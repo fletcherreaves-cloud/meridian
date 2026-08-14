@@ -424,3 +424,48 @@ cheapest credibility you can buy, and a reader who knows the calendar will spot 
 begins at 6/23), almost certainly because that issue only carries forward-looking items. It is not
 a retraction — the owner independently confirms the promotion ran and *"was a huge fail for us."*
 The 6/9 start date stands, and the B4 mapping is unchanged.
+### ⚠️ Current calendar (Aug 2026 issue) — a RECURRING offer, not just point events
+
+The live calendar carries two standing items the earlier issues did not surface:
+
+```
+Now–10/4  Weekly Mass Digital Offers | Free Medium Fry w/ $1 min purchase
+          AND $2 Breakfast Sandwich  (redeemable 1x/customer PER WEEK)
+Now–9/30  ABS 2.0 promotion — up to $3,000 savings per unit, all purchases  [operator-side]
+```
+
+**The Weekly Mass Digital Offers item is the most consequential thing found in any of the calendar
+versions**, because it is *recurring* rather than a single date. A weekly free-fry offer gated at a
+$1 minimum, running across the measurement window, acts continuously on both headline metrics.
+
+**OPEN QUESTION — the only thing blocking its use: when does "Now" start?** The calendar says
+"Now" because it is an August issue. If the offer began in June it contaminates B4 onward; if it
+began in August it barely reaches the 2026-08-13 cutoff. **Ask before writing this into the
+document.**
+
+**It biases BOTH findings toward conservatism, whichever the answer:**
+
+| finding | direction of the offer's effect | consequence |
+|---|---|---|
+| check **+10.4¢** | free item at a $1 minimum **suppresses** average check | the gain was measured *against* a check-suppressing offer — **understated** |
+| traffic **−4.55pp** | a free item is a **traffic draw** | the decline was measured *against* a traffic-supporting offer — **understated** |
+
+That is the good kind of confound: it works against the conclusion in both directions, so naming it
+strengthens the document rather than weakening it.
+
+**`ABS 2.0` is operator-side** (equipment/supply savings, not consumer-facing) so it does not touch
+traffic or check — but it is relevant to food-cost and P&L work, and is noted here so it is not
+mistaken for a marketing event later.
+
+### Post-cutoff items — context only, not in the data
+
+`8/17` Energy Launch + Coffee LTO · `9/1` Spicy McNuggets LTO · `9/8` **Dual Daypart EVM** ($5
+Sausage McMuffin w/ Egg; $8 Big Mac) · `9/15` Arch Card balance in the app · `9/15` Happy Meal #8 ·
+`9/18` **National Cheeseburger Day** (free Double Cheeseburger, $1 min) · `10/6` Monopoly ·
+`10/20` Happy Meal #9.
+
+**Worth one observation in the document:** the forward calendar is dense with **free-item and
+deep-value offers** — weekly free fries, $2 breakfast sandwiches, free Double Cheeseburger, dual
+daypart EVMs at $5/$8. A system leaning this hard on discounting is itself consistent with the
+demand-side reading, and unlike our own analysis it is McDonald's own published plan rather than
+our inference.
