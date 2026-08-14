@@ -156,13 +156,26 @@ In QSRSoft org but NOT in SAML     : 23021, 28819
 In Meridian but NOT in QSRSoft org : (none)
 ```
 
-**23021 and 28819** are provisioned in the QSRSoft org but carry **no McDonald's operator role** —
-absent from both `saml.nsns` and `saml.roles`, which list exactly the 27 we know. Closed or sold
-stores whose org membership was never cleaned up, pending acquisitions, or another party's stores
-inside RKT Inc. **Open question for the owner.**
+**RESOLVED — owner, 2026-08-14: 23021 and 28819 are SOLD OR CLOSED stores. Data retained in the
+org but not current.** That is why they hold no McDonald's operator role and are absent from
+`saml.nsns` / `saml.roles`.
 
-Matters because a pull that iterates the org's location list rather than `STORE_NAMES` would
-silently include them, and any district aggregate built that way would disagree with Meridian's.
+**Not a live risk today, and the reason is worth knowing.** Every pull script hardcodes its own
+`STORE_NSNS` list — `qsrsoft-dar-pull` · `-ops-pull` · `-ebos-pull` · `-onhand-pull` ·
+`-shift-manager-pull` · `-employee-roster-pull` · `-roster-stats-pull` · `-mcdelivery-pull` ·
+`-digital-app-pull` · `-pull`. Neither loc appears anywhere in `src/` or `scripts/`, so they have
+never entered our data at any period. That is also why the 2024 DAR backfill returned **25**
+stores rather than 27 — the list, not the org, decides.
+
+**The standing guard:** never source a pull's store list from the org's `locations` array. It
+carries sold and closed restaurants, and a district aggregate built from it would silently
+disagree with every Meridian total. `STORE_NAMES` (or a script's own `STORE_NSNS`) is the roster.
+
+**The upside, per the data-depth rule:** their history is *retained*. If a longer district
+baseline is ever wanted for a period when they were trading, that data exists and is reachable —
+it simply will not arrive by accident. Treat them as an opt-in historical source, and as a
+portfolio-composition event in `memory/store-events-material-changes.md` if any analysis window
+ever spans their exit.
 
 ## QSRSoft's own RBAC groups
 
