@@ -274,9 +274,14 @@ any one store requires knowing the other 19. Filled incrementally it drifted to 
 20), which breaks the scarcity premise that was supposed to create the discrimination, and collapsed
 to "Execution ≠ Low" — collinear with the field it was meant to supplement.
 
-**Fix: fill it in ONE pass across all 20 once the cohort completes (2026-09-03), before looking at
-any scheduling data.** Done that way it is a genuine forced ranking and cuts *within* the Med band,
-which the three-valued scale cannot. Still fully pre-registered.
+**Fix, as adopted 2026-08-14:** the owner marks it as he goes (now **2 Yes of 8** — exactly the
+pace for 5 of 20), and then **reconciles to exactly 5 in one pass on 2026-09-03, before looking at
+any scheduling data.** If the running tally lands on 7, cut two; on 3, promote two.
+
+**That reconciliation is where the discrimination happens** — it forces a cut either *within* the
+High band or *into* the Med band, which the three-valued scale cannot do. At 8 of 20 both Yeses sit
+on the two Highs, so it carries no information beyond Execution yet; that is expected, not a fault.
+Still fully pre-registered either way.
 
 Also corrected in that round: the binary was initially answered inverted, because I wrote "improve"
 where I meant "execute well". Owner re-oriented it. Wording of a forced-choice question is part of
