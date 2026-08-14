@@ -94,13 +94,30 @@ daily pull, and Supabase would feel it.
 over-rings, promos, manager discounts — run roughly 1–3% of the total. District-wide that is a
 few hundred rows a day, ~150k a year. **That is nothing.**
 
-So the recommendation is three tiers, not two:
+So the recommendation is three tiers, not two. **Owner-approved 2026-08-14** — *"that option
+made logical sense to me so I'm OK with you proceeding as presented."*
 
 | tier | what | cadence | volume |
 |---|---|---|---|
 | **A** | **exception transactions only**, district-wide | daily, standing | ~200–600 rows/day — trivial |
 | **B** | full transaction detail, one store × a date range | **on-demand**, triggered by an investigation | bounded by the ask |
 | **C** | full transaction detail, district-wide, standing | **never** | no |
+
+**The approval is of the design, not a guarantee that Tier A exists.** Tier A is contingent on
+the probe, and there are three possible outcomes:
+
+1. **The report filters to exception types server-side** → Tier A as designed. Best case.
+2. **No server-side filter, but it accepts a date range per store** → we would have to pull
+   everything and discard non-exceptions on our side. Storage stays small (we keep the same
+   ~1–3%), but egress does not — that is the full firehose crossing the wire daily. Needs a
+   measured call on request time and rate limits before committing, not an assumption.
+3. **One date per request, no range, no filter** → 27 stores × 365 days of individual requests
+   makes a standing pull impractical. Tier A dies, Tier B stands alone, and **Register Audit
+   (§A) carries all standing attribution** — which is another reason §A ranks first regardless
+   of how the probe lands.
+
+Outcome 2 is the one that needs a judgement call rather than a build, so flag it rather than
+proceeding straight into implementation if that is what the probe returns.
 
 Tier A is the prize. It gives permanent transaction-level attribution for exactly the
 transactions that matter, with no volume problem at all, and it does not require anyone to
