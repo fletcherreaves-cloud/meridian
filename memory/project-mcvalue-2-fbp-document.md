@@ -554,3 +554,72 @@ already flagged in this file (owner's own idea) — now on the critical path rat
 excluded.** Both are cheap. Both are the kind of thing that, found by a reader first, costs the
 whole document its credibility — and found by us first, becomes a methodology section that
 demonstrates rigour.
+
+---
+
+# ⚠️ TWO MENU PRICE ROUNDS LAND INSIDE THE POST WINDOW — this threatens the check finding
+
+Full calendar coverage (Mar–Oct 2026) obtained 2026-08-14. Rebuilt against launch-anchored blocks:
+
+```
+ B1  04-22 → 05-05   05-05 Happy Meal #4 begins
+ B2  05-06 → 05-19   05-06 Beverage Launch (all-store sell)
+                     05-14 DEADLINE for price changes ahead of 2026 PRICE ROUND 1
+ B3  05-20 → 06-02   06-01 McDonald's Worldwide convention (6/1-6/4)
+                     06-01 2026 Price Round 2 recommendations available on portal
+ B4  06-03 → 06-16   06-09 FIFA World Cup Meal (dual-daypart) + Happy Meal #5
+ B5  06-17 → 06-30   06-23 Fried Apple Pie LTO
+                     06-26 DEADLINE to submit recommendations: PRICE ROUND 2
+ B6  07-01 → 07-14   07-07 McValue 2.0 REHIT · 07-10 French Fry Day · 07-14 Happy Meal #6
+ B7  07-15 → 07-28   07-15 MENU ITEM SEQUENCING begins deploying · 07-21 flavour news ×2
+ B8  07-29 → 08-11   — clean —
+```
+
+## The pricing problem, stated plainly
+
+**Two menu price rounds sit inside the measurement window.** Round 1 changes were due 5/14; Round 2
+recommendations landed 6/1 with submissions due 6/26. Both take effect *after* McValue launched.
+
+**Average check +10.4¢ on a roughly $10 check is about 1%. A menu price round is typically 1–3%.**
+So the entire measured check gain could be **price**, not mix — a complete alternative explanation
+for a headline number, and one a franchisee reader will think of immediately because they took the
+same rounds.
+
+**This is answerable, not a data limitation.** The owner sets his own pricing. **The question to
+answer before publishing: did the stores take price in Round 1 and/or Round 2, on what effective
+dates, and at roughly what percentage?**
+
+**The decomposition that saves the finding:** **B1 (04-22 → 05-05) closes before the Round 1
+deadline**, so whatever check movement appears in B1 cannot be price. B1 is therefore the clean
+read on the McValue *mix* effect — which is what the document actually wants to claim. If B1 shows
+the check gain and later blocks show more, the extra is plausibly price; if B1 shows nothing and
+the gain only appears from B2, the finding is probably pricing and the claim must change.
+
+**Run that block-level check-versus-price decomposition before the 25th.** It is the difference
+between a defensible finding and one that collapses on the first question.
+
+## Correction — "B1–B3 is clean" was wrong
+
+An earlier note in this file called B1–B3 a clean six-week window. **With full calendar coverage
+that is not true.** B1 carries a Happy Meal rotation, B2 a Beverage Launch and the Round 1 price
+deadline, B3 the Worldwide convention and Round 2 recommendations.
+
+The honest statement is narrower: **B1 is the cleanest block** — one routine Happy Meal rotation
+(which rotates on a similar cadence in the LY twin and therefore largely cancels in a vs-LY design)
+and **no pricing action**. Everything from B2 onward carries either a promotional launch or a
+pricing event.
+
+I asserted the clean window before having the calendar for it, then had to narrow it twice as
+coverage arrived. Recorded so the file shows the correction rather than only the conclusion.
+
+## Also new
+
+**`7/15 — Menu Item Sequencing begins deploying`** (B7). An operational deployment changing order
+flow, not a promotion. Potentially relevant to service times and throughput, and therefore to both
+the DAR service metrics and any traffic read on B7 onward. Nothing else we track would have flagged
+it.
+
+**`9/8 — McValue 2.0 Rehit`** (Breakfast under $3: $1.50/$2 Sausage McMuffin; ROD under $3:
+$1.50/$2 Cheeseburger) — a **third** McValue action, after the data cutoff. Note that two calendar
+issues describe 9/8 differently (one as a McValue rehit, one as a Dual Daypart EVM at $5/$8);
+worth resolving if 9/8 ever enters an analysis window.
