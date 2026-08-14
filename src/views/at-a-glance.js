@@ -24,6 +24,7 @@ import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail,
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
+import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { reportRender as _traceRender, mark as _mark } from '../utils/click-trace.js';
 
@@ -1559,6 +1560,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // passed here and silently dropped inside the component — removed at both ends rather
       // than left as a dead prop that looks live.
       h(PatchHeatmap, { ds, stores, onOpenStore, onCoachingSaved }),
+
+      // #274 — Bullseye: distribution-gestalt companion to the heatmap above (gestalt, not
+      // lookup — see the component's own header). Same plain-import pattern as PatchHeatmap:
+      // a tile embedded inline in the already-lazy-loaded At A Glance view, not a lazyPanel().
+      h(BullseyeTile, { stores, onOpenStore }),
 
       // ── TODAY'S MOVERS (auto-fresh) ─────────────────────────────
       moversStrip&&(moversStrip.up.length||moversStrip.down.length||moversStrip.slowDT.length)&&div({
