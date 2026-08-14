@@ -64,17 +64,42 @@ was wrong.
 | Transaction **timestamp + register/terminal id** | ❌ Not available today — this is exactly what #275's probe asks the "Any Transaction" report for. |
 | Per-employee **daily** exception aggregates | ✅ Available via Register Audit (`audit_rows`, PK `loc,date,emp`) — but daily grain, no times. |
 
-So the test is **not runnable today, and plausibly reachable** by either of two routes:
+So the test is **not runnable today, and plausibly reachable** by more than one route.
 
-1. **LifeLenz actual punches.** LifeLenz is the time system; it almost certainly holds real punch
-   in/out times. Our pull discards raw shifts by design (to keep the table small) and stores
-   role rollups. Extending it to keep per-employee punch intervals is a scoped change to a pull
-   that already exists and already authenticates.
-2. **Transaction timestamps + terminal id** from #275. Gives the same contradiction test at finer
-   grain, plus a second signal: one ID transacting on two terminals at the same moment.
+### Source decision — QSRSoft preferred (owner, 2026-08-14)
 
-Route 1 is the cheaper of the two and does not depend on the transaction-detail probe landing
-well.
+Owner: *"we can either do that or maybe we can pull it from QSRSoft. It's available both
+places."* That settles it toward QSRSoft, for three reasons:
+
+1. **History depth.** LifeLenz for Oklahoma starts **October 2025** — a hard floor sitting
+   directly on top of the periods we most want to test (the Sept–Oct 2025 Holdenville padding
+   window, the 2025 cash pairs). QSRSoft has already been backfilled 27 months by API. If punch
+   detail reaches back comparably, attribution-confidence applies **retrospectively to findings
+   already on the table**, not only forward.
+2. **Same identifier space as the registers — the decisive reason.** The test joins punch records
+   to register records *by employee*. Register Audit keys on employee **name**
+   (`parsers/index.js:977`). QSRSoft's roster pull already returns
+   `{storeNum, geid, fullEmployeeName, …}` — the name → ID bridge exists and is already pulled.
+   Sourcing punches from QSRSoft keeps the whole chain in one identifier system. Sourcing from
+   LifeLenz introduces a cross-system identity match, and if the IDs do not line up it degrades
+   to fuzzy name-matching across hundreds of employees at 27 stores. **A wrong match does not
+   error — it silently attributes one person's punches to another.** In a test whose entire
+   purpose is establishing who was present, that failure mode is disqualifying.
+3. **Mature pull infrastructure** — the `qsrsoft-ops-pull.mjs` pattern is proven at 27 months.
+
+**The argument for LifeLenz that survives:** it is the system of record for time. Punches
+originate there; QSRSoft's copy may lag, round, or drop corrections.
+
+**So the probe settles it empirically rather than by assumption:** pull both for one overlapping
+store-week and compare punch-for-punch. Agreement → QSRSoft, for the history and the native
+join. A lossy QSRSoft copy → LifeLenz, accepting the identity-matching cost deliberately with a
+**measured** name→`geid` match rate rather than a hopeful one. Also worth establishing whether
+LifeLenz and QSRSoft share the same `geid`: if they do, reason 2 weakens and the decision rests
+on history depth alone, which still favours QSRSoft.
+
+A third route exists independently: **transaction timestamps + terminal id** from #275, which
+gives the same contradiction test at finer grain plus a second signal — one ID transacting on
+two terminals in overlapping minutes, which needs no punch data at all.
 
 ### Weaker signals, listed so they are not mistaken for the strong one
 
