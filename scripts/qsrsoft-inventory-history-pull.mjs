@@ -132,6 +132,42 @@ async function bisectEarliestMonth(token, nsn, knownEmptyStart, knownDataStart) 
   return fmtDate(hi);
 }
 
+// PR #273 review (owner, 2026-08-14): bisectEarliestMonth converges to the earliest EMPTY
+// probe it saw and reports the month right after it as "earliest month with data" — but
+// physical-inventory counts are weekly (memory/notes-58-queue.md: "every weekly count
+// requires a full Food AND Condiment count"), so a single missed count-week can make a real
+// data month read as empty and make bisect converge later than the true floor, silently
+// under-reporting retention depth. A false-shallow answer turns a backfill candidate into a
+// "forward-only, priority drops" verdict — the failure mode that matters most for a probe
+// whose whole purpose is measuring depth. Confirms from the other side: after convergence,
+// probe the month immediately before the reported answer and the month before that. Both
+// empty confirms the boundary (~4 count sessions per probed month makes an all-empty pair
+// a real signal, not sampling noise). Either returning data means the initial bisect
+// stopped early — re-bisects once more between a widened empty bound and the earliest
+// confirmed-data point found, bounded to one extra pass rather than recursing indefinitely.
+async function confirmEarliestMonth(token, nsn, earliestMonth) {
+  const base = new Date(earliestMonth + 'T00:00:00Z');
+  const monthWindow = (n) => {
+    const m = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - n, 1));
+    return { start: fmtDate(m), end: fmtDate(new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 0))) };
+  };
+  const oneBefore = monthWindow(1);
+  const twoBefore = monthWindow(2);
+  const rOne = await probeWindow(token, nsn, oneBefore.start, oneBefore.end);
+  logResult('confirm boundary -1mo', oneBefore.start, oneBefore.end, rOne);
+  const rTwo = await probeWindow(token, nsn, twoBefore.start, twoBefore.end);
+  logResult('confirm boundary -2mo', twoBefore.start, twoBefore.end, rTwo);
+  const oneHasData = rOne.ok && rOne.count > 0;
+  const twoHasData = rTwo.ok && rTwo.count > 0;
+  if (!oneHasData && !twoHasData) return { earliestMonth, confirmed: true };
+
+  const newDataStart = twoHasData ? twoBefore.start : oneBefore.start;
+  const widenedEmpty = monthWindow(3);
+  console.log(`[probe] ${nsn}: boundary NOT confirmed — data found before the reported floor; re-bisecting from ${widenedEmpty.start}…${newDataStart}`);
+  const corrected = await bisectEarliestMonth(token, nsn, widenedEmpty.start, newDataStart);
+  return { earliestMonth: corrected, confirmed: false, correctedFrom: earliestMonth };
+}
+
 const WINDOWS = [
   { label: 'last 30 days',  start: daysAgo(30),  end: today() },
   { label: 'last 90 days',  start: daysAgo(90),  end: today() },
@@ -178,10 +214,13 @@ async function probeStore(token, nsn) {
   }
   if (firstDeadAfterGood && firstDeadAfterGood.ok && firstDeadAfterGood.count === 0) {
     console.log(`[probe] ${nsn}: retention cutoff between "${lastGoodWithData.label}" (has data) and "${firstDeadAfterGood.label}" (empty) — bisecting…`);
-    const earliestMonth = await bisectEarliestMonth(token, nsn, firstDeadAfterGood.start, lastGoodWithData.start);
-    const msg = `retention cutoff — earliest month with data (approx): ${earliestMonth}`;
+    const bisected = await bisectEarliestMonth(token, nsn, firstDeadAfterGood.start, lastGoodWithData.start);
+    const confirmation = await confirmEarliestMonth(token, nsn, bisected);
+    const msg = confirmation.confirmed
+      ? `retention cutoff — earliest month with data (confirmed): ${confirmation.earliestMonth}`
+      : `retention cutoff — earliest month with data (confirmed): ${confirmation.earliestMonth} (corrected from initial bisect answer ${confirmation.correctedFrom} — data found before it on the boundary check)`;
     console.log(`[probe] ${nsn} verdict: ${msg}`);
-    return { nsn, kind: 'cutoff', summary: msg, earliestMonth };
+    return { nsn, kind: 'cutoff', summary: msg, earliestMonth: confirmation.earliestMonth, confirmed: confirmation.confirmed };
   }
   const deepest = WINDOWS[WINDOWS.length - 1];
   const msg = `deep — every probed window returned data, back to "${deepest.label}" (${deepest.start})`;
