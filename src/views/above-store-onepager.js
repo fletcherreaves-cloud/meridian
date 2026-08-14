@@ -347,7 +347,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   const badge = (actual, target, lowerBetter) => {
     if (actual == null || target == null) return 'var(--text3)';
     const good = lowerBetter ? actual <= target : actual >= target;
-    return good ? '#4ade80' : '#f87171';
+    return good ? '#4ade80' : 'var(--crit)';
   };
   const Row = (label, actual, target, fmt, lowerBetter, extra) => div({ key: label, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
     span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
@@ -358,7 +358,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   // labor % (owner standard 10–15% each). Green in-band, red out. Shows the band range.
   const bandRow = (label, v, lo, hi, title) => div({ key: label, title, style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
     span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, label),
-    span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
+    span({ style: { fontSize: '12px', fontWeight: 700, color: v == null ? 'var(--text3)' : (v >= lo && v <= hi ? '#4ade80' : 'var(--crit)'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(v, '%')),
     span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'band ' + (lo * 100).toFixed(2) + '–' + (hi * 100).toFixed(2) + '%'));
   // Worst store-days behind a Controls metric ("who + when"). signed=true shows +/-
   // (Cash Over/Short: over vs short). Renders nothing when there are no offenders.
@@ -470,8 +470,8 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         // Sales / GC
         showP('sales') && Section('Sales / GC', '💵', 'sales',
           Row('Product Sales', d.byKey.sales?.actual, null, '$'),
-          div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.salesVsLY?.pct))),
-          div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : '#f87171' } }, pct(d.rv.gcVsLY))),
+          div({ key: 'svly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Sales vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.salesVsLY?.pct || 0) >= 0 ? '#4ade80' : 'var(--crit)' } }, pct(d.salesVsLY?.pct))),
+          div({ key: 'gcly', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'Same day-of-week, 364 days back (52 weeks) — not the same calendar date' }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Guest Counts vs LY (Trading Day)'), span({ style: { fontWeight: 700, color: (d.rv.gcVsLY || 0) >= 0 ? '#4ade80' : 'var(--crit)' } }, pct(d.rv.gcVsLY))),
           d.rv.digitalAppPct != null ? Row('Digital App % of Sales', d.rv.digitalAppPct, d.rv.digitalAppPctTarget, '%', false) : null,
           d.projSales ? div({ key: 'pace', style: { display: 'flex', padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' } }, span({ style: { flex: 1, color: 'var(--text2)' } }, 'Pace to projection'), span({ style: { fontWeight: 700, color: (d.pace || 0) >= 1 ? '#4ade80' : '#f5bc00' } }, d.pace ? (d.pace * 100).toFixed(2) + '%' : '—')) : null,
           lyWindowEvents.length ? div({ key: 'lyev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null),
@@ -485,7 +485,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           d.lyFobPct != null ? div({ key: 'fobly', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)', fontSize: '11px' }, title: 'QSRSoft’s own same-calendar-dates comparison — not the Trading Day (364-day) shift used for Sales/GC' },
             span({ style: { flex: 1, color: 'var(--text2)' } }, 'vs LY (Calendar)'),
             span({ style: { fontSize: '10px', color: 'var(--text3)' } }, 'LY ' + fmtV(d.lyFobPct, '%')),
-            span({ style: { fontWeight: 700, color: d.fobVsLyPp == null ? 'var(--text3)' : (d.fobVsLyPp <= 0 ? '#4ade80' : '#f87171'), minWidth: 60, textAlign: 'right' } },
+            span({ style: { fontWeight: 700, color: d.fobVsLyPp == null ? 'var(--text3)' : (d.fobVsLyPp <= 0 ? '#4ade80' : 'var(--crit)'), minWidth: 60, textAlign: 'right' } },
               d.fobVsLyPp == null ? '—' : (d.fobVsLyPp <= 0 ? '' : '+') + (d.fobVsLyPp * 100).toFixed(2) + 'pp')) : null,
           (d.lyFobPct != null && lyWindowEvents.length) ? div({ key: 'fobev', title: 'LY window: ' + lyWindow.s + ' → ' + lyWindow.e, style: { fontSize: '9px', color: '#f5bc00', padding: '3px 0 0 2px', lineHeight: 1.4 } }, '⚠ LY window included: ' + lyEventCaveat()) : null,
           div({ key: 'fobd', style: { fontSize: '9px', color: 'var(--text3)', paddingTop: 3 } }, 'Σ$ ' + fmtV(d.fob$, '$') + ' ÷ Σ prod-sales ' + fmtV(d.fobProd, '$') + ' (dollar-weighted)'),
@@ -513,7 +513,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           div({ key: 'sh', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
             span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Scheduled vs Forecast hrs'),
             span({ style: { fontSize: '10px', color: 'var(--text3)' } }, fmtHrs(d.sched.schedHrs) + ' / ' + fmtHrs(d.sched.fcstHrs)),
-            span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.hrsDiff == null ? 'var(--text3)' : (d.sched.hrsDiff <= 0 ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 56, textAlign: 'right' } }, (d.sched.hrsDiff >= 0 ? '+' : '') + fmtHrs(d.sched.hrsDiff))),
+            span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.hrsDiff == null ? 'var(--text3)' : (d.sched.hrsDiff <= 0 ? '#4ade80' : 'var(--crit)'), fontVariantNumeric: 'tabular-nums', minWidth: 56, textAlign: 'right' } }, (d.sched.hrsDiff >= 0 ? '+' : '') + fmtHrs(d.sched.hrsDiff))),
           Row('Schd TPMH', d.sched.tpmh, null, 'n'),
           // Fixed/Floor/VLH are all shares of TOTAL SCHEDULED HOURS, not of sales — labeled
           // explicitly (Notes 53: "distinguished clearly... make up xx.xx% of total scheduled
@@ -528,7 +528,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
             span({ style: { fontSize: '12px', fontWeight: 700, color: 'var(--text)', fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(d.sched.vlhPct, '%'))) : null,
           div({ key: 'cmb', title: 'Fixed + Floor combined, as a share of TOTAL SCHEDULED HOURS', style: { display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 0', borderTop: '1px solid var(--bdr)' } },
             span({ style: { flex: 1, fontSize: '11px', color: 'var(--text2)' } }, 'Combined (Fixed+Floor, % of Scheduled)'),
-            span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.combinedPct == null ? 'var(--text3)' : (d.sched.combinedPct <= d.sched.combinedMax ? '#4ade80' : '#f87171'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(d.sched.combinedPct, '%')),
+            span({ style: { fontSize: '12px', fontWeight: 700, color: d.sched.combinedPct == null ? 'var(--text3)' : (d.sched.combinedPct <= d.sched.combinedMax ? '#4ade80' : 'var(--crit)'), fontVariantNumeric: 'tabular-nums', minWidth: 60, textAlign: 'right' } }, fmtV(d.sched.combinedPct, '%')),
             span({ style: { fontSize: '9px', color: 'var(--text3)', minWidth: 54, textAlign: 'right' } }, 'cap ' + fmtV(d.sched.combinedMax, '%')))
         ) : Section('Scheduling', '🗓', null,
           div({ style: { fontSize: '10px', color: 'var(--text3)', padding: '4px 0' } }, 'No LifeLenz schedule rows for this scope in the selected period.'))),
@@ -572,7 +572,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
             h('tbody', { key: 'b' }, d.perStore.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
               h('td', { key: 'a', style: { padding: '3px 6px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sNameC(r.loc) || r.loc),
               h('td', { key: 's', style: { padding: '3px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } }, fmtV(r.netSales, '$')),
-              h('td', { key: 'v', style: { padding: '3px 6px', textAlign: 'right', fontWeight: 700, color: (r.salesVsLYPct || 0) >= 0 ? '#4ade80' : '#f87171' } }, r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(2) + '%'),
+              h('td', { key: 'v', style: { padding: '3px 6px', textAlign: 'right', fontWeight: 700, color: (r.salesVsLYPct || 0) >= 0 ? '#4ade80' : 'var(--crit)' } }, r.salesVsLYPct == null ? '—' : (r.salesVsLYPct >= 0 ? '+' : '') + r.salesVsLYPct.toFixed(2) + '%'),
               h('td', { key: 'f', style: { padding: '3px 6px', textAlign: 'right', color: badge(r.fobPct, r.fobTarget, true) } }, fmtV(r.fobPct, '%')),
               h('td', { key: 'l', style: { padding: '3px 6px', textAlign: 'right', color: badge(r.laborPct, r.laborTarget, true) } }, fmtV(r.laborPct, '%')),
               h('td', { key: 'o', style: { padding: '3px 6px', textAlign: 'right' } }, fmtV(r.oepe, 's')),

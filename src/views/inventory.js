@@ -446,7 +446,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
       div({style:{display:'flex',alignItems:'baseline',gap:5}},
         span({style:{fontSize:'8px',fontFamily:'var(--mono)',color:'var(--text3)',flexShrink:0}},r.wrin),
         span(null,r.description,r.inactive?' ':' '),
-        r.inactive&&sTag('#f87171','🚫 INACTIVE'))),
+        r.inactive&&sTag('var(--crit)','🚫 INACTIVE'))),
     td({style:{padding:'4px 8px',fontSize:'8.5px',color:'var(--text3)'}},(r.class_||'')),
     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,color:'#f97316'}},r.daysSupply.toFixed(0)+'d'),
     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px'}},(r.excessDays||0).toFixed(0)+'d'),
@@ -528,7 +528,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
               border:'.5px solid var(--bdr)'}},'☁ loading…')
           :cloudErr
           ?span({title:cloudErr,style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
-              color:'#f87171',background:'rgba(248,113,113,.12)',border:'.5px solid rgba(248,113,113,.4)'}},'⚠ auto-sync failed')
+              color:'var(--crit)',background:'rgba(244,63,94,.12)',border:'.5px solid rgba(244,63,94,.4)'}},'⚠ auto-sync failed')
           :hasCloud
           ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
               color:'#34d399',background:'rgba(52,211,153,.1)',border:'.5px solid rgba(52,211,153,.35)'}},
@@ -640,7 +640,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
           div({style:{fontSize:'10px',fontWeight:700,color:'#ef4444',marginBottom:6}},'⚠ Action Required — '+actionItems.length+' Item'+(actionItems.length!==1?'s':'')+' with Data Quality Issues'),
           ...actionItems.map((r,i)=>div({key:i,style:{borderBottom:i<actionItems.length-1?'.5px solid rgba(239,68,68,.15)':'none',padding:'6px 0',display:'flex',gap:10,alignItems:'flex-start'}},
             div({style:{minWidth:200,fontWeight:600,fontSize:'9px',color:'var(--text)'}},r.description),
-            div({style:{minWidth:60,fontFamily:'var(--mono)',fontSize:'9px',color:'#f87171'}},(r.daysSupply||0).toFixed(1)+'d'),
+            div({style:{minWidth:60,fontFamily:'var(--mono)',fontSize:'9px',color:'var(--crit)'}},(r.daysSupply||0).toFixed(1)+'d'),
             div({style:{flex:1,fontSize:'9px',color:'#f59e0b',lineHeight:1.5}},r.actionMsg)
           ))
         ),
@@ -739,7 +739,7 @@ tr.alt td{background:rgba(255,255,255,.015)}
 .red{color:var(--crit)}.amber{color:var(--warn)}.orange{color:#f97316}
 .green{color:#10b981}.blue{color:#60a5fa}.gold{color:#f5bc00}
 .bold-blue{color:#60a5fa;font-weight:700}
-.badge-red{display:inline-block;background:rgba(248,113,113,.15);color:#f87171;border:.5px solid rgba(248,113,113,.3);border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;margin-left:4px}
+.badge-red{display:inline-block;background:rgba(244,63,94,.15);color:var(--crit);border:.5px solid rgba(244,63,94,.3);border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;margin-left:4px}
 .stats-strip{display:flex;gap:16px;padding:10px 0;border-bottom:.5px solid rgba(255,255,255,.1);margin-bottom:16px}
 .stat-item{text-align:center}.stat-val{font-size:18px;font-weight:700;font-family:'DM Mono',monospace}
 .stat-lbl{font-size:8px;color:#64748b;text-transform:uppercase;letter-spacing:.5px}

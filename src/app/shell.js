@@ -481,7 +481,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           title:tip,
           onClick:onClearSession},
           span({style:{fontSize:'7px',color:col,fontWeight:600,fontFamily:'var(--mono)'}},label),
-          ageDays>3&&span({style:{fontSize:'8px',color:'#f87171'}},' ⚠')
+          ageDays>3&&span({style:{fontSize:'8px',color:'var(--crit)'}},' ⚠')
         );
       })()
     ),

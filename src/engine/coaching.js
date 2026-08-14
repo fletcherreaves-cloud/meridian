@@ -349,10 +349,10 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
       ),
       isExp&&div({style:{padding:'0 12px 12px'}},
         entry.error&&div({style:{padding:'8px 10px',background:'rgba(239,68,68,.08)',borderRadius:'var(--r)',
-          fontSize:'9px',color:'#f87171',marginBottom:8}},
+          fontSize:'9px',color:'var(--crit)',marginBottom:8}},
           'Generation failed: '+entry.error,
           btn({style:{marginLeft:8,fontSize:'8px',padding:'2px 8px',background:'rgba(239,68,68,.15)',
-            border:'.5px solid rgba(239,68,68,.3)',borderRadius:4,color:'#f87171',cursor:'pointer'},
+            border:'.5px solid rgba(239,68,68,.3)',borderRadius:4,color:'var(--crit)',cursor:'pointer'},
             onClick:()=>retryOne(loc)},'↻ Retry')),
         entry.text&&div(null,
           div({style:{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap'}},
@@ -428,8 +428,8 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
           );
         })(),
         div({style:{flex:1,overflowY:'auto',padding:'14px 16px'}},
-          error&&div({style:{padding:'12px',background:'rgba(248,113,113,.1)',border:'.5px solid rgba(248,113,113,.3)',
-            borderRadius:'var(--r)',color:'#f87171',fontSize:'10px',lineHeight:1.6}},error),
+          error&&div({style:{padding:'12px',background:'rgba(244,63,94,.1)',border:'.5px solid rgba(244,63,94,.3)',
+            borderRadius:'var(--r)',color:'var(--crit)',fontSize:'10px',lineHeight:1.6}},error),
           !brief&&!loading&&!error&&div({style:{color:'var(--text3)',textAlign:'center',padding:'40px 20px',fontSize:'11px'}},
             div({style:{fontSize:40,marginBottom:12}},'👨‍💼'),
             div({style:{fontWeight:700,color:'var(--text)',marginBottom:6,fontSize:'13px'}},'Ready to Generate'),
@@ -471,7 +471,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700,padding:'6px 18px'},
             disabled:batchRunning,onClick:generateBatch},
             batchRunning?'⏳ Generating…':'✨ Generate All 27'),
-          batchRunning&&btn({className:'btn btn-sm',style:{color:'#f87171'},onClick:cancelBatch},'⏹ Cancel')
+          batchRunning&&btn({className:'btn btn-sm',style:{color:'var(--crit)'},onClick:cancelBatch},'⏹ Cancel')
         ),
         // Progress bar
         batchRunning&&batchProg&&div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},

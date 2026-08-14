@@ -640,7 +640,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                     ev.status!=='postponed'?btn({disabled:editBusy,onClick:e=>{e.stopPropagation();quickStatus(ev.loc,dk,ev,'postponed');},style:btnS},'⏸ Postpone'):null,
                     ev.status!=='canceled'?btn({disabled:editBusy,onClick:e=>{e.stopPropagation();quickStatus(ev.loc,dk,ev,'canceled');},style:{...btnS,color:'#fca5a5'}},'✕ Cancel'):null,
                     ev.status?btn({disabled:editBusy,onClick:e=>{e.stopPropagation();quickStatus(ev.loc,dk,ev,'scheduled');},style:{...btnS,color:'#6ee7b7'}},'✓ Restore'):null,
-                    btn({disabled:editBusy,onClick:e=>{e.stopPropagation();deleteEvt(ev.loc,dk,ev);},style:{...btnS,color:'#f87171',marginLeft:'auto'}},'🗑 Delete'))),
+                    btn({disabled:editBusy,onClick:e=>{e.stopPropagation();deleteEvt(ev.loc,dk,ev);},style:{...btnS,color:'var(--crit)',marginLeft:'auto'}},'🗑 Delete'))),
                 // ── Edit form ──
                 open&&editing&&editDraft&&div({onClick:e=>e.stopPropagation(),style:{padding:'8px 12px 12px',borderTop:'.5px solid var(--bdr)',display:'flex',flexDirection:'column',gap:7}},
                   ...[['label','Title','text'],['kickoff','Time / kickoff (e.g. 7:00 pm)','text'],...(ev.type==='sports'?[['opponent','Opponent','text']]:[])].map(([f,ph])=>
@@ -795,7 +795,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
                   resize:'vertical',boxSizing:'border-box'}}),
               importError&&div({style:{marginTop:8,padding:'6px 10px',background:'rgba(239,68,68,.08)',
                 border:'.5px solid rgba(239,68,68,.2)',borderRadius:'var(--r)',
-                fontSize:'10px',color:'#f87171'}},importError),
+                fontSize:'10px',color:'var(--crit)'}},importError),
               div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:12}},
                 btn({className:'btn btn-sm',onClick:()=>{setShowImport(false);setImportCode('');setImportError('');}},
                   'Cancel'),
@@ -885,7 +885,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
         searchProg&&div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
             span(null,'Searching '+searchProg.storeName+' · '+searchProg.done+' of '+searchProg.total),
-            btn({style:{fontSize:'8px',color:'#f87171',background:'none',border:'none',cursor:'pointer'},onClick:cancelBatchSearch},'⏹ Cancel')),
+            btn({style:{fontSize:'8px',color:'var(--crit)',background:'none',border:'none',cursor:'pointer'},onClick:cancelBatchSearch},'⏹ Cancel')),
           div({style:{height:5,background:'var(--surf2)',borderRadius:99,overflow:'hidden'}},
             div({style:{height:'100%',width:(searchProg.done/searchProg.total*100).toFixed(2)+'%',
               background:'var(--amber)',borderRadius:99,transition:'width .3s'}}))
@@ -1677,7 +1677,7 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
                   e.aiMatched?'🤖 AI':e.source==='Auto-Holiday Scan'?'🎉 Auto':'📌 '+e.source.replace('Manual Entry','Manual').replace('Manual Tag','Manual')),
                 td({style:{padding:'4px 8px',textAlign:'center'}},
                   btn({style:{fontSize:'9px',padding:'1px 5px',background:'none',
-                    border:'.5px solid rgba(239,68,68,.2)',borderRadius:3,color:'#f87171',cursor:'pointer'},
+                    border:'.5px solid rgba(239,68,68,.2)',borderRadius:3,color:'var(--crit)',cursor:'pointer'},
                     onClick:()=>removeEvent(e.loc,e.dk),title:'Remove this event tag'},'✕'))
               );
             }))

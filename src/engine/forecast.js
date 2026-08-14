@@ -1840,7 +1840,7 @@ function getDIRecommendation(r) {
     return{label:'⚠ Recalibrate',color:'#f59e0b',bg:'rgba(245,158,11,.1)',border:'rgba(245,158,11,.3)',
       detail:'Recent 2W MAPE ('+m2.toFixed(2)+'%) higher than 6W ('+m6.toFixed(2)+'%). Re-run calibration with latest data.'};
   if(highErr)
-    return{label:'❌ Review',color:'#f87171',bg:'rgba(248,113,113,.1)',border:'rgba(248,113,113,.3)',
+    return{label:'❌ Review',color:'var(--crit)',bg:'rgba(244,63,94,.1)',border:'rgba(244,63,94,.3)',
       detail:'MAPE above 11% in recent windows. Consider using default params or investigate anomalies.'};
   return{label:'→ Stable',color:'#60a5fa',bg:'rgba(96,165,250,.1)',border:'rgba(96,165,250,.3)',
     detail:'MAPE consistent. DI calibration reasonable.'};

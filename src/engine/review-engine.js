@@ -516,10 +516,10 @@ export function rateMetric(actual, target, metricCfg) {
 
 export const RATING_LABELS = { 4:'Exceeds', 3:'On Target', 2:'Below', 1:'Needs Improvement' };
 export function ratingColor(r) {
-  return r===4?'#16a34a':r===3?'#22c55e':r===2?'#f87171':r===1?'#dc2626':'var(--text3)';
+  return r===4?'#16a34a':r===3?'#22c55e':r===2?'var(--crit)':r===1?'#dc2626':'var(--text3)';
 }
 export function ratingBg(r) {
-  return r===4?'rgba(22,163,74,.13)':r===3?'rgba(34,197,94,.10)':r===2?'rgba(248,113,113,.11)':r===1?'rgba(220,38,38,.12)':'transparent';
+  return r===4?'rgba(22,163,74,.13)':r===3?'rgba(34,197,94,.10)':r===2?'rgba(244,63,94,.11)':r===1?'rgba(220,38,38,.12)':'transparent';
 }
 
 function avgRating(arr) {

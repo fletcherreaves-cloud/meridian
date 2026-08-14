@@ -533,11 +533,11 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
           div({className:'set-sec-t'},'🗄 Data Management'),
           div({className:'set-note'},'Admin-only. These actions affect data stored on this device.'),
           div({style:{background:'rgba(239,68,68,.06)',border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'12px 14px',marginTop:12}},
-            div({style:{fontWeight:700,fontSize:'11px',color:'#f87171',marginBottom:6}},'Clear All Stored Data'),
+            div({style:{fontWeight:700,fontSize:'11px',color:'var(--crit)',marginBottom:6}},'Clear All Stored Data'),
             div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:10,lineHeight:1.5}},'Removes all uploaded report data from this device (IndexedDB + OPFS). Data in Supabase — Monthly Targets, SMG FullScale, Performance Reviews — is not affected. You will need to re-upload files on next launch.'),
             btn({
               className:'btn btn-sm',
-              style:{color:'#f87171',border:'.5px solid rgba(239,68,68,.3)',background:'rgba(239,68,68,.06)',fontWeight:700},
+              style:{color:'var(--crit)',border:'.5px solid rgba(239,68,68,.3)',background:'rgba(239,68,68,.06)',fontWeight:700},
               onClick:()=>{
                 const confirmed=window.prompt('Type DELETE (all caps) to confirm clearing all stored report data:');
                 if(confirmed==='DELETE') onClearAll&&onClearAll();

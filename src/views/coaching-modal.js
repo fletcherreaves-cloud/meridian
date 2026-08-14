@@ -16,7 +16,7 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 const pct = (v) => v == null ? '—' : (v * 100).toFixed(2) + '%';
-const VERDICT_COLOR = { improved: '#34d399', worse: '#f87171', 'no change': 'var(--text3)' };
+const VERDICT_COLOR = { improved: '#34d399', worse: 'var(--crit)', 'no change': 'var(--text3)' };
 
 /**
  * mode:'start'  — props: { loc, metricKey, ds, onClose, onSaved }
@@ -100,7 +100,7 @@ export function CoachingModal({ mode, loc, metricKey, cycle, ds, onClose, onSave
           style: { background: 'var(--surf3)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: '11px', padding: '6px 8px', resize: 'vertical', fontFamily: 'inherit' },
         }),
       ),
-      err && div({ style: { fontSize: '9px', color: '#f87171' } }, '⚠ ' + err),
+      err && div({ style: { fontSize: '9px', color: 'var(--crit)' } }, '⚠ ' + err),
       div({ style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
         btn({ className: 'btn btn-sm', onClick: onClose, disabled: saving }, 'Cancel'),
         btn({ className: 'btn btn-sm btn-primary', onClick: save, disabled: saving || (mode === 'start' && baseline == null) },

@@ -36,7 +36,7 @@ const STATUSES = ['backlog','ready','in_progress','done','blocked'];
 // a well-chosen set of buckets for this domain that TaskQueuePanel never had of its own.
 const CATEGORY_META = {
   ops:     { label:'Operations', color:'#60a5fa' },
-  ctrl:    { label:'Controls',   color:'#f87171' },
+  ctrl:    { label:'Controls',   color:'var(--crit)' },
   labor:   { label:'Labor',      color:'#f59e0b' },
   sales:   { label:'Sales',      color:'#34d399' },
   weather: { label:'Weather',    color:'#93c5fd' },
@@ -215,7 +215,7 @@ function TaskCard({ task, onUpdate, onDelete }) {
           div({ style:{ display:'flex', gap:8, marginLeft:'auto' }},
             btn({ onClick:()=>onDelete(task.id),
               style:{ padding:'6px 12px', borderRadius:6, border:'.5px solid rgba(239,68,68,.3)',
-                background:'transparent', color:'#f87171', fontSize:11, cursor:'pointer' }},
+                background:'transparent', color:'var(--crit)', fontSize:11, cursor:'pointer' }},
               'Remove'),
             btn({ onClick:saveNotes, disabled:savingNotes,
               style:{ padding:'6px 14px', borderRadius:6, border:'.5px solid var(--gold)',

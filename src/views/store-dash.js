@@ -302,8 +302,8 @@ function TrendChart({dayRows}) {
     if(!dayRows||!dayRows.length) return null;
     const labels = dayRows.map(r => DOW_BASE[r.date.getDay()]);
     return new Chart(canvas, {type:'bar', data:{labels, datasets:[
-      {label:'T2W %', data:dayRows.map(r=>+(r.t2*100).toFixed(2)), backgroundColor:dayRows.map(r=>r.t2>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.5)'), borderColor:dayRows.map(r=>r.t2>=0?'#4ade80':'#f87171'), borderWidth:1},
-      {label:'T6W %', data:dayRows.map(r=>+(r.t6*100).toFixed(2)), backgroundColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.25)':'rgba(248,113,113,.25)'), borderColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.5)':'rgba(248,113,113,.5)'), borderWidth:1},
+      {label:'T2W %', data:dayRows.map(r=>+(r.t2*100).toFixed(2)), backgroundColor:dayRows.map(r=>r.t2>=0?'rgba(74,222,128,.5)':'rgba(244,63,94,.5)'), borderColor:dayRows.map(r=>r.t2>=0?'#4ade80':'var(--crit)'), borderWidth:1},
+      {label:'T6W %', data:dayRows.map(r=>+(r.t6*100).toFixed(2)), backgroundColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.25)':'rgba(244,63,94,.25)'), borderColor:dayRows.map(r=>r.t6>=0?'rgba(74,222,128,.5)':'rgba(244,63,94,.5)'), borderWidth:1},
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:LEG,tooltip:{...TT,callbacks:{label:c=>`${c.dataset.label}: ${c.raw}%`}}},
       scales:{x:{...AX},y:{...AX,ticks:{...AX.ticks,callback:v=>v+'%'}}}}});
@@ -328,7 +328,7 @@ function wxIcon(row, ds, loc) {
   if(rain > 0.25 && rnum >= 3) return {icon:'🌦'+suffix, col:'#93c5fd', tip:'Intermittent rain'+(isForecast?' (forecast)':'')};
   if(rain > 0.25) return {icon:'🌧'+suffix, col:'#93c5fd', tip:'Rain'+(isForecast?' (forecast)':'')};
   if(wmax > 35) return {icon:'💨'+suffix, col:'#fbbf24', tip:'High wind'+(isForecast?' (forecast)':'')};
-  if(tmax > 100) return {icon:'🌡'+suffix, col:'#f87171', tip:'Extreme heat'+(isForecast?' (forecast)':'')};
+  if(tmax > 100) return {icon:'🌡'+suffix, col:'var(--crit)', tip:'Extreme heat'+(isForecast?' (forecast)':'')};
   if(tmax > 0 && tmax < 25) return {icon:'🌨'+suffix, col:'#bfdbfe', tip:'Very cold'+(isForecast?' (forecast)':'')};
   if(tmax >= 65 && tmax <= 85) return {icon:'☀️'+suffix, col:'#fbbf24', tip:'Ideal'+(isForecast?' (forecast)':'')};
   if(adj < -0.03) return {icon:'↓', col:'#f97316', tip:'Weather headwind'};
@@ -394,7 +394,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
   const gcCheck = (r.isFuture&&r.forecast>0&&ds)
     ? gcCrossCheck(loc,r.date,ds,settings,r.forecast) : null;
   const hasWxData = wxR&&(wxR.tmax>0||wxR.rain>0||wxR.wmax>0);
-  const gc  = v => v>=0?'#4ade80':'#f87171';
+  const gc  = v => v>=0?'#4ade80':'var(--crit)';
   const laborCol = (()=>{const _lt=resolveLaborTarget(tgt);if(!r.labor||!_lt)return{color:'#94a3b8',arrow:'',label:'—'};const d=r.labor-_lt;const a=Math.abs(d);const grn=(settings?.laborGreenPct??0.5)/100;const yel=(settings?.laborYellowPct??1.5)/100;const arrow=d>0.001?' ▲':d<-0.001?' ▼':'';if(a<=grn)return{color:'#10b981',arrow,label:'On Target'};if(a<=yel)return{color:'#f59e0b',arrow,label:d>0?'Slightly High':'Slightly Low'};return{color:'#ef4444',arrow,label:d>0?'Over Target':'Under Target'};})();
 
   return tr({className:r.isFuture?'fut':''},
@@ -470,7 +470,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
           ),
           div({style:{display:'flex',gap:6,alignItems:'center',justifyContent:'space-between'}},
             ev&&btn({
-              style:{fontSize:'8px',color:'#f87171',background:'none',border:'.5px solid rgba(239,68,68,.3)',borderRadius:3,cursor:'pointer',padding:'2px 6px'},
+              style:{fontSize:'8px',color:'var(--crit)',background:'none',border:'.5px solid rgba(239,68,68,.3)',borderRadius:3,cursor:'pointer',padding:'2px 6px'},
               onClick:()=>{document.dispatchEvent(new CustomEvent('mf_remove_event',{detail:{loc,date:r.date}}));setShowTag(false);}
             },'✕ Remove tag'),
             btn({style:{fontSize:'8px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'},
@@ -487,7 +487,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
       r.forecast>0?div(null,
         div({style:{fontFamily:'var(--mono)',fontWeight:700}},f$(r.forecast)),
         r.lyAdj>0?div({style:{fontSize:'8px',
-          color:r.forecast>=r.lyAdj?'#10b981':'#f87171',fontWeight:600}},
+          color:r.forecast>=r.lyAdj?'#10b981':'var(--crit)',fontWeight:600}},
           (r.forecast>=r.lyAdj?'+':'')+((r.forecast-r.lyAdj)/r.lyAdj*100).toFixed(2)+'% vs LY'):null
       ):'—'),
     // GC column: actual guest count (past days) or cross-check indicator (future days)
@@ -499,7 +499,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
           ?'Actual: '+r.actualGC+' guests'+(r.lyGC>0?'\nLY: '+r.lyGC+' ('+(r.actualGC>=r.lyGC?'+':'')+((r.actualGC-r.lyGC)/r.lyGC*100).toFixed(2)+'% YOY)':'')+(r.forecastGC>0?'\nFcst: '+r.forecastGC:'')
           :r.forecastGC>0?'Forecast GC: '+r.forecastGC+' guests':undefined},
       r.isFuture
-        ? (gcCheck&&gcCheck.flag==='alert'?span({style:{color:'#f87171',fontSize:'10px'}},'🔴')
+        ? (gcCheck&&gcCheck.flag==='alert'?span({style:{color:'var(--crit)',fontSize:'10px'}},'🔴')
            :gcCheck&&gcCheck.flag==='watch'?span({style:{color:'#f59e0b',fontSize:'10px'}},'⚠')
            :gcCheck?span({style:{color:'#10b981',fontSize:'10px'}},'✓')
            :r.forecastGC>0?span({style:{color:'var(--text3)',fontFamily:'var(--mono)',fontSize:'9px'}},r.forecastGC.toLocaleString())
@@ -507,7 +507,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
         : r.actualGC>0
           ? div({style:{display:'flex',flexDirection:'column',alignItems:'center',lineHeight:1.25}},
               span({style:{fontWeight:700,color:'var(--text2)',fontFamily:'var(--mono)',fontSize:'9px'}},r.actualGC.toLocaleString()),
-              r.lyGC>0?span({style:{fontSize:'8px',color:r.actualGC>=r.lyGC?'#10b981':'#f87171'}},(r.actualGC>=r.lyGC?'+':'')+((r.actualGC-r.lyGC)/r.lyGC*100).toFixed(2)+'%')
+              r.lyGC>0?span({style:{fontSize:'8px',color:r.actualGC>=r.lyGC?'#10b981':'var(--crit)'}},(r.actualGC>=r.lyGC?'+':'')+((r.actualGC-r.lyGC)/r.lyGC*100).toFixed(2)+'%')
               :null)
           : span({style:{color:'var(--text3)',fontSize:'9px'}},'—')
     ),
@@ -521,7 +521,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px'}},
       r.opsFactor>0?((r.opsFactor>=1?'+':'')+((r.opsFactor-1)*100).toFixed(2)+'%'):'—'),
     td({style:{textAlign:'center',fontFamily:'var(--mono)',fontSize:'10px',
-      color:r.varPct!=null?(r.varPct>=0?'#4ade80':'#f87171'):'inherit'}},
+      color:r.varPct!=null?(r.varPct>=0?'#4ade80':'var(--crit)'):'inherit'}},
       // Display-only magnitude cap (data-integrity sweep signature #1) — varPct's denominator is
       // that day's own actual, so a near-zero actual (closure, storm) against a normal forecast
       // can render a nonsensical number like "-111,000%". This does NOT touch r.varPct/r.pass —
@@ -539,7 +539,7 @@ function ForecastRow({r, di, wi, tgt, ds, loc, settings, userEvents}) {
           isFcstWx&&span({style:{fontSize:'7px',color:'#a5b4fc',fontWeight:700}},'FCST')
         ),
         wxR.tmax>0&&div({style:{display:'flex',gap:3,fontSize:'8px',fontFamily:'var(--mono)'}},
-          span({style:{color:'#f87171',fontWeight:600}},Math.round(wxR.tmax)+'°'),
+          span({style:{color:'var(--crit)',fontWeight:600}},Math.round(wxR.tmax)+'°'),
           wxR.tmin>0&&span({style:{color:'#93c5fd'}},Math.round(wxR.tmin)+'°')
         ),
         (wxR.rain>0.05||wxR.wmax>0)&&div({style:{fontSize:'8px',fontFamily:'var(--mono)',color:'var(--text3)',display:'flex',gap:3}},
@@ -594,7 +594,7 @@ function BacktestChart({actualDays}) {
 function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
   if(!weekDays||!weekDays.length) return div({className:'empty-st'}, div({className:'empty-st-t'}, 'Computing forecast...'));
   const today = sodOf(new Date());
-  const gc = v => v>=0?'#4ade80':'#f87171';
+  const gc = v => v>=0?'#4ade80':'var(--crit)';
   const noLYDays = weekDays.filter(r=>r.noLYData).length;
   const totalDays = weekDays.length;
   const hasNoLY = noLYDays > totalDays * 0.5;
@@ -703,12 +703,12 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
           const affectedCount = cross?(cross.crossData.sameDir.length+1):1;
           const wRow = (fetchWx(ds,backtest.worst.date))||getForecastWeather(loc,backtest.worst.date);
           return div({style:{flex:2,minWidth:240,background:'rgba(239,68,68,.05)',border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'9px 12px'}},
-            div({style:{fontSize:'9px',color:'#f87171',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},'✗ Biggest Miss — Cause Analysis'),
+            div({style:{fontSize:'9px',color:'var(--crit)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',marginBottom:4}},'✗ Biggest Miss — Cause Analysis'),
             div({style:{display:'flex',alignItems:'baseline',gap:8,marginBottom:4,flexWrap:'wrap'}},
               div({style:{fontSize:'12px',fontWeight:600}},DOW_BASE[(backtest.worst.date instanceof Date?backtest.worst.date:new Date(backtest.worst.date)).getDay()]+' '+(backtest.worst.date instanceof Date?backtest.worst.date:new Date(backtest.worst.date)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})),
               div({style:{fontSize:'10px',color:'var(--text2)'}},f$(backtest.worst.forecast)+' fcst · '+f$(backtest.worst.actual)+' actual'),
               div({style:{fontSize:'11px',fontWeight:700,
-                color:backtest.worst.actual>backtest.worst.forecast?'#10b981':'#f87171',marginLeft:'auto'}},
+                color:backtest.worst.actual>backtest.worst.forecast?'#10b981':'var(--crit)',marginLeft:'auto'}},
                 (backtest.worst.actual>backtest.worst.forecast?'📈 Beat Forecast +':'')+
                 (backtest.worst.actual<=backtest.worst.forecast?'':'')+(backtest.worst.actual>backtest.worst.forecast?'':'')+
                 (backtest.worst.actual>backtest.worst.forecast
@@ -775,7 +775,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                   )
                 )
               ),
-              aiResult.error&&div({style:{fontSize:'10px',color:'#f87171',marginTop:6,lineHeight:1.6,whiteSpace:'pre-line'}},
+              aiResult.error&&div({style:{fontSize:'10px',color:'var(--crit)',marginTop:6,lineHeight:1.6,whiteSpace:'pre-line'}},
                 aiResult.error,
                 aiResult.searchUrl&&div({style:{marginTop:6}},
                   btn({className:'btn btn-sm',style:{fontSize:'9px'},onClick:()=>window.open(aiResult.searchUrl,'_blank')},'🔍 Open Web Search Instead')
@@ -811,8 +811,8 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
         return [
           div({style:{flex:'0 0 auto',textAlign:'center',background:'rgba(239,68,68,.06)',
             border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'6px 14px'}},
-            div({style:{fontSize:'8px',color:'#f87171',fontWeight:700,marginBottom:2}},'LOW END'),
-            div({style:{fontFamily:'var(--mono)',fontWeight:700,fontSize:'13px',color:'#f87171'}},f$(lo)),
+            div({style:{fontSize:'8px',color:'var(--crit)',fontWeight:700,marginBottom:2}},'LOW END'),
+            div({style:{fontFamily:'var(--mono)',fontWeight:700,fontSize:'13px',color:'var(--crit)'}},f$(lo)),
             div({style:{fontSize:'8px',color:'var(--text3)'}},'-'+mapeLabel)
           ),
           div({style:{flex:1,textAlign:'center',padding:'6px 0'}},
@@ -859,7 +859,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 span({style:{fontSize:'10px',color:'var(--text3)'}},inf.t)
               ),
               div({style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:700,marginBottom:4}},f$(Math.round(dp.total))),
-              div({style:{fontSize:'10px',color:avgTrend>=0?'#10b981':'#f87171'}},(avgTrend>=0?'▲ +':'▼ ')+(avgTrend*100).toFixed(2)+'% trend vs LY'),
+              div({style:{fontSize:'10px',color:avgTrend>=0?'#10b981':'var(--crit)'}},(avgTrend>=0?'▲ +':'▼ ')+(avgTrend*100).toFixed(2)+'% trend vs LY'),
               div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},dp.days+' days · '+f$(Math.round(dp.total/dp.days))+'/day avg')
             );
           })
@@ -880,7 +880,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
               textAlign:'center',fontSize:'8px',color:'#f59e0b',fontWeight:600,letterSpacing:'.3px'}},'OPS METRICS — 6-WK AVG'),
             th({style:{background:'var(--surf3)',borderBottom:'.5px solid var(--bdr)'}},''),
             th({colSpan:2,style:{background:'rgba(239,68,68,.06)',borderBottom:'.5px solid var(--bdr)',
-              textAlign:'center',fontSize:'8px',color:'#f87171',fontWeight:600,letterSpacing:'.3px'}},'RESULT'),
+              textAlign:'center',fontSize:'8px',color:'var(--crit)',fontWeight:600,letterSpacing:'.3px'}},'RESULT'),
             th({style:{background:'rgba(96,165,250,.04)',borderBottom:'.5px solid var(--bdr)'}},'')
           ),
           // ── Row 2: Column labels ──
@@ -899,7 +899,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
             th({style:{color:'#f59e0b',fontSize:'9px'}},'TPPH'),
             th({style:{color:'#f59e0b',fontSize:'9px'}},'Labor%'),
             th({style:{fontSize:'9px'}},'Ops×'),
-            th({style:{color:'#f87171',fontSize:'9px',whiteSpace:'nowrap'}},'AI vs Act'),
+            th({style:{color:'var(--crit)',fontSize:'9px',whiteSpace:'nowrap'}},'AI vs Act'),
             th({style:{color:'#4ade80',fontSize:'9px'}},'✓'),
             th({style:{color:'#a5b4fc',fontSize:'8px',lineHeight:1.3,textAlign:'center'}},'Wx')
           )
@@ -945,7 +945,7 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 div(null,
                   div({style:{fontFamily:'var(--mono)',fontWeight:700}},f$(totFC)),
                   totLY>0?div({style:{fontSize:'8px',fontWeight:600,
-                    color:totFC>=totLY?'#10b981':'#f87171'}},(totFC>=totLY?'+':'')+((totFC-totLY)/totLY*100).toFixed(2)+'% vs LY'):null
+                    color:totFC>=totLY?'#10b981':'var(--crit)'}},(totFC>=totLY?'+':'')+((totFC-totLY)/totLY*100).toFixed(2)+'% vs LY'):null
                 )),
               // GC column — period total of actual GC, or forecast GC
               (()=>{
@@ -961,11 +961,11 @@ function ForecastTable({weekDays, tgt, ds, loc, settings, store, userEvents}) {
                 div(null,
                   div(null,totAct>0?f$(totAct):'—'),
                   totAct>0&&totLY>0?div({style:{fontSize:'8px',fontWeight:600,
-                    color:totAct>=totLY?'#10b981':'#f87171'}},(totAct>=totLY?'+':'')+((totAct-totLY)/totLY*100).toFixed(2)+'% vs LY'):null
+                    color:totAct>=totLY?'#10b981':'var(--crit)'}},(totAct>=totLY?'+':'')+((totAct-totLY)/totLY*100).toFixed(2)+'% vs LY'):null
                 )),
               td({style:{fontFamily:'var(--mono)',fontWeight:600,color:'#4ade80'}},totGoal>0?f$(totGoal):'—'),
               td({colSpan:7},null), // T2W, T6W, OEPE, TPPH, Labor%, OPS×, AI VS ACT
-              td({style:{fontFamily:'var(--mono)',fontSize:'11px',fontWeight:700,color:pctVal!=null?(pctVal>=0?'#4ade80':'#f87171'):'var(--text3)'}},
+              td({style:{fontFamily:'var(--mono)',fontSize:'11px',fontWeight:700,color:pctVal!=null?(pctVal>=0?'#4ade80':'var(--crit)'):'var(--text3)'}},
                 pctVal!=null?fPct(pctVal,2)+' '+pctLabel:'—'),
               td(null)
             );
@@ -1157,7 +1157,7 @@ function CtrlScorecard({store}) {
 
   // Ctrl rows: [label, 6wk_val, 2wk_val, 4wk_val, target, pass_fn, note]
   const groups = [
-    {l:'CASH INTEGRITY', col:'rgba(239,68,68,.08)', bc:'rgba(239,68,68,.25)', tc:'#f87171', rows:[
+    {l:'CASH INTEGRITY', col:'rgba(239,68,68,.08)', bc:'rgba(239,68,68,.25)', tc:'var(--crit)', rows:[
       ['Cash Over/Short %',  p.cashOSPct,  q2.cashOSPct,  q4.cashOSPct,  t.tCashOSPct||-.001, v=>Math.abs(v||0)<=.005, 'pct3', '>0.5% = immediate review'],
       ['Drawer Opens/Day',   p.drawerOpens,q2.drawerOpens,q4.drawerOpens, t.tDrawer||50,      v=>v<=(t.tDrawer||50),   'num1', 'Excess opens = cash gap risk'],
     ]},
@@ -1298,7 +1298,7 @@ function AITabInsight({buildPrompt, label}) {
         loading?'⏳ Analyzing…':'💡 '+label),
       insight&&btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:()=>setInsight(null)},'✕')
     ),
-    err&&div({style:{fontSize:'10px',color:'#f87171',padding:'6px 10px',background:'rgba(239,68,68,.06)',borderRadius:'var(--r)'}},err),
+    err&&div({style:{fontSize:'10px',color:'var(--crit)',padding:'6px 10px',background:'rgba(239,68,68,.06)',borderRadius:'var(--r)'}},err),
     insight&&div({style:{padding:'10px 12px',
       background:'rgba(165,180,252,.06)',borderRadius:'var(--r)',border:'.5px solid rgba(165,180,252,.2)'}},
       ...mdToNodes(insight))
@@ -1801,7 +1801,7 @@ function StoreCard({store, onSelect}) {
           div({style:{display:'flex',alignItems:'baseline',gap:4}},
             span({style:{fontFamily:'var(--mono)',fontWeight:700,color:'var(--amber)'}}
               ,fmtSales(pSales)),
-            vsLY!=null&&span({style:{fontSize:'7.5px',color:vsLY>=0?'#10b981':'#f87171',fontWeight:600}},
+            vsLY!=null&&span({style:{fontSize:'7.5px',color:vsLY>=0?'#10b981':'var(--crit)',fontWeight:600}},
               (vsLY>=0?'+':'')+((vsLY*100).toFixed(2))+'%')
           )
         ),
@@ -1838,7 +1838,7 @@ function StoreCard({store, onSelect}) {
           healthLabel,
           vel&&vel.opsScore!=null&&Math.abs(vel.opsScore)>=2&&span({style:{
             fontSize:'7.5px',fontWeight:700,marginLeft:2,
-            color:vel.opsScore>0?'#10b981':'#f87171'}},
+            color:vel.opsScore>0?'#10b981':'var(--crit)'}},
             (vel.opsScore>0?'↑+':'↓')+Math.round(Math.abs(vel.opsScore))+'pt')
         ),
         div({style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:800,color:healthColor,lineHeight:1}},
@@ -1965,11 +1965,11 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
           div({style:{fontFamily:'var(--mono)',color:'#10b981',fontWeight:700}},'+'+Math.round(s.vel.opsScore)+'pt')
         ))
       ),
-      div({style:{background:'rgba(248,113,113,.06)',border:'.5px solid rgba(248,113,113,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
-        div({style:{fontSize:'10px',fontWeight:700,color:'#f87171',marginBottom:6}},'↓ Most Declining (2w vs 4w)'),
+      div({style:{background:'rgba(244,63,94,.06)',border:'.5px solid rgba(244,63,94,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
+        div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)',marginBottom:6}},'↓ Most Declining (2w vs 4w)'),
         velStores.bottom.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid rgba(255,255,255,.05)':'none'}},
           div({style:{color:'var(--text2)',cursor:'pointer'},onClick:()=>onSelectStore(s)},s.name.slice(0,22)),
-          div({style:{fontFamily:'var(--mono)',color:'#f87171',fontWeight:700}},Math.round(s.vel.opsScore)+'pt')
+          div({style:{fontFamily:'var(--mono)',color:'var(--crit)',fontWeight:700}},Math.round(s.vel.opsScore)+'pt')
         ))
       )
     ),
@@ -2034,7 +2034,7 @@ function OrgView({stores, settings, onSelectStore}) {
           div({style:{fontSize:'10px',color:'var(--text3)'}},group.stores.length+' stores · '+group.stores.map(s=>'#'+s.loc).join(', '))
         ),
         div({style:{fontFamily:'var(--mono)',fontSize:'18px',fontWeight:700,color:comb>=80?'#10b981':comb>=65?'#f59e0b':'#ef4444'}},Math.round(comb)),
-        crits>0&&div({style:{fontSize:'9px',color:'#f87171',fontWeight:700}},crits+' crit')
+        crits>0&&div({style:{fontSize:'9px',color:'var(--crit)',fontWeight:700}},crits+' crit')
       ),
       div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:6,padding:10}},
         group.stores.map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore}))
@@ -3104,7 +3104,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
         div({style:{display:'flex',gap:6,alignItems:'center'}},
           msg&&div({style:{fontSize:'9px',padding:'3px 8px',borderRadius:3,
             background:msg.isErr?'rgba(239,68,68,.15)':'rgba(16,185,129,.15)',
-            color:msg.isErr?'#f87171':'#10b981',border:'.5px solid '+(msg.isErr?'rgba(239,68,68,.3)':'rgba(16,185,129,.3)')
+            color:msg.isErr?'var(--crit)':'#10b981',border:'.5px solid '+(msg.isErr?'rgba(239,68,68,.3)':'rgba(16,185,129,.3)')
           }},msg.m),
           btn({className:'btn btn-sm',onClick:()=>{
               // Export merged targets (all sources) for active month
@@ -3527,9 +3527,9 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
         alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
         btn({className:'btn btn-sm',onClick:()=>setDupesOnly(v=>!v),
           style:{fontSize:'10px',fontWeight:dupesOnly?700:400,
-            background:dupesOnly?'rgba(248,113,113,.15)':'transparent',
-            color:dupesOnly?'#f87171':'var(--text2)',
-            borderColor:dupesOnly?'rgba(248,113,113,.4)':'var(--bdr)'}},
+            background:dupesOnly?'rgba(244,63,94,.15)':'transparent',
+            color:dupesOnly?'var(--crit)':'var(--text2)',
+            borderColor:dupesOnly?'rgba(244,63,94,.4)':'var(--bdr)'}},
           '⧉ Possible duplicates ('+dupeKeys.size+')'),
         inp({type:'text',value:search,onChange:e=>setSearch(e.target.value),
           placeholder:'Search location, type, note…',
@@ -3580,7 +3580,7 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
           const isDupe = dupesOnly && dupeKeys.has(ev.loc+'|'+ev.dk+'|'+normLabel(ev.label));
           const isCombined = ev.combinedOf>1;
           return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',
-            borderBottom:'.5px solid var(--bdr)',background:isDupe?'rgba(248,113,113,.06)':'transparent'}},
+            borderBottom:'.5px solid var(--bdr)',background:isDupe?'rgba(244,63,94,.06)':'transparent'}},
             span({style:{fontSize:'18px'}}),ev.icon||et.icon,
             div({style:{flex:1}},
               div({style:{fontWeight:600,fontSize:'11px'}},ev.label||et.label),
@@ -3613,9 +3613,9 @@ function OpsBarChart({perf, tgt}) {
     const actuals=metrics.map(m=>+m.actual.toFixed(2));
     const targets=metrics.map(m=>+m.target.toFixed(2));
     const colors=metrics.map(m=>{
-      if(m.inv===null)return Math.abs(m.actual-m.target)<=1.5?'rgba(74,222,128,.7)':'rgba(248,113,113,.7)';
-      return m.inv?(m.actual<=m.target?'rgba(74,222,128,.7)':'rgba(248,113,113,.7)'):
-                   (m.actual>=m.target?'rgba(74,222,128,.7)':'rgba(248,113,113,.7)');
+      if(m.inv===null)return Math.abs(m.actual-m.target)<=1.5?'rgba(74,222,128,.7)':'rgba(244,63,94,.7)';
+      return m.inv?(m.actual<=m.target?'rgba(74,222,128,.7)':'rgba(244,63,94,.7)'):
+                   (m.actual>=m.target?'rgba(74,222,128,.7)':'rgba(244,63,94,.7)');
     });
     return new Chart(canvas,{type:'bar',data:{labels,datasets:[
       {label:'Actual',data:actuals,backgroundColor:colors,borderColor:colors.map(c=>c.replace('.7)','.9)')),borderWidth:1},

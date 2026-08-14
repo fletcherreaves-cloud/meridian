@@ -77,7 +77,7 @@ const span = (p, ...c) => h('span', p, ...c);
 
 const CLEAN_COLOR = '#34d399';     // established "good" green (session.js/projections.js/AuthGate.js)
 const WATCH_COLOR = '#f5bc00';     // matches SEV_META.warn — kept visually consistent app-wide
-const CRIT_COLOR = '#f87171';      // matches SEV_META.crit
+const CRIT_COLOR = 'var(--crit)';      // matches SEV_META.crit
 const UNKNOWN_COLOR = 'var(--text3)';
 
 // Converts a "gap past target" into a 0-100 health band: 100 at/better than target,
