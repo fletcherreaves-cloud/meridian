@@ -235,7 +235,19 @@ Tishomingo   execution_confidence      medium
 Three lines, three words, plus an optional note designed to be usually blank. Eight taught stores
 = 24 words.
 
-## 8. Still open
+## 8. Decided — multi-rater deferred to a future program
 
-- Whether the DO / supervisors also rate, giving inter-rater comparison. Powerful, but only if
-  ratings are taken independently and not after discussion.
+Whether the DO / supervisors also rate, giving inter-rater comparison. **Owner, 2026-08-14:
+*"probably not for this round, but a good idea for whatever comes next."*** So the scheduling
+workshop is single-rater (owner only).
+
+Right call for a first run. Inter-rater comparison is only worth anything if the ratings are
+taken **independently, before any discussion** — and organising that across three people
+mid-workshop is the likeliest way to contaminate the owner's own eight, which are the ratings
+this experiment actually depends on. One clean rater beats three coordinated badly.
+
+**Carry this forward to program #2.** It is the natural second entry in the calibration record:
+once `store_assessments` holds two programs, the question "whose read predicts best" becomes
+answerable, and that is a more valuable output than any single program's result. The design
+requirement is unchanged whenever it happens — ratings captured independently, locked before
+outcomes are visible, never after a group conversation.
