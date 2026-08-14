@@ -227,3 +227,76 @@ additional users. This is the first concrete dated need for that key; he has inv
 - [ ] Find the break in the data independently.
 - [ ] Load promo windows to `org_events` for block tagging.
 - [ ] Draft both versions.
+
+---
+
+# McValue launch date CONFIRMED: 2026-04-21 (owner, from the May OPNAD Calendar Optimizations deck)
+
+Owner also reports **an updated push in July 2026**, which he reads as an early corporate
+acknowledgment of weakness. (I could not extract text from the PDF in this environment — poppler is
+unavailable — so the date and the July push are on the owner's reading of the deck, not my own.)
+
+## This settles the satisfaction question, and it favours the document
+
+The district OSAT decline (`memory/qsrsoft-report-catalog.md`) begins around **March 2025** —
+**thirteen months before McValue launched.** Regressing the survey-weighted monthly series:
+
+| window | months | slope | t |
+|---|---|---|---|
+| **pre-launch** (2024-01 … 2026-04) | 28 | **−0.286 pp/month** | **−4.33 — significant** |
+| **post-launch** (2026-05 … 2026-08) | 4 | **+0.586 pp/month** | +1.11 — not significant, n too small |
+
+12 months before launch: **79.7%**. Since launch: **76.8%**.
+
+Monthly around the launch:
+
+```
+2025-12  75.4%
+2026-01  77.2%
+2026-02  80.6%
+2026-03  75.2%
+2026-04  74.7%   <- McValue launches 4/21 — the series TROUGH
+2026-05  76.6%
+2026-06  76.8%
+2026-07  76.0%
+2026-08  78.8%
+```
+
+**Satisfaction fell significantly for 28 months, bottomed in the launch month, and has been
+flat-to-rising in the four months since.**
+
+## What that does to the traffic argument
+
+The obvious challenge to the document — *"traffic fell because service got worse, not because of
+McValue"* — **does not survive this**:
+
+1. The satisfaction decline **predates the launch by 13 months**, so it cannot have been caused by
+   McValue, and it was already significant long before.
+2. A **steady** secular decline is differenced out by the DiD design, which compares the *change*
+   in the vs-LY gap. That is what DiD is for.
+3. What DiD cannot absorb is an *accelerating* decline. Satisfaction did not accelerate downward
+   after launch — the slope flipped positive. So a worsening-service story cannot explain the
+   post-launch traffic deterioration.
+
+**Traffic kept deteriorating (−2.91% → −4.72%) while satisfaction stabilised.** That divergence is
+the strongest form of this argument: whatever is pulling traffic down is *not* a service-quality
+problem, because service perception stopped falling at exactly the point traffic kept going.
+
+Raise this in the document explicitly. A reader who knows the business will wonder about service;
+answering it with the measurement is far stronger than leaving it unaddressed — and the answer
+happens to help.
+
+## ⚠️ Design consequence: the post period contains TWO events
+
+The **July push** sits inside the post-launch window. Blocks after mid-July therefore reflect
+launch **plus** refresh, not launch alone. Options, in order of preference:
+
+1. Report the post period split at the July push date — pre-push blocks and post-push blocks
+   separately. The trajectory table already runs block-by-block, so this is a labelling change, not
+   new analysis.
+2. At minimum, **name the July push in the document** and note which blocks it touches. An
+   unmarked second intervention inside a post period is exactly the kind of thing that invalidates
+   a finding when someone else spots it first.
+
+The owner's read — that a July refresh signals corporate awareness of softness — is plausible
+context but is **not evidence**; keep it as framing, not as a finding.
