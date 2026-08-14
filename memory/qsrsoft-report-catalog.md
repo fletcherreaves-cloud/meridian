@@ -909,7 +909,48 @@ That gives the two families opposite scaling, and they land in the same place:
 Either is cheap. Choose on **content**, not cost: `security-events` carries per-second timestamps
 and `Manager Code Entered`, which `suspicious_activity` does not.
 
-It also sharpens the `suspicious_activity` question rather than settling it. If ~2,500 events span
+## ✅ SETTLED — `suspicious_activity` IS a filtered subset. Decisively.
+
+Same store, same date, same event type, both endpoints (owner-tested 2026-08-14):
+
+| endpoint | 3708 · 2026-08-14 · `pos_overring` |
+|---|---|
+| `security-events` (transaction table) | **3 transactions**, $5.55 + $7.41 + $11.00 |
+| `top_contributors` | reconciles to **3** on both manager and cashier sides |
+| **`suspicious_activity`** | **`[]` — zero rows** |
+
+Three real overrings exist and `suspicious_activity` returns **none of them**. This is not a mild
+threshold; it is a highly selective filter. It also explains the very first capture — a single
+cash refund across 27 stores over 13 days was never the refund *count*, it was a flagged highlight.
+
+### What this decides
+
+**`security-events` is the primary feed.** It has the timestamps, `Manager Code Entered`, and — now
+established — **completeness**. `suspicious_activity` cannot be the source of record for anything.
+
+**Never compute a count, rate, or trend from `suspicious_activity`.** It drops 3 of 3 here. Any
+"refunds per store" or "overrings per $1,000" metric built on it would be wrong by an unknowable
+margin, and wrong *differently* per store. It looks like an event feed and is not one — that is
+precisely the trap.
+
+### ⚠️ Interpretation guard — absence is NOT zero
+
+**A store returning no rows from `suspicious_activity` does not mean no events occurred.** 3708 had
+three overrings and returned an empty array. Absence means "nothing met QSRSoft's threshold", never
+"nothing happened". Any panel, alert, or SAGE answer that reads an empty result as a clean store is
+asserting the opposite of the truth.
+
+### Sensitivity follows directly
+
+Everything `suspicious_activity` returns is, by construction, **QSRSoft's judgment that an event
+warranted attention** — a derived judgment about named individuals under #272. Supervisor-and-above,
+handling notice attached, and **store `score_id`** so the judgment stays attributable to the vendor
+rather than reading as a Meridian finding.
+
+If we ever want our own exception logic, it belongs on top of `security-events` where we can state
+and defend the rule, not on top of a vendor threshold we cannot see.
+
+ If ~2,500 events span
 the window and `cash_refund` is one of ~23 categories, a single returned cash refund is still low
 but less absurd than it looked against an unknown denominator. **The same-store/same-date/same-token
 comparison remains the test** — it is now cheap to run with `all_events` on both endpoints.
