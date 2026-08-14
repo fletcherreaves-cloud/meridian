@@ -162,12 +162,59 @@ is researching their own restaurant and they get called out on a finding about t
 low execution-confidence rating with a note naming their scheduling manager is exactly that
 object.
 
-## 5. Open
+## 5. Outcome metrics — LOCKED before any rating (owner, 2026-08-14)
 
-- Which scheduling metrics are the outcome measure? Needs naming **before** the first ratings are
-  taken, or the test can be reverse-engineered afterwards. Candidates: schedule variance, VLH
-  over/under, labour % vs target, `laborSchedules`-derived adherence.
-- How many stores has the workshop already covered? Any already taught are retrospective and
-  should be marked as such — they are not pre-registered and must not be pooled with the rest.
+> *"The goal is for the stores to meet labor projections by scheduling within 1.5% – 2% above
+> forecast labor. Tracked by % and hours +/-. Should not be extreme swings but consistent and
+> stepped improvements toward the goal."*
+
+**The workshop teaches scheduling, so the primary outcome must be a scheduling metric.**
+
+| | metric | why |
+|---|---|---|
+| **primary** | `(scheduled − needed) / needed`, in **% and hours**, target **+1.5% to +2%** | directly what was taught |
+| **secondary** | actual labour % vs target; VLH over/under | downstream — mixes scheduling quality with day-of execution, call-offs and forecast error |
+| **third** | **volatility** — swing magnitude, shrinking | the owner's own criterion: *"not extreme swings but consistent and stepped improvements"* means success is **convergence**, not just level |
+
+Using actual labour % as primary would blame the wrong person: a store can schedule exactly right
+and still miss on actuals through nothing the scheduling manager did.
+
+**The data already exists.** `qsr_daily_activity_rollup` carries `total_scheduled_hours`,
+`total_needed_hours` and `actual_punched_hours` — the primary metric is computable today with no
+new pull, and each store's **pre-workshop baseline can be established retroactively**, which is
+what makes a before/after comparison possible at all.
+
+## 6. Cohort status — all 20 stores usable
+
+8 of 20 taught as of 2026-08-14 (4 in the last two days, 4 the prior week). **The owner has not
+checked progress on any of them.**
+
+That matters more than the timing does. Two contamination risks, and only one is serious:
+
+- **Outcome contamination** — rating after seeing how a store is tracking. Destroys the
+  prediction. **Absent on all eight**, because he hasn't looked.
+- **Recall decay** — a week on, memory of the class is fuzzier. Adds *noise*, not bias.
+
+So nothing is retrospective. All 20 are pre-registered with respect to outcome.
+
+**Record `days_since_class` on every rating** rather than excluding the older four. That converts
+recall decay from a worry into a measurable covariate: if week-later ratings predict worse than
+same-day ones, we learn how long a useful read survives. If they don't, we stop worrying with
+evidence instead of assumption.
+
+**The one discipline that carries the whole thing: rate all eight BEFORE looking at any
+scheduling data.** After the ratings are locked, look at anything.
+
+## 7. Honest expectation
+
+Twenty stores across three confidence levels is roughly four per cell — **directional evidence,
+not statistical significance.** Say so up front rather than discovering it later.
+
+The calibration value compounds **across** programs, not within one. This is entry number one in
+a record that becomes genuinely powerful after five or ten. Which is exactly why
+`store_assessments` must be general from the start rather than built for scheduling.
+
+## 8. Still open
+
 - Whether the DO / supervisors also rate, giving inter-rater comparison. Powerful, but only if
   ratings are taken independently and not after discussion.
