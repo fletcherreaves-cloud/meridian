@@ -704,3 +704,55 @@ source of variance no store-level analysis can see or control for.
 Three different issues, three different Price-Round-1 dates. Either these are sequential gates in
 one process or the date moved. **Do not cite a Price Round 1 date from the calendar** — the owner
 knows what his stores actually did and when it went effective. That remains the question to answer.
+
+## Corroboration — the monthly free-item programme really does end after March
+
+A **March-issue** "Next 60 Days Calendar" (forward-looking, covering Mar/Apr/May) lists
+`Month of March — GMA Download Incentive: Free 10 pc McNuggets` and shows **no April and no May
+equivalent**.
+
+That is a second, independent issue reaching the same conclusion, and it is the stronger form of
+the evidence: a forward-looking calendar that lists March's monthly offer would list April's if
+one existed. **The earlier caveat is now substantially reduced** — this is no longer inference from
+a document that simply didn't cover the period.
+
+**Also in the pre-period: the Big Arch launch.** `3/3` all-store sell, `3/9` advertising begins. A
+major new product introduction, plus `3/31` Dual-Daypart Brand Relevance advertising and Happy Meals
+#2 (3/10) and #3 (3/31).
+
+*(Naming inconsistency across issues, again: `3/3` appears as "BIG ARCH All Store Sell" in one
+issue and "Core Beef Campaign All Store Sell" in another; `3/9` likewise. Almost certainly the same
+campaign under two names — another reason #290 must keep issues append-only rather than deduping.)*
+
+## The synthesis — and why the 2025 calendar is now CRITICAL PATH
+
+Laying the two periods side by side:
+
+| | promotional support |
+|---|---|
+| **pre** (Jan–Apr 21) | monthly free-item offer (Big Mac / Large Fry / 10pc McNuggets) · **Big Arch product launch** + advertising · McValue 1.0 re-hit · EVM Accelerators · GMA Delivery Accelerator · Egg McMuffin Day · Shamrock Shake / McFlurry · Double Filet-O-Fish · Core Hot Honey LTOs · Dual-Daypart Brand Relevance |
+| **post** (Apr 22 – Aug 13) | McValue 2.0 · Beverage Launch · **World Cup Happy Meal (failed)** · Fried Apple Pie LTO · McValue 2.0 rehit · French Fry Day · flavour news ×2 · weekly digital offers (from ~Aug) |
+
+**The pre-period had stronger promotional support than the post-period** — a major product launch
+and a standing monthly free-item offer, against a post-period whose tentpole failed.
+
+Comparing a strongly-supported baseline to a weakly-supported treatment period will show traffic
+down and check up **whether or not McValue did anything**.
+
+**The `ly_` twin design is what is supposed to neutralise this** — but only if the 2025 pre and post
+periods had a *similar relative* promotional intensity to each other. If 2025 was flat across both,
+the 2026 imbalance passes straight through into the DiD.
+
+**So the 2025 calendar (roughly Dec 2024 – Aug 2025) is no longer a "reference-class extension"
+nice-to-have. It is the item that determines whether the headline numbers mean what the document
+says they mean.** Specifically:
+
+1. Did Jan–Apr **2025** carry the same monthly GMA Download Incentive? (settles the largest confound)
+2. Was there a comparable major product launch in the 2025 pre-window? (Big Arch's counterpart)
+3. What was running May–Aug **2025** — the LY twin of the post period?
+
+If the answer to all three is "similar to 2026", the confounds cancel and the findings stand as
+measured. If 2025 was materially different, the DiD is measuring calendar asymmetry and the
+document's claim has to be rebuilt around B1 and the like-for-like McValue-2.0-vs-1.0 framing.
+
+**This is the single highest-value item remaining before 25 August.**
