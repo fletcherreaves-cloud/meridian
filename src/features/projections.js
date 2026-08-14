@@ -413,7 +413,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
         btn({className:'btn btn-a',onClick:onRun},'Skip Brief & Run Projections'))));
 
   const{trendWeeks,avgVsLY,trendDir,calEvents,lyRisks,avgOEPE,avgTPPH,avgLaborPct,calibrated,totalLocs,distMAPE,weekFcEst,wsDate}=brief;
-  const trendCol=avgVsLY==null?'var(--text3)':avgVsLY>0.02?'#10b981':avgVsLY<-0.02?'#f87171':'#f59e0b';
+  const trendCol=avgVsLY==null?'var(--text3)':avgVsLY>0.02?'#10b981':avgVsLY<-0.02?'var(--crit)':'var(--warn)';
   const trendIcon=trendDir==='improving'?'📈':trendDir==='declining'?'📉':'→';
   const sectionCard=(icon,title,col,children)=>div({style:{
     background:'var(--surf2)',border:'.5px solid var(--bdr2)',
@@ -443,7 +443,7 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
         div(null,
           div({style:{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}},
             trendWeeks.map((w,i)=>{
-              const vc=w.vsLY==null?'var(--text3)':w.vsLY>0.01?'#10b981':w.vsLY<-0.01?'#f87171':'#f59e0b';
+              const vc=w.vsLY==null?'var(--text3)':w.vsLY>0.01?'#10b981':w.vsLY<-0.01?'var(--crit)':'var(--warn)';
               return div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'6px 10px',minWidth:90,textAlign:'center'}},
                 div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}},w.label),
                 div({style:{fontSize:'12px',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text)'}},f$(w.actual)),
@@ -480,9 +480,9 @@ function PreForecastBrief({stores,ds,settings,userEvents,weekStart,projPeriod,lo
         div({style:{display:'flex',gap:12,flexWrap:'wrap'}},
           [['OEPE',avgOEPE?Math.round(avgOEPE)+'s':'—','Target ≤150s',avgOEPE&&avgOEPE>170?'#f59e0b':avgOEPE&&avgOEPE>150?'#f97316':'#10b981'],
            ['TPPH',avgTPPH?avgTPPH.toFixed(2):'—','Target ≥5.0',avgTPPH&&avgTPPH<4.5?'#f59e0b':'#10b981'],
-           ['Labor %',avgLaborPct?(avgLaborPct*100).toFixed(2)+'%':'—','Target ~22%',avgLaborPct?(avgLaborPct>0.28?'#f87171':avgLaborPct>0.25?'#f59e0b':'#10b981'):null],
+           ['Labor %',avgLaborPct?(avgLaborPct*100).toFixed(2)+'%':'—','Target ~22%',avgLaborPct?(avgLaborPct>0.28?'var(--crit)':avgLaborPct>0.25?'var(--warn)':'#10b981'):null],
            ['DI Calibrated',calibrated+'/'+totalLocs,'stores','#a5b4fc'],
-           ['Model MAPE',distMAPE?distMAPE.toFixed(2)+'%':'—','6-week avg',distMAPE&&distMAPE<8?'#10b981':distMAPE&&distMAPE<12?'#f59e0b':'#f87171']
+           ['Model MAPE',distMAPE?distMAPE.toFixed(2)+'%':'—','6-week avg',distMAPE&&distMAPE<8?'#10b981':distMAPE&&distMAPE<12?'var(--warn)':'var(--crit)']
           ].map(([l,v,sub,col],i)=>div({key:i,style:{background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',borderRadius:4,padding:'8px 12px',minWidth:100}},
             div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2}}),
             div({style:{fontSize:'8px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--text3)',marginBottom:2}},l),
@@ -1132,7 +1132,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
             onClick:()=>{setDeepStore(deepStore===loc?null:loc);setDeepTab('forecast');}},
             deepStore===loc?'▼':'▶'),
           span({style:{fontSize:'10px',fontWeight:600}},[name]),
-          mape!=null&&span({style:{fontSize:'8px',color:mape<6?'#10b981':mape<10?'#f59e0b':'#f87171',
+          mape!=null&&span({style:{fontSize:'8px',color:mape<6?'#10b981':mape<10?'var(--warn)':'var(--crit)',
             marginLeft:2}},['±'+mape.toFixed(2)+'%'])
         )
       ),

@@ -46,12 +46,12 @@ export function ModelHealthBadge({loc, settings, ds, showDetail}) {
       ].map((c,i)=>div({key:i,style:{marginBottom:5}},
         div({style:{display:'flex',justifyContent:'space-between',marginBottom:2}},
           span({style:{color:'var(--text2)'}},[c.l]),
-          span({style:{fontWeight:600,color:c.s/c.max>=.8?'#10b981':c.s/c.max>=.5?'#f59e0b':'#f87171'}},
+          span({style:{fontWeight:600,color:c.s/c.max>=.8?'#10b981':c.s/c.max>=.5?'var(--warn)':'var(--crit)'}},
             [c.s+'/'+c.max])
         ),
         div({style:{height:3,background:'var(--bdr)',borderRadius:2}},
           div({style:{height:'100%',borderRadius:2,width:(c.s/c.max*100)+'%',
-            background:c.s/c.max>=.8?'#10b981':c.s/c.max>=.5?'#f59e0b':'#f87171',
+            background:c.s/c.max>=.8?'#10b981':c.s/c.max>=.5?'var(--warn)':'var(--crit)',
             transition:'width .3s'}})),
         div({style:{fontSize:'8px',color:'var(--text3)',marginTop:1}},[c.n])
       ))

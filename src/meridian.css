@@ -9,6 +9,12 @@
   --green:#10b981;--orange:#f97316;--red:#ef4444;--blue:#818cf8;
   --red-mc:#DA291C;--gold-mc:#FFC72C;--teal-ea:#0D9488;
   --r:8px;--rl:12px;
+  /* Status trio (#276) — validated against the app's own dark surface #0f1117.
+     --crit was #f87171: ΔE 14.6 vs --warn, below the normal-vision separation
+     floor of 15 (amber/red hard to tell apart even with full colour vision, not
+     just a CVD edge case). #f43f5e clears the floor (ΔE 21.6) without moving
+     --good/--warn. Do not "restore" the old red — it fails the measured check. */
+  --good:#10b981;--warn:#f59e0b;--crit:#f43f5e;
 }
 
 /* ════════════════════════════════════════
@@ -276,7 +282,7 @@ input,select{font-family:var(--sans);color:var(--text)}
 .sc-bull .sc-amt{color:#4ade80}.sc-base .sc-amt{color:#93c5fd}.sc-cons .sc-amt{color:#fdba74}
 .sc-conf{font-size:10px;color:var(--text2);margin-bottom:5px}
 .sc-why{font-size:10px;color:var(--text3);line-height:1.6}
-.hi{color:#4ade80}.md{color:#f59e0b}.lo{color:#f87171}
+.hi{color:#4ade80}.md{color:var(--warn)}.lo{color:var(--crit)}
 
 /* Date picker */
 .drp{position:relative;display:inline-block}

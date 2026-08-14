@@ -338,7 +338,7 @@ function SessionBanner({session, onRestore, onDismiss}) {
   const { meta, savedAt } = session;
   const ageDays = savedAt ? Math.floor((Date.now() - new Date(savedAt)) / 86400000) : null;
   const ageLabel = ageDays === 0 ? 'today' : ageDays === 1 ? 'yesterday' : ageDays + ' days ago';
-  const ageCol = ageDays > 7 ? '#f87171' : ageDays > 3 ? '#f59e0b' : '#34d399';
+  const ageCol = ageDays > 7 ? 'var(--crit)' : ageDays > 3 ? 'var(--warn)' : '#34d399';
   const dateLabel = savedAt
     ? new Date(savedAt).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'})
     : 'Unknown';

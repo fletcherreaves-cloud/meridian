@@ -1924,7 +1924,7 @@ function computeModelHealth(loc, settings, ds) {
   const total = calScore + freshScore + mapeScore + sampleScore;
   const grade = total >= 75 ? 'green' : total >= 50 ? 'yellow' : 'red';
   const gradeLabel = total >= 75 ? 'Trusted' : total >= 50 ? 'Caution' : 'Needs Attention';
-  const gradeColor = total >= 75 ? '#10b981' : total >= 50 ? '#f59e0b' : '#f87171';
+  const gradeColor = total >= 75 ? '#10b981' : total >= 50 ? 'var(--warn)' : 'var(--crit)';
 
   // ── Confidence Statement (one auto-generated sentence) ────────
   const cal_part = calScore >= 22 ? 'calibrated' : 'calibration aging';

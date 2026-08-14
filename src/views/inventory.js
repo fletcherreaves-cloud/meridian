@@ -310,8 +310,8 @@ function generateBulkInventoryReport(allInvRows, threshold, excldWrap, classKey,
     const excessVal=overstk.reduce((a,r)=>a+(r.excessValue||0),0);
     const f2=n=>'$'+Number(n||0).toFixed(2);
     const thS='font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#475569;border-bottom:.5px solid rgba(255,255,255,.1);padding:5px 8px;text-align:left;background:#111827;';
-    const iR=(r,i)=>`<tr style="${i%2?'background:rgba(255,255,255,.015)':''}"><td style="padding:4px 8px"><span style="font-size:8px;font-family:monospace;color:#64748b;margin-right:5px">${r.wrin||''}</span>${r.description}${r.isRolledUp?'<span style="font-size:7px;padding:1px 4px;border-radius:3px;background:rgba(245,188,0,.12);color:#f5bc00;margin-left:4px">⊕ merged</span>':''}</td><td style="padding:4px 8px;font-family:monospace;text-align:right">${(r.usageDay||0).toFixed(3)}</td><td style="padding:4px 8px;font-family:monospace;text-align:right;color:#60a5fa">${(r.usage1000||0).toFixed(4)}</td><td style="padding:4px 8px;font-family:monospace;text-align:right;color:${r.daysSupply<7?'#f87171':r.daysSupply<14?'#f59e0b':'#94a3b8'}">${(r.daysSupply||0).toFixed(1)}d</td><td style="padding:4px 8px;font-family:monospace;text-align:right;color:#10b981">${Math.round((r.usageDay||0)*(r.caseSize||1)*1.1)} ea/day</td></tr>`;
-    const oR=(r,i)=>`<tr style="${i%2?'background:rgba(255,255,255,.015)':''}${r.inactive?';opacity:.7':''}"><td style="padding:4px 8px"><span style="font-size:8px;font-family:monospace;color:#64748b;margin-right:5px">${r.wrin||''}</span>${r.description}${r.inactive?' <span style="font-size:7px;color:#f87171;font-weight:700">🚫 INACTIVE</span>':''}</td><td style="padding:4px 8px;text-align:right;font-family:monospace;color:#f97316">${(r.daysSupply||0).toFixed(0)}d</td><td style="padding:4px 8px;text-align:right;font-family:monospace">${(r.excessDays||0).toFixed(0)}d</td><td style="padding:4px 8px;text-align:right;font-family:monospace;color:#f59e0b">${(r.excessCases||0).toFixed(2)} cs</td><td style="padding:4px 8px;text-align:right;font-family:monospace;color:#ef4444">${f2(r.excessValue)}</td></tr>`;
+    const iR=(r,i)=>`<tr style="${i%2?'background:rgba(255,255,255,.015)':''}"><td style="padding:4px 8px"><span style="font-size:8px;font-family:monospace;color:#64748b;margin-right:5px">${r.wrin||''}</span>${r.description}${r.isRolledUp?'<span style="font-size:7px;padding:1px 4px;border-radius:3px;background:rgba(245,188,0,.12);color:#f5bc00;margin-left:4px">⊕ merged</span>':''}</td><td style="padding:4px 8px;font-family:monospace;text-align:right">${(r.usageDay||0).toFixed(3)}</td><td style="padding:4px 8px;font-family:monospace;text-align:right;color:#60a5fa">${(r.usage1000||0).toFixed(4)}</td><td style="padding:4px 8px;font-family:monospace;text-align:right;color:${r.daysSupply<7?'var(--crit)':r.daysSupply<14?'var(--warn)':'#94a3b8'}">${(r.daysSupply||0).toFixed(1)}d</td><td style="padding:4px 8px;font-family:monospace;text-align:right;color:#10b981">${Math.round((r.usageDay||0)*(r.caseSize||1)*1.1)} ea/day</td></tr>`;
+    const oR=(r,i)=>`<tr style="${i%2?'background:rgba(255,255,255,.015)':''}${r.inactive?';opacity:.7':''}"><td style="padding:4px 8px"><span style="font-size:8px;font-family:monospace;color:#64748b;margin-right:5px">${r.wrin||''}</span>${r.description}${r.inactive?' <span style="font-size:7px;color:var(--crit);font-weight:700">🚫 INACTIVE</span>':''}</td><td style="padding:4px 8px;text-align:right;font-family:monospace;color:#f97316">${(r.daysSupply||0).toFixed(0)}d</td><td style="padding:4px 8px;text-align:right;font-family:monospace">${(r.excessDays||0).toFixed(0)}d</td><td style="padding:4px 8px;text-align:right;font-family:monospace;color:var(--warn)">${(r.excessCases||0).toFixed(2)} cs</td><td style="padding:4px 8px;text-align:right;font-family:monospace;color:#ef4444">${f2(r.excessValue)}</td></tr>`;
     const hdr=(cols)=>`<thead><tr>${cols.map(c=>`<th style="${thS}">${c}</th>`).join('')}</tr></thead>`;
     return`<div style="page-break-before:always;padding:0 0 24px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #f5bc00;padding-bottom:10px;margin-bottom:14px">
@@ -430,7 +430,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
           :span(null,r.description))),
     td({style:{padding:'4px 8px',fontSize:'8.5px',color:'var(--text3)',fontFamily:'var(--mono)'}},(r.uom||'').split('/')[0].trim()+'/'+r.caseSize),
     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,
-      color:r.daysSupply<7?'#f87171':r.daysSupply<14?'#f59e0b':'var(--text)'}},
+      color:r.daysSupply<7?'var(--crit)':r.daysSupply<14?'var(--warn)':'var(--text)'}},
       r.daysSupply.toFixed(1)+'d'),
     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px'}},
       r.usageDay.toFixed(3)),
@@ -736,7 +736,7 @@ tr.alt td{background:rgba(255,255,255,.015)}
 .mono{font-family:'DM Mono',monospace}
 .dim{color:#64748b}
 .center{text-align:center}
-.red{color:#f87171}.amber{color:#f59e0b}.orange{color:#f97316}
+.red{color:var(--crit)}.amber{color:var(--warn)}.orange{color:#f97316}
 .green{color:#10b981}.blue{color:#60a5fa}.gold{color:#f5bc00}
 .bold-blue{color:#60a5fa;font-weight:700}
 .badge-red{display:inline-block;background:rgba(248,113,113,.15);color:#f87171;border:.5px solid rgba(248,113,113,.3);border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;margin-left:4px}
