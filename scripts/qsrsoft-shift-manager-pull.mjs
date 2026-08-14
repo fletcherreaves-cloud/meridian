@@ -20,6 +20,17 @@
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Auth ladder: QSRSOFT_TOKEN → QSRSOFT_COGNITO_TOKEN → QSRSOFT_USERNAME/PASSWORD (Playwright)
 // Optional: SHIFTMGR_PERIOD=YYYY-MM · ROSTER_STORES=3708,… · QSRSOFT_DEBUG=1
+//
+// SHIFTMGR_START=YYYY-MM-DD [+ SHIFTMGR_END=YYYY-MM-DD, defaults to SHIFTMGR_START] — explicit
+// range override, for investigative pulls narrower than a calendar month (a single day: set only
+// SHIFTMGR_START). The endpoint already accepts an arbitrary startDate/endDate — this was always
+// a one-request change, not a per-day loop like qsrsoft-ops-pull.mjs's START_DATE/END_DATE.
+// IMPORTANT: an explicit range writes to shift_manager_range (loc, geid, period_start, period_end),
+// NOT shift_manager_monthly (loc, period_month, geid) — the monthly table's key is the calendar
+// month, and a single day or partial-month range upserted against that key would silently
+// overwrite the cron job's whole-month aggregate with just the requested days. See
+// supabase/schema-shift-manager-range.sql for the companion table. SHIFTMGR_PERIOD is ignored
+// when SHIFTMGR_START is set.
 
 import { createClient } from '@supabase/supabase-js';
 import { parseShiftManagerSummary } from '../src/engine/people-reports.js';
@@ -66,8 +77,20 @@ function periodRange(period) {
   return { first: `${period}-01`, last: `${end.getUTCFullYear()}-${pad2(end.getUTCMonth() + 1)}-${pad2(end.getUTCDate())}` };
 }
 
-function buildUrl(period) {
+// Resolves what window + table this run targets. Explicit SHIFTMGR_START always wins over
+// SHIFTMGR_PERIOD and routes to the range table — see the file header for why.
+function resolveWindow() {
+  const start = (process.env.SHIFTMGR_START || '').trim();
+  if (start) {
+    const end = (process.env.SHIFTMGR_END || '').trim() || start;
+    return { first: start, last: end, isRange: true };
+  }
+  const period = currentPeriod();
   const { first, last } = periodRange(period);
+  return { first, last, isRange: false, period };
+}
+
+function buildUrl({ first, last }) {
   const params = new URLSearchParams({
     nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: ENTERPRISE,
     timeSegment: 'daypart', segmentBy: 'daypart', timeInterval: 'daypart',
@@ -85,9 +108,11 @@ function extractRows(body) {
   return [];
 }
 
-// Aggregate the "Manager Total" records per (loc, geid) into one monthly row.
-// Sums volume; transaction-weights speed + avg check; hour-weights labor%.
-function aggregate(records, period) {
+// Aggregate the "Manager Total" records per (loc, geid) into one row for the window.
+// Sums volume; transaction-weights speed + avg check; hour-weights labor%. `window` decides
+// whether the row is tagged period_month (monthly table) or period_start/period_end (range
+// table) — see resolveWindow() and the file header.
+function aggregate(records, window) {
   const acc = {};
   for (const r of records) {
     const key = r.loc + '|' + r.geid;
@@ -114,8 +139,11 @@ function aggregate(records, period) {
     const hw = r.actualHours || 0;           // hour weight for labor %
     if (hw > 0 && r.laborPct != null) { a._lbW += hw; a._lb += r.laborPct * hw; }
   }
+  const windowCols = window.isRange
+    ? { period_start: window.first, period_end: window.last }
+    : { period_month: window.period };
   return Object.values(acc).map(a => ({
-    loc: String(a.loc), period_month: period, geid: a.geid, manager_name: a.name || null,
+    loc: String(a.loc), ...windowCols, geid: a.geid, manager_name: a.name || null,
     num_shifts: a.numShifts || null, actual_hours: a.actualHours || null,
     actual_vs_scheduled: a.actualVsScheduled || null, actual_vs_needed: a.actualVsNeeded || null,
     net_sales: a.netSales || null, transactions: a.transactions || null,
@@ -128,20 +156,20 @@ function aggregate(records, period) {
   }));
 }
 
-async function upsert(rows) {
+async function upsert(rows, table, onConflict) {
   if (!rows.length) return 0;
   const CHUNK = 500; let saved = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const slice = rows.slice(i, i + CHUNK);
-    const { error } = await supabase.from('shift_manager_monthly').upsert(slice, { onConflict: 'loc,period_month,geid' });
+    const { error } = await supabase.from(table).upsert(slice, { onConflict });
     if (error) throw error;
     saved += slice.length;
   }
   return saved;
 }
 
-async function fetchDirect(token, period) {
-  const url = buildUrl(period);
+async function fetchDirect(token, window) {
+  const url = buildUrl(window);
   if (DEBUG) console.log(`[shift-mgr] GET ${url.slice(0, 150)}…`);
   const resp = await fetch(url, {
     headers: {
@@ -155,7 +183,7 @@ async function fetchDirect(token, period) {
   return extractRows(await resp.json());
 }
 
-async function fetchViaPlaywright(period) {
+async function fetchViaPlaywright(window) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
   const { chromium } = await import('playwright');
@@ -209,7 +237,7 @@ async function fetchViaPlaywright(period) {
     console.log('[auth] report url:', page.url(), '| token captured:', !!token);
 
     if (!token) {
-      await page.evaluate(async url => { try { await fetch(url, { credentials: 'include' }); } catch {} }, buildUrl(period));
+      await page.evaluate(async url => { try { await fetch(url, { credentials: 'include' }); } catch {} }, buildUrl(window));
       await wait(2000);
     }
     if (!token) { console.error('[auth] ✗ could not capture a reporting token'); await snap('shiftmgr-error.png'); return null; }
@@ -224,7 +252,7 @@ async function fetchViaPlaywright(period) {
         if (!r.ok) return { error: `HTTP ${r.status}` };
         return { body: await r.json() };
       } catch (e) { return { error: e.message }; }
-    }, { url: buildUrl(period), tok: token });
+    }, { url: buildUrl(window), tok: token });
 
     await snap('shiftmgr-final.png');
     if (result.error) { console.error('[shift-mgr] in-browser fetch error:', result.error); return null; }
@@ -239,9 +267,12 @@ async function fetchViaPlaywright(period) {
 }
 
 async function main() {
-  const period = currentPeriod();
-  const { first, last } = periodRange(period);
-  console.log(`[shift-mgr] period ${period} (${first}…${last}) × ${STORE_NSNS.length} stores`);
+  const window = resolveWindow();
+  const table = window.isRange ? 'shift_manager_range' : 'shift_manager_monthly';
+  const onConflict = window.isRange ? 'loc,geid,period_start,period_end' : 'loc,period_month,geid';
+  console.log(window.isRange
+    ? `[shift-mgr] explicit range ${window.first}…${window.last} → ${table} × ${STORE_NSNS.length} stores`
+    : `[shift-mgr] period ${window.period} (${window.first}…${window.last}) → ${table} × ${STORE_NSNS.length} stores`);
 
   let rawRows = null;
   const directTokens = [
@@ -251,7 +282,7 @@ async function main() {
   for (const [name, tok] of directTokens) {
     try {
       console.log(`[auth] trying direct fetch with ${name}…`);
-      rawRows = await fetchDirect(tok, period);
+      rawRows = await fetchDirect(tok, window);
       console.log(`[auth] ✓ ${name} accepted`);
       break;
     } catch (e) {
@@ -261,17 +292,17 @@ async function main() {
   }
   if (rawRows == null) {
     console.log('[auth] direct token(s) unavailable/rejected — falling back to Playwright');
-    rawRows = await fetchViaPlaywright(period);
+    rawRows = await fetchViaPlaywright(window);
   }
   if (rawRows == null) { console.error('[shift-mgr] ✗ no auth method succeeded'); process.exit(1); }
 
   const records = parseShiftManagerSummary(rawRows);      // Manager Total rows, real geid
-  const rows = aggregate(records, period);
+  const rows = aggregate(records, window);
   const stores = new Set(rows.map(r => r.loc)).size;
   console.log(`[shift-mgr] ${records.length} manager-total rows → ${rows.length} managers × ${stores} stores`);
   if (!rows.length) { console.error('[shift-mgr] ✗ no manager rows (check timeSlices / auth)'); process.exit(1); }
-  const saved = await upsert(rows);
-  console.log(`[shift-mgr] ✓ ${saved} manager rows upserted to shift_manager_monthly for ${period}`);
+  const saved = await upsert(rows, table, onConflict);
+  console.log(`[shift-mgr] ✓ ${saved} manager rows upserted to ${table}`);
   if (!saved) process.exit(1);
 }
 

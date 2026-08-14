@@ -36,3 +36,12 @@ manager-attributed metrics (OEPE/R2P/CTP/KVS/labor%/avgCheck/sales); **GMs keep 
 
 Not built yet — queued behind Notes 33 order (wiring+provenance → One-Pager bugs → this). Owner sent the
 dev capture 2026-07-28. See [[notes-33-queue]], [[session-handoff-2026-07-28]].
+
+**Explicit-range pulls (#266, added 2026-08-14):** `scripts/qsrsoft-shift-manager-pull.mjs` accepts
+`SHIFTMGR_START`/`SHIFTMGR_END` overrides for investigative pulls narrower than a calendar month —
+a single day: set only `SHIFTMGR_START`. Because the endpoint already takes an arbitrary
+startDate/endDate, this is a one-request change, not a per-day loop. An explicit range writes to
+the companion table **`shift_manager_range`** (loc, geid, period_start, period_end), never
+`shift_manager_monthly` — upserting a partial window against the monthly table's `(loc,
+period_month, geid)` key would silently overwrite the cron job's whole-month aggregate. See
+`supabase/schema-shift-manager-range.sql`.
