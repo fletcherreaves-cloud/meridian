@@ -894,6 +894,21 @@ assume a name seen on one endpoint will match the other.
 Seven events across **all** types for one store on one day. Extrapolated naively that is roughly
 **2,500 events district-wide per fortnight** — a very manageable pull.
 
+**`all_events` is REJECTED by `suspicious_activity`** (owner-tested 2026-08-14):
+`"Invalid event_token in query parameter: all_events"`. So the two endpoints validate
+`event_token` against **different allowed sets** — further evidence they are separate subsystems,
+not two views of one feed.
+
+That gives the two families opposite scaling, and they land in the same place:
+
+| | requests for a full district window |
+|---|---|
+| `suspicious_activity` | **~26** — one per event type; all 27 stores and the whole date range per call |
+| `security-events` family | **~27** — one per store; `all_events` and the whole range per call |
+
+Either is cheap. Choose on **content**, not cost: `security-events` carries per-second timestamps
+and `Manager Code Entered`, which `suspicious_activity` does not.
+
 It also sharpens the `suspicious_activity` question rather than settling it. If ~2,500 events span
 the window and `cash_refund` is one of ~23 categories, a single returned cash refund is still low
 but less absurd than it looked against an unknown denominator. **The same-store/same-date/same-token
