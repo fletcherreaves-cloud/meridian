@@ -214,6 +214,27 @@ The calibration value compounds **across** programs, not within one. This is ent
 a record that becomes genuinely powerful after five or ten. Which is exactly why
 `store_assessments` must be general from the start rather than built for scheduling.
 
+**To be unambiguous, since these two points sat in one paragraph and read as one** (owner asked,
+2026-08-14: *"aside from high med and low what are you suggesting here? Leave it at that."*):
+
+- **The rating scale is high / medium / low and stays there.** Three values, permanently. Nothing
+  else is being proposed for it.
+- **"General from the start" is about the `program` column only** — name the table
+  `store_assessments`, not `scheduling_workshop_ratings`, so the next experiment is a new *value*
+  rather than a new table. It has zero effect on what the assessor types.
+
+The dimensions are the one place there's more than a single rating per store, and they are still
+just high/med/low applied to named facets. One store's complete entry:
+
+```
+Tishomingo   gm_engagement             high
+Tishomingo   sched_mgr_comprehension   low
+Tishomingo   execution_confidence      medium
+```
+
+Three lines, three words, plus an optional note designed to be usually blank. Eight taught stores
+= 24 words.
+
 ## 8. Still open
 
 - Whether the DO / supervisors also rate, giving inter-rater comparison. Powerful, but only if
