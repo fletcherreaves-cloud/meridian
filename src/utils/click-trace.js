@@ -40,7 +40,14 @@ function _describe(el) {
   } catch { return 'unknown'; }
 }
 
-/** Time a named span. Returns fn's result; records only when tracing is on. */
+/** Time a named span. Returns fn's result; records only when tracing is on.
+ *  Wraps a plain function call — it CANNOT see inside React's render/commit (use
+ *  reportRender/<Profiler> for that). A name naming a `build:*` construction step (element-tree
+ *  construction via h()/div(), not JSX) measures real work; a name that wraps only a bare
+ *  createElement call measures ~nothing and won't clear the 1ms floor below. Absence of a mark in
+ *  a report is therefore ambiguous — "ran under 1ms" and "the span never accumulated enough work
+ *  to be structurally measurable" look identical. Don't read a missing/near-zero mark as proof a
+ *  block is cheap; check what it actually wraps first. */
 export function mark(name, fn) {
   if (!_on) return fn();
   const t0 = performance.now();

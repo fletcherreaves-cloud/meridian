@@ -25,7 +25,7 @@ import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-basel
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
-import { reportRender as _traceRender } from '../utils/click-trace.js';
+import { reportRender as _traceRender, mark as _mark } from '../utils/click-trace.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -305,7 +305,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const saveCl = c=>{setCl(c);localStorage.setItem('mf_checklist_v2',JSON.stringify(c));};
 
   // Auto-generate checklist items from app state
-  const autoItems = React.useMemo(()=>{
+  const autoItems = React.useMemo(()=>_mark('compute:autoItems',()=>{
     const items=[];
     // Freshness = newest business date across manual labor AND every auto-synced
     // feed (DAR summary, FOB, Daily Glimpse, Cash Sheet), clamped to today so a
@@ -346,7 +346,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       text:uncal.length+' stores need Dialed-In calibration (>30 days)',
       detail:'Go to Dialed-In → Run & Apply'});
     return items;
-  },[ds?.laborRows?.length,allLocs,settings,lockedProjections]);
+  }),[ds?.laborRows?.length,allLocs,settings,lockedProjections]);
 
   const activeCl=cl.filter(c=>!c.archivedAt);
   const archivedCl=cl.filter(c=>c.archivedAt);
@@ -371,7 +371,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // effectiveDateRange: use toolbar period if it has data, otherwise fall
   // back to most recent 30 days of loaded data so tiles always show content.
-  const effectiveDateRange = React.useMemo(()=>{
+  const effectiveDateRange = React.useMemo(()=>_mark('compute:effectiveDateRange',()=>{
     if(!dateRange?.s) return dateRange;
     // Auto-aware (Notes: Jul-2026). The old check only looked at manual laborRows, so once
     // manual uploads stopped it fell back to a 30-day window ending at the LAST MANUAL date
@@ -391,9 +391,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const toD=new Date(maxD);toD.setHours(23,59,59,999);
     return{s:minD,e:toD,isFallback:true,
       fallbackLabel:maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})};
-  },[dateRange,ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.glimpseRows?.length]);
+  }),[dateRange,ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.glimpseRows?.length]);
 
-  const labInRange = React.useMemo(()=>{
+  const labInRange = React.useMemo(()=>_mark('compute:labInRange',()=>{
     // FRESHEST-PER-DAY merge, not all-or-nothing (Notes: Jul-2026 "reverts to old date" bug).
     // The old code used ONLY manual rows whenever ANY manual row fell in the range — so a
     // range spanning the last manual upload (e.g. MTD) dropped every auto day AFTER it, and
@@ -408,7 +408,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     for(const r of auto)   m.set(k(r),r);   // auto/DAR fills every day (incl. the recent ones)
     for(const r of manual) m.set(k(r),r);   // a manual upload intentionally overrides its own day
     return [...m.values()];
-  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
+  }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
   // True during the post-reload load race: the core daily streams haven't populated ds
   // yet (App.js loads them from Supabase a beat after first paint). Lets a tile show
@@ -435,7 +435,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   // FOB is monthly data (dated the 1st of each month).
   // Always show the most recent available month — don't filter by the weekly dateRange.
-  const fobRecent = React.useMemo(()=>{
+  const fobRecent = React.useMemo(()=>_mark('compute:fobRecent',()=>{
     const rows=ds?.fobRows||[];
     if(!rows.length)return [];
     const dates=rows.map(r=>r.date).filter(Boolean);
@@ -444,14 +444,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return rows.filter(r=>r.date&&
       r.date.getFullYear()===maxDate.getFullYear()&&
       r.date.getMonth()===maxDate.getMonth());
-  },[ds?.fobRows?.length]);
+  }),[ds?.fobRows?.length]);
   // Auto FOB fallback from qsr_fob → percentages of Product Net Sales. Each FOB
   // component = component_amt / prodSalesAmt (FOB total excludes Disc/Coupon,
   // reference only). P&L Food/Paper Cost = (begin + purchases + adjustments +
   // transfers − promotions − end) / prodSalesAmt — confirmed against the report
   // (store 5985: base food 22.7%, P&L food 27.3%). NOTE: qsr_fob is month-to-date,
   // so this shows current running MTD cost. Manual FOB Report takes precedence.
-  const fobAuto = React.useMemo(()=>{
+  const fobAuto = React.useMemo(()=>_mark('compute:fobAuto',()=>{
     const rows=ds?.qsrFobRows||[];
     if(!rows.length) return [];
     const byLoc=new Map();
@@ -474,7 +474,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         discCoupon:pct(r.discountCouponsAmt,s),
         pLFoodPct:pct(foodCost,s), pLPaperPct:pct(paperCost,s), _auto:true};
     });
-  },[ds?.qsrFobRows?.length]);
+  }),[ds?.qsrFobRows?.length]);
   const fobInRange = fobRecent.length?fobRecent:fobAuto; // manual FOB Report first, else auto qsr_fob (per-store)
 
   // Dollar-weighted FOB roll-up from qsr_fob raw amounts. The TRUE grouped average
@@ -482,7 +482,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // a high-volume store must pull the average more than a low-volume one. Both the
   // current MTD and the last completed month come from qsr_fob (each month's final
   // row = that month's actual), so both periods are accurate and from one source.
-  const fobByMonth = React.useMemo(()=>{
+  const fobByMonth = React.useMemo(()=>_mark('compute:fobByMonth',()=>{
     const m=new Map(); // loc|YYYY-MM -> latest row that month (= that month's MTD-final)
     for(const r of (ds?.qsrFobRows||[])){
       const d=r.date instanceof Date?r.date:new Date(r.date+'T00:00:00');
@@ -493,8 +493,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       if(!ex||d.getTime()>ex._ms) m.set(k,{...r,loc,_ms:d.getTime(),_ym:ym});
     }
     return [...m.values()];
-  },[ds?.qsrFobRows?.length]);
-  const fobPeriods = React.useMemo(()=>{
+  }),[ds?.qsrFobRows?.length]);
+  const fobPeriods = React.useMemo(()=>_mark('compute:fobPeriods',()=>{
     if(!fobByMonth.length) return null;
     const yms=[...new Set(fobByMonth.map(r=>r._ym))].sort();
     const curYM=yms[yms.length-1],priorYM=yms.length>1?yms[yms.length-2]:null;
@@ -502,7 +502,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return {curYM,priorYM,curLabel:lbl(curYM),priorLabel:lbl(priorYM),
       cur:fobByMonth.filter(r=>r._ym===curYM),
       prior:priorYM?fobByMonth.filter(r=>r._ym===priorYM):[]};
-  },[fobByMonth]);
+  }),[fobByMonth]);
   // Dollar-weighted aggregate over a set of qsr_fob raw rows.
   const fobAgg = (rows)=>{
     if(!rows||!rows.length) return null;
@@ -529,7 +529,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const lbl = maxD.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});
     return {rows:recent,isStale:true,label:'Most recent: wk of '+lbl};
   };
-  const opsEffective  = React.useMemo(()=>_recentWeek(ds?.opsRows ||[]),[ds?.opsRows?.length,effectiveDateRange]);
+  const opsEffective  = React.useMemo(()=>_mark('compute:opsEffective',()=>(_recentWeek(ds?.opsRows ||[]))),[ds?.opsRows?.length,effectiveDateRange]);
 
   // Freshest-wins merge: union two same-shape row arrays by (loc, day). The
   // primary (manual upload) overrides the secondary (auto pull/email) for the
@@ -554,7 +554,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // equivalent — DAR's `total_needed_hours` uses a different "need" methodology than the
   // Controls Report's own Act vs Need column, unverified against a real number, so it stays
   // manual-only rather than shipping an unreconciled guess.
-  const ctrlAuto = React.useMemo(()=>{
+  const ctrlAuto = React.useMemo(()=>_mark('compute:ctrlAuto',()=>{
     const byKey=new Map();
     const kk=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
     for(const g of (ds?.glimpseRows||[])){
@@ -605,12 +605,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       byKey.set(key,{...ex, otHrs:ex.otHrs??l.otHrs,otDollar:ex.otDollar??l.otDollar});
     }
     return [...byKey.values()];
-  },[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsLaborRows?.length]);
-  const ctrlEffective = React.useMemo(()=>_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
+  }),[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsLaborRows?.length]);
+  const ctrlEffective = React.useMemo(()=>_mark('compute:ctrlEffective',()=>(_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)))),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
 
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
   // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
-  const svcEffective = React.useMemo(()=>{
+  const svcEffective = React.useMemo(()=>_mark('compute:svcEffective',()=>{
     // FIELD-AWARE merge (Notes: Jul-2026) — each metric takes its freshest available source,
     // low→high precedence: auto DAR (oepe/r2p/park/kvs derived) → emailed Glimpse (oepe/park/kvs) →
     // manual Ops (all). This lets R2P/OEPE/DT-Parked/KVS-Healthy all fill from the current DAR
@@ -635,16 +635,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     layer(ds?.opsRows,{oepe:'oepe',park:'park',kvst:'kvst',kvsu:'kvsu',r2p:'r2p'});
     const res=_recentWeek([...m.values()]);
     return {...res,auto:(ds?.opsRows||[]).length===0};
-  },[ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsServiceRows?.length,effectiveDateRange]);
+  }),[ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsServiceRows?.length,effectiveDateRange]);
 
   // Channel sales mix: manual labor channel rows merged with auto Sales Ledger,
   // freshest-per-day (manual overrides the same day; ledger fills recent gaps).
-  const channelRows = React.useMemo(()=>{
+  const channelRows = React.useMemo(()=>_mark('compute:channelRows',()=>{
     const lab=(ds?.laborRows||[]).filter(r=>r.dtSales||r.bfSales||r.mopSales||r.kioskSales);
     const led=(ds?.salesLedgerRows||[]);
     const merged=mergeFresh(lab,led).filter(r=>inRange(r.date,effectiveDateRange));
     return {rows:merged,auto:lab.length===0&&led.length>0};
-  },[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
+  }),[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
 
   // anyMode=true keeps 0 (and negative) values — for SIGNED/zero-legitimate fields (Cash O/S %,
   // T-Reds %, Discount %, Promo %: a real 0% is good news, not "no data"), matching
@@ -695,7 +695,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const fobByLoc=loc=>fobInRange.filter(r=>r.loc===String(loc));
 
   // ── Data status ────────────────────────────────────────────────
-  const latestLab=React.useMemo(()=>{
+  const latestLab=React.useMemo(()=>_mark('compute:latestLab',()=>{
     // Newest actual business date across manual labor AND every auto-synced feed
     // (DAR summary, FOB, Daily Glimpse, Cash Sheet). Max so a stale manual upload
     // can't mask fresh auto data; clamp to today so LifeLenz's forward schedule
@@ -706,7 +706,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const all=[...pick(ds?.laborRows),...pick(ds?.qsrActSummaryRows),...pick(ds?.qsrFobRows),
       ...pick(ds?.glimpseRows),...pick(ds?.cashRows)].filter(ms=>!isNaN(ms)&&ms<=tMs);
     return all.length?new Date(Math.max(...all)):null;
-  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length]);
+  }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'#f59e0b':'#f87171';
 
@@ -716,7 +716,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // sales, so those two reconcile; Labor's single `sales` is a net/total basis with
   // no product split — shown for reference in the tooltip, NOT reconciled (mixing
   // bases would false-alarm). Flags when the two product-sales totals differ >2%.
-  const salesRecon = React.useMemo(()=>{
+  const salesRecon = React.useMemo(()=>_mark('compute:salesRecon',()=>{
     const inScope = r => r && r.loc && r.date && allLocs.includes(String(r.loc)) && inRange(r.date, effectiveDateRange);
     const darTot = sumOf((ds?.qsrActSummaryRows||[]).filter(inScope), 'sales');
     const ledTot = sumOf((ds?.salesLedgerRows||[]).filter(inScope), 'prodSales');
@@ -725,12 +725,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(darTot>0) src.DAR = darTot;
     if(ledTot>0) src.Ledger = ledTot;
     return { r:_recon(src, {tolerance:0.02}), count:Object.keys(src).length, darTot, ledTot, labTot };
-  },[ds?.qsrActSummaryRows?.length, ds?.salesLedgerRows?.length, ds?.laborRows?.length, effectiveDateRange, stores]);
+  }),[ds?.qsrActSummaryRows?.length, ds?.salesLedgerRows?.length, ds?.laborRows?.length, effectiveDateRange, stores]);
 
   // ── Today's movers (cloud-fresh DAR) ───────────────────────────
   // Surfaces what changed since you last looked, straight from the freshest
   // auto-synced daily-activity data — the "something new when I open the app".
-  const moversStrip=React.useMemo(()=>{
+  const moversStrip=React.useMemo(()=>_mark('compute:moversStrip',()=>{
     const rows=(ds?.qsrActSummaryRows||[]).filter(r=>allLocs.includes(String(r.loc))&&r.date);
     if(!rows.length) return null;
     const ms=r=>r.date instanceof Date?r.date.getTime():new Date(r.date).getTime();
@@ -747,17 +747,17 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const dt=day.map(r=>({loc:r.loc,dt:r._dtCars>0?r._dtTotal/r._dtCars/1000:null})).filter(r=>r.dt!=null&&r.dt>0&&r.dt<1200).sort((a,b)=>b.dt-a.dt);
     return {date:new Date(maxMs),up,down,slowDT:dt.slice(0,2),
       behind:ly.filter(r=>r.salesVsLYPct<0).length,total:ly.length};
-  },[ds?.qsrActSummaryRows?.length,allLocs]);
+  }),[ds?.qsrActSummaryRows?.length,allLocs]);
 
   // ── Model health ───────────────────────────────────────────────
-  const hlth=React.useMemo(()=>{
+  const hlth=React.useMemo(()=>_mark('compute:hlth',()=>{
     let g=0,y=0,r=0;
     allLocs.forEach(loc=>{const h=modelHealthScore(loc,ds,settings);if(h.score==null)return;if(h.score>=75)g++;else if(h.score>=50)y++;else r++;});
     return{green:g,yellow:y,red:r};
-  },[allLocs,ds?.laborRows?.length,settings?.dialedIn]);
+  }),[allLocs,ds?.laborRows?.length,settings?.dialedIn]);
 
   // ── Rule-based state comment ───────────────────────────────────
-  const ruleComment=React.useMemo(()=>{
+  const ruleComment=React.useMemo(()=>_mark('compute:ruleComment',()=>{
     const issues=[];const good=[];
     if(dataAge>14)issues.push({lvl:'critical',msg:'data is '+dataAge+' days old'});
     else if(dataAge>7)issues.push({lvl:'warning',msg:'data is '+dataAge+' days stale'});
@@ -776,7 +776,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(issues.length>0)
       return{tone:'warning',color:'#f59e0b',text:'⚠️  A few items need attention: '+issues.map(i=>i.msg).join(', ')+'.'};
     return{tone:'good',color:'#10b981',text:'✅ Things are looking up! '+(good.length?good.join(', ').replace(/^./,s=>s.toUpperCase())+'.':"District is on track.")};
-  },[dataAge,hlth,allLocs,lockedProjections,ds?.loaded,settings?.weekStartDay]);
+  }),[dataAge,hlth,allLocs,lockedProjections,ds?.loaded,settings?.weekStartDay]);
 
   const fetchAIComment=async()=>{
     const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
@@ -837,7 +837,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   };
 
   // ── Projection section ─────────────────────────────────────────
-  const projSec=React.useMemo(()=>{
+  const projSec=React.useMemo(()=>_mark('compute:projSec',()=>{
     const mapeFn=loc=>{const di=settings.dialedIn?.[loc];return di?.mape6w??di?.mape4w??di?.mape;};
     const mapeVals=allLocs.map(mapeFn).filter(v=>v!=null);
     const avgMape=mapeVals.length?mapeVals.reduce((a,b)=>a+b,0)/mapeVals.length:null;
@@ -850,10 +850,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const wsKey=dKey(ws);const lp=lockedProjections||{};
     const locked=allLocs.filter(loc=>lp[loc+'_'+wsKey]).length;
     return{avgMape,okMape,flMape,locked,total:allLocs.length,health:hlth};
-  },[allLocs,okLocs,flLocs,settings?.dialedIn,lockedProjections,hlth]);
+  }),[allLocs,okLocs,flLocs,settings?.dialedIn,lockedProjections,hlth]);
 
   // ── Sales section ─────────────────────────────────────────────
-  const salesSec=React.useMemo(()=>{
+  const salesSec=React.useMemo(()=>_mark('compute:salesSec',()=>{
     if(!labInRange.length)return null;
     const byLoc=loc=>labInRange.filter(r=>r.loc===String(loc));
     const totSales=allLocs.reduce((a,l)=>a+sumOf(byLoc(l),'allNetSales'),0)||allLocs.reduce((a,l)=>a+sumOf(byLoc(l),'sales'),0);
@@ -939,10 +939,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const avgChkMatched=curMG>0?curMS/curMG:avgChk;
     const avgCheckVsLY=avgCheckLY>0?(avgChkMatched-avgCheckLY)/avgCheckLY:null;
     return{totSales,totGC,avgChk,channels:chData,salesVsLY,gcVsLY,avgCheckVsLY,okSales,flSales,okSalesVsLY,flSalesVsLY};
-  },[labInRange,channelRows,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
+  }),[labInRange,channelRows,allLocs,okLocs,flLocs,ds?.laborRows,dateRange]);
 
   // ── Labor section ─────────────────────────────────────────────
-  const laborSec=React.useMemo(()=>{
+  const laborSec=React.useMemo(()=>_mark('compute:laborSec',()=>{
     // Labor productivity metrics (TPPH, labor%, OT, Act vs Need) live in the
     // Controls sheet (ctrlRows/Billable Sales group) — NOT the Sales sheet (labInRange).
     // Use the merged controls source (manual + auto Glimpse) so Labor % fills from
@@ -1010,10 +1010,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,laborPct:avgOf(cr,'laborPct')||avgOf(lr,'laborPct'),tpph:avgOf(cr,'tpph')||avgOf(lr,'tpph')};
     }).filter(x=>x.laborPct!=null).sort((a,b)=>a.laborPct-b.laborPct);
     return{laborPct,tpph,avn,otHrs,actHrs,crewHrs,avgRate,okLaborAvg,flLaborAvg,okTpphAvg,flTpphAvg,ranked};
-  },[labInRange,ctrlEffective,allLocs,okLocs,flLocs,ds,effectiveDateRange]);
+  }),[labInRange,ctrlEffective,allLocs,okLocs,flLocs,ds,effectiveDateRange]);
 
   // ── Service section ───────────────────────────────────────────
-  const serviceSec=React.useMemo(()=>{
+  const serviceSec=React.useMemo(()=>_mark('compute:serviceSec',()=>{
     const {rows:opsEff,isStale:opsSt,label:opsStaleLbl,auto:svcAuto}=svcEffective;
     if(!opsEff.length)return null;
     const opsScoped=opsEff.filter(r=>allLocs.includes(String(r.loc)));
@@ -1048,10 +1048,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       r2p,okR2p:wMkt(okLocs,'r2p'),flR2p:wMkt(flLocs,'r2p'),
       isStale:opsSt,staleLabel:opsStaleLbl,auto:svcAuto,
     };
-  },[svcEffective,allLocs,okLocs,flLocs,labInRange]);
+  }),[svcEffective,allLocs,okLocs,flLocs,labInRange]);
 
   // ── Controls section ─────────────────────────────────────────
-  const ctrlSec=React.useMemo(()=>{
+  const ctrlSec=React.useMemo(()=>_mark('compute:ctrlSec',()=>{
     const {rows:ctrlEff,isStale:ctrlSt,label:ctrlStaleLbl}=ctrlEffective;
     if(!ctrlEff.length)return null;
     const ctrlScoped=ctrlEff.filter(r=>allLocs.includes(String(r.loc)));
@@ -1107,10 +1107,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       })(),
       isStale:ctrlSt,staleLabel:ctrlStaleLbl,
     };
-  },[ctrlEffective,allLocs,okLocs,flLocs,labInRange]);
+  }),[ctrlEffective,allLocs,okLocs,flLocs,labInRange]);
 
   // ── FOB section ───────────────────────────────────────────────
-  const fobSec=React.useMemo(()=>{
+  const fobSec=React.useMemo(()=>_mark('compute:fobSec',()=>{
     // Prefer the dollar-weighted qsr_fob roll-up (TRUE grouped average + both
     // periods from one consistent source). Fall back to the manual FOB Report
     // (straight-average %s) only when qsr_fob is unavailable.
@@ -1188,10 +1188,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okStatVar:wScope(okLocs,'statVar'),flStatVar:wScope(flLocs,'statVar'),
       okDiscCoupon:wScope(okLocs,'discCoupon'),flDiscCoupon:wScope(flLocs,'discCoupon'),
     };
-  },[fobPeriods,fobRecent,allLocs,okLocs,flLocs]);
+  }),[fobPeriods,fobRecent,allLocs,okLocs,flLocs]);
 
   // ── Intelligence Summary (Morning Brief) ─────────────────────────
-  const intelSec=React.useMemo(()=>{
+  const intelSec=React.useMemo(()=>_mark('compute:intelSec',()=>{
     if(!stores.length) return null;
     // Weighted district targets (sales-weighted where possible, else simple avg)
     const getTgt=(tKey,dflt)=>{
@@ -1223,7 +1223,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const laborSt=storeAlerts.filter(x=>x.issues.includes('labor↑')).length;
     const mapeSt=storeAlerts.filter(x=>x.issues.includes('mape↑')).length;
     return{laborTgt,fobTgt,oepeTgt,tpphTgt,parkTgt,storeAlerts,declineSt,laborSt,mapeSt};
-  },[allLocs,stores,settings,laborSec]);
+  }),[allLocs,stores,settings,laborSec]);
 
   // ── Existing district projection (reuse existing data) ────────
   const [deepStore,setDeepStore]=React.useState(null);
@@ -1346,7 +1346,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Auto-first (data-integrity sweep signature #2, MEDIUM item) — was ds.laborRows only,
   // manual-only; sits next to code elsewhere in this view that already migrated OEPE/Labor/
   // T-Reds for the same reason.
-  const weeklyTrend=React.useMemo(()=>{    if(!ds?.loaded||!allLocs?.length)return[];
+  const weeklyTrend=React.useMemo(()=>_mark('compute:weeklyTrend',()=>{    if(!ds?.loaded||!allLocs?.length)return[];
     const wsd=settings?.weekStartDay??3;
     const getWS=d=>{const w=new Date(d);while(w.getDay()!==wsd)w.setDate(w.getDate()-1);w.setHours(0,0,0,0);return w;};
     const sumSales=range=>allLocs.reduce((tot,loc)=>tot+Object.values(metricSeries(ds,loc,range,'sales')).reduce((a,b)=>a+b,0),0);
@@ -1361,10 +1361,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         sales,lySales,vsLY:lySales>0?(sales-lySales)/lySales:null});
     }
     return result;
-  },[ds,allLocs,settings?.weekStartDay]);
+  }),[ds,allLocs,settings?.weekStartDay]);
 
   // ── Leaderboard store rankings ────────────────────────────────────────
-  const lbData=React.useMemo(()=>{
+  const lbData=React.useMemo(()=>_mark('compute:lbData',()=>{
     const META={
       sales:{getVal:loc=>{const r=labInRange.filter(r=>r.loc===String(loc));const v=r.reduce((a,x)=>a+(x.allNetSales||0),0);return r.length&&v>0?v:null;},
         fmt:v=>f$(Math.round(v)),higherBetter:true,label:'Net Sales',unit:'$'},
@@ -1385,10 +1385,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       .sort((a,b)=>m.higherBetter?b.value-a.value:a.value-b.value);
     const avg=data.length?data.reduce((a,s)=>a+s.value,0)/data.length:null;
     return{data,avg,fmt:m.fmt,label:m.label,higherBetter:m.higherBetter};
-  },[lbMetric,labInRange,opsInRange,ctrlInRange,svcEffective,ctrlEffective,allLocs,flLocs]);
+  }),[lbMetric,labInRange,opsInRange,ctrlInRange,svcEffective,ctrlEffective,allLocs,flLocs]);
 
   // Digital sales section useMemo
-  const digitalSec=React.useMemo(()=>{
+  const digitalSec=React.useMemo(()=>_mark('compute:digitalSec',()=>{
     // Channel breakdown (deliv/mop/kiosk) comes from channelRows = manual labor MERGED with the
     // emailed Sales Ledger — NOT labInRange (labor + DAR), because the DAR has no channel split,
     // so once manual labor stopped the tile read 0% digital (Notes: Jul-2026). Sales Ledger is
@@ -1422,7 +1422,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okMopPct:mktPct(okLocs,'mop'),flMopPct:mktPct(flLocs,'mop'),
       okKioskPct:mktPct(okLocs,'kiosk'),flKioskPct:mktPct(flLocs,'kiosk'),
       digStoreCount:sm.filter(s=>s.dig>0).length,storeCount:sm.length};
-  },[channelRows,okLocs,flLocs,allLocs]);
+  }),[channelRows,okLocs,flLocs,allLocs]);
 
   // ── No data state ─────────────────────────────────────────────
   // noData is false when either manual laborRows OR auto-synced qsrActSummaryRows are present
@@ -1431,7 +1431,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── District weekly projections — memoized so 189 forecastDay calls only fire
   // when ds/stores/settings/userEvents actually change, not on every render
   // (opening Data Manager, state updates, etc. previously re-ran all 189 calls).
-  const weekProjections=React.useMemo(()=>{
+  const weekProjections=React.useMemo(()=>_mark('compute:weekProjections',()=>{
     if(!ds||!ds.loaded||!stores||!stores.length)return null;
     const _today=new Date();
     const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
@@ -1472,7 +1472,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,name:STORE_NAMES[String(loc)]||loc,wkTotal,lyTotal,actualTotal,vsLY,org:orgOf(loc),rowDays};
     }).sort((a,b)=>b.wkTotal-a.wkTotal);
     return{storeProjs,weekDays,wsKey};
-  },[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,stores,settings,userEvents]);
+  }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,stores,settings,userEvents]);
 
   // ── RENDER ────────────────────────────────────────────────────
   // #225: was overflowY:'auto' with onScroll here AND flex:1/overflowY:'auto' on the
@@ -1726,7 +1726,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
         // ── PROJECTIONS SECTION ──
         // ── INTELLIGENCE SUMMARY TILE ──────────────────────────
-        secs.find(s=>s.id==='intelligence'&&s.on)&&(()=>{
+        secs.find(s=>s.id==='intelligence'&&s.on)&&_mark('build:intelligence',()=>((()=>{
           const sl=salesSec,lb=laborSec,fb=fobSec,sv=serviceSec,it=intelSec;
           const noData=!sl&&!lb&&!fb&&!sv;
           // Signal row helper
@@ -1842,10 +1842,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             )
             )
           );
-        })(),
+        })())),
 
         // ── PROJECTIONS SECTION ──
-        secs.find(s=>s.id==='projections'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='projections'&&s.on)&&_mark('build:projections',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:onOpenProjections},
             span(null,'📈'),
@@ -1929,7 +1929,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             })()
           )
           )
-        ),
+        ))),
 
         // ── LOCK DEADLINE COUNTDOWN ──────────────────────────────────────
         (()=>{
@@ -1972,7 +1972,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         })(),
 
         // ── SALES SECTION ──
-        secs.find(s=>s.id==='sales'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='sales'&&s.on)&&_mark('build:sales',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'💰'),
@@ -2023,10 +2023,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               )
             )
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No sales data for this period'))
-        ),
+        ))),
 
         // ── LABOR SECTION ──
-        secs.find(s=>s.id==='labor'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='labor'&&s.on)&&_mark('build:labor',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'👥'),
@@ -2068,10 +2068,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               )
             )
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No labor data for this period'))
-        ),
+        ))),
 
         // ── SERVICE SECTION ──
-        secs.find(s=>s.id==='service'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='service'&&s.on)&&_mark('build:service',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'⚡'),
@@ -2099,10 +2099,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               );
             })
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},coreStreamsLoading?'Loading…':'No service data for this period'))
-        ),
+        ))),
 
         // ── CONTROLS SECTION ──
-        secs.find(s=>s.id==='controls'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='controls'&&s.on)&&_mark('build:controls',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onNav&&onNav('district')},
             span(null,'🔒'),
@@ -2160,10 +2160,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               )
             )
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No controls data — upload Operations Report'))
-        ),
+        ))),
 
         // ── FOB SECTION ──
-        secs.find(s=>s.id==='fob'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='fob'&&s.on)&&_mark('build:fob',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenBrief&&onOpenBrief()},
             span(null,'🍟'),
@@ -2250,10 +2250,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               )
             )
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},'No FOB data — upload Operations Report with FOB sheet'))
-        ),
+        ))),
 
         // ── DIGITAL SALES SECTION ──────────────────────────────────
-        secs.find(s=>s.id==='digital'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='digital'&&s.on)&&_mark('build:digital',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'\uD83D\uDCF1'),
@@ -2330,10 +2330,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             )
           ):div({style:{padding:'12px',textAlign:'center',color:'var(--text3)',fontSize:'10px'}},
             'No channel data — upload Operations Report with Sales sheet'))
-        ),
+        ))),
 
         // ── DISTRICT PULSE RADAR ──
-        secs.find(s=>s.id==='radar'&&s.on)&&(()=>{
+        secs.find(s=>s.id==='radar'&&s.on)&&_mark('build:radar',()=>((()=>{
           // Scores: 0-1 where 1.0 = at or better than target, 0 = significantly below
           const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v||0));
           const METRICS=[
@@ -2450,9 +2450,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               )
             )
           );
-        })(),
+        })())),
         // ── STORE LEADERBOARD ──
-        secs.find(s=>s.id==='leaderboard'&&s.on)&&div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
+        secs.find(s=>s.id==='leaderboard'&&s.on)&&_mark('build:leaderboard',()=>(div({style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:8,overflow:'hidden'}},
           div({style:{display:'flex',alignItems:'center',gap:6,padding:'8px 12px',background:'var(--surf2)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
             onClick:()=>onOpenModal&&onOpenModal('ranking')},
             span(null,'🏆'),
@@ -2526,7 +2526,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               );
             })()
           )
-        ),
+        ))),
       ), // end grid
 
       // ── DISTRICT PROJECTIONS MINI TABLE ────────────────────────
