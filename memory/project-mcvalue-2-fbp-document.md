@@ -313,7 +313,7 @@ launch (2026-04-21), against data running to 2026-08-13:
 | **B3** | 05-19 → 06-01 | **— clean —** |
 | B4 | 06-02 → 06-15 | **U.S. FIFA World Cup Happy Meal begins (6/9)** |
 | B5 | 06-16 → 06-29 | Fried Apple Pie LTO, all-store sell (6/23) |
-| B6 | 06-30 → 07-13 | **McValue 2.0 REHIT (7/7)** — under-$3: $1.50/$2 Sausage Burrito, $1.50/$2 McChicken |
+| B6 | 06-30 → 07-13 | **McValue 2.0 REHIT (7/7)** — under-$3: $1.50/$2 Sausage Burrito, $1.50/$2 McChicken **+ National French Fry Day flash offer (7/10)** |
 | B7 | 07-14 → 07-27 | Happy Meal #6 (7/14); Breakfast Flavor News (7/21); Chicken Flavor News — Caesar Snack Wrap / McCrispy / Dip Cup (7/21) |
 | B8 | 07-28 → 08-10 | — clean — |
 
@@ -402,3 +402,25 @@ That matters for how the document lands. It moves the conversation from *"your o
 execute better"* to *"the offer is not working"* — and each leg is independently defensible, so
 challenging one does not collapse the argument. Point 2 in particular is the pre-emptive answer to
 the most likely pushback, and it is measured rather than asserted.
+
+
+### Calendar revision — a seventh event, and it cuts against the check finding
+
+A later issue of the calendar (owner, 2026-08-14) adds one item the first version did not carry:
+
+**7/10 — National French Fry Day (Flash Offer): free medium fries with $1 minimum purchase,
+redeemable 1× per customer.** Falls in **B6**, alongside the McValue 2.0 rehit.
+
+**This works against the check result, which makes that result more conservative.** A free-item
+offer gated at a **$1 minimum purchase** manufactures a day of unusually low tickets by design.
+Wherever it lands it drags average check down, so the measured **+10.4¢** check gain is if anything
+**understated** in the affected block — the promotion pushed the metric the opposite way from the
+finding.
+
+Worth one line in the document. A limitation that biases *against* your own conclusion is the
+cheapest credibility you can buy, and a reader who knows the calendar will spot the date anyway.
+
+**Note on the World Cup Happy Meal:** the later calendar issue does not list it (its June section
+begins at 6/23), almost certainly because that issue only carries forward-looking items. It is not
+a retraction — the owner independently confirms the promotion ran and *"was a huge fail for us."*
+The 6/9 start date stands, and the B4 mapping is unchanged.
