@@ -482,3 +482,75 @@ deep-value offers** — weekly free fries, $2 breakfast sandwiches, free Double 
 daypart EVMs at $5/$8. A system leaning this hard on discounting is itself consistent with the
 demand-side reading, and unlike our own analysis it is McDonald's own published plan rather than
 our inference.
+
+---
+
+# ⚠️ TWO DEFECTS IN THE BLOCK LAYOUT, found 2026-08-14 once the launch date was confirmed
+
+The block layout was designed **before the McValue date was known** — anchored to data recency
+(working back from Aug 12), not to the intervention. With 4/21 now confirmed from the calendar
+itself (`4/21 — McValue 2.0 Launch`, April 2026 issue), two things are wrong.
+
+## Defect 1 — the pre/post boundary is in the wrong place
+
+```
+ -9  pre   2026-03-26 → 2026-04-08
+ -8  pre   2026-04-09 → 2026-04-22   <-- McValue 4/21 falls INSIDE this block
+ -7  pre   2026-04-23 → 2026-05-06   <-- ENTIRELY after launch, labelled PRE
+ -6  POST  2026-05-07 → 2026-05-20
+```
+
+**Roughly 16 days of post-launch trading sit in the control group.** Block −7 is wholly
+post-launch; block −8 straddles the launch.
+
+Direction: this *dilutes* the measured effect, so the true effect is **larger** than reported —
+conservative, but indefensible once the date is known. A reviewer spots this in one minute.
+
+**Fix: re-anchor to the launch.** 2026-04-21 is a **Tuesday**, so Wednesday-aligned blocks start
+2026-04-22 and give **8 complete post blocks** (one more than the current 7):
+
+```
+B1 04-22→05-05   B2 05-06→05-19   B3 05-20→06-02   B4 06-03→06-16
+B5 06-17→06-30   B6 07-01→07-14   B7 07-15→07-28   B8 07-29→08-11
+pre = 2025-12-31 → 2026-04-21  (8 matched blocks)
+```
+
+## Defect 2 — the re-anchored pre-period contains a month-long FREE-ITEM promotion
+
+From the March/April 2026 calendar issue:
+
+> **Month of March — GMA Download Incentive: Free 10 pc McNuggets with $1 min purchase**
+
+A national, month-long, free-item offer gated at a $1 minimum — sitting inside the baseline,
+covering roughly **30% of the pre window**.
+
+**This is the first confound found that inflates the headline findings rather than deflating
+them**, and it does so on **both**:
+
+| metric | effect on the 2026 pre window | effect on the DiD |
+|---|---|---|
+| traffic | free item **raises** pre-period traffic → pre-vs-LY inflated | subtracting a larger pre makes the decline **more negative — OVERSTATED** |
+| average check | $1-minimum free item **lowers** pre-period check → pre-vs-LY depressed | subtracting a smaller pre makes the gain **larger — OVERSTATED** |
+
+Traffic down and check up is *exactly the signature a free-item promotion ending would produce*,
+independent of anything McValue did. That is the challenge this document must answer.
+
+### It may cancel — and that is measurable, not a matter of opinion
+
+The DiD compares 2026 against `ly_` twins. **If March 2025 carried a comparable offer, the LY twin
+absorbs it and the confound largely cancels.** This is precisely the reference-class extension
+already flagged in this file (owner's own idea) — now on the critical path rather than a nice-to-have.
+
+**Two things to get, in order:**
+
+1. **The March 2025 calendar issue** (ideally Jan–Apr 2025, covering the whole pre window's LY
+   twin). Settles whether the confound cancels.
+2. **Measure it directly:** pull DAR traffic and check for March 2026 vs March 2025. A month-long
+   free-item promo leaves a visible footprint. If March 2026 shows a traffic spike and a check dip
+   versus its LY twin, the confound is live and quantifiable; if not, it is inert. **This does not
+   require the calendar** — it can be run now.
+
+**Do not publish the DiD numbers until defect 1 is fixed and defect 2 is either measured or
+excluded.** Both are cheap. Both are the kind of thing that, found by a reader first, costs the
+whole document its credibility — and found by us first, becomes a methodology section that
+demonstrates rigour.
