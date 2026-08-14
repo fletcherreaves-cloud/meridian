@@ -846,3 +846,35 @@ events queries, since that would collapse 26 requests into one.
 
 `tender_types` includes **`No Tender`**, which 2 of the 3 captured overrings used.
 `billable_orgs` is empty for 3708, consistent with the owner's account of billable sales as rare.
+
+## Unattributable events may be KIOSK orders — owner hypothesis, 2026-08-14
+
+> *"For the unattributable results, could be kiosk orders. I believe typically POS 6-11. I can
+> confirm but should be close."*
+
+Plausible and it changes the handling. If the sentinel rows (`geid: "unavailable"`, badge
+`null`/`000`/`999999999`/empty) are self-service kiosk transactions, they are **not a data-quality
+gap** — they are a legitimate category with genuinely no employee involved.
+
+**Revised guidance: segment, do not discard.** Excluding them from *per-person* rates is still
+correct (a kiosk has no person to attribute to), but they must be reported as their own line rather
+than dropped. Two reasons:
+
+1. **A kiosk-vs-staffed exception rate is operationally interesting in its own right.** If overrings
+   or refunds occur at different rates on kiosks than on staffed registers, that is a finding — and
+   it is invisible if the rows are filtered away.
+2. **Silent exclusion biases store comparisons.** Kiosk mix varies by store. Dropping kiosk events
+   from the numerator while a store-level denominator still includes kiosk sales understates
+   exception rates at high-kiosk stores.
+
+**Not yet confirmed — the test is one capture.** The `security-events` transaction table carries
+both `Register` and `Crew`. Pull one store for a week (or `all_events` for a day) and group by
+register: if the unattributed rows cluster on POS0006–POS0011, the hypothesis holds. The captured
+sample cannot test it — all three overrings were POS0002 with named crew.
+
+**Register topology is emerging, and it matters beyond this.** For 3708 we now have evidence of at
+least three roles: **staffed order points** (POS0002, named crew), **probable kiosks** (0006–0009
+present in the list, owner's 6–11 range), and **payment funnels** (POS0013, which #275 found
+receives orders originating on other terminals). #275's funnel-register discovery step should
+expect this mix rather than treating every register as equivalent — a kiosk is not a funnel and
+should not be probed as one.
