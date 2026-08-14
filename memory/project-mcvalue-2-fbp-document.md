@@ -438,10 +438,23 @@ Now–9/30  ABS 2.0 promotion — up to $3,000 savings per unit, all purchases  
 versions**, because it is *recurring* rather than a single date. A weekly free-fry offer gated at a
 $1 minimum, running across the measurement window, acts continuously on both headline metrics.
 
-**OPEN QUESTION — the only thing blocking its use: when does "Now" start?** The calendar says
-"Now" because it is an August issue. If the offer began in June it contaminates B4 onward; if it
-began in August it barely reaches the 2026-08-13 cutoff. **Ask before writing this into the
-document.**
+**Issue dated 2026-08-10** (owner). That establishes the offer was live *by* 8/10; it does not
+give the start date, since "Now" is relative to publication.
+
+**Inference, and it is only an inference:** the preceding issue did **not** carry it. That issue
+listed `7/10 National French Fry Day` as a **one-day** flash offer and had no standing `Now–`
+items at all. A recurring weekly offer already running in July would almost certainly have appeared
+there in the same standing form the August issue uses. So the likely start is **between mid-July
+and 2026-08-10** — placing it in **B7, B8 and the final partial days**, roughly the last two to
+three weeks of a sixteen-week post period.
+
+**To pin it exactly:** find whichever issue *first* carried the `Now–10/4` line. That dates it to
+within a week. Worth doing before the claim goes in the document, but not blocking.
+
+**What matters most: B1–B3 is clean of this as well.** The headline six-week window closes
+2026-06-01, well before any plausible start date. No version of the answer reaches the read the
+document leads with — which is a further argument for making B1–B3 the headline rather than the
+eight-block average.
 
 **It biases BOTH findings toward conservatism, whichever the answer:**
 
