@@ -749,3 +749,100 @@ Owner supplied three McDonald's Business Building Roadmap PDFs (Q2 2024, Q4 2024
 — national promotional calendars. These cover the period where the decline begins and are the
 natural next test: a marketing-driven mix shift is a district-wide simultaneous change of exactly
 the kind the uniformity implies. Not yet read.
+
+---
+
+# `security-events` — the RAW transaction feed, and it has timestamps
+
+Owner-captured 2026-08-14 (UI + `store_filter_options` for a single store/day/event type).
+`v3.myqsrsoft.com/security/security-events` — **a different report from Suspicious Activity**, and
+the more useful of the two for our purposes.
+
+## It solves the gap that limited `suspicious_activity`
+
+The catalog records of `suspicious_activity`: *"There is no event timestamp… only `busn_dt`… an
+exception can be placed within a shift, not within an hour."* **`security-events` does not have
+that problem.** Its transaction table carries:
+
+```
+Date · Time (16:32:59) · Day Part · Register · Crew · Manager ·
+Manager Code Entered · Tender Type · Overring Amount · View Detail
+```
+
+Per-second event times, so these **can** be joined to `qsr_daily_activity`'s hourly rows — the
+correlation `suspicious_activity` could not support.
+
+**`Manager Code Entered` is a control field we did not know existed.** In the captured day, 2 of 3
+overrings show `false`. An override performed without the manager code being entered is a
+first-class loss-prevention signal, and nothing else we pull exposes it.
+
+## This is now strong evidence that `suspicious_activity` IS filtered
+
+`security-events` returned **3 POS overrings for one store on one day**. `suspicious_activity`
+returned **1 cash refund across 27 stores over 13 days**. Different event types, so not proof —
+but combined with `score_id` and the $151.14 outlier (2× that store's monthly cash-refund budget),
+the balance now clearly favours **`suspicious_activity` = scored/ranked subset**, `security-events`
+= raw stream.
+
+**The clean test, now trivially available and better than the Controls comparison I proposed
+earlier:** run **both** endpoints for the **same store, same date, same `event_token`**. Identical
+counts = both raw. Fewer from `suspicious_activity` = it filters. One capture settles it.
+
+## `Top Contributors` is QSRSoft ranking named individuals
+
+The report leads with a **Top Contributors** panel — managers and cashiers ranked by event count
+(`Dallas L - 51: 2`, `James T - 9: 1`, …). That is a per-person ranking authored by the vendor, so
+it is a **derived judgment** under #272: supervisor-and-above, with
+`memory/attribution-validity-register-login.md`'s caveat attached — the name is the name on the
+login. Do not re-present it as a Meridian finding.
+
+## Four corrections and confirmations from the filter-options capture
+
+### 1. CONFIRMED — `leid` **is** the badge, and it is store-local
+
+`suspicious_activity` returned `manager_leid: 14`; this store's manager list contains
+`{badge: "14", display: "Liz  - 14"}`. The predicted join key **`(location, badge)`** is right, and
+badges are small per-store integers, so joining on badge alone across stores would attribute events
+to the wrong person.
+
+### 2. CORRECTION — register lists are **window-dependent**, not a static store config
+
+The catalog says registers are per-store and must never be hard-coded. That is right but
+understated. The earlier capture gave 3708 `POS0002/0006/0007/0008/0009/0013/**0014**/0016/0019`;
+this one (single day) gives `…/0013/**0015**/0016/0019`. **The list reflects registers active in the
+queried window**, not the store's terminal inventory. So it cannot be cached as a store attribute
+either — only as a per-window observation.
+
+### 3. Sentinel rows exist for unattributable events — exclude them from any per-person rate
+
+```
+managers: {badge: null,  geid: "unavailable", display: "Unavailable - null"}
+          {badge: "000", geid: "unavailable", display: "Unavailable - 000"}
+cashiers: {badge: "999999999", …}   {badge: "", …}
+```
+
+Events genuinely have no attributable person. A naive per-person rollup creates a phantom employee
+"Unavailable" carrying a large event count and, worse, a large *rate*. Filter on
+`geid === "unavailable"` — the flag is explicit, so this needs no heuristics.
+
+### 4. The GEID gap persists
+
+Every real manager and cashier still has `geid: null`; only the sentinels carry a value, and that
+value is the string `"unavailable"`. The **POS badge → empID → geid** chain remains unjoined, and
+`/admin/geidLookup` + `/admin/missingGeids` remain the route to closing it.
+
+## Full `event_types` enumeration (27), confirmed
+
+`total_order_promo` · `mobile_promo` · `other_promo` · `all_promo` · `delivery_promo` ·
+`cash_refund` · `cashless_refund` · `pos_overring` · `pos_auto_discount` · `mobile_discount` ·
+`other_discount` · `all_discount` · `coupon` · `t_red_before` · `t_red_after` ·
+`duplicate_card_swipe` · `drawer_open` · `high_lock_out` (+`_tender`/`_amount`/`_item`) ·
+`employee_meal` · `manager_meal` · `loyalty_reward_ids` · `billable_sales` ·
+`electronic_benefit_transfer` · `all_events`
+
+**`all_events` is the only entry with no `display` field**, which suggests it is a control value
+rather than a real category — worth testing whether it is accepted as an `event_token` on the
+events queries, since that would collapse 26 requests into one.
+
+`tender_types` includes **`No Tender`**, which 2 of the 3 captured overrings used.
+`billable_orgs` is empty for 3708, consistent with the owner's account of billable sales as rare.
