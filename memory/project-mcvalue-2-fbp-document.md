@@ -40,13 +40,19 @@ twins for every key**:
 
 Every row is therefore its own matched pair; **no self-join is needed**.
 
-**Coverage (measured):**
+**Coverage (measured) — these are BACKFILL FLOORS, not data floors:**
 
-| table | from | to | locs |
+| table | backfilled from | to | locs |
 |---|---|---|---|
 | `qsr_cash_sheet` | 2024-04-01 | 2026-08-14 | 27 |
 | `qsr_sales_mix` | 2024-04-01 | 2026-08-14 | 27 |
 | `qsr_daily_activity_rollup` | 2025-01-01 | 2026-08-14 | 27 |
+
+**Owner, 2026-08-14:** *"We can access all historical data for the restaurants for many many
+years in the past, so don't let that be a limiter."* Now a standing rule in CLAUDE.md. If this
+analysis wants a longer pre-period — more promo windows in the reference class, a multi-year
+baseline for the discount rate — **run a backfill rather than scoping down**. The 2024-04-01
+figure is when the ops-pull was first run, nothing more.
 
 `billable_sales_qty` is the **transaction count** — the cash-sheet field group is literally
 `Billable Sales: Billable Sales Cnt` / `Billable Sales Amt` (`scripts/parse-field-defs.mjs:104`).
@@ -114,7 +120,7 @@ dropping it silently.
 | **2024** | **Yes.** Data starts 2024-04-01, so Apr–Dec 2024 windows are directly measurable, and they are the LY baseline under the 2025 windows. |
 | **2026** | **Already in the repo, unextracted** — `REV_2__2026_OPNAD_Calendar_10.29.25.pdf` covers the period under study, including the McValue 2.0 window itself. Free value; extract before sourcing anything new. |
 | **2025** | Already extracted — `data/marketing-calendars/2025-opnad-retail-windows.json`, 16 windows, three source year-typos corrected and owner-confirmed. |
-| **2023** | **Skip.** Our data does not reach 2023, so nothing in it is measurable. Only use would be contextualising `ly_` values on the earliest 2024 rows, which this analysis does not lean on. |
+| **2023** | **Corrected 2026-08-14 — worth having after all.** The original advice ("skip, our data does not reach 2023") was wrong reasoning: QSRSoft holds many years and a backfill reaches 2023 whenever we want it. Value it if the reference class wants more promo windows; the constraint is backfill effort, not data existence. |
 
 The 2026 media-mix grids are a different shape (GRPs by week-start, not start/stop pairs), so a
 window has to be inferred from contiguous non-empty weeks.
