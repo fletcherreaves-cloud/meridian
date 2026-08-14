@@ -356,3 +356,49 @@ only an impression.
 2. **Name every national event in the window**, with dates, in the methodology section.
 3. **State plainly that the post period is not a clean treatment window** and that the clean read is
    six weeks long. Owning that limitation is what makes the B1–B3 result credible.
+
+## FIFA World Cup Happy Meal — a DEMAND failure, not an execution failure (owner-confirmed)
+
+Owner, 2026-08-14: the World Cup Happy Meal was *"a huge fail for us"*, and on the execution
+question — *"your restaurants ran it fine, customers didn't buy it"* — **"correct."**
+
+The satisfaction series supports it independently. Across the promotion window every dimension held
+or improved:
+
+| month | OSAT | Accuracy | Fast | Clean | Quality |
+|---|---|---|---|---|---|
+| 2026-05 | 76.6% | 79.3% | 75.1% | 71.2% | 75.3% |
+| **2026-06** (WC HM from 6/9) | 76.8% | **81.0%** | 76.1% | 71.9% | 75.7% |
+| 2026-07 | 76.0% | 80.2% | **76.8%** | **72.3%** | **76.0%** |
+
+No service degradation anywhere — accuracy actually **peaked** in June. A tentpole promotion that
+strains a kitchen shows up as slower service and worse accuracy. This one did not.
+
+### Correction to an earlier framing in this file
+
+An earlier note argued *"traffic got worse as national marketing support increased."* **Retract
+that.** It assumed the support converted. With the World Cup Happy Meal confirmed as a commercial
+failure, blocks B4–B8 carried *nominal* support that did not translate, so the later-block
+deterioration has a rival explanation that is not McValue. The line was too clever and the owner's
+operational knowledge corrects it.
+
+**Consequence: stop extracting a McValue signal from B4–B8.** At least two candidate causes —
+McValue's effect decaying, or a failed tentpole dragging — and nothing in our data separates them.
+**B1–B3 is the defensible read and should be the headline.**
+
+## The through-line for the document — three independent lines, one conclusion
+
+This is now evidenced from three directions that do not depend on each other:
+
+1. **Traffic DiD −4.55pp, check +10.4¢** — customers visiting less often, spending more per visit.
+2. **Satisfaction stable through the period** (slope flipped positive post-launch; every dimension
+   held during the tentpole) — operations are not the problem.
+3. **A World Cup Happy Meal, in a World Cup year, in a host country, failed to move traffic** —
+   demand is not responding to promotional stimulus.
+
+**The convergent conclusion is that this is a demand-side problem, not an execution problem.**
+
+That matters for how the document lands. It moves the conversation from *"your operators need to
+execute better"* to *"the offer is not working"* — and each leg is independently defensible, so
+challenging one does not collapse the argument. Point 2 in particular is the pre-emptive answer to
+the most likely pushback, and it is measured rather than asserted.
