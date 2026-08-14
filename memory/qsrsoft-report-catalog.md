@@ -534,3 +534,50 @@ definitive test is unchanged and cheap: compare our Controls cash-refund **count
 If it is scored, we are ingesting **QSRSoft's derived judgments about named individuals**, which
 is the far side of #272's line — and the `score_id` should be stored so the judgment stays
 attributable to its author rather than reading as Meridian's own finding.
+
+---
+
+# 1-800 Customer Feedback — a CRCP→QSRSoft email bridge that must be SET UP to exist
+
+KB article 16137918130711, *"How Do I Access and Use Customer Feedback & Recovery (1-800 & Voice)?"*
+Found 2026-08-14 while checking the suspicious-activity filtering question.
+
+1-800 complaints/praise/inquiries originate in **McDonald's CRCP system** (`crcp.mcd.com`), not in
+QSRSoft. QSRSoft ingests them **by being added as an alert designee**:
+
+1. Log in to `https://crcp.mcd.com/crcp/logon.do` with the owner-operator id
+2. **Add Designee** — First `QSRSoft`, Last `QSRSoft`, Phone type "Phone – with Voice Mail",
+   email **`customerfeedback@myqsrsoft.com`**
+3. **Assign Alerts** — add that designee to an open "Initial Alerts" email box **for every location**
+4. Save
+
+Records then post to MyQSRSoft's **Customer Feedback** page (permission: *Customer Feedback App
+Access*) — a table of every record for the user's locations, with actions taken, actions still
+needed, and quick-close. The KB is explicit that this is **different from** the dashboard's
+Customer Feedback card, which carries VOICE scores only.
+
+## ⚠️ This is email ingestion — forward-only, and the clock starts at setup
+
+**It is the `cash_sheet_daily` failure mode exactly**, and CLAUDE.md's API-over-email standing rule
+names that cost: fifteen months of cash and controls history that cannot be recovered because the
+source emails for earlier periods do not exist. An emailed stream's history begins the day it is
+configured to send.
+
+There is no API to backfill from here — CRCP pushes to a designee address or it does not. So
+**every day before the designee is added is a day permanently absent from the record.** Unlike
+almost everything else in this repo, the data-depth standing rule does *not* rescue this one; it is
+the rule's own stated exception class.
+
+**Open question only the owner can answer: is `customerfeedback@myqsrsoft.com` already a designee
+on the CRCP account, for all 27 locations?** The targets workbook carries per-store 1-800 LY
+figures (district total 223.3 → 2026 target 197.0), so the metric is reaching him somehow — but
+that does not establish that it is flowing into QSRSoft, and the per-location alert assignment is
+the part most likely to be partially done.
+
+If it is set up: the Customer Feedback table is a pull target, and it carries **follow-up state**
+(actions taken / still needed), which no other stream we have does.
+If it is not: setting it up is a few minutes and starts accumulating immediately.
+
+**Sensitivity:** individual customer complaints naming restaurants, and potentially staff. Facts
+follow parity; any derived judgment (a "complaint-prone store" ranking) is supervisor-and-above
+per #272.
