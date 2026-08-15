@@ -3732,3 +3732,52 @@ export async function updateActionItem(id, updates) {
   if (error) { console.warn('[action_items] update error:', error.message); return null; }
   return data;
 }
+
+// ── Product Mix (PMIX) rows — #291 ─────────────────────────────────────────────
+// See supabase/schema-product-mix.sql for the full design rationale (grain, why
+// `dollars` is nullable, why nothing populates this table yet). loc is PADDED,
+// matching every other QSRSoft-sourced table (qsr_fob, qsr_service_stats, …) —
+// NOT the unpadded STORE_NAMES key.
+export async function savePmixRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:        String(r.loc),
+    date:       toDate(r),
+    item:       String(r.item),
+    desc_:      r.desc   ?? null,
+    family:     r.family ?? null,
+    units:      r.units  ?? null,
+    dollars:    r.dollars ?? null,          // nullable — see schema header
+    disc_qty:   r.discQty ?? r.disc ?? null,
+    disc_amt:   r.discAmt ?? null,
+    updated_at: new Date().toISOString(),
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('qsr_product_mix').upsert(upsert.slice(i, i+CHUNK), { onConflict: 'loc,date,item' });
+    if (error) { console.warn('[qsr_product_mix] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  return { saved, errors };
+}
+
+export async function loadPmixRows(daysBack = 400) {
+  if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ table: 'qsr_product_mix', select: '*', gteCol: 'date', gteVal: _cutStr, orderCol: 'date', ascending: false, label: 'qsr_product_mix' });
+  if (!data.length) return [];
+  return data.map(r => ({
+    loc:     r.loc,
+    date:    new Date(r.date + 'T00:00:00'),
+    item:    r.item,
+    desc:    r.desc_,
+    family:  r.family,
+    units:   r.units,
+    dollars: r.dollars,
+    discQty: r.disc_qty,
+    discAmt: r.disc_amt,
+  }));
+}
