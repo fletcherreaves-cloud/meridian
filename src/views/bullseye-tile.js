@@ -68,9 +68,9 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 // Corrected status trio (#276 step 1's own tokens, used here as literal hex — see header).
-const GOOD_COLOR = '#10b981';
-const WARN_COLOR = '#f59e0b';
-const CRIT_COLOR = '#f43f5e';
+const GOOD_COLOR = 'var(--good)';
+const WARN_COLOR = 'var(--warn)';
+const CRIT_COLOR = 'var(--crit)';
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -186,7 +186,13 @@ export function BullseyeTile({ stores, onOpenStore }) {
       const target = metric.getTarget(s);
       const pct = signedPct(metric, value, target);
       return {
-        loc, name: sNameC(loc), state: (INV_ORG_COORDS[loc] || {}).state || 'OK',
+        // #282 review (owner, 2026-08-14): defaulting an unmapped store into a real market
+        // (the old default was 'OK') is the exact shape of the v4.426 bug -- a store added to
+        // STORE_NAMES without a matching INV_ORG_COORDS entry would silently join that
+        // market's arc and quietly distort the comparison this tile exists to show. Currently
+        // unreachable (all 27 STORE_NAMES entries have a state), but an explicit sentinel that
+        // groups into its own "Unassigned" sector fails visibly instead of blending in.
+        loc, name: sNameC(loc), state: (INV_ORG_COORDS[loc] || {}).state || 'Unassigned',
         patch: patchByLoc[loc] || null, value, target, pct, band: bandKey(pct),
       };
     });
