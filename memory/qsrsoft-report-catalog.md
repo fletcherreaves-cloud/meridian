@@ -1588,3 +1588,284 @@ If a punch-level pull is ever built: **never include `ssn` in `selectCols`, neve
 Supabase, and never let it into a log line.** This repo already has a standing instruction to
 delete roster workbooks because they carry SSNs, DOBs and addresses. `geid` + `payrollID` identify
 a person adequately for every analysis Meridian does.
+
+---
+
+# `nsd` / `dsd` are the store and date GRAIN switches — captured 2026-08-15
+
+Three captures on the product family, read side by side, resolve the single question that was
+holding up **#292**: *what field identifies the store in a multi-store Product Mix response?*
+
+The answer is that the question was mis-framed. **There is no store field to find, because
+`nsd=s&dsd=s` told the API to roll the stores and the dates away.**
+
+| capture | `nsd` | `dsd` | NSNs in call | store field returned | date field returned |
+|---|---|---|---|---|---|
+| `product-mix-bundles` (#293, 1 store 1 day) | `s` | `s` | 1 | **none** | **none** |
+| `product-mix-bundles` (owner capture, below) | `s` | `s` | many | **none** | **none** |
+| `menuPriceComparison` | `d` | — | 3 | **`nsn`** ✅ | — (single day) |
+| `product/outages` | `d` | `d` | **27** | **`storeNum`** ✅ | **`date`** ✅ |
+
+Reading `s` = *summary* and `d` = *detail*, `nsd` controls the **store** dimension and `dsd` the
+**date** dimension. Every capture in this file is consistent with that, and nothing contradicts it.
+
+⚠️ **This is a hypothesis with a named test, not a measured fact.** The test is one capture:
+re-run the `product-mix-bundles` call **changing only `nsd=s&dsd=s` → `nsd=d&dsd=d`**. If row count
+expands to roughly *(stores × days × items×price)* and rows carry `storeNum` and `date`, it is
+confirmed. Until then do not build on it.
+
+**Why it matters more than it looks:** if confirmed, #292's district pull is **one request per day,
+not 27**, and `mapRow()` reads a real field instead of guessing. If it is wrong, #292 must pull one
+NSN per request and stamp `loc` and `dt` from the request parameters — never from the response.
+
+### The response carries key columns that `selectCols` never asked for
+
+The outage call requested `selectCols=description,familyGroup,outageTimestamp,restoredTimestamp`
+and every row came back with `menuItemNumber`, `storeNum` **and** `date` as well. So `selectCols`
+adds *measure* columns; the API supplies the **grain** columns on its own once `nsd`/`dsd` ask for
+that grain. A missing store column is therefore evidence about grain, not about `selectCols`.
+
+### The store field is named differently per endpoint
+
+`nsn` on `/reports/mcd/product/menuPriceComparison`, `storeNum` on `/reporting/v2/product/outages`
+and on the VOICE family (line ~373). Both are **unpadded integers** — the same zero-padding trap
+recorded twice already. `mapRow()`'s existing `r.storeNum ?? r.nsn` accepts both, which is correct;
+what it cannot do is invent one that was never returned.
+
+---
+
+# The owner's Product Mix capture is a MULTI-STORE ROLL-UP — measured, not assumed
+
+The 2,485-row `{"result":[…]}` payload sent 2026-08-15 has **no `storeNum` and no `date`**. That it
+mixes stores was proven by cross-matching it against the three store price books from
+`menuPriceComparison`, not by inference:
+
+- Dollar share sitting at a price that matches **store 3708's list price**: **23.9%**.
+  Widen to the **union of all three** books and it rises to **39.2%** — a 64% relative jump from
+  adding two stores. A single store's payload cannot behave that way.
+- Dollars matching **exactly one** store's book, so attributable: **3708 $12,586 · 5183 $9,089 ·
+  5985 $5,041**. All three stores are present simultaneously and in volume.
+- **Big Mac (item 5)** appears at **12 distinct price points** (4.89 … 6.99) while the three sampled
+  stores list only 4.99 / 5.09 / 5.39 — the rest belong to the other ~24 stores.
+- Density: **2,485 rows / 497 items = 5.0 price points per item**, against **441 / 314 = 1.4** for
+  the known single-store single-day capture.
+
+Total product dollars in the payload: **$113,554** (excluding `Non-product`).
+
+**Consequence for #291/#292:** this payload cannot be persisted as-is at any primary key, because
+the rows it would key on do not identify a store. `(loc, date, item, price)` — already correct on
+the branch — is the right PK; it just needs a response that actually carries `loc` and `date`.
+
+---
+
+# `menuPriceComparison` — the per-store LIST PRICE BOOK (captured 2026-08-15)
+
+```
+GET https://api.reports.myqsrsoft.com/reports/mcd/product/menuPriceComparison
+    ?nsd=d                                   ← per-store detail; this is what yields `nsn`
+    &nsn=3708,5183,5985                      ← comma list WORKS on this endpoint too
+    &orgId={uuid}&enterpriseName=McDonalds
+    &startDate=2026-08-14&endDate=2026-08-14&weekStart=3
+Referer: https://v3.myqsrsoft.com/reports/mcd/product/menuPriceComparison
+```
+UI name: **"RFM Price Comparison"**.
+
+```json
+{"resp":[{"nsn":3708,"menuItemNumber":5,"price":5.09,"priceEatin":5.09,"priceTakeout":5.09,
+          "priceDelivery":5.99,"deliveryPremium":0.1768,"description":"Big Mac",
+          "familyGroup":"Regular Entree","product":"5 - Big Mac"}]}
+```
+
+**Grain: one row per `(nsn, menuItemNumber)` — 0 duplicates in 1,966 rows** across 3 stores
+(679 / 626 / 661 items). Clean, unambiguous primary key. This is the *cleanest* grain of any
+product endpoint captured so far.
+
+## ⚠️ It is a price book, NOT a sales feed — it is not a shortcut for #291
+
+It carries **no `soldQty`, no `dollarsSold`, no cost fields**. It cannot answer anything #291 was
+filed for on its own. It is **complementary** to Product Mix, not a replacement:
+
+| | `menuPriceComparison` | `product-mix-bundles` |
+|---|---|---|
+| price meaning | **list** price (menu board) | **realized** price (what rang) |
+| per store | ✅ `nsn` | only at `nsd=d` (untested) |
+| volume / dollars | ❌ none | ✅ |
+| food & paper cost | ❌ none | ✅ |
+| delivery price | ✅ | ❌ |
+
+**Together they measure discount depth**, which neither does alone: `realized − list`, per item, per
+store. Measured against store 3708's book, only **23.9% of product dollars** rang at that store's
+list price — and most of the remainder is *other stores'* list prices (§ above), not discounting.
+Do not read the gap as discount depth until the roll-up is fixed.
+
+## `priceEatin` / `priceTakeout` — identical TODAY, but do not delete the columns
+
+**1,966 of 1,966 rows** have `price == priceEatin == priceTakeout`, and `priceEatin != priceTakeout`
+on **zero** rows. So there are **two** live channels in this data, not three: in-store and delivery.
+
+⚠️ **This is a property of Florida and Oklahoma, not of the API** (owner, 2026-08-15):
+
+> *"correct for FL and OK — the option exists in the POS due to some states having different taxes
+> for eat in vs take out … won't affect us now, but any even marginally thin potential roll-out and
+> adoption of this app should keep the door open on that one for flexibility down the road."*
+
+**Standing instruction: persist all three columns even though two are currently redundant, and
+carry this comment forward.** The split is a real POS capability that exists because some states tax
+prepared food differently for eat-in versus take-out. Collapsing the schema to `price` +
+`priceDelivery` would look like a tidy simplification today and would silently break the first
+multi-tenant deployment into such a state — and the collapse would be invisible, because the two
+columns would keep agreeing right up until they didn't. Storage is three floats per item per store.
+
+The **derived** eat-in/take-out comparison may be suppressed in the UI while the two agree; the
+**stored** columns must not be. This is the "never break working features" rule applied forward to a
+feature that does not exist yet.
+
+## `deliveryPremium` — formula confirmed, with two divide-by-zero behaviours
+
+`deliveryPremium == priceDelivery / price − 1` holds on **1,646 / 1,646** rows where `price > 0`.
+Where `price == 0` the API returns **`0`** if `priceDelivery` is also 0 (295 rows) and **`null`** if
+`priceDelivery > 0` (25 rows). It is a derived column — recompute it rather than trusting it, or
+store it and guard both cases.
+
+**Sanitation, mandatory before any aggregate:**
+- exclude `familyGroup === 'Non-product'` (94 rows) — `$0.01` placeholder fee items yield premiums
+  of **349×** (Small Order Fee) and **298×** (Delivery Fee) and will destroy any mean;
+- guard `price <= 0` (320 rows) — condiments and legacy SKUs.
+
+On the 1,579 clean product rows: **p10 +6.7% · median +20.5% · p90 +39.3% · max +146%**.
+
+## Two findings that are already actionable from one day of capture
+
+1. **114 rows (7.2% of clean product rows) carry a delivery premium of exactly ZERO** — sold on
+   a 3PO platform at the in-store price while the platform commission comes out of the same margin.
+2. **9 rows are NEGATIVE** — delivery priced *below* in-store. One is systematic rather than a
+   fat finger: **item 3655 `Sau Egg McMuff Ml-Hb` is negative at all three sampled stores**
+   (−11.1% / −7.9% / −10.5%). Also `594 McDouble Ml-Lrg` (−2.0%), `7526 Egg Biscuit Ml` at two
+   stores, `1231 20 McNug/2MFry Meal`, `4941`, and `25726 Bacn Caesr McCrispy` (−15.4%).
+
+Both are **list-price configuration facts**, independent of volume, so they are true findings from
+this endpoint alone and do not wait on #292. They are the first concrete Pricing-Engine output.
+
+## Why this endpoint is worth pulling on its own schedule
+
+`startDate`/`endDate` are native, so **price history is backfillable** — and a dated price book is
+the only way to establish *when* a price action took effect. That is the missing half of the owner's
+standing note that *"WE DID NOT PARTICIPATE IN THE WHOLE PRICE CHANGE STRATEGY"*: the book can
+confirm or refute it per store per item, rather than from memory. A price book changes rarely, so a
+daily pull is cheap and mostly no-ops.
+
+---
+
+# Product Outage — captured 2026-08-15, 27 stores × 14 days in ONE request
+
+```
+GET https://api.reports.myqsrsoft.com/reporting/v2/product/outages
+    ?catalogType=outages&reportType=currentOutages
+    &nsd=d&dsd=d                             ← per-store AND per-day detail
+    &nsn=3708,5183,…,43701                   ← ALL 27 NSNs, one call
+    &orgId={uuid}&enterpriseName=McDonalds
+    &startDate=2026-08-01&endDate=2026-08-14&weekStart=3
+    &familyGroup=BREAKFAST_DRINK,…,DESSERT
+    &selectCols=description,familyGroup,outageTimestamp,restoredTimestamp
+Referer: https://v3.myqsrsoft.com/reports/mcd/product/productOutage
+```
+
+```json
+{"result":[{"menuItemNumber":13,"description":"Fried Apple Pie","storeNum":3708,
+            "date":"2026-08-14","outageTimestamp":"2026-08-14 22:48:05",
+            "familyGroup":"Dessert"}]}
+```
+
+**A full district, a full fortnight, one HTTP call.** This is the cheapest pull in the catalog and
+the strongest confirmation of the comma-list pattern.
+
+## ⚠️ `restoredTimestamp` came back on 0 of 142 rows — duration is NOT available here
+
+It was in `selectCols` and it is absent from every row, because `reportType=currentOutages` returns
+outages that are **still open**. So this capture cannot answer *how long was it out*, only *that it
+went out*. **A second capture with a different `reportType` is required** before any duration,
+minutes-lost or restore-SLA metric is designed — do not build one against this shape and assume the
+field will appear. `reportType` values are otherwise undocumented; `productOutage`'s UI is the place
+to read them off.
+
+## What 142 rows over 12 days actually say
+
+- **24 of the 27 stores** logged at least one outage in 14 days. Three were clean.
+- **42 distinct `(storeNum, outageTimestamp)` events** produced those 142 item rows. **26 events
+  flagged more than one item.**
+- Family split: Regular Drink 72 · Misc/Shakes 36 · Dessert 19 · Breakfast Entree 13 ·
+  Regular Entree 2.
+- Most-flagged items: Big Mac Sauce Cup ×7 · Mighty Hot Sauce ×6 · Fried Apple Pie ×5 ·
+  2 Fried Apple Pie ×5 · Hny Brwn Bttr Bcn Eg ×5.
+
+## ⚠️ Never rank stores by ROW COUNT — the row is a SKU, the incident is the event
+
+The largest single events are **12 rows at 38609** (every Caramel-Apple-Pie beverage SKU at once)
+and **10 rows at 33109** (every XS drink size at once). One thing ran out; the POS flagged a dozen
+menu numbers. Store 35242 tops the row count at **30 rows — from 4 events**; 33109 has 16 rows,
+also from 4 events. **Ranking by row count ranks how finely a store's menu is subdivided.**
+
+This is the same un-normalised-count trap already recorded in this file for
+`security/top_contributors`, arriving from a second direction. Collapse to the event
+(`storeNum` + `outageTimestamp`) before counting, and normalise by that store's own trading days.
+
+Size SKUs inflate the family split the same way: Regular Drink is 51% of rows largely because S/M/L
+of one drink are three rows.
+
+## Primary key — do NOT repeat #292's mistake
+
+`(storeNum, date, menuItemNumber)` has **0 duplicates on these 142 rows**, and that is exactly how
+`(loc, date, item)` looked before it was measured on Product Mix and found to drop **29% of rows**.
+An item can go out, be restored, and go out again the same day. Key on
+**`(loc, dt, item, outage_ts)`** and let the sample be wrong rather than the schema.
+
+`date` is redundant with `outageTimestamp` — identical on 142/142 rows — but keep it as the
+partition column.
+
+## ⚠️ An "outage" is a MANAGER'S POS ACTION, not a measured out-of-stock
+
+This is the single most important thing to know before building anything on this feed, and it is not
+inferable from the payload. Owner, 2026-08-15:
+
+> *"it is tied to the POS in each location. When a manager puts a product on outage due to lack of
+> physical product available. Should never be many on there."*
+
+> *"there are lots of factors besides actually being out of product that can affect this. Equipment
+> being down (ABS or beverage dispenser for example could cause all XS size drinks in some cases),
+> cleaning (routine) of shake and sundae machine, and many more."*
+
+So every row is **a human marking an item unavailable in the POS**, for any reason. The measured
+data agrees: the largest events are whole equipment-shaped families going down together — 12
+Caramel-Apple-Pie beverage SKUs at 38609, 10 XS drink sizes at 33109, 3 Chocolate Shake sizes at
+29760, 6 Smoothie SKUs then 7 Frappe SKUs at 35242 an hour apart. Those read as one beverage
+dispenser and one shake machine, not as running out of twelve products.
+
+**Three consequences, all binding:**
+
+1. **Never label this "out of stock" in the UI.** It is *item unavailable*. A supply reading is one
+   hypothesis among several and the data cannot distinguish them.
+2. **Do not route it to ordering or FOB as a supply signal** without a cause dimension. An earlier
+   draft of this section said *"a repeated outage on one item is an ordering failure with a name"* —
+   **that is wrong and is retracted.** A nightly shake-machine clean would present identically.
+3. **Equipment and routine-cleaning outages are the interesting finding, not noise to strip.**
+   Recurring same-time, same-family events are an equipment-reliability and a
+   procedure-timing signal — the shake/sundae clean showing up in trading hours is a real
+   operational question. Cluster by `(store, family, time-of-day)` before drawing any conclusion.
+
+**"Should never be many on there"** is also a usable expectation: a store carrying a long or a
+long-lived outage list is itself the exception worth surfacing.
+
+**Next step before design: read the QSRSoft KB articles on the Product Outage report** (owner's
+suggestion) — specifically whether the POS records a *reason code* alongside the flag. If it does,
+one extra `selectCols` field separates supply from equipment from cleaning and the whole feed becomes
+several times more useful. If it does not, cause must be inferred from clustering and every
+downstream metric inherits that caveat.
+
+## Why it is still worth building: it makes lost sales measurable
+
+Outages join to Product Mix on `(store, date, menuItemNumber)`. That turns *"Fried Apple Pie was
+flagged unavailable at five stores"* into *"…and here is what each of those stores normally sells in
+that window."* No current Meridian panel can express an unavailable item at all, and it is a
+plausible partial explanation for both unexplained sales softness and for VOICE accuracy complaints
+— **whatever the cause**, the guest could not buy it. Lost sales is the one metric that is valid
+without knowing why the item was off, which makes it the right first build.
