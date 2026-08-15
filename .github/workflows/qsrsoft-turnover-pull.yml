@@ -57,8 +57,6 @@ jobs:
         env:
           VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
-          QSRSOFT_COGNITO_TOKEN:      ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
           QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
           TURNOVER_MONTHS:            ${{ github.event.inputs.months || '13' }}

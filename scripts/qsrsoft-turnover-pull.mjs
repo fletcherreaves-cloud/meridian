@@ -16,9 +16,16 @@
 //   one row per month in the window. jtcType=Crew ⇒ crew turnover (the review metric).
 // Parsed with parseTurnoverApi() from src/engine/people-reports.js (one source of truth).
 //
-// Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth ladder (mirrors the other people pulls):
-//   QSRSOFT_TOKEN → QSRSOFT_COGNITO_TOKEN  (direct)  →  QSRSOFT_USERNAME/PASSWORD (Playwright)
+// Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, QSRSOFT_USERNAME, QSRSOFT_PASSWORD
+// Auth (#312 conversion — the first of 14 scripts, one at a time, per real schedule):
+//   getFreshToken() mints a Cognito ID token per run  →  Playwright (fallback, unchanged)
+// QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN are no longer read here — #312's finding chain showed
+// they're a ~1h-TTL Cognito token stored as a secret, so a stored copy is stale ~23/24 hours
+// and this script has been running on the Playwright fallback permanently, by construction
+// (confirmed against this exact workflow's own history: run 31882938971, 2026-08-15, both
+// QSRSOFT_TOKEN and QSRSOFT_COGNITO_TOKEN rejected 401 before the Playwright fallback ran).
+// The two secrets are NOT deleted yet (#312 scope 4, held until this runs green on its real
+// schedule for several consecutive days) — see memory/project-qsrsoft-cognito-auth-312.md.
 // Optional:
 //   TURNOVER_MONTHS=13     — trailing months to pull (default 13)
 //   TURNOVER_START=YYYY-MM — explicit window start (overrides TURNOVER_MONTHS)
@@ -29,6 +36,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { parseTurnoverApi } from '../src/engine/people-reports.js';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const API_BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -215,23 +223,15 @@ async function main() {
   console.log(`[turnover] window ${first}…${last} · jtcType=${JTC} · ${STORE_NSNS.length} stores`);
 
   let rawRows = null;
-  const directTokens = [
-    ['QSRSOFT_TOKEN', (process.env.QSRSOFT_TOKEN || '').trim()],
-    ['QSRSOFT_COGNITO_TOKEN', (process.env.QSRSOFT_COGNITO_TOKEN || '').trim()],
-  ].filter(([, t]) => t);
-  for (const [name, tok] of directTokens) {
-    try {
-      console.log(`[auth] trying direct fetch with ${name}…`);
-      rawRows = await fetchDirect(tok);
-      console.log(`[auth] ✓ ${name} accepted`);
-      break;
-    } catch (e) {
-      if (e.message.startsWith('AUTH_FAILED')) { console.log(`[auth] ${name} rejected (${e.message}) — next method`); continue; }
-      throw e;
-    }
+  try {
+    console.log('[auth] minting a fresh Cognito token…');
+    const token = await getFreshToken();
+    rawRows = await fetchDirect(token);
+    console.log('[auth] ✓ minted token accepted');
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
   }
   if (rawRows == null) {
-    console.log('[auth] direct token(s) unavailable/rejected — falling back to Playwright');
     rawRows = await fetchViaPlaywright();
   }
   if (rawRows == null) { console.error('[turnover] ✗ no auth method succeeded'); process.exit(1); }
