@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
-    "amazon-cognito-identity-js": "^6.3.20",
     "chart.js": "^4.5.1",
     "dexie": "^4.4.4",
     "pdfjs-dist": "^6.1.200",
@@ -29,6 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/ui": "^4.1.9",
+    "amazon-cognito-identity-js": "^6.3.20",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

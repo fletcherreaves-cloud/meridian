@@ -115,7 +115,7 @@ async function main() {
     return;
   }
 
-  console.log('[probe] attempting USER_PASSWORD_AUTH (expected to fail — SPA defaults to SRP)...');
+  console.log('[probe] attempting USER_PASSWORD_AUTH...');
   const pwAttempt = await tryUserPasswordAuth();
 
   if (pwAttempt.ok) {
@@ -129,7 +129,7 @@ async function main() {
   }
 
   report({
-    'USER_PASSWORD_AUTH result': 'failed (expected)',
+    'USER_PASSWORD_AUTH result': 'failed',
     ErrorCode: pwAttempt.code || 'Unknown',
     ...(pwAttempt.challengeName ? { ChallengeName: pwAttempt.challengeName } : {}),
     SecretHashRequired: pwAttempt.secretHash ? 'yes' : 'no',
