@@ -76,14 +76,24 @@ Both are read-only. Both were flagged in this file as runnable; neither has been
 
 **Neither can be run from the PM sandbox.** Verified 2026-08-15: the anon key returns zero rows on
 `qsr_cash_sheet` (HTTP 200, empty) and `qsr_daily_activity` — that is RLS, not absence, and it must
-never be reported as "no data." `qsr_daily_activity` additionally returns a statement timeout on an
-unfiltered `limit=1`, so any dispatched query should filter on `dt` and select named columns rather
-than `*`.
+never be reported as "no data."
+
+**Always filter by `loc` and a date range.** An unfiltered `select=*` against `qsr_daily_activity`
+returns a statement timeout — that is **expected behaviour, not a defect and not a finding**: the
+table is 27 stores × hourly slots × years, and `supabase/schema-qsr-daily-activity-index.sql`
+indexes it on `dt` precisely so filtered reads use an index scan. A `dt`-filtered probe returned
+cleanly in the same session. Do not scope a measurement around the timeout; scope it around the
+index.
 
 These need either the owner's service-role shell or an engineer dispatch — the security constraints
-permit the engineer **read-only measurement** with service-role access, so this is dispatchable. It
-competes with the #301/#296-step-2/#292 queue for the one-task-in-flight slot, and it is the only
-work on the board with a hard external deadline.
+permit the engineer **read-only measurement** with service-role access.
+
+**Approved 2026-08-15 to run in parallel with the PR queue, with a constraint.** Rule 3's rationale
+is repo merge collisions, and a read-only measurement writes nothing — but since the engineer must
+run it, it is genuinely a second task in flight. It stays acceptable only as a **pure read: no
+branch, no commit, numbers reported back.** Whoever is free then writes them into this file, so
+exactly one session ever writes the repo. That preserves what rule 3 protects rather than its
+letter.
 
 **Standing instruction from this file, still in force: do not publish the DiD numbers until both are
 resolved.** Found by us first, they become a methodology section that demonstrates rigour; found by

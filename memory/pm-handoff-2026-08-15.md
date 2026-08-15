@@ -245,6 +245,22 @@ Recorded because they are the cheapest thing a successor can inherit.
   of theorising and found the grand-total row. That is the habit.
 - **Could not measure Supabase contents** — the anon key returns zero rows under RLS. That is RLS, not
   absence. Never report an unverifiable count as confirmed.
+- **Wrote a stale blocker into this handoff without checking the branch — in the document whose whole
+  purpose is to prevent that.** §2 said #292's primary key still needed rebuilding and "do not merge
+  until the rebuild lands." The engineer had already fixed it: the branch declares
+  `primary key (loc, date, item, price)` with a matching `onConflict`. The next PM caught it before
+  it became a duplicate dispatch, which is the review gate working. This is the CLAUDE.md rule
+  *"before assuming a 'next up' item is undone, verify against the actual code"* — a rule added after
+  a near-duplicate reimplementation — earning its place a second time, and the second time it was the
+  PM who tripped it. **A handoff board entry is a snapshot; verify any 'still open' item against the
+  branch before dispatching from it.** Owner's own note on this: the register is more useful than the
+  board.
+- **Framed an expected database behaviour as a caveat.** Reported `qsr_daily_activity` timing out on
+  an unfiltered `select=*` as though it constrained how a measurement should be scoped. It is a table
+  of 27 stores × hourly slots × years with a dedicated index file
+  (`supabase/schema-qsr-daily-activity-index.sql`, indexed on `dt`) — an unfiltered scan timing out is
+  what that table is supposed to do. Filter by `loc` and a date range. Scope a query around the index,
+  not around the symptom.
 - **Cited pre-squash commit hashes in durable docs, then squash-merged them out of existence.** This
   handoff and issues #302/#303 pointed at `6d732fd` / `771b186`; #304 squashed four commits into
   `0359b4e`, so those SHAs were never on `main` and every citation was dead on arrival. It was invisible
