@@ -108,6 +108,23 @@ and retains only **42% of dollars**, non-deterministically — and the rows it d
 > no error beyond a debug log. Needs a real multi-store capture (**strip `x-auth-token`**) or a
 > watched first live run. #292 needs a PM review, not an engineer dispatch.
 
+> ⚠️ **UPDATE (2026-08-15, measured on two new owner captures): the multi-store capture arrived, and
+> it reframes this blocker.** The store field was never missing because `mapRow()` guessed the wrong
+> name — it was missing because **`nsd=s&dsd=s` asked the API to roll the stores and dates away.**
+> Evidence, all measured: a `product/outages` call with **`nsd=d&dsd=d`** returned 27 stores × 14 days
+> in one request with **`storeNum` and `date` on every row** — neither of which was in `selectCols`,
+> so the API supplies grain columns once the grain is requested. A `menuPriceComparison` call with
+> `nsd=d` returned `nsn` per row. Both existing `product-mix-bundles` captures used `nsd=s&dsd=s` and
+> returned neither. Separately, the owner's 2,485-row Product Mix payload was **proven** to be a
+> multi-store roll-up by price-book cross-match (list-price dollar share 23.9% against one store's
+> book → 39.2% against three; Big Mac at 12 price points where three stores list three).
+>
+> **The test is one capture: re-run `product-mix-bundles` changing only `nsd=s&dsd=s` → `nsd=d&dsd=d`.**
+> If it confirms, #292 is one request per day rather than 27 and `mapRow()` reads a real field. If it
+> refutes, #292 must pull one NSN per request and stamp `loc`/`dt` from the request parameters, never
+> from the response. **This is a hypothesis with a named test — do not build on it until the capture
+> lands.** Full evidence table in `memory/qsrsoft-report-catalog.md`.
+
 **#269's residual:** in `scripts/check-data-completeness.mjs`,
 `if (inc.date_start < startDate || inc.date_end > endDate) continue;` means an out-of-window incident
 can **never** close. `DAYS_BACK` defaults to 60; `printRanking()` lists *all* open incidents ordered
