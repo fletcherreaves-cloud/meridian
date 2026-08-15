@@ -58,16 +58,36 @@ settled something the PM asserted from inference. See the corrections register i
 
 **Merged in the last two days:** #280 (v5.011), #284, #282 (v5.012), #293 (docs).
 
+**Merged 2026-08-15 (this session):** #297, #298 (v5.014), #301 (v5.015, +#306), #307, #308.
+`main` at `d9002fe`. Build **509.61 KB gzip / 340.39 KB headroom**, **1371/1371** tests.
+
 ### Open PRs — the live board
 
 | PR | What | PM state |
 |---|---|---|
-| **#298** | v5.014 — #295 Bullseye tile invisible in light mode | **NEW, unreviewed** |
-| **#301** | v5.015 — #296 step 1: border/stroke `rgba(255,255,255,X)` → tokens | **NEW, unreviewed** |
-| **#297** | #294 — retention probe drops a reconfirmed correction's history | **NEW, unreviewed** |
-| **#292** | #291 Product Mix real pull | **HELD** — primary-key blocker, see below |
+| **#292** | #291 Product Mix real pull | **REVIEWED 08-15, held** — needs the multi-store capture; see below |
 | **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase onto latest `main` |
 | **#269** | #263 + #265 pull-failure detection + completeness ledger | **HELD** — owner must run the SQL; plus one residual |
+
+### Open issues that are now the real queue
+
+| Issue | What | State |
+|---|---|---|
+| **#312** | Mint the QSRSoft Cognito token at runtime | **probe dispatched 08-15** — see §3 note 1 |
+| **#296 step 2** + **#303** | Remaining ~265 white-alpha sites; `actVsNeed` sourcing | **dispatched 08-15**, land together |
+| **#311** | Fallback masks token expiry | **superseded in part by #312** — do #312 first |
+| **#306** | Bullseye dark-mode tab | ✅ closed via #301 |
+
+**#296 step 2 is not the low-urgency half, and the reason is an identity, not a threshold.**
+White-alpha over a white surface *is* that surface, so every alpha from `.01` to `.85` composites to
+the identical pixel on the two pure-white light themes (`command`, `dualbrand`) — measured against the
+built `dist`. Of the 265 remaining sites, **23 are colour-role: invisible TEXT**, which reads to a user
+as "no data" rather than as a rendering fault. Light is the shipped default (owner-confirmed), so this
+is the default path. **`at-a-glance.js:2134` is not a colour fix** — it shares `actVsNeed` with #303,
+both panels bypass `metric-source.js`, and `at-a-glance` additionally calls `avgOf` without `anyMode`,
+dropping every negative and zero. It biases the number positive and then paints positive white-on-white,
+so fixing only the colour would surface a systematically wrong value. Route both through
+`metricAvg(ds,loc,range,'actVsNeed')`.
 
 **#292's blocker, quantified:** a primary key of `(loc, date, item)` drops **127 of 441 rows (29%)**
 and retains only **42% of dollars**, non-deterministically — and the rows it drops are exactly the
@@ -104,8 +124,22 @@ in PRs #298/#301/#297 awaiting PM review.
 
 ## 3. What the owner owes (his action list — keep it in front of him)
 
-1. **Cycle the QSRSoft session — URGENT.** He has pasted a live `x-auth-token` in plaintext at least
-   **four** times. Strip `x-auth-token` from every capture; never write one to a file or a commit.
+1. ✅ **Cycle the QSRSoft session — DONE 2026-08-15**, and both token secrets rotated. **Do not
+   re-raise the cycle itself.** Strip `x-auth-token` from every capture regardless; never write one to
+   a file or a commit.
+   ⚠️ **But rotation is a stopgap that cannot hold, and this is the important part.** The two secrets
+   are **one credential** (owner-confirmed; `qsrsoft-variance-pull.mjs:176` falls back
+   `COGNITO || TOKEN`), and it is a Cognito **ID token with a ~1h TTL**
+   (`qsrsoft-variance-pull.mjs:74-77`). A stored secret is therefore expired for ~23 of every 24
+   hours, so **all 14 QSRSoft scripts have been running on the Playwright fallback permanently, by
+   construction** — the leg CLAUDE.md records as unreliable as of 2026-08. This was already visible
+   and mis-filed as a performance note on 2026-07-28 (*"stale/401 — refresh for faster runs, not
+   blocking"*). **#312 is the fix**: mint the token per-run via Cognito `InitiateAuth`, delete both
+   secrets, and the "paste a live token" exposure stops existing as a category. Config is already
+   known — pool `us-east-1_OdhPNFLDP`, client `2vt4qrqcakbeo9sh0ivli3lbui`, `us-east-1`, using the
+   existing `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`. Confirmed clear: not federated SSO
+   (`qsrsoft-ops-pull.mjs:197-201` fills a plain email/password form, no IdP redirect) and **MFA is
+   off** (owner-confirmed). Expect SRP rather than `USER_PASSWORD_AUTH`.
 2. **Run `supabase/schema-data-completeness.sql`** — this is the only thing blocking #269.
 3. Rate the **remaining 12 stores** — the cohort closes **2026-09-03**.
 4. **Reconcile the 5-of-20 binary to exactly five** *before* looking at scheduling data.
@@ -275,8 +309,13 @@ Recorded because they are the cheapest thing a successor can inherit.
 
 ## 8. Security constraints (verbatim intent — preserve on every future handoff)
 
-- **Strip `x-auth-token` from every capture.** Never write one to a file or a commit. The owner must
-  **cycle the QSRSoft session** — still outstanding after four exposures.
+- **Strip `x-auth-token` from every capture.** Never write one to a file or a commit. The session
+  cycle is ✅ **done (2026-08-15)** — do not re-raise it. The standing constraint is the stripping,
+  not the cycle.
+  **Sequence any future capture request behind a rotation**, never alongside one: asking for a
+  capture asks the owner to handle a live token again, so a request that unblocks work would
+  otherwise be the same thing keeping the exposure open. **#312 removes the need entirely** by
+  minting the token per-run — treat it as a security item, not a performance one.
 - **Never pull or persist `ssn`.** `geid` + `payrollID` identify a person adequately for every analysis
   Meridian performs. Roster workbooks carrying SSNs/DOBs/addresses are to be deleted.
 - Supabase **anon/publishable key is public by design**; the **service-role key is exported into the
