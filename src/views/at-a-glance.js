@@ -52,7 +52,7 @@ function SageRunsTile() {
       h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Auto-run prompt results · manage in SAGE → 📚 Prompts')));
   if (runs === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   if (!runs.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No scheduled runs yet. In SAGE, save a prompt (📚 Prompts) and set a schedule to have it run automatically — results land here.'));
-  return card(head, h('div', null, ...runs.map(r => h('div', { key: r.id, style: { padding: '8px 14px', borderBottom: '.5px solid rgba(255,255,255,.05)' } },
+  return card(head, h('div', null, ...runs.map(r => h('div', { key: r.id, style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
       h('span', { style: { width: 6, height: 6, borderRadius: '50%', background: r.ok ? '#10b981' : '#ef4444', flexShrink: 0 } }),
       h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text,#e8eaed)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.title || 'Prompt'),
@@ -829,7 +829,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   const KpiRow=({label,val,okAvg,flAvg,tgt,fmtFn,goodDir})=>{
     const tgtClr=tgt!=null&&val!=null?(goodDir==='low'?val<=tgt:val>=tgt)?'#10b981':'#f87171':'transparent';
-    return div({style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+    return div({style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'.5px solid var(--bdr)'}},
       div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},label),
       div({style:{fontSize:'11px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text)',width:70}},(fmtFn?fmtFn(val):(val!=null?val.toFixed(1):' — '))),
       tgt!=null&&div({style:{width:8,height:8,borderRadius:'50%',background:tgtClr,flexShrink:0}}),
@@ -1509,7 +1509,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ),
         // Period label — always visible
         div({style:{fontSize:'10px',padding:'4px 10px',borderRadius:4,
-          background:'rgba(255,255,255,.18)',border:'.5px solid rgba(255,255,255,.4)',
+          background:'rgba(255,255,255,.18)',border:'.5px solid var(--bdr2)',
           color:'#fff',fontWeight:500,letterSpacing:'.2px',whiteSpace:'nowrap'}},
           dateRange&&dateRange.s?
             dateRange.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+
@@ -1529,7 +1529,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               style:{fontSize:'9px',padding:'2px 8px',borderRadius:3,cursor:'pointer',fontWeight:500,
                 background:commentMode===m?'rgba(245,158,11,.35)':'rgba(255,255,255,.18)',
                 color:commentMode===m?'var(--amber)':'#fff',
-                border:commentMode===m?'.5px solid rgba(245,158,11,.6)':'.5px solid rgba(255,255,255,.4)'},
+                border:commentMode===m?'.5px solid rgba(245,158,11,.6)':'.5px solid var(--bdr2)'},
               onClick:()=>{setCommentMode(m);if(m==='ai'&&!aiComment)fetchAIComment();}},
               m==='rule'?'Rule-Based':'AI Narrative'))
           )
@@ -1738,7 +1738,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           // Signal row helper
           const sigRow=(icon,label,valStr,subStr,col,statusDot,navFn)=>
             div({key:label,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',
-              borderBottom:'.5px solid rgba(255,255,255,.05)',cursor:navFn?'pointer':'default'},
+              borderBottom:'.5px solid var(--bdr)',cursor:navFn?'pointer':'default'},
               onClick:navFn||undefined},
               span({style:{fontSize:'14px',width:20,textAlign:'center'}},icon),
               div({style:{flex:1,minWidth:0}},
@@ -2097,7 +2097,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             ].map((row,i)=>{
               const clr=row.tgt!=null&&row.val!=null?(row.goodDir==='low'?row.val<=row.tgt:row.val>=row.tgt)?'#10b981':'#f87171':'var(--text)';
               return div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',
-                borderBottom:i<4?'.5px solid rgba(255,255,255,.04)':'none'}},
+                borderBottom:i<4?'.5px solid var(--bdr)':'none'}},
                 div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},row.label),
                 div({style:{fontSize:'11px',fontFamily:'var(--mono)',fontWeight:600,color:clr,width:48}},
                   row.val!=null?row.fmt(row.val):'—'),
@@ -2158,7 +2158,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               {label:'OT Hours',val:ctrlSec.otHrs,ok:null,fl:null,fmt:v=>(v||0).toFixed(1)+'h',goodDir:'low'},
             ].map((row,i)=>
               div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 0',
-                borderBottom:i<8?'.5px solid rgba(255,255,255,.04)':'none'}},
+                borderBottom:i<8?'.5px solid var(--bdr)':'none'}},
                 div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},row.label),
                 div({style:{fontSize:'10px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text)',width:64}},
                   row.val!=null?row.fmt(row.val):'—'),
@@ -2237,7 +2237,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 )
               ),
               // Disc/Coupon — tracked but not included in FOB calculation
-              div({style:{marginTop:4,paddingTop:4,borderTop:'.5px dashed rgba(255,255,255,.1)'}},
+              div({style:{marginTop:4,paddingTop:4,borderTop:'.5px dashed var(--bdr)'}},
                 div({style:{display:'flex',flexDirection:'column',
                   padding:'2px 5px',borderRadius:3,background:'rgba(255,255,255,.02)'}},
                   div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -2319,7 +2319,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 {icon:'\uD83D\uDCF2',label:'MOP',pct:digitalSec.mopPct,ok:digitalSec.okMopPct,fl:digitalSec.flMopPct,clr:'#34d399'},
                 {icon:'\u2328\uFE0F',label:'Kiosk',pct:digitalSec.kioskPct,ok:digitalSec.okKioskPct,fl:digitalSec.flKioskPct,clr:'#a78bfa'},
               ].map((ch,i)=>div({key:'ch'+i,style:{padding:'6px',borderRadius:5,textAlign:'center',
-                background:'rgba(255,255,255,.03)',border:'.5px solid rgba(255,255,255,.07)'}},
+                background:'rgba(255,255,255,.03)',border:'.5px solid var(--bdr)'}},
                 div({style:{fontSize:'10px',marginBottom:2}},ch.icon),
                 div({style:{fontSize:'12px',fontWeight:800,fontFamily:'var(--mono)',color:ch.clr}},
                   ch.pct!=null?((ch.pct||0)*100).toFixed(2)+'%':'--'),
@@ -2392,13 +2392,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   // Background pentagons
                   ...[1,.67,.33].map((pct,gi)=>
                     h('polygon',{key:'g'+gi,points:gPoly(maxR*pct),
-                      fill:'none',stroke:'rgba(255,255,255,.08)',strokeWidth:.5})
+                      fill:'none',stroke:'var(--bdr)',strokeWidth:.5})
                   ),
                   // Axis spokes
                   ...METRICS.map((m,i)=>{
                     const [ax,ay]=pt(m.angle,maxR);
                     return h('line',{key:'sp'+i,x1:100,y1:100,x2:ax.toFixed(1),y2:ay.toFixed(1),
-                      stroke:'rgba(255,255,255,.12)',strokeWidth:.5});
+                      stroke:'var(--bdr)',strokeWidth:.5});
                   }),
                   // Data fill polygon
                   h('polygon',{points:dataPoly,
@@ -2523,8 +2523,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   textTransform:'uppercase',marginBottom:4}},'▲ Top 3 — '+label),
                 ...top3.map((s,i)=>h(StoreRow,{key:'t'+s.loc,s,rank:i,isTop:true})),
                 avg!=null&&div({style:{textAlign:'center',fontSize:'8px',color:'var(--text3)',
-                  padding:'4px 0',borderTop:'.5px dashed rgba(255,255,255,.1)',
-                  borderBottom:'.5px dashed rgba(255,255,255,.1)',margin:'4px 0'}},
+                  padding:'4px 0',borderTop:'.5px dashed var(--bdr)',
+                  borderBottom:'.5px dashed var(--bdr)',margin:'4px 0'}},
                   'District Avg: '+fmt(avg)+' ('+data.length+' stores)'),
                 div({style:{fontSize:'8px',color:'#f87171',fontWeight:700,letterSpacing:'.5px',
                   textTransform:'uppercase',margin:'4px 0'}},'▼ Bottom 3 — '+label),
@@ -2600,7 +2600,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   const vsClr=vsLYNum==null?'var(--text3)':vsLYNum>=0?'#10b981':'#f87171';
                   const vsLYActNum=vsLYAct!=null?parseFloat(vsLYAct):null;
                   const vsActClr=vsLYActNum==null?'var(--text3)':vsLYActNum>=0?'#10b981':'#f87171';
-                  return h('tr',{key:sp.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
+                  return h('tr',{key:sp.loc,style:{borderBottom:'.5px solid var(--bdr)',
                     background:si%2===0?'transparent':'rgba(255,255,255,.02)'}},
                     h('td',{style:{padding:'4px 6px',color:'var(--text)',whiteSpace:'nowrap',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',fontSize:'10px'}},
                       span({style:{marginRight:4,fontSize:'7px',color:sp.org==='MCDOK'?'#60a5fa':'#34d399'}},sp.org==='MCDOK'?'OK':'FL'),

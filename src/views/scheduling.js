@@ -504,7 +504,7 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
   });
   const thS = (left) => ({ padding:'6px 10px', fontSize:9.5, color:TEXT3, textTransform:'uppercase', letterSpacing:'.5px', fontWeight:600, borderBottom:`1px solid ${BDR}`, whiteSpace:'nowrap', textAlign:left?'left':'right' });
   const tdS = (color, left) => ({ padding:'5px 10px', fontSize:11.5, color:color||TEXT2, textAlign:left?'left':'right', borderBottom:`1px solid ${BDR}`, whiteSpace:'nowrap' });
-  const tdDay = (color, left) => ({ padding:'4px 10px', fontSize:11, color:color||TEXT3, textAlign:left?'left':'right', borderBottom:`1px solid rgba(255,255,255,.04)`, whiteSpace:'nowrap' });
+  const tdDay = (color, left) => ({ padding:'4px 10px', fontSize:11, color:color||TEXT3, textAlign:left?'left':'right', borderBottom:`1px solid var(--bdr)`, whiteSpace:'nowrap' });
 
   const pluSign = v => (v > 0 ? '+' : '') + v.toFixed(1);
   const hrColor = diff => diff > 5 ? RED : diff > 0 ? AMBER : diff < -5 ? GREEN : TEXT2;

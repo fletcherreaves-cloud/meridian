@@ -122,7 +122,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
 
   const selStyle = { fontSize: 10, padding: '3px 7px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', colorScheme: 'dark', cursor: 'pointer' };
   const th = { padding: '5px 6px', fontSize: 8, fontWeight: 700, color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', background: 'var(--surf2)', position: 'sticky', top: 0, zIndex: 1 };
-  const td = { padding: '3px 6px', fontSize: 10, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap' };
+  const td = { padding: '3px 6px', fontSize: 10, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap' };
   const jobTh = j => h('th', { key: j, title: j + ' — click to sort', onClick: () => setSortBy(j), style: { ...th, textAlign: 'center', cursor: 'pointer', writingMode: 'vertical-rl', transform: 'rotate(180deg)', height: 92, verticalAlign: 'bottom', color: sortBy === j ? 'var(--amber)' : 'var(--text3)' } }, j);
 
   const skillCell = (e, j) => { const v = (e.skills || {})[j]; const dim = minRating > 0 && (!v || v < minRating);

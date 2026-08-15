@@ -432,7 +432,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
     oppDollar:{fontSize:'14px',fontWeight:800,color:'#10b981',margin:'3px 0'},
     oppDetail:{fontSize:'10px',color:'var(--text2)',lineHeight:1.5,marginBottom:3},
     oppAction:{fontSize:'10px',color:'#818cf8',lineHeight:1.4},
-    findRow:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'8px 0',borderBottom:'.5px solid rgba(255,255,255,.04)',gap:12},
+    findRow:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'8px 0',borderBottom:'.5px solid var(--bdr)',gap:12},
   };
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
     div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
@@ -603,7 +603,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
                 stats.stores.map(function(s){
                   var sR=liBuildRoadmap(s),top=sR[0],isExp=expandedStore===s.loc;
                   return div({key:s.loc},
-                    div({style:{padding:'9px 14px',borderBottom:'.5px solid rgba(255,255,255,.04)',cursor:'pointer',display:'flex',alignItems:'center',gap:10,background:isExp?'var(--adim)':'transparent'},
+                    div({style:{padding:'9px 14px',borderBottom:'.5px solid var(--bdr)',cursor:'pointer',display:'flex',alignItems:'center',gap:10,background:isExp?'var(--adim)':'transparent'},
                       onClick:function(){setExpandedStore(isExp?null:s.loc);}},
                       div({style:{fontSize:'11px',fontWeight:600,flex:1}},s.name),
                       div({style:{fontSize:'10px',color:'var(--text3)'}},fmtD(s.annualSales)+' ann.'),

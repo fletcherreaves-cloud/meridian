@@ -162,7 +162,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
 
   const selStyle = { fontSize: 10, padding: '3px 7px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', colorScheme: 'dark', cursor: 'pointer' };
   const th = { padding: '6px 8px', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.3px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
-  const td = { padding: '4px 8px', fontSize: 10.5, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
+  const td = { padding: '4px 8px', fontSize: 10.5, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
 
   const cell = (r, col) => {
     const tip = col.title ? col.title(r) : null;

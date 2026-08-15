@@ -93,7 +93,7 @@ function TaskCard({ task, onUpdate, onDelete }) {
   };
 
   return div({ style:{ borderRadius:8, overflow:'hidden', marginBottom:8,
-    border:`.5px solid rgba(255,255,255,.08)`, background:'var(--surf2)',
+    border:`.5px solid var(--bdr)`, background:'var(--surf2)',
     borderLeft:`3px solid ${tierColor}` }},
 
     // ── Collapsed row ──
@@ -117,7 +117,7 @@ function TaskCard({ task, onUpdate, onDelete }) {
     ),
 
     // ── Expanded ──
-    open && div({ style:{ padding:'0 14px 14px', borderTop:'.5px solid rgba(255,255,255,.06)' }},
+    open && div({ style:{ padding:'0 14px 14px', borderTop:'.5px solid var(--bdr)' }},
 
       task.description && div({ style:{ fontSize:12, color:'var(--text2)', lineHeight:1.5,
         padding:'10px 0 12px' }}, task.description),
@@ -453,7 +453,7 @@ function SessionNotesTab() {
           : notes.map(n =>
               div({ key:n.id, style:{ marginBottom:10, padding:'12px 14px', borderRadius:8,
                 background:n.consumed?'transparent':'rgba(245,188,0,.04)',
-                border:`.5px solid ${n.consumed?'rgba(255,255,255,.06)':'rgba(245,188,0,.2)'}` }},
+                border:`.5px solid ${n.consumed?'var(--bdr)':'rgba(245,188,0,.2)'}` }},
                 div({ style:{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }},
                   div({ style:{ fontSize:12, color:n.consumed?'var(--text3)':'var(--text)',
                     lineHeight:1.5, flex:1, whiteSpace:'pre-wrap' }}, n.body),
@@ -462,7 +462,7 @@ function SessionNotesTab() {
                       timeAgo(n.created_at)),
                     !n.consumed && btn({ onClick:()=>consume(n.id),
                       style:{ fontSize:'9px', padding:'3px 8px', borderRadius:4,
-                        border:'.5px solid rgba(255,255,255,.15)', background:'transparent',
+                        border:'.5px solid var(--bdr2)', background:'transparent',
                         color:'var(--text3)', cursor:'pointer' }},
                       '✓ Mark read')
                   )
@@ -557,7 +557,7 @@ export function TaskQueuePanel({ onClose }) {
     ].map(f =>
       btn({ key:f.key, onClick:()=>setFilter(f.key),
         style:{ padding:'7px 14px', borderRadius:99, whiteSpace:'nowrap',
-          border:`.5px solid ${filter===f.key?'var(--gold)':'rgba(255,255,255,.12)'}`,
+          border:`.5px solid ${filter===f.key?'var(--gold)':'var(--bdr)'}`,
           background:filter===f.key?'rgba(245,188,0,.12)':'transparent',
           color:filter===f.key?'var(--gold)':'var(--text3)',
           fontSize:12, fontWeight:filter===f.key?700:400, cursor:'pointer' }},
@@ -573,7 +573,7 @@ export function TaskQueuePanel({ onClose }) {
     padding:'0 16px 10px', overflowX:'auto', flexWrap:'nowrap', borderBottom:'.5px solid var(--bdr)' }},
     btn({ onClick:()=>setCatFilter('all'),
       style:{ padding:'5px 12px', borderRadius:99, whiteSpace:'nowrap',
-        border:`.5px solid ${catFilter==='all'?'var(--text3)':'rgba(255,255,255,.12)'}`,
+        border:`.5px solid ${catFilter==='all'?'var(--text3)':'var(--bdr)'}`,
         background:catFilter==='all'?'rgba(255,255,255,.06)':'transparent',
         color:catFilter==='all'?'var(--text)':'var(--text3)',
         fontSize:11, fontWeight:catFilter==='all'?700:400, cursor:'pointer' }},

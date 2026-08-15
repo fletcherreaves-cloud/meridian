@@ -614,14 +614,14 @@ function renderMarkdown(text) {
           h('thead', null, h('tr', null,
             header.map((cell, i) => h('th', { key: i, style: {
               padding: '5px 10px', background: 'rgba(245,158,11,.1)', color: amber,
-              fontWeight: 700, textAlign: align[i], border: '1px solid rgba(255,255,255,.1)',
+              fontWeight: 700, textAlign: align[i], border: '1px solid var(--bdr)',
               fontSize: 10, textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap',
             } }, cell))
           )),
           h('tbody', null,
             body.map((row, ri) => h('tr', { key: ri },
               row.map((cell, ci) => h('td', { key: ci, style: {
-                padding: '4px 10px', border: '1px solid rgba(255,255,255,.07)', fontSize: 11,
+                padding: '4px 10px', border: '1px solid var(--bdr)', fontSize: 11,
                 color: 'var(--text,#f1f5f9)', textAlign: align[ci] || 'left',
                 fontVariantNumeric: align[ci] === 'right' ? 'tabular-nums' : 'normal',
                 whiteSpace: align[ci] === 'right' ? 'nowrap' : 'normal',
@@ -643,7 +643,7 @@ function renderMarkdown(text) {
 
     if (!t) { elements.push(h('div', { key: k(), style: { height: 6 } })); continue; }
     if (t === '---' || t === '***' || t.match(/^─+$/)) {
-      elements.push(h('hr', { key: k(), style: { border: 'none', borderTop: '1px solid rgba(255,255,255,.1)', margin: '10px 0' } }));
+      elements.push(h('hr', { key: k(), style: { border: 'none', borderTop: '1px solid var(--bdr)', margin: '10px 0' } }));
       continue;
     }
     if (t.startsWith('### ')) {
@@ -825,11 +825,11 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
     setTimeout(onClose, 900);
   };
 
-  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
-  const seg = (val, label, hint) => h('button', { onClick: () => setDest(val), title: hint, style: { flex: 1, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (dest === val ? amber : 'rgba(255,255,255,.12)'), background: dest === val ? 'rgba(245,158,11,.14)' : 'transparent', color: dest === val ? amber : muted } }, label);
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  const seg = (val, label, hint) => h('button', { onClick: () => setDest(val), title: hint, style: { flex: 1, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, border: '1px solid ' + (dest === val ? amber : 'var(--bdr)'), background: dest === val ? 'rgba(245,158,11,.14)' : 'transparent', color: dest === val ? amber : muted } }, label);
 
   return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
-    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
+    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid var(--bdr)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '🐞 Log this as an issue'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Turn SAGE’s response into a tracked ticket with a ready-to-run troubleshooting prompt.' + (src ? ' Detected source: ' + src.label + '.' : '')),
       h('div', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: muted, marginBottom: 5 } }, 'Where should this go?'),
@@ -846,7 +846,7 @@ function LogIssueModal({ question, answer, conversation, onClose }) {
         h('select', { value: priority, onChange: e => setPriority(e.target.value), style: { ...fld, width: 'auto', padding: '5px 8px', colorScheme: 'dark' } },
           h('option', { value: 'high' }, 'High'), h('option', { value: 'medium' }, 'Medium'), h('option', { value: 'low' }, 'Low')),
         h('span', { style: { flex: 1, fontSize: 10, color: msg.startsWith('⚠') ? red : grn } }, msg),
-        h('button', { onClick: onClose, style: { padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Cancel'),
+        h('button', { onClick: onClose, style: { padding: '6px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Cancel'),
         h('button', { onClick: doSave, disabled: saving, style: { padding: '6px 16px', borderRadius: 6, border: 'none', background: amber, color: '#000', fontSize: 11, fontWeight: 800, cursor: saving ? 'default' : 'pointer' } }, saving ? '…' : 'Create'))));
 }
 
@@ -866,7 +866,7 @@ function KbViewerModal({ onClose, onAskSage }) {
     try { setResults(await searchQsrKb(t, { limit: 30 }) || []); } catch { setResults([]); }
     setBusy(false);
   }, [q]);
-  const card = { background: 'var(--surf,#0f1117)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '86vh', overflow: 'auto', padding: 18, position: 'relative' };
+  const card = { background: 'var(--surf,#0f1117)', border: '1px solid var(--bdr)', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '86vh', overflow: 'auto', padding: 18, position: 'relative' };
   return createPortal(
     h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.72)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 } },
       h('div', { onClick: e => e.stopPropagation(), style: card },
@@ -876,19 +876,19 @@ function KbViewerModal({ onClose, onAskSage }) {
         h('div', { style: { display: 'flex', gap: 7, marginBottom: 12 } },
           h('input', { value: q, autoFocus: true, placeholder: 'e.g. stat variance, OEPE, raw item report, red model…',
             onChange: e => setQ(e.target.value), onKeyDown: e => { if (e.key === 'Enter') run(); },
-            style: { flex: 1, background: 'var(--surf2,#161a22)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 7, padding: '8px 10px', color: 'var(--text,#f1f5f9)', fontSize: 13 } }),
+            style: { flex: 1, background: 'var(--surf2,#161a22)', border: '1px solid var(--bdr)', borderRadius: 7, padding: '8px 10px', color: 'var(--text,#f1f5f9)', fontSize: 13 } }),
           h('button', { onClick: () => run(), disabled: busy, style: { background: amber, color: '#000', border: 'none', borderRadius: 7, padding: '8px 16px', fontWeight: 800, fontSize: 12, cursor: busy ? 'default' : 'pointer' } }, busy ? '…' : 'Search')),
         busy && h('div', { style: { color: muted, fontSize: 12, padding: '10px 2px' } }, 'Searching…'),
         !busy && ran && !results.length && h('div', { style: { color: muted, fontSize: 12, padding: '10px 2px' } }, `No articles matched "${q}". Try different terms.`),
         !busy && h('div', null, results.map((a, i) => {
           const isOpen = open === i;
-          return h('div', { key: a.id || i, style: { border: '1px solid rgba(255,255,255,.1)', borderRadius: 8, marginBottom: 7, background: 'var(--surf2,#161a22)', overflow: 'hidden' } },
+          return h('div', { key: a.id || i, style: { border: '1px solid var(--bdr)', borderRadius: 8, marginBottom: 7, background: 'var(--surf2,#161a22)', overflow: 'hidden' } },
             h('div', { onClick: () => setOpen(o => o === i ? null : i), style: { padding: '9px 11px', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'baseline' } },
               h('span', { style: { color: amber, fontSize: 11 } }, isOpen ? '▾' : '▸'),
               h('div', { style: { flex: 1 } },
                 h('div', { style: { fontSize: 12.5, fontWeight: 700, color: 'var(--text,#f1f5f9)' } }, a.title || '(untitled)'),
                 h('div', { style: { fontSize: 10, color: muted, marginTop: 1 } }, [a.category, a.section].filter(Boolean).join(' · ')))),
-            isOpen && h('div', { style: { padding: '2px 12px 11px', borderTop: '1px solid rgba(255,255,255,.06)' } },
+            isOpen && h('div', { style: { padding: '2px 12px 11px', borderTop: '1px solid var(--bdr)' } },
               h('div', { style: { fontSize: 12, color: 'var(--text2,#cbd5e1)', lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto', marginTop: 8 } }, (a.bodyText || '').trim() || '(no text captured)'),
               h('div', { style: { display: 'flex', gap: 8, marginTop: 10 } },
                 h('button', { onClick: () => onAskSage(a), style: { background: 'transparent', border: `1px solid ${amber}`, color: amber, borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' } }, '🧠 Explain with SAGE'),
@@ -954,10 +954,10 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClos
   const openSched = p => { setSdraft({ freq: p.scheduleFreq || 'daily', hour: p.scheduleHour != null ? p.scheduleHour : 13, dow: p.scheduleDow != null ? p.scheduleDow : 1 }); setSchedFor(p.id); };
   const saveSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: true, hour: +sdraft.hour, freq: sdraft.freq, dow: +sdraft.dow }); setSchedFor(null); onRefresh(); };
   const clearSched = async (p) => { await updateSagePromptSchedule(p.id, { enabled: false }); setSchedFor(null); onRefresh(); };
-  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
-  const miniSel = { fontSize: 10.5, padding: '3px 6px', background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.14)', borderRadius: 5, color: 'var(--text,#f1f5f9)', colorScheme: 'dark' };
+  const fld = { width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '7px 9px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 6, color: 'var(--text,#f1f5f9)', fontFamily: 'inherit' };
+  const miniSel = { fontSize: 10.5, padding: '3px 6px', background: 'rgba(255,255,255,.05)', border: '1px solid var(--bdr)', borderRadius: 5, color: 'var(--text,#f1f5f9)', colorScheme: 'dark' };
   return h('div', { onClick: onClose, style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
-    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid rgba(255,255,255,.12)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
+    h('div', { onClick: e => e.stopPropagation(), style: { background: 'var(--surf,#1e293b)', border: '1px solid var(--bdr)', borderRadius: 12, width: 'min(560px,96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 16, boxShadow: '0 16px 56px rgba(0,0,0,.5)' } },
       h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#f1f5f9)', marginBottom: 2 } }, '📚 Prompt library'),
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Save prompts you run often; use, re-run, or schedule them to run automatically. Scheduled results land on the At-A-Glance “Scheduled Runs” tile.'),
       h('div', { style: { marginBottom: 6 } },
@@ -969,31 +969,31 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClos
           h('button', { onClick: saveCurrent, disabled: busy, style: { padding: '7px 14px', borderRadius: 6, border: 'none', background: canSave ? amber : 'rgba(245,158,11,.25)', color: canSave ? '#000' : 'rgba(245,158,11,.85)', fontSize: 11, fontWeight: 800, cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap', opacity: busy ? 0.6 : 1 } }, busy ? '…' : '★ Save'))),
       msg && h('div', { style: { fontSize: 10, color: msg.startsWith('⚠') ? red : grn, marginBottom: 8 } }, msg),
       // This chat's prompts — multi-select to save individually or combine into one saved prompt.
-      chatPrompts.length > 0 && h('div', { style: { marginBottom: 8, border: '1px solid rgba(255,255,255,.08)', borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.02)' } },
+      chatPrompts.length > 0 && h('div', { style: { marginBottom: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.02)' } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 } },
           h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, flex: 1 } }, 'This chat\'s prompts' + (sel.size ? ' · ' + sel.size + ' selected' : '')),
-          h('button', { onClick: combineIntoDraft, disabled: busy, title: 'Combine the selected prompts into the box above to edit & save as one', style: { fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, cursor: 'pointer', whiteSpace: 'nowrap' } }, '⧉ Combine → edit'),
+          h('button', { onClick: combineIntoDraft, disabled: busy, title: 'Combine the selected prompts into the box above to edit & save as one', style: { fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'transparent', color: muted, cursor: 'pointer', whiteSpace: 'nowrap' } }, '⧉ Combine → edit'),
           h('button', { onClick: saveSelectedSeparately, disabled: busy, title: 'Save each selected prompt as its own library entry', style: { fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 5, border: 'none', background: amber, color: '#000', cursor: busy ? 'default' : 'pointer', whiteSpace: 'nowrap' } }, '★ Save each')),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 150, overflowY: 'auto' } },
           ...chatPrompts.map((p, i) => h('label', { key: i, style: { display: 'flex', alignItems: 'flex-start', gap: 7, fontSize: 11, color: 'var(--text,#f1f5f9)', cursor: 'pointer', padding: '3px 2px' } },
             h('input', { type: 'checkbox', checked: sel.has(i), onChange: () => toggleSel(i), style: { marginTop: 2, accentColor: amber, cursor: 'pointer' } }),
             h('span', { style: { flex: 1, lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } }, p))))),
-      h('div', { style: { borderTop: '1px solid rgba(255,255,255,.08)', margin: '8px 0' } }),
+      h('div', { style: { borderTop: '1px solid var(--bdr)', margin: '8px 0' } }),
       !prompts.length
         ? h('div', { style: { fontSize: 11, color: muted, textAlign: 'center', padding: '20px 0' } }, 'No saved prompts yet.')
         : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.3)' : 'rgba(255,255,255,.09)'), borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
+            ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.3)' : 'var(--bdr)'), borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 } },
                 h('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#f1f5f9)', flex: 1 } }, p.title),
                 schedLabel(p) && h('span', { title: 'Auto-runs on this schedule', style: { fontSize: 9, fontWeight: 700, color: amber, background: 'rgba(245,158,11,.14)', borderRadius: 99, padding: '1px 7px' } }, schedLabel(p))),
               h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, (p.promptText || '').slice(0, 220)),
               h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
                 h('button', { onClick: () => onRun(p.promptText), style: { padding: '3px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' } }, '▶ Run'),
-                h('button', { onClick: () => onUse(p.promptText), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Use'),
-                h('button', { onClick: () => (schedFor === p.id ? setSchedFor(null) : openSched(p)), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.4)' : 'rgba(255,255,255,.14)'), background: 'transparent', color: p.scheduleEnabled ? amber : muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '⏰ Schedule'),
+                h('button', { onClick: () => onUse(p.promptText), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Use'),
+                h('button', { onClick: () => (schedFor === p.id ? setSchedFor(null) : openSched(p)), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.4)' : 'var(--bdr)'), background: 'transparent', color: p.scheduleEnabled ? amber : muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '⏰ Schedule'),
                 h('button', { onClick: () => del(p.id), title: 'Delete', style: { padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', marginLeft: 'auto' } }, 'Delete')),
               // Inline schedule editor
-              schedFor === p.id && h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,.08)' } },
+              schedFor === p.id && h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--bdr)' } },
                 h('span', { style: { fontSize: 10, color: muted } }, 'Run'),
                 h('select', { value: sdraft.freq, onChange: e => setSdraft(d => ({ ...d, freq: e.target.value })), style: miniSel }, h('option', { value: 'daily' }, 'Daily'), h('option', { value: 'weekly' }, 'Weekly')),
                 sdraft.freq === 'weekly' && h('select', { value: sdraft.dow, onChange: e => setSdraft(d => ({ ...d, dow: +e.target.value })), style: miniSel }, ...DOW.map((d, i) => h('option', { key: i, value: i }, d))),
@@ -1001,9 +1001,9 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClos
                 h('select', { value: sdraft.hour, onChange: e => setSdraft(d => ({ ...d, hour: +e.target.value })), style: miniSel }, ...Array.from({ length: 24 }, (_, i) => h('option', { key: i, value: i }, String(i).padStart(2, '0') + ':00'))),
                 h('span', { style: { fontSize: 9, color: muted } }, 'UTC'),
                 h('button', { onClick: () => saveSched(p), style: { padding: '3px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', marginLeft: 'auto' } }, 'Set'),
-                p.scheduleEnabled && h('button', { onClick: () => clearSched(p), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid rgba(255,255,255,.14)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Turn off'))))),
+                p.scheduleEnabled && h('button', { onClick: () => clearSched(p), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Turn off'))))),
       h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 12 } },
-        h('button', { onClick: onClose, style: { padding: '6px 14px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Close'))));
+        h('button', { onClick: onClose, style: { padding: '6px 14px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'transparent', color: muted, fontSize: 11, fontWeight: 600, cursor: 'pointer' } }, 'Close'))));
 }
 
 // ── Message bubble ────────────────────────────────────────────────────────────
@@ -1066,7 +1066,7 @@ function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
 
   const btnStyle = (active) => ({
     background: 'none',
-    border: `1px solid ${active ? 'rgba(16,185,129,.4)' : 'rgba(255,255,255,.12)'}`,
+    border: `1px solid ${active ? 'rgba(16,185,129,.4)' : 'var(--bdr)'}`,
     borderRadius: 4,
     color: active ? grn : muted,
     fontSize: 11,
@@ -1095,7 +1095,7 @@ function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
         padding: '10px 14px',
         borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
         background: isUser ? 'rgba(245,158,11,.12)' : 'rgba(255,255,255,.05)',
-        border: `1px solid ${isUser ? 'rgba(245,158,11,.22)' : 'rgba(255,255,255,.09)'}`,
+        border: `1px solid ${isUser ? 'rgba(245,158,11,.22)' : 'var(--bdr)'}`,
         fontSize: '13px',
         lineHeight: 1.65,
         color: 'var(--text, #f1f5f9)',
@@ -1288,7 +1288,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   return h('div', { style: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' } },
 
     // ── Header ──────────────────────────────────────────────────────────────
-    h('div', { style: { padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,.08)', flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' } },
+    h('div', { style: { padding: '16px 20px 14px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' } },
       h('div', null,
         h('div', { style: { fontSize: '10px', fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: amber, marginBottom: 4 } }, 'AI Assistant'),
         h('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: '24px', fontWeight: 900, letterSpacing: '-.04em', color: 'var(--text, #f1f5f9)', lineHeight: 1 } }, 'SAGE'),
@@ -1299,45 +1299,45 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
           onClick: () => setPromptLibOpen(true),
           title: 'Saved prompts — save & re-run your go-to questions',
           style: {
-            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            background: 'transparent', border: '1px solid var(--bdr)',
             borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
             fontSize: '11px', color: muted, transition: 'all .15s',
           },
           onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; e.currentTarget.style.color = amber; },
-          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'var(--bdr)'; e.currentTarget.style.color = muted; },
         }, '📚 Prompts' + (prompts.length ? ' · ' + prompts.length : '')),
         h('button', {
           onClick: () => setKbOpen(true),
           title: 'QSRSoft Help Center — search the vendor docs SAGE grounds on',
           style: {
-            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            background: 'transparent', border: '1px solid var(--bdr)',
             borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
             fontSize: '11px', color: muted, transition: 'all .15s',
           },
           onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; e.currentTarget.style.color = amber; },
-          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'var(--bdr)'; e.currentTarget.style.color = muted; },
         }, '📖 Docs'),
         sessions.length > 0 && h('button', {
           onClick: () => setSessionsOpen(true),
           title: 'Past conversations — reopen a previous SAGE session',
           style: {
-            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            background: 'transparent', border: '1px solid var(--bdr)',
             borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
             fontSize: '11px', color: muted, transition: 'all .15s',
           },
           onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(96,165,250,.4)'; e.currentTarget.style.color = '#60a5fa'; },
-          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'var(--bdr)'; e.currentTarget.style.color = muted; },
         }, '🕘 History · ' + sessions.length),
         messages.length > 0 && !streaming && h('button', {
           onClick: clearThread,
           title: 'Archive this conversation to History and start fresh',
           style: {
-            background: 'transparent', border: '1px solid rgba(255,255,255,.1)',
+            background: 'transparent', border: '1px solid var(--bdr)',
             borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
             fontSize: '11px', color: muted, transition: 'all .15s',
           },
           onMouseEnter: e => { e.currentTarget.style.borderColor = 'rgba(239,68,68,.4)'; e.currentTarget.style.color = '#ef4444'; },
-          onMouseLeave: e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; e.currentTarget.style.color = muted; },
+          onMouseLeave: e => { e.currentTarget.style.borderColor = 'var(--bdr)'; e.currentTarget.style.color = muted; },
         }, '✕ New chat'),
       ),
     ),
@@ -1362,12 +1362,12 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
             key: p,
             onClick: () => setInput(p),
             style: {
-              background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)',
+              background: 'rgba(255,255,255,.04)', border: '1px solid var(--bdr)',
               borderRadius: 8, padding: '9px 14px', cursor: 'pointer',
               fontSize: '12px', color: 'var(--text, #f1f5f9)', textAlign: 'left',
             },
             onMouseEnter: e => { e.currentTarget.style.background = 'rgba(245,158,11,.07)'; e.currentTarget.style.borderColor = 'rgba(245,158,11,.2)'; },
-            onMouseLeave: e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; },
+            onMouseLeave: e => { e.currentTarget.style.background = 'rgba(255,255,255,.04)'; e.currentTarget.style.borderColor = 'var(--bdr)'; },
           }, '→  ' + p))
         ),
       ),
@@ -1406,7 +1406,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
     h('div', {
       style: {
         padding: '12px 16px',
-        borderTop: '1px solid rgba(255,255,255,.08)',
+        borderTop: '1px solid var(--bdr)',
         flexShrink: 0,
         display: 'flex',
         gap: 8,
@@ -1424,7 +1424,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
         style: {
           flex: 1,
           background: 'rgba(255,255,255,.05)',
-          border: '1px solid rgba(255,255,255,.1)',
+          border: '1px solid var(--bdr)',
           borderRadius: 8,
           padding: '10px 12px',
           color: 'var(--text, #f1f5f9)',
@@ -1435,7 +1435,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
           fontFamily: 'inherit',
         },
         onFocus: e => { e.currentTarget.style.borderColor = 'rgba(245,158,11,.4)'; },
-        onBlur:  e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)'; },
+        onBlur:  e => { e.currentTarget.style.borderColor = 'var(--bdr)'; },
       }),
       streaming
         ? h('button', {
@@ -1495,8 +1495,8 @@ function SessionsModal({ sessions, onClose, onReopen, onDelete }) {
   return h(ModalShell, { title: '🕘 Conversation history', onClose, maxWidth: 560, zIndex: Z.nested, closeOnBackdrop: true },
     h('div', { style: { padding: '12px 16px' } },
       h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } }, 'Reopen a past SAGE conversation. Your current chat is archived here automatically when you start a new one.'),
-      !sessions.length && h('div', { style: { fontSize: 12, color: muted, padding: 16, textAlign: 'center', border: '1px dashed rgba(255,255,255,.12)', borderRadius: 8 } }, 'No past conversations yet.'),
-      sessions.map(s => h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,.08)', marginBottom: 6 } },
+      !sessions.length && h('div', { style: { fontSize: 12, color: muted, padding: 16, textAlign: 'center', border: '1px dashed var(--bdr)', borderRadius: 8 } }, 'No past conversations yet.'),
+      sessions.map(s => h('div', { key: s.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', borderRadius: 8, border: '1px solid var(--bdr)', marginBottom: 6 } },
         h('div', { onClick: () => onReopen(s), style: { flex: 1, minWidth: 0, cursor: 'pointer' } },
           h('div', { style: { fontSize: 12, fontWeight: 600, color: 'var(--text,#f1f5f9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, s.title || 'Conversation'),
           h('div', { style: { fontSize: 10, color: muted } }, (s.count || 0) + ' messages')),

@@ -387,10 +387,10 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
   const C     = { // col header style
     th: { background: '#1e2d40', color: '#94b3cc', fontSize: '9px', fontWeight: 700,
           textTransform: 'uppercase', letterSpacing: '.05em', padding: '4px 6px',
-          textAlign: 'right', borderRight: '1px solid rgba(255,255,255,.07)' },
+          textAlign: 'right', borderRight: '1px solid var(--bdr)' },
     thL: { textAlign: 'left' },
     td: { fontFamily: 'monospace', fontSize: '11px', fontWeight: 600, padding: '3px 6px',
-          textAlign: 'right', borderRight: '1px solid rgba(255,255,255,.06)',
+          textAlign: 'right', borderRight: '1px solid var(--bdr)',
           color: 'var(--text,#111827)' },
     tdL: { textAlign: 'left', color: 'var(--text2,#374151)', fontSize: '11px' },
     num: (col) => ({ color: col || 'var(--text,#111827)' }),
@@ -421,7 +421,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
   const hrStr    = (v) => v != null ? v.toFixed(2) : '—';
 
   const rowBg = (i) => i % 2 === 0 ? 'rgba(255,255,255,.025)' : 'transparent';
-  const bdr   = isRollup ? '2px solid rgba(245,158,11,.35)' : '1px solid rgba(255,255,255,.1)';
+  const bdr   = isRollup ? '2px solid rgba(245,158,11,.35)' : '1px solid var(--bdr)';
   const bg    = isRollup ? 'rgba(245,158,11,.04)' : 'rgba(255,255,255,.02)';
 
   // Render the 4-row x 8-col data table
@@ -521,10 +521,10 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
   const laborAdj = h('div', {
     style: {
       display: 'flex', gap: '0', marginTop: '8px',
-      border: '1px solid rgba(255,255,255,.1)', borderRadius: '6px', overflow: 'hidden',
+      border: '1px solid var(--bdr)', borderRadius: '6px', overflow: 'hidden',
     }
   },
-    h('div', { style: { background: 'rgba(245,158,11,.06)', padding: '6px 10px', minWidth: '140px', borderRight: '1px solid rgba(255,255,255,.08)' } },
+    h('div', { style: { background: 'rgba(245,158,11,.06)', padding: '6px 10px', minWidth: '140px', borderRight: '1px solid var(--bdr)' } },
       h('div', { style: { fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#94b3cc', marginBottom: '4px' } }, 'Crew Labor Adjustment'),
       ...[
         ['$ Amount (Shaded)', laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—', colShaded(laborAdjAmt), null, null],
@@ -533,7 +533,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
         ['New Total $', null, colShaded(laborNewTotal), null, null, true],
       ].map(([lbl, val, col, field, curVal, isTot]) => h('div', { key: lbl, style: {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '2px 0', borderTop: isTot ? '1px solid rgba(255,255,255,.1)' : 'none',
+        padding: '2px 0', borderTop: isTot ? '1px solid var(--bdr)' : 'none',
         marginTop: isTot ? '3px' : 0, paddingTop: isTot ? '4px' : '2px',
       }},
         h('span', { style: { fontSize: '10px', color: '#7da0c4' } }, lbl),
@@ -589,7 +589,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
         padding: '8px 12px', cursor: isRollup ? 'default' : 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         background: isRollup ? 'rgba(245,158,11,.07)' : 'rgba(255,255,255,.03)',
-        borderBottom: '1px solid rgba(255,255,255,.08)',
+        borderBottom: '1px solid var(--bdr)',
       },
       onClick: isRollup ? undefined : () => setExpanded(isExp && !forPrint ? null : id),
     },
@@ -873,7 +873,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
             title: 'Copy every store’s OP Supplies for the selected Period above (actual + projected), sorted by store number — paste into Excel',
             style: {
               background: opCopied ? 'rgba(16,185,129,.18)' : 'rgba(255,255,255,.06)',
-              border: '1px solid rgba(255,255,255,.14)', color: opCopied ? grn : 'var(--text,#111827)',
+              border: '1px solid var(--bdr)', color: opCopied ? grn : 'var(--text,#111827)',
               borderRadius: '7px', padding: '6px 12px', cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
             }
           }, opCopied ? '✓ Copied' : '📋 Copy OP Supplies'),
@@ -881,7 +881,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
             onClick: exportOpCsv, disabled: opSupplyRows.length === 0,
             title: 'Download OP Supplies per store as CSV, sorted by store number',
             style: {
-              background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.14)',
+              background: 'rgba(255,255,255,.06)', border: '1px solid var(--bdr)',
               color: 'var(--text,#111827)', borderRadius: '7px', padding: '6px 12px',
               cursor: opSupplyRows.length ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: 600,
             }
@@ -954,7 +954,7 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
 // ── Style helpers ─────────────────────────────────────────────────────────────
 function ctrlStyle() {
   return {
-    background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.12)',
+    background: 'rgba(255,255,255,.07)', border: '1px solid var(--bdr)',
     borderRadius: '7px', padding: '5px 10px', color: 'var(--text,#111827)',
     fontSize: '12px', cursor: 'pointer',
   };
@@ -964,7 +964,7 @@ function pillStyle(active) {
     padding: '5px 12px', borderRadius: '99px', fontSize: '11px', fontWeight: 600,
     cursor: 'pointer', border: '1px solid',
     background: active ? 'rgba(245,158,11,.15)' : 'transparent',
-    borderColor: active ? 'rgba(245,158,11,.4)' : 'rgba(255,255,255,.1)',
+    borderColor: active ? 'rgba(245,158,11,.4)' : 'var(--bdr)',
     color: active ? amber : muted,
   };
 }
