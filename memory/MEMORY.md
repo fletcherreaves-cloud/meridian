@@ -4,6 +4,11 @@
 > session, read the most-recent handoff first, then the relevant thread files.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐ [PM handoff 2026-08-15](pm-handoff-2026-08-15.md)** — **NEWEST. Start here if you are taking the
+  PM seat.** The PM/engineer arrangement and its disciplines, the live PR board (#298/#301/#297 awaiting
+  review; #292/#286/#269 held and why), the engineer dispatch order, the owner's action list, the three
+  Product Mix / `user/settings` captures and what they settled, PM debts not yet filed, the McValue FBP
+  deadline (25 Aug), the corrections register, and the security constraints.
 - **[Session handoff 2026-07-28](session-handoff-2026-07-28.md)** — MASTER handoff: everything
   shipped this session (v4.535–544), locked decisions, the next task (build QSRSoft pull scripts),
   access/settings, and pending items. **Start here after a session switch.**
