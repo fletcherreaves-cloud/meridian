@@ -69,10 +69,24 @@ settled something the PM asserted from inference. See the corrections register i
 | **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase onto latest `main` |
 | **#269** | #263 + #265 pull-failure detection + completeness ledger | **HELD** — owner must run the SQL; plus one residual |
 
-**#292's blocker, quantified (this is the review note to repeat):** a primary key of
-`(loc, date, item)` drops **127 of 441 rows (29%)** and retains only **42% of dollars**,
-non-deterministically — and the rows it drops are exactly the **price tiers the issue exists to
-measure**. The PK must include the price point. Do not merge until the rebuild lands.
+**#292's blocker, quantified:** a primary key of `(loc, date, item)` drops **127 of 441 rows (29%)**
+and retains only **42% of dollars**, non-deterministically — and the rows it drops are exactly the
+**price tiers the issue exists to measure**. The PK must include the price point.
+
+> ⚠️ **CORRECTION (2026-08-15, verified on the branch): the PK rebuild is DONE. Do not dispatch it.**
+> `supabase/schema-product-mix.sql` on `claude/issue-291-product-mix-pull` declares
+> `primary key (loc, date, item, price)`, and `savePmixRows` upserts on
+> `onConflict: 'loc,date,item,price'` to match. The engineer corrected it *before* this handoff was
+> written; the board entry above was never updated. This is the CLAUDE.md "verify against the actual
+> code before assuming a next-up item is undone" rule earning its place a second time — dispatching
+> the rebuild would have been a duplicate reimplementation of work already sitting in the PR.
+>
+> **#292's real remaining blocker** is the one the PR body flags itself: `mapRow()`'s
+> `loc: nsn7(r.storeNum ?? r.nsn ?? '')` is a **guess**. #293's capture was single-store, so the field
+> QSRSoft uses to identify the store in a genuine multi-store response is unconfirmed. If wrong it
+> fails closed — drops rows rather than misattributing them — and silently upserts **zero** rows with
+> no error beyond a debug log. Needs a real multi-store capture (**strip `x-auth-token`**) or a
+> watched first live run. #292 needs a PM review, not an engineer dispatch.
 
 **#269's residual:** in `scripts/check-data-completeness.mjs`,
 `if (inc.date_start < startDate || inc.date_end > endDate) continue;` means an out-of-window incident
@@ -231,6 +245,22 @@ Recorded because they are the cheapest thing a successor can inherit.
   of theorising and found the grand-total row. That is the habit.
 - **Could not measure Supabase contents** — the anon key returns zero rows under RLS. That is RLS, not
   absence. Never report an unverifiable count as confirmed.
+- **Wrote a stale blocker into this handoff without checking the branch — in the document whose whole
+  purpose is to prevent that.** §2 said #292's primary key still needed rebuilding and "do not merge
+  until the rebuild lands." The engineer had already fixed it: the branch declares
+  `primary key (loc, date, item, price)` with a matching `onConflict`. The next PM caught it before
+  it became a duplicate dispatch, which is the review gate working. This is the CLAUDE.md rule
+  *"before assuming a 'next up' item is undone, verify against the actual code"* — a rule added after
+  a near-duplicate reimplementation — earning its place a second time, and the second time it was the
+  PM who tripped it. **A handoff board entry is a snapshot; verify any 'still open' item against the
+  branch before dispatching from it.** Owner's own note on this: the register is more useful than the
+  board.
+- **Framed an expected database behaviour as a caveat.** Reported `qsr_daily_activity` timing out on
+  an unfiltered `select=*` as though it constrained how a measurement should be scoped. It is a table
+  of 27 stores × hourly slots × years with a dedicated index file
+  (`supabase/schema-qsr-daily-activity-index.sql`, indexed on `dt`) — an unfiltered scan timing out is
+  what that table is supposed to do. Filter by `loc` and a date range. Scope a query around the index,
+  not around the symptom.
 - **Cited pre-squash commit hashes in durable docs, then squash-merged them out of existence.** This
   handoff and issues #302/#303 pointed at `6d732fd` / `771b186`; #304 squashed four commits into
   `0359b4e`, so those SHAs were never on `main` and every citation was dead on arrival. It was invisible
