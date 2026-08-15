@@ -1,0 +1,38 @@
+name: QSRSoft Cognito Auth Probe (#312 — probe only, do not extend)
+
+# Answers exactly one question: which Cognito InitiateAuth flow does the QSRSoft
+# app client (2vt4qrqcakbeo9sh0ivli3lbui, pool us-east-1_OdhPNFLDP) accept for the
+# existing QSRSOFT_USERNAME/QSRSOFT_PASSWORD secrets? Nothing downstream (the
+# shared getFreshToken() helper, the 14-script ladder conversion, secret deletion)
+# happens until this returns green and the flow is known. workflow_dispatch only —
+# no schedule, this is not a pull.
+#
+# Security, non-negotiable: the probe script never prints, logs, or writes the
+# token or the password anywhere — only a fixed set of derived, non-sensitive
+# fields (flow name, IdToken yes/no, AWS error CODE, SECRET_HASH-required flag,
+# ChallengeName). No -x, no debug/verbose mode exists for this workflow.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Probe Cognito auth flow
+        run: node scripts/qsrsoft-cognito-auth-probe.mjs
+        env:
+          QSRSOFT_USERNAME: ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD: ${{ secrets.QSRSOFT_PASSWORD }}
