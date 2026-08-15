@@ -1488,3 +1488,103 @@ detection, a grand-total exclusion, a user-dependent column check, and a wrap-co
 Per the auto-first standing rule the API was always going to win. This quantifies by how much:
 **the manual path has four distinct ways to be silently wrong, and three of them are currently
 live in the shipped panel.**
+
+---
+
+# ⭐ `user/settings` — a field dictionary for EVERY report in the suite (2026-08-15)
+
+```
+GET/POST https://api.sso.myqsrsoft.com/user/settings
+    ?appName=reports&userId={uuid}&settingName={report}%2FdefaultColumns
+```
+
+The response returns **every** stored `*/defaultColumns` key for the user, not just the one
+requested — a DynamoDB item dump. One call enumerates the canonical API field names for 13 reports.
+This is the single most useful capture in this file: it removes guessing from every future pull.
+
+**Do not re-derive field names from Excel headers again.** The Excel export renders
+`priceRange` as "Price" and `adjPmixSales` as "Adj PMIX Sales"; this endpoint gives the names
+`selectCols` actually wants.
+
+## The 13 reports it enumerates
+
+| settings key | what it unlocks |
+|---|---|
+| `productMixDrillDown` | 31 PMIX fields — see below |
+| `dailyActivity` | 63 fields: OEPE/OEPENoPark/CTP/R2P/dtTTL, MFY1+MFY2, KVS, bev, **labor** (`totalScheduledHours`, `actualPunchedHours`, `actualHoursMinusNeeded`, `transPerPunchedHour`, `punchedLaborPct`), projections, `totalSalesMean` |
+| `dailyGlimpse` | everything with an `_mtd` twin, a full Controls group, a Service group, and **`dtCars_7am-9am` / `11am-2pm` / `5pm-7pm`** |
+| `operationsReport/salesLedger` | every channel group (DT/Delivery/EatIn/Kiosk/InStore/FC/MOP/Takeout/Breakfast) each with sales, trans, avgCheck **and an LY twin** |
+| `operationsReport/controls` | **`overTimeHours`, `overTimeDollar`, `avgRate`, `actualVsNeeded`**, punched/crew labor, T-Reds, refunds, discounts, deposits |
+| `operationsReport/fobOps` | `baseFoodPct`, `foodOverBasePct`, `compWastePct`, `rawWastePct`, `condimentPct`, `empMealDscPct`, `statVariancePct`, `unexplainedPct`, `discCouponPct`, `pnlFoodCostPct` — a 1:1 match for Meridian's `FOB_COMP` |
+| `analysisSummary` | **`avgWage`, `totalPay`, `crewTimeWorked`, `salariedTimeWorked`, `projectedHours`, `hourOverUnder`, and per-position `overUnderFloor/Window/DriveThru/Grill/FryHash/Other`** |
+| `threePeaksSales` | per-channel sales/trans/avgCheck/comp% at the three peaks |
+| `threePeaksService` | DT timing decomposed: `dtOrderTime`, `dtLineTime`, `dtWin1Time`, `dtWin2Time`, `dtParkedCarTime`, `dtPctPullForward` |
+| `mobileReport` | `mobileOrderAheadTransPct` split by **DriveThru / Curbside / FrontCounter / Table**, `scannedOfferSalesPct`, `loyaltySelfIDEarnSalesPct` |
+| `mcDelivery3POReport` | `vendor`, `3POTrans`, `avgDeliveryTime`, `avgRestaurantTime`, `avgTotalTime`, **`avgCSat`** |
+| `storePeoplePunches` | punch-level detail — ⚠️ **includes `ssn`**, see the PII note below |
+| `dashboardRoleBaseSwitch` | a UI toggle, not data |
+
+## The full PMIX `selectCols` vocabulary — 31 fields, no guessing left
+
+```
+soldQty  discQty  offerAmt  description  familyGroup  bundleQty  bundleDiscAmt
+priceRange  dollarsSold  promoQty  unitsWaste  unitsUsed  unitsServed
+foodAndPaperCostSalesPct  unitPerGrandTrans  unitPerGrandSales
+pctNetProduct  pctNet  adjPmixSales  promoAmt
+marginPct  totalMarginAmt
+totalFoodAndPaperCost  unitFoodAndPaperCost  avgFoodAndPaperCostPct
+unitFoodCost  totalFoodCost  avgFoodCostPct
+unitPaperCost  totalPaperCost  avgPaperCostPct
+```
+
+### ✅ RESOLVED — there is no `discAmt`, and the reconciliation identity is different
+
+This file previously asked the owner for "one capture with `discAmt` added to `selectCols`" as the
+way to close `Σ dollarsSold − Σ offerAmt − Σ discAmt == allNetSales`. **Withdraw that request —
+`discAmt` does not exist.** The discount-dollar fields are `offerAmt`, `promoAmt` and
+`bundleDiscAmt`.
+
+The real identity, verified on the export's own numbers at two levels:
+
+```
+Hamburger subtotal:  $ Sold 777.91  −  Offer Discount $ 15.76  =  Adj PMIX Sales 762.15  ✓
+Hamburger @ $1.89:   $ Sold 253.26  −  Offer Discount $  5.67  =  Adj PMIX Sales 247.59  ✓
+
+    adjPmixSales = dollarsSold − offerAmt
+```
+
+So **`adjPmixSales` is the already-netted dollar column** — select it and the subtraction is done
+server-side. `discQty` is a *count* with no matching dollar field of its own; its value is carried
+inside `offerAmt`.
+
+That leaves a smaller residual against the `qtr-hr-sales` `allNetSales` than previously estimated
+($116.90 on the captured store-day, ~1.2%), and the likely cause is now a definitional one rather
+than a missing column: PMIX covers **product** sales while `allNetSales` does not.
+`pctNetProduct` and `pctNet` being two separate fields is the tell. Select both and the
+denominator question answers itself — no new capture from the owner required.
+
+## Fields that close gaps already open elsewhere in Meridian
+
+- **Labor Analytics shows `OT HRS / DAY` as "—" and `OT COST (PERIOD)` as `$0` across 27 stores.**
+  `operationsReport/controls` carries `overTimeHours`, `overTimeDollar` **and `avgRate`** — the
+  three inputs `otCostEst` needs. Same report carries `actualVsNeeded`, which is the panel's
+  `ACT VS NEED +0 hrs`.
+- **Per-position over/under** (`overUnderFloor/Window/DriveThru/Grill/FryHash/Other` in
+  `analysisSummary`) is finer than anything Meridian holds and speaks directly to the scheduling
+  work — where a store is over or under, not just by how much.
+- **3PO `avgCSat` per vendor** is a customer-satisfaction signal completely absent today; SMG VOICE
+  does not cover delivery platforms.
+- **`dtCars_*` peak car counts** would give the Speed of Service panel a volume denominator.
+- **MOP split by Curbside/Table/FC/DT** bears on the kiosk/channel question that Product Mix's
+  `poo` turned out *not* to answer.
+
+## ⚠️ PII — `storePeoplePunches` exposes `ssn`
+
+Its default column list is `geid, dayOfWeek, badgeType, punchType, isPaidBreak, timeCardNumber,
+hoursWorkedDecimal, hoursWorked, fullEmployeeName, firstName, lastName, **ssn**, jobTitleCode,
+startTime, endTime, payrollID, inModified, outModified`.
+
+If a punch-level pull is ever built: **never include `ssn` in `selectCols`, never let it reach
+Supabase, and never let it into a log line.** This repo already has a standing instruction to
+delete roster workbooks because they carry SSNs, DOBs and addresses. `geid` + `payrollID` identify
+a person adequately for every analysis Meridian does.
