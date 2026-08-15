@@ -1343,3 +1343,148 @@ completeness check for any multi-store, multi-day pull, free with every request.
 4. **Retention depth.** Per the standing rule, `min(dt)` is a pull artifact, not a floor — but the
    depth this endpoint actually serves is untested. Probe one week of April 2025 before scoping any
    backfill, the same way #257/#259 did.
+
+---
+
+# Product Mix — the UI's own filter surface + the real Excel export (2026-08-15)
+
+Owner sent DevTools-free evidence this time: screenshots of the Product Mix report's controls, and
+**two real exports of the same day** (2026-08-14) — one with QSRSoft's default columns, one with
+"all available metrics" selected. Both measured, not eyeballed.
+
+## The filter surface — what the endpoint's params actually mean
+
+| control | values | maps to |
+|---|---|---|
+| **Point of Order** | Combined · **Delivery** · **Non-Delivery** | `poo` |
+| Time Segment | Day · Dayparts · Peaks | `timeSegment` |
+| View Segment | By Total · **By Hour** · **By Quarter Hour** | `timeInterval` |
+| Family Groups | All + the 9 groups | `familyGroup` |
+| item scope | Menu Items · **Watch Lists** | — |
+| tabs | PMIX · **PMIX LIVE** · **MGR/EMP MEALS** | — |
+| column sets | DEFAULT · PMIX · MARGIN · QCR | `selectCols` |
+
+### ⚠️ CORRECTION — `poo` is NOT a channel split
+
+The waste-capture note in this file speculated that `poo` might be point-of-origin
+(drive-thru / front counter / delivery / kiosk) and called that "a bigger unlock than the price
+question", relevant to the kiosk hypothesis. **It is not.** The dropdown has exactly three values:
+Combined, Delivery, Non-Delivery. It is a delivery flag, nothing more.
+
+Product Mix therefore **cannot** attribute a mix shift to drive-thru vs front counter vs kiosk.
+The kiosk hypothesis (POS 6–11) still needs the security/register surface, not this one. Delivery
+vs non-delivery *is* useful — it bears directly on the delivery-offer asymmetry in the McValue work
+— but the broader channel question is closed here, negatively.
+
+### Two capabilities worth knowing exist
+
+- **By Quarter Hour** on item-level data. Enormous volume, but it means item mix by daypart is a
+  parameter change, not a new integration.
+- **Watch Lists** — QSRSoft maintains curated item groupings: `5-6-7 Meal Deals`, `All Bagels`,
+  `Beverage 2026: All`, `Beverage 2026: Coffee LTOs`, `Beverage 2026: Energizers`, `Beverage Cell`,
+  `Big Arch Burger`, `BOAO 2026`. That is a **ready-made taxonomy for the many-to-one item-name
+  problem** — better than inventing our own groupings, and it tracks national marketing constructs
+  we'd otherwise have to reverse-engineer.
+- **MGR/EMP MEALS** is its own tab — the same data FOB's "Emp / Mgr Meals" component needs, which
+  is manual today.
+
+### A caveat QSRSoft states in its own UI, which must be encoded
+
+> Wrap Combo Units Sold are based off the menu item, therefore the 2 wrap menu items will need to
+> be multiplied by 2 to get total single units sold.
+
+Any unit count over wrap items is **half** the true figure unless doubled. Not discoverable from
+the data — only from this banner.
+
+## The Excel export is HIERARCHICAL — and this breaks the existing parser
+
+Structure of `Product_Mix_20260814.xlsx`, sheet `Product Mix 2026-08-14`, 4,539 data rows over
+**535 distinct `Menu Item #`s**:
+
+```
+Menu Item #  Desc         Price            Units Sold
+1            Hamburger    $1.79 - $2.59    385      ← per-item SUBTOTAL (price is a RANGE)
+1            Hamburger    $1.89            134      ← price-point detail
+1            Hamburger    $1.99            130
+1            Hamburger    $1.79             47
+1            Hamburger    $2.49             31
+1            Hamburger    $2.39             28
+1            Hamburger    $2.59             11
+1            Hamburger    $2.29              2
+1            Hamburger    $2.32              2
+                                           ---
+                          detail sum       385      ← equals the subtotal exactly
+```
+
+Measured: for **534 of 535 items** the first row's units equal the sum of the remaining rows. The
+one exception is not an exception — it is the sheet's **grand-total row** (units 103,923,
+`Desc` empty, a nonsense `$24.89` in Price), which lands inside the last item's group.
+
+Consequences, all measured on the real file:
+
+| naive Σ over every row | true value | inflation |
+|---|---|---|
+| Units Sold **311,769** | 103,923 | **×3.00** |
+| Units Wasted **13,911** | 1,205 | **×11.54** |
+
+Units Sold triples because every unit is counted at the detail level, again at the item subtotal,
+and again in the grand total. Units Wasted inflates ×11.5 because **waste is an item-level figure
+repeated verbatim on every price-tier row** (Hamburger shows `6` on all nine of its rows), not
+allocated across them.
+
+### `parsePMixData` does exactly the naive thing
+
+`src/parsers/index.js:1209` keeps every row where `r[C.item] != null` and accumulates into
+`byFamily`. It has no notion of subtotal rows, detail rows, or a grand total. **The Product Mix
+panel's family totals are therefore roughly 3× reality, and its waste figures ~11× reality.**
+Filed as its own issue.
+
+Detecting the subtotal row: `Price` containing `' - '` catches 455 of them, but **80 items have no
+ranged row at all** (single price point, e.g. 167 Chicken Pack, 219 M Fruit Punch), so a
+range-only heuristic silently reclassifies those. Group by `Menu Item #` and take the first row —
+and drop the grand-total row explicitly, by empty `Desc`.
+
+## The column set is USER-SELECTABLE — and the parser's mapping silently degrades
+
+The two exports of the *same day* have different columns:
+
+| column | default export | "all metrics" export | `parsePMixData` looks for |
+|---|---|---|---|
+| `Units Sold` | ✅ | ✅ | ✅ `Units Sold`/`Units` |
+| `Disc Qty` | ❌ | ✅ | ✅ `Disc Qty`/`Discount Qty` |
+| `Offer Discount $` | ❌ | ✅ | ✅ `Offer Discount $` |
+| `Family Group` | ❌ | ✅ | ✅ `Family Group`/`Category` |
+| `$ Sold` / `Adj PMIX Sales` | ✅ | ✅ | ❌ **not mapped at all** |
+| `Units Promo` / `Promo $` | ✅ | ✅ | ❌ |
+| `Units Served` / `Units Wasted` / `Units Used` | ✅ | ✅ | ❌ |
+| cost + margin columns | MARGIN/QCR tabs | ✅ | ❌ |
+
+The mapping is **correct but unvalidated**. On a default export `Family Group` is absent, so every
+row falls to `fam = 'Other'` and the panel's entire by-family breakdown collapses into one bucket —
+silently, with no warning. Same for `disc`/`discAmt`, which become 0 rather than null.
+
+**Two different dollar columns, and they differ.** Hamburger: `$ Sold` **777.91** vs
+`Adj PMIX Sales` **762.15** (`Promo $` 9.65). Pick deliberately and document which; do not let
+"dollars" mean whichever column happened to be present.
+
+Full column list on the all-metrics export (32):
+`Menu Item #, Units Sold, Disc Qty, Offer Discount $, Desc, Family Group, Bundle Units,
+Bundle Discount $, Price, $ Sold, Units Promo, Units Wasted, Units Used, F&P % of Total Sales,
+Units / 1K GC, Units / $1K Sales, % Total (Product Sales), % Total (Net Sales), Adj PMIX Sales,
+Promo $, Units Served, Margin %, Total Margin $, Total F&P Cost, Unit F&P Cost, Avg F&P Cost %,
+Unit Food Cost, Total Food Cost, Avg Food Cost %, Unit Paper Cost, Total Paper Cost,
+Avg Paper Cost %`
+
+Sheets `PMIX` / `Margin` / `QCR` are the same 4,540 rows re-cut with different columns, and they
+put `Menu Item #` **only on the subtotal row** (null on details) — the opposite of sheet 1. A
+parser keyed on "item# present" would read only subtotals there and only-triple-count on sheet 1.
+
+## Why this settles the API-vs-manual question
+
+The API returns **one flat row per (item, price point)** with no subtotals, no grand total, no
+repeated waste, and an explicit `familyGroup` on every row. The Excel export requires hierarchy
+detection, a grand-total exclusion, a user-dependent column check, and a wrap-combo doubling rule.
+
+Per the auto-first standing rule the API was always going to win. This quantifies by how much:
+**the manual path has four distinct ways to be silently wrong, and three of them are currently
+live in the shipped panel.**
