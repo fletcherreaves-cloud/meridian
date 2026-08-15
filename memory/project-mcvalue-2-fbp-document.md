@@ -788,3 +788,112 @@ Jan–Aug 2026 window to matter at all.
 **Worth noting for context, not for the finding:** if most of the system took price and this
 organisation did not, then any comparison against a national or co-op benchmark is not like-for-like
 on price. That cuts against using system averages as a yardstick anywhere in the document.
+
+---
+
+# 2025 CALENDAR OBTAINED — the LY twin is NOT a clean control
+
+Owner supplied Dec 2024 – Nov 2025 coverage, 2026-08-14. This was flagged as the highest-value
+remaining item. It answers all three questions, and two of the answers are bad for the document.
+
+## 1. McValue 1.0 launched **2025-01-07**
+
+> **1/7 — McValue Launch**
+
+So the platform history is: **McValue 1.0 on 2025-01-07**, **McValue 2.0 on 2026-04-21**. This
+confirms from the calendar what the `2/2/2026 McValue Marketing re-hit` entry implied — the
+document's comparison is **2.0 versus 1.0**, not McValue versus its absence.
+
+### ⚠️ A post-hoc observation about the OSAT decline — flagged as post-hoc, not a finding
+
+District OSAT **peaked in Jan–Feb 2025 (87.5%, 87.8%)** — the highest months in the entire 32-month
+series after Aug 2024 — and then began the sustained 28-month decline from **March 2025**.
+
+McValue 1.0 launched **2025-01-07**. The decline begins roughly eight weeks later.
+
+**This is hypothesis-generating only.** My McValue prediction was pre-registered against 2.0 and was
+cleanly refuted. This one was found *by looking at the data after the fact*, which is exactly the
+thing this project treats as a story rather than a test. It is worth recording and worth testing
+properly; it is not worth asserting. A real test needs a pre-registered prediction about something
+not yet observed.
+
+## 2. The monthly free-item programme ran ALL YEAR in 2025 — so the confound does NOT cancel
+
+| 2025 | GMA New Customer Download Incentive |
+|---|---|
+| Feb | Free Large Fries, $1 min (thru 2/28) |
+| Mar | Free McCrispy, $1 min (thru 3/31) |
+| **Apr** | Free Large Fries, $1 min (thru 4/30) |
+| **May** | Free Big Mac, $1 min (thru 5/31) |
+| **Jun** | Free QPC, $1 min (thru 6/30) |
+| **Aug** | Free Large Fry, $1 min (thru 8/31) |
+| **Sep** | Free Big Mac, $1 min (thru 9/30) |
+
+**Continuous through 2025.** In 2026 it appears only in Jan/Feb/Mar.
+
+That asymmetry is the problem:
+
+| period | 2026 | 2025 (LY twin) | cancels? |
+|---|---|---|---|
+| **pre** (Jan – Apr 21) | offer present | offer present | ✅ yes |
+| **post** (Apr 22 – Aug) | **apparently absent** | **present** | ❌ **NO** |
+
+In the post window the 2026 data lacks a free-item offer that its LY twin had. That makes
+post-vs-LY **worse on traffic and better on check**, and since `DiD = post-vs-LY − pre-vs-LY`,
+**both headline findings are overstated.** This is the confound confirmed, not resolved.
+
+**But the 2026 half is still not established.** The 2025 pattern shows this is a *standing monthly
+programme*, which makes it more plausible that 2026 continued it and later issues simply stopped
+listing a routine item. Against that, the **March 2026 forward-looking issue listed March's and not
+April's**. Genuinely unresolved, and the stakes are both headline numbers.
+
+**Resolve it empirically, not from calendars — this is now a concrete argument for #291 (Product
+Mix).** A free 10-pc McNuggets or Big Mac offer shows up as a **unit spike at near-zero realized
+price** for that item. PMIX would settle in one query what three months of calendar screenshots
+could not.
+
+## 3. The 2025 post-twin was MORE heavily promoted than the 2026 post period
+
+2025, Apr 22 – Aug 13 — the LY baseline the post period is measured against:
+
+- **McCrispy Strips** all-store selling 4/29–6/15, advertising 5/11–6/16 — **major product launch**
+- **Snack Wraps Launch** 7/10, live on all channels with paid advertising — **major product launch**
+- **French Fry Flash Offer** 6/17–7/13 — free medium fry, $1 min, **four weeks**
+- S'mores McFlurry 6/10–8/11 · **Daily Double** 6/24 and 7/22 · McValue Rehit 7/2 ·
+  McValue advertising from 8/19 · monthly free-item offers throughout
+
+Against 2026's post period: McValue 2.0, a Beverage Launch, a **failed** World Cup Happy Meal, a
+Fried Apple Pie LTO, a rehit, a **one-day** French Fry Day, and two flavour launches.
+
+**Two major product launches and a four-week free-fry offer in 2025 versus a failed tentpole and a
+one-day flash offer in 2026.** The LY baseline is inflated, which pushes the same direction as
+finding 2 — **traffic decline overstated**.
+
+## 4. Price rounds ARE roughly symmetric across years — the one clean answer
+
+2025: Price Round 1 announced 3/9, recommendations due 3/28; Price Round 2 announced 9/18,
+recommendations 10/6. 2026: Round 1 deadlines Feb–May, Round 2 recommendations 6/1–6/26.
+
+Similar cadence in both years, so pricing largely differences out — consistent with the owner's
+account of minimal participation. **This confound can be closed.**
+
+## What this does to the document
+
+The honest position has moved. The measured DiD is **not** a clean estimate of McValue 2.0's effect:
+it is contaminated by a promotional calendar that was materially stronger in the 2025 post-twin than
+in the 2026 post period, in the same direction as the finding.
+
+**Three options, in order of preference:**
+
+1. **Lead with B1 and the like-for-like framing.** B1 (04-22 → 05-05) predates the price deadline
+   and sits closest to launch. Frame the whole document as *McValue 2.0 versus McValue 1.0*, which
+   is what it actually measures.
+2. **Report the DiD with the calendar asymmetry stated as a bound**, i.e. "the true effect is
+   smaller than −4.55pp because the LY baseline carried two product launches and a four-week
+   free-fry offer this year did not."
+3. **Do not report the headline DiD as a point estimate of McValue's effect.** It is defensible as
+   a description of what happened; it is not defensible as attribution.
+
+Option 2 is probably the strongest for an FBP audience — it keeps the number, states the direction
+of the bias, and demonstrates that the calendar was checked. **A number offered with its own
+limitation is far harder to dismiss than a number offered bare.**
