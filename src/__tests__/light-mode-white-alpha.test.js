@@ -1,12 +1,22 @@
 // @ts-nocheck
 // Guards against #296's regression class re-growing: a hardcoded rgba(255,255,255,X) border,
 // stroke, background, or color bypasses meridian.css's --bdr/--bdr2/--surf/--surf2/--surf3
-// tokens (defined in every one of the 8 [data-theme][data-mode] blocks). Every one of the 427
-// sites #296 measured renders wrong in the light themes -- some invisible (border/stroke, the
-// #295 bug class), the rest low-contrast. 1135+ sites already use the token system correctly;
-// these are stragglers that predate or bypassed it. Without a ratcheting ceiling this regrows
-// silently -- the Bullseye tile (#274/#282) was written well AFTER the tokens existed and AFTER
-// 1135 sites had already adopted them, and still shipped three invisible rings (#295).
+// tokens (defined in every one of the 8 [data-theme][data-mode] blocks). Every one renders
+// wrong in the light themes -- some invisible (border/stroke, the #295 bug class), the rest
+// low-contrast. 1135+ sites already use the token system correctly; these are stragglers that
+// predate or bypassed it. Without a ratcheting ceiling this regrows silently -- the Bullseye
+// tile (#274/#282) was written well AFTER the tokens existed and AFTER 1135 sites had already
+// adopted them, and still shipped three invisible rings (#295).
+//
+// The issue's own filing measured 427 sites; a fresh count against this PR's actual base
+// (f330c17, immediately before #295 merged) measured 471 -- the codebase moved between the
+// issue being filed and this PR being built, and 471 is the number this file's own math is
+// built on: 471 total, 202 border/stroke converted here, 269 remaining. #295 then merged
+// first and removed 3 more (Bullseye's own ring sites, deliberately excluded from THIS PR's
+// conversion -- see below), so after rebasing onto post-#295 main the true remaining count is
+// 266, which is what CEILING is set to. Stating the real counts measured against the actual
+// base at each point, not repeating the issue's now-stale 427, per PM review on this PR
+// (2026-08-15) flagging the mismatch.
 //
 // #296 step 1 (this commit) converts the border/stroke-role sites -- the ones that vanish
 // rather than merely low-contrast -- from 202 down to (mostly) zero; step 2 will do the
