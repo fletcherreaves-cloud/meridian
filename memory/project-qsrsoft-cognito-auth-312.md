@@ -141,20 +141,78 @@ run [31913030549](https://github.com/fletcherreaves-cloud/meridian/actions/runs/
 108 = 27×4 (2026-08-15 not yet finalized, consistent with this script's own documented
 "service-stats confirmed NOT live" note); peaks 402 ≈ 27×5×3 dayparts (a few sparse
 timeslots). All three of the dispatch's required checks confirmed directly against
-`qsr_labor_summary` via the Supabase REST API (anon key, RLS-honoring read):
-non-zero rows (1050 total, 2026-08-11→2026-08-15); `qsr_labor_summary` received 135
-rows; `over_time_total_hours`/`over_time_total_dollars` are present (non-null key) on
-all 135 store-days pulled, with **23 of 135 store-days showing a real non-zero OT
-reading** (range 1.08–21.18 hrs, $25.63–$437.49) — the exact thing the owner reported
-existing operationally that the dashboard couldn't see. OT Cost should now render a
-real number (or a correct "—" only on the ~112 genuinely-zero-OT store-days) instead of
-blanket "—" everywhere.
+`qsr_labor_summary` via the Supabase REST API: non-zero rows (1050 total,
+2026-08-11→2026-08-15); `qsr_labor_summary` received 135 rows; `over_time_total_hours`/
+`over_time_total_dollars` are present (non-null key) on all 135 store-days pulled, with
+**23 of 135 store-days showing a real non-zero OT reading** (range 1.08–21.18 hrs,
+$25.63–$437.49) — the exact thing the owner reported existing operationally that the
+dashboard couldn't see. OT Cost should now render a real number (or a correct "—" only
+on the ~112 genuinely-zero-OT store-days) instead of blanket "—" everywhere.
+
+**Correction (found during the backfill addendum below):** this was originally
+described as "anon key, RLS-honoring read." Wrong — this sandbox's local `.env.local`
+has `VITE_SUPABASE_ANON_KEY` set to the exact same value as `SUPABASE_SERVICE_ROLE_KEY`
+(both decode to `role: service_role`), so every read this session has made was already
+full-access, not RLS-scoped. That's sandbox-only convenience, not representative of the
+real anon key's production behavior — the check above is still correct as a *read of
+what's in the table*, just not evidence about anon-key RLS either way.
 
 Deliberately not touched, per the dispatch: `sync-failure-watch.yml` (this workflow is
 already watched and already passing — the gap is that it can succeed while returning
 zero rows, which is #269's completeness-ledger's job, not a missing watch entry); no
 historical backfill run (owner's call on cost/runtime once the daily pull is confirmed
 working).
+
+## Backfill addendum — owner authorized "no gaps" (2026-08-15)
+
+Owner: *"Backfill as much as needed to have no gaps."* Two-part scope: fill interior
+holes in the already-covered range, and extend the start date to match sibling ops
+streams (per CLAUDE.md, a table's `min(dt)` is when the pull first ran, not a real data
+floor).
+
+**Gap report tool**: `scripts/qsrsoft-ops-gap-report.mjs` (new, committed) — min(dt),
+max(dt), row count, distinct-day count vs. expected calendar days, and missing interior
+days as compact ranges, for all 5 tables. Requires `SUPABASE_SERVICE_ROLE_KEY` — an
+anon-key `[]` read is RLS, not evidence of an empty table, and must never be reported as
+a confirmed gap (this is the exact trap the addendum's own author hit). First draft of
+this script had a real bug worth recording: PostgREST caps each response at 1000 rows
+regardless of the requested `Range` size (confirmed via a manual probe — `Range: 0-9999`
+came back `content-range: 0-999/*`), and treating "fewer rows than requested" as
+"last page" silently truncated the query to just the oldest ~1000 rows, reporting a
+false early `max(dt)` of 2024-05-10 for a table that actually had rows through
+2026-08-15. Fixed by stepping in fixed 1000-row windows and stopping only on an empty
+page.
+
+**Before** (all 5 tables identical): floor 2024-04-01, ceiling ~2026-08-15, one shared
+90-day interior hole 2025-01-01..2025-03-31. All five agreeing exactly on the same
+single contiguous gap (not scattered per-table divergence) is consistent with a real
+historical outage window.
+
+**Sibling floor check**: `qsr_daily_activity` (DAR) reaches back to 2024-01-01,
+`qsr_fob` to 2024-01-19, `qsr_ebos_daily` to 2024-01-21 — all ~91 days earlier than
+these 5 tables' 2024-04-01 floor. Target: 2024-01-01 (DAR, earliest). Well inside the
+addendum's ~3-year owner-check threshold, so extended without asking.
+
+**Backfill**: two `workflow_dispatch` chunks against this PR's branch (so the
+expiry-aware `getFreshToken()` fix was live for both, required by the addendum before
+the first backfill dispatch), each well under the workflow's 120-minute timeout:
+
+- [run 31913447998](https://github.com/fletcherreaves-cloud/meridian/actions/runs/31913447998): `2024-01-01..2024-03-31` (91 days, start extension) — 18,193 rows, ~4m45s.
+- [run 31913691310](https://github.com/fletcherreaves-cloud/meridian/actions/runs/31913691310): `2025-01-01..2025-03-31` (90 days, interior hole) — 18,720 rows, ~4m38s.
+
+No `AUTH_FAILED`/Playwright-fallback lines in either log.
+
+**After** (all 5 tables identical): floor **2024-01-01** (now matches DAR exactly),
+missing interior days **0**, 36,913 total rows added. Full before/after tables and the
+gap-report output posted to PR #323 as comments (before: [comment
+5304626064](https://github.com/fletcherreaves-cloud/meridian/pull/323#issuecomment-5304626064),
+after: [comment
+5304664692](https://github.com/fletcherreaves-cloud/meridian/pull/323#issuecomment-5304664692)).
+
+**Open caveat**: these dispatches ran against the PR branch, not `main` — the historical
+gap is permanently closed (writes are real), but `main`'s scheduled cron still carries
+the stale-`QSRSOFT_TOKEN` bug until PR #323 merges, so a *new* gap can start
+accumulating from 2026-08-15 forward until that lands.
 
 ## #311
 
