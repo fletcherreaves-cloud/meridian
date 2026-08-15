@@ -98,6 +98,26 @@ async function fetchActualDays(stream, startDate, endDate) {
   return seen;
 }
 
+// Same paging/ordering contract as fetchActualDays, scoped to a specific loc set and date
+// range instead of ALL_LOCS × the run's own window — used by closeRecoveredIncidents to
+// re-check old, out-of-window incidents without re-fetching the whole district.
+async function fetchActualDaysForLocs(stream, locs, startDate, endDate) {
+  const seen = new Set();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from(stream.table)
+      .select(`${stream.locCol},${stream.dateCol}`)
+      .in(stream.locCol, locs)
+      .gte(stream.dateCol, startDate).lte(stream.dateCol, endDate)
+      .order(stream.locCol, { ascending: true }).order(stream.dateCol, { ascending: true })
+      .range(from, from + 999);
+    if (error) throw error;
+    if (!data || !data.length) break;
+    for (const r of data) seen.add(`${r[stream.locCol]}|${r[stream.dateCol]}`);
+    if (data.length < 1000) break;
+  }
+  return seen;
+}
+
 // Group a sorted list of missing dates for one loc into contiguous [start,end] runs, so a
 // week-long outage is one incident, not seven.
 function groupConsecutive(dates) {
@@ -126,25 +146,41 @@ function groupConsecutive(dates) {
 // printRanking()'s headline output, which sorts open incidents oldest-first: the entries
 // most likely to already be fixed were permanently pinned to the top.
 //
-// Checks EVERY prior 'open' incident for this stream (not just still-gapping locs) against
-// `actual` — the same fetch checkStream already did for this run — and closes any whose
-// full [date_start, date_end] range is now present. Scoped to ranges entirely inside THIS
-// run's checked window: `actual` only covers [startDate,endDate], so a range extending
-// outside it can't be judged either way without a second fetch, and guessing would risk a
-// false recovery. An incident older than the rolling window simply isn't reconsidered by
-// this run — no worse than before this fix, and every incident inside the common case (an
-// incident detected and fixed within the same DAYS_BACK trailing window) now closes.
+// #269 review round 2 (owner, 2026-08-15): the first fix above still had a gap in the same
+// direction. It checked every prior 'open' incident, but only against `actual` — the fetch
+// bounded to THIS run's [startDate,endDate] window — and SKIPPED any incident whose range
+// fell outside it. printRanking() sorts oldest-first, so the incidents this skip can never
+// reach are exactly the ones sitting at the top of that ranked list: the older an incident
+// gets, the more certain this pass becomes that it will never be reconsidered, however long
+// ago it actually recovered. Fixed by fetching those out-of-window incidents' own ranges
+// directly — ONE extra query per stream (their combined min..max envelope, scoped to just
+// the locs with an out-of-window incident), not one query per incident.
 async function closeRecoveredIncidents(stream, actual, startDate, endDate) {
   const { data: priorOpen, error } = await supabase.from('data_completeness_incidents')
     .select('loc,date_start,date_end')
     .eq('stream', stream.name).eq('recovery_status', 'open');
   if (error) { console.warn(`[completeness]   recovery check failed: ${error.message}`); return 0; }
+  if (!priorOpen || !priorOpen.length) return 0;
+
+  const inWindow = priorOpen.filter(inc => inc.date_start >= startDate && inc.date_end <= endDate);
+  const outOfWindow = priorOpen.filter(inc => inc.date_start < startDate || inc.date_end > endDate);
+
+  let outOfWindowActual = null;
+  if (outOfWindow.length) {
+    const locs = [...new Set(outOfWindow.map(inc => inc.loc))];
+    const minDate = outOfWindow.reduce((m, inc) => inc.date_start < m ? inc.date_start : m, outOfWindow[0].date_start);
+    const maxDate = outOfWindow.reduce((m, inc) => inc.date_end > m ? inc.date_end : m, outOfWindow[0].date_end);
+    if (DEBUG) console.log(`[completeness]   ${outOfWindow.length} out-of-window open incident(s) — re-checking ${minDate}…${maxDate} for ${locs.length} loc(s)`);
+    outOfWindowActual = await fetchActualDaysForLocs(stream, locs, minDate, maxDate);
+  }
+
   let closed = 0;
-  for (const inc of (priorOpen || [])) {
-    if (inc.date_start < startDate || inc.date_end > endDate) continue; // outside this run's checked window -- can't judge
+  for (const inc of [...inWindow, ...outOfWindow]) {
+    const coverage = (inc.date_start >= startDate && inc.date_end <= endDate) ? actual : outOfWindowActual;
+    if (!coverage) continue; // outOfWindowActual only fetched when outOfWindow is non-empty; guards a stray null
     let fullyPresent = true;
     for (let d = new Date(inc.date_start + 'T00:00:00Z'); dkey(d) <= inc.date_end; d = addDays(d, 1)) {
-      if (!actual.has(`${inc.loc}|${dkey(d)}`)) { fullyPresent = false; break; }
+      if (!coverage.has(`${inc.loc}|${dkey(d)}`)) { fullyPresent = false; break; }
     }
     if (!fullyPresent) continue;
     const { error: updErr } = await supabase.from('data_completeness_incidents')
