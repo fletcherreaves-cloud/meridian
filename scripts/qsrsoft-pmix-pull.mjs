@@ -1,53 +1,59 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-pmix-pull.mjs
-// QSRSoft Product Mix (PMIX) — per-item units + dollars per store per day.
+// QSRSoft Product Mix (PMIX) — per-item, per-price-point sales facts.
 //
-// STATUS (2026-08-14, issue #291): SKELETON ONLY. This script does NOT perform a real
-// pull yet — see fetchPmixWindow() below, which throws rather than guessing. What IS real
-// here: the auth ladder (direct token → Playwright fallback, proven pattern shared with
-// every other reporting-API script) and the date-range/CLI scaffolding. Per the owner's
-// explicit sequencing on #291 ("the endpoint capture has to come from the owner first, so
-// start with schema and the pull skeleton") and this repo's own standing rule ("measure it,
-// don't reason about it" — #273's probe: "do not guess the back-pull shape"), the one thing
-// this file will NOT do is invent request params or a response shape for an endpoint nobody
-// has captured. memory/qsrsoft-report-catalog.md still marks Product Mix / PMIX Discount /
-// Product Mix Trend all ⬜ (unexplored) — the same status Shift Manager had before #266's
-// DevTools capture confirmed it.
+// Endpoint confirmed 2026-08-14 (memory/qsrsoft-report-catalog.md, "Product Mix — the
+// SALES view" — read that section before changing selectCols or the row mapping, it has
+// the full capture, reconciliation math, and every measured caveat this file is built
+// from). Same /reporting/v2/ family qsrsoft-ops-pull.mjs already drives, so this file
+// mirrors that script's auth ladder, query builder and Playwright fallback structure
+// directly rather than reinventing them.
 //
-// What IS known, from menu.json's report catalogue (not a capture):
-//   Host: api.reports.myqsrsoft.com          (same as DAR/ops/shift-manager — confirmed host)
-//   Path: /reports/mcd/product/productMixDrillDown     permission: pmixCI
-//   Page: https://v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown
-// A SEPARATE report, /reports/mcd/product/productMixDiscount (permission pmixDiscountMenuItems),
-// isolates discounting from realized price — see issue #291's caveat on realized-vs-list
-// price. NOT built here; a second pull once this one's shape is confirmed and proven.
+//   GET https://api.reports.myqsrsoft.com/reporting/v2/product/product-mix-bundles
+//       ?catalogType=productMix&reportType=summary&nsn=<csv>&orgId=<org>
+//       &enterpriseName=McDonalds&startDate=&endDate=&weekStart=3
+//       &familyGroup=BREAKFAST_DRINK,BREAKFAST_SIDE,BREAKFAST_ENTREE,REGULAR_DRINK,
+//                    REGULAR_ENTREE,FRIES,NON_PRODUCT,SHAKES,DESSERT
+//       &poo=Combined&timeSegment=openClose&segmentBy=summary&timeInterval=summary
+//       &segmentNames=open-close&segmentsSelected=open-close&nsd=s&dsd=s
+//       &selectCols=soldQty,discQty,menuItemNumber,description,familyGroup,price,
+//                   dollarsSold,promoQty,offerAmt,unitFoodCost,unitPaperCost
+//   → { result: [ {menuItemNumber, price, soldQty, discQty, description, familyGroup,
+//        dollarsSold, promoQty, offerAmt, unitFoodCost, unitPaperCost, bundleQty,
+//        bundleDiscAmt, totalUnitFoodCost, totalUnitPaperCost} ] }
 //
-// ── Next step (owner action required) ──────────────────────────────────────────────
-// DevTools capture, same steps as every prior endpoint (Shift Manager, DAR, eBOS): open
-// the Product Mix report at v3.myqsrsoft.com, run it for one store/one day, Network tab,
-// filter to api.reports.myqsrsoft.com, copy the request URL + full query params + response
-// JSON shape (field names for item id, description, family/category, units, DOLLARS —
-// issue #291 requires storing units and dollars, never a computed unit price — and any
-// discount/promo fields) into fetchPmixWindow() below. Once that lands, this script's auth
-// ladder and CLI scaffolding need no changes — only fetchPmixWindow()'s body and the
-// upsert-row mapping in runAll() do.
+// dollarsSold/totalUnitFoodCost/totalUnitPaperCost are requested (the API always returns
+// them) but deliberately NOT stored — measured exactly equal to price*soldQty /
+// unitFoodCost*soldQty / unitPaperCost*soldQty on the captured payload (0 exceptions).
+// Storing both a primitive and its extension invites them to disagree; the extensions are
+// computed at read time instead. bundleQty/bundleDiscAmt are requested implicitly by the
+// endpoint but not selected or stored — measured zero on every row of the captured
+// payload despite the endpoint's name; not designed around until a capture shows one
+// non-zero. discAmt is NOT in selectCols yet — memory/qsrsoft-report-catalog.md flags it
+// as the one still-unknown column needed to close the reconciliation identity
+// (ΣdollarsSold − Σoffer_amt − Σdisc_amt == allNetSales); add it here once captured.
+//
+// Rows with soldQty=0 are catalog placeholders (measured 21/441 on the captured payload)
+// — filtered before upsert, not stored.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Auth ladder: QSRSOFT_TOKEN (direct) → QSRSOFT_COGNITO_TOKEN (direct) →
-//              QSRSOFT_USERNAME/PASSWORD (Playwright: logs in, navigates to the Product Mix
-//              report page itself to passively capture a token — same technique DAR's pull
-//              uses, "got the token PASSIVELY from the dailyActivity navigation itself").
-// Optional: PMIX_START_DATE / PMIX_END_DATE (YYYY-MM-DD, backfill range — target 2024-01 per
-//           the issue, matching DAR/VOICE depth), PMIX_STORE (comma-separated NSNs, default
-//           all 27), QSRSOFT_DEBUG=1.
+//              QSRSOFT_USERNAME/PASSWORD (Playwright, mirrors qsrsoft-ops-pull.mjs exactly:
+//              logs in, navigates to the Product Mix report page to passively capture a
+//              token, in-browser fetch fallback if that alone doesn't fire a token-bearing
+//              request).
+// Optional: PMIX_START_DATE / PMIX_END_DATE (YYYY-MM-DD, backfill range — target 2024-01
+//           per the issue, matching DAR/VOICE depth; probe retention depth first per the
+//           standing rule, same as #257/#259 did — do not assume it reaches that far),
+//           PMIX_STORE (comma-separated NSNs, default all 27), QSRSOFT_DEBUG=1.
 
 import { createClient } from '@supabase/supabase-js';
 import { savePmixRows } from '../src/lib/supabase.js';
 
-const BASE       = 'https://api.reports.myqsrsoft.com';
+const BASE   = 'https://api.reports.myqsrsoft.com';
+const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const REPORT_URL = 'https://v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown';
-const ORG_ID      = 'a546d4ef-684a-4f25-8bc0-6580af068875';
-const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
+const DEBUG  = process.env.QSRSOFT_DEBUG === '1';
 
 const STORE_NSNS = (process.env.PMIX_STORE
   ? process.env.PMIX_STORE.split(',').map(s => s.trim())
@@ -57,24 +63,43 @@ const STORE_NSNS = (process.env.PMIX_STORE
     37566, 38609, 43380, 43701,
   ]).map(String);
 
+const FAMILY_GROUPS = ['BREAKFAST_DRINK', 'BREAKFAST_SIDE', 'BREAKFAST_ENTREE', 'REGULAR_DRINK',
+  'REGULAR_ENTREE', 'FRIES', 'NON_PRODUCT', 'SHAKES', 'DESSERT'].join(',');
+const SELECT_COLS = ['soldQty', 'discQty', 'menuItemNumber', 'description', 'familyGroup', 'price',
+  'dollarsSold', 'promoQty', 'offerAmt', 'unitFoodCost', 'unitPaperCost'].join(',');
+
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const pad2 = n => String(n).padStart(2, '0');
 const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+const addDay = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + n); return r; };
 const nsn7 = n => String(n).padStart(7, '0');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Fail-fast input validation (PR #267 review, 2026-08-14, adopted repo-wide since): a bad
+function url(date) {
+  const params = new URLSearchParams({
+    catalogType: 'productMix', reportType: 'summary',
+    nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
+    startDate: date, endDate: date, weekStart: '3',
+    familyGroup: FAMILY_GROUPS, poo: 'Combined',
+    timeSegment: 'openClose', segmentBy: 'summary', timeInterval: 'summary',
+    segmentNames: 'open-close', segmentsSelected: 'open-close', nsd: 's', dsd: 's',
+    selectCols: SELECT_COLS,
+  });
+  return `${BASE}/reporting/v2/product/product-mix-bundles?${params}`;
+}
+
+// Fail-fast input validation (PR #267 review, 2026-08-14, applied repo-wide since): a bad
 // PMIX_START_DATE/PMIX_END_DATE should error on the input, not surface as a confusing
 // downstream auth or empty-result failure.
 function resolveWindow() {
   const start = (process.env.PMIX_START_DATE || '').trim();
   const end   = (process.env.PMIX_END_DATE   || '').trim() || start;
   if (!start) {
-    // No explicit range: default to yesterday only, matching the "only ever evaluate the
-    // most recent COMPLETE day" rule this repo already applies elsewhere (qsrsoft-ops-pull.mjs) —
-    // today's PMIX totals are still accumulating, not finalized.
-    const y = new Date(); y.setUTCDate(y.getUTCDate() - 1);
+    // No explicit range: default to yesterday only — today's totals are still
+    // accumulating, matching the "only ever evaluate the most recent COMPLETE day" rule
+    // this repo already applies elsewhere (qsrsoft-ops-pull.mjs's cash-anomaly check).
+    const y = addDay(new Date(), -1);
     const yStr = fmtDate(y);
     return { start: yStr, end: yStr };
   }
@@ -88,58 +113,89 @@ function resolveWindow() {
   }
   return { start, end };
 }
-
-// ── THE STUB — do not guess this ────────────────────────────────────────────────
-// See the file header. This throws deliberately: a guessed URL/param shape that happens to
-// return HTTP 200 with an empty or malformed body would look identical to "ran fine, no
-// data" to every caller downstream — silently corrupting the very thing this pull exists to
-// measure. Fails loud instead, naming exactly what's missing and where to get it.
-async function fetchPmixWindow(token, nsn, start, end) {
-  throw new Error(
-    '[pmix] fetchPmixWindow() is a stub — the productMixDrillDown request shape has not been ' +
-    'captured yet (memory/qsrsoft-report-catalog.md still marks it ⬜). See this file\'s header ' +
-    'for the exact DevTools steps. Refusing to guess query params or a response shape.'
-  );
+function dateRange(start, end) {
+  const out = [];
+  for (let d = new Date(start + 'T00:00:00Z'); fmtDate(d) <= end; d = addDay(d, 1)) out.push(fmtDate(d));
+  return out;
 }
 
-async function runAll(token, dates, nsns = STORE_NSNS) {
-  let total = 0;
-  for (const nsn of nsns) {
-    for (const { start, end } of dates) {
-      let rows;
+const HDRS = t => ({ 'X-Auth-Token': t, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
+
+async function fetchRows(reqUrl, token, evalPage) {
+  if (evalPage) {
+    const res = await evalPage.evaluate(async ({ url, token }) => {
       try {
-        rows = await fetchPmixWindow(token, nsn, start, end);
-      } catch (e) {
-        console.error(`[pmix] ${nsn7(nsn)} ${start}…${end}: ${e.message}`);
-        throw e; // one stub failure means every call would fail identically — no point continuing
-      }
-      if (!rows?.length) continue;
-      const { saved, errors } = await savePmixRows(rows.map(r => ({ ...r, loc: nsn7(nsn) })));
-      if (errors.length) console.warn(`[pmix] ${nsn7(nsn)} ${start}…${end}: ${errors.length} save error(s)`);
-      total += saved;
-    }
+        const r = await fetch(url, { headers: { 'X-Auth-Token': token, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown' }, signal: AbortSignal.timeout(25000) });
+        if (!r.ok) return { error: `HTTP ${r.status}` };
+        const body = await r.json();
+        return { rows: Array.isArray(body) ? body : (body?.result || []) };
+      } catch (e) { return { error: e.message }; }
+    }, { url: reqUrl, token });
+    if (res.error) throw new Error(res.error);
+    return res.rows || [];
   }
-  return total;
+  const resp = await fetch(reqUrl, { headers: HDRS(token) });
+  if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 160)}`);
+  const body = await resp.json();
+  return Array.isArray(body) ? body : (body?.result || []);
 }
 
-// ── Auth: direct token, tried first ─────────────────────────────────────────────
-function directToken() {
-  const t = (process.env.QSRSOFT_TOKEN || process.env.QSRSOFT_COGNITO_TOKEN || '').trim();
-  return t || null;
+// Maps one API row → the shape savePmixRows() expects. loc comes from the row itself if
+// present (the endpoint is a multi-store pull, one response covering all requested NSNs —
+// unconfirmed field name for which store each row belongs to since the capture was a
+// single-store request; storeNum/nsn is the convention every sibling reporting/v2 endpoint
+// uses, so that's the first guess, but VERIFY against a real multi-store response before
+// trusting this silently drops rows into the wrong store).
+function mapRow(r, date) {
+  return {
+    loc: nsn7(r.storeNum ?? r.nsn ?? ''),
+    date,
+    item: r.menuItemNumber,
+    price: r.price,
+    desc: r.description,
+    familyGroup: r.familyGroup,
+    soldQty: r.soldQty,
+    discQty: r.discQty,
+    promoQty: r.promoQty,
+    offerAmt: r.offerAmt,
+    unitFoodCost: r.unitFoodCost,
+    unitPaperCost: r.unitPaperCost,
+  };
 }
 
-// ── Auth: Playwright fallback — logs in, navigates to the Product Mix report page itself to
-// passively capture a token, same technique as qsrsoft-ops-pull.mjs's Daily Activity flow
-// ("got the token PASSIVELY from the dailyActivity navigation itself" — no guessed trigger
-// request needed, since simply loading the report page's default view fires a real
-// authenticated request whose X-Auth-Token header this listener captures regardless of
-// whatever params that default request happens to use).
-async function viaPlaywright() {
+async function runAll(token, dates, evalPage) {
+  let grand = 0;
+  for (const date of dates) {
+    let rows;
+    try {
+      rows = await fetchRows(url(date), token, evalPage);
+    } catch (e) {
+      if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+      console.error(`[pmix] ${date} ERROR: ${e.message}`);
+      continue;
+    }
+    if (!rows.length) { if (DEBUG) console.log(`[pmix] ${date}: no data`); continue; }
+    const mapped = rows.map(r => mapRow(r, date))
+      .filter(r => r.loc && r.loc !== '0000000' && Number(r.soldQty) > 0); // soldQty=0 rows are catalog placeholders — see file header
+    if (!mapped.length) { if (DEBUG) console.log(`[pmix] ${date}: ${rows.length} row(s), all filtered (placeholders)`); continue; }
+    const { saved, errors } = await savePmixRows(mapped);
+    if (errors.length) console.warn(`[pmix] ${date}: ${errors.length} save error(s)`);
+    console.log(`[pmix] ${date}: ${mapped.length}/${rows.length} row(s) upserted (${rows.length - mapped.length} placeholder(s) filtered)`);
+    grand += saved;
+    await new Promise(r => setTimeout(r, 120));
+  }
+  return grand;
+}
+
+// ── Playwright fallback — mirrors qsrsoft-ops-pull.mjs exactly, pointed at the Product
+// Mix report page instead of the Operations Report.
+async function viaPlaywright(dates) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return null; }
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
-  const page = await (await browser.newContext()).newPage();
+  const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
   const seenApiUrls = [];
@@ -164,34 +220,43 @@ async function viaPlaywright() {
     console.log('[auth] product mix page url:', page.url(), '| token captured:', !!token);
     console.log('[auth] api.reports requests seen:', seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
     await snap('pmix-02-report-page.png');
-    if (!token) { console.error('[auth] ✗ could not capture token from the Product Mix report page'); return null; }
-    console.log(`[auth] ✓ token captured (${token.length} chars)`);
-    return token;
+    if (!token) {
+      console.log('[auth] no token from passive navigation — attempting in-browser fetch to trigger auth…');
+      const testResult = await page.evaluate(async ({ reqUrl }) => {
+        try { const r = await fetch(reqUrl, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
+        catch (e) { return { error: e.message, name: e.name }; }
+      }, { reqUrl: url(dates[0]) });
+      console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
+      await new Promise(r => setTimeout(r, 2000));
+      await snap('pmix-03-post-trigger.png');
+    }
+    if (!token) { console.error('[auth] ✗ could not capture token from the Product Mix report page'); return 0; }
+    console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s)…`);
+    return await runAll(token, dates, page);
   } finally { await browser.close(); }
 }
 
 async function main() {
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) { console.error('[pmix] Missing Supabase env'); process.exit(1); }
   const { start, end } = resolveWindow();
-  console.log(`[pmix] window: ${start}…${end} — ${STORE_NSNS.length} store(s)`);
+  const dates = dateRange(start, end);
+  console.log(`[pmix] window: ${start}…${end} (${dates.length} day(s)) — ${STORE_NSNS.length} store(s)`);
 
-  let token = directToken();
+  const token = (process.env.QSRSOFT_TOKEN || process.env.QSRSOFT_COGNITO_TOKEN || '').trim();
+  let total = 0;
   if (token) {
     console.log('[auth] using direct token');
+    try { total = await runAll(token, dates, null); }
+    catch (e) {
+      if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright(dates) || 0; }
+      else throw e;
+    }
   } else {
     console.log('[auth] no direct token — falling back to Playwright');
-    token = await viaPlaywright();
+    total = await viaPlaywright(dates) || 0;
   }
-  if (!token) { console.error('[pmix] ✗ no auth token available (direct env vars unset and Playwright fallback failed)'); process.exit(1); }
-
-  try {
-    const total = await runAll(token, [{ start, end }]);
-    console.log(`[pmix] done — ${total} rows upserted.`);
-    process.exit(0);
-  } catch (e) {
-    console.error('[pmix] not run — see the error above. This is expected until fetchPmixWindow() is implemented against a real DevTools capture.');
-    process.exit(1);
-  }
+  console.log(`[pmix] done — ${total} row(s) upserted.`);
+  process.exit(0);
 }
 
 main().catch(e => { console.error('[pmix] FATAL:', e); process.exit(1); });

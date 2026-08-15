@@ -1,106 +1,126 @@
 # Product Mix (PMIX) — #291
 
-**Status as of 2026-08-14: schema + Supabase loader + pull skeleton shipped. Live pull
-NOT built — blocked on an owner DevTools capture.** Per the owner's own sequencing on
-#291 ("the endpoint capture has to come from the owner first, so start with schema and
-the pull skeleton") and the standing "measure it, don't reason about it" rule.
+**Status as of 2026-08-15: real pull implemented and building/testing clean.** The
+endpoint capture that gated a non-stub implementation landed via PR #293
+(`memory/qsrsoft-report-catalog.md`, "Product Mix — the SALES view" section — read that
+before touching `selectCols` or the row mapping, it has the full capture + reconciliation
+math this build is drawn from). This file previously described a schema+loader+skeleton
+pass with a deliberately-throwing stub pull; that design has been superseded end-to-end
+now that real facts exist, per the same dispatch that originally scoped the stub ("start
+with schema and the pull skeleton" — the "endpoint capture has to come from the owner
+first" condition is now satisfied).
 
 ## Why this issue exists
 
-PMIX carries units AND dollars per item per period. `dollars ÷ units` is realized price —
-measured, not recalled — and turns "average check rose 10.4¢" (the McValue FBP document's
-headline number, deadline 2026-08-25) into a decomposition: price × mix × units. The
-single most damaging challenge to that document is "that's just your price increases";
-today the answer rests on the owner's recollection. PMIX converts recollection into
-evidence. Full framing in the issue itself — this file only records the build state.
+PMIX carries units AND dollars per item per price point. Realized price is measured, not
+recalled — it turns "average check rose 10.4¢" (the McValue FBP document's headline
+number, deadline 2026-08-25) into a decomposition: price × mix × units. The single most
+damaging challenge to that document is "that's just your price increases"; PMIX converts
+recollection into evidence. Full framing in the issue itself — this file records build
+state.
 
-## What's shipped
+## What actually shipped (this pass — supersedes the earlier stub design)
 
-- **`supabase/schema-product-mix.sql`** — `qsr_product_mix` table, grain `(loc, date,
-  item)`, padded `loc` (matches every other QSRSoft table), `tenant_id`+RLS from day
-  one. Stores `units` and `dollars` SEPARATELY (issue's explicit instruction — never a
-  computed unit price, same principle as VOICE's count pairs in #288). `dollars` is
-  nullable — see the manual-parser gap below.
-- **`savePmixRows`/`loadPmixRows`** in `src/lib/supabase.js` — exact same shape as
-  `saveAuditRows`/`loadAuditRows` (chunked upsert, windowed paginated load). Real,
-  callable today. Nothing calls them yet — see "not done" below.
-- **`scripts/qsrsoft-pmix-pull.mjs`** — real, working auth ladder (direct token →
-  Playwright fallback that navigates to the actual Product Mix report page at
-  `v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown` to passively capture a
-  token, same technique the DAR pull already proved) and CLI date-range scaffolding
-  (`PMIX_START_DATE`/`PMIX_END_DATE`, defaults to yesterday-only per the "never count an
-  in-progress day" rule already applied in `qsrsoft-ops-pull.mjs`). The one thing it does
-  NOT do: `fetchPmixWindow()` is a deliberate stub that throws with an explicit message
-  rather than guessing the request's query params or the response JSON's field names —
-  matching #273's "do not guess the back-pull shape" and #277's refusal to fabricate an
-  endpoint. `memory/qsrsoft-report-catalog.md` still marks Product Mix ⬜ (unexplored) —
-  same status Shift Manager had before #266's real capture.
+- **`supabase/schema-product-mix.sql`** — grain corrected from the original
+  `(loc, date, item)` design to **`(loc, date, item, price)`**. Measured on the real
+  capture: 441 rows over 314 distinct `menuItemNumber`s for one store-day, 116 items at
+  more than one price the same day (e.g. McChicken $1.50×140 and $3.69×5 same day). The
+  API has already separated price from mix; averaging dollars÷units across price tiers —
+  the original plan — would blend those into a meaningless $1.57 and misread a mix shift
+  as a price change. `price` is exact per row already, so it's part of the key, not a
+  derived aggregate.
+  Stores PRIMITIVES only (`sold_qty`, `disc_qty`, `promo_qty`, `offer_amt`,
+  `unit_food_cost`, `unit_paper_cost`), not `dollarsSold`/extensions — measured
+  `dollarsSold == price*soldQty` exactly (0/441 exceptions), so it's computed at read
+  time, never stored, to avoid the two disagreeing after a partial update.
+  **No `dollars` column at all** — `dollarsSold` is GROSS: Σ overstates `allNetSales` by
+  2.9% on the captured store-day, and the overstatement is promotional intensity. Never
+  surface Σ(price×sold_qty) as sales.
+  `promo_qty` and `offer_amt` are kept as two DIFFERENT measures (15 rows carry
+  `promo_qty` with `offer_amt=0`, 12 the reverse) — `promo_qty` = units given away,
+  `offer_amt` = $ of discount offer applied. `disc_amt` is nullable, not yet selected
+  upstream (needed to close `Σdollars_sold − Σoffer_amt − Σdisc_amt == allNetSales`).
+  `bundle_qty`/`bundle_disc_amt` deliberately excluded — measured zero on every row
+  despite the endpoint's name. `loc` padded (matches every other QSRSoft table).
+  `tenant_id` + RLS from day one, indexes on `(date, loc)` and `(loc, item, date)`.
+- **`savePmixRows`/`loadPmixRows`** (`src/lib/supabase.js`) — rewritten to match: chunked
+  upsert on `onConflict: 'loc,date,item,price'`, maps the primitive fields only (no
+  `dollars`). Load returns the same camelCase shape the pull script produces.
+- **`scripts/qsrsoft-pmix-pull.mjs`** — fully rewritten from the throwing stub into a
+  real, working pull. Same `/reporting/v2/` family and auth ladder
+  `qsrsoft-ops-pull.mjs` already proved: direct `QSRSOFT_TOKEN`/`QSRSOFT_COGNITO_TOKEN`
+  first, Playwright fallback (navigates to
+  `v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown`, passively captures
+  `X-Auth-Token` from any `api.reports.myqsrsoft.com` request, in-browser
+  `fetch(..., {credentials:'include'})` trigger as a last resort) on `401`/`403`.
+  Requests `dollarsSold`/`totalUnitFoodCost`/`totalUnitPaperCost` (the API always returns
+  them) but does not store them — computed at read time instead, per the schema's
+  reasoning above. Filters `soldQty=0` rows (catalog placeholders, measured 21/441 on the
+  captured payload) before upsert. `PMIX_START_DATE`/`PMIX_END_DATE` window (defaults to
+  yesterday-only, matching the "never count an in-progress day" rule already applied in
+  `qsrsoft-ops-pull.mjs`'s cash-anomaly check), fail-fast date validation matching #269's
+  pattern, `PMIX_STORE` override, `QSRSOFT_DEBUG=1`.
 
-## A previously-undocumented finding: the manual-upload path has no loc/date grain either
+**Verified this pass:** `node --check` clean on both JS files; `npm test -- --run` —
+1370/1370 passing (unchanged, no test coverage added — this is a pull script + storage
+layer, matching the precedent set by the other QSRSoft pull scripts, none of which carry
+unit tests); `npm run build` — clean, eager total 509.64 KB gzip (budget 850 KB, headroom
+340.36 KB), no meaningful shift from before this change (these files aren't in App.js's
+eager import graph).
 
-Discovered while designing the schema — worth recording since it changes what "wire the
-manual fallback" actually means here. `parsePMixData` (`src/parsers/index.js:1209`) does
-NOT attach a location or date to its output at all. `pipeline.js`'s call site
-(`type==='pmix'`) stores the raw parse result on `ds.pmixData[filename]` — a per-FILE
-object (`{rows, byFamily}`), never a flat per-row array with loc/date, unlike `ds.darRows`
-(which DOES get a `dateHint` extracted from the filename at the same call site).
-`ds.pmixRows` — the array-shaped entry present in the Dexie schema (`src/db/index.js`) —
-is never populated anywhere; it's vestigial.
+## One open, explicitly-flagged uncertainty — do not treat as resolved
 
-The one consumer, `ProductMixPanel` (`src/views/labor-tools.js:280`), reflects this: it
-aggregates `byFamily` totals across EVERY loaded PMIX file into one lifetime-cumulative
-view, with no time dimension and no per-store split. Its own placeholder text names the
-expected filename convention — `Product_Mix_YYYYMMDD_to_YYYYMMDD_[store].xlsx` — but
-neither the parser nor the pipeline call site extracts date-range or store from it today.
+`mapRow()`'s `loc: nsn7(r.storeNum ?? r.nsn ?? '')` — the capture that established the
+endpoint's response shape (#293) was a **single-store** request. The field name QSRSoft
+uses to identify which store a row belongs to in a genuine **multi-store** response
+(this script always requests all 27 NSNs at once, matching the other pull scripts) is
+**unconfirmed**. `storeNum`/`nsn` is the first guess (the convention other
+`/reporting/v2/` endpoints use), not a verified fact. If neither field is present, or a
+different name is used, `mapRow` would produce `loc: '0000000'` for every row, and
+`runAll`'s filter (`r.loc !== '0000000'`) would silently drop the entire response rather
+than misattribute it — a fail-closed default, not a fail-silent one, but the pull would
+then upsert **zero rows** with no error surfaced beyond a debug-only "all filtered" log.
+**Before trusting a live run**, either capture one real multi-store response and confirm
+the actual field name, or watch the first scheduled run's row counts.
 
-`parsePMixData` also does not read a dollars/net-sales column at all — only `item, units,
-disc, discAmt, desc, family`. Whether a dollars column exists in real PMIX exports (and
-under what header name) is unconfirmed; guessing a candidate header list without a real
-sample file risks silently mis-mapping a column, so it was deliberately NOT attempted.
+## Deliberately still not done, and why
 
-**Net effect:** even the "keep the manual upload fallback wired" build requirement can't
-be fully satisfied yet — there's currently no reliable path to real per-store per-day
-per-item rows from EITHER the API (unconfirmed) or the manual upload (no loc/date/dollars
-extraction). Wiring `savePmixRows`/`loadPmixRows` into App.js's lazy-fill now, before
-either path produces real rows, would add integration surface with nothing to test it
-against — deferred, see below.
+- **`productMixDiscount`** (the separate discount-isolation report, needed to settle
+  `disc_amt` and fully close the reconciliation identity) — documented in the issue as
+  the real fix for realized-vs-list price. A second pull, once this one's shape is
+  proven against a live run.
+- **App.js lazy-fill wiring for `pmixRows` / a `pmix` metric-source chain** — no live
+  data yet to source from; same one-line pattern as `auditRows`/`wasteRows` once rows
+  exist in the table.
+- **GitHub Actions workflow + `sync-failure-watch.yml` entry** — deferred until the
+  multi-store `loc` uncertainty above is confirmed; watching a pull that might be
+  silently dropping all rows would produce a green check that means nothing.
+- **Backfill to 2024-01** — `PMIX_START_DATE`/`PMIX_END_DATE` already support an
+  arbitrary range; retention depth needs probing first (per the standing rule — same as
+  #257/#259), not assumed.
+- **`node scripts/gen-loader-emits.mjs --write`** — not yet re-run this pass; no metric
+  chain references `loadPmixRows` yet (see lazy-fill note above), so nothing for it to
+  pick up.
 
-## Deliberately not done in this pass, and why
+## Manual-upload path gap (carried over from the original pass, unrelated to this update, still true)
 
-- **`fetchPmixWindow()`'s real implementation** — needs the owner's DevTools capture.
-  Steps are in the script's own header (same steps as every prior capture: open the
-  report, run one store/one day, Network tab, filter `api.reports.myqsrsoft.com`, copy
-  URL + params + response shape).
-- **`parsePMixData` loc/date/dollars extraction** — needs either a real sample PMIX
-  export (to confirm the filename convention and check for a dollars column) or the API
-  capture (which would settle the field names for both paths at once, if the manual
-  export and API share a schema — unconfirmed).
-- **App.js lazy-fill wiring for `pmixRows`** — no real data source to wire it against yet
-  (see above). Small diff once either path lands — same one-line pattern as `auditRows`/
-  `wasteRows` in `App.js:575`'s `configureLazyFill` call.
-- **GitHub Actions workflow / `sync-failure-watch.yml` entry** — nothing to schedule that
-  can succeed yet. Same precedent as #257's probe (`workflow_dispatch`-only, no cron, no
-  watch-list entry needed — that test only enforces scheduled workflows).
-- **`productMixDiscount` (the separate discount-isolation report)** — documented in the
-  issue as the real fix for realized-vs-list price, not attempted here. A second pull,
-  once this one's shape is proven.
-- **Backfill to 2024-01** — can't backfill against a stub. Once the real pull works,
-  `PMIX_START_DATE`/`PMIX_END_DATE` already support an arbitrary range for it.
-- **`node scripts/gen-loader-emits.mjs --write`** — run, but produced no PMIX entry: the
-  regen script only tracks loaders wired into `metric-source.js`'s `METRIC_SOURCES`
-  chains, and `loadPmixRows` isn't wired into any metric chain yet (nothing to source —
-  see lazy-fill note above). Running it also surfaced one line of PRE-EXISTING, unrelated
-  drift (`qsrActSummaryRows` missing a `darSchedHrs` field) — deliberately reverted out of
-  this diff rather than folded in, since it's unrelated to #291 and belongs in its own fix.
+`parsePMixData` (`src/parsers/index.js:1209`) does not attach a location or date to its
+output — `pipeline.js` stores the raw parse result on `ds.pmixData[filename]` (a per-FILE
+object), never a flat per-row array, unlike `ds.darRows`. `ds.pmixRows` (the array-shaped
+Dexie schema entry) is never populated — vestigial. `ProductMixPanel`
+(`src/views/labor-tools.js:280`) reflects this: lifetime-cumulative across every loaded
+file, no time dimension, no per-store split. Whether a dollars/net-sales column exists in
+real manual PMIX exports (and under what header) is still unconfirmed — not attempted
+without a real sample file. This means the manual-upload fallback still cannot be fully
+wired even now that the API path is real; it needs its own pass against a real export.
 
 ## Next session, in order
 
-1. Owner captures the real endpoint (or a sample PMIX export file surfaces).
-2. Implement `fetchPmixWindow()` + `runAll()`'s row mapping against the real response.
-3. Extend `parsePMixData`/`pipeline.js`'s `pmix` branch to extract loc+date (from the
-   captured API response, or from the filename convention if going the manual-export
-   route) and a real dollars field — resolves the schema's `dollars` nullability.
-4. Wire `savePmixRows`/`loadPmixRows` into App.js's `configureLazyFill` + the upload
+1. Confirm the multi-store `loc` field name — either a real multi-store DevTools capture,
+   or watch the first live run's per-date row counts for a silent zero.
+2. Wire `savePmixRows`/`loadPmixRows` into App.js's `configureLazyFill` + upload
    save-after-diff pattern (mirrors `auditRows`, `App.js` ~line 2166-2239).
-5. Scheduled workflow + `sync-failure-watch.yml` entry + manual fallback confirmation +
-   backfill to 2024-01 — the standard 5-part new-pull checklist, all now unblocked.
+3. Scheduled workflow + `sync-failure-watch.yml` entry + backfill to 2024-01 — the
+   standard 5-part new-pull checklist, once step 1 is confirmed.
+4. `productMixDiscount` pull for `disc_amt` / full reconciliation.
+5. `parsePMixData`/`pipeline.js` loc+date+dollars extraction for the manual fallback.
