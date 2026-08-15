@@ -1698,12 +1698,27 @@ store. Measured against store 3708's book, only **23.9% of product dollars** ran
 list price — and most of the remainder is *other stores'* list prices (§ above), not discounting.
 Do not read the gap as discount depth until the roll-up is fixed.
 
-## `priceEatin` and `priceTakeout` are dead columns here
+## `priceEatin` / `priceTakeout` — identical TODAY, but do not delete the columns
 
 **1,966 of 1,966 rows** have `price == priceEatin == priceTakeout`, and `priceEatin != priceTakeout`
-on **zero** rows. There are **two** channels in this data, not three: in-store and delivery. Do not
-persist three columns that are one column; store `price` and `priceDelivery`, and re-test the eat-in
-split only if a state with a prepared-food tax difference is ever added.
+on **zero** rows. So there are **two** live channels in this data, not three: in-store and delivery.
+
+⚠️ **This is a property of Florida and Oklahoma, not of the API** (owner, 2026-08-15):
+
+> *"correct for FL and OK — the option exists in the POS due to some states having different taxes
+> for eat in vs take out … won't affect us now, but any even marginally thin potential roll-out and
+> adoption of this app should keep the door open on that one for flexibility down the road."*
+
+**Standing instruction: persist all three columns even though two are currently redundant, and
+carry this comment forward.** The split is a real POS capability that exists because some states tax
+prepared food differently for eat-in versus take-out. Collapsing the schema to `price` +
+`priceDelivery` would look like a tidy simplification today and would silently break the first
+multi-tenant deployment into such a state — and the collapse would be invisible, because the two
+columns would keep agreeing right up until they didn't. Storage is three floats per item per store.
+
+The **derived** eat-in/take-out comparison may be suppressed in the UI while the two agree; the
+**stored** columns must not be. This is the "never break working features" rule applied forward to a
+feature that does not exist yet.
 
 ## `deliveryPremium` — formula confirmed, with two divide-by-zero behaviours
 
@@ -1807,10 +1822,50 @@ An item can go out, be restored, and go out again the same day. Key on
 `date` is redundant with `outageTimestamp` — identical on 142/142 rows — but keep it as the
 partition column.
 
-## Why this is worth building: it makes lost sales measurable
+## ⚠️ An "outage" is a MANAGER'S POS ACTION, not a measured out-of-stock
 
-Outages join to Product Mix on `(store, date, menuItemNumber)`. That turns *"Fried Apple Pie was out
-at five stores"* into *"…and here is what each of those stores normally sells in that window."* No
-current Meridian panel can express an out-of-stock at all, and it is a plausible partial explanation
-for both unexplained sales softness and for VOICE accuracy complaints. It also feeds the FOB /
-inventory work directly: a repeated outage on one item is an ordering failure with a name.
+This is the single most important thing to know before building anything on this feed, and it is not
+inferable from the payload. Owner, 2026-08-15:
+
+> *"it is tied to the POS in each location. When a manager puts a product on outage due to lack of
+> physical product available. Should never be many on there."*
+
+> *"there are lots of factors besides actually being out of product that can affect this. Equipment
+> being down (ABS or beverage dispenser for example could cause all XS size drinks in some cases),
+> cleaning (routine) of shake and sundae machine, and many more."*
+
+So every row is **a human marking an item unavailable in the POS**, for any reason. The measured
+data agrees: the largest events are whole equipment-shaped families going down together — 12
+Caramel-Apple-Pie beverage SKUs at 38609, 10 XS drink sizes at 33109, 3 Chocolate Shake sizes at
+29760, 6 Smoothie SKUs then 7 Frappe SKUs at 35242 an hour apart. Those read as one beverage
+dispenser and one shake machine, not as running out of twelve products.
+
+**Three consequences, all binding:**
+
+1. **Never label this "out of stock" in the UI.** It is *item unavailable*. A supply reading is one
+   hypothesis among several and the data cannot distinguish them.
+2. **Do not route it to ordering or FOB as a supply signal** without a cause dimension. An earlier
+   draft of this section said *"a repeated outage on one item is an ordering failure with a name"* —
+   **that is wrong and is retracted.** A nightly shake-machine clean would present identically.
+3. **Equipment and routine-cleaning outages are the interesting finding, not noise to strip.**
+   Recurring same-time, same-family events are an equipment-reliability and a
+   procedure-timing signal — the shake/sundae clean showing up in trading hours is a real
+   operational question. Cluster by `(store, family, time-of-day)` before drawing any conclusion.
+
+**"Should never be many on there"** is also a usable expectation: a store carrying a long or a
+long-lived outage list is itself the exception worth surfacing.
+
+**Next step before design: read the QSRSoft KB articles on the Product Outage report** (owner's
+suggestion) — specifically whether the POS records a *reason code* alongside the flag. If it does,
+one extra `selectCols` field separates supply from equipment from cleaning and the whole feed becomes
+several times more useful. If it does not, cause must be inferred from clustering and every
+downstream metric inherits that caveat.
+
+## Why it is still worth building: it makes lost sales measurable
+
+Outages join to Product Mix on `(store, date, menuItemNumber)`. That turns *"Fried Apple Pie was
+flagged unavailable at five stores"* into *"…and here is what each of those stores normally sells in
+that window."* No current Meridian panel can express an unavailable item at all, and it is a
+plausible partial explanation for both unexplained sales softness and for VOICE accuracy complaints
+— **whatever the cause**, the guest could not buy it. Lost sales is the one metric that is valid
+without knowing why the item was off, which makes it the right first build.

@@ -336,6 +336,14 @@ flagged 12 SKUs (every Caramel-Apple-Pie beverage size) and one at 33109 flagged
 drink). Collapse to `(storeNum, outageTimestamp)` first, then normalise per trading day. Same
 un-normalised-count trap as `security/top_contributors`.
 
+⚠️ **An outage row is a manager's POS action, not a measured out-of-stock** (owner, 2026-08-15).
+Equipment down (ABS, beverage dispenser) and routine shake/sundae-machine cleaning produce identical
+rows — which is exactly what the 12-SKU and 10-SKU events look like. **Never label it "out of
+stock"; do not route it to ordering or FOB as a supply signal without a cause dimension.** Lost
+sales is valid regardless of cause, so it is the right first build. Read the QSRSoft KB articles
+first to find out whether the POS records a reason code — one extra `selectCols` field would
+separate supply from equipment from cleaning. Full detail in `qsrsoft-report-catalog.md`.
+
 ## L. Menu Price Comparison ("RFM Price Comparison") — the per-store list price book
 
 `GET /reports/mcd/product/menuPriceComparison` with `nsd=d` and a comma NSN list. Grain is a clean
@@ -365,3 +373,11 @@ it per store per item from the record, not from memory.
 K first — it is one request, it is new capability rather than a refinement, and it is small enough
 to ship inside the existing `qsrsoft-ops-pull.mjs` auth. Then A (Register Audit) as before. L slots
 in beside F, since both live in the same script and answer the same question from two sides.
+
+**Schema note for L, carried forward deliberately:** `priceEatin` and `priceTakeout` are identical
+to `price` on all 1,966 rows — but that is a fact about **Florida and Oklahoma**, not about the API.
+The POS exposes the split because some states tax prepared food differently for eat-in versus
+take-out. **Persist all three columns anyway.** Collapsing them would look like a tidy simplification
+and would silently break the first multi-tenant deployment into such a state, invisibly — the columns
+agree right up until they don't. Suppress the derived comparison in the UI if you like; do not
+collapse the schema.
