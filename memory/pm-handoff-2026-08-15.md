@@ -69,10 +69,24 @@ settled something the PM asserted from inference. See the corrections register i
 | **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase onto latest `main` |
 | **#269** | #263 + #265 pull-failure detection + completeness ledger | **HELD** — owner must run the SQL; plus one residual |
 
-**#292's blocker, quantified (this is the review note to repeat):** a primary key of
-`(loc, date, item)` drops **127 of 441 rows (29%)** and retains only **42% of dollars**,
-non-deterministically — and the rows it drops are exactly the **price tiers the issue exists to
-measure**. The PK must include the price point. Do not merge until the rebuild lands.
+**#292's blocker, quantified:** a primary key of `(loc, date, item)` drops **127 of 441 rows (29%)**
+and retains only **42% of dollars**, non-deterministically — and the rows it drops are exactly the
+**price tiers the issue exists to measure**. The PK must include the price point.
+
+> ⚠️ **CORRECTION (2026-08-15, verified on the branch): the PK rebuild is DONE. Do not dispatch it.**
+> `supabase/schema-product-mix.sql` on `claude/issue-291-product-mix-pull` declares
+> `primary key (loc, date, item, price)`, and `savePmixRows` upserts on
+> `onConflict: 'loc,date,item,price'` to match. The engineer corrected it *before* this handoff was
+> written; the board entry above was never updated. This is the CLAUDE.md "verify against the actual
+> code before assuming a next-up item is undone" rule earning its place a second time — dispatching
+> the rebuild would have been a duplicate reimplementation of work already sitting in the PR.
+>
+> **#292's real remaining blocker** is the one the PR body flags itself: `mapRow()`'s
+> `loc: nsn7(r.storeNum ?? r.nsn ?? '')` is a **guess**. #293's capture was single-store, so the field
+> QSRSoft uses to identify the store in a genuine multi-store response is unconfirmed. If wrong it
+> fails closed — drops rows rather than misattributing them — and silently upserts **zero** rows with
+> no error beyond a debug log. Needs a real multi-store capture (**strip `x-auth-token`**) or a
+> watched first live run. #292 needs a PM review, not an engineer dispatch.
 
 **#269's residual:** in `scripts/check-data-completeness.mjs`,
 `if (inc.date_start < startDate || inc.date_end > endDate) continue;` means an out-of-window incident
