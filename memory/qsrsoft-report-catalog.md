@@ -2032,8 +2032,21 @@ rather than from the export alone.
 ## The expanded row, reconciled — children are PRICE TIERS, not stores
 
 The owner expanded item **1 Hamburger** at **27 Locations**, YEST 2026-08-14. Eight child rows, one
-per price point. **At full district scope the children are still price tiers — there is no store
-dimension anywhere in this report, expanded or collapsed.** That closes the question for good.
+per price point. At full district scope the children are still price tiers.
+
+> ⚠️ **RETRACTED, same day.** This section originally read *"there is no store dimension anywhere in
+> this report, expanded or collapsed — that closes the question for good."* Minutes after it was
+> committed the owner found a **`Show Location Names` toggle inside the table's Column Settings
+> gear**. The claim was made from an incomplete sweep of the UI — the filter bar was enumerated, the
+> per-table column dialog was not — and "closes the question for good" was language the evidence did
+> not support. **Status: UNDER TEST, not closed.** What is still true is narrower and safe: with
+> `Show Location Names` in whatever state it was in for this capture, the children of item 1 came
+> back as eight price tiers, and the reconciliation below holds.
+>
+> The test: SAVE the toggle, re-expand a row, and see whether the children become store names — and
+> capture the request either way, since a new parameter in it is what the pull script needs.
+> This is the second time in one day that a UI control answered a question I had reasoned about
+> instead of measured. See [[feedback-measure-dont-reason]].
 
 Five columns reconcile **exactly** (parent vs Σ children):
 
