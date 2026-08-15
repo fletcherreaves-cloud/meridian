@@ -1104,3 +1104,67 @@ compound the vendor's framing error with our own authority.
 The **transactions** call itself. Following this pattern it is most likely
 `POST /security/security_events/v1/{orgId}/{nsn}` with the same body plus optional filter keys
 (day part, register, cashier, manager, tender type, manager-code flag).
+
+---
+
+# Product Mix endpoint — captured 2026-08-14 (WASTE view; sales view still needed)
+
+```
+GET https://api.reports.myqsrsoft.com/reports/mcd/product
+    ?catalogType=completedWaste          ← SWITCHABLE — the sales/mix catalog is behind this
+    &nsn=3708                            ← single store; comma-list support UNTESTED
+    &orgId={uuid}&enterpriseName=McDonalds
+    &startDate=&endDate=&weekStart=3
+    &familyGroup=BREAKFAST_DRINK,BREAKFAST_SIDE,BREAKFAST_ENTREE,REGULAR_DRINK,
+                 REGULAR_ENTREE,FRIES,NON_PRODUCT,SHAKES,DESSERT
+    &poo=Combined                        ← point-of-origin; "Combined" implies it SPLITS
+    &timeSegment=openClose&segmentBy=summary&timeInterval=summary
+    &segmentNames=open-close&segmentsSelected=open-close
+    &nsd=s&dsd=s&selectCols=wasteQty     ← explicit column selection, like VOICE
+```
+
+Same host as VOICE/DAR (`api.reports.myqsrsoft.com`), so the documented Playwright in-browser auth
+pattern applies. Date ranges native. `weekStart=3` (Wednesday) again. Referer is
+`/reports/mcd/product/productMixDrillDown`.
+
+`/reports/mcd/product` is a **generic product endpoint with `catalogType` selecting the view** —
+not one endpoint per report. That is a better shape than expected: one client, several catalogs.
+
+## Response — item-level, and NO ITEM NAMES
+
+```json
+{"resp":[{"menuItemNumber":5,"wasteQty":2},{"menuItemNumber":6053,"wasteQty":10}, …]}
+```
+
+27 items for one store on one day. **Keyed by `menuItemNumber` with no display name.**
+
+**A Product Mix pull therefore needs a companion item catalog** — whatever call maps item number to
+name. The UI renders names, so the lookup exists. **This is a required second capture**, and the
+kind of omission that stalls a build halfway: item-level data with no way to say which item.
+
+Design consequence: store `menuItemNumber` as the key and join names from a separately-maintained
+catalog table. Never bake names into the fact rows — item numbers are stable, marketing names are
+not, and #291's price work depends on tracking the *same item* across periods.
+
+## `poo=Combined` — possibly a channel split, and that would matter
+
+If `poo` is point-of-origin (drive-thru / front counter / delivery / kiosk), Product Mix splits by
+channel. That would let a mix shift be attributed to a *channel*, not just an item — a bigger unlock
+than the price question #291 was filed for, and directly relevant to the kiosk hypothesis
+(POS 6–11) and to the delivery-offer asymmetry in the McValue work.
+
+Untested. Worth one capture with `poo` set to something other than `Combined`.
+
+## Bonus: item-level waste is finer than anything Meridian holds
+
+`DEFAULT_TARGETS` carries waste only in aggregate (`tCompWaste`, `tRawWaste`, `tStatLoss`).
+**Per-item completed waste per store per day** is a materially finer signal and feeds the food-cost
+and FOB work directly. Not what #291 was filed for, but worth capturing in the same pull since it is
+the same endpoint with a different `catalogType`.
+
+## Still needed before #291 can be built
+
+1. **Sales/mix view** — `catalogType` off waste, `selectCols` carrying quantity **and dollars**.
+   That is what yields realized unit price and the whole price-detection argument.
+2. **The item catalog call** — `menuItemNumber` → name.
+3. **`nsn` comma-list test** — decides whether a district pull is 1 request or 27.
