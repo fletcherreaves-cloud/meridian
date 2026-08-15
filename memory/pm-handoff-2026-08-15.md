@@ -44,8 +44,9 @@ measurement, not another hypothesis) · data depth is never the limiter, backfil
 (email ingestion is forward-only) · auto/emailed-first, freshest-wins; manual is last-resort fill ·
 never average averages, dollar-weight aggregates · source metrics through `metric-source.js` /
 `vs-ly.js`, never raw rows in a panel · commit every `memory/` file in the same commit as the work
-citing it · a commit body is the durable handoff — spell out what was deferred and why · never break
-working features · speed check on every change.
+citing it · a commit body is the durable handoff — spell out what was deferred and why · **cite PR
+numbers, not commit hashes, in anything that outlives a branch** (§7) · never break working features ·
+speed check on every change.
 
 **PM-specific discipline that has repeatedly mattered:** when the PM asserts something with a tidy
 justification, the engineer should check it. Four times on 2026-08-10 a five-minute look would have
@@ -113,9 +114,12 @@ cannot split drive-thru vs front counter vs kiosk. That line of inquiry is close
 
 ## 4. The captures he sent just before the session died — all processed
 
-Three commits, all on this branch or `main`. Read the commit bodies; they are the record.
+All landed on `main`. **Cite them by PR number, not by commit hash** — #304 was squash-merged, so the
+four hashes its own body cited (`6d732fd`, `771b186`, `7a7611a`, `e181773`) never existed on `main` and
+resolve nowhere once the branch ref is gone. Pre-squash → landed mapping, recorded once for anyone
+decoding an older reference: all four collapsed into **`0359b4e` (#304)**.
 
-- **`a0d9c7e`** (on `main` via #293) — `product-mix-bundles` / `menuitems` / `qtr-hr-sales`.
+- **#293** (`a0d9c7e`, a true ancestor of `main`) — `product-mix-bundles` / `menuitems` / `qtr-hr-sales`.
   Endpoint `/reporting/v2/product/product-mix-bundles`, `catalogType=productMix`. Grain is
   **(item, price point)**, not item — 441 rows over 314 item numbers, 116 items at >1 price. So
   **never** recover realized price as `dollars ÷ units`; it would read a mix shift as a price change.
@@ -125,13 +129,13 @@ Three commits, all on this branch or `main`. Read the commit bodies; they are th
   `promoQty` gives **direct free-item detection**, which turns the FBP monthly-GMA-offer confound from
   an assumption into a measurement. Volume: ~11,900 rows/day district-wide, ~4.3M/year; 21 rows per
   store-day are `soldQty 0` catalog placeholders (filter on ingest).
-- **`6d732fd`** (this branch) — the UI filter surface and the **hierarchical Excel export**. Measured
+- **#304** — the UI filter surface and the **hierarchical Excel export**. Measured
   on 535 items / 4,539 rows: subtotal row + detail rows + a grand-total row. Naive summation gives
   Units Sold **311,769 vs a true 103,923 (×3.00)** and Units Wasted **13,911 vs 1,205 (×11.54)**.
   `parsePMixData` does exactly the naive thing. Detecting the subtotal by "Price contains a range"
   misses 80 single-price items — group by item number, take the first row, drop the grand total by its
   empty `Desc`.
-- **`771b186`** (this branch) — **`api.sso.myqsrsoft.com/user/settings` returns EVERY report's
+- **#304** — **`api.sso.myqsrsoft.com/user/settings` returns EVERY report's
   `*/defaultColumns`**, not just the one requested. That is the canonical API field vocabulary for 13
   reports; read field names from there instead of reverse-engineering Excel headers (the export renders
   `priceRange` as "Price" and `adjPmixSales` as "Adj PMIX Sales", neither of which `selectCols` wants).
@@ -150,7 +154,7 @@ the last three days.
 
 **Cleared while writing this handoff — both were unfiled and both are now issues:**
 
-- **#302 — `parsePMixData` sums a hierarchical export as if it were flat.** Commit `6d732fd` had
+- **#302 — `parsePMixData` sums a hierarchical export as if it were flat.** A commit body in #304 had
   declared this "Filed separately" and it never was; that dangling claim is now closed. Panel family
   totals **×3.00**, waste **×11.54**, and on a default export `Family Group` is absent so every row
   falls to `'Other'` and the by-family breakdown silently collapses into one bucket. Three of the four
@@ -160,7 +164,7 @@ the last three days.
   `src/views/labor-tools.js:1764` falls to `0` when `otHrs` or `avgRate` is missing, while the adjacent
   OT HRS/DAY column correctly renders "—" from the same missing data. Filed together with the At A
   Glance "No labor data" vs Labor Analytics 22.47% inconsistency, the "+0 hrs" Act-vs-Need column, and
-  the `771b186` finding that `operationsReport/controls` already exposes `overTimeHours`,
+  the #304 finding that `operationsReport/controls` already exposes `overTimeHours`,
   **`overTimeDollar`** (the actual figure, not this panel's `hrs × 0.5 × rate` estimate), `avgRate` and
   `actualVsNeeded`.
 
@@ -227,6 +231,15 @@ Recorded because they are the cheapest thing a successor can inherit.
   of theorising and found the grand-total row. That is the habit.
 - **Could not measure Supabase contents** — the anon key returns zero rows under RLS. That is RLS, not
   absence. Never report an unverifiable count as confirmed.
+- **Cited pre-squash commit hashes in durable docs, then squash-merged them out of existence.** This
+  handoff and issues #302/#303 pointed at `6d732fd` / `771b186`; #304 squashed four commits into
+  `0359b4e`, so those SHAs were never on `main` and every citation was dead on arrival. It was invisible
+  from the authoring session because that container still had the branch checked out — the hashes
+  resolved locally and nowhere else. **Rule: in anything that outlives a branch — memory files, issue
+  bodies, PR bodies — cite the PR number.** PR numbers survive squash, rebase, and branch deletion;
+  branch SHAs survive none of them. If a hash is genuinely needed, verify it with
+  `git merge-base --is-ancestor <sha> origin/main` **before** writing it down, and never verify a
+  cross-session reference from a working copy that still holds the branch.
 
 ---
 
