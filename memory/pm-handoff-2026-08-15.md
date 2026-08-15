@@ -146,25 +146,33 @@ the last three days.
 
 ---
 
-## 5. PM debts — owed work, none of it filed yet
+## 5. PM debts
 
-1. **`parsePMixData` inflation issue is NOT filed**, despite commit `6d732fd` saying "Filed
-   separately." That is a dangling claim. The shipped Product Mix panel's family totals are **~3×**
-   reality and its waste **~11.5×**, and on a default export `Family Group` is absent so *every* row
-   falls to `'Other'` and the by-family breakdown silently collapses into one bucket. Three of the
-   four failure modes are live in production today. **File this first.**
-2. **Labor Analytics OT false-zero is NOT filed.** `src/views/labor-tools.js:1764` —
-   `const otCostEst = (otHrs||0)>0 && (avgRate||0)>0 ? … : 0;` renders **"$0"** for 27 locations while
-   OT HRS/DAY correctly renders "—" from the same missing data. A false zero is worse than a blank.
-   Pair it with At A Glance showing "No labor data" while Labor Analytics shows 22.47%, and with the
-   `771b186` finding that `operationsReport/controls` already exposes the three fields needed.
-3. **Promo/Discount ROI reads negative for every store** — suspected denominator artifact from
-   promo-heavy classification. Investigate or file.
-4. **Re-post consolidated #291/#292 guidance** covering the UI filter surface and the workbook
+**Cleared while writing this handoff — both were unfiled and both are now issues:**
+
+- **#302 — `parsePMixData` sums a hierarchical export as if it were flat.** Commit `6d732fd` had
+  declared this "Filed separately" and it never was; that dangling claim is now closed. Panel family
+  totals **×3.00**, waste **×11.54**, and on a default export `Family Group` is absent so every row
+  falls to `'Other'` and the by-family breakdown silently collapses into one bucket. Three of the four
+  failure modes are live in production today. The API path is unaffected (flat rows, `familyGroup`
+  inline), but a fallback that is 3× wrong is worse than no fallback.
+- **#303 — Labor Analytics renders OT COST as "$0" for all 27 locations.**
+  `src/views/labor-tools.js:1764` falls to `0` when `otHrs` or `avgRate` is missing, while the adjacent
+  OT HRS/DAY column correctly renders "—" from the same missing data. Filed together with the At A
+  Glance "No labor data" vs Labor Analytics 22.47% inconsistency, the "+0 hrs" Act-vs-Need column, and
+  the `771b186` finding that `operationsReport/controls` already exposes `overTimeHours`,
+  **`overTimeDollar`** (the actual figure, not this panel's `hrs × 0.5 × rate` estimate), `avgRate` and
+  `actualVsNeeded`.
+
+**Still owed:**
+
+1. **Promo/Discount ROI reads negative for every store** — suspected denominator artifact from
+   promo-heavy classification. Investigate, then file.
+2. **Re-post consolidated #291/#292 guidance** covering the UI filter surface and the workbook
    structure.
-5. **McValue FBP document edits before 25 August** — split B1 out, name the calendar events, state the
+3. **McValue FBP document edits before 25 August** — split B1 out, name the calendar events, state the
    LY-asymmetry bound. Workspace: `memory/project-mcvalue-2-fbp-document.md`. **This has a hard
-   external deadline.**
+   external deadline and is the only externally-dated item on the board.**
 
 Already filed and needing no further PM work: **#299** (FOB Root-Cause Matrix claims to exclude Base
 Food, then ranks it #1/#3/#5 — `analytics.js:3178`, the `actionable` flag is set on zero of the 10
@@ -241,15 +249,14 @@ Recorded because they are the cheapest thing a successor can inherit.
 
 ## 9. First actions for the successor PM, in order
 
-1. **Review #298, #301, #297** — three engineer PRs are sitting unreviewed. Fetch `main`, read the
-   diffs, build, test, spot-check one factual claim each, then merge.
-2. **File the two owed issues** (`parsePMixData` inflation; Labor Analytics OT false-zero). #1 is
-   already claimed as filed in a commit body, so it is also a correctness debt.
-3. **Land this handoff and the two pending memory commits** (`6d732fd`, `771b186`) — they are on
-   `claude/phone-disconnection-issue-di7ae9` and unmerged.
-4. **Chase the owner's list in §3**, leading with the token cycle and the #269 SQL run.
-5. **Dispatch #292's PK rebuild** to the engineer once #298/#301/#297 are merged (one task in flight).
-6. **Start the McValue FBP edits** — 25 August is close and it is the only externally-dated item.
+1. **Review #298, #301, #297** — three engineer PRs are sitting unreviewed and each hour open is
+   drift. Fetch `main`, read the diffs, build, test, spot-check one factual claim each, then merge.
+2. **Chase the owner's list in §3**, leading with the token cycle and the #269 SQL run.
+3. **Dispatch #292's PK rebuild** to the engineer once #298/#301/#297 are merged (one task in flight).
+   #302 and #303 are now filed and unassigned — they are good candidates for the queue behind
+   #286/#269, and #303's first half is small and self-contained.
+4. **Start the McValue FBP edits** — 25 August is close and it is the only externally-dated item.
+5. **Investigate the Promo/Discount ROI all-negative suspicion** and file it if it holds.
 
 Related: [[feedback-pm-worker-split]] · [[feedback-measure-dont-reason]] ·
 [[feedback-performance-budget]] · [[qsrsoft-report-catalog]] · [[project-mcvalue-2-fbp-document]] ·
