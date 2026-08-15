@@ -340,9 +340,15 @@ un-normalised-count trap as `security/top_contributors`.
 Equipment down (ABS, beverage dispenser) and routine shake/sundae-machine cleaning produce identical
 rows — which is exactly what the 12-SKU and 10-SKU events look like. **Never label it "out of
 stock"; do not route it to ordering or FOB as a supply signal without a cause dimension.** Lost
-sales is valid regardless of cause, so it is the right first build. Read the QSRSoft KB articles
-first to find out whether the POS records a reason code — one extra `selectCols` field would
-separate supply from equipment from cleaning. Full detail in `qsrsoft-report-catalog.md`.
+sales is valid regardless of cause, so it is the right first build.
+
+**KB read 2026-08-15 — it confirms this and closes the reason-code question.** QSRSoft's own
+definition: *"Menu Items that are not being sold. This is often because a machine is not working or
+needs to be cleaned. For Menu Items to appear on this list, a Manager must perform the POS function
+called Product Outage."* **There is no reason code**, so cause must be inferred from clustering
+permanently — not a gap a better `selectCols` closes. The KB also shows a **"Trailing 365 Days"**
+date option, so this stream is **backfillable to at least a year** and must not be built
+forward-only. Full detail in `qsrsoft-report-catalog.md`.
 
 ## L. Menu Price Comparison ("RFM Price Comparison") — the per-store list price book
 

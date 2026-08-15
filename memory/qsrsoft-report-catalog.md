@@ -1855,11 +1855,40 @@ dispenser and one shake machine, not as running out of twelve products.
 **"Should never be many on there"** is also a usable expectation: a store carrying a long or a
 long-lived outage list is itself the exception worth surfacing.
 
-**Next step before design: read the QSRSoft KB articles on the Product Outage report** (owner's
-suggestion) — specifically whether the POS records a *reason code* alongside the flag. If it does,
-one extra `selectCols` field separates supply from equipment from cleaning and the whole feed becomes
-several times more useful. If it does not, cause must be inferred from clustering and every
-downstream metric inherits that caveat.
+### ✅ The KB was read (2026-08-15). It confirms the above and closes the reason-code question.
+
+Queried `qsrsoft_kb` (208 articles) directly from the sandbox with the anon key. Three articles
+mention outages; the operative definitions:
+
+> **"The Product Outage insight shows information about Menu Items that are not being sold. This is
+> often because a machine is not working or needs to be cleaned. For Menu Items to appear on this
+> list, a Manager must perform the POS function called Product Outage."**
+> — *Insights - Did You Know? - Dashboard Details*
+
+> **"The Reported Product Outage report shows items that have been marked deactivated on the POS at
+> the restaurant."**
+> — *QSRSoft Reports - Overview Of Reports*
+
+So the vendor's own definition leads with **machine down or needing cleaning**, and mentions supply
+nowhere. The owner's read was exactly right and this is now sourced rather than inferred.
+
+**❌ There is no reason code.** No article describes a cause, category or reason field on the record,
+and none appears in the response. **Cause must be inferred from clustering, and every downstream
+metric inherits that caveat permanently** — this is not a gap a better `selectCols` closes.
+
+Two things the KB turned up that were not being looked for:
+
+- **"DATE: Choose from Last 30 Days OR Trailing 365 Days."** A year of history is available on the
+  vendor's own surface, so this stream is **backfillable to at least 365 days** — consistent with
+  the standing "data depth is never the limiter" rule. Do not build it as forward-only.
+- **Watch lists exist** — "select from a dropdown of all watch lists, up to 4 maximum." A store or
+  org can define named menu-item watch lists. Possibly a filter parameter worth probing, and
+  possibly a place the organisation has already encoded which items matter.
+
+One phrasing worth carrying: the near-real-time Insights version *"identifies down equipment,
+inventory outages, preparation opportunities and end-of-promotional events."* Those are four
+distinct operational causes the vendor knows are mixed into this one feed — which is precisely why
+a single "out of stock" label would be wrong.
 
 ## Why it is still worth building: it makes lost sales measurable
 
