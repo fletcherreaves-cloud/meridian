@@ -1759,11 +1759,17 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       const actHrs    = _perDay(cRows,lRows,'actHrs');
       const crewHrs   = _avg(lRows,'crewHrs')      || (cIsSummary?null:_avg(cRows,'crewHrs'));
       const salMgrHrs = _avg(lRows,'salaryMgrHrs') || (cIsSummary?null:_avg(cRows,'salaryMgrHrs'));
-      // OT cost: prefer parsed dollar amount; fall back to estimated OT premium
+      // OT cost: prefer parsed dollar amount; fall back to estimated OT premium.
+      // #303: otCostEst used (otHrs||0)>0&&(avgRate||0)>0, which cannot distinguish "otHrs/
+      // avgRate are missing" from "otHrs is a real 0" -- both collapsed to the same false
+      // branch and returned 0, a MEASURED result meaning "no OT cost anywhere," not "unknown."
+      // The adjacent OT HRS/DAY column (fed by the same missing inputs) already correctly
+      // rendered "--" one column over. Distinguish null (missing) from 0 (genuine, no OT that
+      // period) explicitly: only estimate when BOTH inputs are present.
       const otDolRaw  = _sum(cRows.length?cRows:lRows,'otDollar');
-      const otCostEst = (otHrs||0)>0&&(avgRate||0)>0 ? Math.round((otHrs||0)*0.5*(avgRate||0)*normDays) : 0;
+      const otCostEst = (otHrs!=null&&avgRate!=null) ? Math.round((otHrs||0)*0.5*(avgRate||0)*normDays) : null;
       const otCost    = otDolRaw>1 ? otDolRaw : otCostEst;
-      const otCostEd  = otDolRaw<=1 && otCostEst>0;
+      const otCostEd  = otDolRaw<=1 && (otCostEst||0)>0;
       return{loc,days,laborPct,tpph,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,
         otCost,otCostEd,totalSales,tgt,
         storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
@@ -1777,6 +1783,12 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     const sA=f=>{const v=locStats.map(s=>s[f]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     return{laborPct:wA('laborPct'),tpph:sA('tpph'),otHrs:sA('otHrs'),avgRate:sA('avgRate'),actVsNeed:sA('actVsNeed'),
       otCost:locStats.reduce((a,s)=>a+(s.otCost||0),0),
+      // #303: otCost sums s.otCost||0, which is correct for a SUM (a store with no data
+      // contributes 0, same as a store with genuine $0 OT) but loses the "every store's data
+      // was missing" signal once summed -- the district tile below had no guard at all and
+      // showed "$0" whenever every store's otCost happened to be null. otCostKnown tracks
+      // whether at least one store actually had a real reading.
+      otCostKnown:locStats.some(s=>s.otCost!=null),
       otCostEd:locStats.some(s=>s.otCostEd),
       totalSales:locStats.reduce((a,s)=>a+(s.totalSales||0),0),
       storeCount:locStats.length};
@@ -1907,7 +1919,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       {l:'Act vs Need',  v:avnFmt(dist.actVsNeed),
        sub:'+ overstaffed  ·  − understaffed',
        col:avCol(dist.actVsNeed), bg:'rgba(255,255,255,.02)'},
-      {l:'OT Cost (Period)',v:(dist.otCostEd?'~ ':'')+f$(dist.otCost),
+      {l:'OT Cost (Period)',v:dist.otCostKnown?(dist.otCostEd?'~ ':'')+f$(dist.otCost):'—', // #303: was unconditional f$(dist.otCost), showed "$0" when every store's input was missing
        sub:(dist.otCostEd?'Estimated premium  ·  ':'')+(dist.avgRate?'$'+nFmtL(dist.avgRate,2)+'/hr AROP  ·  ':'')+(dist.storeCount)+' locations',
        col:dist.otCost>5000?'#ef4444':dist.otCost>1000?'#f59e0b':'#a5b4fc',
        bg:'rgba(165,180,252,.04)'},
@@ -1977,7 +1989,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
           td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:avCol(dist.actVsNeed),borderTop:'.5px solid var(--bdr2)'}},avnFmt(dist.actVsNeed)),
           td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.avgRate?'$'+nFmtL(dist.avgRate,2):'—'),
           td({style:{borderTop:'.5px solid var(--bdr2)'}}),
-          td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,color:dist.otCost>2000?'#ef4444':dist.otCost>500?'#f59e0b':'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},(dist.otCostEd?'~':'')+f$(dist.otCost)),
+          td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,color:dist.otCost>2000?'#ef4444':dist.otCost>500?'#f59e0b':'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.otCostKnown?(dist.otCostEd?'~':'')+f$(dist.otCost):'—'), // #303: same guard as the OT Cost tile above
           td({style:{padding:'6px 8px',textAlign:'right',color:'var(--text3)',fontSize:'8.5px',borderTop:'.5px solid var(--bdr2)'}},dist.storeCount+' locs')
         ))
       )
