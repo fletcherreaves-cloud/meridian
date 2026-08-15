@@ -1168,3 +1168,178 @@ the same endpoint with a different `catalogType`.
    That is what yields realized unit price and the whole price-detection argument.
 2. **The item catalog call** — `menuItemNumber` → name.
 3. **`nsn` comma-list test** — decides whether a district pull is 1 request or 27.
+
+---
+
+# Product Mix — the SALES view. All three gaps above are CLOSED (captured 2026-08-14)
+
+Three further captures landed and answer 1, 2 and 3 in order. **`#291` is now buildable.**
+Every number below is measured off the actual 441-row payload, not inferred.
+
+## 1. `product-mix-bundles` — the item×price fact table
+
+```
+GET https://api.reports.myqsrsoft.com/reporting/v2/product/product-mix-bundles
+    ?catalogType=productMix            ← THE value the waste capture was hiding
+    &reportType=summary
+    &nsn=3708&orgId={uuid}&enterpriseName=McDonalds
+    &startDate=2026-08-13&endDate=2026-08-13&weekStart=3
+    &familyGroup=BREAKFAST_DRINK,BREAKFAST_SIDE,BREAKFAST_ENTREE,REGULAR_DRINK,
+                 REGULAR_ENTREE,FRIES,NON_PRODUCT,SHAKES,DESSERT
+    &poo=Combined
+    &timeSegment=openClose&segmentBy=summary&timeInterval=summary
+    &segmentNames=open-close&segmentsSelected=open-close&nsd=s&dsd=s
+    &selectCols=soldQty,discQty,menuItemNumber,description,familyGroup,
+                bundleQty,bundleDiscAmt,price,dollarsSold,promoQty,
+                totalUnitFoodCost,totalUnitPaperCost,offerAmt,unitFoodCost,unitPaperCost
+```
+
+Note this is **`/reporting/v2/product/…`**, not the `/reports/mcd/product` path the waste capture
+used. Same referer page (`productMixDrillDown`); two different backends behind one screen. The
+`/reporting/v2/` family is the same one `qsrsoft-ops-pull.mjs` already drives, so the existing auth,
+`base()` query builder and Playwright fallback all apply unchanged.
+
+```json
+{"menuItemNumber":8932,"price":2.99,"soldQty":65,"discQty":3,
+ "description":"M French Fries","familyGroup":"Fries","bundleQty":0,"bundleDiscAmt":0,
+ "dollarsSold":194.35,"promoQty":28,"totalUnitFoodCost":22.555,"totalUnitPaperCost":1.8785,
+ "offerAmt":86.6,"unitFoodCost":0.347,"unitPaperCost":0.0289}
+```
+
+### Grain: one row per (item, **price point**) — not per item
+
+441 rows over **314 distinct `menuItemNumber`s** for one store on one day. **116 items appear at
+more than one price.** The API has already done the price separation:
+
+| item | price points that day |
+|---|---|
+| 4314 McChicken | **$1.50 ×140** · $3.69 ×5 |
+| 592 McDouble | $2.59 ×113 · $3.39 ×1 |
+| 334 Sausage Burrito | **$1.50 ×63** · $2.89 ×3 |
+| 521 M Coke | $1.59 ×67 · $1.89 ×3 · $1.79 ×1 |
+| 8932 M French Fries | $2.99 ×65 · $3.69 ×8 |
+
+**This changes the #291 design.** The plan was to recover realized price as `dollars ÷ units`. Do
+not do that — it would average $1.50 and $3.69 McChickens into a meaningless $1.57 and make a
+mix shift look like a price change. **`price` is exact, per row, already.** A price *change* is a
+new price value appearing in the tier set for an item; a *mix* shift is the quantity moving between
+existing tiers. Those are now separable, which is strictly better than what the issue asked for.
+
+### `dollarsSold` is gross, and Σ does NOT equal net sales
+
+Measured on all 441 rows: `dollarsSold == price × soldQty` **exactly, 0 exceptions**. It is a
+menu-price extension, carries no discount, and is therefore redundant — derivable from two columns
+already present. Same for the cost pair: `totalUnitFoodCost == unitFoodCost × soldQty` exactly,
+0 exceptions. **Store the primitives (`price`, `soldQty`, `unitFoodCost`, `unitPaperCost`) and
+derive the extensions.** Storing both invites them to disagree.
+
+The reconciliation against `qtr-hr-sales` for the same store/day:
+
+```
+Σ dollarsSold           10,376.61
+allNetSales (qtr-hr)    10,087.69     gap +288.92  (+2.9%)
+Σ offerAmt                 172.02     residual +116.90 still unexplained
+Σ discQty                      264     → 116.90 / 264 = $0.44/unit, a plausible discAmt
+```
+
+**Never surface Σ `dollarsSold` as sales.** It overstates by ~3% at this store/day, and the
+overstatement is exactly the promotional intensity — so it will be *largest* in the periods a
+promo analysis cares about most. The residual is almost certainly a `discAmt` column we did not
+select; **one capture with `discAmt` added to `selectCols` should close it**, and that is the
+acceptance test for the ingest: Σ dollarsSold − Σ offerAmt − Σ discAmt == `allNetSales`.
+
+### `promoQty` and `offerAmt` are DIFFERENT things — carry both
+
+32 rows carry one or the other, and they do not co-occur: **15 rows have `promoQty` > 0 with
+`offerAmt` = 0**, and **12 have `offerAmt` > 0 with `promoQty` = 0**. Where both appear, neither
+derives the other (Hash Brown: promoQty 3 × $2.19 = $6.57, offerAmt $4.38; M Fries: 28 × $2.99 =
+$83.72, offerAmt $86.60). Read them as: `promoQty` = **units given away**, `offerAmt` = **dollars of
+offer applied**. A free-item program shows in `promoQty`; a dollar-off deal shows in `offerAmt`.
+
+**This settles the outstanding FBP question directly.** M French Fries on 2026-08-13 at store 3708:
+`soldQty` 65, `promoQty` **28** — 43% of medium fries given away in one day. That is the free-item
+signature, visible per store per day. Pull the 2025 and 2026 series and the monthly-GMA-offer
+confound stops being an assumption and becomes a measurement. That confound currently overstates
+*both* FBP headline findings (it ran continuously through 2025 but only Jan–Mar 2026, so it cancels
+in the pre-period and not the post-period) — this is the data that bounds it.
+
+### `bundleQty` / `bundleDiscAmt` are zero on every row
+
+Despite the endpoint's name. Either this store does not ring bundles, or they need a different
+`reportType`. **Unverified — do not design around them** until a capture shows one non-zero.
+
+### Volume — the one real design problem
+
+**441 rows per store-day → ~11,900/day across 27 stores → ~4.3M rows/year.** That is an order of
+magnitude past anything else in Meridian. Two measured mitigations:
+
+- **21 rows carry `soldQty` 0** — catalog placeholders (BBQ Sauce, Surprise Toy, Kids Fry, No Sauce).
+  Filter `soldQty > 0` on ingest.
+- **238 rows (54%) have `soldQty` ≤ 2 and carry 11.1% of dollars.** A long-tail cutoff is available
+  if needed, but it would break the price-tier history for slow items — prefer keeping them and
+  partitioning, and decide only if volume actually hurts.
+
+Roll-forward is cheap regardless: item-level daily is the atom, and every rollup Meridian wants
+(weekly item mix, family-group mix, price-tier history) derives from it.
+
+## 2. `menuitems` — the name catalog, and it takes all 27 stores in ONE call
+
+```
+GET https://api.reports.myqsrsoft.com/reporting/v2/product/menuitems
+    ?nsn=3708,5183,…,43701            ← all 27 NSNs, comma-separated. WORKS.
+    &orgId={uuid}&enterpriseName=McDonalds
+→ {"result":[{"text":"1 - Hamburger","value":1}, …]}
+```
+
+**Answers gap 3 as well:** the `nsn` comma-list is accepted on this family, so a district pull is
+per-date, not per-store — exactly the shape `qsrsoft-ops-pull.mjs` already uses.
+
+But `product-mix-bundles` **returns `description` and `familyGroup` inline**, so the fact rows do
+not need this catalog to be readable. It is still worth pulling once, because:
+
+**Display names are many-to-one over item numbers.** Measured on the returned catalog:
+
+```
+Hamburger      -> 1, 1001, 1403, 5041, 5728
+10 McNuggets   -> 5280, 8510, 25019, 25052
+M French Fries -> 8932, 9891, 9899
+6 McNuggets    -> 60, 1060, 25051
+Cheeseburger   -> 3, 1003, 1407
+```
+
+So **never group by name.** Grouping "Hamburger" collapses five distinct POS items — likely
+à-la-carte vs bundle-component vs meal-deal variants — and a price series built that way would
+show phantom moves as volume rotates between them. Key on `menuItemNumber`, join names for display,
+and treat the name as a label that can change while the number does not.
+
+## 3. `qtr-hr-sales` at `segmentBy=summary` — the denominator
+
+```
+GET …/reporting/v2/sales/qtr-hr-sales?catalogType=sales&timeSegment=openClose
+    &segmentBy=summary&segmentNames=open-close&segmentsSelected=open-close
+    &…&selectCols=transactions,allNetSales,nonProdAmt,nonProdTax
+→ {"result":[{"numberOfStores":1,"numberOfDays":1,"storeNumDate":1,"qualifiedDay":1,
+              "transactions":1018,"allNetSales":10087.69,"nonProdAmt":82.39,"nonProdTax":0}]}
+```
+
+Same endpoint `qsrsoft-ops-pull.mjs` already calls with `timeSegment=peaks`; at `summary` it returns
+one whole-day row. Useful for two things: the reconciliation above, and **average check** —
+`10,087.69 / 1,018 = $9.909` ($9.828 ex non-product).
+
+That average check is the denominator the McValue check-gain claim needed: **+10.4¢ on a $9.91
+check is 1.05%**, so the ~1% figure in the FBP work holds against a measured base rather than a
+remembered one.
+
+Also note `numberOfStores` / `numberOfDays` / `qualifiedDay` come back inline — a built-in
+completeness check for any multi-store, multi-day pull, free with every request.
+
+## What is still unknown
+
+1. **`discAmt`** — one capture, closes the reconciliation identity above.
+2. **`poo`** — still only ever seen as `Combined`. If it is point-of-origin, product mix splits by
+   channel, and that is a bigger unlock than the price question (kiosk hypothesis, delivery-offer
+   asymmetry). One capture with any other value settles it.
+3. **`bundleQty`** — never non-zero yet.
+4. **Retention depth.** Per the standing rule, `min(dt)` is a pull artifact, not a floor — but the
+   depth this endpoint actually serves is untested. Probe one week of April 2025 before scoping any
+   backfill, the same way #257/#259 did.
