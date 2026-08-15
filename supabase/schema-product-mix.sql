@@ -55,6 +55,27 @@
 -- every row of the captured payload despite the endpoint's name. Unverified;
 -- do not design around them until a capture shows one non-zero.
 --
+-- ⚠️ WRAP COMBO sold_qty IS HALVED, per a dismissible vendor banner (not
+-- discoverable from the data itself): "Wrap Combo Units Sold are based off
+-- the menu item, therefore the 2 wrap menu items will need to be multiplied
+-- by 2 to get total single units sold." Any wrap-level unit or food-cost
+-- analysis over sold_qty must double the 2-wrap combo items (item numbers
+-- carrying "2 …" naming: 25254/25261/25729 Snack Wraps and their combo
+-- variants, plus other "2 …"/"3 …" multi-item bundles — the banner names
+-- only wraps; whether the same halving applies to the others is untested,
+-- per memory/qsrsoft-report-catalog.md). No consumer of this table does that
+-- doubling yet — this note exists so the first one that computes a wrap unit
+-- count does it correctly rather than shipping a plausible-looking 50%-low
+-- number.
+--
+-- units_used / units_wasted deliberately NOT selected or stored: measured
+-- (memory/qsrsoft-report-catalog.md) that Units Used does not reconcile
+-- parent-to-child (child = sold + promo; parent = sold + promo + wasted,
+-- since waste isn't price-attributable) and would misread if summed across
+-- this table's per-price-tier grain. sold_qty/promo_qty here already carry
+-- the sold-vs-given-away distinction this table needs; nothing currently
+-- requires waste at the price-tier level.
+--
 -- Never GROUP BY item name/description for a price or mix series — measured:
 -- display names are many-to-one over item numbers ("Hamburger" -> item#s 1,
 -- 1001, 1403, 5041, 5728; likely à-la-carte vs bundle-component vs meal-deal

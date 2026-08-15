@@ -15,13 +15,29 @@
 //       &familyGroup=BREAKFAST_DRINK,BREAKFAST_SIDE,BREAKFAST_ENTREE,REGULAR_DRINK,
 //                    REGULAR_ENTREE,FRIES,NON_PRODUCT,SHAKES,DESSERT
 //       &poo=Combined&timeSegment=openClose&segmentBy=summary&timeInterval=summary
-//       &segmentNames=open-close&segmentsSelected=open-close&nsd=s&dsd=s
+//       &segmentNames=open-close&segmentsSelected=open-close&nsd=?&dsd=?
 //       &selectCols=soldQty,discQty,menuItemNumber,description,familyGroup,price,
 //                   dollarsSold,promoQty,offerAmt,unitFoodCost,unitPaperCost
 //   → { result: [ {menuItemNumber, price, soldQty, discQty, description, familyGroup,
 //        dollarsSold, promoQty, offerAmt, unitFoodCost, unitPaperCost, bundleQty,
 //        bundleDiscAmt, totalUnitFoodCost, totalUnitPaperCost} ] }
 //
+// nsd/dsd (= locationAgg/dateAgg — memory/qsrsoft-report-catalog.md "nsd/dsd CONFIRMED",
+// captured 2026-08-15 from the vendor's own saved-report blobs) are the store/date GRAIN
+// switches: 's' summary (rolled up, no store or date field on the rows), 'd' detail (one
+// row per store/day, with storeNum/date on each row). The Product Mix UI can never send
+// 'd' — enumerated three independent ways (filter bar, Column Settings, row expansion),
+// it has no per-store or per-day control at all — so whether this endpoint HONOURS
+// nsd=d&dsd=d for a multi-store request is a code test, not a capturable browser fact.
+// probeDistrictMode() below is that test, run fresh at the start of every invocation:
+//   - if the response carries a real per-row store field for >1 distinct store, USE IT —
+//     one request/day for all 27 stores, loc trusted from the response.
+//   - if not (endpoint silently rolls up anyway, or errors), fall back to one request
+//     PER STORE per day (the shape this file originally shipped with) — loc is then
+//     stamped from the request's own nsn parameter, NEVER trusted from the response,
+//     because a summary response for a single-store request may or may not echo a store
+//     field and either way it is redundant with what was already asked for.
+// Either fallback ships #292; only the request count changes (1/day vs 27/day).
 // dollarsSold/totalUnitFoodCost/totalUnitPaperCost are requested (the API always returns
 // them) but deliberately NOT stored — measured exactly equal to price*soldQty /
 // unitFoodCost*soldQty / unitPaperCost*soldQty on the captured payload (0 exceptions).
@@ -76,18 +92,23 @@ const addDay = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + 
 const nsn7 = n => String(n).padStart(7, '0');
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function url(date) {
+function url(date, nsn, nsd, dsd) {
   const params = new URLSearchParams({
     catalogType: 'productMix', reportType: 'summary',
-    nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
+    nsn, orgId: ORG_ID, enterpriseName: 'McDonalds',
     startDate: date, endDate: date, weekStart: '3',
     familyGroup: FAMILY_GROUPS, poo: 'Combined',
     timeSegment: 'openClose', segmentBy: 'summary', timeInterval: 'summary',
-    segmentNames: 'open-close', segmentsSelected: 'open-close', nsd: 's', dsd: 's',
+    segmentNames: 'open-close', segmentsSelected: 'open-close', nsd, dsd,
     selectCols: SELECT_COLS,
   });
   return `${BASE}/reporting/v2/product/product-mix-bundles?${params}`;
 }
+// District mode: all 27 stores, one request, testing whether nsd=d&dsd=d yields real
+// per-store/per-day attribution (see file header). Per-store mode: exactly what this
+// file always sent — one NSN, nsd=s&dsd=s (nothing to disaggregate from a single store).
+const districtUrl = date => url(date, STORE_NSNS.join(','), 'd', 'd');
+const perStoreUrl  = (date, nsn) => url(date, nsn, 's', 's');
 
 // Fail-fast input validation (PR #267 review, 2026-08-14, applied repo-wide since): a bad
 // PMIX_START_DATE/PMIX_END_DATE should error on the input, not surface as a confusing
@@ -141,15 +162,16 @@ async function fetchRows(reqUrl, token, evalPage) {
   return Array.isArray(body) ? body : (body?.result || []);
 }
 
-// Maps one API row → the shape savePmixRows() expects. loc comes from the row itself if
-// present (the endpoint is a multi-store pull, one response covering all requested NSNs —
-// unconfirmed field name for which store each row belongs to since the capture was a
-// single-store request; storeNum/nsn is the convention every sibling reporting/v2 endpoint
-// uses, so that's the first guess, but VERIFY against a real multi-store response before
-// trusting this silently drops rows into the wrong store).
-function mapRow(r, date) {
+// Maps one API row → the shape savePmixRows() expects. In district mode, loc comes from
+// the row's own store field (storeNum/nsn — the convention every sibling reporting/v2
+// endpoint uses) because that field is exactly what's being tested. In per-store mode,
+// loc is ALWAYS the store this specific request asked for (fallbackLoc), never read from
+// the response — a single-store request's response may or may not echo a store field,
+// and either way trusting it over what was actually asked for adds a failure mode for no
+// benefit.
+function mapRow(r, date, fallbackLoc) {
   return {
-    loc: nsn7(r.storeNum ?? r.nsn ?? ''),
+    loc: fallbackLoc != null ? nsn7(fallbackLoc) : nsn7(r.storeNum ?? r.nsn ?? ''),
     date,
     item: r.menuItemNumber,
     price: r.price,
@@ -164,26 +186,94 @@ function mapRow(r, date) {
   };
 }
 
+// A store field is proof of real per-row attribution only if it identifies MORE THAN ONE
+// distinct store — present-but-constant would just echo a request param, not demonstrate
+// the endpoint actually disaggregated a 27-store request.
+function districtRowsUsable(rows) {
+  if (!rows.length) return false; // can't prove attribution from an empty response; fall back rather than assume
+  const stores = new Set(rows.map(r => r.storeNum ?? r.nsn).filter(v => v != null && v !== ''));
+  return stores.size > 1;
+}
+
+// The code test itself (see file header): one request, all 27 stores, nsd=d&dsd=d. Returns
+// the raw rows if the endpoint honoured it, or null if it didn't (or errored) — the caller
+// decides what null means (fall back to per-store for this run).
+async function probeDistrictMode(date, token, evalPage) {
+  const rows = await fetchRows(districtUrl(date), token, evalPage); // AUTH_FAILED propagates — that's an auth problem, not a grain-parameter one
+  if (!districtRowsUsable(rows)) {
+    console.log(`[pmix] district-mode probe: nsd=d&dsd=d returned ${rows.length} row(s) with no usable per-store field — falling back to per-store mode (27 requests/day).`);
+    return null;
+  }
+  const stores = new Set(rows.map(r => r.storeNum ?? r.nsn));
+  console.log(`[pmix] district-mode CONFIRMED: nsd=d&dsd=d returned ${rows.length} row(s) across ${stores.size} distinct store(s) — 1 request/day from here.`);
+  return rows;
+}
+
+function mappedRows(rows, date, fallbackLoc) {
+  return rows.map(r => mapRow(r, date, fallbackLoc))
+    .filter(r => r.loc && r.loc !== '0000000' && Number(r.soldQty) > 0); // soldQty=0 rows are catalog placeholders — see file header
+}
+
+async function upsertAndLog(mapped, label, rawCount) {
+  if (!mapped.length) { if (DEBUG) console.log(`[pmix] ${label}: ${rawCount} row(s), all filtered (placeholders)`); return 0; }
+  const { saved, errors } = await savePmixRows(mapped);
+  if (errors.length) console.warn(`[pmix] ${label}: ${errors.length} save error(s)`);
+  console.log(`[pmix] ${label}: ${mapped.length}/${rawCount} row(s) upserted (${rawCount - mapped.length} placeholder(s) filtered)`);
+  return saved;
+}
+
 async function runAll(token, dates, evalPage) {
   let grand = 0;
+  let mode = null; // decided once, from the first date's probe, and reused for the rest of this run
+
   for (const date of dates) {
-    let rows;
-    try {
-      rows = await fetchRows(url(date), token, evalPage);
-    } catch (e) {
-      if (String(e.message).startsWith('AUTH_FAILED')) throw e;
-      console.error(`[pmix] ${date} ERROR: ${e.message}`);
+    if (mode === null) {
+      let districtRows;
+      try {
+        districtRows = await probeDistrictMode(date, token, evalPage);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+        console.error(`[pmix] ${date} ERROR (district-mode probe): ${e.message}`);
+        mode = 'perStore';
+        districtRows = undefined;
+      }
+      if (districtRows) {
+        mode = 'district';
+        grand += await upsertAndLog(mappedRows(districtRows, date, null), date, districtRows.length);
+        await new Promise(r => setTimeout(r, 120));
+        continue;
+      }
+      mode = mode || 'perStore'; // probe ran clean but returned null (endpoint didn't honour nsd=d&dsd=d)
+      // falls through to the per-store loop below, for this same date
+    }
+
+    if (mode === 'district') {
+      let rows;
+      try {
+        rows = await fetchRows(districtUrl(date), token, evalPage);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+        console.error(`[pmix] ${date} ERROR: ${e.message}`);
+        continue;
+      }
+      grand += await upsertAndLog(mappedRows(rows, date, null), date, rows.length);
+      await new Promise(r => setTimeout(r, 120));
       continue;
     }
-    if (!rows.length) { if (DEBUG) console.log(`[pmix] ${date}: no data`); continue; }
-    const mapped = rows.map(r => mapRow(r, date))
-      .filter(r => r.loc && r.loc !== '0000000' && Number(r.soldQty) > 0); // soldQty=0 rows are catalog placeholders — see file header
-    if (!mapped.length) { if (DEBUG) console.log(`[pmix] ${date}: ${rows.length} row(s), all filtered (placeholders)`); continue; }
-    const { saved, errors } = await savePmixRows(mapped);
-    if (errors.length) console.warn(`[pmix] ${date}: ${errors.length} save error(s)`);
-    console.log(`[pmix] ${date}: ${mapped.length}/${rows.length} row(s) upserted (${rows.length - mapped.length} placeholder(s) filtered)`);
-    grand += saved;
-    await new Promise(r => setTimeout(r, 120));
+
+    // mode === 'perStore'
+    for (const nsn of STORE_NSNS) {
+      let rows;
+      try {
+        rows = await fetchRows(perStoreUrl(date, nsn), token, evalPage);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+        console.error(`[pmix] ${date} store ${nsn} ERROR: ${e.message}`);
+        continue;
+      }
+      grand += await upsertAndLog(mappedRows(rows, date, nsn), `${date} store ${nsn}`, rows.length);
+      await new Promise(r => setTimeout(r, 120));
+    }
   }
   return grand;
 }
@@ -225,7 +315,7 @@ async function viaPlaywright(dates) {
       const testResult = await page.evaluate(async ({ reqUrl }) => {
         try { const r = await fetch(reqUrl, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
         catch (e) { return { error: e.message, name: e.name }; }
-      }, { reqUrl: url(dates[0]) });
+      }, { reqUrl: districtUrl(dates[0]) });
       console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
       await new Promise(r => setTimeout(r, 2000));
       await snap('pmix-03-post-trigger.png');
