@@ -84,6 +84,11 @@ async function fetchActualDays(stream, startDate, endDate) {
     const { data, error } = await supabase.from(stream.table)
       .select(`${stream.locCol},${stream.dateCol}`)
       .gte(stream.dateCol, startDate).lte(stream.dateCol, endDate)
+      // #269 review: Postgres doesn't guarantee row order across separate paged queries
+      // without an explicit ORDER BY — a row skipped or repeated between pages surfaces as
+      // a false gap, indistinguishable from a real one (the same class of bug that already
+      // cost this repo a real incident: loadQsrActSummary's 1000-row truncation).
+      .order(stream.locCol, { ascending: true }).order(stream.dateCol, { ascending: true })
       .range(from, from + 999);
     if (error) throw error;
     if (!data || !data.length) break;
@@ -109,9 +114,57 @@ function groupConsecutive(dates) {
   return runs;
 }
 
+// #269 review (owner, 2026-08-14): nothing ever closed an incident. The only writes were
+// the 'open' default on a new row and a carry-forward of a prior row's own status —
+// recovered_at appeared in the schema and in no code path. Worse than "the happy path
+// isn't wired": checkStream's incident query below is scoped to Object.keys(incidentsByLoc)
+// — the locs that STILL have a gap — so a loc whose gap was fully backfilled is never even
+// looked at, and its row stays 'open' permanently. Partial recovery is the same shape and
+// hits sooner: gap Aug1-8 writes date_start=2026-08-01; Aug1 gets backfilled; the next run
+// groups the remainder as date_start=2026-08-02 and inserts a SECOND row (the unique key is
+// loc+stream+date_start) — the Aug1 row stays open forever. That lands squarely on
+// printRanking()'s headline output, which sorts open incidents oldest-first: the entries
+// most likely to already be fixed were permanently pinned to the top.
+//
+// Checks EVERY prior 'open' incident for this stream (not just still-gapping locs) against
+// `actual` — the same fetch checkStream already did for this run — and closes any whose
+// full [date_start, date_end] range is now present. Scoped to ranges entirely inside THIS
+// run's checked window: `actual` only covers [startDate,endDate], so a range extending
+// outside it can't be judged either way without a second fetch, and guessing would risk a
+// false recovery. An incident older than the rolling window simply isn't reconsidered by
+// this run — no worse than before this fix, and every incident inside the common case (an
+// incident detected and fixed within the same DAYS_BACK trailing window) now closes.
+async function closeRecoveredIncidents(stream, actual, startDate, endDate) {
+  const { data: priorOpen, error } = await supabase.from('data_completeness_incidents')
+    .select('loc,date_start,date_end')
+    .eq('stream', stream.name).eq('recovery_status', 'open');
+  if (error) { console.warn(`[completeness]   recovery check failed: ${error.message}`); return 0; }
+  let closed = 0;
+  for (const inc of (priorOpen || [])) {
+    if (inc.date_start < startDate || inc.date_end > endDate) continue; // outside this run's checked window -- can't judge
+    let fullyPresent = true;
+    for (let d = new Date(inc.date_start + 'T00:00:00Z'); dkey(d) <= inc.date_end; d = addDays(d, 1)) {
+      if (!actual.has(`${inc.loc}|${dkey(d)}`)) { fullyPresent = false; break; }
+    }
+    if (!fullyPresent) continue;
+    const { error: updErr } = await supabase.from('data_completeness_incidents')
+      .update({ recovery_status: 'backfilled', recovered_at: new Date().toISOString() })
+      .eq('stream', stream.name).eq('loc', inc.loc).eq('date_start', inc.date_start);
+    if (updErr) { console.warn(`[completeness]   ✗ recovery update failed for ${inc.loc} ${inc.date_start}: ${updErr.message}`); continue; }
+    closed++;
+  }
+  if (closed) console.log(`[completeness]   ✓ ${closed} incident(s) recovered — marked backfilled`);
+  return closed;
+}
+
 async function checkStream(stream, startDate, endDate) {
   console.log(`[completeness] ${stream.name}: ${startDate} → ${endDate} × ${ALL_LOCS.length} stores`);
   const actual = await fetchActualDays(stream, startDate, endDate);
+
+  // Recovery pass runs UNCONDITIONALLY, before any early return below — the common case is
+  // exactly "zero new incidents this run, but an old one just got backfilled," and an early
+  // return on an empty `rows` array must never skip this.
+  await closeRecoveredIncidents(stream, actual, startDate, endDate);
 
   const incidentsByLoc = {}; // loc -> [date, date, ...] missing, tolerated ones excluded up front
   let tolerated = 0;
@@ -187,7 +240,17 @@ async function printRanking() {
 
 async function main() {
   const today = new Date();
-  const endDate = dkey(today);
+  // #269 review (owner, 2026-08-14): the window must never reach today. An in-progress day
+  // has no completeness guard, and this repo already hit exactly this bug once —
+  // qsrsoft-ops-pull.mjs's cash-anomaly check compares against `.lt('dt', todayStr)` under
+  // the comment "it looked wildly anomalous vs closed days for 23 of 27 stores
+  // simultaneously on first run — a systematic false-positive, not real anomalies. Only
+  // ever evaluate the most recent COMPLETE (yesterday-or-earlier) day." Same comparison,
+  // same partial-current-day cause, same 27-store blast radius here. This also makes the
+  // workflow's shared 13:00 UTC cron minute with qsrsoft-dar-pull.yml harmless rather than
+  // a race: once the window stops at yesterday, this check depends only on data that had
+  // an entire prior day's worth of DAR runs to land, never on today's still-running pull.
+  const endDate = dkey(addDays(today, -1));
   const startDate = dkey(addDays(today, -DAYS_BACK));
 
   let worst = 0;
