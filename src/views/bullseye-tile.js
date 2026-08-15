@@ -282,7 +282,7 @@ export function BullseyeTile({ stores, onOpenStore }) {
           key: k, onClick: () => setMetricKey(k),
           style: {
             fontSize: '9px', padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontWeight: 600, border: 'none',
-            background: metricKey === k ? 'var(--amber)' : 'var(--surf2)', // #295: same white-wash issue as the ring guides above
+            background: metricKey === k ? 'var(--amber)' : 'var(--surf3)', // #295 fixed the white-wash; #306 measured --surf2 as strictly worse than --surf3 across all 8 theme x mode combos (--surf3 also beats or nearly matches the original dark-mode value #295 regressed)
             color: metricKey === k ? 'var(--navy)' : 'var(--text3)',
           },
         }, METRICS[k].short))
