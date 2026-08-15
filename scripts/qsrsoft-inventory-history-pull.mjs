@@ -179,7 +179,17 @@ async function confirmEarliestMonth(token, nsn, earliestMonth, depth = 0, origin
   logResult('confirm boundary -2mo', twoBefore.start, twoBefore.end, rTwo);
   const oneHasData = rOne.ok && rOne.count > 0;
   const twoHasData = rTwo.ok && rTwo.count > 0;
-  if (!oneHasData && !twoHasData) return { earliestMonth, confirmed: true };
+  if (!oneHasData && !twoHasData) {
+    // #294 (residual from #284's review): this return path is reached on BOTH the plain
+    // first-pass confirm (earliestMonth === original) AND the depth-1 reconfirm pass after a
+    // widen+re-bisect correction (earliestMonth !== original) -- collapsing them into an
+    // identical {confirmed:true} silently drops the fact that the first bisect was wrong,
+    // which is exactly the signal that tells us whether the WINDOWS ladder above is mis-sized.
+    // Carry correctedFrom through whenever it differs so probeStore can report which path ran.
+    return earliestMonth === original
+      ? { earliestMonth, confirmed: true }
+      : { earliestMonth, confirmed: true, correctedFrom: original };
+  }
 
   let newDataStart = twoHasData ? twoBefore.start : oneBefore.start;
   console.log(`[probe] ${nsn}: boundary NOT confirmed — data found before the reported floor; widening to find a genuinely empty bound before re-bisecting`);
@@ -255,7 +265,9 @@ async function probeStore(token, nsn) {
     const bisected = await bisectEarliestMonth(token, nsn, firstDeadAfterGood.start, lastGoodWithData.start);
     const confirmation = await confirmEarliestMonth(token, nsn, bisected);
     let msg;
-    if (confirmation.confirmed) {
+    if (confirmation.confirmed && confirmation.correctedFrom) {
+      msg = `retention cutoff — earliest month with data (confirmed on the second pass): ${confirmation.earliestMonth} — the initial bisect answered ${confirmation.correctedFrom}, which the boundary check refuted.`;
+    } else if (confirmation.confirmed) {
       msg = `retention cutoff — earliest month with data (confirmed): ${confirmation.earliestMonth}`;
     } else if (confirmation.unresolved) {
       msg = `retention cutoff — could NOT confirm a floor (unresolved, NOT confirmed): every widen probe back to ${confirmation.deepestProbed} still returned data, so the true floor is deeper than this probe checked. Best data-backed estimate so far: ${confirmation.earliestMonth}.`;
