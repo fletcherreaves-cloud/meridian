@@ -321,15 +321,32 @@ lost-sales dollars at each store's own sell rate. It is a plausible partial expl
 unexplained sales softness and for VOICE accuracy complaints, and a repeat outage on one item is an
 ordering failure with a name — which feeds FOB and inventory directly.
 
-**Two things must be settled before it is built, and only one needs the owner:**
+**Nothing is now blocked on the owner. Two build constraints:**
 
-1. **`restoredTimestamp` came back empty on all 142 rows** (it *was* in `selectCols`).
-   `reportType=currentOutages` returns still-open outages only, so **duration is not available from
-   this shape**. A second capture at a different `reportType` is required before any
-   minutes-lost / restore-SLA metric is designed. ← needs the owner, one capture.
+1. ✅ **Pull `reportType=allOutages`, NOT `currentOutages`** (resolved 2026-08-15 — the owner found
+   the report's **All / Current** toggle and re-captured). `restoredTimestamp` is populated, so
+   duration IS available. **`currentOutages` ≡ `allOutages WHERE restoredTimestamp IS NULL`** —
+   verified exactly, not assumed: 63 `allOutages` rows for 2 stores over 14 days, 5 null-restored,
+   and those five are the same five `currentOutages` returned, matching to the second.
+   **The first capture undercounted by ~12× (5 of 63, 8%)** — the 142-row district figure is the
+   still-open tail only; real 14-day district volume is ~1,300–1,800 rows. Size against `allOutages`.
 2. **Key on `(loc, dt, item, outage_ts)`, not `(loc, dt, item)`.** The narrow key has 0 duplicates
    on this sample — which is exactly how #292's `(loc, date, item)` looked before measurement showed
    it dropped 29% of rows. An item can go out, be restored and go out again in one day.
+
+**Durations are real and some are long:** a Caramel Frappe machine at 3708 was out **239 hours
+(≈10 days)**, 08-01 → 08-11. Snr Sweet Iced Tea 55 h. Milk 47 h at 3708 and 27 h at 5183. Nothing in
+Meridian can express any of it today.
+
+⚠️ **The timestamp is a POLL time, not the moment the manager acted.** Every 3708 timestamp ends
+`:48` and every 5183 ends `:23`, outage and restore alike, and **every duration across all 63 rows
+is a whole number of hours** — QSRSoft samples hourly on a per-store minute offset. Resolution is
+±1 h: never present duration to the minute, expect sub-hour outages to be missing entirely, and do
+not compare raw timestamps across stores as event times.
+
+⚠️ **Never dedupe or join on `description`.** `3499`/`3502` are both "S Caramel Frappe",
+`3498`/`3500` both "S Mocha Frappe", `2842`/`4301` both "M Caramel Frappe" — parallel item-number
+sets for one product name. Join on `menuItemNumber` only.
 
 **And it must not be ranked by row count.** 42 real events produced 142 rows; one event at 38609
 flagged 12 SKUs (every Caramel-Apple-Pie beverage size) and one at 33109 flagged 10 (every XS

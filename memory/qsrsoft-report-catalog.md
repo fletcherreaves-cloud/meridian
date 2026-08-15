@@ -1779,20 +1779,70 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/product/productOutage
 **A full district, a full fortnight, one HTTP call.** This is the cheapest pull in the catalog and
 the strongest confirmation of the comma-list pattern.
 
-## ⚠️ `restoredTimestamp` came back on 0 of 142 rows — duration is NOT available here
+## ✅ RESOLVED — `reportType=allOutages` is the one to pull. Duration IS available.
 
-It was in `selectCols` and it is absent from every row, because `reportType=currentOutages` returns
-outages that are **still open**. So this capture cannot answer *how long was it out*, only *that it
-went out*. **A second capture with a different `reportType` is required** before any duration,
-minutes-lost or restore-SLA metric is designed — do not build one against this shape and assume the
-field will appear. `reportType` values are otherwise undocumented; `productOutage`'s UI is the place
-to read them off.
+The first capture used `reportType=currentOutages` and `restoredTimestamp` came back empty on all
+142 rows. The owner found the UI toggle (**All / Current**) and re-captured on 2026-08-15:
+
+```
+&reportType=allOutages     ← USE THIS. currentOutages is a filtered subset.
+```
+
+`restoredTimestamp` is populated, and the two report types reconcile **exactly**. On the same two
+stores over the same 14 days:
+
+| | rows |
+|---|---|
+| `allOutages` (3708 + 5183, 2026-08-01→08-14) | **63** |
+| of those, `restoredTimestamp IS NULL` | **5** |
+| `currentOutages`, same stores, same window | **5** |
+
+and they are the *same five rows*, matching on store, item, date **and timestamp to the second**
+(3708 items 13 / 4421 / 25740 at `2026-08-14 22:48:05`; 5183 items 25736 / 25737 at
+`2026-08-13 08:23:02`). So **`currentOutages` ≡ `allOutages WHERE restoredTimestamp IS NULL`.**
+
+### ⚠️ This means the first capture undercounted by ~12×
+
+`currentOutages` returned **5 of 63** events for those stores — **8%**. The 142-row district figure
+recorded above is therefore only the still-open tail, **not** the district's 14-day outage volume,
+which extrapolates to roughly 1,300–1,800 rows. Any sizing, staleness threshold or "should never be
+many on there" expectation must be set against `allOutages`.
+
+### Durations are real, and some are long
+
+| store | items | out → restored | duration |
+|---|---|---|---|
+| 3708 | Caramel Frappe ×4 SKUs | 08-01 10:48 → 08-11 09:48 | **239 h (≈10 days)** |
+| 5183 | Snr Sweet Iced Tea | 08-04 05:23 → 08-06 12:23 | 55 h |
+| 3708 | Milk | 08-04 10:48 → 08-06 09:48 | 47 h |
+| 5183 | Milk | 08-10 06:23 → 08-11 09:23 | 27 h |
+| 3708 | Sprite Berry Blast / Dirty Dr Pepper | 08-11 11:48 → 08-12 10:48 | 23 h |
+| 3708 | StrawBan Smoothie ×3 | 08-08 17:48 → 08-09 15:48 | 22 h |
+| 3708 | Crafted Soda / Diet Dirty DP ×12 | 08-11 13:48 → 08-12 10:48 | 21 h |
+| 5183 | Cookies ×3 | 08-10 21:23 → 08-11 12:23 | 15 h |
+| 3708 | Bottled Water | 08-12 16:48 → 08-13 07:48 | 15 h |
+| 5183 | Sundaes / McFlurries ×6 | 08-11 21:23 → 08-12 07:23 | 10 h |
+| 3708 | Apple Juice | 08-09 04:48 → 08-09 11:48 | 7 h |
+
+**A Frappe machine down for ten days at one store** is the headline, and no Meridian panel can
+express it today.
+
+### ⚠️ The timestamp is a POLL time, not the moment the manager acted
+
+Every 3708 timestamp ends `:48`; every 5183 timestamp ends `:23` — outage *and* restore alike. Each
+store has a fixed minute offset and QSRSoft samples **hourly**. The proof is that **every duration
+in the table above is a whole number of hours**, with no exceptions across 63 rows.
+
+Consequences: resolution is ±1 hour, so never present outage duration to the minute; a sub-hour
+outage may not appear at all; and the offset is per-store, so do not compare raw timestamps across
+stores as if they were event times.
 
 ## What 142 rows over 12 days actually say
 
 - **24 of the 27 stores** logged at least one outage in 14 days. Three were clean.
 - **42 distinct `(storeNum, outageTimestamp)` events** produced those 142 item rows. **26 events
-  flagged more than one item.**
+  flagged more than one item.** (Figures are for `currentOutages`; see the `allOutages` correction
+  below — they describe the still-open tail only.)
 - Family split: Regular Drink 72 · Misc/Shakes 36 · Dessert 19 · Breakfast Entree 13 ·
   Regular Entree 2.
 - Most-flagged items: Big Mac Sauce Cup ×7 · Mighty Hot Sauce ×6 · Fried Apple Pie ×5 ·
@@ -1821,6 +1871,15 @@ An item can go out, be restored, and go out again the same day. Key on
 
 `date` is redundant with `outageTimestamp` — identical on 142/142 rows — but keep it as the
 partition column.
+
+**Confirmed against `allOutages`:** item 2721 `S StrawBan Smoothie` goes out at 3708 on **08-08 and
+again on 08-11** — the same item, same store, twice in one window. Distinct dates here, so the
+narrow key survives this sample too, but it is the exact repeat-outage pattern the wide key exists
+to protect against. Key on `(loc, dt, item, outage_ts)`.
+
+**Do not dedupe or join on `description`.** `3499` and `3502` are both "S Caramel Frappe"; `3498`
+and `3500` are both "S Mocha Frappe"; `2842` and `4301` are both "M Caramel Frappe". There are
+parallel item-number sets for the same product name. Join on `menuItemNumber` only.
 
 ## ⚠️ An "outage" is a MANAGER'S POS ACTION, not a measured out-of-stock
 
