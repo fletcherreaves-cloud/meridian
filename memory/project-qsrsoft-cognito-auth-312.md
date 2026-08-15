@@ -91,6 +91,71 @@ SSO-exchange rung. The env var is genuinely consumed, indirectly through the sha
 lib — removing it would have silently broken that script's fastest auth rung. Left
 untouched; not the state described in the original issue text.
 
+## Scope 3 — second script converted: `qsrsoft-ops-pull.mjs` (#322)
+
+Pulled ahead of the remaining-12 queue by #322: the owner's OT Cost tile reading "—"
+everywhere turned out to be #303 correctly exposing that the auto stream feeding it
+(`qsr_labor_summary.overTimeTotalHours`/`overTimeTotalDollars`) is empty in production,
+not a display bug — traced end to end to this script's stale `QSRSOFT_TOKEN` read.
+
+This script writes **five** tables (`qsr_cash_sheet`, `qsr_labor_summary` ×2 (labor +
+labor-detail merge), `qsr_service_stats`, `qsr_sales_mix`, `qsr_peaks_sales`), across
+**three** invocation modes (`QSRSOFT_CASH_ANOMALY_CHECK`, `QSRSOFT_PULSE_PULL`, default
+full-ops/backfill) — all three read `process.env.QSRSOFT_TOKEN` directly and all three
+converted to pass `getFreshToken` (the function) into `runAll()`.
+
+**TTL cache made expiry-aware in this PR, not deferred** — unlike `turnover-pull`, this
+script is backfill-capable (`QSRSOFT_OPS_START_DATE`/`END_DATE`, day-by-day loop) and
+CLAUDE.md records a 27-month API backfill as routine at ~6.6s/day, ≈1.5h against the
+token's ~1h TTL. A single mint-once cache would sail past expiry mid-backfill and start
+401ing silently. `getFreshToken()` (`scripts/lib/qsrsoft-auth.mjs`) now decodes the
+token's own JWT `exp` claim and re-mints proactively at a 5-minute margin (55-minute
+assumed-TTL fallback if `exp` can't be decoded), plus a `forceRemint` escape hatch for a
+caller that gets rejected despite a nominally-fresh cached token. `runAll()` resolves a
+token per `(endpoint, date)` via a new `resolveToken()` helper rather than being handed
+one static value up front, so a long backfill re-mints transparently instead of running
+out mid-loop.
+
+`QSRSOFT_TOKEN` removed from `qsrsoft-ops-pull.yml`'s env block (secret stays defined in
+GitHub, per the Scope 4 hold above).
+
+**Live verification** (`workflow_dispatch`, branch `claude/issue-312-scope3-ops-pull`,
+run [31913030549](https://github.com/fletcherreaves-cloud/meridian/actions/runs/31913030549),
+2026-08-15, against production Supabase + QSRSoft credentials, default gap-aware window
+— no `AUTH_FAILED`/Playwright-fallback lines in the log, confirming the direct
+`getFreshToken()` path worked end to end):
+
+```
+[ops] pulling 5 date(s): 2026-08-11…2026-08-15
+[ops] cash → qsr_cash_sheet: 135 rows
+[ops] labor → qsr_labor_summary: 135 rows
+[ops] laborDetail → qsr_labor_summary: 135 rows
+[ops] service 2026-08-15: no data
+[ops] service → qsr_service_stats: 108 rows
+[ops] salesMix → qsr_sales_mix: 135 rows
+[ops] peaks → qsr_peaks_sales: 402 rows
+[ops] done — 1050 rows upserted across 6 endpoints.
+```
+
+135 = 27 stores × 5 dates (cash/labor/laborDetail/salesMix, full coverage); service is
+108 = 27×4 (2026-08-15 not yet finalized, consistent with this script's own documented
+"service-stats confirmed NOT live" note); peaks 402 ≈ 27×5×3 dayparts (a few sparse
+timeslots). All three of the dispatch's required checks confirmed directly against
+`qsr_labor_summary` via the Supabase REST API (anon key, RLS-honoring read):
+non-zero rows (1050 total, 2026-08-11→2026-08-15); `qsr_labor_summary` received 135
+rows; `over_time_total_hours`/`over_time_total_dollars` are present (non-null key) on
+all 135 store-days pulled, with **23 of 135 store-days showing a real non-zero OT
+reading** (range 1.08–21.18 hrs, $25.63–$437.49) — the exact thing the owner reported
+existing operationally that the dashboard couldn't see. OT Cost should now render a
+real number (or a correct "—" only on the ~112 genuinely-zero-OT store-days) instead of
+blanket "—" everywhere.
+
+Deliberately not touched, per the dispatch: `sync-failure-watch.yml` (this workflow is
+already watched and already passing — the gap is that it can succeed while returning
+zero rows, which is #269's completeness-ledger's job, not a missing watch entry); no
+historical backfill run (owner's call on cost/runtime once the daily pull is confirmed
+working).
+
 ## #311
 
 Stays open until scope 3 lands in full (all 14 scripts converted). Its
