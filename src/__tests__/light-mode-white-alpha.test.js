@@ -29,17 +29,20 @@
 import { describe, it, expect } from 'vitest';
 import { execSync } from 'child_process';
 
-// Measured immediately after #296 step 1 (2026-08-15): 269 remaining rgba(255,255,255,X)
-// occurrences in src/**/*.js -- almost entirely background/color-role (step 2's scope) plus a
-// handful of standalone-HTML-export sites that must stay literal (see header). Any number
-// ABOVE this means something new landed without going through the token system.
+// Measured immediately after #296 step 1 rebased onto main post-#295 (2026-08-15): 266
+// remaining rgba(255,255,255,X) occurrences in src/**/*.js -- almost entirely background/
+// color-role (step 2's scope) plus a handful of standalone-HTML-export sites that must stay
+// literal (see header). Originally measured as 269 before this branch was rebased onto main
+// after #295 merged (which dropped bullseye-tile.js's 3 sites) -- lowered to match immediately,
+// per this guard's own ratchet discipline: don't leave slack once a real drop is measured.
+// Any number ABOVE this means something new landed without going through the token system.
 //
 // Excludes __tests__ (this file's own descriptive prose would otherwise match its own guard)
 // and the two changelog files (changelog-data.js / changelog-latest.js -- their entries
 // describe fixes like this one in prose, which legitimately contains the literal string being
 // grepped for; historical/descriptive text, not live style code -- same reasoning #286 used to
 // exclude changelog mentions from its own hex-token sweep).
-const CEILING = 269;
+const CEILING = 266;
 
 describe('#296: no new hardcoded rgba(255,255,255,X) in src/**/*.js', () => {
   it('stays at or below the post-step-1 ceiling', () => {
