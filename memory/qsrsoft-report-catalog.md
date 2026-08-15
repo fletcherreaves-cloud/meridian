@@ -2028,3 +2028,50 @@ Hamburger, `$2.79 - $3.69` on Double Cheeseburger) — the `priceRange` field fr
 vocabulary. Parent row plus price-tier children, which is exactly the structure `parsePMixData` sums
 as though it were flat (#302: units ×3.00, waste ×11.54). Independent confirmation from the live UI
 rather than from the export alone.
+
+## The expanded row, reconciled — children are PRICE TIERS, not stores
+
+The owner expanded item **1 Hamburger** at **27 Locations**, YEST 2026-08-14. Eight child rows, one
+per price point. **At full district scope the children are still price tiers — there is no store
+dimension anywhere in this report, expanded or collapsed.** That closes the question for good.
+
+Five columns reconcile **exactly** (parent vs Σ children):
+
+| column | Σ children | parent |
+|---|---|---|
+| Units Sold | 385 | 385 ✓ |
+| $ Sold | 777.91 | 777.91 ✓ |
+| Disc Qty | 25 | 25 ✓ |
+| Offer Discount $ | 15.76 | 15.76 ✓ |
+| Units Promo | 5 | 5 ✓ |
+
+### ⚠️ `Units Used` does NOT reconcile — and the reason is a trap
+
+**Σ children = 390. Parent = 396.** The 6-unit gap is exactly `Units Wasted`, which is populated on
+the parent and **blank on every child**. Two different identities are in play:
+
+```
+child:   Units Used = Units Sold + Units Promo          (true on 8/8 children)
+parent:  Units Used = Units Sold + Units Promo + Units Wasted
+```
+
+Waste is **not price-attributable** — a wasted unit was never rung at a price — so it exists only at
+the item level. Consequences: `Units Used` cannot be summed across a flattened export without either
+losing waste (children only) or double-counting everything (parent + children); and `Units Used` is
+**not** a synonym for units sold in either place.
+
+### ✅ `F&P % of Total Sales` is dollar-weighted, and the vendor does it correctly
+
+Σ(cost)/Σ(sales) across the eight tiers = **32.67%**; the parent shows **32.69%** (rounding). The
+straight average of the eight child percentages is **30.12%** — **2.6 pp wrong**. Anyone rolling
+this up must dollar-weight, per the standing "never average averages" rule. Worth knowing that
+QSRSoft's own parent row is trustworthy here.
+
+### A 45% price spread on a Hamburger
+
+Across 27 stores on one day, item 1 sold at **$1.79 · $1.89 · $1.99 · $2.29 · $2.32 · $2.39 · $2.49
+· $2.59** — a **45% spread** between cheapest and dearest, with the two biggest tiers ($1.89 ×134,
+$1.99 ×130) accounting for 69% of units. This is the dispersion the price book (`menuPriceComparison`)
+exists to attribute to specific stores; Product Mix shows that it exists but cannot say who is who.
+
+`$2.32` is not a menu-board-shaped price and is likely bundle-allocated. Untested.
