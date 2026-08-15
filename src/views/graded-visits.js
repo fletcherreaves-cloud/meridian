@@ -295,7 +295,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     div({ style: { fontSize: 18, fontWeight: 800, fontFamily: 'var(--mono)', color: color || 'var(--text)' } }, value));
 
   const thS = { padding: '6px 8px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)' };
-  const tdS = { padding: '6px 8px', fontSize: 11, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right' };
+  const tdS = { padding: '6px 8px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right' };
 
   // Operational context for a visit's store on its date — the restaurant's state
   // at the time of the visit. Hourly DAR when present; otherwise (and alongside)
@@ -539,7 +539,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
           h('tbody', null, ...hrs.map((x, i) => {
             const m = hourMetrics(x, cutoff);
             const relTag = m.visitHr ? ' ◂ visit' : m.rel === -1 ? ' ◂ hour before' : m.rel === 1 ? ' ◂ hour after' : '';
-            return h('tr', { key: i, style: { borderBottom: '.5px solid rgba(255,255,255,.03)', background: m.visitHr ? 'rgba(245,188,0,.16)' : m.nearVisit ? 'rgba(245,188,0,.06)' : 'transparent' } },
+            return h('tr', { key: i, style: { borderBottom: '.5px solid var(--bdr)', background: m.visitHr ? 'rgba(245,188,0,.16)' : m.nearVisit ? 'rgba(245,188,0,.06)' : 'transparent' } },
               h('td', { style: { ...td2, textAlign: 'left', color: m.visitHr ? 'var(--amber)' : 'var(--text2)', fontWeight: m.visitHr ? 700 : 400 } }, m.label + relTag),
               ...METRICS.map((mt, j) => {
                 const val = m[mt.key];

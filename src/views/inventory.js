@@ -415,7 +415,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
   const sTag=(col,txt)=>span({style:{fontSize:'8px',padding:'1px 6px',borderRadius:3,fontWeight:700,
     background:col+'22',color:col,border:'.5px solid '+col+'55'}},txt);
 
-  const iRow=(r,i)=>tr({key:r.wrin,style:{borderBottom:'.5px solid rgba(255,255,255,.05)',
+  const iRow=(r,i)=>tr({key:r.wrin,style:{borderBottom:'.5px solid var(--bdr)',
     background:i%2?'rgba(255,255,255,.015)':'transparent'}},
     td({style:{padding:'4px 8px',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:'9px'}},(i+1)),
     td({style:{padding:'4px 8px',fontSize:'9px',color:'var(--text)'}},
@@ -440,7 +440,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
       Math.round(r.usageDay*r.caseSize*1.1)+'ea/day')
   );
 
-  const oRow=(r,i)=>tr({key:r.wrin,style:{borderBottom:'.5px solid rgba(255,255,255,.05)',
+  const oRow=(r,i)=>tr({key:r.wrin,style:{borderBottom:'.5px solid var(--bdr)',
     background:i%2?'rgba(255,255,255,.015)':'transparent'}},
     td({style:{padding:'4px 8px',fontSize:'9px',color:'var(--text)'}},
       div({style:{display:'flex',alignItems:'baseline',gap:5}},
@@ -454,7 +454,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,color:'#ef4444'}},'$'+(r.excessValue||0).toFixed(2))
   );
 
-  const tRow=(r,i)=>tr({key:i,style:{borderBottom:'.5px solid rgba(255,255,255,.05)',
+  const tRow=(r,i)=>tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',
     background:r.noRecipient?'rgba(245,158,11,.04)':'transparent'}},
     td({style:{padding:'4px 8px',fontSize:'9px',color:'var(--text)'}},
       div({style:{display:'flex',alignItems:'baseline',gap:5}},
@@ -480,7 +480,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
   );
 
   const thStyle={fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.5px',
-    color:'var(--text3)',borderBottom:'.5px solid rgba(255,255,255,.1)',padding:'5px 8px',
+    color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',padding:'5px 8px',
     textAlign:'left',background:'var(--mid2)'};
 
   const secTab=(n,label,count,col)=>btn({
@@ -582,7 +582,7 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
           activeSection===4&&btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
             onClick:()=>setViewTransfers(v=>!v)},
             viewTransfers?'Hide Transfers':'Calculate Transfers'),
-            viewTransfers&&btn({className:'btn btn-sm',style:{fontSize:'9px',color:groupByProduct?'#f5bc00':'var(--text3)',borderColor:groupByProduct?'rgba(245,188,0,.4)':'rgba(255,255,255,.1)'},
+            viewTransfers&&btn({className:'btn btn-sm',style:{fontSize:'9px',color:groupByProduct?'#f5bc00':'var(--text3)',borderColor:groupByProduct?'rgba(245,188,0,.4)':'var(--bdr)'},
               onClick:()=>setGroupByProduct(v=>!v)},groupByProduct?'↕ By Product':'↕ By Distance'),
             viewTransfers&&div({style:{display:'flex',alignItems:'center',gap:5,fontSize:'9px',color:'var(--text3)'}},
               'Sends >',

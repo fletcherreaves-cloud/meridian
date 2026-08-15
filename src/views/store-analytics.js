@@ -448,7 +448,7 @@ function ShiftAnalysisTab({store, ds, settings, userEvents}) {
         impacts.slice(0,5).map((e,i)=>{
           const typeLabel=(EVENT_TYPES&&EVENT_TYPES[e.type])||{label:e.type||'Competition',icon:'🏪'};
           const impCol=e.impact!=null?(e.type==='comp_closure'?(e.impact>=0?'#10b981':'#94a3b8'):(e.impact>=0?'#94a3b8':'#f87171')):'var(--text3)';
-          return div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 0',borderBottom:i<Math.min(4,impacts.length-1)?'.5px solid rgba(255,255,255,.04)':'none'}},
+          return div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 0',borderBottom:i<Math.min(4,impacts.length-1)?'.5px solid var(--bdr)':'none'}},
             div({style:{fontSize:'10px',flexShrink:0}},typeLabel.icon),
             div({style:{flex:1,fontSize:'9px',color:'var(--text2)'}},
               e.evDate.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · '+typeLabel.label+(e.note?' · '+e.note.slice(0,30):'')),
@@ -607,7 +607,7 @@ function ModelComparisonPanel({loc, date, ds, settings, userEvents}) {
             ),
             // Drill-down rows
             isOpen&&wk.days.map((day,di)=>
-              tr({key:'d'+i+di,style:{background:'rgba(96,165,250,.04)',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+              tr({key:'d'+i+di,style:{background:'rgba(96,165,250,.04)',borderBottom:'.5px solid var(--bdr)'}},
                 td({style:{padding:'3px 8px 3px 20px',color:'var(--text3)',fontSize:'9px'}},
                   day.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
                 td({style:{padding:'3px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
@@ -939,7 +939,7 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
               div({style:{fontSize:'10px',color:'var(--text2)',lineHeight:1.6,marginBottom:10}},opData.erosion.explanation),
               Object.entries(opData.erosion.erosion).map(([sl,data],i)=>div({key:i,style:{
                 display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'4px 0',
-                borderBottom:i<Object.keys(opData.erosion.erosion).length-1?'.5px solid rgba(255,255,255,.06)':'none'}},
+                borderBottom:i<Object.keys(opData.erosion.erosion).length-1?'.5px solid var(--bdr)':'none'}},
                 span({style:{textTransform:'capitalize',fontWeight:600}},sl),
                 div({style:{display:'flex',gap:10}},
                   span({style:{fontFamily:'var(--mono)',color:'var(--text3)'}},f$(data.avgRecent)+'/day'),
@@ -1503,10 +1503,10 @@ function DaypartPaceCard({loc}) {
 
   const visibleDp = dpData.filter(dp => dp.actual > 0 || dp.proj > 0);
 
-  return div({style:{marginBottom:10,border:'.5px solid rgba(255,255,255,.1)',borderRadius:'var(--r)',overflow:'hidden'}},
+  return div({style:{marginBottom:10,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden'}},
     // Card header
     div({style:{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',
-      background:'rgba(255,255,255,.03)',borderBottom:'.5px solid rgba(255,255,255,.08)',cursor:'pointer'},
+      background:'rgba(255,255,255,.03)',borderBottom:'.5px solid var(--bdr)',cursor:'pointer'},
       onClick:()=>setCollapsed(c=>!c)},
       span({style:{fontSize:'11px',fontWeight:800,color:'var(--text)',flex:1}},'⏱ Daypart Pace'),
       div({style:{display:'flex',gap:4}},
@@ -1515,7 +1515,7 @@ function DaypartPaceCard({loc}) {
             onClick:e=>{e.stopPropagation();setDateOpt(v);},
             style:{fontSize:'7px',fontWeight:700,padding:'1px 6px',borderRadius:3,border:'.5px solid',cursor:'pointer',
               background:dateOpt===v?'rgba(245,158,11,.15)':'transparent',
-              borderColor:dateOpt===v?'rgba(245,158,11,.4)':'rgba(255,255,255,.12)',
+              borderColor:dateOpt===v?'rgba(245,158,11,.4)':'var(--bdr)',
               color:dateOpt===v?'var(--amber)':'var(--text3)'}},
             v==='today'?'Today':'Yesterday'))
       ),
@@ -1536,7 +1536,7 @@ function DaypartPaceCard({loc}) {
           const totLY   = visibleDp.reduce((a,d)=>a+(d.ly||0),0);
           const pm = totMean>0?(totAct-totMean)/totMean:null;
           const pl = totLY>0?(totAct-totLY)/totLY:null;
-          return div({style:{display:'flex',gap:12,marginBottom:10,paddingBottom:8,borderBottom:'.5px solid rgba(255,255,255,.06)',flexWrap:'wrap'}},
+          return div({style:{display:'flex',gap:12,marginBottom:10,paddingBottom:8,borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
             div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:800,color:pctClr(pm)}},fK(totAct)),
             pm!=null&&span({style:{fontSize:'10px',fontWeight:700,color:pctClr(pm),alignSelf:'center'}},(pm>=0?'+':'')+(pm*100).toFixed(2)+'% vs mean'),
             pl!=null&&span({style:{fontSize:'10px',color:pctClr(pl),alignSelf:'center'}},(pl>=0?'+':'')+(pl*100).toFixed(2)+'% vs LY'),
@@ -1551,7 +1551,7 @@ function DaypartPaceCard({loc}) {
           visibleDp.map(dp =>
             div({key:dp.id,style:{
               background:dp.isActive?'rgba(245,158,11,.06)':dp.isDone?'rgba(16,185,129,.05)':'rgba(255,255,255,.03)',
-              border:'.5px solid '+(dp.isActive?'rgba(245,158,11,.2)':dp.isDone?'rgba(16,185,129,.15)':'rgba(255,255,255,.07)'),
+              border:'.5px solid '+(dp.isActive?'rgba(245,158,11,.2)':dp.isDone?'rgba(16,185,129,.15)':'var(--bdr)'),
               borderRadius:6,padding:'8px 10px'}},
               div({style:{display:'flex',alignItems:'center',gap:4,marginBottom:4}},
                 span({style:{fontSize:'11px'}},dp.emoji),
@@ -1783,7 +1783,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             recentEvs.map((ev,i)=>{
               const evDef = EVENT_TYPES[ev.type]||{icon:'•',label:ev.type||'Event'};
               return div({key:i,style:{display:'flex',gap:7,fontSize:'9px',alignItems:'flex-start',
-                borderTop:i>0?'.5px solid rgba(255,255,255,.06)':'none',paddingTop:i>0?5:0,marginTop:i>0?5:0}},
+                borderTop:i>0?'.5px solid var(--bdr)':'none',paddingTop:i>0?5:0,marginTop:i>0?5:0}},
                 div({style:{fontSize:'12px',flexShrink:0}},evDef.icon),
                 div({style:{flex:1,minWidth:0}},
                   div({style:{color:'var(--text3)',fontSize:'8px'}},ev.dk.slice(5).replace('-','/')),
@@ -1858,7 +1858,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             border:'.5px solid rgba(251,191,36,.25)',borderRadius:'var(--r)',padding:'8px 12px'}},
             div({style:{fontSize:'8.5px',fontWeight:700,color:'#fbbf24',letterSpacing:'.5px',marginBottom:4}},'⚡ PREDICTIVE ALERTS'),
             trendAlerts.map((f,i)=>div({key:i,style:{fontSize:'9px',color:'var(--text2)',lineHeight:1.5,
-              marginTop:i>0?5:0,borderTop:i>0?'.5px solid rgba(255,255,255,.06)':'none',paddingTop:i>0?5:0}},f.m))
+              marginTop:i>0?5:0,borderTop:i>0?'.5px solid var(--bdr)':'none',paddingTop:i>0?5:0}},f.m))
           ),
           findings.length===0
             ? div({style:{fontSize:'9px',color:'#10b981',textAlign:'center',padding:'12px',

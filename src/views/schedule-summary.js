@@ -48,7 +48,7 @@ function StationBreakdown({ jobRows }) {
       h('thead', null, h('tr', { style: { color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase' } },
         th('Station', 'left'), th('Cat'), th('Shifts'), th('Reg'), th('OT'), th('Hours'), th('Cost'), th('$/hr'))),
       h('tbody', null,
-        rows.map((r, i) => h('tr', { key: i, style: { fontSize: 10.5, fontFamily: 'var(--mono)', borderTop: '.5px solid rgba(255,255,255,.04)' } },
+        rows.map((r, i) => h('tr', { key: i, style: { fontSize: 10.5, fontFamily: 'var(--mono)', borderTop: '.5px solid var(--bdr)' } },
           h('td', { style: { padding: '3px 8px', color: 'var(--text2)', fontFamily: 'inherit' } }, r.name || r.businessRoleId),
           h('td', { style: { textAlign: 'right', padding: '3px 8px' } }, h('span', { style: { fontSize: 8.5, fontWeight: 700, color: catColor(r.category), border: '.5px solid ' + catColor(r.category), borderRadius: 4, padding: '1px 4px' } }, r.category || '—')),
           tdc((r.nShifts || 0).toLocaleString()),
@@ -69,7 +69,7 @@ function StationBreakdown({ jobRows }) {
 function StoreRow({ s, expanded, onToggle, jobRows }) {
   const td = (c, col, mono) => h('td', { style: { textAlign: 'right', padding: '6px 8px', fontSize: 11, fontFamily: mono ? 'var(--mono)' : 'inherit', color: col || 'var(--text)', whiteSpace: 'nowrap' } }, c);
   return h(React.Fragment, null,
-    h('tr', { onClick: onToggle, style: { borderTop: '.5px solid rgba(255,255,255,.05)', cursor: 'pointer' } },
+    h('tr', { onClick: onToggle, style: { borderTop: '.5px solid var(--bdr)', cursor: 'pointer' } },
       h('td', { style: { padding: '6px 8px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' } }, h('span', { style: { color: 'var(--text3)', marginRight: 5 } }, expanded ? '▾' : '▸'), sName(s.loc)),
       td(f$(s.fcstSales), null, true),
       td((s.fcstGC || 0).toLocaleString(), null, true),
