@@ -1704,8 +1704,6 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     if(!range||!ds) return [];
     // v>0 avg: treats 0 as "field not parsed" — matches avg6() behavior for rate metrics
     const _avg =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-    // Any-value avg: 0 and negatives valid (otHrs=0 means no OT; actVsNeed can be negative)
-    const _avgZ=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _sum =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0):0;};
     return activeLocs.map(loc=>{
       const tgt=(settings.targets&&settings.targets[loc])||DEFAULT_TARGETS[loc]||{};
@@ -1727,51 +1725,44 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // Operations Report produces 1 aggregate row per store for the entire period.
       // Robust detection that works even when lRows is empty (no daily Labor Analysis loaded).
       const cIsSummary = cRows.length>0 && cRows.length < Math.max(3,Math.floor(rangeDays/4)) && rangeDays>3;
-      // Always use calendar days for per-day normalization
-      const normDays   = rangeDays;
       // ── Rate/percentage metrics ─────────────────────────────────────────────
-      // laborPct/tpph now route through metric-source.js's auto-first per-day resolver
+      // laborPct/tpph route through metric-source.js's auto-first per-day resolver
       // (2026-08-05) — both already had a registered ctrlRows→glimpseRows→laborRows/DAR
       // fallback chain (used elsewhere, e.g. analytics.js's ctrlSec) that this panel wasn't
       // using, so it went stale/blank whenever neither manual upload covered the range even
-      // though real auto data existed. avgRate/otHrs/actVsNeed still need their own
-      // METRIC_SOURCES entries before the same swap is safe — left as the manual
-      // ctrlRows→laborRows chain for now.
+      // though real auto data existed. avgRate/otHrs/actHrs/actVsNeed now migrated too
+      // (#324) — same gap, same fix, once #323 landed the auto stream (opsLaborRows) these
+      // actually resolve against. avgRate is a DERIVED metric (metric-source.js:280,
+      // laborPct×sales÷actHrs); otHrs/actVsNeed are mode:'any' (0/negative are legitimate,
+      // not "missing").
       const laborPct  = metricAvg(ds,loc,range,'laborPct');
       const tpph      = metricAvg(ds,loc,range,'tpph');
-      const avgRate   = _avg(cRows,'avgRate')   || _avg(lRows,'avgRate');
-      const actVsNeed = _avgZ(cRows.length?cRows:lRows,'actVsNeed');
-      // ── Volume metrics (hours) ──────────────────────────────────────────────
-      // Daily lRows already gives true per-day average.
-      // Period-summary cRows gives period TOTAL → must divide by normDays.
-      // Also divide when lRows is sparse (< 3 days) since they don't represent a real daily avg.
-      const _perDay=(cSrc,lSrc,f)=>{
-        const daily=_avgZ(lSrc,f);
-        if(daily!=null&&lSrc.length>=3) return daily; // only trust daily if we have ≥3 data points
-        // _avg (v>0) for cRows: parseCtrlData defaults missing cols to 0 via ||0.
-        // _avgZ would return 0.0; _avg returns null → shows — for unparsed columns.
-        // Daily lRows use _avgZ so genuine "no OT today = 0" is preserved.
-        const tot=_avg(cSrc,f);
-        if(tot==null) return (daily!=null?daily:null);
-        return (cIsSummary||lSrc.length<3) ? tot/normDays : tot;
-      };
-      const otHrs     = _perDay(cRows,lRows,'otHrs');
-      const actHrs    = _perDay(cRows,lRows,'actHrs');
-      const crewHrs   = _avg(lRows,'crewHrs')      || (cIsSummary?null:_avg(cRows,'crewHrs'));
-      const salMgrHrs = _avg(lRows,'salaryMgrHrs') || (cIsSummary?null:_avg(cRows,'salaryMgrHrs'));
-      // OT cost: prefer parsed dollar amount; fall back to estimated OT premium.
-      // #303: otCostEst used (otHrs||0)>0&&(avgRate||0)>0, which cannot distinguish "otHrs/
-      // avgRate are missing" from "otHrs is a real 0" -- both collapsed to the same false
-      // branch and returned 0, a MEASURED result meaning "no OT cost anywhere," not "unknown."
-      // The adjacent OT HRS/DAY column (fed by the same missing inputs) already correctly
-      // rendered "--" one column over. Distinguish null (missing) from 0 (genuine, no OT that
-      // period) explicitly: only estimate when BOTH inputs are present.
-      const otDolRaw  = _sum(cRows.length?cRows:lRows,'otDollar');
-      const otCostEst = (otHrs!=null&&avgRate!=null) ? Math.round((otHrs||0)*0.5*(avgRate||0)*normDays) : null;
-      const otCost    = otDolRaw>1 ? otDolRaw : otCostEst;
-      const otCostEd  = otDolRaw<=1 && (otCostEst||0)>0;
+      const avgRate   = metricAvg(ds,loc,range,'avgRate');
+      const actVsNeed = metricAvg(ds,loc,range,'actVsNeed');
+      const otHrs     = metricAvg(ds,loc,range,'otHrs');
+      const actHrs    = metricAvg(ds,loc,range,'actHrs');
+      // salaryMgrHrs is a registered metric (metric-source.js:232, mode:'pos',
+      // schedRows→ctrlRows) — migrated to match. crewHrs has NO metric-source.js entry
+      // anywhere (no auto source registered, opsLaborRows included) — left on the manual
+      // ctrlRows/laborRows read; adding a new registry entry is out of #324's scope, which
+      // only migrates metrics that already HAVE a registered source.
+      const salMgrHrs = metricAvg(ds,loc,range,'salaryMgrHrs');
+      const crewHrs   = _avg(lRows,'crewHrs') || (cIsSummary?null:_avg(cRows,'crewHrs'));
+      // OT cost: was hrs×0.5×rate estimated (otCostEst) because the real dollar figure was
+      // unreliable — #324 measured it directly before deciding whether that's still true:
+      // 1647/1647 (100%) of qsr_labor_summary rows over the trailing 60 days carry a real,
+      // non-null over_time_total_dollars across all 27 stores, post-#323's backfill. With
+      // the real figure reliably present, the estimate (and its "~" approximation flag)
+      // retires outright rather than staying as a needless fallback. otCost is a PERIOD
+      // TOTAL (unlike otHrs, a daily average) — metricAvg returns a mean, so sum the daily
+      // series directly instead. This preserves #309's null-vs-zero fix: null only when NO
+      // day in range resolved a value (missing), never when every resolved day's OT was a
+      // genuine $0 — do not touch that guard, only the sourcing underneath it.
+      const otSeries = metricSeries(ds,loc,range,'otDollar');
+      const otDays   = Object.keys(otSeries);
+      const otCost   = otDays.length ? otDays.reduce((a,dk)=>a+otSeries[dk],0) : null;
       return{loc,days,laborPct,tpph,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,
-        otCost,otCostEd,totalSales,tgt,
+        otCost,totalSales,tgt,
         storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
     }).filter(Boolean);
   },[range,activeLocs,ds,settings]);
@@ -1789,7 +1780,6 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // showed "$0" whenever every store's otCost happened to be null. otCostKnown tracks
       // whether at least one store actually had a real reading.
       otCostKnown:locStats.some(s=>s.otCost!=null),
-      otCostEd:locStats.some(s=>s.otCostEd),
       totalSales:locStats.reduce((a,s)=>a+(s.totalSales||0),0),
       storeCount:locStats.length};
   },[locStats]);
@@ -1879,7 +1869,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     {id:'actVsNeed',l:'Act vs Need', lB:null,  fmt:s=>avnFmt(s.actVsNeed),         col:s=>avCol(s.actVsNeed)},
     {id:'avgRate',  l:'AROP',        lB:null,  fmt:s=>s.avgRate?'$'+nFmtL(s.avgRate,2):'—', col:()=>'var(--text2)'},
     {id:'actHrs',   l:'Act Hrs/Day', lB:null,  fmt:s=>nFmtL(s.actHrs,1),          col:()=>'var(--text2)'},
-    {id:'otCost',   l:'OT Cost',     lB:true,  fmt:s=>s.otCost>0?(s.otCostEd?'~':'')+f$(s.otCost):'—', col:s=>s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'#10b981'},
+    {id:'otCost',   l:'OT Cost',     lB:true,  fmt:s=>s.otCost>0?f$(s.otCost):'—', col:s=>s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'#10b981'},
   ];
   const curMet=RANK_MET.find(m=>m.id===sortMet)||RANK_MET[0];
   const rankSorted=uM(()=>[...locStats].sort((a,b)=>{
@@ -1919,8 +1909,8 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       {l:'Act vs Need',  v:avnFmt(dist.actVsNeed),
        sub:'+ overstaffed  ·  − understaffed',
        col:avCol(dist.actVsNeed), bg:'rgba(255,255,255,.02)'},
-      {l:'OT Cost (Period)',v:dist.otCostKnown?(dist.otCostEd?'~ ':'')+f$(dist.otCost):'—', // #303: was unconditional f$(dist.otCost), showed "$0" when every store's input was missing
-       sub:(dist.otCostEd?'Estimated premium  ·  ':'')+(dist.avgRate?'$'+nFmtL(dist.avgRate,2)+'/hr AROP  ·  ':'')+(dist.storeCount)+' locations',
+      {l:'OT Cost (Period)',v:dist.otCostKnown?f$(dist.otCost):'—', // #303: was unconditional f$(dist.otCost), showed "$0" when every store's input was missing
+       sub:(dist.avgRate?'$'+nFmtL(dist.avgRate,2)+'/hr AROP  ·  ':'')+(dist.storeCount)+' locations',
        col:dist.otCost>5000?'#ef4444':dist.otCost>1000?'#f59e0b':'#a5b4fc',
        bg:'rgba(165,180,252,.04)'},
     ];
@@ -1974,7 +1964,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:ac}},avnFmt(s.actVsNeed)),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},s.avgRate?'$'+nFmtL(s.avgRate,2):'—'),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},nFmtL(s.actHrs,1)),
-            td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'var(--text2)'}},s.otCost>0?(s.otCostEd?'~':'')+f$(s.otCost):'—'),
+            td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'var(--text2)'}},s.otCost>0?f$(s.otCost):'—'),
             td({style:{padding:'5px 8px',textAlign:'right',color:'var(--text3)',fontSize:'8.5px'}},s.days)
           );
         })),
@@ -1989,7 +1979,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
           td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:avCol(dist.actVsNeed),borderTop:'.5px solid var(--bdr2)'}},avnFmt(dist.actVsNeed)),
           td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.avgRate?'$'+nFmtL(dist.avgRate,2):'—'),
           td({style:{borderTop:'.5px solid var(--bdr2)'}}),
-          td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,color:dist.otCost>2000?'#ef4444':dist.otCost>500?'#f59e0b':'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.otCostKnown?(dist.otCostEd?'~':'')+f$(dist.otCost):'—'), // #303: same guard as the OT Cost tile above
+          td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,color:dist.otCost>2000?'#ef4444':dist.otCost>500?'#f59e0b':'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.otCostKnown?f$(dist.otCost):'—'), // #303: same guard as the OT Cost tile above
           td({style:{padding:'6px 8px',textAlign:'right',color:'var(--text3)',fontSize:'8.5px',borderTop:'.5px solid var(--bdr2)'}},dist.storeCount+' locs')
         ))
       )
@@ -2213,7 +2203,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
           level:'critical', loc:s.loc, metric:'otHrs',
           headline:`OT ${s.otHrs.toFixed(1)} hrs/day — excessive overtime`,
           detail:`More than 4 daily OT hours is unsustainable. `+
-            (s.otCost>0?`Period cost: ${s.otCostEd?'~':''}${f$(s.otCost)}.`:''),
+            (s.otCost>0?`Period cost: ${f$(s.otCost)}.`:''),
           action:'Audit OT approvals. Determine if root cause is chronic understaffing, call-outs, or scheduling errors. Increase base crew if needed.',
           impact:s.otCost||0,
         });
@@ -2223,7 +2213,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         insights.push({
           level:'warning', loc:s.loc, metric:'otHrs',
           headline:`OT ${s.otHrs.toFixed(1)} hrs/day — above target`,
-          detail:`Target is ≤2 hrs/day. Period premium: ${s.otCostEd?'~':''}${f$(s.otCost||0)}.`,
+          detail:`Target is ≤2 hrs/day. Period premium: ${f$(s.otCost||0)}.`,
           action:'Review weekend and close-shift scheduling. Identify if specific shifts drive OT.',
           impact:s.otCost||0,
         });
@@ -2417,7 +2407,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
               'Act vs Need':     s.actVsNeed!=null?((s.actVsNeed>0?'+':'')+s.actVsNeed.toFixed(0)+' hrs'):'—',
               'AROP':            s.avgRate?('$'+s.avgRate.toFixed(2)):'—',
               'Act Hrs/Day':     s.actHrs!=null?s.actHrs.toFixed(1):'—',
-              'OT Cost':         s.otCost>0?((s.otCostEd?'~':'')+f$(s.otCost)):'—',
+              'OT Cost':         s.otCost>0?f$(s.otCost):'—',
               'Days':            s.days,
             }))
           }),
