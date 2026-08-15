@@ -142,10 +142,30 @@ async function bisectEarliestMonth(token, nsn, knownEmptyStart, knownDataStart) 
 // whose whole purpose is measuring depth. Confirms from the other side: after convergence,
 // probe the month immediately before the reported answer and the month before that. Both
 // empty confirms the boundary (~4 count sessions per probed month makes an all-empty pair
-// a real signal, not sampling noise). Either returning data means the initial bisect
-// stopped early — re-bisects once more between a widened empty bound and the earliest
-// confirmed-data point found, bounded to one extra pass rather than recursing indefinitely.
-async function confirmEarliestMonth(token, nsn, earliestMonth) {
+// a real signal, not sampling noise).
+//
+// PR #284 review (owner, 2026-08-14): the first cut of the "not confirmed" branch had two
+// bugs, both now fixed. (1) It printed "(confirmed)" on the unconfirmed path too — the exact
+// overconfidence #285 was filed about, reproduced by the fix meant to address it. Every
+// return path below is labeled distinctly: confirmed:true / confirmed:false+correctedFrom /
+// confirmed:false+unresolved, and probeStore's message text uses different words for each,
+// not just a different boolean a reader has to know to check. (2) The re-bisect used a fixed
+// "3 months before" bound as a KNOWN-EMPTY floor without ever probing it — bisectEarliestMonth
+// documents its `lo` param as "known empty (or erroring) at/after this", and an unprobed
+// assumption doesn't meet that bar. If the true floor were deeper than 3 months (the CLAUDE.md
+// "data depth is never the limiter" case), every mid-probe in that re-bisect would have found
+// data, converged just above the assumed bound, and reported ANOTHER false-shallow floor —
+// this time confidently. Fixed by actually widening outward (3→6→12→24→48→96 months) and
+// probing each candidate bound until one genuinely comes back empty, updating the known-data
+// bound along the way if a widen probe itself finds data (real evidence the floor is deeper
+// still, not just a wider search window). If NO widen probe within that range ever comes back
+// empty, this returns unresolved:true rather than asserting a wrong date — "deeper than I
+// looked" is itself a real, honest measurement for a probe whose job is measuring depth.
+// Once a real empty bound is found and bisected against, the result gets ONE bounded extra
+// pass back through this same two-sided check (depth 0 -> 1, never deeper) so a genuinely
+// re-confirmable corrected answer comes back labeled confirmed:true rather than merely
+// "corrected" — bounded to at most 2 total confirm passes, never unbounded recursion.
+async function confirmEarliestMonth(token, nsn, earliestMonth, depth = 0, original = earliestMonth) {
   const base = new Date(earliestMonth + 'T00:00:00Z');
   const monthWindow = (n) => {
     const m = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - n, 1));
@@ -161,11 +181,29 @@ async function confirmEarliestMonth(token, nsn, earliestMonth) {
   const twoHasData = rTwo.ok && rTwo.count > 0;
   if (!oneHasData && !twoHasData) return { earliestMonth, confirmed: true };
 
-  const newDataStart = twoHasData ? twoBefore.start : oneBefore.start;
-  const widenedEmpty = monthWindow(3);
-  console.log(`[probe] ${nsn}: boundary NOT confirmed — data found before the reported floor; re-bisecting from ${widenedEmpty.start}…${newDataStart}`);
-  const corrected = await bisectEarliestMonth(token, nsn, widenedEmpty.start, newDataStart);
-  return { earliestMonth: corrected, confirmed: false, correctedFrom: earliestMonth };
+  let newDataStart = twoHasData ? twoBefore.start : oneBefore.start;
+  console.log(`[probe] ${nsn}: boundary NOT confirmed — data found before the reported floor; widening to find a genuinely empty bound before re-bisecting`);
+
+  const WIDEN_OFFSETS_MONTHS = [3, 6, 12, 24, 48, 96];
+  let verifiedEmptyStart = null;
+  for (const offset of WIDEN_OFFSETS_MONTHS) {
+    const w = monthWindow(offset);
+    const r = await probeWindow(token, nsn, w.start, w.end);
+    logResult(`widen -${offset}mo`, w.start, w.end, r);
+    if (r.ok && r.count > 0) { newDataStart = w.start; continue; } // deeper data — push the known-data bound back, keep widening
+    if (r.ok && r.count === 0) { verifiedEmptyStart = w.start; break; } // genuinely empty — safe to bisect against
+    // erroring window: inconclusive, neither confirms nor denies emptiness — keep widening
+  }
+
+  if (!verifiedEmptyStart) {
+    const deepestProbed = monthWindow(WIDEN_OFFSETS_MONTHS[WIDEN_OFFSETS_MONTHS.length - 1]).start;
+    console.log(`[probe] ${nsn}: could not establish a verified-empty floor — every widen probe back to ${deepestProbed} still returned data`);
+    return { earliestMonth: newDataStart, confirmed: false, unresolved: true, correctedFrom: original, deepestProbed };
+  }
+
+  const corrected = await bisectEarliestMonth(token, nsn, verifiedEmptyStart, newDataStart);
+  if (depth === 0) return confirmEarliestMonth(token, nsn, corrected, depth + 1, original);
+  return { earliestMonth: corrected, confirmed: false, correctedFrom: original };
 }
 
 const WINDOWS = [
@@ -216,11 +254,16 @@ async function probeStore(token, nsn) {
     console.log(`[probe] ${nsn}: retention cutoff between "${lastGoodWithData.label}" (has data) and "${firstDeadAfterGood.label}" (empty) — bisecting…`);
     const bisected = await bisectEarliestMonth(token, nsn, firstDeadAfterGood.start, lastGoodWithData.start);
     const confirmation = await confirmEarliestMonth(token, nsn, bisected);
-    const msg = confirmation.confirmed
-      ? `retention cutoff — earliest month with data (confirmed): ${confirmation.earliestMonth}`
-      : `retention cutoff — earliest month with data (confirmed): ${confirmation.earliestMonth} (corrected from initial bisect answer ${confirmation.correctedFrom} — data found before it on the boundary check)`;
+    let msg;
+    if (confirmation.confirmed) {
+      msg = `retention cutoff — earliest month with data (confirmed): ${confirmation.earliestMonth}`;
+    } else if (confirmation.unresolved) {
+      msg = `retention cutoff — could NOT confirm a floor (unresolved, NOT confirmed): every widen probe back to ${confirmation.deepestProbed} still returned data, so the true floor is deeper than this probe checked. Best data-backed estimate so far: ${confirmation.earliestMonth}.`;
+    } else {
+      msg = `retention cutoff — earliest month with data (corrected, NOT independently reconfirmed): ${confirmation.earliestMonth} — original bisect answer ${confirmation.correctedFrom} was wrong; data was found before it on the boundary check.`;
+    }
     console.log(`[probe] ${nsn} verdict: ${msg}`);
-    return { nsn, kind: 'cutoff', summary: msg, earliestMonth: confirmation.earliestMonth, confirmed: confirmation.confirmed };
+    return { nsn, kind: 'cutoff', summary: msg, earliestMonth: confirmation.earliestMonth, confirmed: confirmation.confirmed, unresolved: !!confirmation.unresolved };
   }
   const deepest = WINDOWS[WINDOWS.length - 1];
   const msg = `deep — every probed window returned data, back to "${deepest.label}" (${deepest.start})`;
