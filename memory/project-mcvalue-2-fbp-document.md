@@ -12,6 +12,85 @@ the owner 2026-08-14 — an earlier "Morhininweg" was voice-input garble).
 
 ---
 
+# ⭐ FINAL EDIT SET — read this first; it supersedes earlier guidance below
+
+Written 2026-08-15, ten days out. **This file accumulated three generations of guidance as calendar
+coverage arrived, and several earlier conclusions were retracted by later ones.** Everything below
+this section is preserved as the evidence trail, but where it conflicts with this section, this
+section wins. A reader who starts at the top of the file and stops early will otherwise publish a
+claim this project already withdrew.
+
+## What is verified and stands
+
+- **Launch date 2026-04-21**, from the April 2026 calendar issue. Independently confirmed to be a
+  **Tuesday**, which is what forces the Wednesday-aligned re-anchoring.
+- **The launch-anchored block layout is arithmetically exact** — recomputed 2026-08-15, all eight
+  blocks are 14 days and every one starts on a Wednesday:
+  `B1 04-22→05-05 · B2 05-06→05-19 · B3 05-20→06-02 · B4 06-03→06-16 · B5 06-17→06-30 ·
+  B6 07-01→07-14 · B7 07-15→07-28 · B8 07-29→08-11`
+- **Pricing largely differences out.** Round cadence is roughly symmetric across 2025 and 2026,
+  consistent with the owner's account of minimal participation. This confound closes.
+- **The FIFA World Cup Happy Meal was a demand failure, not an execution failure** — owner-confirmed
+  and independently corroborated by satisfaction holding or improving on every dimension through the
+  promotion, with accuracy peaking in June.
+- **B1 closes 05-05, before the 05-14 Round 1 price deadline** — and effective dates fall later than
+  the submission deadline, so the margin is wider than nine days. **Check movement inside B1 cannot
+  be price.** This is the single most useful structural fact in the file.
+
+## Superseded — do not re-derive these
+
+| Retracted claim | Where | Replaced by |
+|---|---|---|
+| "B1–B3 is a clean six-week window" | §"What this means for the document" | **B1 alone is the cleanest block.** B2 carries a Beverage Launch and the Round 1 deadline; B3 the Worldwide convention and Round 2 recommendations. |
+| "Traffic got worse as national marketing support increased" | §"The framing this unlocks" | **Retracted.** It assumed the support converted. With the World Cup Happy Meal confirmed as a commercial failure, B4–B8 carried *nominal* support that did not translate. |
+| Calendar→block table with `B1 = 04-21 → 05-04` | §"six national events" | **Stale by one day** — built on the pre-re-anchoring layout. Under the corrected layout Happy Meal #4 (05-05) falls inside **B1**, not B2. Use the launch-anchored table instead. |
+| "Required edits: split B1–B3 from B4–B8" | §"Required edits before 25 August" | Superseded by the narrowing above — **split B1 out**, not B1–B3. |
+
+## The three edits the document needs
+
+1. **Lead with B1, framed as McValue 2.0 versus McValue 1.0.** That is what the design actually
+   measures — 1.0 launched 2025-01-07, so the LY twin is not "no McValue." Say so in the first
+   paragraph rather than letting a reader discover it.
+2. **Name every national event in the window, with dates, in the methodology section**, using the
+   launch-anchored layout. B1's own Happy Meal rotation included — it rotates on a similar cadence in
+   the LY twin and therefore largely cancels, but state that rather than omitting the event.
+3. **Report the DiD with the calendar asymmetry stated as a bound, not as a point estimate.** The
+   2025 post-twin carried two major product launches (McCrispy Strips, Snack Wraps) and a four-week
+   free-fry offer; 2026's carried a failed tentpole and a one-day flash offer. Both headline numbers
+   are therefore **overstated in the direction of the finding**. The honest form is *"the true effect
+   is smaller than −4.55pp because the LY baseline was more heavily promoted"* — a number offered
+   with its own limitation is far harder to dismiss than a number offered bare.
+
+## The two measurements that gate publishing the DiD — NOT yet run
+
+Both are read-only. Both were flagged in this file as runnable; neither has been run.
+
+1. **March 2026 vs March 2025 traffic and check.** Settles whether the month-long free-item offer in
+   the 2026 pre-window cancels against its LY twin. The 2025 programme ran *continuously* while 2026
+   shows it only in Jan–Mar, and that asymmetry inflates **both** headline numbers. A month-long
+   free-item promotion leaves a visible footprint: a traffic spike with a check dip.
+2. **Block-level check decomposition, B1 versus B2–B8.** If the check gain appears in B1, it is mix
+   and the finding stands. If it only appears from B2, it is probably price and **the claim must
+   change**. +10.4¢ is ~1.05% of a $9.909 check; a price round is typically 1–3%, so price alone
+   could account for the entire headline.
+
+**Neither can be run from the PM sandbox.** Verified 2026-08-15: the anon key returns zero rows on
+`qsr_cash_sheet` (HTTP 200, empty) and `qsr_daily_activity` — that is RLS, not absence, and it must
+never be reported as "no data." `qsr_daily_activity` additionally returns a statement timeout on an
+unfiltered `limit=1`, so any dispatched query should filter on `dt` and select named columns rather
+than `*`.
+
+These need either the owner's service-role shell or an engineer dispatch — the security constraints
+permit the engineer **read-only measurement** with service-role access, so this is dispatchable. It
+competes with the #301/#296-step-2/#292 queue for the one-task-in-flight slot, and it is the only
+work on the board with a hard external deadline.
+
+**Standing instruction from this file, still in force: do not publish the DiD numbers until both are
+resolved.** Found by us first, they become a methodology section that demonstrates rigour; found by
+the FBP first, they cost the document its credibility.
+
+---
+
 ## The claim under test
 
 The owner's observation: McValue changed direction in **May 2026**, producing roughly a
