@@ -950,7 +950,6 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // the auto feed on days without a manual upload. Fall back to labInRange.
     const cRows=ctrlEffective.rows.length?ctrlEffective.rows:[];
     const lRows=labInRange;
-    if(!cRows.length&&!lRows.length)return null;
     const cScoped=cRows.filter(r=>allLocs.includes(String(r.loc)));
     const lScoped=lRows.filter(r=>allLocs.includes(String(r.loc)));
     // Labor %/TPPH now auto-first per-day via metric-source.js (2026-08-06) instead of pooling
@@ -966,7 +965,22 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // TPPH "--" gap first reported 2026-08-04 (v4.808's fix didn't fully close it).
     const laborPct=metricAvg(ds,allLocs,effectiveDateRange,'laborPct');
     const tpph=metricAvg(ds,allLocs,effectiveDateRange,'tpph');
-    const avn=avgOf(cScoped,'actVsNeed')||avgOf(lScoped,'actVsNeed');
+    // #303/2026-08-15 review: this gate used to run BEFORE laborPct/tpph existed, on raw
+    // cRows/lRows presence alone -- a device with real auto-pulled data (glimpse/cash/DAR
+    // rollup, all reachable via metricAvg's own auto-first chain) but zero manual ctrlRows
+    // upload and zero labInRange rows would fail this check and show "No labor data for this
+    // period" while Labor Analytics (already auto-first via the same metricAvg) showed a real
+    // number for the identical range. Gate on whether ANY of the raw rows or the auto-first
+    // resolutions found something, not on raw-row presence alone.
+    if(!cRows.length&&!lRows.length&&laborPct==null&&tpph==null)return null;
+    // #303/2026-08-15 review: was avgOf(cScoped,'actVsNeed')||avgOf(lScoped,'actVsNeed') --
+    // avgOf's default x>0 filter (see its definition) drops every negative AND zero reading.
+    // actVsNeed is a SIGNED hour difference (actual-needed) where negative = understaffed and
+    // 0 = dead on target -- both real, both dropped by that filter, per metric-source.js:178's
+    // own "mode:'any' is load-bearing" comment. The result was silently biased positive, which
+    // is also why the tile's color (line ~2134, `clr:(laborSec.avn||0)>=0?...`) almost always
+    // painted its "good" branch -- not a color-token bug, a data bug wearing one.
+    const avn=metricAvg(ds,allLocs,effectiveDateRange,'actVsNeed');
     const otHrs=sumOf(cScoped,'otHrs')||sumOf(lScoped,'otHrs');
     const actHrs=sumOf(cScoped,'actHrs')||sumOf(lScoped,'actHrs');
     const crewHrs=sumOf(cScoped,'crewHrs');
