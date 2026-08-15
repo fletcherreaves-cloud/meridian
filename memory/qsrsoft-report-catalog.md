@@ -2043,10 +2043,21 @@ per price point. At full district scope the children are still price tiers.
 > `Show Location Names` in whatever state it was in for this capture, the children of item 1 came
 > back as eight price tiers, and the reconciliation below holds.
 >
-> The test: SAVE the toggle, re-expand a row, and see whether the children become store names — and
-> capture the request either way, since a new parameter in it is what the pull script needs.
-> This is the second time in one day that a UI control answered a question I had reasoned about
-> instead of measured. See [[feedback-measure-dont-reason]].
+> **TEST RUN, RESULT NEGATIVE (owner, same day): with `Show Location Names` saved, the expanded
+> children were still price tiers.** The toggle does not change the grain.
+>
+> So the original conclusion survives — but the retraction was still correct to make, and that
+> distinction is the point worth keeping. At the moment it was written the claim rested on an
+> incomplete sweep and on the phrase "closes the question for good"; it happened to be right, and I
+> had not established that it was. **A conclusion that turns out true is not evidence the reasoning
+> behind it was sound.** Retracting cost one commit; shipping on unverified reasoning is how the
+> `poo` point-of-origin guess got as far as "a bigger unlock than the price question."
+>
+> Now established three independent ways — filter bar, Column Settings, row expansion — **the
+> Product Mix UI cannot break out by store.** The parameter itself is real, though: see the
+> `locationAgg` section below, where the vendor's own saved reports use `"d"` in production on three
+> other reports. The remaining test is in code, not in the browser.
+> See [[feedback-measure-dont-reason]].
 
 Five columns reconcile **exactly** (parent vs Σ children):
 
