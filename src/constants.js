@@ -146,7 +146,11 @@ const DEF_SETTINGS={
     'Brad Denley':       ['6178','6838','10034','35242','37566','38609','43701']
   },
   operators:{
-    // MCDOK — Oklahoma (Ryan + FL stores 10034, 37566, 43380, 43701)
+    // Ryan Thorley operates in BOTH orgs: MCDOK/Oklahoma plus the Emerald Arches/Florida
+    // stores 10034, 37566, 43701. Owner/operator is NOT nested under organization — never
+    // model it as a strict tree or a rollup will double-count or drop his Florida stores.
+    // (43380 is Tishomingo, OKLAHOMA — an earlier version of this comment listed it as
+    // Florida. The data below was always right; only the comment was wrong.)
     'Ryan Thorley':       ['3708','6972','10034','10915','24471','29760','31357','32525','33222','37566','43380','43701'],
     'Gary Mornhinweg':    ['5183','11657','18213','20475','33704','34222'],
     'Rick/Kathy Thorley': ['5985','10422','13113','33109','35064'],
