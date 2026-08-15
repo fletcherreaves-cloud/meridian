@@ -2088,3 +2088,131 @@ $1.99 ×130) accounting for 69% of units. This is the dispersion the price book 
 exists to attribute to specific stores; Product Mix shows that it exists but cannot say who is who.
 
 `$2.32` is not a menu-board-shaped price and is likely bundle-allocated. Untested.
+
+---
+
+# ✅ `nsd`/`dsd` CONFIRMED — they are `locationAgg`/`dateAgg`, and `"d"` is in production use
+
+Captured 2026-08-15 from `POST api.sso.myqsrsoft.com/user/settings` (the `productMixDrillDown/defaultColumns`
+save). The response is a full DynamoDB item dump, and it contains **saved-report blobs** that spell
+the aggregation parameters out by name:
+
+```json
+"/reports/mcd/shift/operationsReport/savedReport": {
+    "locationData": { "locationAgg": "d", "patchAgg": "s" },
+    "dateData":     { "dateAgg": "s", "selectedDaysOfWeek": [1..7], "compType": "calendar" } }
+
+"/reports/mcd/controlsLabor/laborAnalysis/savedReport": {
+    "locationData": { "locationAgg": "d", "patchAgg": "s" },
+    "dateData":     { "dateAgg": "d", "selectedDaysOfWeek": [1..7] } }
+
+"/reports/mcd/shift/rank/savedReport": {
+    "locationData": { "locationAgg": "d" },
+    "dateData":     { "datePreset": "Yesterday" } }
+
+"/reports/mcd/controlsCash/registerAudit/savedReport": {
+    "locationData": { "employeeAgg": true },
+    "dateData":     { "dateAgg": "d" },
+    "registerType": { "registerType": "cashier" } }
+```
+
+So the earlier reading was right and is now **sourced, not inferred**:
+
+| query param | real name | meaning |
+|---|---|---|
+| `nsd` | `locationAgg` | store dimension — `s` summary, `d` detail |
+| `dsd` | `dateAgg` | date dimension — `s` summary, `d` detail |
+| — | **`patchAgg`** | **a THIRD dimension: patch-level rollup.** New. |
+| — | **`employeeAgg`** | boolean, register audit — **employee-level detail** |
+
+**`locationAgg: "d"` is saved and in production on three different reports.** It is a real, accepted
+value in this system — not something we invented. That does not *prove* `product-mix-bundles` honours
+it (the UI never sends it there), but it moves the #292 test from "does this parameter exist" to
+"does this endpoint respect a parameter the platform demonstrably supports." Test it in code.
+
+**`patchAgg` is new and matters to Meridian directly** — the app has a patch/supervisor tier in every
+location selector and has been building it from `INV_ORG_COORDS`. If reports can aggregate to patch
+natively, that is worth knowing before more patch logic is hand-rolled. Untested.
+
+Also: `selectedDaysOfWeek: [1..7]` and `compType: "calendar"` are day-of-week filtering and a
+comparison-basis switch — neither previously known, both relevant to matched-day vs-LY work.
+
+## ⭐ Register Audit's full column vocabulary — #277 no longer needs guessing
+
+The shopping list calls Register Audit *"the single highest-value pull on this list"* (parser, table,
+loader and risk-scoring engine all already built, only the endpoint missing). Its columns are now
+known, in two variants:
+
+```
+registerAudit-1  (store/day grain)
+  allNetSales  avgCheck  transactions  drawerOpens
+  overShortAmt  overShortPct
+  overringAmt  overringQty  manOverringAmt
+  promoAmt  promoPct  promoQty
+  tRedBeforeQty/Pct/Avg/Amt      tRedAfterQty/Pct/Avg/Amt
+  refundCashQty/Amt              refundCashlessQty/Amt
+  empMealDiscQty/Amt             mgrMealDiscQty/Amt
+
+registerAudit-2  adds the DRAWER identity:
+  regNum  drawerCashier  drawerManager  drawerPreparer  cashOutTimeStamp
+```
+
+**`registerAudit-2` plus `employeeAgg: true` is rung 2 of the attribution ladder** — the
+employee × store × day layer the August cash investigation did not have. `drawerCashier` /
+`drawerManager` / `drawerPreparer` are three distinct roles per drawer, which matches the
+`security/top_contributors` finding that manager-vs-cashier is a **per-event role, not a person
+attribute**. `registerType: "cashier"` in the saved report implies at least one other value
+(manager?) — untested.
+
+Every threshold on this data must be **rate-normalised per $1,000 of that drawer's own sales**, per
+the standing rule; the raw counts here are exactly the un-normalised shape that trap lives in.
+
+## Point of Order DOES exist in QSRSoft — just not on Product Mix
+
+```json
+"snapshot/dashboard/frontend/defaultComponents-Point Of Order": {
+    "componentOrder": ["McDelivery", "Drive Thru", "Front Counter", "Kiosk", "MOP"] }
+```
+
+Product Mix's `poo` is a delivery flag only (Combined/Delivery/Non-Delivery) and that stays closed.
+But a genuine five-way channel dimension exists on the **snapshot dashboard**, and `salesLedger`
+carries `kiosk*`, `fc*`, `dt*`, `mop*`, `eatIn*`, `takeout*`, `delivery*` families with LY twins.
+**The kiosk/channel question is answerable — through Sales Ledger and the snapshot, not through
+Product Mix.** Reopened as a different question, not a revival of the `poo` guess.
+
+## ⚠️ PII is much wider than the `ssn` note said
+
+`employeeRoster/defaultColumns` exposes, in one list: **`ssn`, `dateOfBirth`, `birthday`,
+`minorAdult`, `address`, `streetAddress`, `aptNumber`, `city`, `state`, `zipCode`,
+`homePhoneNumber`, `cellPhoneNumber`, `emailAddress`, `nationalOrigin`, `gender`,
+`federalMaritalStatus`, `hourlyPayRate`, `terminationReason`, and four `emergencyContact*` fields.**
+
+The existing instruction ("never select `ssn` from `storePeoplePunches`") is too narrow. **Never pull
+`employeeRoster` at all without an explicit field allow-list**, and never let any of the above reach
+Supabase or a log line. `geid` + `payrollID` remain sufficient for every analysis Meridian performs.
+`rosterStatistics` additionally exposes `under16` / `under17` / `under18` counts — aggregate and safe,
+and directly relevant to the minors/regulatory exposure noted for #278.
+
+## A `camera` field exists on every suspicious-activity detail grid
+
+`susInsightMoreInfoGrid-{pos_overring, cash_refund, all_promo, drawer_open, total_order_promo}` each
+carry: `store_busn_dt`, `useTime`, `daypart_name`, `reg_num`, `crew`, `mgr`, `mgr_code`,
+`tender_type`, `event_amt`, (`event_display`, `remaining_amt` on promo), `actions`, **`camera`**.
+
+**There is video integration on loss-prevention events.** Nobody has looked at it. Note it and leave
+it — it is a person-level surveillance surface and squarely inside #272's facts-vs-judgments split.
+
+## Reports enumerated here but NOT in the 13 previously catalogued
+
+`activeEmployeesNoPay` · `registerAudit-1` · `registerAudit-2` · `laborAnalysis` (59 fields,
+`opportunityCost*`, per-position `projected*LabHrs`) · `shiftManagerSummary` (**`managerName`**,
+`timeSlice`, `numShifts` — per-manager shift performance) · `laborStatistics` (quarter-hour) ·
+`employeeLookBack` · `employeeRoster` · `delivery` (per-vendor **and** internal-vs-external:
+`intDoorDash*` / `doorDash*`, same for GrubHub and UberEats) · `focusOnService` · `timeAttendance`
+(`attendanceRating`, `onTimeRating`, `noShow`, `inLate`, `inEarly`, `outLate`, `outEarly`,
+`notScheduled`) · `turnoverReport` · `rosterStatistics` · `threePeaksSales` · `threePeaksService` ·
+`salesLedger` · `foodOverBase` (a **superset** of `operationsReport/fobOps`, with `target*` twins for
+every component) · `physicalInventory` · `transfersByStore` · `vlhOverUnder` · `allHours` ·
+`rawItemCounts` (null) · the five `susInsightMoreInfoGrid-*` grids.
+
+**One call enumerates the entire reporting surface.** Re-run it before designing any new pull.
