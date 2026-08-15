@@ -1957,3 +1957,74 @@ that window."* No current Meridian panel can express an unavailable item at all,
 plausible partial explanation for both unexplained sales softness and for VOICE accuracy complaints
 — **whatever the cause**, the guest could not buy it. Lost sales is the one metric that is valid
 without knowing why the item was off, which makes it the right first build.
+
+---
+
+# Product Mix — the UI filter surface, enumerated (screenshots 2026-08-15)
+
+The owner walked every control on the **Product Mix Drill Down** screen. Recording the complete
+list, because the absence of a control is a finding and the next person will otherwise go looking
+for it too.
+
+| control | values | maps to |
+|---|---|---|
+| Location(s) | multi-store picker | `nsn` comma list |
+| date | YEST · LW · LM · WTD · MTD · Custom | `startDate`/`endDate` — a **period**, always totalled |
+| MENU ITEMS / WATCH LISTS | toggle | — (watch lists also exist on Product Outage) |
+| Menu Items | multi-select, searchable, `1 - Hamburger` … | item filter |
+| Family Groups | the nine `familyGroup` values, multi-select | `familyGroup` |
+| Point of Order | **Combined · Delivery · Non-Delivery** | `poo` |
+| Time Segment | Day · Dayparts · Peaks | `timeSegment` |
+| View Segment | By Total · By Hour · By Quarter Hour | `segmentBy` / `timeInterval` |
+| table tabs | DEFAULT · PMIX · MARGIN · QCR | column presets |
+
+## ❌ There is NO per-store and NO per-day breakout on this screen
+
+Nothing in that list splits output by store or by day, and the date control is a *period* selector,
+so a multi-day window always totals. **That is why the UI unconditionally sends `nsd=s&dsd=s`.**
+
+Consequence, and it redirects the work: **do not ask the owner for an `nsd=d&dsd=d` capture — the
+website cannot produce one.** The pull script builds its own URLs, so "does
+`/reporting/v2/product/product-mix-bundles` accept `nsd=d&dsd=d`?" is a **code** test inside #292,
+not an owner task. If the response comes back without `storeNum`, fall back to one request per NSN
+and stamp `loc`/`dt` from the request parameters. Either way #292 ships; only the request count
+changes (1/day vs 27/day).
+
+Recorded as a PM error: the owner was sent hunting for a control that does not exist, when the
+question was answerable in code. **Check whether a thing can be measured directly before asking for
+a capture.**
+
+## ✅ `poo` re-confirmed as a delivery flag, third time
+
+The dropdown reads **Combined / Delivery / Non-Delivery**. Despite the label "Point of Order" it is
+not point-of-origin, and **Product Mix cannot split drive-thru vs front counter vs kiosk.** This
+line of inquiry is closed; see the ⚠️ CORRECTION earlier in this file.
+
+## ⚠️ WRAP COMBO UNITS ARE HALVED — vendor rule, in a dismissible banner
+
+A blue info banner on the report reads, verbatim:
+
+> **"Wrap Combo Units Sold are based off the menu item, therefore the 2 wrap menu items will need to
+> be multiplied by 2 to get total single units sold."**
+
+So for a **2-wrap combo** menu item, `soldQty` counts the *combo*, not the wraps. Any wrap unit
+count taken straight from this feed is **50% low** — and it will look entirely plausible, which is
+what makes it dangerous. Snack Wrap volume is live product-mix data today (`25254 Ranch Snack Wrap`,
+`25261 Spicy Snack Wrap`, `25729 Caesar Snack Wrap`, plus the `2 …` and `Ml` combo variants).
+
+**Any wrap-level unit or food-cost analysis must double the 2-wrap combo items** — and the same
+question should be asked of every other multi-item bundle before its units are trusted
+(`4421 2 Fried Apple Pie`, `582 2 Biscuits & Gravy`, `5093 2 Burrito Ml-Hb`, `6183 2 Chsburger`,
+`4192 3 Pack of Cookies`, `4191 13 Cookie Tote`, the `Classic Pack` items). The banner names only
+wraps; whether the same halving applies to the others is **untested**.
+
+It is captured here because **the banner is dismissible** — click the ✕ and the rule is gone from
+the screen with no other documentation of it anywhere.
+
+## The on-screen table is hierarchical, corroborating #302
+
+Each row carries an expand chevron and the **Price column shows a range** (`$1.89 - $2.49` on
+Hamburger, `$2.79 - $3.69` on Double Cheeseburger) — the `priceRange` field from the `user/settings`
+vocabulary. Parent row plus price-tier children, which is exactly the structure `parsePMixData` sums
+as though it were flat (#302: units ×3.00, waste ×11.54). Independent confirmation from the live UI
+rather than from the export alone.
