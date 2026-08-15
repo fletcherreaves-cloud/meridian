@@ -1779,20 +1779,70 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/product/productOutage
 **A full district, a full fortnight, one HTTP call.** This is the cheapest pull in the catalog and
 the strongest confirmation of the comma-list pattern.
 
-## ⚠️ `restoredTimestamp` came back on 0 of 142 rows — duration is NOT available here
+## ✅ RESOLVED — `reportType=allOutages` is the one to pull. Duration IS available.
 
-It was in `selectCols` and it is absent from every row, because `reportType=currentOutages` returns
-outages that are **still open**. So this capture cannot answer *how long was it out*, only *that it
-went out*. **A second capture with a different `reportType` is required** before any duration,
-minutes-lost or restore-SLA metric is designed — do not build one against this shape and assume the
-field will appear. `reportType` values are otherwise undocumented; `productOutage`'s UI is the place
-to read them off.
+The first capture used `reportType=currentOutages` and `restoredTimestamp` came back empty on all
+142 rows. The owner found the UI toggle (**All / Current**) and re-captured on 2026-08-15:
+
+```
+&reportType=allOutages     ← USE THIS. currentOutages is a filtered subset.
+```
+
+`restoredTimestamp` is populated, and the two report types reconcile **exactly**. On the same two
+stores over the same 14 days:
+
+| | rows |
+|---|---|
+| `allOutages` (3708 + 5183, 2026-08-01→08-14) | **63** |
+| of those, `restoredTimestamp IS NULL` | **5** |
+| `currentOutages`, same stores, same window | **5** |
+
+and they are the *same five rows*, matching on store, item, date **and timestamp to the second**
+(3708 items 13 / 4421 / 25740 at `2026-08-14 22:48:05`; 5183 items 25736 / 25737 at
+`2026-08-13 08:23:02`). So **`currentOutages` ≡ `allOutages WHERE restoredTimestamp IS NULL`.**
+
+### ⚠️ This means the first capture undercounted by ~12×
+
+`currentOutages` returned **5 of 63** events for those stores — **8%**. The 142-row district figure
+recorded above is therefore only the still-open tail, **not** the district's 14-day outage volume,
+which extrapolates to roughly 1,300–1,800 rows. Any sizing, staleness threshold or "should never be
+many on there" expectation must be set against `allOutages`.
+
+### Durations are real, and some are long
+
+| store | items | out → restored | duration |
+|---|---|---|---|
+| 3708 | Caramel Frappe ×4 SKUs | 08-01 10:48 → 08-11 09:48 | **239 h (≈10 days)** |
+| 5183 | Snr Sweet Iced Tea | 08-04 05:23 → 08-06 12:23 | 55 h |
+| 3708 | Milk | 08-04 10:48 → 08-06 09:48 | 47 h |
+| 5183 | Milk | 08-10 06:23 → 08-11 09:23 | 27 h |
+| 3708 | Sprite Berry Blast / Dirty Dr Pepper | 08-11 11:48 → 08-12 10:48 | 23 h |
+| 3708 | StrawBan Smoothie ×3 | 08-08 17:48 → 08-09 15:48 | 22 h |
+| 3708 | Crafted Soda / Diet Dirty DP ×12 | 08-11 13:48 → 08-12 10:48 | 21 h |
+| 5183 | Cookies ×3 | 08-10 21:23 → 08-11 12:23 | 15 h |
+| 3708 | Bottled Water | 08-12 16:48 → 08-13 07:48 | 15 h |
+| 5183 | Sundaes / McFlurries ×6 | 08-11 21:23 → 08-12 07:23 | 10 h |
+| 3708 | Apple Juice | 08-09 04:48 → 08-09 11:48 | 7 h |
+
+**A Frappe machine down for ten days at one store** is the headline, and no Meridian panel can
+express it today.
+
+### ⚠️ The timestamp is a POLL time, not the moment the manager acted
+
+Every 3708 timestamp ends `:48`; every 5183 timestamp ends `:23` — outage *and* restore alike. Each
+store has a fixed minute offset and QSRSoft samples **hourly**. The proof is that **every duration
+in the table above is a whole number of hours**, with no exceptions across 63 rows.
+
+Consequences: resolution is ±1 hour, so never present outage duration to the minute; a sub-hour
+outage may not appear at all; and the offset is per-store, so do not compare raw timestamps across
+stores as if they were event times.
 
 ## What 142 rows over 12 days actually say
 
 - **24 of the 27 stores** logged at least one outage in 14 days. Three were clean.
 - **42 distinct `(storeNum, outageTimestamp)` events** produced those 142 item rows. **26 events
-  flagged more than one item.**
+  flagged more than one item.** (Figures are for `currentOutages`; see the `allOutages` correction
+  below — they describe the still-open tail only.)
 - Family split: Regular Drink 72 · Misc/Shakes 36 · Dessert 19 · Breakfast Entree 13 ·
   Regular Entree 2.
 - Most-flagged items: Big Mac Sauce Cup ×7 · Mighty Hot Sauce ×6 · Fried Apple Pie ×5 ·
@@ -1821,6 +1871,15 @@ An item can go out, be restored, and go out again the same day. Key on
 
 `date` is redundant with `outageTimestamp` — identical on 142/142 rows — but keep it as the
 partition column.
+
+**Confirmed against `allOutages`:** item 2721 `S StrawBan Smoothie` goes out at 3708 on **08-08 and
+again on 08-11** — the same item, same store, twice in one window. Distinct dates here, so the
+narrow key survives this sample too, but it is the exact repeat-outage pattern the wide key exists
+to protect against. Key on `(loc, dt, item, outage_ts)`.
+
+**Do not dedupe or join on `description`.** `3499` and `3502` are both "S Caramel Frappe"; `3498`
+and `3500` are both "S Mocha Frappe"; `2842` and `4301` are both "M Caramel Frappe". There are
+parallel item-number sets for the same product name. Join on `menuItemNumber` only.
 
 ## ⚠️ An "outage" is a MANAGER'S POS ACTION, not a measured out-of-stock
 
@@ -1898,3 +1957,273 @@ that window."* No current Meridian panel can express an unavailable item at all,
 plausible partial explanation for both unexplained sales softness and for VOICE accuracy complaints
 — **whatever the cause**, the guest could not buy it. Lost sales is the one metric that is valid
 without knowing why the item was off, which makes it the right first build.
+
+---
+
+# Product Mix — the UI filter surface, enumerated (screenshots 2026-08-15)
+
+The owner walked every control on the **Product Mix Drill Down** screen. Recording the complete
+list, because the absence of a control is a finding and the next person will otherwise go looking
+for it too.
+
+| control | values | maps to |
+|---|---|---|
+| Location(s) | multi-store picker | `nsn` comma list |
+| date | YEST · LW · LM · WTD · MTD · Custom | `startDate`/`endDate` — a **period**, always totalled |
+| MENU ITEMS / WATCH LISTS | toggle | — (watch lists also exist on Product Outage) |
+| Menu Items | multi-select, searchable, `1 - Hamburger` … | item filter |
+| Family Groups | the nine `familyGroup` values, multi-select | `familyGroup` |
+| Point of Order | **Combined · Delivery · Non-Delivery** | `poo` |
+| Time Segment | Day · Dayparts · Peaks | `timeSegment` |
+| View Segment | By Total · By Hour · By Quarter Hour | `segmentBy` / `timeInterval` |
+| table tabs | DEFAULT · PMIX · MARGIN · QCR | column presets |
+
+## ❌ There is NO per-store and NO per-day breakout on this screen
+
+Nothing in that list splits output by store or by day, and the date control is a *period* selector,
+so a multi-day window always totals. **That is why the UI unconditionally sends `nsd=s&dsd=s`.**
+
+Consequence, and it redirects the work: **do not ask the owner for an `nsd=d&dsd=d` capture — the
+website cannot produce one.** The pull script builds its own URLs, so "does
+`/reporting/v2/product/product-mix-bundles` accept `nsd=d&dsd=d`?" is a **code** test inside #292,
+not an owner task. If the response comes back without `storeNum`, fall back to one request per NSN
+and stamp `loc`/`dt` from the request parameters. Either way #292 ships; only the request count
+changes (1/day vs 27/day).
+
+Recorded as a PM error: the owner was sent hunting for a control that does not exist, when the
+question was answerable in code. **Check whether a thing can be measured directly before asking for
+a capture.**
+
+## ✅ `poo` re-confirmed as a delivery flag, third time
+
+The dropdown reads **Combined / Delivery / Non-Delivery**. Despite the label "Point of Order" it is
+not point-of-origin, and **Product Mix cannot split drive-thru vs front counter vs kiosk.** This
+line of inquiry is closed; see the ⚠️ CORRECTION earlier in this file.
+
+## ⚠️ WRAP COMBO UNITS ARE HALVED — vendor rule, in a dismissible banner
+
+A blue info banner on the report reads, verbatim:
+
+> **"Wrap Combo Units Sold are based off the menu item, therefore the 2 wrap menu items will need to
+> be multiplied by 2 to get total single units sold."**
+
+So for a **2-wrap combo** menu item, `soldQty` counts the *combo*, not the wraps. Any wrap unit
+count taken straight from this feed is **50% low** — and it will look entirely plausible, which is
+what makes it dangerous. Snack Wrap volume is live product-mix data today (`25254 Ranch Snack Wrap`,
+`25261 Spicy Snack Wrap`, `25729 Caesar Snack Wrap`, plus the `2 …` and `Ml` combo variants).
+
+**Any wrap-level unit or food-cost analysis must double the 2-wrap combo items** — and the same
+question should be asked of every other multi-item bundle before its units are trusted
+(`4421 2 Fried Apple Pie`, `582 2 Biscuits & Gravy`, `5093 2 Burrito Ml-Hb`, `6183 2 Chsburger`,
+`4192 3 Pack of Cookies`, `4191 13 Cookie Tote`, the `Classic Pack` items). The banner names only
+wraps; whether the same halving applies to the others is **untested**.
+
+It is captured here because **the banner is dismissible** — click the ✕ and the rule is gone from
+the screen with no other documentation of it anywhere.
+
+## The on-screen table is hierarchical, corroborating #302
+
+Each row carries an expand chevron and the **Price column shows a range** (`$1.89 - $2.49` on
+Hamburger, `$2.79 - $3.69` on Double Cheeseburger) — the `priceRange` field from the `user/settings`
+vocabulary. Parent row plus price-tier children, which is exactly the structure `parsePMixData` sums
+as though it were flat (#302: units ×3.00, waste ×11.54). Independent confirmation from the live UI
+rather than from the export alone.
+
+## The expanded row, reconciled — children are PRICE TIERS, not stores
+
+The owner expanded item **1 Hamburger** at **27 Locations**, YEST 2026-08-14. Eight child rows, one
+per price point. At full district scope the children are still price tiers.
+
+> ⚠️ **RETRACTED, same day.** This section originally read *"there is no store dimension anywhere in
+> this report, expanded or collapsed — that closes the question for good."* Minutes after it was
+> committed the owner found a **`Show Location Names` toggle inside the table's Column Settings
+> gear**. The claim was made from an incomplete sweep of the UI — the filter bar was enumerated, the
+> per-table column dialog was not — and "closes the question for good" was language the evidence did
+> not support. **Status: UNDER TEST, not closed.** What is still true is narrower and safe: with
+> `Show Location Names` in whatever state it was in for this capture, the children of item 1 came
+> back as eight price tiers, and the reconciliation below holds.
+>
+> **TEST RUN, RESULT NEGATIVE (owner, same day): with `Show Location Names` saved, the expanded
+> children were still price tiers.** The toggle does not change the grain.
+>
+> So the original conclusion survives — but the retraction was still correct to make, and that
+> distinction is the point worth keeping. At the moment it was written the claim rested on an
+> incomplete sweep and on the phrase "closes the question for good"; it happened to be right, and I
+> had not established that it was. **A conclusion that turns out true is not evidence the reasoning
+> behind it was sound.** Retracting cost one commit; shipping on unverified reasoning is how the
+> `poo` point-of-origin guess got as far as "a bigger unlock than the price question."
+>
+> Now established three independent ways — filter bar, Column Settings, row expansion — **the
+> Product Mix UI cannot break out by store.** The parameter itself is real, though: see the
+> `locationAgg` section below, where the vendor's own saved reports use `"d"` in production on three
+> other reports. The remaining test is in code, not in the browser.
+> See [[feedback-measure-dont-reason]].
+
+Five columns reconcile **exactly** (parent vs Σ children):
+
+| column | Σ children | parent |
+|---|---|---|
+| Units Sold | 385 | 385 ✓ |
+| $ Sold | 777.91 | 777.91 ✓ |
+| Disc Qty | 25 | 25 ✓ |
+| Offer Discount $ | 15.76 | 15.76 ✓ |
+| Units Promo | 5 | 5 ✓ |
+
+### ⚠️ `Units Used` does NOT reconcile — and the reason is a trap
+
+**Σ children = 390. Parent = 396.** The 6-unit gap is exactly `Units Wasted`, which is populated on
+the parent and **blank on every child**. Two different identities are in play:
+
+```
+child:   Units Used = Units Sold + Units Promo          (true on 8/8 children)
+parent:  Units Used = Units Sold + Units Promo + Units Wasted
+```
+
+Waste is **not price-attributable** — a wasted unit was never rung at a price — so it exists only at
+the item level. Consequences: `Units Used` cannot be summed across a flattened export without either
+losing waste (children only) or double-counting everything (parent + children); and `Units Used` is
+**not** a synonym for units sold in either place.
+
+### ✅ `F&P % of Total Sales` is dollar-weighted, and the vendor does it correctly
+
+Σ(cost)/Σ(sales) across the eight tiers = **32.67%**; the parent shows **32.69%** (rounding). The
+straight average of the eight child percentages is **30.12%** — **2.6 pp wrong**. Anyone rolling
+this up must dollar-weight, per the standing "never average averages" rule. Worth knowing that
+QSRSoft's own parent row is trustworthy here.
+
+### A 45% price spread on a Hamburger
+
+Across 27 stores on one day, item 1 sold at **$1.79 · $1.89 · $1.99 · $2.29 · $2.32 · $2.39 · $2.49
+· $2.59** — a **45% spread** between cheapest and dearest, with the two biggest tiers ($1.89 ×134,
+$1.99 ×130) accounting for 69% of units. This is the dispersion the price book (`menuPriceComparison`)
+exists to attribute to specific stores; Product Mix shows that it exists but cannot say who is who.
+
+`$2.32` is not a menu-board-shaped price and is likely bundle-allocated. Untested.
+
+---
+
+# ✅ `nsd`/`dsd` CONFIRMED — they are `locationAgg`/`dateAgg`, and `"d"` is in production use
+
+Captured 2026-08-15 from `POST api.sso.myqsrsoft.com/user/settings` (the `productMixDrillDown/defaultColumns`
+save). The response is a full DynamoDB item dump, and it contains **saved-report blobs** that spell
+the aggregation parameters out by name:
+
+```json
+"/reports/mcd/shift/operationsReport/savedReport": {
+    "locationData": { "locationAgg": "d", "patchAgg": "s" },
+    "dateData":     { "dateAgg": "s", "selectedDaysOfWeek": [1..7], "compType": "calendar" } }
+
+"/reports/mcd/controlsLabor/laborAnalysis/savedReport": {
+    "locationData": { "locationAgg": "d", "patchAgg": "s" },
+    "dateData":     { "dateAgg": "d", "selectedDaysOfWeek": [1..7] } }
+
+"/reports/mcd/shift/rank/savedReport": {
+    "locationData": { "locationAgg": "d" },
+    "dateData":     { "datePreset": "Yesterday" } }
+
+"/reports/mcd/controlsCash/registerAudit/savedReport": {
+    "locationData": { "employeeAgg": true },
+    "dateData":     { "dateAgg": "d" },
+    "registerType": { "registerType": "cashier" } }
+```
+
+So the earlier reading was right and is now **sourced, not inferred**:
+
+| query param | real name | meaning |
+|---|---|---|
+| `nsd` | `locationAgg` | store dimension — `s` summary, `d` detail |
+| `dsd` | `dateAgg` | date dimension — `s` summary, `d` detail |
+| — | **`patchAgg`** | **a THIRD dimension: patch-level rollup.** New. |
+| — | **`employeeAgg`** | boolean, register audit — **employee-level detail** |
+
+**`locationAgg: "d"` is saved and in production on three different reports.** It is a real, accepted
+value in this system — not something we invented. That does not *prove* `product-mix-bundles` honours
+it (the UI never sends it there), but it moves the #292 test from "does this parameter exist" to
+"does this endpoint respect a parameter the platform demonstrably supports." Test it in code.
+
+**`patchAgg` is new and matters to Meridian directly** — the app has a patch/supervisor tier in every
+location selector and has been building it from `INV_ORG_COORDS`. If reports can aggregate to patch
+natively, that is worth knowing before more patch logic is hand-rolled. Untested.
+
+Also: `selectedDaysOfWeek: [1..7]` and `compType: "calendar"` are day-of-week filtering and a
+comparison-basis switch — neither previously known, both relevant to matched-day vs-LY work.
+
+## ⭐ Register Audit's full column vocabulary — #277 no longer needs guessing
+
+The shopping list calls Register Audit *"the single highest-value pull on this list"* (parser, table,
+loader and risk-scoring engine all already built, only the endpoint missing). Its columns are now
+known, in two variants:
+
+```
+registerAudit-1  (store/day grain)
+  allNetSales  avgCheck  transactions  drawerOpens
+  overShortAmt  overShortPct
+  overringAmt  overringQty  manOverringAmt
+  promoAmt  promoPct  promoQty
+  tRedBeforeQty/Pct/Avg/Amt      tRedAfterQty/Pct/Avg/Amt
+  refundCashQty/Amt              refundCashlessQty/Amt
+  empMealDiscQty/Amt             mgrMealDiscQty/Amt
+
+registerAudit-2  adds the DRAWER identity:
+  regNum  drawerCashier  drawerManager  drawerPreparer  cashOutTimeStamp
+```
+
+**`registerAudit-2` plus `employeeAgg: true` is rung 2 of the attribution ladder** — the
+employee × store × day layer the August cash investigation did not have. `drawerCashier` /
+`drawerManager` / `drawerPreparer` are three distinct roles per drawer, which matches the
+`security/top_contributors` finding that manager-vs-cashier is a **per-event role, not a person
+attribute**. `registerType: "cashier"` in the saved report implies at least one other value
+(manager?) — untested.
+
+Every threshold on this data must be **rate-normalised per $1,000 of that drawer's own sales**, per
+the standing rule; the raw counts here are exactly the un-normalised shape that trap lives in.
+
+## Point of Order DOES exist in QSRSoft — just not on Product Mix
+
+```json
+"snapshot/dashboard/frontend/defaultComponents-Point Of Order": {
+    "componentOrder": ["McDelivery", "Drive Thru", "Front Counter", "Kiosk", "MOP"] }
+```
+
+Product Mix's `poo` is a delivery flag only (Combined/Delivery/Non-Delivery) and that stays closed.
+But a genuine five-way channel dimension exists on the **snapshot dashboard**, and `salesLedger`
+carries `kiosk*`, `fc*`, `dt*`, `mop*`, `eatIn*`, `takeout*`, `delivery*` families with LY twins.
+**The kiosk/channel question is answerable — through Sales Ledger and the snapshot, not through
+Product Mix.** Reopened as a different question, not a revival of the `poo` guess.
+
+## ⚠️ PII is much wider than the `ssn` note said
+
+`employeeRoster/defaultColumns` exposes, in one list: **`ssn`, `dateOfBirth`, `birthday`,
+`minorAdult`, `address`, `streetAddress`, `aptNumber`, `city`, `state`, `zipCode`,
+`homePhoneNumber`, `cellPhoneNumber`, `emailAddress`, `nationalOrigin`, `gender`,
+`federalMaritalStatus`, `hourlyPayRate`, `terminationReason`, and four `emergencyContact*` fields.**
+
+The existing instruction ("never select `ssn` from `storePeoplePunches`") is too narrow. **Never pull
+`employeeRoster` at all without an explicit field allow-list**, and never let any of the above reach
+Supabase or a log line. `geid` + `payrollID` remain sufficient for every analysis Meridian performs.
+`rosterStatistics` additionally exposes `under16` / `under17` / `under18` counts — aggregate and safe,
+and directly relevant to the minors/regulatory exposure noted for #278.
+
+## A `camera` field exists on every suspicious-activity detail grid
+
+`susInsightMoreInfoGrid-{pos_overring, cash_refund, all_promo, drawer_open, total_order_promo}` each
+carry: `store_busn_dt`, `useTime`, `daypart_name`, `reg_num`, `crew`, `mgr`, `mgr_code`,
+`tender_type`, `event_amt`, (`event_display`, `remaining_amt` on promo), `actions`, **`camera`**.
+
+**There is video integration on loss-prevention events.** Nobody has looked at it. Note it and leave
+it — it is a person-level surveillance surface and squarely inside #272's facts-vs-judgments split.
+
+## Reports enumerated here but NOT in the 13 previously catalogued
+
+`activeEmployeesNoPay` · `registerAudit-1` · `registerAudit-2` · `laborAnalysis` (59 fields,
+`opportunityCost*`, per-position `projected*LabHrs`) · `shiftManagerSummary` (**`managerName`**,
+`timeSlice`, `numShifts` — per-manager shift performance) · `laborStatistics` (quarter-hour) ·
+`employeeLookBack` · `employeeRoster` · `delivery` (per-vendor **and** internal-vs-external:
+`intDoorDash*` / `doorDash*`, same for GrubHub and UberEats) · `focusOnService` · `timeAttendance`
+(`attendanceRating`, `onTimeRating`, `noShow`, `inLate`, `inEarly`, `outLate`, `outEarly`,
+`notScheduled`) · `turnoverReport` · `rosterStatistics` · `threePeaksSales` · `threePeaksService` ·
+`salesLedger` · `foodOverBase` (a **superset** of `operationsReport/fobOps`, with `target*` twins for
+every component) · `physicalInventory` · `transfersByStore` · `vlhOverUnder` · `allHours` ·
+`rawItemCounts` (null) · the five `susInsightMoreInfoGrid-*` grids.
+
+**One call enumerates the entire reporting surface.** Re-run it before designing any new pull.
