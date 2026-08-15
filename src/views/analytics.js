@@ -743,7 +743,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
           div({style:{width:46,height:22,borderRadius:4,background:corrColor(r),margin:'0 auto',
             display:'flex',alignItems:'center',justifyContent:'center',
             fontSize:'8px',fontFamily:'var(--mono)',
-            color:abs>0.3?'rgba(0,0,0,.8)':'rgba(255,255,255,.2)',fontWeight:700}},
+            color:abs>0.3?'rgba(0,0,0,.8)':'var(--text3)',fontWeight:700}},
             r!==null&&abs>0.2?(r>0?'+':'')+r.toFixed(2):null)
         );
       })
@@ -3553,16 +3553,16 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
             const bx=x+bi*(bW+gW),bh=bH(v),by=H-24-bh;
             return h('g',{key:bi},
               h('rect',{x:bx,y:by,width:bW,height:bh,rx:2,fill:COLS[bi],fillOpacity:.75}),
-              bh>14&&h('text',{x:bx+bW/2,y:by+bh/2+3,textAnchor:'middle',fontSize:6.5,fill:'rgba(255,255,255,.9)',fontWeight:'700'},v.toFixed(2)+'%'));
+              bh>14&&h('text',{x:bx+bW/2,y:by+bh/2+3,textAnchor:'middle',fontSize:6.5,style:{fill:'var(--text)'},fontWeight:'700'},v.toFixed(2)+'%'));
           }),
-          h('text',{x:x+sW/2-grp/2,y:H-10,textAnchor:'middle',fontSize:6.5,fill:'rgba(255,255,255,.45)'},nm)
+          h('text',{x:x+sW/2-grp/2,y:H-10,textAnchor:'middle',fontSize:6.5,style:{fill:'var(--text2)'}},nm)
         );
       }),
       // Legend
       h('g',{transform:'translate(8,'+(H+6)+')'},
         MODELS.slice(0,3).map((m,i)=>h('g',{key:m.key,transform:'translate('+(i*80)+',0)'},
           h('rect',{x:0,y:-5,width:8,height:5,rx:1,fill:m.col,fillOpacity:.75}),
-          h('text',{x:11,y:0,fontSize:6.5,fill:'rgba(255,255,255,.5)'},m.label)))
+          h('text',{x:11,y:0,fontSize:6.5,style:{fill:'var(--text2)'}},m.label)))
       )
     );
   };
