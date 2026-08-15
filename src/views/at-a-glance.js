@@ -1498,9 +1498,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             letterSpacing:'-0.5px',lineHeight:1.1,transition:'font-size .2s ease'}},
             'At a Glance'),
           !headerScrolled&&(userName
-            ?div({style:{fontSize:'13px',color:'rgba(255,255,255,.8)',marginTop:2,fontWeight:500}},
+            ?div({style:{fontSize:'13px',color:'var(--text)',marginTop:2,fontWeight:500}},
                 greetWord+', '+userName+'!')
-            :div({style:{fontSize:'12px',color:'rgba(255,255,255,.5)',marginTop:2}},
+            :div({style:{fontSize:'12px',color:'var(--text2)',marginTop:2}},
                 greetWord+'!  ',
                 span({style:{fontSize:'10px',color:'rgba(245,158,11,.6)',cursor:'pointer'},
                   onClick:()=>{}/* Settings is a separate nav */,
@@ -1521,7 +1521,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       !headerScrolled&&div(null,
         div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
           div({style:{flex:1,fontSize:'11px',lineHeight:1.5,
-            color:commentMode==='ai'&&aiComment?'rgba(255,255,255,.85)':ruleComment.color}},
+            color:commentMode==='ai'&&aiComment?'var(--text)':ruleComment.color}},
             commentMode==='rule'?ruleComment.text:
             aiLoading?'Generating...':(aiComment||ruleComment.text)),
           div({style:{display:'flex',gap:4}},
@@ -1607,7 +1607,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               borderRadius:5,background:item.priority==='high'?'rgba(248,113,113,.08)':
                 item.priority==='medium'?'rgba(245,158,11,.08)':'rgba(255,255,255,.04)',
               border:'.5px solid '+(item.priority==='high'?'rgba(248,113,113,.2)':
-                item.priority==='medium'?'rgba(245,158,11,.2)':'rgba(255,255,255,.08)')}},
+                item.priority==='medium'?'rgba(245,158,11,.2)':'var(--bdr)')}}, // #296 step 2 review: missed by step 1 -- the border: key sat on the line above this occurrence, outside step 1's same-line classifier window
               btn({style:{flexShrink:0,width:16,height:16,borderRadius:3,
                 border:'.5px solid var(--bdr)',background:'transparent',cursor:'pointer',
                 display:'flex',alignItems:'center',justifyContent:'center',marginTop:1},
@@ -1685,7 +1685,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           return sources.map(src=>{
             const rows=src.rows||[];
             if(!rows.length)return div({key:src.name,style:{fontSize:'9px',
-              color:'rgba(255,255,255,.25)',padding:'2px 8px',borderRadius:3,
+              color:'var(--text3)',padding:'2px 8px',borderRadius:3,
               background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
               src.icon+' '+src.name+': Not loaded');
             // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
@@ -1919,12 +1919,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 weeklyTrend.map((wk,i)=>{
                   const barH=Math.max(3,Math.round((wk.sales/maxS)*44));
                   const x=i*(bw+gap)+2, y=48-barH;
-                  const clr=wk.vsLY==null?'rgba(255,255,255,.25)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'var(--warn)':'var(--crit)';
+                  const clr=wk.vsLY==null?'var(--text3)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'var(--warn)':'var(--crit)';
                   return h('g',{key:i},
-                    h('rect',{x,y,width:bw,height:barH,rx:2,fill:clr,fillOpacity:.8}),
-                    wk.sales>0&&h('text',{x:x+bw/2,y:y-2,textAnchor:'middle',fontSize:'9',fontWeight:'700',fill:'rgba(255,255,255,.85)'},
+                    h('rect',{x,y,width:bw,height:barH,rx:2,style:{fill:clr},fillOpacity:.8}),
+                    wk.sales>0&&h('text',{x:x+bw/2,y:y-2,textAnchor:'middle',fontSize:'9',fontWeight:'700',style:{fill:'var(--text)'}},
                       '$'+(wk.sales/1000).toFixed(0)+'K'),
-                    h('text',{x:x+bw/2,y:54,textAnchor:'middle',fontSize:'6',fill:'rgba(255,255,255,.4)'},
+                    h('text',{x:x+bw/2,y:54,textAnchor:'middle',fontSize:'6',style:{fill:'var(--text2)'}},
                       wk.label||'—'),
                     wk.vsLY!=null&&h('text',{x:x+bw/2,y:58,textAnchor:'middle',fontSize:'8',fontWeight:'600',
                       fill:wk.vsLY>=0?'#10b981':'#f87171'},
@@ -2131,7 +2131,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                    fmt:v=>(v||0).toFixed(1),clr:(laborSec.tpph||0)>=5?'#10b981':(laborSec.tpph||0)>=4?'var(--warn)':'var(--crit)'},
                   {lbl:'Act vs Need',v:laborSec.avn,ok:null,fl:null,
                    fmt:v=>(v>=0?'+':'')+((v||0).toFixed(1)),
-                   clr:(laborSec.avn||0)>=0?'rgba(255,255,255,.8)':'#f87171'},
+                   clr:(laborSec.avn||0)>=0?'var(--text)':'#f87171'}, // #296 step 2: was rgba(255,255,255,.8) -- literally the light themes' own text-on-surface identity, invisible
                   {lbl:'OT Hours',v:laborSec.otHrs,ok:null,fl:null,
                    fmt:v=>(v||0).toFixed(1)+'h',
                    clr:(laborSec.otHrs||0)<20?'#10b981':(laborSec.otHrs||0)<50?'var(--warn)':'var(--crit)'},
@@ -2245,12 +2245,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       'Disc/Coupon ',
                       span({style:{fontSize:'7px',color:'var(--amber)',fontWeight:600},
                         title:'Disc/Coupon is tracked for awareness but is NOT included in the FOB calculation.'},'*')),
-                    span({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,color:'rgba(255,255,255,.5)'}},
+                    span({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text2)'}},
                       fobSec.discCoupon!=null?((fobSec.discCoupon||0)*100).toFixed(2)+'%':'—')
                   ),
                   (fobSec.okDiscCoupon!=null||fobSec.flDiscCoupon!=null)&&div({style:{marginTop:1}},
                     MktBadge({ok:fobSec.okDiscCoupon,fl:fobSec.flDiscCoupon,fmt:v=>((v||0)*100).toFixed(2)+'%'})),
-                  div({style:{fontSize:'7px',color:'rgba(255,255,255,.3)',marginTop:2}},
+                  div({style:{fontSize:'7px',color:'var(--text3)',marginTop:2}},
                     '* Not included in FOB calculation — monitored for trend only')
                 )
               )
@@ -2306,7 +2306,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   fontSize:'7px',color:'#fff',fontWeight:700,overflow:'hidden'}},
                   ((digitalSec.digitalPct||0)*100)>8?((digitalSec.digitalPct||0)*100).toFixed(2)+'%':''),
                 div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
-                  fontSize:'7px',color:'rgba(255,255,255,.4)'}},
+                  fontSize:'7px',color:'var(--text2)'}},
                   (((1-(digitalSec.digitalPct||0))*100).toFixed(2))+'%')
               )
             ),
@@ -2417,7 +2417,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                     const ta=lx<cx-4?'end':lx>cx+4?'start':'middle';
                     return h('g',{key:'lab'+i},
                       h('text',{x:lx.toFixed(1),y:(ly-3).toFixed(1),textAnchor:ta,fontSize:6.5,
-                        fill:'rgba(255,255,255,.6)',fontWeight:'600'},m.short),
+                        style:{fill:'var(--text2)'},fontWeight:'600'},m.short),
                       h('text',{x:lx.toFixed(1),y:(ly+5).toFixed(1),textAnchor:ta,fontSize:5.5,
                         fill:scoreClr,fontFamily:'monospace'},m.display)
                     );
@@ -2426,7 +2426,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   h('circle',{cx:100,cy:100,r:16,fill:scoreBg,stroke:scoreClr,strokeWidth:.5}),
                   h('text',{x:100,y:98,textAnchor:'middle',dominantBaseline:'middle',
                     fontSize:13,fontWeight:700,fill:scoreClr,fontFamily:'monospace'},overallScore),
-                  h('text',{x:100,y:111,textAnchor:'middle',fontSize:4.5,fill:'rgba(255,255,255,.35)'},'SCORE')
+                  h('text',{x:100,y:111,textAnchor:'middle',fontSize:4.5,style:{fill:'var(--text3)'}},'SCORE')
                 )
               ),
               // Metric legend
@@ -2445,7 +2445,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       div({style:{width:pct+'%',height:'100%',background:barClr,
                         borderRadius:2,transition:'width .6s ease'}})
                     ),
-                    div({style:{fontSize:'6px',color:'rgba(255,255,255,.25)',marginTop:1}},m.hint)
+                    div({style:{fontSize:'6px',color:'var(--text3)',marginTop:1}},m.hint)
                   );
                 }),
                 div({style:{marginTop:8,paddingTop:6,borderTop:'.5px solid var(--bdr)',
@@ -2491,7 +2491,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 const medal=['🥇','🥈','🥉'];
                 const vsAvg=avg&&avg>0?((s.value-avg)/avg*100):null;
                 const barPct=maxV>0?Math.min(100,s.value/maxV*100):0;
-                const clr=isTop?(rank===0?'var(--warn)':rank===1?'rgba(255,255,255,.6)':'rgba(180,120,60,.9)'):'var(--crit)';
+                const clr=isTop?(rank===0?'var(--warn)':rank===1?'var(--text2)':'rgba(180,120,60,.9)'):'var(--crit)';
                 return div({style:{marginBottom:5,padding:'4px 6px',borderRadius:5,
                   background:isTop?'rgba(16,185,129,.06)':'rgba(248,113,113,.06)',
                   border:'.5px solid '+(isTop?'rgba(16,185,129,.15)':'rgba(248,113,113,.15)')}},
