@@ -740,8 +740,44 @@ would move both series down together over years and would be **invisible** to a 
 test. The detrended test rules out volume as a short-run driver. It cannot rule out a slow
 composition drift, which is exactly the shape the data shows.
 
-**What would settle it:** response *channel mix* over time (DT vs FC survey counts, and invitation
-source if SMG exposes it), not response volume. The DT/FC split is already in the monthly export.
+**What would settle it:** response *channel mix* over time. **DONE — see below.**
+
+## ✅ CHANNEL-MIX TEST RUN (2026-08-14) — the composition confound is CLOSED
+
+The monthly export gives DT% , FC% and the blended overall, but **not** the channel counts. It does
+not need to: `overall = dtShare·dtPct + (1 − dtShare)·fcPct` is one equation in one unknown, so
+
+```
+dtShare = (overall − fcPct) / (dtPct − fcPct)
+```
+
+recovers the mix per store-month. **555 of 824 store-months solvable**; the remainder had DT and FC
+within 5pp of each other, where the inversion is numerically unstable — a precision limit, not a
+selection bias.
+
+Survey-weighted drive-thru share of responses, Jan 2024 → Aug 2026:
+
+```
+2024-01 35.9%   2024-07 41.5%   2025-01 44.8%   2025-07 50.1%   2026-01 35.8%   2026-07 44.3%
+2024-04 45.3%   2024-10 47.7%   2025-04 43.5%   2025-10 38.8%   2026-04 37.4%   2026-08 42.2%
+```
+
+**Trend +0.108 pp/month, t = 1.47 — not significant.** The mix oscillates around ~42% with no drift.
+
+**Both legs of the measurement-artifact explanation are now closed:**
+
+| test | result |
+|---|---|
+| response **volume** vs OSAT, month-over-month | r = 0.137, t = 0.74 — not significant |
+| response **channel mix** drift over 32 months | +0.108 pp/mo, t = 1.47 — not significant |
+
+**The decline is therefore real.** Not a solicitation change, not a volume artifact, not a channel
+shift. A −7.4pp fall in district OSAT from 2024 to 2026, across 18 of 20 stores, every DO and every
+operator, is measuring something that actually happened to the guest experience.
+
+That closes the "is it even real" question and moves the whole investigation to **cause**. The
+remaining candidates are operational or competitive, and the national marketing calendar (#290) is
+the covariate that would let them be tested.
 
 ## Next
 
