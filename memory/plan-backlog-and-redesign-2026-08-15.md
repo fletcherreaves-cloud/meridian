@@ -110,9 +110,34 @@ filled.** Gold is not stored by volume.
 operator whether anything they did worked. Nothing else in the white space is as hard to copy, as
 obviously valuable, or as immediately visible to a Field Business Partner.
 
-Plus two that are already distinctive UI rather than new analysis: **SAGE** (owner wants it
-persistent in the top bar) and the **Bullseye** (a distribution gestalt the sorted-bar leaderboard
-cannot show — shipped in #282).
+Plus two that are already distinctive UI rather than new analysis: **SAGE** and the **Bullseye** (a
+distribution gestalt the sorted-bar leaderboard cannot show — shipped in #282).
+
+### Pinning — owner decisions, 2026-08-15, and the rule they imply
+
+- **SAGE stays persistent in the top bar.** Confirmed.
+- **The Bullseye is NOT pinned.** Owner: *"Bullseye does not have to be pinned if it is better left
+  to scroll. On mobile it will likely cause an issue of not being able to see or scroll below it
+  anyway."*
+
+**The derived rule: exactly one pinned region — the top bar (greeting + SAGE). Every home-screen
+widget scrolls, the Bullseye included.**
+
+This is not a taste call; it is a measured bug generalised. **#225** is the same failure mode the
+owner is predicting: six `flexShrink:0` blocks stacked above a single scroll region consumed the
+phone viewport and made *the entire lower page unreachable*, with the Patch Heatmap the straw rather
+than the cause. His own fix framing there was already this rule — *"everything below the top strip
+that says good morning… just make everything else scroll up the screen"* — with only the greeting
+header staying pinned.
+
+**A distinctive widget that blocks the viewport is worth negative value on a phone**, and the owner
+works from a phone. Any home-screen widget proposal must therefore state where it sits in the single
+scroll region; "pin it" has to clear the #225 bar first.
+
+> ⚠️ **#225 appears to be FIXED but is still open.** `at-a-glance.js` now sets `overflowY:'hidden'`
+> on the outer container with a `#225:` comment recording the change, so the nested-scroller
+> mechanism the issue named is gone. Confirm on a **real phone** — the issue is explicit that
+> devtools emulation is not sufficient — then close it. Same staleness class as #279.
 
 ### The KPI grid is DEMOTED, not deleted
 
