@@ -23,16 +23,47 @@
 // X-Auth-Token to api.reports.myqsrsoft.com keeps working unchanged; only the source of the
 // token value changes, from a stale secret to a fresh mint.
 //
-// Cached for the lifetime of the process only (one mint serves every request in a single pull
-// run) — NEVER written to disk. A pull script that needs a fresh token on its next scheduled run
-// mints again; there is no cross-run reuse to manage or invalidate.
+// Cached for the lifetime of the process only (one mint can serve many requests in a single
+// pull run) — NEVER written to disk. A pull script that needs a fresh token on its next
+// scheduled run mints again; there is no cross-run reuse to manage or invalidate.
+//
+// Expiry-aware (#312 scope 3, ops-pull conversion, 2026-08-15): a naive "mint once, reuse for
+// the whole process" cache is correct for a short daily pull but wrong for a backfill —
+// qsrsoft-ops-pull.mjs is explicitly backfill-capable (QSRSOFT_OPS_START_DATE/END_DATE, a
+// day-by-day loop) and CLAUDE.md records a 27-month backfill as routine at ~6.6s/day, ≈1.5
+// hours against this token's ~1h TTL. A single mint would sail past expiry and start 401ing
+// partway through. Fixed two ways, deliberately both rather than picking one: (1) PROACTIVE —
+// decode the token's own `exp` claim and re-mint once the remaining lifetime crosses
+// EXPIRY_MARGIN_MS, so a long-running caller that calls getFreshToken() before each unit of
+// work (each date, each request) never has to observe a stale token as such — it silently gets
+// a new one instead; (2) REACTIVE — forceRemint lets a caller that DID get a 401 despite a
+// nominally-fresh token (clock skew, early revocation, anything the exp claim didn't predict)
+// force exactly one new mint and retry, rather than concluding the whole auth mechanism is
+// broken and falling back to Playwright for work that a single re-mint would have fixed.
 const CLIENT_ID = '2vt4qrqcakbeo9sh0ivli3lbui'; // QSRSoft's Cognito app client (region us-east-1)
 const COGNITO_ENDPOINT = 'https://cognito-idp.us-east-1.amazonaws.com/';
+const EXPIRY_MARGIN_MS = 5 * 60 * 1000; // re-mint 5 min before the token's own exp — covers clock skew and the gap between mint and first use
+const ASSUMED_TTL_MS = 55 * 60 * 1000;  // fallback if exp can't be decoded: documented ~1h TTL, minus a safety margin
 
 let cachedToken = null;
+let cachedExpiryMs = 0;
 
-export async function getFreshToken() {
-  if (cachedToken) return cachedToken;
+// A Cognito ID token is a JWT; the middle segment is a base64url JSON payload carrying `exp`
+// (epoch seconds). Decoded locally, no network call — this is not signature verification (this
+// module never needs to verify the token, only read its own stated expiry) and must not be
+// treated as one.
+function decodeExpiryMs(idToken) {
+  try {
+    const payload = idToken.split('.')[1];
+    const json = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return typeof json.exp === 'number' ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getFreshToken({ forceRemint = false } = {}) {
+  if (!forceRemint && cachedToken && Date.now() < cachedExpiryMs - EXPIRY_MARGIN_MS) return cachedToken;
 
   const username = process.env.QSRSOFT_USERNAME;
   const password = process.env.QSRSOFT_PASSWORD;
@@ -63,6 +94,7 @@ export async function getFreshToken() {
   const idToken = body?.AuthenticationResult?.IdToken;
   if (resp.ok && idToken) {
     cachedToken = idToken;
+    cachedExpiryMs = decodeExpiryMs(idToken) || (Date.now() + ASSUMED_TTL_MS);
     return cachedToken;
   }
 
