@@ -12,7 +12,7 @@
 // so this drives the fix through a real exported loader, loadQsrFob, against a mock Supabase
 // client — the only way to force a count-HEAD failure deterministically, since one can't be
 // manufactured on demand against live infra.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const __fakeConfig = {};
 vi.mock('@supabase/supabase-js', () => ({
@@ -50,8 +50,17 @@ let loadQsrFob;
 beforeEach(async () => {
   vi.resetModules();
   for (const k of Object.keys(__fakeConfig)) delete __fakeConfig[k];
+  // supabase.js only calls createClient (mocked above) when VITE_SUPABASE_URL/ANON_KEY are
+  // both set — otherwise `supabase` is null and every loader short-circuits to []. This
+  // sandbox happens to carry real ambient values (see CLAUDE.md), which masked that CI (no
+  // ambient env) hit the null-guard and made every assertion below trivially "pass" against
+  // an empty array. Stub deterministically so the test exercises the mock either way.
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://fake.supabase.test');
+  vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'fake-anon-key');
   ({ loadQsrFob } = await import('../lib/supabase.js'));
 });
+
+afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('_pagedParallel count-HEAD failure fallback (#343)', () => {
   it('a failed count no longer silently caps the read at one page', async () => {
