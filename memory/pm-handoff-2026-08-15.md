@@ -91,14 +91,41 @@ causes stacked, found in order, each only visible once the one above it was remo
    never called the resolver; `grep -n opsLaborRows src/views/labor-tools.js` returned **one** hit,
    a comment on the *other* panel. Five metrics routed through `metricAvg`; `otCostEst`'s
    `hrs×0.5×rate` estimate retired (1647/1647 rows carry the real dollar figure).
-3. **#327 (open)** — Labor % on At A Glance reads "No labor data" while Labor Analytics shows
-   22.47%. Same *class* as #325, one layer down: #325 fixed a call site, this is the **registry
-   entry**. `laborPct` (`metric-source.js:89`) has three sources and **not one is API-pulled** —
-   `glimpseRows` is emailed, `ctrlRows`/`laborRows` are manual. It is the odd one out in its own
-   block (`tpph` leads with the DAR rollup, `otHrs` with `opsLaborRows`), and it runs against the
-   **API-over-email** standing rule. The atoms are already pulled daily: `qsr_labor_summary`
-   carries `grossDollars`, `qsr_sales_mix` carries `netSalesAmt`. Fix = a `derive` fallback,
-   `tpph`'s exact precedent.
+3. **#327 ✅ SHIPPED v5.022** (was: Labor % on At A Glance reads "No labor data" while Labor
+   Analytics shows 22.47%). `laborPct` got a `derive` fallback — crew labor $ ÷ DAR sales — on
+   `tpph`'s precedent. Both legs were wrong in the first pass and were corrected against real
+   data: `gross_dollars` includes salaried-manager pay (store 6178, gross 2978.60 vs crew 2661.50,
+   a $317.10 gap that IS that day's `salaried_manager_dollars`), and `net_sales_amt` carries a
+   ~0.2–0.3pp low bias where `product_sales_amt` reconciles. Units confirmed as a fraction, so
+   `d/s` not `d/s*100`.
+
+   **Shipped knowingly at 89.8%** (582/648 store-days within 0.001). The deciding fact: the derive
+   is **last-resort only** — `metric-source.js:491` skips it whenever a real source answered — so
+   it can only ever replace a **blank**, never a better number. "Within 0.1pp nine days in ten vs
+   nothing" is an easy yes; it would have been a hard no if it could displace a real value.
+
+   ⭐ **The verification took two passes and the first was a tautology — this is the reusable
+   lesson.** It built `glimpseRows` into the `ds` and compared `metricSeries('laborPct')` against
+   Glimpse. But the derive is a *fallback*, so the resolver returned **Glimpse's own value** and
+   the comparison was Glimpse against itself: a perfect 192/192 that **would have passed with the
+   derivation deleted.** Two tells caught it: 8 stores × 24 days = *exactly* 192 with zero gaps
+   anywhere (real float division across two tables never agrees to 4dp on 100% of a sample), and
+   the engineer had already used the strip-`glimpseRows` trick for their `avgRate` check but not
+   for the reconciliation. **Ask of any verification: would this still pass if the feature were
+   removed?** The honest re-run (582/648, 66 documented misses) is a *better* result than the
+   perfect one. The 192/192 is preserved in-code as a documented retraction.
+
+4. **#330 (open)** — the residual 10.2%. `laborPct`'s derive divides a **calendar-day numerator by
+   a trading-day denominator**: `labor-summary` pulls `compType:'calendar'`
+   (`qsrsoft-ops-pull.mjs:94`), the DAR `daily-activity-raw` pulls `compType:'trading'`
+   (`qsrsoft-dar-pull.mjs:260`). Late-night volume straddling midnight lands in a different bucket
+   on each side, which matches the measured day-specific/store-spread pattern (66 misses over
+   25/27 stores, none at 100%). **The parameter mismatch is measured; it is NOT confirmed as the
+   cause of the + skew** (58/8), and store 31357 on 07-19 shows the numerator off on its own terms,
+   so there may be more than one cause. Test is one parameter and proven in-repo (`qtr-hr-sales`
+   uses `trading` in the same script). **Do not flip it in production first** — `compType` is
+   shared by five sub-endpoints there, and three of them feed tiles that currently reconcile fine.
+   Re-measure the 89.8% if it lands; that number lives in three files.
 
 **#324 CLOSED 2026-08-15, owner-confirmed on his own screen** — `OT HRS/DAY 1.5`,
 `OT COST $24,352`, `ACT VS NEED +3 hrs`, and per-store OT cost varying store-by-store
@@ -176,11 +203,14 @@ by `detected_at` ascending.
 
 #295 ✅ → #296 step 1 ✅ → #294 ✅ → #312 probe ✅ → #321 ✅ → #323 ✅ (+ backfill) → #325 ✅
 
-**Next: #327, then #292, #286, #269.** #327 goes first for the same reason the OT thread jumped the
-queue twice — the owner reporting a broken tile outranks the standing backlog. It is written
-dispatch-ready, with the blocking measurement stated as a stop condition rather than a suggestion:
-`max(date)` on `daily_glimpse_daily`, service-role, **before any code**. If Glimpse turns out
-current through Aug 15 the premise is refuted and the engineer must re-diagnose, not build anyway.
+**Next: #292, #286, #269** — with **#330** (the `compType` boundary mismatch) available whenever
+someone wants a self-contained, well-scoped piece. #330 is *not* urgent: v5.022 already closed the
+user-facing gap, and #330 only tightens the residual 10%.
+
+**The stop-condition pattern worked and should be reused.** #327's dispatch stated the blocking
+measurement as a stop condition, not a suggestion — *"if Glimpse is current through Aug 15 the
+premise is refuted; re-diagnose, don't build anyway."* The engineer measured it first
+(`max(date) = 2026-08-11`) and reported it before writing code. Write dispatches that way.
 
 **Note the column names differ across these tables** — `daily_glimpse_daily` uses `date`,
 `qsr_labor_summary` uses `dt`. Cost a round of 42703 errors; check before querying.
@@ -409,6 +439,21 @@ Recorded because they are the cheapest thing a successor can inherit.
 - **Asked the owner to re-capture a request with modified parameters.** He runs the reports **from the
   website**, not from DevTools — he cannot edit a query string. Route parameter experiments to the
   engineer as a code test; ask the owner only for what a UI can actually produce.
+- **⭐ A verification that would still pass with the feature removed (caught at review, #329).** The
+  reconciliation built `glimpseRows` into the `ds` and compared `metricSeries('laborPct')` against
+  Glimpse — but the derive is a **fallback** (`metric-source.js:491` skips it when a real source
+  answered), so the resolver returned Glimpse's own value and the test compared Glimpse to itself.
+  It reported a flawless **192/192**. The honest re-run was **582/648**. **Standing question for
+  every verification, yours and the engineer's: would this still pass if the feature were deleted?**
+  The tells were both statistical and behavioural — 8 stores × 24 days = *exactly* 192 with zero
+  gaps (real division across two tables never agrees to 4dp on 100% of a sample), and the author had
+  already applied the strip-the-winning-source trick to a *different* check in the same PR. **A
+  suspiciously perfect number deserves more scrutiny than a mediocre one**, and 66 documented misses
+  is a better deliverable than a perfect result nobody can reproduce.
+- **Nearly flagged a false discrepancy on that same PR.** Grepped for `192/192` expecting it removed,
+  found it in three files, and almost reported the fix as incomplete — the engineer had kept it as a
+  *documented retraction* ("an earlier draft reported a tautological 192/192"), which is the practice
+  this register itself recommends. **Read the context around a grep hit before calling it drift.**
 
 ---
 
