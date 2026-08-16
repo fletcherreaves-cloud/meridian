@@ -318,17 +318,35 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const [showArchive,setShowArchive] = React.useState(false);
   const saveCl = c=>{setCl(c);localStorage.setItem('mf_checklist_v2',JSON.stringify(c));};
 
+  // #171 — was one pooled Math.max across 5 feeds (manual laborRows included), so the
+  // alert only fired once EVERY feed was stale at once. lifelenz_schedules went dark 6
+  // days and sales_ledger_daily 5 days, both invisible here because a sibling feed
+  // stayed fresh and the pool used its date. worstStream() checks each auto stream
+  // independently and names the worst one; manual laborRows is excluded entirely (a
+  // stale device-local upload must never mask an auto stream going dark) and LifeLenz
+  // is clamped to <=today rather than dropped, so its forward schedule can't skew it.
+  //
+  // Defined here, ABOVE autoItems, and consumed by BOTH autoItems and ruleComment below —
+  // a single memo, not two call sites deriving the same value from two separately-
+  // maintained dep arrays (autoItems originally called worstStream(ds,today) directly with
+  // a dep array that only tracked ds?.laborRows?.length — the one stream the fix
+  // deliberately excludes — so the checklist alert computed once against whatever ds
+  // looked like before the async ops/email streams landed, and never revisited: #171's
+  // primary user-facing output could silently never fire).
+  //
+  // `today` is deliberately NOT in the deps: it's `new Date()` (line ~239), a fresh
+  // reference every render, which would defeat memoization entirely and make worstStream
+  // walk all ten streams on every render. Matches the sibling latestLab/dataAge memo
+  // below, which omits it for the same reason.
+  const worstAuto=React.useMemo(()=>worstStream(ds,today),
+    [ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length,
+     ds?.salesLedgerRows?.length,ds?.opsCashRows?.length,ds?.opsLaborRows?.length,ds?.opsServiceRows?.length,
+     ds?.opsSalesMixRows?.length,ds?.schedRows?.length]);
+
   // Auto-generate checklist items from app state
   const autoItems = React.useMemo(()=>_mark('compute:autoItems',()=>{
     const items=[];
-    // #171 — was one pooled Math.max across 5 feeds (manual laborRows included), so the
-    // alert only fired once EVERY feed was stale at once. lifelenz_schedules went dark 6
-    // days and sales_ledger_daily 5 days, both invisible here because a sibling feed
-    // stayed fresh and the pool used its date. worstStream() checks each auto stream
-    // independently and names the worst one; manual laborRows is excluded entirely (a
-    // stale device-local upload must never mask an auto stream going dark) and LifeLenz
-    // is clamped to <=today rather than dropped, so its forward schedule can't skew it.
-    const worst = worstStream(ds, today);
+    const worst = worstAuto;
     if(worst?.severity==='crit') items.push({id:'auto_data_stale',priority:'high',
       text:worst.label+' is '+worst.staleDays+' days old — auto-sync may be down',
       detail:'Check the daily pull (Signals → Sync), or upload an Operations Report as fallback.'});
@@ -357,7 +375,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       text:uncal.length+' stores need Dialed-In calibration (>30 days)',
       detail:'Go to Dialed-In → Run & Apply'});
     return items;
-  }),[ds?.laborRows?.length,allLocs,settings,lockedProjections]);
+  }),[worstAuto,ds?.laborRows?.length,allLocs,settings,lockedProjections]);
 
   const activeCl=cl.filter(c=>!c.archivedAt);
   const archivedCl=cl.filter(c=>c.archivedAt);
@@ -745,12 +763,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'var(--warn)':'var(--crit)';
   // #171 — latestLab/dataAge above answer "what's the freshest data we have" (a pooled
-  // max is the right tool for THAT question); worstAuto answers "is anything dark right
+  // max is the right tool for THAT question); worstAuto (defined near autoItems, above,
+  // and consumed by both autoItems and ruleComment below) answers "is anything dark right
   // now", which a pool can't — see stream-freshness.js's header for the incident history.
-  const worstAuto=React.useMemo(()=>worstStream(ds,today),
-    [ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length,
-     ds?.salesLedgerRows?.length,ds?.opsCashRows?.length,ds?.opsLaborRows?.length,ds?.opsServiceRows?.length,
-     ds?.opsSalesMixRows?.length,ds?.schedRows?.length,today]);
 
   // Sales reconciliation (accuracy layer, Workstream A): cross-check period PRODUCT
   // sales across independent sources for the active scope. Only DAR-summary
