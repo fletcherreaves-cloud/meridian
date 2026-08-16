@@ -25,10 +25,8 @@ const SEV = {
   ok:   { col: '#10b981', word: 'On cycle' },
 };
 const CLS_COL = { Food: '#60a5fa', Condiment: '#f5bc00', Paper: '#a78bfa', 'Non-Product': '#6b7280' };
-const KIND_LABEL = {
-  eom: 'End of month', weekly: 'Weekly', 'mid-paper': 'Mid-month paper',
-  partial: 'Partial', spot: 'Spot check',
-};
+// #357-A — s.kind is now sessionLabel()'s output, already human-readable (a session can
+// satisfy more than one requirement, e.g. "Weekly + Mid-Month Paper") — no lookup needed.
 
 /** One store's session timeline — the evidence behind its status. */
 function SessionRow({ s }) {
@@ -38,9 +36,9 @@ function SessionRow({ s }) {
     span({ style: {
       fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em',
       padding: '1px 6px', borderRadius: 4, minWidth: 74, textAlign: 'center',
-      color: s.kind === 'spot' ? 'var(--text3,#6b7280)' : 'var(--text2,#9aa4b2)',
+      color: s.isSpot ? 'var(--text3,#6b7280)' : 'var(--text2,#9aa4b2)',
       border: '.5px solid var(--bdr,#2a2f3a)',
-    } }, KIND_LABEL[s.kind] || s.kind),
+    } }, s.kind),
     div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
       classes.map(c => span({
         key: c,
