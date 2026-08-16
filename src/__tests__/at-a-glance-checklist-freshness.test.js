@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 // @ts-nocheck
 // #171/#366 — panel-level verification bar (dispatch15). Both existing stream-freshness.test.js
 // cases call streamFreshness/worstStream directly and would pass even if the panel never called
@@ -21,7 +21,7 @@
 // streams on unrelated renders), but the specific "silently never fires" failure mode does not
 // reproduce here. This test therefore documents current (correct) behavior rather than standing
 // in as a red-before/green-after regression guard — see the PR body for the full measurement.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
@@ -60,6 +60,15 @@ describe('#366 panel-level: AtAGlance checklist sees every stream, not just labo
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+  });
+
+  afterEach(() => {
+    // Unmount before the test environment's window tears down, so the SAGE Scheduled Runs
+    // tile's in-flight loadSagePromptRuns fetch is cancelled cleanly by React's own effect
+    // cleanup instead of by the environment yanking the window out from under it (which
+    // surfaced as a stray unhandled AbortError in CI, harmless but noisy).
+    act(() => { root.unmount(); });
+    container.remove();
   });
 
   it('names a stale ops/email stream in the Action Checklist once its data lands, without laborRows ever changing', async () => {
