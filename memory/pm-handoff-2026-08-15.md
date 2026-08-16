@@ -186,7 +186,7 @@ distinguishes null from zero correctly. Next null-vs-zero pass should convert th
 | **#296 step 2** + **#303** | Remaining ~265 white-alpha sites; `actVsNeed` sourcing | **dispatched 08-15**, land together |
 | **#311** | Fallback masks token expiry | **superseded in part by #312** — do #312 first |
 | **#306** | Bullseye dark-mode tab | ✅ closed via #301 |
-| **#348** | Scheduling/Opportunity Need+Scheduled+Labor% all wrong | **root-caused 08-16**, dispatch #12 |
+| **#348** | Scheduling/Opportunity Need+Scheduled+Labor% all wrong | ✅ **FIXED v5.029 (#354)** — engine helpers exported + imported, as prescribed |
 
 **#348 is root-caused — it is a formula diff, not a debugging job.** `views/scheduling.js` and
 `engine/schedule-summary.js` compute the same three figures from the same `schedRows`, differently.
@@ -201,6 +201,14 @@ The fix is to **export `schedHrsOf`/`fcstHrsOf`/`normLaborPct` from the engine a
 to patch three lines. Two panels disagreeing on the same number from the same rows *is* the defect, and
 this file already proves a private copy doesn't hold: `wAvgLaborPct` sits at `scheduling.js:22`,
 written for exactly this, exported, and not called by the broken line 45 lines below it.
+
+**Shipped as v5.029 (#354)** exactly as prescribed — helpers exported from the engine and imported,
+not three patched lines; regression test on the real Duncan rows, confirmed red against stashed
+pre-fix code. **One residual, filed as #361:** the panel now reads 23.29% where Schedule Summary
+reads 23.35%. `rollup()` weights `laborPct` by `fcstSales`; `wAvgLaborPct` weights by actual sales.
+Since `laborPct = labor$/actualSales`, actual-sales weighting is the leg that reconstructs
+`Σlabor$/Σsales` exactly — **the newly-fixed panel is right and the engine is the wrong one**, so
+the follow-up belongs in `rollup()`. Merged over 0.06pp rather than holding a good fix.
 
 **Contaminated by it:** `distTot` (`:484`) → the district story (`+$207,944`, `27 stores over target`),
 and `scheduling-deck.js:59-63` renders those totals into the **exported slide deck**, so wrong numbers
