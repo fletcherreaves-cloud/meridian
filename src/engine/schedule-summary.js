@@ -22,9 +22,14 @@ export function weekStartOf(date) {
 }
 const _wkKey = d => weekStartOf(d).toISOString().slice(0, 10);
 
-// Scheduled / forecast hours for one daily row (hours, decimal).
-const schedHrsOf = r => _n(r.schVLH) + _n(r.schFixHrs) + _n(r.schFloor);
-const fcstHrsOf  = r => _n(r.projVLH) + _n(r.fixGuideHrs) + _n(r.projFloor);
+// Scheduled / forecast hours for one daily row (hours, decimal). Exported (#348) so
+// every panel reading schedRows derives the same two figures the same way — the
+// Scheduling/Opportunity panel had its own private reimplementation that omitted
+// schFloor/projFloor and read the wrong field (needVLH instead of projVLH) for the
+// forecast leg, producing numbers that disagreed with this file's own (reconciled)
+// Schedule Summary band on the identical rows.
+export const schedHrsOf = r => _n(r.schVLH) + _n(r.schFixHrs) + _n(r.schFloor);
+export const fcstHrsOf  = r => _n(r.projVLH) + _n(r.fixGuideHrs) + _n(r.projFloor);
 
 // Daily labor % is an ACTUAL figure: null on future days, and wildly high on the
 // CURRENT (partial) day — labor has accrued but the day's sales haven't landed yet,
@@ -32,7 +37,7 @@ const fcstHrsOf  = r => _n(r.projVLH) + _n(r.fixGuideHrs) + _n(r.projFloor);
 // out-of-band partial/garbage days so they don't dominate the weekly dollar-weighted
 // average. Real QSR weekly labor % lives ~15–35%; anything >70% is a partial day.
 const LABOR_PCT_MIN = 3, LABOR_PCT_MAX = 70;
-function normLaborPct(raw) {
+export function normLaborPct(raw) {
   if (raw == null || !isFinite(raw)) return null;
   const f = Math.abs(raw) <= 1.5 ? raw * 100 : raw; // accept fraction (0.245) or percent (24.5)
   return (f >= LABOR_PCT_MIN && f <= LABOR_PCT_MAX) ? f : null;
