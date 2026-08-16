@@ -965,6 +965,23 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // TPPH "--" gap first reported 2026-08-04 (v4.808's fix didn't fully close it).
     const laborPct=metricAvg(ds,allLocs,effectiveDateRange,'laborPct');
     const tpph=metricAvg(ds,allLocs,effectiveDateRange,'tpph');
+    // TEMP DIAGNOSTIC (#337) — remove in the fix PR. Comparing production's live arguments
+    // against the ones the sandbox harness used (which resolved laborPct correctly) — every
+    // static-analysis candidate is eliminated, so this is the last thing left to observe.
+    const _dbgLoc = allLocs[0];
+    console.log('[#337]', {
+      effectiveDateRange,
+      rangeKeys: [effectiveDateRange?.s, effectiveDateRange?.e],
+      allLocsCount: allLocs.length,
+      allLocsSample: allLocs.slice(0, 3),
+      opsLaborRowsLen: ds?.opsLaborRows?.length,
+      opsLaborSample: ds?.opsLaborRows?.[0],
+      qsrActLen: ds?.qsrActSummaryRows?.length,
+      laborDollarKeys: Object.keys(metricSeries(ds, _dbgLoc, effectiveDateRange, 'laborDollar')),
+      salesKeys: Object.keys(metricSeries(ds, _dbgLoc, effectiveDateRange, 'sales')),
+      laborPctResolved: laborPct,
+      tpphResolved: tpph,
+    });
     // #303/2026-08-15 review: this gate used to run BEFORE laborPct/tpph existed, on raw
     // cRows/lRows presence alone -- a device with real auto-pulled data (glimpse/cash/DAR
     // rollup, all reachable via metricAvg's own auto-first chain) but zero manual ctrlRows
