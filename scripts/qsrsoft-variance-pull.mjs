@@ -32,6 +32,7 @@
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
   mapWasteEvents, mapTransferLines, mapRawItemHistory,
@@ -265,6 +266,7 @@ async function runPeriod(period, token) {
   console.log(`[variance-pull] period ${period} (${first}…${last}) × ${STORE_NSNS.length} stores`);
 
   let vSaved = 0, wSaved = 0, tSaved = 0, rSaved = 0, storesOk = 0, authFailed = false;
+  const tracker = makeOutcomeTracker('variance-pull');
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
     const loc = String(nsn).padStart(7, '0');
@@ -341,21 +343,31 @@ async function runPeriod(period, token) {
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) { authFailed = true; console.error('[variance-pull] auth failed — refresh QSRSOFT_EBOS_TOKEN'); break; }
       console.warn(`  ${nsn}: ${e.message}`);
+      tracker.fail(nsn, e.message);
     }
   }
 
   console.log(`[variance-pull] ✓ ${storesOk}/${STORE_NSNS.length} stores · ${vSaved} variance · ${wSaved} waste · ${tSaved} transfer · ${rSaved} raw-detail rows for ${period}`);
-  return { authFailed };
+  const code = authFailed ? 0 : tracker.finalize({
+    // authFailed already short-circuits main() to exit 1 -- don't also run the
+    // zero-rows/threshold check against a period this loop broke out of early.
+    requestedUnits: STORE_NSNS, totalSaved: vSaved + wSaved + tSaved + rSaved,
+    formatRerun: failedStores => `VARIANCE_STORES=${failedStores.join(',')} VARIANCE_PERIOD=${period}`,
+  });
+  return { authFailed, code };
 }
 
 async function main() {
   const token = await resolveEbosToken();
   const periods = periodsToRun();
   if (periods.length > 1) console.log(`[variance-pull] backfill ${periods.length} periods: ${periods.join(', ')}`);
+  let worstCode = 0;
   for (const period of periods) {
-    const { authFailed } = await runPeriod(period, token);
+    const { authFailed, code } = await runPeriod(period, token);
     if (authFailed) process.exit(1);
+    if (code) worstCode = code;
   }
+  if (worstCode) process.exit(worstCode);
 }
 
 main().catch(err => { console.error('[variance-pull] fatal:', err); process.exit(1); });

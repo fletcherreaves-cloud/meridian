@@ -20,6 +20,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 
 const DAR_BASE  = 'https://api.reports.myqsrsoft.com';
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -282,7 +283,7 @@ async function fetchDayDirect(token, date) {
   return Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
 }
 
-async function runDirect(token, dates) {
+async function runDirect(token, dates, tracker) {
   let totalRows = 0;
   for (let i = 0; i < dates.length; i++) {
     const date = dates[i];
@@ -297,6 +298,7 @@ async function runDirect(token, dates) {
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) throw e; // bubble up for fallback
       console.error(`[dar-pull]   ${date} ERROR: ${e.message}`);
+      tracker.fail(date, e.message);
     }
     if (i < dates.length - 1) await new Promise(r => setTimeout(r, 150));
   }
@@ -304,7 +306,7 @@ async function runDirect(token, dates) {
 }
 
 // ── Path B: Playwright login → in-browser fetches ────────────────────────────
-async function pullViaPlaywright(dates) {
+async function pullViaPlaywright(dates, tracker) {
   const u = process.env.QSRSOFT_USERNAME;
   const pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) {
@@ -385,7 +387,10 @@ async function pullViaPlaywright(dates) {
     if (!darToken) {
       console.error('[auth] ✗ could not capture DAR token');
       await snap('dar-error.png');
-      return 0;
+      // #263: this is a TOTAL auth failure (no token, zero dates attempted), not a
+      // real zero-row result -- must return null like every other auth-exhausted path
+      // in this file, or main()'s `=== null` check silently treats it as success.
+      return null;
     }
     console.log(`[auth] ✓ DAR token captured (${darToken.length} chars) — fetching ${dates.length} dates…`);
 
@@ -416,6 +421,7 @@ async function pullViaPlaywright(dates) {
 
       if (result.error) {
         console.error(`[dar-pull]   ${date} ERROR: ${result.error}`);
+        tracker.fail(date, result.error);
       } else if (!result.rows.length) {
         console.log(`[dar-pull]   ${date}: no data`);
       } else {
@@ -453,13 +459,27 @@ async function main() {
   }
   console.log(`[dar-pull] ${dates.length} dates × ${STORE_NSNS.length} stores (~${dates.length * STORE_NSNS.length * 25} rows expected)`);
 
+  // #263: one tracker for whichever path actually runs -- a date that failed under
+  // Path A never gets counted again if Path B doesn't retry it (each path pulls the
+  // FULL date list independently, they don't hand off partial progress).
+  const finalizeAndExit = (totalSaved, tracker) => {
+    const code = tracker.finalize({
+      requestedUnits: dates, totalSaved,
+      formatRerun: failedDates => failedDates
+        .map(d => `QSRSOFT_DAR_START_DATE=${d} QSRSOFT_DAR_END_DATE=${d}`).join('  ||  '),
+    });
+    if (code) process.exit(code);
+  };
+
   // ── Path A: direct token ──
   const token = (process.env.QSRSOFT_TOKEN || '').trim();
   if (token) {
     console.log('[auth] trying direct server-side fetch with QSRSOFT_TOKEN…');
+    const tracker = makeOutcomeTracker('dar-pull');
     try {
-      const total = await runDirect(token, dates);
+      const total = await runDirect(token, dates, tracker);
       console.log(`[dar-pull] done. Total: ${total} rows`);
+      finalizeAndExit(total, tracker);
       return;
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) {
@@ -471,12 +491,14 @@ async function main() {
   }
 
   // ── Path B: Playwright ──
-  const totalSaved = await pullViaPlaywright(dates);
+  const pwTracker = makeOutcomeTracker('dar-pull');
+  const totalSaved = await pullViaPlaywright(dates, pwTracker);
   if (totalSaved === null) {
     console.error('[dar-pull] no auth method succeeded — set QSRSOFT_TOKEN or QSRSOFT_USERNAME+PASSWORD');
     process.exit(1);
   }
   console.log(`[dar-pull] done. ${totalSaved} rows upserted`);
+  finalizeAndExit(totalSaved, pwTracker);
 }
 
 main().catch(e => { console.error('[dar-pull] FATAL:', e); process.exit(1); });

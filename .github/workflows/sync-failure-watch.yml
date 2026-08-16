@@ -32,6 +32,7 @@ name: Sync Failure Watch
 on:
   workflow_run:
     workflows:
+      - Data Completeness Check
       - EOM Baseline Snapshot
       - Event Impact — Retail Lift Measurement
       - Hourly Projection Accuracy

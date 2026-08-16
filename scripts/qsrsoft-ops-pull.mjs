@@ -31,6 +31,7 @@
 //           QSRSOFT_OPS_START_DATE/END_DATE (explicit backfill), QSRSOFT_OPS_DEBUG=1.
 
 import { createClient } from '@supabase/supabase-js';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const BASE   = 'https://api.reports.myqsrsoft.com';
@@ -153,12 +154,15 @@ async function upsert(table, records, conflict) {
 // long backfill re-mints transparently near expiry instead of running out mid-loop (see file
 // header). On an AUTH_FAILED with a function token, one forced re-mint-and-retry is attempted
 // before giving up on that single request — see scripts/lib/qsrsoft-auth.mjs's own header for
-// why both the proactive and reactive paths exist together.
+// why both the proactive and reactive paths exist together. `tracker` is optional (the
+// cash-anomaly and pulse call sites pass one too, per #263's review — this is the
+// widest-blast-radius script in the set: six endpoints, arbitrary date ranges, used for
+// every backfill).
 async function resolveToken(token, forceRemint) {
   return typeof token === 'function' ? await token({ forceRemint }) : token;
 }
 
-async function runAll(token, dates, evalPage, onlyKeys) {
+async function runAll(token, dates, evalPage, onlyKeys, tracker) {
   let grand = 0;
   for (const ep of ENDPOINTS) {
     if (onlyKeys && !onlyKeys.includes(ep.key)) continue;
@@ -184,6 +188,7 @@ async function runAll(token, dates, evalPage, onlyKeys) {
       } catch (e) {
         if (String(e.message).startsWith('AUTH_FAILED')) throw e;
         console.error(`[ops] ${ep.key} ${date} ERROR: ${e.message}`);
+        tracker?.fail(`${ep.key} ${date}`, e.message);
       }
       await new Promise(r => setTimeout(r, 120));
     }
@@ -191,6 +196,19 @@ async function runAll(token, dates, evalPage, onlyKeys) {
     grand += epTotal;
   }
   return grand;
+}
+
+// #263: one tracked unit per (endpoint, date) -- the same granularity runAll()'s own
+// try/catch already operates at. formatRerun points at QSRSOFT_OPS_START_DATE/END_DATE,
+// the script's own existing backfill override -- it reruns every endpoint for that date
+// span, not just the failed one, since that override has no per-endpoint granularity.
+function requestedUnits(dates, onlyKeys) {
+  const eps = onlyKeys ? ENDPOINTS.filter(ep => onlyKeys.includes(ep.key)) : ENDPOINTS;
+  return eps.flatMap(ep => dates.map(d => `${ep.key} ${d}`));
+}
+function formatRerunDates(dates) {
+  const sorted = [...dates].sort();
+  return () => `QSRSOFT_OPS_START_DATE=${sorted[0]} QSRSOFT_OPS_END_DATE=${sorted[sorted.length - 1]}`;
 }
 
 // ── Date range (gap-aware, like the DAR pull) ─────────────────────────────────
@@ -206,7 +224,7 @@ async function getDates() {
 }
 
 // ── Playwright fallback (mirrors the DAR pull) ────────────────────────────────
-async function viaPlaywright(dates, onlyKeys) {
+async function viaPlaywright(dates, onlyKeys, tracker) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return null; }
   const { chromium } = await import('playwright');
@@ -269,7 +287,7 @@ async function viaPlaywright(dates, onlyKeys) {
       return 0;
     }
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s) × ${onlyKeys ? onlyKeys.length : ENDPOINTS.length} endpoints…`);
-    return await runAll(token, dates, page, onlyKeys);
+    return await runAll(token, dates, page, onlyKeys, tracker);
   } finally { await browser.close(); }
 }
 
@@ -320,10 +338,15 @@ async function checkCashAnomalies() {
     console.log(`[cash-check] ${anomalies.length} anomaly(s):`, JSON.stringify(anomalies));
     const dates = [...new Set(anomalies.map(a => a.dt))].sort();
     let total = 0;
-    try { total = await runAll(getFreshToken, dates, null, ['cash']); }
-    catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright(dates, ['cash']) || 0; }
+    const tracker = makeOutcomeTracker('ops-pull:cash-check');
+    try { total = await runAll(getFreshToken, dates, null, ['cash'], tracker); }
+    catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright(dates, ['cash'], tracker) || 0; }
     console.log(`[cash-check] re-pull done — ${total} rows upserted for ${dates.join(', ')}.`);
-    process.exit(0);
+    const code = tracker.finalize({
+      requestedUnits: requestedUnits(dates, ['cash']), totalSaved: total,
+      formatRerun: formatRerunDates(dates),
+    });
+    process.exit(code);
   }
 
   // Live Pulse Phase 1 (2026-08-04, Notes 54 P1) — hourly capture of TODAY ONLY across the
@@ -338,17 +361,35 @@ async function checkCashAnomalies() {
     // for today — worth hourly observation to see if/when it starts populating, same
     // reasoning as FOB below.
     const keys = ['cash', 'labor', 'salesMix', 'service'];
-    try { total = await runAll(getFreshToken, [today], null, keys); }
-    catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright([today], keys) || 0; }
+    const tracker = makeOutcomeTracker('ops-pull:pulse');
+    try { total = await runAll(getFreshToken, [today], null, keys, tracker); }
+    catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright([today], keys, tracker) || 0; }
     console.log(`[pulse] done — ${total} rows upserted for ${today} across ${keys.join(', ')}.`);
-    process.exit(0);
+    // The zero-rows check below is on the TOTAL across all 4 keys, not per-key, so
+    // 'service' legitimately returning nothing (documented above) doesn't trip it on its
+    // own -- only cash+labor+salesMix+service all landing at 0 does, which is the actual
+    // failure this exists to catch.
+    const code = tracker.finalize({
+      requestedUnits: requestedUnits([today], keys), totalSaved: total,
+      formatRerun: formatRerunDates([today]),
+    });
+    if (code) process.exit(code);
   }
 
   const dates = await getDates();
   console.log(`[ops] pulling ${dates.length} date(s): ${dates[0]}…${dates[dates.length - 1]}`);
   let total = 0;
-  try { total = await runAll(getFreshToken, dates, null); }
-  catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright(dates) || 0; }
+  // #263 (review on #269): this is the path that produced the actual incident -- a
+  // backfill chunk logged "0 rows upserted across 6 endpoints" after both auth paths
+  // failed, and exited green. Widest blast radius in the set: six endpoints, arbitrary
+  // date ranges, the script used for every backfill.
+  const tracker = makeOutcomeTracker('ops-pull');
+  try { total = await runAll(getFreshToken, dates, null, undefined, tracker); }
+  catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright(dates, undefined, tracker) || 0; }
   console.log(`[ops] done — ${total} rows upserted across ${ENDPOINTS.length} endpoints.`);
-  process.exit(0);
+  const code = tracker.finalize({
+    requestedUnits: requestedUnits(dates), totalSaved: total,
+    formatRerun: formatRerunDates(dates),
+  });
+  process.exit(code);
 })().catch(e => { console.error('[ops] FATAL:', e); process.exit(1); });

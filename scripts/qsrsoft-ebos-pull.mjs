@@ -28,6 +28,7 @@
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
+import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
@@ -398,7 +399,7 @@ async function pullViaPlaywright(startDate, endDate) {
 
     for (const msg of log) console.log('[ebos]', msg);
     await snap('ebos-final.png');
-    return rows;
+    return { rows, log };
 
   } catch (e) {
     console.error('[auth] Playwright error:', e.message);
@@ -412,6 +413,7 @@ async function pullViaPlaywright(startDate, endDate) {
 // ── Fetch all stores with a known token (external Node.js fetches) ────────────
 async function runWithToken(token, startDate, endDate) {
   let totalLineItems = 0, totalDayRows = 0, totalSaved = 0, authFailed = false;
+  const tracker = makeOutcomeTracker('ebos-pull');
   const buffer = [];
   const flush = async () => {
     if (!buffer.length) return;
@@ -437,12 +439,21 @@ async function runWithToken(token, startDate, endDate) {
         console.error(`[ebos] auth failed — token expired or invalid`);
       } else {
         console.error(`[ebos] NSN ${nsn} error: ${e.message}`);
+        tracker.fail(nsn, e.message);
       }
     }
   }
   await flush();
   console.log(`[ebos-pull] done — ${totalLineItems} line items, ${totalDayRows} store-days, ${totalSaved} rows saved`);
   if (authFailed) process.exit(1);
+
+  // #263: no store-subset override exists for this script today -- a re-run reruns
+  // every store for the same date range until one is added.
+  const code = tracker.finalize({
+    requestedUnits: STORE_NSNS, totalSaved,
+    formatRerun: () => `same date range (${startDate}…${endDate}) — no store-subset flag exists yet, reruns all stores`,
+  });
+  if (code) process.exit(code);
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -468,11 +479,12 @@ async function main() {
   }
 
   // ── Path C: Playwright — login + fetch all data from within the live session ──
-  const rows = await pullViaPlaywright(startDate, endDate);
-  if (!rows) {
+  const pwResult = await pullViaPlaywright(startDate, endDate);
+  if (!pwResult) {
     console.error('[ebos-pull] no auth — set QSRSOFT_EBOS_TOKEN or QSRSOFT_USERNAME+PASSWORD');
     process.exit(1);
   }
+  const { rows, log: pwLog } = pwResult;
 
   let totalSaved = 0;
   for (let i = 0; i < rows.length; i += 500) {
@@ -482,6 +494,23 @@ async function main() {
     else totalSaved += batch.length;
   }
   console.log(`[ebos-pull] done — ${rows.length} store-days aggregated, ${totalSaved} rows saved to qsr_ebos_daily`);
+
+  // #263: pullViaPlaywright's per-store loop runs inside the browser (page.evaluate) and
+  // can't reach this process's tracker directly -- it logs "NSN X error:"/"NSN X HTTP NNN"
+  // into the `log` array instead (already printed above as "[ebos] ..."), which this
+  // parses after the fact to apply the same zero-rows/threshold check as Path A/B.
+  const failedNsns = [];
+  for (const msg of pwLog) {
+    const m = /^NSN (\d+) (?:error|HTTP)/.exec(msg);
+    if (m) failedNsns.push(m[1]);
+  }
+  const tracker = makeOutcomeTracker('ebos-pull');
+  for (const nsn of failedNsns) tracker.fail(nsn, 'see [ebos] log above');
+  const code = tracker.finalize({
+    requestedUnits: STORE_NSNS, totalSaved,
+    formatRerun: () => `same date range (${startDate}…${endDate}) — no store-subset flag exists yet, reruns all stores`,
+  });
+  if (code) process.exit(code);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
