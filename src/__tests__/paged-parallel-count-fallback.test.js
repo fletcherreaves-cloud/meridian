@@ -64,14 +64,16 @@ afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('_pagedParallel count-HEAD failure fallback (#343)', () => {
   it('a failed count no longer silently caps the read at one page', async () => {
-    // 12 rows, well beyond the single default page (400) that the old pages=1 fallback
-    // would have returned anyway at this size — the real bug manifests on tables with MORE
-    // rows than one page. Use a small dataset here since the fix path (fetchAll) walks
-    // pageSize-sized pages regardless of size; what matters is proving no rows are dropped.
-    const rows = Array.from({ length: 12 }, (_, i) => fobRow(i));
+    // qsr_fob's pageSize is 400 (src/lib/supabase.js's loadQsrFob call to _pagedParallel).
+    // MUST exceed one page — the original version of this test used 12 rows, which the old
+    // buggy pages=1 path returns in full too (12 < 400), so it "passed" with the fix
+    // reverted and proved nothing (caught in dispatch #10 review before merge). 401 rows
+    // means the old code truncates to exactly 400 and the fix returns all 401 — the two
+    // are only distinguishable past the page boundary.
+    const rows = Array.from({ length: 401 }, (_, i) => fobRow(i));
     __fakeConfig.qsr_fob = { rows, countError: { message: 'canceling statement due to statement timeout' } };
     const result = await loadQsrFob({ daysBack: 30 });
-    expect(result.length).toBe(12);
+    expect(result.length).toBe(401);
   });
 
   it('the happy path (count succeeds) is unaffected — same rows as before', async () => {

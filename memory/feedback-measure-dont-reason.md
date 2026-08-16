@@ -225,6 +225,51 @@ Also: the engineer flagged those sites and proposed deferring them. The PM overr
 and was wrong to. **A worker's "I found something adjacent, I don't think it belongs here"
 deserves a `grep -rn` before it is overruled**, not a confident instruction.
 
+## Half 7 — Would this verification still pass if the change were reverted?
+
+Added 2026-08-16 after the same failure shape hit three times in one day.
+
+**What happened, three times:**
+
+1. **#327/#329's first verification** reported 192/192 store-days matching Glimpse to 4
+   decimals — but the test fixture included `glimpseRows`, and `laborPct`'s `srcs` list
+   checks `glimpseRows` FIRST. The comparison was Glimpse against itself on every sampled
+   day. It would have passed identically with the derivation deleted.
+2. **#329's own harness** built `ds` by hand rather than through the real loaders, so it
+   never exercised `loadOpsLaborSummary` at all — it passed while production stayed broken,
+   and shipped as "fixed" on that basis.
+3. **#344's regression test** used 12 rows against a 400-row page. `pages = 1` (the bug)
+   returns all 12 rows too — a single page comfortably covers 12. The test passed with the
+   fix reverted, caught only because the PR's own reviewer asked the question below before
+   merging, not by the test itself.
+
+Two of these three shipped as "fixed" and weren't. The work in all three cases was sound —
+the derivation, the fallback logic — the *check* was what let a wrong claim through.
+
+**The rule:** before opening a PR, ask **"would this verification still pass if my change
+were reverted?"** If yes, it isn't evidence — it's a check that happens to also pass, not a
+check that requires the fix. Concretely:
+
+- **For a fixture-based comparison** (case 1): strip out every source your fix is meant to
+  be a fallback FOR, so the comparison is forced through the new code path, not past it.
+- **For a hand-built harness** (case 2): build test state through the real loaders/parsers
+  the production code path uses, not a hand-assembled shape that happens to look similar.
+- **For a regression test on a size/threshold bug** (case 3): the dataset must cross the
+  boundary the bug lives on. A boundary bug (a page cap, an off-by-one, a truncation limit)
+  is invisible to any input that stays under the boundary either way.
+
+**The cheap, mechanical version for a regression test specifically:** run it once against
+the unfixed code and watch it go red. Not "the logic looks like it should fail" — actually
+revert the fix (checkout the pre-fix version of the touched file, or comment out the fix)
+and run the test. If it stays green, the test is not testing what the commit message claims
+it tests, no matter how reasonable the code looks.
+
+**Generalisable:** this is the same family as Half 5 (verify with the exit code, not a
+success-marker grep) and Half 2 (verify the output, not the intent) — a verification whose
+failure mode is silent agreement is not verification. It extends those to the test itself:
+a test can be well-written, pass cleanly, and still prove nothing, if it was never capable
+of failing against the bug it's named for.
+
 ## Half 6 — "Non-reproducing" is not closed. Verify with the REPORTER.
 
 Added 2026-08-11, after the owner re-reported a bug that had been cleared a day earlier and
