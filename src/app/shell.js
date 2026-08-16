@@ -476,7 +476,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
         const label = ageDays===0?'Auto-saved today':ageDays===1?'Session: 1d old':'Session: '+ageDays+'d old';
         const tip = ageDays>3?'Consider loading a fresh Operations Report — session data may be stale':'Session data is current';
         return div({style:{display:'flex',alignItems:'center',gap:3,
-          background:'rgba(255,255,255,.04)',border:'.5px solid rgba(255,255,255,.1)',
+          background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)',
           borderRadius:10,padding:'1px 8px',cursor:'pointer'},
           title:tip,
           onClick:onClearSession},
@@ -507,7 +507,7 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
             style:{fontSize:'9px',padding:'2px 7px',
               background:locScope===s?'rgba(245,188,0,.15)':'transparent',
               color:locScope===s?'var(--gold)':'var(--text3)',
-              borderColor:locScope===s?'rgba(245,188,0,.4)':'rgba(255,255,255,.1)',
+              borderColor:locScope===s?'rgba(245,188,0,.4)':'var(--bdr)',
               fontWeight:locScope===s?700:400},
             onClick:()=>onScopeChange&&onScopeChange(s)},l)
         )

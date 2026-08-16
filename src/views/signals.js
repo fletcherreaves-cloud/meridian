@@ -178,7 +178,7 @@ function CascadeChain({ signals }) {
         parts.push(h('div', { key: node.id, style: {
           padding: '3px 10px', borderRadius: '99px', fontSize: 11, fontWeight: 600,
           background: active ? 'rgba(96,165,250,.15)' : 'rgba(255,255,255,.04)',
-          border: `1px solid ${active ? 'rgba(96,165,250,.35)' : 'rgba(255,255,255,.08)'}`,
+          border: `1px solid ${active ? 'rgba(96,165,250,.35)' : 'var(--bdr)'}`,
           color: active ? blue : 'rgba(107,114,128,.6)',
         } }, node.label));
         return parts;
@@ -728,7 +728,7 @@ function HourlyDetail({ slots }) {
           const end = parseInt(r.hour_slot, 10);
           const start = (end - 1 + 24) % 24;
           const fmt = h => h === 0 ? '12am' : h <= 11 ? `${h}am` : h === 12 ? '12pm' : `${h-12}pm`;
-          return h('tr', { key: r.hour_slot, style: { borderTop: `1px solid rgba(255,255,255,.04)` } },
+          return h('tr', { key: r.hour_slot, style: { borderTop: `1px solid var(--bdr)` } },
             h('td', { style: lbl }, `${fmt(start)}–${fmt(end % 24)}`),
             h('td', { style: cellStyle }, r.product_sales != null ? `$${r.product_sales.toLocaleString('en-US', {maximumFractionDigits:0})}` : '—'),
             h('td', { style: { ...cellStyle, color: paceColor(pace), fontWeight: 700 } }, pace != null ? `${pace > 100 ? '+' : ''}${(pace-100).toFixed(2)}%` : '—'),

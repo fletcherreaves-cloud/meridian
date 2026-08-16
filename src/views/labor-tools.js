@@ -222,7 +222,7 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
               {l:'Avg GC/hr',v:dp.avgGC?Math.round(dp.avgGC):'—',c:'#34d399'},
               {l:'Avg Sales/hr',v:dp.avgSales?'$'+Math.round(dp.avgSales):'—',c:'var(--amber)'},
             ].map((k,i)=>div({key:i,style:{display:'flex',justifyContent:'space-between',
-              padding:'4px 0',borderBottom:'.5px solid rgba(255,255,255,.06)',fontSize:'9px'}},
+              padding:'4px 0',borderBottom:'.5px solid var(--bdr)',fontSize:'9px'}},
               span({style:{color:'var(--text3)'}},(k.l)),
               span({style:{fontFamily:'var(--mono)',fontWeight:700,color:k.c}},(k.v))
             ))
@@ -254,7 +254,7 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
               return h('tr',{key:i,style:{
                 background:isPeakGC?'rgba(52,211,153,.08)':isPeakOepe?'rgba(239,68,68,.06)':
                   i%2?'rgba(255,255,255,.015)':'transparent',
-                borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+                borderBottom:'.5px solid var(--bdr)'}},
                 td({style:{padding:'5px 8px',fontWeight:600,color:'var(--text2)'}},hr.label),
                 td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',
                   color:oepeCol(hr.oepe||0),fontWeight:700}},hr.oepe?Math.round(hr.oepe)+'s':'—'),
@@ -645,9 +645,9 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
         h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
           h('thead',null,h('tr',{style:{position:'sticky',top:0,background:'var(--surf2)',zIndex:2}},
             h('th',{style:{...thS,textAlign:'left',paddingLeft:14,width:220}},'Store'),
-            h('th',{style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.07)'}},'📅 Weekly Lock\n~10 days out'),
-            h('th',{style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.07)'}},'🗓 Monthly Lock\n15th prior month'),
-            h('th',{style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.07)'}},'📆 Yearly Plan\n~Dec 1')
+            h('th',{style:{...thS,borderLeft:'.5px solid var(--bdr)'}},'📅 Weekly Lock\n~10 days out'),
+            h('th',{style:{...thS,borderLeft:'.5px solid var(--bdr)'}},'🗓 Monthly Lock\n15th prior month'),
+            h('th',{style:{...thS,borderLeft:'.5px solid var(--bdr)'}},'📆 Yearly Plan\n~Dec 1')
           )),
           h('tbody',null,
             !visLocs.length&&h('tr',null,h('td',{colSpan:4,style:{padding:'28px 14px',textAlign:'center',color:'var(--text3)',fontSize:'9px'}},
@@ -663,7 +663,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
             const def = DEFAULT_MODEL_ASSIGNMENTS[loc]||{};
             const isOvrAny = !!ovr[loc];
             return [
-              h('tr',{key:loc,style:{borderTop:ri>0?'.5px solid rgba(255,255,255,.06)':'none'}},
+              h('tr',{key:loc,style:{borderTop:ri>0?'.5px solid var(--bdr)':'none'}},
                 h('td',{style:{padding:'8px 8px 3px 14px',verticalAlign:'top'}},
                   div({style:{fontWeight:700,color:isOvrAny?'#f59e0b':'var(--amber)',fontSize:'9px'}},(STORE_NAMES[loc]||loc)+(isOvrAny?' ✎':'')),
                   def.note&&div({style:{fontSize:'7px',color:'var(--text3)',fontStyle:'italic',marginTop:2,lineHeight:1.4,maxWidth:200}},
@@ -681,7 +681,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                   // Prefer ref from the live assignment (includes backtest ref), fall back to default
                   const ref  = asgn.ref || (def[hz.id] && def[hz.id].ref) || '';
                   return h('td',{key:hz.id,style:{padding:'8px 8px 3px',textAlign:'center',
-                    borderLeft:'.5px solid rgba(255,255,255,.06)',verticalAlign:'top'}},
+                    borderLeft:'.5px solid var(--bdr)',verticalAlign:'top'}},
                     div({style:{display:'flex',alignItems:'center',justifyContent:'center',gap:4,marginBottom:3}},
                       span({style:{display:'inline-block',fontSize:'10px',fontWeight:800,
                         padding:'2px 10px',borderRadius:99,
@@ -696,7 +696,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                     div({style:{display:'flex',gap:3,justifyContent:'center',flexWrap:'wrap'}},
                       ...(['simple','ae','ewma','di','ly','dow'].filter(opt=>opt!==m).map(opt=>
                         btn({key:opt,style:{fontSize:'7px',padding:'1px 5px',borderRadius:4,
-                          background:'rgba(255,255,255,.05)',border:'.5px solid rgba(255,255,255,.1)',
+                          background:'rgba(255,255,255,.05)',border:'.5px solid var(--bdr)',
                           color:'var(--text3)',cursor:'pointer'},onClick:()=>handleOvr(loc,hz.id,opt)},
                           opt==='simple'?'SIMPLE':opt.toUpperCase())
                       )),
@@ -882,13 +882,13 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
             h('thead',null,h('tr',{style:{position:'sticky',top:0,background:'var(--surf2)',zIndex:2}},
               h('th',{style:{...thS,textAlign:'left',paddingLeft:14,width:200}},'Store'),
               h('th',{style:{...thS}},'Winner'),
-              ...result.models.map(m=>h('th',{key:m,style:{...thS,borderLeft:'.5px solid rgba(255,255,255,.06)'}},ML[m]||m)),
+              ...result.models.map(m=>h('th',{key:m,style:{...thS,borderLeft:'.5px solid var(--bdr)'}},ML[m]||m)),
               h('th',{style:{...thS}},'Windows')
             )),
             h('tbody',null,
               !rows.length && h('tr',null,h('td',{colSpan:result.models.length+3,style:{padding:'28px',textAlign:'center',color:'var(--text3)'}},'No stores had enough history to score.')),
               ...rows.map(([loc,s],ri)=>{
-                return h('tr',{key:loc,style:{borderTop:ri>0?'.5px solid rgba(255,255,255,.06)':'none'}},
+                return h('tr',{key:loc,style:{borderTop:ri>0?'.5px solid var(--bdr)':'none'}},
                   h('td',{style:{padding:'6px 8px 6px 14px',fontWeight:700,color:'var(--text)'}},s.storeName),
                   h('td',{style:{padding:'6px 8px',textAlign:'center'}},
                     s.winner ? span({style:{display:'inline-block',fontSize:'9px',fontWeight:800,padding:'2px 8px',
@@ -898,7 +898,7 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
                     const pm=s.perModel[m];
                     const isWin = s.winner===m;
                     return h('td',{key:m,style:{padding:'6px 8px',textAlign:'center',
-                      borderLeft:'.5px solid rgba(255,255,255,.06)',
+                      borderLeft:'.5px solid var(--bdr)',
                       background:isWin?(mCol[m]||'#888')+'14':'transparent'}},
                       pm ? span({style:{color:mapeCol(pm.mape),fontWeight:isWin?800:600}},pm.mape+'%')
                         : span({style:{color:'var(--text3)'}},'·'));
@@ -1051,7 +1051,7 @@ function StoreKBEditor({onClose, ds}) {
               const hasProfile = edits[loc]?.profile&&Object.values(edits[loc].profile).some(Boolean);
               const hasIntel   = (edits[loc]?.intelligenceNotes||[]).length>0;
               return div({key:loc,
-                style:{padding:'6px 10px',cursor:'pointer',borderBottom:'.5px solid rgba(255,255,255,.04)',
+                style:{padding:'6px 10px',cursor:'pointer',borderBottom:'.5px solid var(--bdr)',
                   background:selLoc===loc?'rgba(245,158,11,.1)':'transparent',
                   borderLeft:selLoc===loc?'2px solid var(--amber)':'2px solid transparent'},
                 onClick:()=>setSelLoc(loc)},
@@ -1531,7 +1531,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
       // ── Controls bar (period · group-by · focus · sort) ────────────────────
       div({style:{flexShrink:0,borderBottom:'.5px solid var(--bdr)',background:'var(--surf)'}},
         // Row 1: Period
-        div({style:{display:'flex',gap:3,padding:'7px 16px 6px',flexWrap:'wrap',alignItems:'center',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+        div({style:{display:'flex',gap:3,padding:'7px 16px 6px',flexWrap:'wrap',alignItems:'center',borderBottom:'.5px solid var(--bdr)'}},
           span({style:{fontSize:'8px',color:'var(--text3)',marginRight:4,textTransform:'uppercase',letterSpacing:'.3px',flexShrink:0}},'Period:'),
           ...PERIODS.map(p=>p.id!=='custom'?
             btn({key:p.id,style:{padding:'3px 9px',borderRadius:99,border:'.5px solid '+(selPeriod===p.id?'rgba(245,158,11,.4)':'var(--bdr)'),background:selPeriod===p.id?'var(--adim)':'transparent',color:selPeriod===p.id?'var(--amber)':'var(--text2)',fontSize:'9.5px',cursor:'pointer'},onClick:()=>setSelPeriod(p.id)},p.l):
@@ -1625,7 +1625,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
                 )),
                 h('tbody',null,...op.stores.filter(s=>s.sales>0).map((s,i)=>{
                   const vsLY=s.vsLY;   // matched-day (precomputed)
-                  return tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+                  return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
                     td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',whiteSpace:'nowrap',fontSize:'8.5px'}},s.storeName),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text2)'}},s.sales>0?f$(s.sales):'—'),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8.5px'}},s.lySales>0?f$(s.lySales):'—'),
@@ -1704,8 +1704,6 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     if(!range||!ds) return [];
     // v>0 avg: treats 0 as "field not parsed" — matches avg6() behavior for rate metrics
     const _avg =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v)&&v>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-    // Any-value avg: 0 and negatives valid (otHrs=0 means no OT; actVsNeed can be negative)
-    const _avgZ=(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     const _sum =(rows,f)=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0):0;};
     return activeLocs.map(loc=>{
       const tgt=(settings.targets&&settings.targets[loc])||DEFAULT_TARGETS[loc]||{};
@@ -1727,45 +1725,44 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // Operations Report produces 1 aggregate row per store for the entire period.
       // Robust detection that works even when lRows is empty (no daily Labor Analysis loaded).
       const cIsSummary = cRows.length>0 && cRows.length < Math.max(3,Math.floor(rangeDays/4)) && rangeDays>3;
-      // Always use calendar days for per-day normalization
-      const normDays   = rangeDays;
       // ── Rate/percentage metrics ─────────────────────────────────────────────
-      // laborPct/tpph now route through metric-source.js's auto-first per-day resolver
+      // laborPct/tpph route through metric-source.js's auto-first per-day resolver
       // (2026-08-05) — both already had a registered ctrlRows→glimpseRows→laborRows/DAR
       // fallback chain (used elsewhere, e.g. analytics.js's ctrlSec) that this panel wasn't
       // using, so it went stale/blank whenever neither manual upload covered the range even
-      // though real auto data existed. avgRate/otHrs/actVsNeed still need their own
-      // METRIC_SOURCES entries before the same swap is safe — left as the manual
-      // ctrlRows→laborRows chain for now.
+      // though real auto data existed. avgRate/otHrs/actHrs/actVsNeed now migrated too
+      // (#324) — same gap, same fix, once #323 landed the auto stream (opsLaborRows) these
+      // actually resolve against. avgRate is a DERIVED metric (metric-source.js:280,
+      // laborPct×sales÷actHrs); otHrs/actVsNeed are mode:'any' (0/negative are legitimate,
+      // not "missing").
       const laborPct  = metricAvg(ds,loc,range,'laborPct');
       const tpph      = metricAvg(ds,loc,range,'tpph');
-      const avgRate   = _avg(cRows,'avgRate')   || _avg(lRows,'avgRate');
-      const actVsNeed = _avgZ(cRows.length?cRows:lRows,'actVsNeed');
-      // ── Volume metrics (hours) ──────────────────────────────────────────────
-      // Daily lRows already gives true per-day average.
-      // Period-summary cRows gives period TOTAL → must divide by normDays.
-      // Also divide when lRows is sparse (< 3 days) since they don't represent a real daily avg.
-      const _perDay=(cSrc,lSrc,f)=>{
-        const daily=_avgZ(lSrc,f);
-        if(daily!=null&&lSrc.length>=3) return daily; // only trust daily if we have ≥3 data points
-        // _avg (v>0) for cRows: parseCtrlData defaults missing cols to 0 via ||0.
-        // _avgZ would return 0.0; _avg returns null → shows — for unparsed columns.
-        // Daily lRows use _avgZ so genuine "no OT today = 0" is preserved.
-        const tot=_avg(cSrc,f);
-        if(tot==null) return (daily!=null?daily:null);
-        return (cIsSummary||lSrc.length<3) ? tot/normDays : tot;
-      };
-      const otHrs     = _perDay(cRows,lRows,'otHrs');
-      const actHrs    = _perDay(cRows,lRows,'actHrs');
-      const crewHrs   = _avg(lRows,'crewHrs')      || (cIsSummary?null:_avg(cRows,'crewHrs'));
-      const salMgrHrs = _avg(lRows,'salaryMgrHrs') || (cIsSummary?null:_avg(cRows,'salaryMgrHrs'));
-      // OT cost: prefer parsed dollar amount; fall back to estimated OT premium
-      const otDolRaw  = _sum(cRows.length?cRows:lRows,'otDollar');
-      const otCostEst = (otHrs||0)>0&&(avgRate||0)>0 ? Math.round((otHrs||0)*0.5*(avgRate||0)*normDays) : 0;
-      const otCost    = otDolRaw>1 ? otDolRaw : otCostEst;
-      const otCostEd  = otDolRaw<=1 && otCostEst>0;
+      const avgRate   = metricAvg(ds,loc,range,'avgRate');
+      const actVsNeed = metricAvg(ds,loc,range,'actVsNeed');
+      const otHrs     = metricAvg(ds,loc,range,'otHrs');
+      const actHrs    = metricAvg(ds,loc,range,'actHrs');
+      // salaryMgrHrs is a registered metric (metric-source.js:232, mode:'pos',
+      // schedRows→ctrlRows) — migrated to match. crewHrs has NO metric-source.js entry
+      // anywhere (no auto source registered, opsLaborRows included) — left on the manual
+      // ctrlRows/laborRows read; adding a new registry entry is out of #324's scope, which
+      // only migrates metrics that already HAVE a registered source.
+      const salMgrHrs = metricAvg(ds,loc,range,'salaryMgrHrs');
+      const crewHrs   = _avg(lRows,'crewHrs') || (cIsSummary?null:_avg(cRows,'crewHrs'));
+      // OT cost: was hrs×0.5×rate estimated (otCostEst) because the real dollar figure was
+      // unreliable — #324 measured it directly before deciding whether that's still true:
+      // 1647/1647 (100%) of qsr_labor_summary rows over the trailing 60 days carry a real,
+      // non-null over_time_total_dollars across all 27 stores, post-#323's backfill. With
+      // the real figure reliably present, the estimate (and its "~" approximation flag)
+      // retires outright rather than staying as a needless fallback. otCost is a PERIOD
+      // TOTAL (unlike otHrs, a daily average) — metricAvg returns a mean, so sum the daily
+      // series directly instead. This preserves #309's null-vs-zero fix: null only when NO
+      // day in range resolved a value (missing), never when every resolved day's OT was a
+      // genuine $0 — do not touch that guard, only the sourcing underneath it.
+      const otSeries = metricSeries(ds,loc,range,'otDollar');
+      const otDays   = Object.keys(otSeries);
+      const otCost   = otDays.length ? otDays.reduce((a,dk)=>a+otSeries[dk],0) : null;
       return{loc,days,laborPct,tpph,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,
-        otCost,otCostEd,totalSales,tgt,
+        otCost,totalSales,tgt,
         storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
     }).filter(Boolean);
   },[range,activeLocs,ds,settings]);
@@ -1777,7 +1774,12 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     const sA=f=>{const v=locStats.map(s=>s[f]).filter(v=>v!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
     return{laborPct:wA('laborPct'),tpph:sA('tpph'),otHrs:sA('otHrs'),avgRate:sA('avgRate'),actVsNeed:sA('actVsNeed'),
       otCost:locStats.reduce((a,s)=>a+(s.otCost||0),0),
-      otCostEd:locStats.some(s=>s.otCostEd),
+      // #303: otCost sums s.otCost||0, which is correct for a SUM (a store with no data
+      // contributes 0, same as a store with genuine $0 OT) but loses the "every store's data
+      // was missing" signal once summed -- the district tile below had no guard at all and
+      // showed "$0" whenever every store's otCost happened to be null. otCostKnown tracks
+      // whether at least one store actually had a real reading.
+      otCostKnown:locStats.some(s=>s.otCost!=null),
       totalSales:locStats.reduce((a,s)=>a+(s.totalSales||0),0),
       storeCount:locStats.length};
   },[locStats]);
@@ -1867,7 +1869,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     {id:'actVsNeed',l:'Act vs Need', lB:null,  fmt:s=>avnFmt(s.actVsNeed),         col:s=>avCol(s.actVsNeed)},
     {id:'avgRate',  l:'AROP',        lB:null,  fmt:s=>s.avgRate?'$'+nFmtL(s.avgRate,2):'—', col:()=>'var(--text2)'},
     {id:'actHrs',   l:'Act Hrs/Day', lB:null,  fmt:s=>nFmtL(s.actHrs,1),          col:()=>'var(--text2)'},
-    {id:'otCost',   l:'OT Cost',     lB:true,  fmt:s=>s.otCost>0?(s.otCostEd?'~':'')+f$(s.otCost):'—', col:s=>s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'#10b981'},
+    {id:'otCost',   l:'OT Cost',     lB:true,  fmt:s=>s.otCost>0?f$(s.otCost):'—', col:s=>s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'#10b981'},
   ];
   const curMet=RANK_MET.find(m=>m.id===sortMet)||RANK_MET[0];
   const rankSorted=uM(()=>[...locStats].sort((a,b)=>{
@@ -1907,8 +1909,8 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       {l:'Act vs Need',  v:avnFmt(dist.actVsNeed),
        sub:'+ overstaffed  ·  − understaffed',
        col:avCol(dist.actVsNeed), bg:'rgba(255,255,255,.02)'},
-      {l:'OT Cost (Period)',v:(dist.otCostEd?'~ ':'')+f$(dist.otCost),
-       sub:(dist.otCostEd?'Estimated premium  ·  ':'')+(dist.avgRate?'$'+nFmtL(dist.avgRate,2)+'/hr AROP  ·  ':'')+(dist.storeCount)+' locations',
+      {l:'OT Cost (Period)',v:dist.otCostKnown?f$(dist.otCost):'—', // #303: was unconditional f$(dist.otCost), showed "$0" when every store's input was missing
+       sub:(dist.avgRate?'$'+nFmtL(dist.avgRate,2)+'/hr AROP  ·  ':'')+(dist.storeCount)+' locations',
        col:dist.otCost>5000?'#ef4444':dist.otCost>1000?'#f59e0b':'#a5b4fc',
        bg:'rgba(165,180,252,.04)'},
     ];
@@ -1940,7 +1942,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     if(!locStats.length) return div({style:{color:'var(--text3)',textAlign:'center',padding:40,fontSize:'12px'}},'No labor data for this period and location. Try widening the date range.');
     const cols=[{l:'Store',a:'left'},{l:'Labor %',a:'right'},{l:'Tgt',a:'right'},{l:'vs Tgt',a:'right'},{l:'TPPH',a:'right'},{l:'Tgt TPPH',a:'right'},{l:'OT Hrs/Day',a:'right'},{l:'Act vs Need',a:'right'},{l:'AROP',a:'right'},{l:'Act Hrs/Day',a:'right'},{l:'OT Cost',a:'right'},{l:'Days',a:'right'}];
     return div({style:{overflowX:'auto'}},
-      div({style:{padding:'5px 16px 2px',fontSize:'8.5px',color:'var(--text3)',display:'flex',gap:16,borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+      div({style:{padding:'5px 16px 2px',fontSize:'8.5px',color:'var(--text3)',display:'flex',gap:16,borderBottom:'.5px solid var(--bdr)'}},
         span(null,locStats.length+' locations · '+curP.l+' period'),
         dist&&span(null,'District Labor: '+pFmtL(dist.laborPct)),
         dist&&span(null,'TPPH: '+nFmtL(dist.tpph)),
@@ -1951,7 +1953,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         h('tbody',null,...locStats.map((s,i)=>{
           const lc=lbCol(s.laborPct,resolveLaborTarget(s.tgt)),tc=tpCol(s.tpph,s.tgt.tTpph),oc=otCol(s.otHrs),ac=avCol(s.actVsNeed);
           const ld=s.laborPct!=null&&resolveLaborTarget(s.tgt)?(s.laborPct-resolveLaborTarget(s.tgt))*100:null;
-          return tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+          return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
             td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}},s.storeName),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lc}},pFmtL(s.laborPct)),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8.5px'}},resolveLaborTarget(s.tgt)?pFmtL(resolveLaborTarget(s.tgt)):'—'),
@@ -1962,7 +1964,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:ac}},avnFmt(s.actVsNeed)),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},s.avgRate?'$'+nFmtL(s.avgRate,2):'—'),
             td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},nFmtL(s.actHrs,1)),
-            td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'var(--text2)'}},s.otCost>0?(s.otCostEd?'~':'')+f$(s.otCost):'—'),
+            td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:s.otCost>500?'#ef4444':s.otCost>100?'#f59e0b':'var(--text2)'}},s.otCost>0?f$(s.otCost):'—'),
             td({style:{padding:'5px 8px',textAlign:'right',color:'var(--text3)',fontSize:'8.5px'}},s.days)
           );
         })),
@@ -1977,7 +1979,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
           td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:avCol(dist.actVsNeed),borderTop:'.5px solid var(--bdr2)'}},avnFmt(dist.actVsNeed)),
           td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.avgRate?'$'+nFmtL(dist.avgRate,2):'—'),
           td({style:{borderTop:'.5px solid var(--bdr2)'}}),
-          td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,color:dist.otCost>2000?'#ef4444':dist.otCost>500?'#f59e0b':'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},(dist.otCostEd?'~':'')+f$(dist.otCost)),
+          td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',fontWeight:700,color:dist.otCost>2000?'#ef4444':dist.otCost>500?'#f59e0b':'var(--text2)',borderTop:'.5px solid var(--bdr2)'}},dist.otCostKnown?f$(dist.otCost):'—'), // #303: same guard as the OT Cost tile above
           td({style:{padding:'6px 8px',textAlign:'right',color:'var(--text3)',fontSize:'8.5px',borderTop:'.5px solid var(--bdr2)'}},dist.storeCount+' locs')
         ))
       )
@@ -1999,7 +2001,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         th({style:{...thSL,textAlign:'left'}},'Store'),
         ...RANK_MET.map((m,i)=>th({key:i,style:{...thSL,textAlign:'right',color:m.id===sortMet?'var(--amber)':'var(--text3)',cursor:'pointer'},onClick:()=>{if(sortMet===m.id)setSortDir(d=>d*-1);else{setSortMet(m.id);setSortDir(1);}}},m.l+(m.id===sortMet?(sortDir===1?' ↑':' ↓'):'')))
       )),
-      h('tbody',null,...rankSorted.map((s,i)=>tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+      h('tbody',null,...rankSorted.map((s,i)=>tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
         td({style:{padding:'5px 8px',textAlign:'center',fontFamily:'var(--mono)',fontSize:'8.5px',color:'var(--text3)'}},
           i===0?span({style:{fontSize:'11px'}},'🥇'):i===1?span({style:{fontSize:'11px'}},'🥈'):i===2?span({style:{fontSize:'11px'}},'🥉'):(i+1)),
         td({style:{padding:'5px 8px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}},s.storeName),
@@ -2019,7 +2021,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       h('tbody',null,...dowStats.map((d,i)=>{
         const lpDiff=d.laborPct!=null&&resolveLaborTarget(distTgt)?(d.laborPct-resolveLaborTarget(distTgt))*100:null;
         const tpDiff=d.tpph!=null&&distTgt.tTpph?(d.tpph-distTgt.tTpph):null;
-        return tr({key:i,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:d.count>0?i%2?'rgba(255,255,255,.015)':'transparent':'transparent',opacity:d.count>0?1:.35}},
+        return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:d.count>0?i%2?'rgba(255,255,255,.015)':'transparent':'transparent',opacity:d.count>0?1:.35}},
           td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',width:60}},d.name),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:lbCol(d.laborPct,resolveLaborTarget(distTgt))}},pFmtL(d.laborPct)),
           td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'8.5px',color:lbCol(d.laborPct,resolveLaborTarget(distTgt))}},lpDiff!=null?(lpDiff>0?'+':'')+lpDiff.toFixed(2)+'%':'—'),
@@ -2132,7 +2134,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
               avCol(s.combinedGapHrs)==='#10b981' ? 'On plan' :
               Math.abs(s.planningGapHrs)>=Math.abs(s.executionGapHrs) ? 'Scheduler' : 'Shift Manager';
             const coachColor = coach==='Scheduler'?'#f59e0b':coach==='Shift Manager'?'#ef4444':'var(--text3)';
-            return tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
+            return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.015)':'transparent'}},
               td({style:{padding:'5px 8px 5px 16px',fontWeight:600,color:'var(--text)',whiteSpace:'nowrap',fontSize:'9px'}}, STORE_NAMES[s.loc]||s.loc),
               td({style:{padding:'5px 8px',color:'var(--text3)',fontSize:'8.5px',whiteSpace:'nowrap'}}, s.weekStart),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}}, nFmtL(s.needHrs,0)),
@@ -2201,7 +2203,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
           level:'critical', loc:s.loc, metric:'otHrs',
           headline:`OT ${s.otHrs.toFixed(1)} hrs/day — excessive overtime`,
           detail:`More than 4 daily OT hours is unsustainable. `+
-            (s.otCost>0?`Period cost: ${s.otCostEd?'~':''}${f$(s.otCost)}.`:''),
+            (s.otCost>0?`Period cost: ${f$(s.otCost)}.`:''),
           action:'Audit OT approvals. Determine if root cause is chronic understaffing, call-outs, or scheduling errors. Increase base crew if needed.',
           impact:s.otCost||0,
         });
@@ -2211,7 +2213,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
         insights.push({
           level:'warning', loc:s.loc, metric:'otHrs',
           headline:`OT ${s.otHrs.toFixed(1)} hrs/day — above target`,
-          detail:`Target is ≤2 hrs/day. Period premium: ${s.otCostEd?'~':''}${f$(s.otCost||0)}.`,
+          detail:`Target is ≤2 hrs/day. Period premium: ${f$(s.otCost||0)}.`,
           action:'Review weekend and close-shift scheduling. Identify if specific shifts drive OT.',
           impact:s.otCost||0,
         });
@@ -2405,7 +2407,7 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
               'Act vs Need':     s.actVsNeed!=null?((s.actVsNeed>0?'+':'')+s.actVsNeed.toFixed(0)+' hrs'):'—',
               'AROP':            s.avgRate?('$'+s.avgRate.toFixed(2)):'—',
               'Act Hrs/Day':     s.actHrs!=null?s.actHrs.toFixed(1):'—',
-              'OT Cost':         s.otCost>0?((s.otCostEd?'~':'')+f$(s.otCost)):'—',
+              'OT Cost':         s.otCost>0?f$(s.otCost):'—',
               'Days':            s.days,
             }))
           }),

@@ -1363,7 +1363,7 @@ function KnowledgeBasePanel({onClose}) {
         div({style:{width:220,flexShrink:0,borderRight:'.5px solid var(--bdr)',overflowY:'auto'}},
           filtered.length===0&&div({style:{padding:20,fontSize:'10px',color:'var(--text3)',textAlign:'center'}},'No results'),
           filtered.map(art=>div({key:art.key,onClick:()=>setSelKey(selKey===art.key?null:art.key),
-            style:{padding:'9px 13px',cursor:'pointer',borderBottom:'.5px solid rgba(255,255,255,.03)',
+            style:{padding:'9px 13px',cursor:'pointer',borderBottom:'.5px solid var(--bdr)',
               background:selKey===art.key?'var(--adim)':'transparent'},
             onMouseEnter:e=>{if(selKey!==art.key)e.currentTarget.style.background='rgba(255,255,255,.04)';},
             onMouseLeave:e=>{if(selKey!==art.key)e.currentTarget.style.background='transparent';}},

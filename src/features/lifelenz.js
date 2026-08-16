@@ -191,7 +191,7 @@ function LifelenzGapPanel({ds, settings, onClose}) {
               const stats=period==='pre'?r.pre:period==='post'?r.post:r.all;
               return h('tr',{key:r.loc,style:{
                 background:i%2?'rgba(255,255,255,.015)':'transparent',
-                borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+                borderBottom:'.5px solid var(--bdr)'}},
                 h('td',{style:{padding:'7px 8px 7px 14px',fontWeight:600,color:'var(--amber)',verticalAlign:'middle'}},
                   div(null,STORE_NAMES[r.loc]||r.loc),
                   div({style:{fontSize:'7.5px',color:'var(--text3)',marginTop:1}},
@@ -667,7 +667,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
                 .map(([loc,r])=>{
                   const tomorrow=r.days&&r.days[0];
                   const shapeFlagCount=r.days?r.days.filter(d=>d.shapeFlag).length:0;
-                  return h('tr',{key:loc,style:{borderBottom:'.5px solid rgba(255,255,255,.05)',
+                  return h('tr',{key:loc,style:{borderBottom:'.5px solid var(--bdr)',
                     cursor:'pointer'},onClick:()=>jumpToStore(loc)},
                     h('td',{style:{padding:'7px 8px',fontWeight:700,color:'var(--amber)'}},sNameC(loc)),
                     h('td',{style:{padding:'7px 8px',textAlign:'center',

@@ -110,7 +110,21 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
 
 ## UI Conventions
 
-- **Theme:** Bloomberg-inspired dark. Background `#0f1117`, accent `#f5bc00` (McDonald's gold)
+- **Theme:** **LIGHT is the shipped default; dark is a selectable mode.** `DEF_SETTINGS` is
+  `theme:'command'` + `colorMode:'light'` (`constants.js`), set in the 2026-06-20 Vite lift-and-shift
+  and unchanged since; `App.js` writes both to `<html>` on every settings change, and the built
+  `index.html` ships `data-mode="light"`. Owner-confirmed 2026-08-15 as intended product behaviour,
+  not a divergence. Fletcher and other long-standing users see dark because their `colorMode` is
+  persisted — **your own screenshot is not evidence of what a new user sees.**
+  4 theme families (`golden`/`command`/`dualbrand`/`refined`) × 2 modes = 8
+  `html[data-theme][data-mode]` blocks in `meridian.css`, each defining the full
+  `--bg/--surf/--surf2/--surf3/--bdr/--bdr2` ladder. Accent `#f5bc00` (McDonald's gold); the
+  dark-mode background is `#0f1117`.
+  **Never hardcode `rgba(255,255,255,X)` — use the tokens.** White-alpha over a light surface is
+  algebraically still that surface: at *every* alpha from .01 to .85 it composites to the identical
+  pixel on the two pure-white light themes. This is what made ~430 such sites read as a niche
+  dark-theme nicety for two months when they were in fact default-path bugs (#295, #296, #306), and
+  it is guarded by `src/__tests__/light-mode-white-alpha.test.js`'s ratcheting ceiling.
 - **Density:** power-user tool — dense, data-first layouts (not consumer-friendly)
 - **Location selectors:** pill-style, All → State → Org/Patch → Store hierarchy on all filters
 - **Print/PDF:** export formatting should match existing workbook aesthetic

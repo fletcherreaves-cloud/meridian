@@ -504,10 +504,10 @@ function DataPolicyBanner() {
 function UploadSummaryModal({ report, onClose }) {
   const { received, loaded, errored, skipped, lines, saveErrs } = report;
   const collision = received > loaded + (errored?.length || 0) + (skipped?.length || 0);
-  const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,.08)', fontSize: 12 };
+  const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--bdr)', fontSize: 12 };
   return h('div', { onClick: e => { if (e.target === e.currentTarget) onClose(); },
     style: { position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
-    h('div', { style: { background: 'var(--bg,#0f1117)', border: '1px solid var(--bdr,rgba(255,255,255,.1))', borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto', padding: 22 } },
+    h('div', { style: { background: 'var(--bg,#0f1117)', border: '1px solid var(--bdr,var(--bdr))', borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto', padding: 22 } },
       h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
         h('div', { style: { fontSize: 15, fontWeight: 800 } }, '📥 Upload summary'),
         h('button', { onClick: onClose, style: { border: 'none', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 } }, '✕')),
@@ -2728,7 +2728,7 @@ function App() {
     // stays visible and interactive while SAGE is open, same intent the minimize
     // pill served before but without having to minimize to get it.
     showSage&&div({style:{position:'fixed',top:0,right:0,bottom:0,width:'min(460px,100vw)',background:'var(--surf)',borderLeft:'.5px solid var(--bdr2)',boxShadow:'-12px 0 40px rgba(0,0,0,.45)',zIndex:360,display:sageMin?'none':'flex',flexDirection:'column',overflow:'hidden'}},
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid rgba(255,255,255,.1)',flexShrink:0}},
+      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'calc(12px + env(safe-area-inset-top,0px)) 20px 12px',borderBottom:'1px solid var(--bdr)',flexShrink:0}},
         div({style:{display:'flex',alignItems:'center',gap:8}},
           span({style:{width:8,height:8,borderRadius:'50%',background:sageBusy?'#ef4444':'#10b981',boxShadow:'0 0 6px '+(sageBusy?'#ef4444':'#10b981')}}),
           span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'15px',letterSpacing:'-.02em',color:'var(--text)'}},'🧠 SAGE'),

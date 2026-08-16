@@ -282,7 +282,7 @@ export function BullseyeTile({ stores, onOpenStore }) {
           key: k, onClick: () => setMetricKey(k),
           style: {
             fontSize: '9px', padding: '3px 8px', borderRadius: 4, cursor: 'pointer', fontWeight: 600, border: 'none',
-            background: metricKey === k ? 'var(--amber)' : 'rgba(255,255,255,.07)',
+            background: metricKey === k ? 'var(--amber)' : 'var(--surf3)', // #295 fixed the white-wash; #306 measured --surf2 as strictly worse than --surf3 across all 8 theme x mode combos (--surf3 also beats or nearly matches the original dark-mode value #295 regressed)
             color: metricKey === k ? 'var(--navy)' : 'var(--text3)',
           },
         }, METRICS[k].short))
@@ -298,10 +298,13 @@ export function BullseyeTile({ stores, onOpenStore }) {
       ),
       div({ style: { position: 'relative', width: '100%', maxWidth: 340, margin: '0 auto' } },
         h('svg', { viewBox: '0 0 340 340', style: { width: '100%', height: 'auto', display: 'block' } },
-          // Equal-area ring guides
-          h('circle', { cx, cy, r: r1, fill: 'none', stroke: 'rgba(255,255,255,.10)', strokeWidth: .75 }),
-          h('circle', { cx, cy, r: r2, fill: 'none', stroke: 'rgba(255,255,255,.10)', strokeWidth: .75 }),
-          h('circle', { cx, cy, r: maxR, fill: 'none', stroke: 'rgba(255,255,255,.14)', strokeWidth: .75 }),
+          // Equal-area ring guides. #295: these were hardcoded rgba(255,255,255,X) -- a
+          // white-on-white wash that's invisible against the light theme's own light surface.
+          // var(--bdr)/var(--bdr2) are theme-aware and already used for this tile's own card
+          // border two lines up in the calling component.
+          h('circle', { cx, cy, r: r1, fill: 'none', stroke: 'var(--bdr)', strokeWidth: .75 }),
+          h('circle', { cx, cy, r: r2, fill: 'none', stroke: 'var(--bdr)', strokeWidth: .75 }),
+          h('circle', { cx, cy, r: maxR, fill: 'none', stroke: 'var(--bdr2)', strokeWidth: .75 }),
           // Ring labels, fixed at the top (12 o'clock) so they never collide with a sector label
           h('text', { x: cx, y: cy - r1 - 4, textAnchor: 'middle', fontSize: 6, fill: GOOD_COLOR, fontWeight: 700 }, 'BEATING'),
           h('text', { x: cx, y: cy - r2 - 4, textAnchor: 'middle', fontSize: 6, fill: WARN_COLOR, fontWeight: 700 }, 'AT TARGET'),

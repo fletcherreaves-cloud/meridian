@@ -1074,9 +1074,9 @@ function OpsScorecard({store, settings}) {
       td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
         color:'var(--text3)'}}, fmtVal(v4, fmt)),
       td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
-        color:'rgba(255,255,255,.35)'}}, fmtVal(v6, fmt)),
+        color:'var(--text3)'}}, fmtVal(v6, fmt)),
       td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
-        color:tgt!=null?'var(--text3)':'rgba(255,255,255,.25)'}},
+        color:'var(--text3)'}},
         tgt!=null?(fmt==='pct'?fP(tgt/100,2):fmt==='sec'?tgt+'s':fmt==='dollar'?'$'+fN(tgt,2):fN(tgt,1)):'—'),
       td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',
         fontWeight:600,color:vcol}}, vstr),
@@ -1092,7 +1092,7 @@ function OpsScorecard({store, settings}) {
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',
       letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:65}},'4-Wk'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',
-      letterSpacing:'.3px',color:'rgba(255,255,255,.3)',borderBottom:'.5px solid var(--bdr)',width:65}},'6-Wk'),
+      letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:65}},'6-Wk'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',
       letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:65}},'Target'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',
@@ -1149,7 +1149,7 @@ function CtrlScorecard({store}) {
     th({style:{padding:'5px 8px',textAlign:'left',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',minWidth:140}},'Metric'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'#60a5fa',borderBottom:'.5px solid var(--bdr)',width:65}},'2-Wk'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:65}},'4-Wk'),
-    th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'rgba(255,255,255,.3)',borderBottom:'.5px solid var(--bdr)',width:65}},'6-Wk'),
+    th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:65}},'6-Wk'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:65}},'Target'),
     th({style:{padding:'5px 8px',textAlign:'right',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',width:55}},'Var'),
     th({style:{padding:'5px 8px',fontSize:'8px',textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)'}},'Note')
@@ -1248,7 +1248,7 @@ function CtrlScorecard({store}) {
               td({style:{padding:'5px 8px',fontSize:'10px',color:'var(--text2)'}}, l),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,color:'var(--text)'}}, (noData2?'—':fmtV(v2,fmt))),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, (noData4?'—':fmtV(v4,fmt))),
-              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'rgba(255,255,255,.3)'}}, (noData6?'—':fmtV(v6,fmt))),
+              td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, (noData6?'—':fmtV(v6,fmt))),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',color:'var(--text3)'}}, tgtStr),
               td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'10px',fontWeight:600,
                 color:pass===null?'var(--text3)':pass?'#10b981':'#ef4444'}}, varV!=null?varS:'—'),
@@ -1765,7 +1765,7 @@ function StoreCard({store, onSelect}) {
   const warns  = store.findings.filter(f=>f.t==='warn'||f.t==='watch');
   const topIssue = crits.length?crits[0]:warns[0];
 
-  const tileBdr = crits.length?'rgba(239,68,68,.25)':warns.length?'rgba(245,158,11,.2)':'rgba(255,255,255,.06)';
+  const tileBdr = crits.length?'rgba(239,68,68,.25)':warns.length?'rgba(245,158,11,.2)':'var(--bdr)';
 
   return div({className:'store-card',onClick:()=>onSelect(store),style:{
     borderRadius:'var(--r)',border:'.5px solid '+tileBdr,
@@ -1796,7 +1796,7 @@ function StoreCard({store, onSelect}) {
       div({style:{display:'flex',flexDirection:'column',gap:3}},
         // Sales row
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
-          fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
+          fontSize:'9.5px',borderBottom:'.5px solid var(--bdr)',paddingBottom:3}},
           span({style:{color:'var(--text3)'}},'Sales'),
           div({style:{display:'flex',alignItems:'baseline',gap:4}},
             span({style:{fontFamily:'var(--mono)',fontWeight:700,color:'var(--amber)'}}
@@ -1807,7 +1807,7 @@ function StoreCard({store, onSelect}) {
         ),
         // Labor row
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
-          fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
+          fontSize:'9.5px',borderBottom:'.5px solid var(--bdr)',paddingBottom:3}},
           span({style:{color:'var(--text3)'}},'Labor'),
           span({style:{fontFamily:'var(--mono)',fontWeight:700,
             color:metCol(p.laborPct,resolveLaborTarget(t),true)}},
@@ -1815,7 +1815,7 @@ function StoreCard({store, onSelect}) {
         ),
         // OEPE row
         div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
-          fontSize:'9.5px',borderBottom:'.5px solid rgba(255,255,255,.04)',paddingBottom:3}},
+          fontSize:'9.5px',borderBottom:'.5px solid var(--bdr)',paddingBottom:3}},
           span({style:{color:'var(--text3)'}},'OEPE'),
           span({style:{fontFamily:'var(--mono)',fontWeight:700,
             color:metCol(p.oepe,t.tOepe,true)}},
@@ -1847,7 +1847,7 @@ function StoreCard({store, onSelect}) {
 
       // Critical/Watch flag (top issue, truncated)
       topIssue&&div({style:{
-        fontSize:'7.5px',borderTop:'.5px solid rgba(255,255,255,.05)',paddingTop:4,marginTop:1,
+        fontSize:'7.5px',borderTop:'.5px solid var(--bdr)',paddingTop:4,marginTop:1,
         color:crits.length?'var(--crit)':'var(--warn)',
         display:'flex',alignItems:'center',gap:3,overflow:'hidden'}},
         span(null,crits.length?'⚠':'●'),
@@ -1930,7 +1930,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
        {l:'Data Status',v:ds&&ds.loaded?'Live':'Mock',c:ds&&ds.loaded?'#10b981':'#94a3b8',/* click removed — showDataStatus not implemented */},
       ].map((k,i)=>div({key:i,className:'kpi-card',
         style:{flex:1,minWidth:100,cursor:k.click?'pointer':'default',
-          outline:k.click?'.5px solid rgba(255,255,255,.08)':'none'},
+          outline:k.click?'.5px solid var(--bdr)':'none'},
         onClick:k.click||undefined,title:k.click?'Click for details':''},
         div({className:'kpi-l'},k.l),
         div({className:'kpi-v',style:{color:k.c,fontSize:'18px'}},k.v)
@@ -1960,14 +1960,14 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
     velStores&&sort==='vel'&&div({style:{marginBottom:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
       div({style:{background:'rgba(16,185,129,.06)',border:'.5px solid rgba(16,185,129,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
         div({style:{fontSize:'10px',fontWeight:700,color:'#10b981',marginBottom:6}},'↑ Most Improved (2w vs 4w)'),
-        velStores.top.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid rgba(255,255,255,.05)':'none'}},
+        velStores.top.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid var(--bdr)':'none'}},
           div({style:{color:'var(--text2)',cursor:'pointer'},onClick:()=>onSelectStore(s)},s.name.slice(0,22)),
           div({style:{fontFamily:'var(--mono)',color:'#10b981',fontWeight:700}},'+'+Math.round(s.vel.opsScore)+'pt')
         ))
       ),
       div({style:{background:'rgba(244,63,94,.06)',border:'.5px solid rgba(244,63,94,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
         div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)',marginBottom:6}},'↓ Most Declining (2w vs 4w)'),
-        velStores.bottom.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid rgba(255,255,255,.05)':'none'}},
+        velStores.bottom.map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'3px 0',borderBottom:i<2?'.5px solid var(--bdr)':'none'}},
           div({style:{color:'var(--text2)',cursor:'pointer'},onClick:()=>onSelectStore(s)},s.name.slice(0,22)),
           div({style:{fontFamily:'var(--mono)',color:'var(--crit)',fontWeight:700}},Math.round(s.vel.opsScore)+'pt')
         ))
@@ -1997,7 +1997,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
                 padding:'1px 6px',borderRadius:3,
                 background:i===0?tier.col+'33':i<3?'rgba(255,255,255,.08)':'rgba(255,255,255,.04)',
                 color:i===0?tier.col:i<3?'var(--text2)':'var(--text3)',
-                border:'.5px solid '+(i===0?tier.col+'55':'rgba(255,255,255,.1)')
+                border:'.5px solid '+(i===0?tier.col+'55':'var(--bdr)')
               }},['#1','#2','#3'][i]||(i===tier.stores.length-1?'↓last':'#'+(i+1))),
               h(StoreCard,{store:s,onSelect:onSelectStore})
             ))
@@ -2306,7 +2306,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
           style:{fontSize:'8px',padding:'2px 6px',
             background:activePreset===p.id?'rgba(245,188,0,.12)':'transparent',
             color:activePreset===p.id?'var(--gold)':'var(--text3)',
-            borderColor:activePreset===p.id?'rgba(245,188,0,.4)':'rgba(255,255,255,.1)'},
+            borderColor:activePreset===p.id?'rgba(245,188,0,.4)':'var(--bdr)'},
           onClick:()=>{
             const r=p.fn();
             setRankRange({s:r.s,e:r.e,id:p.id});
@@ -2322,7 +2322,7 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
             style:{fontSize:'9px',padding:'2px 9px',
               background:groupDim===id?'rgba(245,188,0,.14)':'transparent',
               color:groupDim===id?'var(--gold)':'var(--text3)',
-              borderColor:groupDim===id?'rgba(245,188,0,.4)':'rgba(255,255,255,.1)'},
+              borderColor:groupDim===id?'rgba(245,188,0,.4)':'var(--bdr)'},
             onClick:()=>setGroupDim(id)},l))
       ),
       div({style:{padding:'8px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:4,flexWrap:'wrap'}},
@@ -2529,7 +2529,7 @@ function PerformanceCalculator({stores, ds, settings, onClose}) {
               ['TPPH',        baseline.baseTpph.toFixed(2)+' → '+model.newTpph, parseFloat(model.newTpph)-baseline.baseTpph,'guests/labor hr'],
             ].map(([l,now,chg,u],i)=>
               div({key:i,style:{display:'flex',alignItems:'baseline',gap:8,padding:'5px 0',
-                borderBottom:i<5?'.5px solid rgba(255,255,255,.06)':'none'}},
+                borderBottom:i<5?'.5px solid var(--bdr)':'none'}},
                 span({style:{width:100,fontSize:'9px',color:'var(--text3)',flexShrink:0}},(l)),
                 span({style:{flex:1,fontSize:'9.5px',fontFamily:'var(--mono)',color:'var(--text2)'}},typeof now==='string'?now:now.toFixed(0)),
                 div({style:{fontSize:'9.5px'}},
@@ -2859,7 +2859,7 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
             const gapStr  = gap!=null?(m.unit==='s'?(gap>0?'+':'')+Math.round(gap)+'s':
               m.unit==='%'?(gap>0?'+':'')+((gap*100).toFixed(2))+'%':
               (gap>0?'+':'')+gap.toFixed(1)):null;
-            return tr({key:m.id,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
+            return tr({key:m.id,style:{borderBottom:'.5px solid var(--bdr)',
               background:i%2?'rgba(255,255,255,.015)':'transparent'}},
               td({style:{padding:'5px 8px 5px 14px',fontWeight:600,color:'var(--text2)'}},(m.l)),
               td({style:{padding:'5px 8px',textAlign:'right'}},
@@ -3316,7 +3316,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
       !!(activeMonthData[loc]&&
                       Object.keys(activeMonthData[loc]).some(k=>k!=='_locked'));
                     return h('tr',{key:loc,
-                      style:{borderBottom:'.5px solid rgba(255,255,255,.03)',
+                      style:{borderBottom:'.5px solid var(--bdr)',
                         background:isEditing?'rgba(255,188,13,.04)':
                           hasOverride?'rgba(16,185,129,.02)':'transparent'}},
                       h('td',{style:{padding:'5px 10px',whiteSpace:'nowrap',
@@ -3337,7 +3337,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
                         const val = getFieldVal(loc, f);
                         const isMonthOverride = !!(activeMonthData[loc]&&activeMonthData[loc][f.k]!=null);
                         return h('td',{key:f.k,style:{padding:'3px 6px',textAlign:'center',
-                          borderLeft:'.5px solid rgba(255,255,255,.04)'}},
+                          borderLeft:'.5px solid var(--bdr)'}},
                           h('input',{
                             type:'number',min:f.min,max:f.max,step:f.step||1,
                             value:val,
