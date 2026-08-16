@@ -105,14 +105,29 @@ export const METRIC_SOURCES = {
   //     only crew_labor_dollars (punched/hourly only) does, matching this chain's existing
   //     3 sources which are all the crew-only "Punched Labor %" (see loadOpsLaborSummary).
   //   - Denominator: net_sales_amt does NOT reconcile (systematic ~0.2-0.3pp low bias) —
-  //     product_sales_amt does.
-  // Reconciled crew_labor_dollars/DAR-sales against Daily Glimpse's real labor_pct on 12
-  // store-days spanning 4 stores, 2026-08-16 (service-role read): 11/12 matched to 4 decimals,
-  // 1 outlier +0.0057 (store 5183, 2026-08-05) not investigated further — single-day, doesn't
-  // change the verdict. Unit convention confirmed fraction (0-1), not percent (0.2428, not
-  // 22.47) — glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every
-  // render site multiplies by 100 before display (labor-tools.js). A derive returning d/s*100
-  // would have shipped a number 100x too large.
+  //     product_sales_amt does, for the ~90% of days that reconcile at all (see below).
+  // MEASURED ACCURACY (2026-08-16, service-role, real metricSeries with glimpseRows/ctrlRows/
+  // laborRows excluded so the comparison is genuinely against the derive path, not Glimpse
+  // compared to itself — an earlier PR draft made exactly that mistake and reported a
+  // tautological 192/192): 648 store-days, 27 stores, 2026-07-19 to 2026-08-11, crew_labor_dollars
+  // ÷ DAR sales vs Daily Glimpse's real labor_pct. 582/648 (89.8%) match within 0.001. The other
+  // 66 (10.2%) do NOT — mean signed diff +0.0050 (58 positive / 8 negative, i.e. the derivation
+  // mostly runs HIGH), mean |diff| 0.0074, max 0.0276. Spread across 25 of 27 stores with no
+  // store at 100% mismatch, so it is NOT a fixed per-store definitional gap (that would hit every
+  // day for the affected store) — it is day-specific. One deep-dive (store 31357, 2026-07-19)
+  // ruled out BOTH candidate denominators for that day: neither product_sales_amt nor
+  // net_sales_amt implies Glimpse's 0.1876 from crew_labor_dollars=2270.67 — the NUMERATOR itself
+  // disagrees with whatever Glimpse used, not just the sales denominator. Leading unconfirmed
+  // hypothesis, NOT verified: qsr_labor_summary is pulled with compType:'calendar'
+  // (qsrsoft-ops-pull.mjs), while Daily Glimpse may report on a business-day boundary (e.g. 5am
+  // cutover) — late-night volume would land in a different day bucket in each, which would also
+  // explain the positive skew (a calendar-day pull missing late sales the business day counted
+  // understates the denominator, pushing the ratio up) and the day-specific (not store-fixed)
+  // pattern. Not chased further; flagged in the PR for the fallback-accuracy decision instead of
+  // asserted as fact. Unit convention confirmed fraction (0-1), not percent (0.2428, not 22.47) —
+  // glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every render site
+  // multiplies by 100 before display (labor-tools.js). A derive returning d/s*100 would have
+  // shipped a number 100x too large.
   laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
                derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null) } },
   tpph:      { mode: 'pos', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
