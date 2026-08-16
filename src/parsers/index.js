@@ -1204,19 +1204,52 @@ function parseDARData(wb, dateHint) {
   return rows;
 }
 
-// PRODUCT MIX PARSER  (v179)
-// Parses item-level unit sales; aggregates by Family Group
+// PRODUCT MIX PARSER  (v179, hierarchy-aware v5.025 — #302)
+// Parses item-level unit sales; aggregates by Family Group.
+//
+// The export is HIERARCHICAL, not flat (measured on real Product_Mix_20260815.xlsx, #302):
+// each Menu Item # with more than one price point gets a SUBTOTAL row (Units Sold already
+// summed across its price tiers) immediately followed by one DETAIL row per price point;
+// 452/452 measured groups satisfy parent==sum(children) exactly. Summing every row (the old
+// behavior) double/triple-counts every unit — measured 306,015 naive vs 204,708 true, a
+// 1.495x overstatement. 78 items have only one price point and so have no separate subtotal
+// row at all — for those the lone row IS the true figure.
+// Rule: per Menu Item #, keep only the FIRST row encountered in sheet order (the subtotal
+// for multi-price items, the only row for single-price items); skip every row after it for
+// that item. This also transparently handles sheets 2-4 (PMIX/Margin/QCR), which use the
+// opposite convention — item # only on the parent row, blank on children — since those
+// children are already filtered out by the pre-existing `r[C.item]==null` skip and each
+// parent's item # appears exactly once, so the dedup is a no-op there.
+// The sheet's grand-total row (empty Desc, a nonsense Price) is dropped explicitly by its
+// empty Desc, not relied upon to fall out of the dedup.
 function parsePMixData(wb) {
   const sh=wb.SheetNames.find(s=>s.toLowerCase().includes('pmix')||s.toLowerCase().includes('product mix'))||wb.SheetNames[0];
   const raw=parseRaw(wb,sh),hi=autoHdrRow(raw,3),h=raw[hi]||[];
   const C={item:fc(h,'Menu Item #','Item #','Item'),units:fc(h,'Units Sold','Units'),
     disc:fc(h,'Disc Qty','Discount Qty'),discAmt:fc(h,'Offer Discount $'),
     desc:fc(h,'Desc','Description'),family:fc(h,'Family Group','Category')};
-  const rows=[],byFamily={};
+  if(C.item<0||C.units<0)
+    return {rows:[],byFamily:{},error:'Product Mix export is missing "Menu Item #" or "Units Sold" — cannot parse.'};
+  // Family Group / Disc Qty / Offer Discount $ are only present on an "all metrics" export.
+  // A default export omits them — fail loudly instead of silently defaulting family to
+  // 'Other' and discounts to 0, which makes a missing column indistinguishable from real
+  // zero data (#302).
+  const missing=[];
+  if(C.family<0)missing.push('Family Group');
+  if(C.disc<0)missing.push('Disc Qty');
+  if(C.discAmt<0)missing.push('Offer Discount $');
+  if(missing.length)
+    return {rows:[],byFamily:{},error:`Product Mix export is missing column(s): ${missing.join(', ')}. Re-export from QSRSoft with "All Metrics" columns selected — a default export omits these and family/discount totals would be silently wrong.`};
+  const rows=[],byFamily={},seen=new Set();
   for(let i=hi+1;i<raw.length;i++){const r=raw[i];if(!r||r[C.item]==null)continue;
+    const desc=r[C.desc];
+    if(desc==null||String(desc).trim()==='')continue; // grand-total row
+    const item=r[C.item];
+    if(seen.has(item))continue; // detail row already covered by this item's subtotal/single row
+    seen.add(item);
     const fam=r[C.family]||'Other',units=parseFloat(r[C.units])||0;
-    rows.push({item:r[C.item],units,disc:parseFloat(r[C.disc])||0,
-      discAmt:parseFloat(r[C.discAmt])||0,desc:r[C.desc]||'',family:fam});
+    rows.push({item,units,disc:parseFloat(r[C.disc])||0,
+      discAmt:parseFloat(r[C.discAmt])||0,desc:desc||'',family:fam});
     if(!byFamily[fam])byFamily[fam]={family:fam,units:0,disc:0,items:0};
     byFamily[fam].units+=units;byFamily[fam].disc+=parseFloat(r[C.disc])||0;byFamily[fam].items++;}
   return {rows,byFamily};

@@ -283,6 +283,12 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
 
   const hasPMix = ds.pmixData && Object.keys(ds.pmixData).length > 0;
 
+  // #302 — a file that failed column validation (missing Family Group / Disc Qty /
+  // Offer Discount $) carries an explicit .error instead of silently defaulting; surface
+  // it rather than letting it render as an empty/zero panel.
+  const pmixErrors = uM(()=>Object.entries(ds.pmixData||{})
+    .filter(([,pmx])=>pmx&&pmx.error).map(([name,pmx])=>({name,error:pmx.error})),[ds.pmixData]);
+
   const data = uM(()=>{
     if(!hasPMix) return null;
     // Aggregate across all loaded PMix files
@@ -335,6 +341,11 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
             color:sortBy===s?'var(--amber)':'var(--text3)'},onClick:()=>setSortBy(s)},
           s==='units'?'Units':s==='disc'?'Disc Rate':'Mix %')),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+      ),
+      pmixErrors.length>0&&div({style:{padding:'8px 16px',flexShrink:0,background:'var(--adim)',
+        borderBottom:'.5px solid var(--bdr)'}},
+        pmixErrors.map(e=>div({key:e.name,style:{fontSize:'9.5px',color:'var(--amber)',lineHeight:1.6}},
+          span({style:{fontWeight:700}},e.name+': '),e.error))
       ),
       !hasPMix?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
         flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},
