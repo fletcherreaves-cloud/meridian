@@ -3739,3 +3739,66 @@ export async function updateActionItem(id, updates) {
   if (error) { console.warn('[action_items] update error:', error.message); return null; }
   return data;
 }
+
+// ── Product Mix (PMIX) rows — #291 ─────────────────────────────────────────────
+// See supabase/schema-product-mix.sql for the full design rationale — grain is
+// (loc, date, item, price), NOT (loc, date, item): the API separates price
+// tiers itself (measured: 116/314 items at multiple prices the same store-day),
+// so item+price together are the real identity, and price must never be
+// averaged across tiers. Stores primitives only (price, soldQty, unit costs) —
+// never a computed dollars-sold extension, which would be GROSS (overstates
+// net sales by the promo amount) and would invite disagreement with its own
+// primitives after a partial update. loc is PADDED, matching every other
+// QSRSoft-sourced table (qsr_fob, qsr_service_stats, …) — NOT the unpadded
+// STORE_NAMES key.
+export async function savePmixRows(rows) {
+  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  const upsert = rows.map(r => ({
+    loc:             String(r.loc),
+    date:            toDate(r),
+    item:            Number(r.item),
+    price:           Number(r.price),
+    desc_:           r.desc       ?? null,
+    family_group:    r.familyGroup ?? null,
+    sold_qty:        r.soldQty    ?? null,
+    disc_qty:        r.discQty    ?? null,
+    promo_qty:       r.promoQty   ?? null,
+    offer_amt:       r.offerAmt   ?? null,
+    disc_amt:        r.discAmt    ?? null,      // not yet selected upstream — see schema header
+    unit_food_cost:  r.unitFoodCost  ?? null,
+    unit_paper_cost: r.unitPaperCost ?? null,
+    updated_at:      new Date().toISOString(),
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('qsr_product_mix').upsert(upsert.slice(i, i+CHUNK), { onConflict: 'loc,date,item,price' });
+    if (error) { console.warn('[qsr_product_mix] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  return { saved, errors };
+}
+
+export async function loadPmixRows(daysBack = 400) {
+  if (!supabase) return [];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await _pagedParallel({ table: 'qsr_product_mix', select: '*', gteCol: 'date', gteVal: _cutStr, orderCol: 'date', ascending: false, label: 'qsr_product_mix' });
+  if (!data.length) return [];
+  return data.map(r => ({
+    loc:            r.loc,
+    date:           new Date(r.date + 'T00:00:00'),
+    item:           r.item,
+    price:          r.price,
+    desc:           r.desc_,
+    familyGroup:    r.family_group,
+    soldQty:        r.sold_qty,
+    discQty:        r.disc_qty,
+    promoQty:       r.promo_qty,
+    offerAmt:       r.offer_amt,
+    discAmt:        r.disc_amt,
+    unitFoodCost:   r.unit_food_cost,
+    unitPaperCost:  r.unit_paper_cost,
+  }));
+}
