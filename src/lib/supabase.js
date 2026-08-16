@@ -79,7 +79,34 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, or
   let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
   if (gteCol) head = head.gte(gteCol, gteVal);
   if (inCol) head = head.in(inCol, inVals);
-  const { count } = await head;
+  const { count, error: headError } = await head;
+  // #343 — a failed count (e.g. a statement timeout on an exact count over a big table)
+  // used to be silently swallowed here (only `count` was destructured), defaulting
+  // `pages` to 1 and capping the read at one page of the NEWEST rows with no error
+  // surfaced anywhere. Because the single page still fetched fine (a plain ranged
+  // SELECT is a different, cheaper query than a full exact count), the tile rendered
+  // real-looking recent data and nothing looked broken — every one of this function's
+  // 10 callers (qsr_fob, labor_rows, peaks_rows, audit_rows, ops_rows, ctrl_rows,
+  // daily_glimpse_daily, cash_sheet_daily, sales_ledger_daily, qsr_product_mix) shared
+  // the exposure, not just the table it was first noticed on.
+  // Fall back to fetchAll's sequential-until-short-page strategy instead, which needs no
+  // upfront count and so can't under-fetch from a bad one. Deliberately slower than the
+  // parallel happy path (fetchAll is strictly sequential) — correctness over speed on
+  // what should be a rare error path; a fast, silently-truncated read is worse than a
+  // slow, complete one. Only reports through _recordDataError if fetchAll's OWN read
+  // then also errors — a self-healing fallback that completes cleanly is not a partial
+  // load and should not raise the "DATA INCOMPLETE" banner.
+  if (headError) {
+    console.warn(`[Meridian] _pagedParallel(${label || table}) count query failed, falling back to sequential fetch:`, headError.message || headError);
+    return fetchAll((from, to) => {
+      let q = supabase.from(table).select(select);
+      if (gteCol) q = q.gte(gteCol, gteVal);
+      if (inCol) q = q.in(inCol, inVals);
+      q = q.order(orderCol, { ascending });
+      for (const oc of extraOrder) q = q.order(oc);
+      return q.range(from, to);
+    }, pageSize, label || table);
+  }
   const pages = Math.max(1, Math.ceil((count || 0) / pageSize));
   const reqs = [];
   for (let p = 0; p < pages; p++) {
@@ -1997,20 +2024,34 @@ export async function loadQsrActSummary(daysBack = 35) {
   // load. Aggregation is by (loc,dt) so page order doesn't affect the result.
   const SELECT = 'loc,dt,product_sales,transactions,healthy_count,unhealthy_count,dt_untilserve,dt_untilstore,dt_trans_cnt,dt_carsheld,dt_heldtime,fc_untilserve,fc_untilclosedrawer,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,proj_total_transactions,proj_sales_dollars,ly_product_sales,ly_transactions,actual_punched_hours,total_needed_hours,total_scheduled_hours';
   const PAGE = 1000;
-  const { count } = await supabase.from('qsr_daily_activity')
+  const { count, error: countError } = await supabase.from('qsr_daily_activity')
     .select('loc', { count: 'exact', head: true }).gte('dt', cutoffStr);
-  const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
-  const reqs = [];
-  for (let p = 0; p < pages; p++) {
-    reqs.push(() => supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
+  // #343 — a failed count here used to be silently dropped (only `count` was destructured),
+  // defaulting `pages` to 1 and capping this ~40-request fallback at the newest 1000 rows
+  // with no error surfaced anywhere. Same anti-pattern as _pagedParallel, hand-duplicated
+  // here rather than shared — fall back to fetchAll's sequential-until-short-page strategy
+  // for the same reason: it needs no upfront count, so it can't under-fetch from a bad one.
+  let data, failedPages = 0, pages;
+  if (countError) {
+    console.warn('[Meridian] qsr_daily_activity count query failed, falling back to sequential fetch:', countError.message || countError);
+    data = await fetchAll((from, to) => supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
       .order('dt', { ascending: false }).order('loc').order('hour_slot')
-      .range(p * PAGE, p * PAGE + PAGE - 1));
-  }
-  const settled = await Promise.allSettled(reqs.map(f => _limited(f)));
-  const data = []; let failedPages = 0;
-  for (const s of settled) {
-    if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
-    else failedPages++;
+      .range(from, to), PAGE, 'qsr act summary (hourly fallback)');
+    pages = Math.max(1, Math.ceil(data.length / PAGE));
+  } else {
+    pages = Math.max(1, Math.ceil((count || 0) / PAGE));
+    const reqs = [];
+    for (let p = 0; p < pages; p++) {
+      reqs.push(() => supabase.from('qsr_daily_activity').select(SELECT).gte('dt', cutoffStr)
+        .order('dt', { ascending: false }).order('loc').order('hour_slot')
+        .range(p * PAGE, p * PAGE + PAGE - 1));
+    }
+    const settled = await Promise.allSettled(reqs.map(f => _limited(f)));
+    data = [];
+    for (const s of settled) {
+      if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
+      else failedPages++;
+    }
   }
   if (failedPages) _recordDataError('qsr act summary (hourly fallback)', failedPages, pages, 'run supabase/schema-qsr-daily-summary.sql to replace ~40 requests with 1');
   const map = {};
@@ -2820,20 +2861,32 @@ export async function saveEmployeeSkills(employees, { source = 'lifelenz_people_
 export async function loadEmployeeSkills() {
   if (!supabase) return [];
   const PAGE = 1000;
-  const { count } = await supabase.from('employee_skills').select('loc', { count: 'exact', head: true });
-  const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
-  const reqs = [];
-  for (let p = 0; p < pages; p++) reqs.push(supabase.from('employee_skills').select('*').order('loc').order('employee').range(p * PAGE, p * PAGE + PAGE - 1));
-  const results = await Promise.all(reqs);
-  const out = [];
-  for (const res of results) {
-    if (res.error) { console.warn('[employee_skills] load error:', res.error.message); continue; }
-    for (const r of (res.data || [])) out.push({
-      employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
-      roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
-      skills: r.skills_json || {}, source: r.source, updatedAt: r.updated_at,
-    });
+  const { count, error: countError } = await supabase.from('employee_skills').select('loc', { count: 'exact', head: true });
+  // #343 — same anti-pattern as _pagedParallel: a failed count silently dropped `error` and
+  // defaulted `pages` to 1, capping the roster at the first 1000 rows (~19 of 27 stores per
+  // this function's own header comment) with no error surfaced. Fall back to fetchAll's
+  // sequential-until-short-page strategy, which needs no upfront count.
+  let rawRows;
+  if (countError) {
+    console.warn('[Meridian] employee_skills count query failed, falling back to sequential fetch:', countError.message || countError);
+    rawRows = await fetchAll((from, to) => supabase.from('employee_skills').select('*').order('loc').order('employee').range(from, to), PAGE, 'employee_skills');
+  } else {
+    const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
+    const reqs = [];
+    for (let p = 0; p < pages; p++) reqs.push(supabase.from('employee_skills').select('*').order('loc').order('employee').range(p * PAGE, p * PAGE + PAGE - 1));
+    const results = await Promise.all(reqs);
+    rawRows = [];
+    for (const res of results) {
+      if (res.error) { console.warn('[employee_skills] load error:', res.error.message); continue; }
+      rawRows.push(...(res.data || []));
+    }
   }
+  const out = [];
+  for (const r of rawRows) out.push({
+    employee: r.employee, loc: r.loc, homeStore: r.home_store, role: r.role,
+    roleCode: r.role_code, isPrimaryRole: r.is_primary_role, schoolCalendar: r.school_calendar,
+    skills: r.skills_json || {}, source: r.source, updatedAt: r.updated_at,
+  });
   return out;
 }
 
