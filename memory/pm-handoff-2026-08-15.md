@@ -91,14 +91,21 @@ causes stacked, found in order, each only visible once the one above it was remo
    never called the resolver; `grep -n opsLaborRows src/views/labor-tools.js` returned **one** hit,
    a comment on the *other* panel. Five metrics routed through `metricAvg`; `otCostEst`'s
    `hrs×0.5×rate` estimate retired (1647/1647 rows carry the real dollar figure).
-3. **Still open** — Labor % on At A Glance reads "No labor data" while Labor Analytics shows 22.47%.
-   Different cause: `laborPct`'s only non-manual source is the *emailed* `glimpseRows`.
-   **Needs `max(dt)` on `daily_glimpse_daily` measured before anyone writes code.** Hypothesis only.
+3. **#327 (open)** — Labor % on At A Glance reads "No labor data" while Labor Analytics shows
+   22.47%. Same *class* as #325, one layer down: #325 fixed a call site, this is the **registry
+   entry**. `laborPct` (`metric-source.js:89`) has three sources and **not one is API-pulled** —
+   `glimpseRows` is emailed, `ctrlRows`/`laborRows` are manual. It is the odd one out in its own
+   block (`tpph` leads with the DAR rollup, `otHrs` with `opsLaborRows`), and it runs against the
+   **API-over-email** standing rule. The atoms are already pulled daily: `qsr_labor_summary`
+   carries `grossDollars`, `qsr_sales_mix` carries `netSalesAmt`. Fix = a `derive` fallback,
+   `tpph`'s exact precedent.
 
-**#324 is deliberately left OPEN** pending the owner confirming real numbers on his screen. v5.020
-was correct and the panel still read `$0` — a correct trace and a green build are not the bar this
-thread set. Engineer verified against the *real* resolver on real rows (district 1.75 hrs/day,
-$5,134.63), which clears the non-zero bar but does not prove the render agrees.
+**#324 CLOSED 2026-08-15, owner-confirmed on his own screen** — `OT HRS/DAY 1.5`,
+`OT COST $24,352`, `ACT VS NEED +3 hrs`, and per-store OT cost varying store-by-store
+($1,358 / $773 / $457 / $392 / $173 / $73) with the colour thresholds firing. The per-store column
+is the real proof: it was `—` on **every** row before. Holding the issue open for his screen rather
+than closing it on the engineer's (correct, real-resolver) numbers was the right call — v5.020 had
+already been correct-and-still-broken once.
 
 Expected and **not** a failure: a store with genuinely $0 OT still renders `—` per-store, because
 that cell gates on `otCost>0`. Pre-dates #325, left alone on purpose. The district total
@@ -169,8 +176,21 @@ by `detected_at` ascending.
 
 #295 ✅ → #296 step 1 ✅ → #294 ✅ → #312 probe ✅ → #321 ✅ → #323 ✅ (+ backfill) → #325 ✅
 
-**Next three, in order: #292, #286, #269.** All three predate the OT thread that jumped the queue —
-the owner reporting a broken tile outranks the standing backlog, and did so twice.
+**Next: #327, then #292, #286, #269.** #327 goes first for the same reason the OT thread jumped the
+queue twice — the owner reporting a broken tile outranks the standing backlog. It is written
+dispatch-ready, with the blocking measurement stated as a stop condition rather than a suggestion:
+`max(date)` on `daily_glimpse_daily`, service-role, **before any code**. If Glimpse turns out
+current through Aug 15 the premise is refuted and the engineer must re-diagnose, not build anyway.
+
+**Note the column names differ across these tables** — `daily_glimpse_daily` uses `date`,
+`qsr_labor_summary` uses `dt`. Cost a round of 42703 errors; check before querying.
+
+**The PM environment cannot verify any of this.** Anon returns `[]` on `qsr_labor_summary`,
+`daily_glimpse_daily`, `cash_sheet_daily`, `sales_ledger_daily`. Confirmed that is RLS and not
+absence with the discriminating test — `qsr_labor_summary` returns `content-range: */0` for
+**2026-08-11**, a date #323 measured at 135 rows via service-role. **Run that test before treating
+any empty anon result as a finding**; it is two seconds and it is the difference between a
+measurement and a fabrication.
 
 **Held deliberately, do not dispatch:**
 - **#312 scope 4** (deleting the `QSRSOFT_TOKEN` / `QSRSOFT_COGNITO_TOKEN` secrets) — waits until
