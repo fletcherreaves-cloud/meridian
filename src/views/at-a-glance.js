@@ -33,6 +33,18 @@ const div=(p,...c)=>h('div',p,...c);
 const span=(p,...c)=>h('span',p,...c);
 const btn=(p,...c)=>h('button',p,...c);
 const tr=(p,...c)=>h('tr',p,...c);
+
+// #340 — Sales vs LY / Guest Count vs LY (and the avg-check-vs-LY figure that shares the
+// same suspect inputs) are a FALSE ALARM, not a real decline: DAR (qsr_daily_activity_rollup)
+// measures the district flat (Aug 3-11 ~$289K/day vs Aug 12-15 ~$286K/day, matching the
+// 6-week trend's own +0.5%-ish reading), while this comp shows -36.16%/-34.14% and paints a
+// red "Attention" flag that reads as a real collapse. Leading (unconfirmed, not chased here
+// per explicit instruction) suspect: $934,676 / $1,211,724 = 77.1%, suspiciously close to
+// 21/27 = 77.8% -- salesSec's totSales (this file, ~line 860) sums per store via
+// allLocs.includes(loc), so a DAR loc that matches no allLocs entry silently vanishes from
+// every downstream comp built off the same labInRange filter, current AND matched-LY alike.
+// Single flag, trivially reversible: flip to true once #340's root cause is actually fixed.
+const SHOW_VSLY_COMP_340 = false;
 const td=(p,...c)=>h('td',p,...c);
 const label=(p,...c)=>h('label',p,...c);
 const th=(p,...c)=>h('th',p,...c);
@@ -1767,8 +1779,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             );
 
           // Build signals
-          const svLY=sl?.salesVsLY;
-          const gcVLY=sl?.gcVsLY;
+          // #340 — svLY/gcVLY/avgCheckVsLY forced null while SHOW_VSLY_COMP_340 is off (see
+          // that flag's comment, top of file): these comps are a measured false alarm, not
+          // real data. Raw totals (sl.totSales/totGC/avgChk) are untouched and still shown.
+          const svLY=SHOW_VSLY_COMP_340?sl?.salesVsLY:null;
+          const gcVLY=SHOW_VSLY_COMP_340?sl?.gcVsLY:null;
+          const avgChkVLY=SHOW_VSLY_COMP_340?sl?.avgCheckVsLY:null;
           const labor=lb?.laborPct;
           const fobFC=fb?.pLFoodPct;
           const mape=projSec?.avgMape;
@@ -1776,15 +1792,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           const park=sv?.park;
 
           const signals=[
-            {icon:'💰',label:'Sales vs LY (comp)',
+            {icon:'💰',label:SHOW_VSLY_COMP_340?'Sales vs LY (comp)':'Sales (Period)',
              val:svLY!=null?(svLY>=0?'+':'')+(svLY*100).toFixed(2)+'%':'—',
              sub:sl?'$'+(sl.totSales/1000).toFixed(0)+'K total · '+(sl.totGC||0).toLocaleString()+' guests':'Load Operations Report',
              col:svLY==null?'var(--text3)':svLY>=0.01?'#10b981':svLY>=-0.03?'#f59e0b':'#ef4444',
              dot:svLY==null?'—':svLY>=0?'🟢':svLY>=-0.03?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('ranking:t2w')},
-            {icon:'👥',label:'Guest Count vs LY (comp)',
+            {icon:'👥',label:SHOW_VSLY_COMP_340?'Guest Count vs LY (comp)':'Guest Count (Period)',
              val:gcVLY!=null?(gcVLY>=0?'+':'')+(gcVLY*100).toFixed(2)+'%':'—',
-             sub:gcVLY!=null?'Check Avg: $'+(sl?.avgChk||0).toFixed(2)+(sl?.avgCheckVsLY!=null?' ('+(sl.avgCheckVsLY>=0?'+':'')+(sl.avgCheckVsLY*100).toFixed(2)+'% vs LY)':''):'No LY guest count data',
+             sub:sl?'Check Avg: $'+(sl.avgChk||0).toFixed(2)+(avgChkVLY!=null?' ('+(avgChkVLY>=0?'+':'')+(avgChkVLY*100).toFixed(2)+'% vs LY)':''):'No guest count data',
              col:gcVLY==null?'var(--text3)':gcVLY>=0?'#10b981':gcVLY>=-0.03?'#f59e0b':'#ef4444',
              dot:gcVLY==null?'—':gcVLY>=0?'🟢':gcVLY>=-0.03?'🟡':'🔴',
              nav:()=>onOpenModal&&onOpenModal('ranking:gc')},
@@ -1999,7 +2015,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             span({style:{fontSize:'11px',fontWeight:700,color:'var(--text)',flex:1}},'Sales & Guest Counts'),
             _spanTag(labInRange),
             span({style:{fontSize:'9px',color:'var(--amber)'}},'→'),
-            salesSec&&salesSec.salesVsLY!=null&&span({style:{fontSize:'10px',fontFamily:'var(--mono)',
+            SHOW_VSLY_COMP_340&&salesSec&&salesSec.salesVsLY!=null&&span({style:{fontSize:'10px',fontFamily:'var(--mono)',
               color:(salesSec.salesVsLY*100)>=0?'#10b981':'var(--crit)'}},
               ((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(2)+'% vs LY'),
             collBtn('sales')
@@ -2011,10 +2027,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 div({style:{fontSize:'16px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--amber)'}},
                   sFmt(salesSec.totSales)),
                 div({style:{fontSize:'8px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.5px'}},'Net Sales'),
-                salesSec.salesVsLY!=null&&div({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,
+                SHOW_VSLY_COMP_340&&salesSec.salesVsLY!=null&&div({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,
                   color:salesSec.salesVsLY>=0?'#10b981':'var(--crit)',marginTop:2}},
                   (salesSec.salesVsLY>=0?'+':'')+(salesSec.salesVsLY*100).toFixed(2)+'% vs LY'),
-                MktBadge({ok:salesSec.okSalesVsLY!=null?(salesSec.okSalesVsLY*100):null,
+                SHOW_VSLY_COMP_340&&MktBadge({ok:salesSec.okSalesVsLY!=null?(salesSec.okSalesVsLY*100):null,
                           fl:salesSec.flSalesVsLY!=null?(salesSec.flSalesVsLY*100):null,
                           fmt:v=>(v>=0?'+':'')+v.toFixed(2)+'%'})
               ),
@@ -2357,9 +2373,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           // Scores: 0-1 where 1.0 = at or better than target, 0 = significantly below
           const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v||0));
           const METRICS=[
+            // #340 — treat as no-data (neutral score, '—' display) while SHOW_VSLY_COMP_340
+            // is off, same as the Sales tile and Intelligence Summary: this comp is a
+            // measured false alarm, and a wedge scored near-zero from it is exactly the
+            // "wrong number that's trusted" this flag exists to prevent.
             {label:'Sales vs LY',short:'Sales',icon:'💰',angle:270,
-              score:salesSec?.salesVsLY!=null?clamp(0.5+(salesSec.salesVsLY*10),0,1):0.5,
-              display:salesSec?.salesVsLY!=null?((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(2)+'%':'—',
+              score:(SHOW_VSLY_COMP_340&&salesSec?.salesVsLY!=null)?clamp(0.5+(salesSec.salesVsLY*10),0,1):0.5,
+              display:(SHOW_VSLY_COMP_340&&salesSec?.salesVsLY!=null)?((salesSec.salesVsLY*100)>=0?'+':'')+((salesSec.salesVsLY||0)*100).toFixed(2)+'%':'—',
               hint:'Target: flat or better vs last year'},
             {label:'Service',short:'OEPE',icon:'⚡',angle:342,
               score:serviceSec?.oepe?clamp(150/serviceSec.oepe,0,1):0.5,
