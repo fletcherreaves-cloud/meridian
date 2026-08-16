@@ -533,6 +533,16 @@ Recorded because they are the cheapest thing a successor can inherit.
   vs `engine/schedule-summary.js`). **When two panels disagree on the same number from the same data,
   diff the two computations first.** Reasoning from the symptom is what the measure-don't-reason rule
   exists to stop, and a cross-issue resemblance is the most seductive form of it.
+- **⭐ Wrote "these five days are gone for good" about data that was sitting in another table.** #360
+  reported `sales_ledger_daily` empty for Aug 12–16 and framed it, twice, as permanently lost —
+  reasoning from the API-over-email rule's *"nothing recovers what was never emailed."* But that rule
+  is about the **stream**, not the **data**: the same PR that surfaced the gap (#347) had already
+  measured `qsr_sales_mix` holding **135 rows for the identical window**, and I quoted that number in
+  the same issue without connecting it. The owner corrected the whole class: *"If you detect anything
+  missing, you may simply back pull the data needed to close the gap. Should not keep coming up as an
+  issue."* **A gap in one stream is a work item, not a finding** — check whether a sibling API source
+  already covers it before writing a word about loss. The real finding was always the silent alarm
+  (#171), not the rows. CLAUDE.md's backfill rule now says this explicitly.
 - **⭐ The pattern behind most of this register, named.** Reasoning forward from a symptom to a cause
   has been near-worthless here — #337 alone burned seven refuted hypotheses. Asking *"what single
   query, grep, or diff would discriminate between the possibilities?"* has been reliable. The
