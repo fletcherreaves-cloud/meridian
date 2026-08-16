@@ -4,6 +4,7 @@ import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { generateSlideDeckHTML } from './scheduling-deck.js';
 import { metricDaily } from '../engine/metric-source.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { schedHrsOf, fcstHrsOf, normLaborPct } from '../engine/schedule-summary.js';
 
 const { useState, useMemo, useCallback } = React;
 
@@ -16,19 +17,23 @@ const { useState, useMemo, useCallback } = React;
 
 /**
  * Labor % is labor$/sales, so a rollup must be Σ(labor$)/Σ(sales) — i.e. weighted by
- * each day's sales, since labor$ = laborPct × sales.
+ * each day's sales, since labor$ = laborPct × sales. Also runs each day through
+ * schedule-summary.js's normLaborPct (#348) so a mid-day partial-day read (labor has
+ * accrued, that day's sales haven't landed — can show 400%+) can't dominate the
+ * average; dollar-weighting alone doesn't filter it out, since a garbage % is still
+ * multiplied by real sales dollars.
  */
 export function wAvgLaborPct(rows) {
   let num = 0, den = 0;
   for (const r of rows || []) {
-    const s = +r.sales || 0, lp = +r.laborPct || 0;
-    if (s > 0 && lp > 0) { num += lp * s; den += s; }
+    const s = +r.sales || 0, lp = normLaborPct(r.laborPct);
+    if (s > 0 && lp != null) { num += lp * s; den += s; }
   }
   if (den > 0) return num / den;
   // No sales on any row — a purely forward-looking schedule with no actuals yet.
   // Fall back to the plain mean so the card shows the schedule's own figure rather
   // than a misleading 0.
-  const v = (rows || []).map(r => +r.laborPct || 0).filter(x => x > 0);
+  const v = (rows || []).map(r => normLaborPct(r.laborPct)).filter(x => x != null);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
 }
 
@@ -448,8 +453,13 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
       const ta   = TA_DATA[loc] || {};
 
       const days = [...rows].sort((a,b) => a.date - b.date).map(r => {
-        const needHrs  = (r.needVLH || 0) + (r.fixGuideHrs || 0);
-        const schedHrs = (r.schVLH  || 0) + (r.schFixHrs   || 0);
+        // #348 — was (r.needVLH||0)+(r.fixGuideHrs||0) / (r.schVLH||0)+(r.schFixHrs||0):
+        // a private reimplementation that read the wrong field for the forecast leg
+        // (needVLH instead of projVLH) and omitted Floor hours on both legs, disagreeing
+        // with the reconciled Schedule Summary band on the identical rows. Now the same
+        // schedHrsOf/fcstHrsOf schedule-summary.js exports, so there is one definition.
+        const needHrs  = fcstHrsOf(r);
+        const schedHrs = schedHrsOf(r);
         const crewHrs  = r.crewHrs || 0;
         const sales    = r.sales   || 0;
         const tgtHrs   = tgt * sales / rate;
@@ -472,7 +482,10 @@ function OpportunityReport({ schedRows, laborRows, ctrlRows, glimpseRows, qsrAct
         excessVsTgt: a.excessVsTgt + d.excessVsTgt,
       }), { sales:0, needHrs:0, schedHrs:0, crewHrs:0, tgtHrs:0, controlled:0, excessVsTgt:0 });
 
-      const avgLaborPct = days.reduce((s,d) => s + d.laborPct, 0) / (days.length || 1);
+      // #348 — was a plain mean of daily labor%, no band filter: a single mid-day
+      // partial-day read (400%+) skewed a 7-day average by itself. wAvgLaborPct
+      // dollar-weights AND runs each day through normLaborPct's 3-70% band.
+      const avgLaborPct = wAvgLaborPct(days);
       const excessCost  = tot.excessVsTgt * rate;
       const controlCost = tot.controlled * rate;
       const actLaborPct = tot.sales > 0 ? (tot.crewHrs * rate / tot.sales * 100) : 0;
