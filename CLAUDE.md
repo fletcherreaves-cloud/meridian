@@ -276,6 +276,24 @@ actual code — this note nearly caused a duplicate reimplementation.
 - **FL stores (Emerald Arches):** Freeport, Mossy Head, Cottondale, Bonifay, DeFuniak Springs, Chipley-St.Rd.77, Ponce de Leon
 - **OK stores (MCDOK):** Tishomingo, Holdenville, Harrah, Tecumseh, Elgin, Marietta, Sulphur, Pauls Valley, Duncan, Ardmore, OKC-I-240/Sooner, Lindsay, Madill, Purcell, Seminole, Atoka, Ada, Durant, Chickasha, and others
   - Canonical mapping (`getStoreOrg`, `constants.js`): **MCDOK = Oklahoma, Emerald Arches = Florida.** (An earlier draft of this doc — and an `orgOf` helper in analytics.js — had these swapped; fixed v4.497.)
+- **⏰ THE BUSINESS DAY RUNS 4:00am → 4:00am** (owner-stated 2026-08-16). A calendar day is **not**
+  a business day. The 00:00–04:00 block belongs to the **previous** business day — that is when
+  overnight close, clean-up and late-night volume land. Treat this as a first-class fact about the
+  data, not a scheduling detail: **any metric that divides one atom by another must have both legs
+  on the same boundary**, or the ratio silently mixes two different days.
+  - This is already a live, measured bug — see **#330**. `laborPct`'s derive (v5.022) divides
+    `crew_labor_dollars` from `labor-summary`, pulled `compType:'calendar'`
+    (`qsrsoft-ops-pull.mjs:94`), by DAR `product_sales`, pulled `compType:'trading'`
+    (`qsrsoft-dar-pull.mjs:260`). With a 4am boundary that is a **4-hour offset on both ends**:
+    calendar day N's labor carries 00:00–04:00 of N (business day N−1) and omits 00:00–04:00 of
+    N+1 (business day N), while its sales cover 04:00 N → 04:00 N+1. Measured effect: 66 of 648
+    store-days off, mean **+0.0050**, skewed 58 positive / 8 negative, day-specific rather than
+    per-store — the shape a boundary offset predicts.
+  - **`compType: 'trading'` is believed to BE the 4am–4am business day and `'calendar'` the
+    midnight one — confirm before relying on it.** The 4am figure is owner-stated; the mapping onto
+    QSRSoft's parameter is inference.
+  - **Before adding any new derived metric, ask which boundary each input is on.** Both scripts
+    already use both values, so a mismatch is easy to introduce and invisible once shipped.
 - **LifeLenz Business ID:** `01979dbf-a166-759b-8702-aba9915c578e`
 - **Supabase URL:** from `VITE_SUPABASE_URL` env var
 - **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user. **Pronouns: he/him** (stated 2026-08-10 — use them; don't fall back to they/them)

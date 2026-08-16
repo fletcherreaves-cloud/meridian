@@ -118,11 +118,23 @@ causes stacked, found in order, each only visible once the one above it was remo
 4. **#330 (open)** — the residual 10.2%. `laborPct`'s derive divides a **calendar-day numerator by
    a trading-day denominator**: `labor-summary` pulls `compType:'calendar'`
    (`qsrsoft-ops-pull.mjs:94`), the DAR `daily-activity-raw` pulls `compType:'trading'`
-   (`qsrsoft-dar-pull.mjs:260`). Late-night volume straddling midnight lands in a different bucket
-   on each side, which matches the measured day-specific/store-spread pattern (66 misses over
-   25/27 stores, none at 100%). **The parameter mismatch is measured; it is NOT confirmed as the
-   cause of the + skew** (58/8), and store 31357 on 07-19 shows the numerator off on its own terms,
-   so there may be more than one cause. Test is one parameter and proven in-repo (`qtr-hr-sales`
+   (`qsrsoft-dar-pull.mjs:260`).
+
+   ⭐ **UPGRADED 2026-08-16 — the owner supplied the missing number: the business day runs
+   4:00am → 4:00am.** That turns an abstract "different buckets" story into a specific **4-hour
+   offset on both ends**: calendar day N's labor carries 00:00–04:00 of N (which belongs to
+   business day N−1) and omits 00:00–04:00 of N+1 (which belongs to business day N), while the
+   sales denominator covers 04:00 N → 04:00 N+1. The 00:00–04:00 block is overnight close/clean
+   and late-night volume — staffed but low-sales — so the mispairing is between blocks of
+   *unequal* labor-to-sales density, which is why the error is day-specific (heavier Fri/Sat
+   late-nights) rather than a fixed per-store offset. That is exactly the measured shape: 66 misses
+   over 25/27 stores, none at 100%, mean **+0.0050**, skewed 58 positive / 8 negative.
+   Now recorded in **CLAUDE.md's Organization Context** as a standing fact, not just a #330 detail.
+
+   **Still to confirm:** the 4am figure is owner-stated, but the claim that `compType:'trading'`
+   *is* that 4am–4am day (and `'calendar'` the midnight one) is **inference**. Verify before
+   relying on it. Also unchanged: store 31357 on 07-19 shows the numerator off on its own terms,
+   so the boundary may not be the only cause. Test is one parameter and proven in-repo (`qtr-hr-sales`
    uses `trading` in the same script). **Do not flip it in production first** — `compType` is
    shared by five sub-endpoints there, and three of them feed tiles that currently reconcile fine.
    Re-measure the 89.8% if it lands; that number lives in three files.
