@@ -116,6 +116,42 @@ describe('changelog / version', () => {
     expect([...new Set(dupes)], 'duplicate changelog versions').toEqual([]);
   });
 
+  // Dispatch14 — four PRs independently picked v5.029 and CI was green on every one of them,
+  // because this file only ever checked the two files agree with EACH OTHER, never that the
+  // version actually moved forward. A duplicate-versus-itself is invisible to a same-file dupe
+  // check when the collision is between BRANCHES, not within one branch's own array — each PR's
+  // CI only ever saw its own single new entry, and "no duplicate versions" only catches a repeat
+  // that's already IN that one array — it says nothing about whether the newest entry actually
+  // advanced past the one before it.
+  //
+  // Scoped to the LAST TWO entries only, not the whole array: the append-only convention (#230,
+  // 2026-08-12) guarantees the newest entry is always the last one, so that's the only pair that
+  // matters for "did this addition move the version forward" — and checking the whole array
+  // instead is actively wrong here, since real pre-#230 history is NOT in strictly increasing
+  // array order (confirmed: the unmodified array fails a whole-array monotonic check at entry 1,
+  // v5.003 after v5.004 — version numbers moved around before appends were ordered).
+  //
+  // Verified this goes red: temporarily appended a second entry with the SAME version as the
+  // (then-)newest one and confirmed this assertion fails (v5.031 not strictly greater than
+  // v5.031) — then reverted.
+  it('the newest MERIDIAN_CHANGELOG entry is strictly greater than the one before it', () => {
+    expect(versions.length, 'need at least 2 entries to check monotonicity').toBeGreaterThanOrEqual(2);
+    const prev = versions[versions.length - 2], newest = versions[versions.length - 1];
+    const [prevMaj, prevMin] = asNum(prev);
+    const [newMaj, newMin] = asNum(newest);
+    const increasing = newMaj > prevMaj || (newMaj === prevMaj && newMin > prevMin);
+    expect(increasing,
+      `newest entry v${newest} is not strictly greater than the previous entry v${prev} — ` +
+      'a duplicate or backwards version landed at the end of the append-only array'
+    ).toBe(true);
+  });
+
+  it('LATEST_CHANGELOG_ENTRY.version equals the LAST entry in MERIDIAN_CHANGELOG (append-only, so last == newest)', () => {
+    const latestVersionMatch = LATEST_SRC.match(/LATEST_CHANGELOG_ENTRY\s*=\s*\{version:'([0-9.]+)'/);
+    expect(latestVersionMatch, 'could not find LATEST_CHANGELOG_ENTRY.version').toBeTruthy();
+    expect(latestVersionMatch[1]).toBe(versions[versions.length - 1]);
+  });
+
   it('every entry has a version, an ISO date, and at least one change line', () => {
     const entries = [...DATA_BLOCK.matchAll(/\{version:'([0-9.]+)', date:'([^']*)'/g)];
     expect(entries.length).toBe(versions.length);

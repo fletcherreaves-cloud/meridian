@@ -650,14 +650,38 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return {...res,auto:(ds?.opsRows||[]).length===0};
   }),[ds?.opsRows?.length,ds?.glimpseRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsServiceRows?.length,effectiveDateRange]);
 
-  // Channel sales mix: manual labor channel rows merged with auto Sales Ledger,
-  // freshest-per-day (manual overrides the same day; ledger fills recent gaps).
+  // #dispatch11 — opsSalesMixRows (auto-pulled qsr_sales_mix, COLS_SALES_MIX in
+  // qsrsoft-ops-pull.mjs) carries the same channel breakdown as Sales Ledger but was pulled
+  // into ds and read by nothing — the Digital Sales tile fell back to "upload an Operations
+  // Report" while the real numbers already sat in the browser. Measured 2026-08-16: for
+  // Aug 12-16, sales_ledger_daily has ZERO rows in that window (the currently-wired auto
+  // source) while qsr_sales_mix has 135 (27 stores x 5 days, fully populated) — that gap is
+  // exactly why the tile was blank, not a missing pull. _loadOpsTable spreads the row's
+  // `metrics` JSONB directly, so the raw field names are qsr_sales_mix's own snake_case
+  // (kiosk_amt, net_sales_dthru_amt, ...), not this file's dtSales/bfSales/... convention —
+  // map them onto the SAME shape salesLedgerRows already produces so the existing
+  // mergeFresh/consumer code needs no changes downstream of this mapping.
+  const mixToChannelShape = r => ({
+    loc: r.loc, date: r.date,
+    sales: r.product_sales_amt, allNetSales: r.net_sales_amt,
+    dtSales: r.net_sales_dthru_amt, dtGC: r.net_sales_dthru_qty,
+    bfSales: r.net_sales_bfast_amt, bfGC: r.net_sales_bfast_qty,
+    delivSales: r.delivery_amt, delivGC: r.delivery_qty,
+    mopSales: r.mobile_amt, mopGC: r.mobile_qty,
+    kioskSales: r.kiosk_amt, kioskGC: r.kiosk_qty,
+    eatInSales: r.net_sales_eatin_amt, eatInGC: r.net_sales_eatin_qty,
+  });
+
+  // Channel sales mix: manual labor channel rows, freshest-per-day over TWO auto sources
+  // (Sales Ledger, then Sales Mix filling whatever Ledger doesn't cover) — manual overrides
+  // the same day; each auto layer fills the gaps the layer above it leaves.
   const channelRows = React.useMemo(()=>_mark('compute:channelRows',()=>{
     const lab=(ds?.laborRows||[]).filter(r=>r.dtSales||r.bfSales||r.mopSales||r.kioskSales);
     const led=(ds?.salesLedgerRows||[]);
-    const merged=mergeFresh(lab,led).filter(r=>inRange(r.date,effectiveDateRange));
-    return {rows:merged,auto:lab.length===0&&led.length>0};
-  }),[ds?.laborRows?.length,ds?.salesLedgerRows?.length,effectiveDateRange]);
+    const mix=(ds?.opsSalesMixRows||[]).map(mixToChannelShape);
+    const merged=mergeFresh(lab,mergeFresh(led,mix)).filter(r=>inRange(r.date,effectiveDateRange));
+    return {rows:merged,auto:lab.length===0&&(led.length>0||mix.length>0)};
+  }),[ds?.laborRows?.length,ds?.salesLedgerRows?.length,ds?.opsSalesMixRows?.length,effectiveDateRange]);
 
   // anyMode=true keeps 0 (and negative) values — for SIGNED/zero-legitimate fields (Cash O/S %,
   // T-Reds %, Discount %, Promo %: a real 0% is good news, not "no data"), matching
@@ -1417,9 +1441,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // Digital sales section useMemo
   const digitalSec=React.useMemo(()=>_mark('compute:digitalSec',()=>{
     // Channel breakdown (deliv/mop/kiosk) comes from channelRows = manual labor MERGED with the
-    // emailed Sales Ledger — NOT labInRange (labor + DAR), because the DAR has no channel split,
-    // so once manual labor stopped the tile read 0% digital (Notes: Jul-2026). Sales Ledger is
-    // the current channel source.
+    // emailed Sales Ledger and the auto-pulled Sales Mix — NOT labInRange (labor + DAR), because
+    // the DAR has no channel split, so once manual labor stopped the tile read 0% digital (Notes:
+    // Jul-2026). #dispatch11: Sales Ledger alone had gone empty for a real window (0 rows,
+    // 2026-08-12..16) while Sales Mix stayed fully populated for the same dates — Sales Mix is
+    // now the auto backstop for exactly the days Ledger doesn't cover.
     const chRows=channelRows.rows||[];
     if(!chRows.length)return null;
     const sm=allLocs.map(loc=>{

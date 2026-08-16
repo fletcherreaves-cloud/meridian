@@ -218,7 +218,7 @@ const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, loadOpsPeaksSales, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles } from '../lib/supabase.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
@@ -1429,21 +1429,28 @@ function App() {
           console.log(`[Meridian] ✓ Loaded cloud email reports — glimpse:${glimpse.length} cash:${cash.length} ledger:${ledger.length}`);
         }
       }catch(e){console.warn('[Meridian] Cloud email-report load failed:',e);} };
-      // Operations Report streams (#37) — Controls / Labor(OT) / Service / Sales-mix / 3 Peaks,
+      // Operations Report streams (#37) — Controls / Labor(OT) / Service / Sales-mix,
       // store-daily with LY, from the qsrsoft-ops-pull. Loaded into ds for the tile-wiring phase
-      // (ctrlAuto discount%/T-Reds, OT, service, etc.). Fails soft before the tables exist/populate.
+      // (ctrlAuto discount%/T-Reds, OT, service, Digital Sales, etc.). Fails soft before the
+      // tables exist/populate.
+      // #dispatch11: loadOpsPeaksSales (3 Peaks daypart sales by channel, qsr_peaks_sales) was
+      // dropped from this eager load — measured zero consumers anywhere in src/ outside this
+      // call site and its own loader, so every session was paying startup time + egress to
+      // parse ~4,938 unused rows (CLAUDE.md treats that as a real cost, not a formality). The
+      // pull/schema/loader are untouched and ready — reintroduce this call (or route it through
+      // metric-source.js's LAZY_FILL_SOURCES, matching auditRows/wasteRows) if/when a panel is
+      // built to consume it. Filed as #345.
       const _stOpsReportStream = async () => {
       try{
-        const [oCash,oLabor,oSvc,oMix,oPeaks]=await Promise.all([
-          loadOpsCashSheet(60),loadOpsLaborSummary(60),loadOpsServiceStats(60),loadOpsSalesMix(60),loadOpsPeaksSales(60)]);
-        if(oCash.length||oLabor.length||oSvc.length||oMix.length||oPeaks.length){
+        const [oCash,oLabor,oSvc,oMix]=await Promise.all([
+          loadOpsCashSheet(60),loadOpsLaborSummary(60),loadOpsServiceStats(60),loadOpsSalesMix(60)]);
+        if(oCash.length||oLabor.length||oSvc.length||oMix.length){
           setDs(prev=>{if(!prev)return prev;return{...prev,
             ...(oCash.length?{opsCashRows:oCash}:{}),
             ...(oLabor.length?{opsLaborRows:oLabor}:{}),
             ...(oSvc.length?{opsServiceRows:oSvc}:{}),
-            ...(oMix.length?{opsSalesMixRows:oMix}:{}),
-            ...(oPeaks.length?{opsPeaksRows:oPeaks}:{})};});
-          console.log(`[Meridian] ✓ Ops Report streams — cash:${oCash.length} labor:${oLabor.length} svc:${oSvc.length} mix:${oMix.length} peaks:${oPeaks.length}`);
+            ...(oMix.length?{opsSalesMixRows:oMix}:{})};});
+          console.log(`[Meridian] ✓ Ops Report streams — cash:${oCash.length} labor:${oLabor.length} svc:${oSvc.length} mix:${oMix.length}`);
         }
       }catch(e){console.warn('[Meridian] Ops Report stream load failed:',e);} };
       // Load cross-device user settings (locked projections, AE calibration params)
