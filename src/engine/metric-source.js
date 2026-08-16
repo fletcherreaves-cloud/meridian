@@ -86,7 +86,35 @@ export const METRIC_SOURCES = {
   // Glimpse is independently confirmed genuinely punched and auto/cloud-fresh (no upload lag), so
   // ordering it first gets today's best available number without waiting on a re-upload, and
   // costs nothing once ctrlRows data is clean again (both sources should then agree).
-  laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']] },
+  // laborDollar — crew (punched, hourly) labor $, the numerator laborPct's derivation below
+  // needs. Auto-pulled from the Operations Report labor-summary stream (qsr_labor_summary ->
+  // loadOpsLaborSummary, aliased crew_labor_dollars -> laborDollar, #327). mode:'pos' — a real
+  // operating day never has $0 crew labor; a 0 here means the row is missing, not that the
+  // store ran on zero hours.
+  laborDollar: { mode: 'pos', srcs: [['opsLaborRows', 'laborDollar']] },
+  // Labor % (#327) — closes the gap where the only 3 sources are emailed/manual (glimpseRows is
+  // forward-only from 2026-07-01, ctrlRows/laborRows go stale the moment uploads stop), so a
+  // window past the Glimpse floor with no manual upload resolved null district-wide (At A
+  // Glance's "No labor data"), even though Labor Analytics' 4-week window (inside the Glimpse
+  // floor) showed a real number. Derived = crew labor $ ÷ sales, where `sales` already resolves
+  // DAR product_sales first (supabase.js's loadQsrActSummary, `sales: r.product_sales`) — NOT
+  // net sales, which the fraction is NOT reconcilable against (see below). Both legs (numerator
+  // AND denominator) were wrong in the initial approach and had to be corrected against real
+  // data before this landed:
+  //   - Numerator: gross_dollars (total labor incl. salaried managers) does NOT reconcile —
+  //     only crew_labor_dollars (punched/hourly only) does, matching this chain's existing
+  //     3 sources which are all the crew-only "Punched Labor %" (see loadOpsLaborSummary).
+  //   - Denominator: net_sales_amt does NOT reconcile (systematic ~0.2-0.3pp low bias) —
+  //     product_sales_amt does.
+  // Reconciled crew_labor_dollars/DAR-sales against Daily Glimpse's real labor_pct on 12
+  // store-days spanning 4 stores, 2026-08-16 (service-role read): 11/12 matched to 4 decimals,
+  // 1 outlier +0.0057 (store 5183, 2026-08-05) not investigated further — single-day, doesn't
+  // change the verdict. Unit convention confirmed fraction (0-1), not percent (0.2428, not
+  // 22.47) — glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every
+  // render site multiplies by 100 before display (labor-tools.js). A derive returning d/s*100
+  // would have shipped a number 100x too large.
+  laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
+               derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null) } },
   tpph:      { mode: 'pos', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
                     derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null) } },
   // TPPH = transactions ÷ actual hours. TRANSACTIONS AND GUEST COUNTS ARE THE SAME THING

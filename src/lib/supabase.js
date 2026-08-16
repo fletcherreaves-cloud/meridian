@@ -2239,9 +2239,14 @@ export const loadOpsCashSheet = async (d = 45) => {
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that
 // look for those names (AAG Labor, EOM Supervisor) can read the auto stream with no manual upload (#37).
+// laborDollar (#327) aliases crew_labor_dollars, NOT gross_dollars — gross_dollars includes
+// salaried_manager_dollars (verified store 6178, where they differ by exactly that column: gross
+// 2978.60 vs crew 2661.50, diff 317.10), and the headline Punched Labor % this feeds is crew-only
+// (parsers/index.js's punchLaborPct). Reconciled crew_labor_dollars/DAR-product-sales against
+// Daily Glimpse's real punched labor_pct on 12 store-days (2026-08-16): 11/12 matched to 4 decimals.
 export const loadOpsLaborSummary = async (d = 45) => {
   const rows = await _loadOpsTable('qsr_labor_summary', d);
-  return rows.map(r => ({ ...r, otHrs: Number(r.over_time_total_hours) || 0, otDollar: Number(r.over_time_total_dollars) || 0 }));
+  return rows.map(r => ({ ...r, otHrs: Number(r.over_time_total_hours) || 0, otDollar: Number(r.over_time_total_dollars) || 0, laborDollar: Number(r.crew_labor_dollars) || 0 }));
 };
 // Service stats → derive the composed metrics the AAG/One-Pager read (the raw fields are already flat
 // on the row via _loadOpsTable). This is the cloud-fresh source that fills KVS (the DAR carries MFY
