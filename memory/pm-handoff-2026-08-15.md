@@ -186,6 +186,26 @@ distinguishes null from zero correctly. Next null-vs-zero pass should convert th
 | **#296 step 2** + **#303** | Remaining ~265 white-alpha sites; `actVsNeed` sourcing | **dispatched 08-15**, land together |
 | **#311** | Fallback masks token expiry | **superseded in part by #312** — do #312 first |
 | **#306** | Bullseye dark-mode tab | ✅ closed via #301 |
+| **#348** | Scheduling/Opportunity Need+Scheduled+Labor% all wrong | **root-caused 08-16**, dispatch #12 |
+
+**#348 is root-caused — it is a formula diff, not a debugging job.** `views/scheduling.js` and
+`engine/schedule-summary.js` compute the same three figures from the same `schedRows`, differently.
+Schedule Summary is right (tested against LifeLenz); Opportunity is wrong three ways:
+`schedHrs` omits `schFloor` (`:452`); `needHrs` uses `needVLH` where the forecast is `projVLH` **and**
+omits `projFloor` (`:451`); `avgLaborPct` (`:475`) is a plain mean of daily percentages with no
+`normLaborPct` 3–70% band, so one mid-day partial row (labor accrued, sales not yet landed → 400%+)
+produces the 655.24% on screen. Duncan `0029760`, week of Aug 12: Need **705 vs 1541**, Scheduled
+**2204 vs 2329**, Labor % **655.24% vs 23.35%**.
+
+The fix is to **export `schedHrsOf`/`fcstHrsOf`/`normLaborPct` from the engine and import them** — not
+to patch three lines. Two panels disagreeing on the same number from the same rows *is* the defect, and
+this file already proves a private copy doesn't hold: `wAvgLaborPct` sits at `scheduling.js:22`,
+written for exactly this, exported, and not called by the broken line 45 lines below it.
+
+**Contaminated by it:** `distTot` (`:484`) → the district story (`+$207,944`, `27 stores over target`),
+and `scheduling-deck.js:59-63` renders those totals into the **exported slide deck**, so wrong numbers
+have been leaving the app. **Separate, file it:** `TA_DATA` (`scheduling.js:55`) is a hardcoded
+"Jun 1–28, 2026" literal — the source of `2,455 missed shifts`, and it will read as current forever.
 
 **#296 step 2 is not the low-urgency half, and the reason is an identity, not a threshold.**
 White-alpha over a white surface *is* that surface, so every alpha from `.01` to `.85` composites to
@@ -506,6 +526,19 @@ Recorded because they are the cheapest thing a successor can inherit.
   found it in three files, and almost reported the fix as incomplete — the engineer had kept it as a
   *documented retraction* ("an earlier draft reported a tautological 192/192"), which is the practice
   this register itself recommends. **Read the context around a grep hit before calling it drift.**
+- **Floated a shared-cause theory between #348 and #340 before looking at either file.** Guessed the
+  Scheduling panel was dropping a subset of stores, the way #340's tile does. The owner refuted it in
+  one screenshot — Schedule Summary shows all 27 stores sane on the same rows. Fifteen minutes later a
+  plain `grep` of the two files produced the actual cause (three formula differences, `scheduling.js`
+  vs `engine/schedule-summary.js`). **When two panels disagree on the same number from the same data,
+  diff the two computations first.** Reasoning from the symptom is what the measure-don't-reason rule
+  exists to stop, and a cross-issue resemblance is the most seductive form of it.
+- **⭐ The pattern behind most of this register, named.** Reasoning forward from a symptom to a cause
+  has been near-worthless here — #337 alone burned seven refuted hypotheses. Asking *"what single
+  query, grep, or diff would discriminate between the possibilities?"* has been reliable. The
+  difference is not effort or care; it is which question gets asked first. **Ask the discriminating
+  question before forming the theory, and when a theory dies, the next step is a measurement — not
+  another theory.**
 
 ---
 
