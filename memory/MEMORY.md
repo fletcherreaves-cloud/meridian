@@ -3,6 +3,31 @@
 > Read this to discover what's documented. **Newest work is at the top.** When resuming a
 > session, read the most-recent handoff first, then the relevant thread files.
 
+## 🛑 BEFORE YOU THEORIZE ABOUT DATA — these questions are already answered
+
+**Added 2026-08-16 because rediscovery, not bugs, was the largest single cost of that day's work.**
+Three separate re-derivations in one day, each of an answer already sitting in this directory:
+`#243` re-proposed from scratch what `#327` then built (four days apart, same two atoms); a PM
+day-boundary theory was written into CLAUDE.md and refuted an hour later by a file from 08-07; and
+`#330`/`#331` were filed twice, twelve seconds apart, by two agents who couldn't see each other.
+
+None of that was carelessness. **`dar-vs-ops-reconciliation.md` was not in this index** — 43 of 124
+memory files weren't. The answer existed and nothing pointed at it.
+
+| If you are about to ask… | Read this FIRST | It already says |
+|---|---|---|
+| "Is the DAR aligned to the 4am business day?" | [dar-vs-ops-reconciliation.md](dar-vs-ops-reconciliation.md) | **Yes — measured 08-07.** `hour_slot` runs `05:00→28:00` = 04:00→04:00. Boundary RULED OUT as the cause of DAR-vs-Ops deltas. Also: deltas are ~0.01% **only on days with a complete 24 slots** |
+| "Which labor % basis do we use, and does it include managers?" | [project-labor-pct-punched-vs-crew.md](project-labor-pct-punched-vs-crew.md) | Standardized on **Punched (all-hourly)** so FL and OK compare like-for-like. Crew Labor % silently includes salaried-manager $ where a store is configured that way (**FL is, OK isn't**). *"Read before touching any labor-basis code"* |
+| "What's the 4am cutover helper?" | `src/utils/date.js:101,117` (code, not memory) | `businessDate()` / `lastClosedBusinessDay()`. Consolidated after recurring **five times** as signature #4 — see [plan-data-integrity-sweep.md](plan-data-integrity-sweep.md). Never re-derive inline |
+| "Can I verify this from a sandbox session?" | [feedback-verification-in-sandbox.md](feedback-verification-in-sandbox.md) | The working Playwright/Chromium recipe, the CORS hard stop, and the merge-resolution class the suite does NOT catch |
+| "Is this metric averaged correctly?" | [weighted-rollup-audit.md](weighted-rollup-audit.md) | Full average-of-averages sweep — what was fixed, what was already right, what was left alone and why |
+| "Does the hourly projection have a known bias?" | [project-hourly-projection-accuracy.md](project-hourly-projection-accuracy.md) | Corroborates the 4am/`hour_slot` mapping independently (`:81`) |
+
+**The discipline this encodes:** CLAUDE.md's *"check whether an affordance already exists before
+adding one"* covers code. It applies just as hard to **explanations**. Search `memory/` and
+`src/utils/` before writing a mechanism into any durable doc — the grep that refutes you costs
+seconds, and the theory that survives one costs a PR.
+
 ## ⭐ READ FIRST — latest handoff & vision
 - **⭐ [PM handoff 2026-08-15](pm-handoff-2026-08-15.md)** — **NEWEST. Start here if you are taking the
   PM seat.** The PM/engineer arrangement and its disciplines, the live PR board (#298/#301/#297 awaiting
@@ -189,5 +214,63 @@
   the close-button/header pattern app-wide. See [[vision-and-roadmap]] Workstream D and [[notes-63-queue]].
 - [PWA Share bug](project-pwa-share-bug.md) · [Backlog](project-backlog.md) · [Meridian status](project-meridian.md)
 
+## 📇 Previously unindexed (added 2026-08-16)
+
+**43 of 124 files were on disk but absent from this index** — measured, not estimated
+(`comm -23` of the directory against every `.md` referenced here). Descriptions below are each
+file's own front-matter, not a summary written after the fact. Several are cross-referenced above
+in the "before you theorize" table because their absence has already cost real work.
+
+### Data reconciliation & measurement
+- [dar-vs-ops-reconciliation.md](dar-vs-ops-reconciliation.md) — why DAR-derived totals differ from the manual Ops Report, what was ruled out (**the 4am boundary WAS**), and why auto-first is still correct
+- [project-labor-pct-punched-vs-crew.md](project-labor-pct-punched-vs-crew.md) — Notes 35: Labor % standardized on Punched; Crew silently includes salaried-manager $ (FL yes, OK no)
+- [project-hourly-projection-accuracy.md](project-hourly-projection-accuracy.md) — tracks whether QSRSoft/LifeLenz hourly projections are systematically biased
+- [weighted-rollup-audit.md](weighted-rollup-audit.md) — average-of-averages sweep, incl. what was deliberately left alone for want of a weighting basis
+- [metric-inventory-2026-08-07.md](metric-inventory-2026-08-07.md) · [reference-r2p-formula.md](reference-r2p-formula.md) — R2P reconciled to the penny · [notes-57-metric-registry-plan.md](notes-57-metric-registry-plan.md)
+- [project-noise-measurement-237.md](project-noise-measurement-237.md) · [project-labor-pct-tail-236.md](project-labor-pct-tail-236.md) — the 994 nulled rows (#243)
+- [store-events-material-changes.md](store-events-material-changes.md) — the legitimate-gap ground truth #269's tolerance list is built on
+- [project-pull-completeness-263-265.md](project-pull-completeness-263-265.md) — #263 makes a pull say so when it KNOWS it failed; #265 catches the gaps a pull never saw at all (QSRSoft had no row, nothing threw, success was reported truthfully). Neither substitutes for the other — **neither the Sulphur nor the Marietta outage would have been caught by #263 alone**
+
+### QSRSoft / pulls / auth
+- [project-qsrsoft-cognito-auth-312.md](project-qsrsoft-cognito-auth-312.md) — the #312/#323 token conversion + backfill record
+- [project-product-mix-291.md](project-product-mix-291.md) — #292's design notes and next-session ordering
+- [data-acquisition-shopping-list.md](data-acquisition-shopping-list.md) — every candidate endpoint, incl. addenda K (Product Outage) and L (Menu Price Comparison)
+- [reference-shift-manager-summary.md](reference-shift-manager-summary.md) — per-daypart manager-on-duty attribution · [qsrsoft-kb-digest.md](qsrsoft-kb-digest.md)
+
+### Security / RLS / infra
+- [rls-table-audit-119.md](rls-table-audit-119.md) — full 82-table RLS audit; one real gap, one non-reproduction
+- [session-2026-08-07-perf-and-rls.md](session-2026-08-07-perf-and-rls.md) — cold start 183s→59s, per-loc RLS after a rollback, **seven wrong assumptions caught by live queries**
+- [project-security-notes.md](project-security-notes.md) — accepted-risk vs needs-fix tracker
+- [attribution-validity-register-login.md](attribution-validity-register-login.md) · [project-salaried-coverage-guard-242.md](project-salaried-coverage-guard-242.md)
+
+### Design & product threads
+- [project-coaching-feedback-loop.md](project-coaching-feedback-loop.md) — the loop that turns Meridian from reporting into management
+- [project-events-redesign.md](project-events-redesign.md) · [project-inventory-control-redesign.md](project-inventory-control-redesign.md) — both owner-signed-off designs
+- [project-insight-ledger.md](project-insight-ledger.md) · [project-food-cost-labor-enhancements.md](project-food-cost-labor-enhancements.md) — the two P&L lines that are ~50% of sales
+- [project-org-structure.md](project-org-structure.md) — supervisor→store, data-driven since v4.570, incl. the retroactive-attribution caveat
+- [project-eom-scoreboard-notify.md](project-eom-scoreboard-notify.md) · [project-scoring-revisit.md](project-scoring-revisit.md) — a MEASURED divergence between two Model Health scorers
+- [spine1-panel-controls-126.md](spine1-panel-controls-126.md) · [project-mcvalue-2-fbp-document.md](project-mcvalue-2-fbp-document.md)
+- [project-sage-knowledge-grounding.md](project-sage-knowledge-grounding.md) — the handling-notice gate #269 deliberately did not bypass · [project-sage-manual-sourcing-270.md](project-sage-manual-sourcing-270.md)
+
+### Process, capacity & planning
+- [systemic-issues-and-next-phase.md](systemic-issues-and-next-phase.md) — **four recurring bug classes measured from 977 commits**, and the structural fix for each
+- [plan-backlog-and-redesign-2026-08-15.md](plan-backlog-and-redesign-2026-08-15.md) — how the open issues collapse into a working order
+- [feedback-verification-in-sandbox.md](feedback-verification-in-sandbox.md) — what a sandbox session can and cannot prove
+- [benchmark-daily-readiness.md](benchmark-daily-readiness.md) — read before quoting any readiness number
+- [capacity-and-onboarding-review.md](capacity-and-onboarding-review.md) — how many users can onboard today, and what must land first
+- [mac-session-todo-2026-08-06.md](mac-session-todo-2026-08-06.md) — items that require the owner at a Mac
+- [finding-padding-and-cash-hunt-2026-08-13.md](finding-padding-and-cash-hunt-2026-08-13.md)
+
+### Owner notes queues
+- [notes-33-queue.md](notes-33-queue.md) · [notes-54-56-triage.md](notes-54-56-triage.md) · [notes-66-bullseye-and-state-of-business.md](notes-66-bullseye-and-state-of-business.md) · [notes-66-staged-experiments-and-risk.md](notes-66-staged-experiments-and-risk.md)
+
 ---
 *Index maintenance: when adding a memory file, add it here. Newest handoff always pinned at top.*
+*Drift check — run it, don't trust the habit:*
+```
+comm -23 <(ls memory/*.md | xargs -n1 basename | grep -v '^MEMORY.md$' | sort) \
+         <(grep -o '[a-z0-9-]*\.md' memory/MEMORY.md | sort -u)
+```
+*Empty output = index complete. It printed **43 filenames** on 2026-08-16 and is empty as of that
+fix (125 files, 125 referenced). An index nobody can verify drifts back — run this, don't trust
+the habit of "I added it."*
