@@ -246,7 +246,7 @@ function LockHistoryPanel({stores, onClose}) {
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},rows.length+' events · last 500 kept')
         ),
         btn({className:'btn btn-sm',onClick:exportCSV},'⬇ CSV'),
-        btn({className:'btn btn-sm',style:{color:'#f87171'},onClick:clearHistory},'🗑 Clear'),
+        btn({className:'btn btn-sm',style:{color:'var(--crit)'},onClick:clearHistory},'🗑 Clear'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
       div({style:{display:'flex',gap:6,padding:'7px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,alignItems:'center',flexWrap:'wrap'}},
@@ -1060,7 +1060,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
       ),
       td({style:{padding:'1px 4px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,color:'#60a5fa',borderLeft:'.5px solid var(--bdr)'}},f$(gcaTot)),
       td({style:{padding:'1px 4px',textAlign:'right',fontSize:'8px',color:'var(--text3)'}},
-        span({style:{fontSize:'8px',color:+diff>=0?'#10b981':'#f87171'}},
+        span({style:{fontSize:'8px',color:+diff>=0?'#10b981':'var(--crit)'}},
           (+diff>=0?'+':'')+diff+'% vs LY model')),
       td()
     );
@@ -1175,7 +1175,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         lyTotal>0?f$(Math.round(lyTotal)):'—'),
       // vs LY %
       td({style:{padding:'4px 8px',textAlign:'right',fontSize:'9px',
-        color:vsLY!=null?(+vsLY>=0?'#10b981':'#f87171'):'var(--text3)',fontWeight:vsLY!=null?600:400}},
+        color:vsLY!=null?(+vsLY>=0?'#10b981':'var(--crit)'):'var(--text3)',fontWeight:vsLY!=null?600:400}},
         vsLY!=null?((+vsLY>=0?'+':'')+vsLY+'% vs LY'):'—'),
       // Actions
       td({style:{padding:'2px 6px',whiteSpace:'nowrap'}},
@@ -1792,10 +1792,10 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                                         )
                                       : '—'),
                                   td({style:{padding:'3px 6px',textAlign:'right',fontSize:'9px',
-                                    color:vsLY!=null?(+vsLY>=0?'#10b981':'#f87171'):'var(--text3)'}},
+                                    color:vsLY!=null?(+vsLY>=0?'#10b981':'var(--crit)'):'var(--text3)'}},
                                     vsLY!=null?((+vsLY>=0?'+':'')+vsLY+'%'):'—'),
                                   td({style:{padding:'3px 6px',textAlign:'right',
-                                    color:r.trend>=0?'#10b981':'#f87171'}},
+                                    color:r.trend>=0?'#10b981':'var(--crit)'}},
                                     r.trend!=null?((r.trend>=0?'+':'')+( r.trend*100).toFixed(2)+'%'):'—'),
                                   td({style:{padding:'3px 6px',textAlign:'right',color:'var(--text3)'}},
                                     r.opsFactor!=null?r.opsFactor.toFixed(3):'—'),

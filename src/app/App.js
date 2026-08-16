@@ -516,7 +516,7 @@ function UploadSummaryModal({ report, onClose }) {
         errored && errored.length ? ` · ${errored.length} errored` : ''),
       collision && h('div', { style: { fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,.1)', border: '1px solid rgba(245,158,11,.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 } },
         `⚠ Fewer files were delivered than you likely selected — the browser collapsed some identically-named "eu065119 (N).pdf" files. Upload one folder (and a few files) at a time so every month lands.`),
-      saveErrs && saveErrs.length ? h('div', { style: { fontSize: 11, color: '#f87171', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 } },
+      saveErrs && saveErrs.length ? h('div', { style: { fontSize: 11, color: 'var(--crit)', background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 } },
         h('div', { style: { fontWeight: 700, marginBottom: 2 } }, '⚠ Parsed, but NOT saved to the cloud'),
         `These will vanish on reload / other devices. Cause: ${saveErrs.join('; ')}. `,
         /relation|does not exist|schema cache|find the table/i.test(saveErrs.join(' ')) ? 'Run the smg_voice_daypart SQL block in Supabase, then re-upload.' : '') : null,
@@ -524,7 +524,7 @@ function UploadSummaryModal({ report, onClose }) {
         h('div', { style: { fontWeight: 600 } }, l.label, h('span', { style: { color: 'var(--text3)', fontWeight: 400 } }, `  ·  ${l.files} file${l.files === 1 ? '' : 's'}`)),
         h('div', { style: { color: 'var(--text3)', textAlign: 'right', maxWidth: 220 } }, l.months && l.months.length ? l.months.join(', ') : '—'))),
       skipped && skipped.length ? h('div', { style: { fontSize: 11, color: 'var(--text3)', marginTop: 10 } }, `Skipped ${skipped.length} period-summary file(s).`) : null,
-      errored && errored.length ? h('div', { style: { fontSize: 11, color: '#f87171', marginTop: 6, lineHeight: 1.5 } },
+      errored && errored.length ? h('div', { style: { fontSize: 11, color: 'var(--crit)', marginTop: 6, lineHeight: 1.5 } },
         h('div', { style: { fontWeight: 700, marginBottom: 2 } }, `Could not read ${errored.length} file(s):`),
         errored.map((e, i) => h('div', { key: i, style: { marginTop: 4 } },
           `${typeof e === 'string' ? e : e.name}`,
@@ -2870,7 +2870,7 @@ function App() {
               {t:'4. Review FOB Analysis',d:'Open FOB Analysis from the toolbar. Root-Cause Priority Matrix shows the highest-dollar coaching opportunities ranked by store + component. Focus on the top 3 items first.'},
               {t:'5. Generate Intelligence Briefs',d:'From any store: Intelligence Brief tab → Generate. For your weekly district review, use GM Coaching Letters to generate store-specific letters for each manager.'},
             ]},
-            {day:'MONTHLY (By the 15th of prior month)',color:'#f87171',items:[
+            {day:'MONTHLY (By the 15th of prior month)',color:'var(--crit)',items:[
               {t:'1. Lock the monthly projection',d:'Open Projections → set Period to Month. Review all stores monthly totals with weekly sub-totals. Approve all stores. Deadline: 15th of the prior month.'},
               {t:'2. Calibrate all forecast models',d:'Dialed-In panel → Calibrate All. Updates every store model with latest 6+ weeks of actuals. Run monthly or whenever a store\'s MAPE is trending up. Takes ~15 seconds for all 27 stores.'},
               {t:'3. Review Channel Intelligence',d:'Open Channel Intel from the toolbar. Review Breakfast, MOP, Kiosk, and Delivery mix per store vs district average. Stores with unusually low digital mix may be missing sales opportunities.'},

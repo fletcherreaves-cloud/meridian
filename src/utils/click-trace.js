@@ -292,7 +292,7 @@ export function initClickTrace() {
             if (_tasks.length > MAX_ENTRIES) _tasks.shift();
             if (entry.duration >= 200) {
               console.log(`%c[click-trace] ${Math.round(entry.duration)}ms blocked  ←  ${near ? _lastClick.label : 'no recent click'}`,
-                'color:#f87171');
+                'color:var(--crit)');
             }
           }
         }).observe({ entryTypes: ['longtask'] });

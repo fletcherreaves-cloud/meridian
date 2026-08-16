@@ -151,7 +151,7 @@ Be specific, quantitative, and direct. This is for a district manager who knows 
       '⚠ Add your Anthropic API key in Settings → AI & Integrations to enable this feature.'),
 
     error&&div({style:{background:'rgba(239,68,68,.08)',border:'.5px solid rgba(239,68,68,.3)',
-      borderRadius:'var(--r)',padding:'10px 14px',fontSize:'10px',color:'#f87171',marginBottom:10}},error),
+      borderRadius:'var(--r)',padding:'10px 14px',fontSize:'10px',color:'var(--crit)',marginBottom:10}},error),
 
     !insights&&!loading&&!error&&div({style:{color:'var(--text3)',fontSize:'11px',textAlign:'center',padding:'32px 16px',
       border:'.5px dashed var(--bdr)',borderRadius:'var(--rl)',marginBottom:10}},
@@ -613,7 +613,7 @@ function MetricCorrelationExplorer({stores, ds, settings, onClose}) {
                 h('td',{style:{padding:'4px 8px',color:'var(--text3)',fontSize:'8px'}},srcLabel(c.src)),
                 h('td',{style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},c.n),
                 h('td',{style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
-                  color:c.r>0?'#34d399':'#f87171'}},(c.r>0?'+':'')+c.r.toFixed(3)),
+                  color:c.r>0?'#34d399':'var(--crit)'}},(c.r>0?'+':'')+c.r.toFixed(3)),
                 h('td',{style:{padding:'4px 8px',textAlign:'right',
                   color:c.sig==='strong'?'#34d399':c.sig==='sig'?'#f59e0b':'var(--text3)',fontSize:'9px'}},
                   c.sig==='strong'?'● Statistically strong':c.sig==='sig'?'● Significant':'○ Weak / unclear')
@@ -658,7 +658,7 @@ function DistrictLensPanel({stores, ds, settings, onClose}) {
     if(r===null||Math.abs(r)<0.05) return 'rgba(255,255,255,.05)';
     const abs=Math.min(Math.abs(r)/0.65,1);
     const alpha=0.1+abs*0.8;
-    return r>0?`rgba(52,211,153,${alpha})`:`rgba(248,113,113,${alpha})`;
+    return r>0?`rgba(52,211,153,${alpha})`:`rgba(244,63,94,${alpha})`;
   };
 
   const fmtVal = (pid,v)=>{
@@ -757,7 +757,7 @@ Tone: practical, direct, written for a district manager presenting to a field co
       'Each cell shows the Pearson correlation (r) between an ops metric and your selected outcome across the last 90 days for that store. ',
       span({style:{fontWeight:600,color:'#10b981'}},'Green'),
       ' = positive link (metric goes up → outcome goes up). ',
-      span({style:{fontWeight:600,color:'#f87171'}},'Red'),
+      span({style:{fontWeight:600,color:'var(--crit)'}},'Red'),
       ' = inverse link. Darker = stronger. Use this to see at a glance which levers matter most — and where.'
     ),
     tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
@@ -865,11 +865,11 @@ Tone: practical, direct, written for a district manager presenting to a field co
             td({style:{padding:'6px 8px',color:isTop?'var(--text)':'var(--text2)',fontWeight:isTop?600:400,fontSize:'10px'}},STORE_NAMES[o.loc]||o.loc),
             td({style:{padding:'6px 8px',textAlign:'right',color:'var(--text)',fontWeight:600}},o.metric.shortL),
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',
-              color:o.metric.r>0?'#34d399':'#f87171',fontWeight:700}},
+              color:o.metric.r>0?'#34d399':'var(--crit)',fontWeight:700}},
               (o.metric.r>0?'+':'')+o.metric.r.toFixed(3)),
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},fmtVal(o.metric.id,o.sa)),
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},fmtVal(o.metric.id,o.da)),
-            td({style:{padding:'6px 8px',textAlign:'right',color:o.gap>0.15?'#f87171':'var(--text3)'}},
+            td({style:{padding:'6px 8px',textAlign:'right',color:o.gap>0.15?'var(--crit)':'var(--text3)'}},
               o.gap>0.01?'+'+(o.gap*100).toFixed(2)+'%':'—'),
             td({style:{padding:'6px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:sc}},
               o.score.toFixed(2))
@@ -1172,7 +1172,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
     </div>
     <!-- LY comparison banner -->
     ${d.vsLY!=null?`<div style="margin-top:16px;padding:10px 16px;background:${d.vsLY>=0?'rgba(5,150,105,.2)':'rgba(220,38,38,.2)'};border-radius:8px;display:inline-block">
-      <span style="font-size:13px;font-weight:700;color:${d.vsLY>=0?'#34d399':'#f87171'}">
+      <span style="font-size:13px;font-weight:700;color:${d.vsLY>=0?'#34d399':'var(--crit)'}">
         ${d.vsLY>=0?'↑':'↓'} ${Math.abs(d.vsLY*100).toFixed(2)}% vs Prior Year
       </span>
       <span style="font-size:12px;color:#94a3b8;margin-left:8px">Avg daily: ${fmt$(d.sales)} vs LY ${fmt$(d.lyAvgSales)}</span>
@@ -1906,7 +1906,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
             ...autoSyncedRows,
             syncNote&&h('tr',{key:'sync-note'},
               h('td',{colSpan:4,style:{padding:'2px 10px 8px',fontSize:'8px',
-                color:syncNote.err?'#f87171':'#10b981'}}, syncNote.msg)),
+                color:syncNote.err?'var(--crit)':'#10b981'}}, syncNote.msg)),
             sectionHdr('hdr-pipeline','📧 Email Pipeline · QSRSoft'),
             ...pipelineRows,
             sectionHdr('hdr-cloud','☁ Cloud-Persisted · Manual Upload'),
@@ -2514,7 +2514,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             pulse.greenN,' running well')
         ),
         pulse.vsLY!=null&&div({style:{fontSize:'9px',color:'var(--text3)',borderLeft:'.5px solid var(--bdr)',paddingLeft:12}},
-          '4-Week vs LY: ',span({style:{color:pulse.vsLY>=0?'#10b981':'#f87171',fontWeight:700}},
+          '4-Week vs LY: ',span({style:{color:pulse.vsLY>=0?'#10b981':'var(--crit)',fontWeight:700}},
             (pulse.vsLY>=0?'+':'')+((pulse.vsLY*100).toFixed(2))+'%'),
           '  ·  Sales: ',span({style:{color:'var(--text)',fontWeight:600}},f$(pulse.totS))
         ),
@@ -2806,7 +2806,7 @@ function WhyEnginePanel({stores, ds, settings, userEvents, onUpdate, onClose}) {
             [4,8,12,16].map(w=>h('option',{key:w,value:w},w+' weeks'))),
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700},disabled:districtRunning,
             onClick:runDistrict},districtRunning?'⏳ Scanning…':'▶ Run District Scan'),
-          districtRunning&&btn({className:'btn btn-sm',style:{color:'#f87171'},onClick:cancelDistrict},'⏹ Cancel')
+          districtRunning&&btn({className:'btn btn-sm',style:{color:'var(--crit)'},onClick:cancelDistrict},'⏹ Cancel')
         ),
         districtRunning&&districtProg&&div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
           div({style:{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:'9px',color:'var(--text3)'}},
@@ -3133,7 +3133,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         // that is showing the truncated list.
         (qsrFobRows!==null&&!fobHasCloud)&&span({
           title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr})`:'Cloud FOB stream returned no rows',
-          style:{fontSize:'10px',fontWeight:700,padding:'4px 9px',borderRadius:5,background:'rgba(248,113,113,.14)',color:'#f87171',border:'.5px solid rgba(248,113,113,.45)',cursor:'help',maxWidth:360,lineHeight:1.35}},
+          style:{fontSize:'10px',fontWeight:700,padding:'4px 9px',borderRadius:5,background:'rgba(244,63,94,.14)',color:'var(--crit)',border:'.5px solid rgba(244,63,94,.45)',cursor:'help',maxWidth:360,lineHeight:1.35}},
           '⚠ Manual uploads only — the cloud FOB stream returned nothing, so Period stops at your last upload.'),
         // Month selector
         div({style:{display:'flex',flexDirection:'column',gap:1}},
@@ -3187,14 +3187,14 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
         if(!items.length) return null;
         const top=items.slice(0,8);
         return div({style:{margin:'0 16px 0',borderRadius:'var(--r)',border:'.5px solid rgba(239,68,68,.25)',background:'rgba(239,68,68,.04)',padding:'10px 14px',flexShrink:0}},
-          div({style:{fontSize:'10px',fontWeight:700,color:'#f87171',marginBottom:8}},'🎯 Root-Cause Priority Matrix — Top Coaching Opportunities'),
+          div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)',marginBottom:8}},'🎯 Root-Cause Priority Matrix — Top Coaching Opportunities'),
           div({style:{fontSize:'8.5px',color:'var(--text3)',marginBottom:8}},'Ranked by dollar impact above target. Excludes Base Food (largely outside store control). Fix these first to close FOB fastest.'),
           top.map((item,i)=>div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:i<top.length-1?'.5px solid var(--bdr)':'none'}},
             div({style:{width:16,textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',color:'var(--text3)',flexShrink:0}},i+1),
             div({style:{fontSize:'9px',color:'var(--gold)',fontWeight:600,flex:1}},sName(item.loc)),
-            div({style:{fontSize:'9px',fontWeight:700,color:'#f87171',width:18,flexShrink:0}},item.comp.icon),
+            div({style:{fontSize:'9px',fontWeight:700,color:'var(--crit)',width:18,flexShrink:0}},item.comp.icon),
             div({style:{fontSize:'9px',color:'var(--text2)',width:90,flexShrink:0}},item.comp.label),
-            div({style:{fontFamily:'var(--mono)',fontSize:'9px',color:'#f87171',width:55,textAlign:'right',flexShrink:0}},
+            div({style:{fontFamily:'var(--mono)',fontSize:'9px',color:'var(--crit)',width:55,textAlign:'right',flexShrink:0}},
               (item.diff*100).toFixed(2)+'% over'),
             div({style:{fontFamily:'var(--mono)',fontSize:'10px',fontWeight:700,color:'#ef4444',width:70,textAlign:'right',flexShrink:0}},
               '$'+Math.round(item.dollar).toLocaleString())
@@ -3205,8 +3205,8 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
       // ── Data Discipline (#209) — unrecorded waste inflates Unexplained ──────────────
       selLoc==='all'&&(()=>{
         if(wastePending) return div({style:{margin:'0 16px',padding:'6px 14px',fontSize:'8.5px',color:'var(--text3)'}},'Checking waste-entry discipline…');
-        if(wasteFailed) return div({style:{margin:'0 16px',borderRadius:'var(--r)',border:'.5px solid rgba(248,113,113,.3)',
-          background:'rgba(248,113,113,.06)',padding:'8px 14px',fontSize:'9px',color:'#f87171',flexShrink:0}},
+        if(wasteFailed) return div({style:{margin:'0 16px',borderRadius:'var(--r)',border:'.5px solid rgba(244,63,94,.3)',
+          background:'rgba(244,63,94,.06)',padding:'8px 14px',fontSize:'9px',color:'var(--crit)',flexShrink:0}},
           '⚠ Waste-entry discipline check failed to load from the cloud stream — try reopening this panel.');
         if(!disciplineSum||!disciplineSum.totalMissing) return null; // no derivable gaps — nothing to flag, not a claim every store is perfect
         const worst=[...discipline].filter(d=>d.totalMissing>0).sort((a,b)=>b.estImpact-a.estImpact).slice(0,8);
@@ -3611,7 +3611,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
           h('option',{value:'all'},'All Locations ('+allLocs.length+')'),
           allLocs.map(l=>h('option',{key:l,value:l},sNameC(l)))),
         div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
-          running&&btn({className:'btn btn-sm',style:{color:'#f87171',borderColor:'rgba(248,113,113,.3)'},
+          running&&btn({className:'btn btn-sm',style:{color:'var(--crit)',borderColor:'rgba(244,63,94,.3)'},
             onClick:()=>{cancelRef.current=true;}},'✕ Cancel'),
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700,fontSize:'10px',padding:'4px 14px'},
             disabled:running,
@@ -4686,7 +4686,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
           (row.varPct>0?'+':'')+row.varPct.toFixed(2)+'%'),
         // vs LY: same calendar date 52 weeks prior — secondary context column
         td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',
-          color:row.lyVarPct!=null?(row.lyVarPct>0?'#34d399':row.lyVarPct<0?'#f87171':'var(--text3)'):'var(--text3)'},
+          color:row.lyVarPct!=null?(row.lyVarPct>0?'#34d399':row.lyVarPct<0?'var(--crit)':'var(--text3)'):'var(--text3)'},
           title:row.lyActual>0?'LY actual: $'+Math.round(row.lyActual).toLocaleString():undefined},
           row.lyVarPct!=null?(row.lyVarPct>0?'+':'')+row.lyVarPct.toFixed(2)+'%':'—'),
         td({style:{padding:'5px 6px',minWidth:140}},tagBadge(row)),
@@ -4748,7 +4748,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
                   : div({style:{display:'flex',flexDirection:'column',gap:4}},
                       ...a.signals.map((s,si)=>div({key:si,style:{display:'flex',gap:8,alignItems:'flex-start',
                         padding:'5px 8px',borderRadius:'var(--r)',border:'.5px solid var(--bdr)',
-                        background:s.impact==='negative'?'rgba(248,113,113,.06)':s.impact==='positive'?'rgba(52,211,153,.06)':'rgba(245,158,11,.04)'}},
+                        background:s.impact==='negative'?'rgba(244,63,94,.06)':s.impact==='positive'?'rgba(52,211,153,.06)':'rgba(245,158,11,.04)'}},
                         span({style:{fontSize:'13px',flexShrink:0}},s.icon),
                         div({style:{flex:1}},
                           div({style:{display:'flex',gap:6,alignItems:'baseline',marginBottom:2}},
@@ -5036,7 +5036,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     results&&div({style:{display:'flex',gap:5,marginBottom:8,flexWrap:'wrap'}},
       ...[
         {l:'Total',    v:tagCounts.tot,   col:'var(--text)',  bg:'rgba(255,255,255,.02)'},
-        {l:'Under',    v:allFlatRows.filter(r=>r.varPct<0).length, col:'#f87171', bg:'rgba(239,68,68,.06)'},
+        {l:'Under',    v:allFlatRows.filter(r=>r.varPct<0).length, col:'var(--crit)', bg:'rgba(239,68,68,.06)'},
         {l:'Over',     v:allFlatRows.filter(r=>r.varPct>0).length, col:'#34d399', bg:'rgba(16,185,129,.06)'},
         {l:'Tagged',   v:tagCounts.tagged+'  /  '+tagCounts.tot+'   ('+tagCounts.pct+'%)', col:'#10b981', bg:'rgba(16,185,129,.06)'},
         {l:'AI Auto',  v:tagCounts.aiTagged,  col:'#60a5fa',  bg:'rgba(96,165,250,.06)'},
@@ -5356,7 +5356,7 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
         padding:'14px 20px',borderBottom:'.5px solid var(--bdr)',
         background:'rgba(239,68,68,.06)'}},
         div(null,
-          div({style:{fontSize:'14px',fontWeight:800,color:'#f87171',
+          div({style:{fontSize:'14px',fontWeight:800,color:'var(--crit)',
             letterSpacing:'-.2px'}},'⚠ Needs Attention'),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
             'Ranked by worst finding per store · click a chip to filter')
@@ -5366,7 +5366,7 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
 
       // Clickable severity chips (Notes 61 DV14)
       div({style:{display:'flex',gap:8,padding:'10px 20px',borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
-        sevChip('Critical',critStores.length,'#f87171',filter==='critical',()=>toggleFilter('critical')),
+        sevChip('Critical',critStores.length,'var(--crit)',filter==='critical',()=>toggleFilter('critical')),
         sevChip('Watch',warnStores.length,'#f5bc00',filter==='watch',()=>toggleFilter('watch')),
         sevChip('Acknowledged',ackHistory.length,'#10b981',ackOpen,()=>setAckOpen(p=>!p))
       ),
@@ -5681,7 +5681,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
               ? span({style:{color:'var(--text3)'}},' · '+storeLog.filter(s=>s.status==='ineligible').length+' not yet eligible')
               : null,
             storeLog.filter(s=>s.status==='null'||s.status==='error').length
-              ? span({style:{color:'#f87171'}},' · '+storeLog.filter(s=>s.status==='null'||s.status==='error').length+' failed')
+              ? span({style:{color:'var(--crit)'}},' · '+storeLog.filter(s=>s.status==='null'||s.status==='error').length+' failed')
               : null)
         ),
         (storeLog.find(s=>s.trendDiag)||{}).trendDiag
@@ -5697,10 +5697,10 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
           const _inel=s.status==='ineligible';
           return div({key:i,style:{display:'flex',gap:8,padding:'3px 10px',
             borderTop:'.5px solid var(--bdr)',background:_inel?'transparent':'rgba(239,68,68,.04)'}},
-            span({style:{color:_inel?'var(--text3)':'#f87171',fontWeight:700,minWidth:14}},_inel?'ⓘ':'✗'),
+            span({style:{color:_inel?'var(--text3)':'var(--crit)',fontWeight:700,minWidth:14}},_inel?'ⓘ':'✗'),
             span({style:{fontWeight:600,minWidth:120,color:_inel?'var(--text2)':undefined}},sNameC(s.loc)),
             span({style:{color:'var(--text3)'}},'Rows: '+s.rows),
-            span({style:{color:_inel?'var(--text3)':'#f87171',flex:1}},'→ '+s.detail),
+            span({style:{color:_inel?'var(--text3)':'var(--crit)',flex:1}},'→ '+s.detail),
             s.diag?span({style:{fontFamily:'var(--mono)',fontSize:'8px',color:'var(--text3)',flexBasis:'100%'}},
               'idx '+s.diag.locIdxKeys+' keys '+s.diag.idxSpan
               +' · eval '+s.diag.evalSpan
@@ -5755,7 +5755,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
                 title:r.mape6w!=null&&r.mape1w!=null?('6W:'+r.mape6w.toFixed(2)+'% → 1W:'+r.mape1w.toFixed(2)+'%'):'Run calibration to see trend'},
                 r.mape6w!=null&&r.mape1w!=null?(
                   r.mape1w<r.mape6w-2?span({style:{color:'#10b981'}},'▼ Better'):
-                  r.mape1w>r.mape6w+2?span({style:{color:'#f87171'}},'▲ Worse'):
+                  r.mape1w>r.mape6w+2?span({style:{color:'var(--crit)'}},'▲ Worse'):
                   span({style:{color:'#f59e0b'}},'→ Stable')
                 ):'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape6w!=null?mapeColor(r.mape6w):'var(--text3)',fontFamily:'var(--mono)'}},r.mape6w!=null?r.mape6w.toFixed(2)+'%':'—'),
@@ -5763,7 +5763,7 @@ function DialedInPanel({stores, ds, settings, userEvents, onUpdateSettings, onCl
               td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape2w!=null?mapeColor(r.mape2w):'var(--text3)',fontFamily:'var(--mono)',fontWeight:r.mape2w!=null?700:400}},
                 // Drift indicator: if 2W MAPE is 5+ points worse than 6W
                 r.mape2w!=null?span(null,r.mape2w.toFixed(2)+'%',
-                  r.mape6w!=null&&r.mape2w>r.mape6w+5?span({style:{marginLeft:4,color:'#f87171'},title:'Model drifting — consider recalibrating'},'⚠')
+                  r.mape6w!=null&&r.mape2w>r.mape6w+5?span({style:{marginLeft:4,color:'var(--crit)'},title:'Model drifting — consider recalibrating'},'⚠')
                   :r.mape6w!=null&&r.mape2w<r.mape6w-3?span({style:{marginLeft:4,color:'#10b981'},title:'Model improving'},'▲'):null
                 ):'—'),
               td({style:{padding:'5px 8px',textAlign:'right',fontSize:'9px',color:r.mape1w!=null?mapeColor(r.mape1w):'var(--text3)',fontFamily:'var(--mono)',fontWeight:r.mape1w!=null?700:400},
@@ -6003,9 +6003,9 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
               td2(r.days,'var(--text3)'),
               td2(f$(r.actualSales),'var(--text)'),
               td2(r.vsLY!=null?((r.vsLY>=0?'+':'')+( r.vsLY*100).toFixed(2)+'%'):'—',
-                r.vsLY!=null?(r.vsLY>=0?'#10b981':'#f87171'):'var(--text3)'),
+                r.vsLY!=null?(r.vsLY>=0?'#10b981':'var(--crit)'):'var(--text3)'),
               td2(r.vsFc!=null?((r.vsFc>=0?'+':'')+(r.vsFc*100).toFixed(2)+'%'):'—',
-                r.vsFc!=null?(r.vsFc>=0?'#10b981':'#f87171'):'var(--text3)'),
+                r.vsFc!=null?(r.vsFc>=0?'#10b981':'var(--crit)'):'var(--text3)'),
               td2(r.mape!=null?r.mape.toFixed(2)+'%':'—',
                 r.mape!=null?(r.mape<5?'#10b981':r.mape<10?'var(--warn)':'var(--crit)'):'var(--text3)'),
               td2(r.passRate!=null?r.passRate.toFixed(2)+'%':'—',
@@ -6143,7 +6143,7 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
               [{l:'AI Forecast',v:f$(audit.row.forecast),c:'#a5b4fc'},
                {l:'Actual',v:audit.row.actual>0?f$(audit.row.actual):'—',c:'#10b981'},
                {l:'vs Actual',v:audit.row.actual>0?((audit.row.actual>audit.row.forecast?'+':'')+((audit.row.actual-audit.row.forecast)/audit.row.forecast*100).toFixed(2)+'%'):'—',
-                c:audit.row.actual>0?(audit.row.actual>=audit.row.forecast?'#10b981':'#f87171'):'var(--text3)'},
+                c:audit.row.actual>0?(audit.row.actual>=audit.row.forecast?'#10b981':'var(--crit)'):'var(--text3)'},
                {l:'Holiday',v:audit.holidayInfo?audit.holidayInfo.label:'None',c:audit.holidayInfo?'#f59e0b':'var(--text3)'},
                {l:'Dialed-In',v:settings.dialedInEnabled&&audit.cal?'Enabled ('+(audit.cal.mape||'?').toFixed(2)+'% MAPE)':'Off',c:settings.dialedInEnabled&&audit.cal?'#10b981':'var(--text3)'}
               ].map((k,i)=>div({key:i,style:{textAlign:'center'}},
@@ -6164,7 +6164,7 @@ function ForecastAudit({store, ds, settings, userEvents, dateRange, onClose}) {
                 borderLeft:lt.status==='used'?'2px solid #10b981':'2px solid transparent'}},
                 div({style:{minWidth:60,fontSize:'9px',color:'var(--text3)'}},(lt.off>0?'+':'' )+lt.off+'d'),
                 div({style:{minWidth:90,fontSize:'9px'}},[lt.dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})]),
-                div({style:{minWidth:140,fontSize:'9px',color:lt.status==='used'?'#10b981':'#f87171'}},[lt.status]),
+                div({style:{minWidth:140,fontSize:'9px',color:lt.status==='used'?'#10b981':'var(--crit)'}},[lt.status]),
                 lt.val&&div({style:{fontFamily:'var(--mono)',fontSize:'9px',color:'#a5b4fc'}},[f$(lt.val)]),
                 lt.weight&&div({style:{fontSize:'9px',color:'var(--amber)',marginLeft:4}},['w:'+lt.weight])
               )
@@ -6414,7 +6414,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
     div({style:{flex:1,overflowY:'auto',padding:'16px 18px'}},
       !brief&&!loading&&!error&&div({style:{textAlign:'center',padding:40}},
         !apiKey&&div({style:{background:'rgba(239,68,68,.08)',border:'.5px solid rgba(239,68,68,.3)',
-          borderRadius:'var(--r)',padding:'10px 16px',marginBottom:16,fontSize:'10px',color:'#f87171'}},
+          borderRadius:'var(--r)',padding:'10px 16px',marginBottom:16,fontSize:'10px',color:'var(--crit)'}},
           '🔑 No API key set — go to Settings → AI to add your Anthropic API key. The key is required for all AI features including this brief.'),
         div({style:{fontSize:'14px',marginBottom:8,color:'var(--text3)'}},apiKey?'🧠':'🔑'),
         div({style:{fontWeight:600,marginBottom:6}},apiKey?'Ready to generate brief':'API key required'),
@@ -6429,7 +6429,7 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
         div({style:{fontSize:'24px',marginBottom:8}},'⏳'),
         div({style:{color:'var(--text3)',fontSize:'11px'}},'Analyzing '+activeLocs.length+' location'+(activeLocs.length>1?'s':'')+' · Building intelligence brief...')
       ),
-      error&&div({style:{padding:16,background:'rgba(239,68,68,.1)',border:'.5px solid rgba(239,68,68,.3)',borderRadius:'var(--r)',color:'#f87171',fontSize:'11px'}},
+      error&&div({style:{padding:16,background:'rgba(239,68,68,.1)',border:'.5px solid rgba(239,68,68,.3)',borderRadius:'var(--r)',color:'var(--crit)',fontSize:'11px'}},
         '⚠ '+error),
       brief&&div(null,
         // Regenerate button
@@ -6578,7 +6578,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                       wk.mape!=null&&span({style:{fontWeight:400,fontSize:'8px',color:'var(--text3)'}},
                         wk.mape<6?' ✓ Excellent':wk.mape<10?' ~ OK':' ✗ Missed')),
                     div({style:{fontSize:'8px',display:'flex',gap:6,justifyContent:'center',marginTop:1}},
-                      div({style:{color:wk.vsLY!=null?(wk.vsLY>=0?'#10b981':'#f87171'):'var(--text3)'}},
+                      div({style:{color:wk.vsLY!=null?(wk.vsLY>=0?'#10b981':'var(--crit)'):'var(--text3)'}},
                         wk.vsLY!=null?((wk.vsLY>=0?'+':'')+wk.vsLY.toFixed(2)+'% vs LY'):'—'),
                       div({style:{color:'var(--text3)'}},f$(wk.wkAct))),
                     div({style:{fontSize:'7px',color:'var(--amber)',marginTop:2}},
@@ -6598,7 +6598,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                           span({style:{color:'var(--text3)'}},[dow+' '+day.date.getDate()]),
                           span({style:{fontFamily:'var(--mono)',color:'var(--text)'}},[f$(day.actual)]),
                           span({style:{color:sc,fontWeight:600}},[status+(err!=null?' '+err.toFixed(2)+'%':'')]),
-                          vsLY!=null?span({style:{color:vsLY>=0?'#10b981':'#f87171',fontSize:'7px'}},
+                          vsLY!=null?span({style:{color:vsLY>=0?'#10b981':'var(--crit)',fontSize:'7px'}},
                             [(vsLY>=0?'+':'')+vsLY.toFixed(2)+'% LY']):span({style:{color:'var(--text3)'}},'—')
                         );
                       })
@@ -6640,7 +6640,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                           color:err<5?'#10b981':err<10?'var(--warn)':'var(--crit)'}},
                           (err<5?'✓ ':err<10?'~ ':'✗ ')+err.toFixed(2)+'% err'),
                         vsLY&&div({style:{fontSize:'8px',fontWeight:600,
-                          color:+vsLY>=0?'#10b981':'#f87171'}},
+                          color:+vsLY>=0?'#10b981':'var(--crit)'}},
                           (+vsLY>=0?'+':'')+vsLY+'% vs LY')
                       );
                     })
@@ -6659,7 +6659,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
                   div({style:{fontFamily:'var(--mono)',fontWeight:700,color:mapeColor(gt.avgMape)}},
                     gt.avgMape.toFixed(2)+'% avg'),
                   div({style:{fontSize:'8px',display:'flex',gap:6,justifyContent:'center'}},
-                    div({style:{color:gt.vsLY!=null?(gt.vsLY>=0?'#10b981':'#f87171'):'var(--text3)'}},
+                    div({style:{color:gt.vsLY!=null?(gt.vsLY>=0?'#10b981':'var(--crit)'):'var(--text3)'}},
                       gt.vsLY!=null?((gt.vsLY>=0?'+':'')+gt.vsLY.toFixed(2)+'% vs LY'):'—'),
                     div({style:{color:'var(--text3)'}},f$(gt.tAct)))
                 ):div({style:{color:'var(--text3)'}},['—'])
@@ -6745,7 +6745,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
               {l:'District Avg MAPE',v:avgMape!=null?avgMape.toFixed(2)+'%':'—',c:mapeColor(avgMape),
                 sub:avgMape!=null?(avgMape<6?'Excellent accuracy':avgMape<10?'Good accuracy':'Needs attention'):''},
               {l:'Avg vs Last Year',v:avgVsLY!=null?((avgVsLY>=0?'+':'')+avgVsLY.toFixed(2)+'%'):'—',
-                c:avgVsLY!=null?(avgVsLY>=0?'#10b981':'#f87171'):'var(--text3)',sub:weeksBack+'-week rolling'},
+                c:avgVsLY!=null?(avgVsLY>=0?'#10b981':'var(--crit)'):'var(--text3)',sub:weeksBack+'-week rolling'},
               {l:'Most Accurate',v:bestStore?(STORE_NAMES[String(bestStore.loc)]||bestStore.loc):'—',
                 c:'#10b981',sub:bestStore?bestStore.avg.toFixed(2)+'% avg MAPE':''},
               {l:'Weeks Analyzed',v:String(weeksBack),c:'var(--amber)',sub:report.allLocs.length+' locations'},
@@ -6764,7 +6764,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
           span({style:{fontWeight:600}},'MAPE guide:'),
           div({style:{display:'flex',gap:2,alignItems:'center'}},div({style:{width:8,height:8,borderRadius:2,background:'#10b981'}}),span(null,' <6% = Excellent ✓')),
           div({style:{display:'flex',gap:2,alignItems:'center'}},div({style:{width:8,height:8,borderRadius:2,background:'#f59e0b'}}),span(null,' 6-10% = OK ~')),
-          div({style:{display:'flex',gap:2,alignItems:'center'}},div({style:{width:8,height:8,borderRadius:2,background:'#f87171'}}),span(null,' >10% = Missed ✗')),
+          div({style:{display:'flex',gap:2,alignItems:'center'}},div({style:{width:8,height:8,borderRadius:2,background:'var(--crit)'}}),span(null,' >10% = Missed ✗')),
           span({style:{marginLeft:8}},'· Click any cell to see daily breakdown · MAPE = Mean Absolute % Error (lower = better model accuracy)')
         ),
         ...getGroups().map(([name,locs])=>renderGroupTable(name,locs||[]))
@@ -6960,7 +6960,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
               c:mapeColor(report.districtBase),sub:'without calibration'},
             {l:'Calibration Improvement',
               v:report.districtImprovement!=null?(report.districtImprovement>0?'+':'')+report.districtImprovement.toFixed(2)+'%':'—',
-              c:report.districtImprovement>0?'#10b981':report.districtImprovement<0?'#f87171':'#94a3b8',
+              c:report.districtImprovement>0?'#10b981':report.districtImprovement<0?'var(--crit)':'#94a3b8',
               sub:report.districtImprovement>0?'Dialed-In is helping':'Default is competitive'},
             {l:'Stores with Dialed-In',
               v:report.allLocs.filter(l=>report.results[l]&&report.results[l].hasDI).length+'/'+report.allLocs.length,
@@ -7007,7 +7007,7 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
               div({style:{fontWeight:700,fontSize:'11px',color:'var(--amber)'}},[groupName]),
               gImprove!=null&&div({style:{fontSize:'9px',fontWeight:600,padding:'1px 8px',borderRadius:10,
                 background:gImprove>0?'rgba(16,185,129,.1)':'rgba(239,68,68,.1)',
-                color:gImprove>0?'#10b981':'#f87171',border:'.5px solid '+(gImprove>0?'rgba(16,185,129,.3)':'rgba(239,68,68,.3)')}},
+                color:gImprove>0?'#10b981':'var(--crit)',border:'.5px solid '+(gImprove>0?'rgba(16,185,129,.3)':'rgba(239,68,68,.3)')}},
                 'Group improvement: '+(gImprove>0?'+':'')+gImprove.toFixed(2)+'%')
             ),
             tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
@@ -7026,12 +7026,12 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
                 ...gLocs.map(loc=>{
                   const r=report.results[loc]; if(!r) return null;
                   const name=sName(loc);
-                  const impColor=r.improvement==null?'var(--text3)':r.improvement>0?'#10b981':r.improvement<0?'#f87171':'#94a3b8';
+                  const impColor=r.improvement==null?'var(--text3)':r.improvement>0?'#10b981':r.improvement<0?'var(--crit)':'#94a3b8';
                   return tr({key:loc,style:{borderBottom:'.5px solid var(--bdr)'}},
                     td({style:{padding:'4px 8px',fontWeight:600}},[name]),
                     td({style:{padding:'4px 8px',textAlign:'center'}},[
                       r.hasDI?span({style:{color:'#10b981',fontWeight:700}},'✓ Yes'):
-                               span({style:{color:'#f87171'}},'— No')
+                               span({style:{color:'var(--crit)'}},'— No')
                     ]),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:mapeColor(r.mapeDI)}},[r.mapeDI!=null?r.mapeDI.toFixed(2)+'%':'—']),
                     td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(r.mapeBase)}},[r.mapeBase!=null?r.mapeBase.toFixed(2)+'%':'—']),
@@ -7051,10 +7051,10 @@ function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
                   td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(gAvgDI)}},[gAvgDI!=null?gAvgDI.toFixed(2)+'%':'—']),
                   td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeColor(gAvgBase)}},[gAvgBase!=null?gAvgBase.toFixed(2)+'%':'—']),
                   td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
-                    color:gImprove!=null?(gImprove>0?'#10b981':gImprove<0?'#f87171':'#94a3b8'):'var(--text3)'}},
+                    color:gImprove!=null?(gImprove>0?'#10b981':gImprove<0?'var(--crit)':'#94a3b8'):'var(--text3)'}},
                     [gImprove!=null?(gImprove>0?'+':'')+gImprove.toFixed(2)+'%':'—']),
                   td({colSpan:4,style:{padding:'5px 8px',textAlign:'center',fontSize:'9px',
-                    color:gImprove!=null?(gImprove>0?'#10b981':'#f87171'):'var(--text3)'}},
+                    color:gImprove!=null?(gImprove>0?'#10b981':'var(--crit)'):'var(--text3)'}},
                     [gImprove!=null?(gImprove>0?'Calibration is helping this group':'Consider recalibrating'):'No data'])
                 )
               )
@@ -7081,7 +7081,7 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
     {key:'bfSales',    pctKey:'bfPctTotal',   label:'Breakfast',   color:'#fbbf24', emoji:'☀️'},
     {key:'delivSales', pctKey:'delivPctTotal', label:'Delivery',    color:'#34d399', emoji:'🛵'},
     {key:'mopSales',   pctKey:'mopPctTotal',  label:'MOP',         color:'#a78bfa', emoji:'📱'},
-    {key:'kioskSales', pctKey:'kioskPctTotal',label:'Kiosk',       color:'#f87171', emoji:'🖥'},
+    {key:'kioskSales', pctKey:'kioskPctTotal',label:'Kiosk',       color:'var(--crit)', emoji:'🖥'},
   ];
 
   const cutoff = uM(()=>new Date(Date.now()-range*86400000),[range]);
@@ -7220,7 +7220,7 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
               const v = s.chans[focus];
               const deviation = v.pct - distAvgPct;
               const barPct = Math.max(0,Math.min(1,v.pct));
-              const devCol = Math.abs(deviation)<0.01?'var(--text3)':deviation>0?'#10b981':'#f87171';
+              const devCol = Math.abs(deviation)<0.01?'var(--text3)':deviation>0?'#10b981':'var(--crit)';
               return div({key:s.loc,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:i<sortedStores.length-1?'.5px solid var(--bdr)':'none'}},
                 div({style:{width:20,textAlign:'right',color:'var(--text3)',fontSize:'9px',fontFamily:'var(--mono)',flexShrink:0}},i+1),
                 div({style:{width:140,flexShrink:0,fontSize:'10px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},s.name),
@@ -7249,11 +7249,11 @@ function ChannelIntelligencePanel({stores, ds, onClose}) {
               div({style:{fontFamily:'var(--mono)',color:'#10b981',fontWeight:600}},fmtP(s.chans[focus].pct))
             ))
           )||div(null),
-          low.length>0&&div({style:{background:'rgba(248,113,113,.06)',border:'.5px solid rgba(248,113,113,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
-            div({style:{fontSize:'10px',fontWeight:700,color:'#f87171',marginBottom:6}},'↓ Below-Avg '+focusCh.label+' Mix (5%+ under district)'),
+          low.length>0&&div({style:{background:'rgba(244,63,94,.06)',border:'.5px solid rgba(244,63,94,.2)',borderRadius:'var(--rl)',padding:'10px 14px'}},
+            div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)',marginBottom:6}},'↓ Below-Avg '+focusCh.label+' Mix (5%+ under district)'),
             low.slice().reverse().map((s,i)=>div({key:s.loc,style:{display:'flex',justifyContent:'space-between',fontSize:'10px',padding:'2px 0',borderBottom:i<low.length-1?'.5px solid var(--bdr)':'none'}},
               div({style:{color:'var(--text2)'}},(i+1)+'. '+s.name.slice(0,20)),
-              div({style:{fontFamily:'var(--mono)',color:'#f87171',fontWeight:600}},fmtP(s.chans[focus].pct))
+              div({style:{fontFamily:'var(--mono)',color:'var(--crit)',fontWeight:600}},fmtP(s.chans[focus].pct))
             ))
           )||div(null)
         );

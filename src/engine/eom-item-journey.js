@@ -26,7 +26,7 @@ export const SOURCE_LANE = {
 export const LANE_META = {
   received: { label: 'Received', hint: 'Invoices / deliveries in', color: '#38bdf8', flow: +1 },
   used:     { label: 'Used', hint: 'Rung on POS (theoretical usage)', color: '#94a3b8', flow: -1 },
-  waste:    { label: 'Waste', hint: 'Logged as waste / comped', color: '#f87171', flow: -1 },
+  waste:    { label: 'Waste', hint: 'Logged as waste / comped', color: 'var(--crit)', flow: -1 },
   transfer: { label: 'Transfer', hint: 'Moved to / from another store', color: '#c084fc', flow: 0 },
   count:    { label: 'Count', hint: 'Physical inventory count', color: '#f5bc00', flow: 0 },
 };

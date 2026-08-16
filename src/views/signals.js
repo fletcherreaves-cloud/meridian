@@ -1289,7 +1289,7 @@ function ScannerTab({ ds, onTrack }) {
         title: 'Select to bulk-track', style: { cursor: 'pointer', flexShrink: 0 } }),
       h('div', { style: { flex: 1, minWidth: 220 } },
         h('div', { style: { fontSize: 13, fontWeight: 600 } }, `${row.xLabel}  &  ${row.yLabel}`),
-        h('div', { style: { fontSize: 11, color: row.r >= 0 ? grn : '#f87171', marginTop: 2 } },
+        h('div', { style: { fontSize: 11, color: row.r >= 0 ? grn : 'var(--crit)', marginTop: 2 } },
           row.r >= 0 ? 'rise and fall together' : 'when one goes up, the other goes down'),
         h('div', { style: { fontSize: 10, color: muted, marginTop: 2 } }, `${row.xCat} · ${row.yCat} · based on ${row.n} data points`),
       ),
@@ -1430,7 +1430,7 @@ function CsatDriversTab({ ds, onTrack }) {
       h('div', { style: { flex: 1, minWidth: 260 } },
         // Plain-English headline — what moves with what, in operator language.
         h('div', { style: { fontSize: 13, fontWeight: 700, lineHeight: 1.4 } }, plain.headline,
-          h('span', { style: { color: good ? grn : '#f87171', fontWeight: 600 } }, ' ' + plain.goodBad)),
+          h('span', { style: { color: good ? grn : 'var(--crit)', fontWeight: 600 } }, ' ' + plain.goodBad)),
         // How much to trust it — plain words, no stats.
         h('div', { style: { fontSize: 11, color: muted, marginTop: 3, lineHeight: 1.5 } },
           plain.trust + ' ' + plain.coverage + (signDisagree ? " (The link isn't a straight line — bigger swings matter more than small ones.)" : '')),

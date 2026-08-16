@@ -18,7 +18,7 @@ class ErrorBoundary extends React.Component {
       const cause=e?.cause;
       return h('div',{style:{padding:40,fontFamily:'monospace',background:'#090e18',color:'#e2e8f0',minHeight:'100vh'}},
         h('div',{style:{color:'#f59e0b',fontSize:20,fontWeight:700,marginBottom:16}},'⚠ Meridian — Runtime Error'),
-        h('div',{style:{color:'#f87171',fontSize:13,marginBottom:8}},e.message),
+        h('div',{style:{color:'var(--crit)',fontSize:13,marginBottom:8}},e.message),
         cause&&h('div',{style:{color:'#fb923c',fontSize:12,marginBottom:12}},'Caused by: '+(cause.message||String(cause))),
         h('pre',{style:{color:'#64748b',fontSize:11,marginBottom:20,whiteSpace:'pre-wrap'}},e.stack||''),
         h('button',{onClick:()=>this.setState({err:null}),style:{padding:'8px 16px',background:'#f59e0b',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600}},'Try to recover'),

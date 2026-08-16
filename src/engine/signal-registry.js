@@ -36,7 +36,7 @@ export const METRIC_CATEGORIES = [
     ],
   },
   {
-    key: 'food_cost', label: 'Food Cost', color: '#f87171',
+    key: 'food_cost', label: 'Food Cost', color: 'var(--crit)',
     metrics: [
       { key: 'fobPct',      label: 'FOB % (Food Over Base)',    source: 'fobRows',    field: 'fobPct',         granularity: ['monthly'],        better: 'lower',  unit: 'pct' },
       { key: 'baseFoodPct', label: 'Base Food %',               source: 'fobRows',    field: 'baseFoodPct',    granularity: ['monthly'],        better: 'lower',  unit: 'pct' },

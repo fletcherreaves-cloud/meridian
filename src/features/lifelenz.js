@@ -559,7 +559,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
             div(null,'Select a store and run the scan. Compares Meridian\'s forecast against LifeLenz\'s own projection for the next 14 days.')),
 
           scanResult&&scanResult.error&&div({style:{padding:'16px',background:'rgba(239,68,68,.08)',
-            border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',color:'#f87171',fontSize:'10px'}},
+            border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',color:'var(--crit)',fontSize:'10px'}},
             '⚠ Scan error: '+scanResult.error),
 
           scanResult&&!scanResult.error&&!scanResult.biasStats&&!scanResult.days?.length&&div({style:{
@@ -585,7 +585,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
                   return div({key:d.dow,style:{padding:'5px 10px',borderRadius:4,background:'rgba(255,255,255,.04)',
                     border:'.5px solid var(--bdr)',fontSize:'8px'}},
                     span({style:{color:'var(--text3)',fontWeight:700}},DOW_NAMES[d.dow]+': '),
-                    span({style:{color:d.avgBiasPct>=0?'#10b981':'#f87171',fontWeight:700}},fmtPct(d.avgBiasPct)),
+                    span({style:{color:d.avgBiasPct>=0?'#10b981':'var(--crit)',fontWeight:700}},fmtPct(d.avgBiasPct)),
                     span({style:{color:'var(--text3)'}},' · Meridian wins '+d.meridianWinRate.toFixed(2)+'%'),
                     attr&&attr.label&&span({style:{display:'block',fontSize:'7px',color:attrCol,marginTop:2}},
                       '🔬 '+attr.label+(attr.topPct?' ('+attr.topPct.toFixed(2)+'%)':'')+
@@ -671,7 +671,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
                     cursor:'pointer'},onClick:()=>jumpToStore(loc)},
                     h('td',{style:{padding:'7px 8px',fontWeight:700,color:'var(--amber)'}},sNameC(loc)),
                     h('td',{style:{padding:'7px 8px',textAlign:'center',
-                      color:r.biasStats.overall.avgBiasPct>=0?'#10b981':'#f87171',fontWeight:700}},
+                      color:r.biasStats.overall.avgBiasPct>=0?'#10b981':'var(--crit)',fontWeight:700}},
                       fmtPct(r.biasStats.overall.avgBiasPct)),
                     h('td',{style:{padding:'7px 8px',textAlign:'center',color:'var(--text2)'}},
                       r.biasStats.overall.n+' obs'),

@@ -23,7 +23,7 @@ const GREEN  = '#34d399';
 function ErrBox({ msg }) {
   if (!msg) return null;
   return div({
-    style: { fontSize: 11, color: '#f87171', padding: '6px 10px',
+    style: { fontSize: 11, color: 'var(--crit)', padding: '6px 10px',
       background: '#1c0a0a', borderRadius: R, border: '1px solid #7f1d1d' }
   }, msg);
 }

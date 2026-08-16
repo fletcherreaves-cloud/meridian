@@ -158,7 +158,7 @@ function UsersTab({ orgRoles }) {
         span(null,'User'), span(null,'Role'), span(null,'Accessible Stores (blank = all)')
       ),
       loading && div({style:{padding:28,textAlign:'center',color:TEXT3,fontSize:12}},'Loading users…'),
-      error   && div({style:{padding:14,color:'#f87171',fontSize:12}}, error),
+      error   && div({style:{padding:14,color:'var(--crit)',fontSize:12}}, error),
       !loading&&!error&&users.length===0 &&
         div({style:{padding:28,textAlign:'center',color:TEXT3,fontSize:12}},
           'No users yet. Send an invite above to get started.'),

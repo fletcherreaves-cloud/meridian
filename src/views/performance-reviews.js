@@ -51,7 +51,7 @@ function Tag({label,color='var(--amber)'}) {
 }
 function ScorePill({score,size='sm'}) {
   if (score==null) return span({style:{color:TEXT3,fontSize:10}},'—');
-  const col = score>=3.5?'#16a34a':score>=2.5?'#22c55e':score>=1.5?'#f87171':'#dc2626';
+  const col = score>=3.5?'#16a34a':score>=2.5?'#22c55e':score>=1.5?'var(--crit)':'#dc2626';
   const bg  = col+'22';
   const fs  = size==='lg' ? 18 : 13;
   return span({style:{fontWeight:700,fontSize:fs,color:col,background:bg,
@@ -241,7 +241,7 @@ function HelpGuideModal({onClose, zIndex = Z.modal}) {
         ...[
           [4,'#16a34a','Exceeds Expectations','Consistently exceeds the standard. Model behavior — others should emulate this.'],
           [3,'#22c55e','On Target / Meets','Meets expectations consistently. Solid, reliable performance at standard.'],
-          [2,'#f87171','Below Target','Below expectations. Improvement needed; specific coaching underway.'],
+          [2,'var(--crit)','Below Target','Below expectations. Improvement needed; specific coaching underway.'],
           [1,'#dc2626','Needs Improvement','Significantly below expectations. Active performance plan required.'],
         ].map(([r,col,lbl,desc])=>div({style:{display:'grid',gridTemplateColumns:'32px 120px 1fr',
           gap:8,padding:8,background:ratingBg(r),borderRadius:R,border:`1px solid ${col}33`,
@@ -463,8 +463,8 @@ function CustomizePanel({cfg, onSave, onReset}) {
       GhostBtn({onClick:saveAsTemplate,style:{fontSize:11}},'＋ Save as new'),
       selTpl&&GhostBtn({onClick:updateTemplate,style:{fontSize:11}},'Update'),
       selTpl&&GhostBtn({onClick:duplicateTpl,style:{fontSize:11}},'Duplicate'),
-      selTpl&&GhostBtn({onClick:deleteTpl,style:{fontSize:11,color:'#f87171'}},'Delete'),
-      span({style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:wv.ok?'#10b981':'#f87171'},
+      selTpl&&GhostBtn({onClick:deleteTpl,style:{fontSize:11,color:'var(--crit)'}},'Delete'),
+      span({style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:wv.ok?'#10b981':'var(--crit)'},
         title:wv.ok?'Every weight group totals 100%':wv.errors.map(e=>`${e.scope}: ${(e.sum*100).toFixed(2)}%`).join(' · ')},
         wv.ok?'✓ Weights 100%':`⚠ ${wv.errors[0].scope} = ${(wv.errors[0].sum*100).toFixed(2)}%`)),
     // Save bar
@@ -473,7 +473,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
       PrimaryBtn({onClick:save,style:wv.ok?{}:{opacity:.5}},saved?'Saved!':'Save Changes'),
       GhostBtn({onClick:doReset,style:{fontSize:11,color:TEXT3}},'Reset to Defaults'),
       saved&&span({style:{color:'#10b981',fontSize:11}},'Settings saved'),
-      !wv.ok&&span({style:{color:'#f87171',fontSize:11}},'Fix weight totals to save')),
+      !wv.ok&&span({style:{color:'var(--crit)',fontSize:11}},'Fix weight totals to save')),
     // Content
     div({style:{flex:1,overflowY:'auto',padding:16}},
       section==='org'        && h(OrgSection, {}),
@@ -1900,7 +1900,7 @@ function ScoreBreakdownPanel({review, cfg}) {
                       span({style:{textAlign:'right',color:TEXT3,...mono}}, fmtVal(d.target)),
                       span({style:{
                         textAlign:'right',...mono,
-                        color: d.dev==null?TEXT3 : d.rating===4?'#16a34a':d.rating===3?'#22c55e':d.rating===2?'#f87171':'#dc2626',
+                        color: d.dev==null?TEXT3 : d.rating===4?'#16a34a':d.rating===3?'#22c55e':d.rating===2?'var(--crit)':'#dc2626',
                       }}, fmtDev(d.dev, m.unit)),
                       span({style:{textAlign:'center'}},
                         d.rating != null

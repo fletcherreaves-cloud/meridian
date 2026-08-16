@@ -359,9 +359,9 @@ function SmgSettingsEditor({ settings, onChange, fsRows }) {
       }, '✦ Auto-calibrate from data'),
       calibMsg && h('div', { style: {
         width:'100%', padding:'6px 10px', borderRadius:5, fontSize:10,
-        background: calibMsg.ok ? 'rgba(16,185,129,.12)' : 'rgba(248,113,113,.12)',
+        background: calibMsg.ok ? 'rgba(16,185,129,.12)' : 'rgba(244,63,94,.12)',
         color: calibMsg.ok ? '#10b981' : '#ef4444',
-        border: `1px solid ${calibMsg.ok ? 'rgba(16,185,129,.3)' : 'rgba(248,113,113,.3)'}`
+        border: `1px solid ${calibMsg.ok ? 'rgba(16,185,129,.3)' : 'rgba(244,63,94,.3)'}`
       } }, calibMsg.text)
     ),
 
@@ -1051,7 +1051,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
           h('button', { onClick: onClose, style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' } }, '✕'),
         ),
       ),
-      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: bf.error ? '#f87171' : 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
+      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: bf.error ? 'var(--crit)' : 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
         `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`,
         bf.error ? ` · save error: ${bf.error}` : ''),
 

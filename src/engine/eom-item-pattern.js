@@ -18,7 +18,7 @@
 
 export const PATTERN_META = {
   'within-tolerance':   { label: 'Within Tolerance',   color: '#4ade80', rank: 0, tone: 'good' },
-  'high-variance':      { label: 'High Variance',      color: '#f87171', rank: 3, tone: 'bad'  },
+  'high-variance':      { label: 'High Variance',      color: 'var(--crit)', rank: 3, tone: 'bad'  },
   'fluctuating':        { label: 'Fluctuating',        color: '#fbbf24', rank: 2, tone: 'warn' },
   'loss-forming':       { label: 'Loss Pattern Forming', color: '#fb7185', rank: 4, tone: 'bad' },
   'inconsistent-count': { label: 'Inconsistent Count(s)', color: '#38bdf8', rank: 3, tone: 'warn' },

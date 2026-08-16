@@ -369,7 +369,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
                 div({style:{display:'flex',gap:12}},
                   span({style:{fontFamily:'var(--mono)',color:col,fontWeight:700}},f.units.toLocaleString()+' units'),
                   span({style:{color:'var(--text3)'}},(f.unitPct*100).toFixed(2)+'% mix'),
-                  span({style:{color:(f.discRate>.1?'#f87171':'var(--text3)'),fontFamily:'var(--mono)'}},
+                  span({style:{color:(f.discRate>.1?'var(--crit)':'var(--text3)'),fontFamily:'var(--mono)'}},
                     (f.discRate*100).toFixed(2)+'% discounted')
                 )
               ),
@@ -381,8 +381,8 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
           })
         ),
         // Discount exposure analysis
-        div({style:{padding:'12px 14px',background:'rgba(248,113,113,.06)',
-          borderRadius:'var(--r)',border:'.5px solid rgba(248,113,113,.2)',fontSize:'8.5px',
+        div({style:{padding:'12px 14px',background:'rgba(244,63,94,.06)',
+          borderRadius:'var(--r)',border:'.5px solid rgba(244,63,94,.2)',fontSize:'8.5px',
           color:'var(--text3)',lineHeight:1.7}},
           span({style:{fontWeight:700,color:'var(--text)'}},'Discount Exposure: '),
           sorted.filter(f=>f.discRate>.10).length>0
@@ -533,9 +533,9 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
         ),
         btn({className:'btn btn-sm',
           style:{fontSize:'8px',
-            background:btRunning?'rgba(248,113,113,.12)':'rgba(245,158,11,.10)',
-            border:'.5px solid '+(btRunning?'rgba(248,113,113,.3)':'rgba(245,158,11,.3)'),
-            color:btRunning?'#f87171':'var(--amber)',
+            background:btRunning?'rgba(244,63,94,.12)':'rgba(245,158,11,.10)',
+            border:'.5px solid '+(btRunning?'rgba(244,63,94,.3)':'rgba(245,158,11,.3)'),
+            color:btRunning?'var(--crit)':'var(--amber)',
             opacity:(!ds||!ds.laborRows||!ds.laborRows.length)?0.4:1,
             cursor:(!ds||!ds.laborRows||!ds.laborRows.length)?'not-allowed':'pointer'},
           onClick: btRunning ? cancelBacktest : runBacktest},
@@ -577,8 +577,8 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
           'Results are written to localStorage when complete. Manual overrides are preserved.'
         ),
         btn({className:'btn btn-sm',
-          style:{marginTop:8,background:'rgba(248,113,113,.1)',border:'.5px solid rgba(248,113,113,.3)',
-            color:'#f87171',fontSize:'9px'},
+          style:{marginTop:8,background:'rgba(244,63,94,.1)',border:'.5px solid rgba(244,63,94,.3)',
+            color:'var(--crit)',fontSize:'9px'},
           onClick:cancelBacktest},'⏹ Cancel')
       ),
 
@@ -601,7 +601,7 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
             div({key:i,style:{lineHeight:1.6}},
               span({style:{color:'var(--amber)',fontWeight:600}},(STORE_NAMES[c.loc]||c.loc).split(' ').slice(0,2).join(' ')),
               ' '+c.hz+': ',
-              span({style:{color:'#f87171'}},c.from.toUpperCase()),
+              span({style:{color:'var(--crit)'}},c.from.toUpperCase()),
               ' → ',
               span({style:{color:'#34d399'}},c.to.toUpperCase()),
               c.mape!=null?' ('+c.mape+'% MAPE)':''
@@ -701,8 +701,8 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
                           opt==='simple'?'SIMPLE':opt.toUpperCase())
                       )),
                       isManualOvr&&btn({style:{fontSize:'7px',padding:'1px 5px',borderRadius:4,
-                        background:'rgba(248,113,113,.1)',border:'.5px solid rgba(248,113,113,.3)',
-                        color:'#f87171',cursor:'pointer'},onClick:()=>clearOvr(loc,hz.id)},'↺ reset')
+                        background:'rgba(244,63,94,.1)',border:'.5px solid rgba(244,63,94,.3)',
+                        color:'var(--crit)',cursor:'pointer'},onClick:()=>clearOvr(loc,hz.id)},'↺ reset')
                     )
                   );
                 })
@@ -847,7 +847,7 @@ function PeriodTotalScoreboard({ds, settings, userEvents, onClose}) {
           prog.model && span({style:{color:'#f5bc00'}},' · '+(ML[prog.model]||prog.model)),
           prog.fold && span({style:{color:'var(--text3)'}},` · window ${prog.fold}/${prog.folds}`)),
         btn({className:'btn btn-sm',
-          style:{marginTop:8,background:'rgba(248,113,113,.1)',border:'.5px solid rgba(248,113,113,.3)',color:'#f87171',fontSize:'9px'},
+          style:{marginTop:8,background:'rgba(244,63,94,.1)',border:'.5px solid rgba(244,63,94,.3)',color:'var(--crit)',fontSize:'9px'},
           onClick:cancel},'⏹ Cancel')
       ),
 
@@ -990,7 +990,7 @@ function StoreKBEditor({onClose, ds}) {
   });
 
   const tagCol = t => t.includes('fl')?'#60a5fa':t.includes('well-run')||t.includes('excellent')?'#10b981':
-    t.includes('watch')||t.includes('degrad')||t.includes('recalib')?'#f87171':
+    t.includes('watch')||t.includes('degrad')||t.includes('recalib')?'var(--crit)':
     t.includes('improving')?'#34d399':t.includes('tourist')||t.includes('interstate')?'#a78bfa':
     t.includes('new-location')||t.includes('insufficient')?'#f59e0b':'#64748b';
 
@@ -1082,7 +1082,7 @@ function StoreKBEditor({onClose, ds}) {
                   div({style:{fontSize:'13px',fontWeight:700,color:'var(--amber)'}},(STORE_NAMES[selLoc]||selLoc)),
                   div({style:{fontSize:'8px',color:'var(--text3)'}},'Store #'+selLoc)
                 ),
-                edits[selLoc]&&btn({className:'btn btn-sm',style:{color:'#f87171',fontSize:'8.5px'},onClick:resetLoc},'↺ Reset'),
+                edits[selLoc]&&btn({className:'btn btn-sm',style:{color:'var(--crit)',fontSize:'8.5px'},onClick:resetLoc},'↺ Reset'),
                 saved&&span({style:{fontSize:'9px',color:'#10b981',fontWeight:700}},'✓ Saved!'),
                 btn({className:'btn btn-sm btn-a',style:{fontWeight:700,padding:'4px 14px'},onClick:saveDraft},'💾 Save')
               ),
@@ -1107,13 +1107,13 @@ function StoreKBEditor({onClose, ds}) {
                         {tag:'well-run',label:'✓ Well-Run',col:'#10b981'},
                         {tag:'high-volume',label:'↑ High Volume',col:'#60a5fa'},
                         {tag:'improving',label:'↗ Improving',col:'#34d399'},
-                        {tag:'model-degrading',label:'⚠ Model Degrading',col:'#f87171'},
+                        {tag:'model-degrading',label:'⚠ Model Degrading',col:'var(--crit)'},
                       ]},
                       {group:'Management',items:[
                         {tag:'gm-in-training',label:'🎓 GM in Training',col:'#f59e0b'},
                         {tag:'new-gm',label:'👤 New GM (<6mo)',col:'#f59e0b'},
                         {tag:'fl',label:'⭐ FL Store',col:'#60a5fa'},
-                        {tag:'high-turnover',label:'🔄 High Turnover',col:'#f87171'},
+                        {tag:'high-turnover',label:'🔄 High Turnover',col:'var(--crit)'},
                       ]},
                       {group:'Location',items:[
                         {tag:'tourist',label:'🏖 Tourist Area',col:'#a78bfa'},
@@ -1271,7 +1271,7 @@ function StoreKBEditor({onClose, ds}) {
                       div({style:{display:'flex',alignItems:'center',gap:8,marginTop:4}},
                         span({style:{fontSize:'7.5px',color:'var(--text3)'}},'📅 '+note.date),
                         btn({onClick:()=>setDraft(d=>({...d,intelligenceNotes:d.intelligenceNotes.filter((_,j)=>j!==i)})),
-                          style:{fontSize:'7px',color:'#f87171',background:'transparent',border:'none',cursor:'pointer',padding:'0 4px',marginLeft:'auto'}},
+                          style:{fontSize:'7px',color:'var(--crit)',background:'transparent',border:'none',cursor:'pointer',padding:'0 4px',marginLeft:'auto'}},
                           '✕ Remove')
                       )
                     ))

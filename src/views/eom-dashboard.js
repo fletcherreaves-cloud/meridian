@@ -290,7 +290,7 @@ function FobStrip({ fob, loc }) {
     return div({ style: box },
       span({ style: lab }, label),
       span({ style: big() }, $(amt)),
-      p != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: dPp == null ? 'var(--text3)' : over ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+      p != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: dPp == null ? 'var(--text3)' : over ? 'var(--crit)' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
         `${(p * 100).toFixed(2)}%${dPp != null ? ` · ${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}` : ''}${tgtFrac != null ? ` (tgt ${(tgtFrac * 100).toFixed(2)}%)` : ''}`) : null);
   };
   const fobOver = fobTgt != null && f.fobPct != null && f.fobPct > fobTgt;
@@ -298,8 +298,8 @@ function FobStrip({ fob, loc }) {
     div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', alignItems: 'stretch' } },
       div({ style: box },
         span({ style: lab }, 'FOB'),
-        span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`),
-        fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+        span({ style: big(fobOver ? 'var(--crit)' : '#f5bc00') }, `${f.fobPct != null ? (f.fobPct * 100).toFixed(2) + '%' : '—'} · ${$(f.fob)}`),
+        fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? 'var(--crit)' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
           `${f.fobPct != null ? `${f.fobPct >= fobTgt ? '+' : ''}${((f.fobPct - fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${(fobTgt * 100).toFixed(2)}%`) : null),
       comp('Comp Waste', f.comp, tg.tCompWaste), comp('Raw Waste', f.raw, tg.tRawWaste), comp('Condiments', f.cond, tg.tCondiment),
       comp('Emp Meals', f.emp, tg.tEmpFood), comp('Stat Var', f.statv, tg.tStatLoss), comp('Unexplained', f.unex, tg.tUnex),
@@ -309,7 +309,7 @@ function FobStrip({ fob, loc }) {
 
 function ProgressBar({ value }) {
   const p = Math.max(0, Math.min(1, value || 0));
-  const color = p >= BELIEVES_DONE_PCT ? '#4ade80' : p >= 0.5 ? '#f5bc00' : '#f87171';
+  const color = p >= BELIEVES_DONE_PCT ? '#4ade80' : p >= 0.5 ? '#f5bc00' : 'var(--crit)';
   return div({ style: { display: 'flex', alignItems: 'center', gap: '8px', minWidth: '140px' } },
     div({ style: { flex: 1, height: '8px', background: 'var(--bdr)', borderRadius: '4px', overflow: 'hidden' } },
       div({ style: { width: `${p * 100}%`, height: '100%', background: color } })),
@@ -339,17 +339,17 @@ function VarianceTraceChart({ trace, jump }) {
   const dLbl = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return d; } };
   return div(null,
     jump && Math.abs(jump.delta) >= 25 ? div({ style: { fontSize: '11px', color: 'var(--text2)', marginBottom: '6px' } },
-      span({ style: { fontWeight: 700, color: jump.delta > 0 ? '#f87171' : '#4ade80' } }, `${jump.delta > 0 ? '+' : ''}$${Math.round(jump.delta).toLocaleString()}`),
+      span({ style: { fontWeight: 700, color: jump.delta > 0 ? 'var(--crit)' : '#4ade80' } }, `${jump.delta > 0 ? '+' : ''}$${Math.round(jump.delta).toLocaleString()}`),
       ` biggest single-pull jump landed on `, span({ style: { fontWeight: 700, color: 'var(--text)' } }, dLbl(jump.date)),
       ' — look-back window: ', span({ style: { fontWeight: 600 } }, dLbl(jump.windowStart)), ' → ', span({ style: { fontWeight: 600 } }, dLbl(jump.date)),
       wIdx < 0 ? ' (no earlier count on record — could be anywhere before this)' : '.') : null,
     h('svg', { viewBox: `0 0 ${W} ${H}`, style: { width: '100%', height: H, display: 'block', overflow: 'visible' } },
       h('defs', null, h('linearGradient', { id: 'lg_vt', x1: '0', y1: '0', x2: '0', y2: '1' },
         h('stop', { offset: '0%', stopColor: '#f5bc00', stopOpacity: .16 }), h('stop', { offset: '100%', stopColor: '#f5bc00', stopOpacity: 0 }))),
-      jIdx >= 0 && wIdx >= 0 && h('rect', { x: xOf(wIdx), y: pYt, width: Math.max(xOf(jIdx) - xOf(wIdx), 1), height: H - pYt - pYb, fill: 'rgba(248,113,113,.10)' }),
+      jIdx >= 0 && wIdx >= 0 && h('rect', { x: xOf(wIdx), y: pYt, width: Math.max(xOf(jIdx) - xOf(wIdx), 1), height: H - pYt - pYb, fill: 'rgba(244,63,94,.10)' }),
       h('polygon', { points: areaStr, fill: 'url(#lg_vt)' }),
       h('polyline', { points: poly, fill: 'none', stroke: '#f5bc00', strokeWidth: 1.5, strokeLinejoin: 'round', strokeLinecap: 'round' }),
-      jIdx >= 0 && h('line', { x1: xOf(jIdx), y1: pYt, x2: xOf(jIdx), y2: H - pYb, stroke: '#f87171', strokeWidth: 1, strokeDasharray: '4,3' }),
+      jIdx >= 0 && h('line', { x1: xOf(jIdx), y1: pYt, x2: xOf(jIdx), y2: H - pYb, stroke: 'var(--crit)', strokeWidth: 1, strokeDasharray: '4,3' }),
       ...pts.map((p, i) => {
         const tp = p.touchpoint && TP_STYLE[p.touchpoint];
         const px = xOf(i), py = yOf(p.cumulative.fobPct);
@@ -395,7 +395,7 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
         ['Store', 'Counts on', 'Last full count', 'This window', 'Status'].map(th))),
       h('tbody', null, data.flatMap(({ loc, name, c }) => {
         const st = statusOf(c);
-        const col = st >= 2 ? '#f87171' : st === 1 ? '#f5bc00' : '#4ade80';
+        const col = st >= 2 ? 'var(--crit)' : st === 1 ? '#f5bc00' : '#4ade80';
         const label = c.daysSinceWeekly == null ? 'No full weekly' : c.daysSinceWeekly >= 8 ? `Overdue · ${c.daysSinceWeekly}d` : 'On track';
         const isOpen = open === loc;
         const wins = isOpen ? windowsFor(loc) : [];
@@ -430,7 +430,7 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
                 ? div(null,
                     ...wins.map((w, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0' } },
                       span({ style: { fontWeight: 600, color: 'var(--text)' } }, w.descr), ` — moved `,
-                      span({ style: { fontWeight: 700, color: w.delta < 0 ? '#f87171' : '#4ade80' } }, `${w.delta >= 0 ? '+' : ''}${$(w.delta)}`),
+                      span({ style: { fontWeight: 700, color: w.delta < 0 ? 'var(--crit)' : '#4ade80' } }, `${w.delta >= 0 ? '+' : ''}${$(w.delta)}`),
                       ` between ${w.from} and ${w.to}`)))
                 : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
         return rowEls;
@@ -446,7 +446,7 @@ const VP_VBADGE = {
   'single-count': ['var(--text3)', 'counted'],
   'counted-multi': ['#38bdf8', 'counted · area-by-area'],
   improved: ['#4ade80', 'recount improved'],
-  worsened: ['#f87171', 'recount hurt'],
+  worsened: ['var(--crit)', 'recount hurt'],
   held: ['#f5bc00', 'recount held'],
 };
 function VarianceProgressionView({ rows, progByLoc, nm, period }) {
@@ -497,7 +497,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
     const rc = i.recount; if (!rc || !rc.nEomRecounts) return null;
     const confirmed = (rc.eomRecounts || []).some(r => r.confidence === 'confirmed');
     const label = rc.nEomHurt > rc.nEomHelped ? 'recount hurt' : rc.nEomHelped > rc.nEomHurt ? 'recount helped' : 'recount held';
-    const color = rc.nEomHurt > rc.nEomHelped ? '#f87171' : rc.nEomHelped > rc.nEomHurt ? '#4ade80' : 'var(--text3)';
+    const color = rc.nEomHurt > rc.nEomHelped ? 'var(--crit)' : rc.nEomHelped > rc.nEomHurt ? '#4ade80' : 'var(--text3)';
     return { label: `↻ ${label}${confirmed ? ' ✓' : ''}`, color,
       title: `${rc.nEomRecounts} same-day recount${rc.nEomRecounts !== 1 ? 's' : ''} on the binding (EOM) count day ${rc.eomDay || ''} — ${rc.nEomHelped} helped, ${rc.nEomHurt} hurt${confirmed ? '. ✓ = a back-office (non-MobileApp) correction — a confirmed recount.' : '. Detected from a later store-level count window — a re-verify after the walkthrough.'}${rc.nRecounts > rc.nEomRecounts ? ` (${rc.nRecounts - rc.nEomRecounts} more on earlier count-days — informational only.)` : ''}` };
   };
@@ -515,7 +515,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
         (r && r.baseCounted ? `session counted ${r.baseCounted}${r.baseVar != null ? ` (${$$(r.baseVar)})` : ''}. ` : 'counted on only one day in the EOM close window. ') +
         'Expand to see the count ledger' + (ovr ? ' or reset the override.' : '.') };
     const dir = eff.dir;
-    const color = dir === 'hurt' ? '#f87171' : dir === 'helped' ? '#4ade80' : '#f5bc00';
+    const color = dir === 'hurt' ? 'var(--crit)' : dir === 'helped' ? '#4ade80' : '#f5bc00';
     const n = r?.nRecounts || 1;
     // Clear SESSION → RECOUNT notation: show both bindings when the auto engine has them.
     const chain = r && r.baseCounted ? `SESSION ${r.baseCounted} ${$$(r.baseVar)} → RECOUNT${n > 1 ? `×${n}` : ''} ${r.curCounted} ${$$(r.curVar)}` : `RECOUNT ${dir}`;
@@ -570,7 +570,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
   const qty = n => n == null ? '—' : (Math.round(n * 100) / 100).toLocaleString();
   const MOM_BADGE = {
     improved: ['#4ade80', 'improving vs last period'], resolved: ['#4ade80', 'resolved vs last period'],
-    regressed: ['#f87171', 'regressing vs last period'], new: ['#f5bc00', 'new vs last period'],
+    regressed: ['var(--crit)', 'regressing vs last period'], new: ['#f5bc00', 'new vs last period'],
     held: ['var(--text3)', 'flat vs last period'], na: ['var(--text3)', 'no last-period data'],
   };
   const toggleBtn = (k, l) => h('button', { key: k, onClick: () => setBaseMode(k),
@@ -627,7 +627,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
       s.entries.forEach((e, ei) => {
         const binding = ei === s.entries.length - 1;
         const isRecount = recountKeys.has(`${e.dt} ${e.tm || ''}`);
-        const dc = Math.abs(e.dolVar) >= 1 ? (e.dolVar < 0 ? '#f87171' : '#4ade80') : 'var(--text3)';
+        const dc = Math.abs(e.dolVar) >= 1 ? (e.dolVar < 0 ? 'var(--crit)' : '#4ade80') : 'var(--text3)';
         const tag = binding ? 'BINDING' : isRecount ? 'RECOUNT' : 'area';
         const tagC = binding ? '#38bdf8' : isRecount ? '#f5bc00' : 'var(--text3)';
         bodyRows.push(h('tr', { key: `s${si}e${ei}`, style: { background: binding ? 'var(--surf2)' : isRecount ? 'rgba(245,188,0,.07)' : 'transparent' } },
@@ -645,7 +645,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
       h('tbody', null, ...bodyRows));
   };
 
-  const netC = dMomNet < 0 ? '#4ade80' : dMomNet > 0 ? '#f87171' : 'var(--text3)';
+  const netC = dMomNet < 0 ? '#4ade80' : dMomNet > 0 ? 'var(--crit)' : 'var(--text3)';
   return div(null,
     // Baseline toggle: this-period sessions vs month-over-month vs last period.
     div({ style: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', flexWrap: 'wrap' } },
@@ -654,12 +654,12 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
     lastEom
       ? div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
           div({ style: box }, span({ style: lab, title: 'Items whose period variance moved TOWARD zero vs last period, or dropped off the flag list entirely' }, 'Improving'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(dImproving))),
-          div({ style: box }, span({ style: lab, title: 'Items whose variance grew away from zero vs last period, or newly landed on the flag list' }, 'Regressing'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dRegressing))),
+          div({ style: box }, span({ style: lab, title: 'Items whose variance grew away from zero vs last period, or newly landed on the flag list' }, 'Regressing'), div({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--crit)' } }, String(dRegressing))),
           div({ style: box }, span({ style: lab, title: 'Net change in |variance| vs last period across scoped items (− = better)' }, 'Net vs last period'), div({ style: { fontSize: '17px', fontWeight: 800, color: netC } }, (dMomNet < 0 ? '−' : dMomNet > 0 ? '+' : '') + $(Math.abs(dMomNet)).replace('-', ''))))
       : div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
           div({ style: box }, span({ style: { ...lab }, title: 'Items with a genuine SAME-DAY recount — a deliberate re-verify AFTER the count walkthrough (a later store-level count window, or a back-office correction). Area-by-area entries within one walkthrough are NOT recounts, and neither is a weekly-cadence count on another day.' }, 'Recounted'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dRecounted))),
           div({ style: box }, span({ style: lab, title: 'Same-day recounts that moved the variance TOWARD zero — the manager diagnosed and corrected well.' }, 'Recount helped'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(dRHelped))),
-          div({ style: box }, span({ style: lab, title: 'Same-day recounts that moved the variance AWAY from zero — re-verifying made the number worse (or introduced an error).' }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(dRHurt))),
+          div({ style: box }, span({ style: lab, title: 'Same-day recounts that moved the variance AWAY from zero — re-verifying made the number worse (or introduced an error).' }, 'Recount hurt'), div({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--crit)' } }, String(dRHurt))),
           div({ style: box }, span({ style: lab, title: 'A binding count of ~$0 is statistically improbable — usually not-yet-posted; verify' }, '$0 (verify)'), div({ style: { fontSize: '17px', fontWeight: 800, color: '#38bdf8' } }, String(dZero)))),
     div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginBottom: '10px', lineHeight: 1.5 } }, lastEom
       ? ['Month-over-month trend: each item’s ', span({ key: 'a', style: { fontWeight: 700, color: 'var(--text2)' } }, 'official period variance, this period vs last'), '. (Each period already reconciles from the prior EOM count — beginning inventory = last EOM’s ending count — so this compares two reconciliations.) Improving = variance shrank toward zero (or resolved off the list); regressing = grew (or newly on the list). Stores ranked by most regressing. Click a store, then an item.']
@@ -673,10 +673,10 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
           span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, s.name),
           span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
           span({ style: { marginLeft: 'auto', fontSize: '11px', display: 'flex', gap: '10px' } }, ...(lastEom
-            ? [s.regressing ? span({ key: 'r', style: { color: '#f87171', fontWeight: 700 } }, `${s.regressing} regressing`) : null,
+            ? [s.regressing ? span({ key: 'r', style: { color: 'var(--crit)', fontWeight: 700 } }, `${s.regressing} regressing`) : null,
                s.improving ? span({ key: 'i', style: { color: '#4ade80', fontWeight: 700 } }, `${s.improving} improving`) : null,
-               span({ key: 'n', style: { color: s.momNet < 0 ? '#4ade80' : s.momNet > 0 ? '#f87171' : 'var(--text3)' } }, `net ${s.momNet < 0 ? '−' : s.momNet > 0 ? '+' : ''}${$(Math.abs(s.momNet)).replace('-', '')} vs last period`)]
-            : [s.rHurt ? span({ key: 'w', style: { color: '#f87171', fontWeight: 700 } }, `${s.rHurt} recount hurt`) : null,
+               span({ key: 'n', style: { color: s.momNet < 0 ? '#4ade80' : s.momNet > 0 ? 'var(--crit)' : 'var(--text3)' } }, `net ${s.momNet < 0 ? '−' : s.momNet > 0 ? '+' : ''}${$(Math.abs(s.momNet)).replace('-', '')} vs last period`)]
+            : [s.rHurt ? span({ key: 'w', style: { color: 'var(--crit)', fontWeight: 700 } }, `${s.rHurt} recount hurt`) : null,
                s.rHelped ? span({ key: 'h', style: { color: '#4ade80', fontWeight: 700 } }, `${s.rHelped} helped`) : null,
                s.flagged ? span({ key: 'f', style: { color: '#f5bc00', fontWeight: 700 } }, `⚑ ${s.flagged}`) : null,
                span({ key: 'c', style: { color: 'var(--text3)' } }, `${s.recounted} recounted · ${s.items.length} items`)]))),
@@ -690,7 +690,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
           const iid = `${s.loc}|${p.wrin}`;
           const itemOpen = openItem === iid;
           const off = p.officialVar;
-          const offC = off == null ? 'var(--text3)' : Math.abs(off) < 1 ? 'var(--text3)' : off < 0 ? '#f87171' : '#4ade80';
+          const offC = off == null ? 'var(--text3)' : Math.abs(off) < 1 ? 'var(--text3)' : off < 0 ? 'var(--crit)' : '#4ade80';
           return div({ key: p.wrin, style: { borderTop: '1px solid var(--bdr)', padding: '4px 0' } },
             div({ onClick: () => setOpenItem(o => o === iid ? null : iid), style: { display: 'flex', alignItems: 'baseline', gap: '8px', fontSize: '12px', flexWrap: 'wrap', cursor: 'pointer' } },
               span({ style: { color: 'var(--text3)', fontSize: '10px' } }, itemOpen ? '▾' : '▸'),
@@ -706,7 +706,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
                     ? span({ title: 'Official period variance (QSRSoft Variance Stat)' }, span({ style: { fontSize: '9px', color: 'var(--text3)', marginRight: '3px' } }, 'period var'), span({ style: { fontWeight: 800, color: offC, fontVariantNumeric: 'tabular-nums' } }, $(off)))
                     : span({ style: { fontSize: '10px', color: 'var(--text3)' }, title: 'No authoritative period variance (QSRSoft Variance Stat) for this item — either it is under ±$50 (immaterial), or the Variance-Stat data has not posted / been pulled for this period yet. If EVERY item reads "not flagged", the period’s variance report almost certainly has not landed yet — the ledger below still shows how it was counted.' }, 'not flagged')),
               span({ style: { fontSize: '10px', fontWeight: 700, color: vc, border: `1px solid ${vc}`, borderRadius: '4px', padding: '0 6px' } }, vl),
-              lastEom && m.delta != null ? span({ style: { fontSize: '9px', color: m.delta < 0 ? '#4ade80' : '#f87171' } }, `${m.delta < 0 ? '−' : '+'}${$(Math.abs(m.delta)).replace('-', '')}`) : null,
+              lastEom && m.delta != null ? span({ style: { fontSize: '9px', color: m.delta < 0 ? '#4ade80' : 'var(--crit)' } }, `${m.delta < 0 ? '−' : '+'}${$(Math.abs(m.delta)).replace('-', '')}`) : null,
               !lastEom ? (p.nSessions > 1 ? span({ title: 'Counted on more than one day — the weekly count progression. Only the final (EOM) count binds; these are NOT recounts.', style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.nSessions} count days`) : span({ style: { fontSize: '9px', color: 'var(--text3)' } }, `${p.sessions[0].nEntries} ${p.sessions[0].nEntries === 1 ? 'entry' : 'area entries'}`)) : null,
               // Genuine same-day recount badge (store-window model) — graded helped/hurt; ✓ = confirmed back-office.
               !lastEom ? (() => { const rb = recountBadge(p); return rb ? span({ title: rb.title, style: { fontSize: '9px', fontWeight: 700, color: rb.color, border: `1px solid ${rb.color}`, borderRadius: '4px', padding: '0 5px' } }, rb.label) : null; })() : null,
@@ -736,7 +736,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
     })));
 }
 
-const VERDICT_TONE = { good: '#4ade80', warn: '#f5bc00', bad: '#f87171', neutral: 'var(--text3)' };
+const VERDICT_TONE = { good: '#4ade80', warn: '#f5bc00', bad: 'var(--crit)', neutral: 'var(--text3)' };
 const jMoney = (n) => `$${Math.round(Math.abs(n || 0)).toLocaleString()}`;
 
 // One item's count-cycle "journey": verdict banner → flow summary → verified
@@ -749,7 +749,7 @@ const jMoney = (n) => `$${Math.round(Math.abs(n || 0)).toLocaleString()}`;
 // High Variance / Fluctuating / Loss Pattern Forming / Inconsistent Count(s). A look-back
 // selector tunes the window. Turns a flat "here's the $ this month" list into "is this a
 // one-off or a chronic problem, and is it a real-usage loss or a count-integrity artifact?"
-const SEV_COLOR = { critical: '#f87171', high: '#f5bc00', medium: '#38bdf8', info: '#64748b', low: '#64748b' };
+const SEV_COLOR = { critical: 'var(--crit)', high: '#f5bc00', medium: '#38bdf8', info: '#64748b', low: '#64748b' };
 function PatternChip({ chip, title }) {
   return span({
     title: title || chip.why,
@@ -858,9 +858,9 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
                   h('th', { key: hd, style: { textAlign: hd === 'Period' ? 'left' : 'right', padding: '2px 6px', borderBottom: '1px solid var(--bdr)', color: 'var(--text3)', fontWeight: 600 } }, hd)))),
               h('tbody', null, series.map((p, j2) => {
                 const worst = Math.abs(p.dol) === Math.max(...series.map(x => Math.abs(x.dol)));
-                return h('tr', { key: p.period, style: { background: worst && series.length > 1 ? 'rgba(248,113,113,.08)' : 'transparent' } },
+                return h('tr', { key: p.period, style: { background: worst && series.length > 1 ? 'rgba(244,63,94,.08)' : 'transparent' } },
                   h('td', { style: { padding: '2px 6px', color: 'var(--text2)' } }, p.period),
-                  h('td', { style: { padding: '2px 6px', textAlign: 'right', fontWeight: 700, color: p.dol < -tolerance ? '#f87171' : p.dol > tolerance ? '#fbbf24' : 'var(--text2)' } }, dolStr(p.dol)),
+                  h('td', { style: { padding: '2px 6px', textAlign: 'right', fontWeight: 700, color: p.dol < -tolerance ? 'var(--crit)' : p.dol > tolerance ? '#fbbf24' : 'var(--text2)' } }, dolStr(p.dol)),
                   h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (p.qty || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })),
                   caseSz > 0 ? h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (Math.abs(p.qty) / caseSz).toFixed(1)) : null);
               }))) : (wrin ? div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'No prior-period history for this item.') : null)),
@@ -903,7 +903,7 @@ function ItemJourneyView({ journey: j }) {
       return div({ style: { padding: '8px 12px', borderRadius: '8px', background: 'var(--surf3)', border: '1px solid var(--bdr)' } },
         div({ style: { display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' } },
           span({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Variance (Stat report)'),
-          rd != null && span(null, lbl('$'), span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? '#f87171' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`)),
+          rd != null && span(null, lbl('$'), span({ style: { fontSize: '14px', fontWeight: 800, color: rd < 0 ? 'var(--crit)' : '#4ade80' } }, `${rd < 0 ? '-' : '+'}${jMoney(rd)}`)),
           ru != null && Math.abs(ru) >= 0.5 && span(null, lbl('Qty'), span({ style: { fontSize: '13px', fontWeight: 700, color: 'var(--text2)' } }, `${ru > 0 ? '+' : ''}${Math.round(ru).toLocaleString()}${j.uom ? ` ${j.uom}` : ''}${cs}`))),
         checks.length > 0 && div({ style: { fontSize: '11px', marginTop: '4px', color: allTie ? '#4ade80' : '#f5bc00' } },
           allTie
@@ -934,7 +934,7 @@ function ItemJourneyView({ journey: j }) {
         div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } },
           laneFilter ? `${LANE_META[laneFilter].label} events` : 'Count-cycle timeline',
           laneFilter && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '6px', color: 'var(--text3)' } }, `(${shownEvents.length})`),
-          !laneFilter && j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? '#f87171' : '#4ade80', fontWeight: 700 } },
+          !laneFilter && j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? 'var(--crit)' : '#4ade80', fontWeight: 700 } },
             `net count variance ${fmtQty(j.netCountUnits)}${j.uom ? ` ${j.uom}` : ' units'}`)),
         shownEvents.length === 0
           ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, laneFilter ? `No ${LANE_META[laneFilter].label.toLowerCase()} events for this item.` : 'No ledger movement recorded for this item this period.')
@@ -958,9 +958,9 @@ function ItemJourneyView({ journey: j }) {
                   span({ style: { fontSize: '12px', color: 'var(--text2)', minWidth: '68px', fontWeight: e.isCount ? 700 : 500 } }, m.label),
                   span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
                     e.isCount ? `count${e.manager ? ` · ${e.manager}` : ''}` : (e.invoice || '')),
-                  span({ style: { fontSize: '12px', minWidth: '70px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: e.isCount ? 700 : 500, color: qtyVal == null ? 'var(--text3)' : e.isCount ? (qtyVal < 0 ? '#f87171' : '#4ade80') : 'var(--text2)' } },
+                  span({ style: { fontSize: '12px', minWidth: '70px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: e.isCount ? 700 : 500, color: qtyVal == null ? 'var(--text3)' : e.isCount ? (qtyVal < 0 ? 'var(--crit)' : '#4ade80') : 'var(--text2)' } },
                     qtyVal == null ? '—' : fmtQty(qtyVal)),
-                  span({ style: { fontSize: '12px', fontWeight: 700, minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? (e.dollars < 0 ? '#f87171' : '#4ade80') : 'var(--text3)' } },
+                  span({ style: { fontSize: '12px', fontWeight: 700, minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? (e.dollars < 0 ? 'var(--crit)' : '#4ade80') : 'var(--text3)' } },
                     (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}` : '—'));
               }))));
     })(),
@@ -1043,8 +1043,8 @@ function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
                 title: t != null ? `${(ratePct(c, k) * 100).toFixed(2)}% vs tgt ${(t * 100).toFixed(2)}% (${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}pp)` : `${(ratePct(c, k) * 100).toFixed(2)}% — no target set`,
                 style: {
                   padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
-                  color: over ? '#f87171' : under ? '#4ade80' : 'var(--text2)', fontWeight: over ? 700 : 400,
-                  background: over ? 'rgba(248,113,113,.08)' : 'transparent',
+                  color: over ? 'var(--crit)' : under ? '#4ade80' : 'var(--text2)', fontWeight: over ? 700 : 400,
+                  background: over ? 'rgba(244,63,94,.08)' : 'transparent',
                 },
               }, k === drv && span({ title: 'biggest component for this store', style: { color: '#f5bc00', marginRight: '3px' } }, '▸'), cell(c, k));
             }));
@@ -1061,7 +1061,7 @@ function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
           h('td', { style: { padding: '6px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, pct2(distFobTgt)),
           ...FOB_COMPONENTS.map(([k]) => { const dt = distTgt(k); const dPp = (dt != null && distPct(k) != null) ? (distPct(k) - dt) * 100 : null;
             return h('td', { key: k, style: { padding: '6px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
-              dt != null ? pct2(dt) : '—', dPp != null ? span({ style: { fontSize: '9px', color: dPp > 0.01 ? '#f87171' : '#4ade80', marginLeft: '4px' } }, `${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}`) : null); })))),
+              dt != null ? pct2(dt) : '—', dPp != null ? span({ style: { fontSize: '9px', color: dPp > 0.01 ? 'var(--crit)' : '#4ade80', marginLeft: '4px' } }, `${dPp >= 0 ? '+' : ''}${dPp.toFixed(2)}`) : null); })))),
     div({ style: { fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic', marginTop: '8px' } },
       '▸ = store’s largest component.  Red = OVER its target · green = under.  Target row = sales-weighted target per component (± = district vs target).  Click a column to sort.'));
 }
@@ -2244,7 +2244,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const actionsSlot = h(React.Fragment, null,
     h(ActionMenus, { groups: actionGroups }),
     lockMsg ? span({ style: { fontSize: '11px', color: lockMsg.startsWith('✓') ? '#4ade80' : '#fb923c' } }, lockMsg) : null,
-    pullMsg ? span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : '#f87171', maxWidth: '260px' } }, pullMsg.text) : null,
+    pullMsg ? span({ style: { fontSize: '11px', color: pullMsg.ok ? '#4ade80' : 'var(--crit)', maxWidth: '260px' } }, pullMsg.text) : null,
   );
 
   const subtitleText = (mode === 'eom'
@@ -2378,13 +2378,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               mode === 'progress' && (() => {
                 const cd = preferredCountDate(r); if (!cd) return null;
                 const a = daysAgo(cd.getTime());
-                return a == null ? null : span({ style: { fontSize: '10px', color: a > 40 ? '#f87171' : 'var(--text3)', marginLeft: '5px' } }, a === 0 ? 'today' : `${a}d ago`);
+                return a == null ? null : span({ style: { fontSize: '10px', color: a > 40 ? 'var(--crit)' : 'var(--text3)', marginLeft: '5px' } }, a === 0 ? 'today' : `${a}d ago`);
               })()),
             (() => {
               const tgt = fobTgtOf(r.loc);
               const d = (r.fobPct != null && tgt != null) ? r.fobPct - tgt : null;
               const over = d != null && d > 0.0005, under = d != null && d < -0.0005;
-              const c = over ? '#f87171' : under ? '#4ade80' : 'var(--text)';
+              const c = over ? 'var(--crit)' : under ? '#4ade80' : 'var(--text)';
               return h('td', { style: { padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' },
                   title: tgt != null ? `Target ${(tgt * 100).toFixed(2)}% · ${over ? 'OVER target — prioritize diagnosis' : under ? 'under target' : 'on target'}` : 'No FOB target on file' },
                 span({ style: { color: c } }, pct2(r.fobPct)),
@@ -2426,14 +2426,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   onClick: () => createShare(r.loc, r.name, r.components),
                   style: { background: 'none', border: '1px solid var(--bdr2)', borderRadius: '5px', color: 'var(--text2)', cursor: 'pointer', fontSize: '12px', padding: '3px 7px', marginLeft: '4px' },
                 }, '🔗 Share'))))))),
-    shareMsg ? div({ style: { position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12.5px', color: shareMsg.startsWith('✓') ? '#4ade80' : shareMsg.startsWith('Share failed') ? '#f87171' : 'var(--text2)', boxShadow: '0 6px 20px rgba(0,0,0,.4)', maxWidth: '90vw' }, onClick: () => setShareMsg('') }, shareMsg) : null,
+    shareMsg ? div({ style: { position: 'fixed', bottom: '16px', left: '50%', transform: 'translateX(-50%)', zIndex: 500, background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '9px 14px', fontSize: '12.5px', color: shareMsg.startsWith('✓') ? '#4ade80' : shareMsg.startsWith('Share failed') ? 'var(--crit)' : 'var(--text2)', boxShadow: '0 6px 20px rgba(0,0,0,.4)', maxWidth: '90vw' }, onClick: () => setShareMsg('') }, shareMsg) : null,
 
     // 📊 FOB Report modal (Notes 42 #1) — OK/FL summary → opportunities → patch → store, scoped.
     fobRepOpen && (() => {
       const R = fobReport;
       const ppf = f => (f == null ? '—' : (f * 100).toFixed(2) + '%');
       const trendChip = (t) => t.dir === 'improving' ? span({ style: { color: '#4ade80', fontWeight: 700 } }, `▼ improving ${t.deltaPP}pp`)
-        : t.dir === 'regressing' ? span({ style: { color: '#f87171', fontWeight: 700 } }, `▲ regressing +${t.deltaPP}pp`)
+        : t.dir === 'regressing' ? span({ style: { color: 'var(--crit)', fontWeight: 700 } }, `▲ regressing +${t.deltaPP}pp`)
         : t.dir === 'flat' ? span({ style: { color: 'var(--text3)' } }, 'flat') : span({ style: { color: 'var(--text3)' } }, 'n/a');
       const sumTile = (label, val, color, sub) => div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '8px 12px', minWidth: '120px' } },
         div({ style: { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 } }, label),
@@ -2445,12 +2445,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { display: 'flex', alignItems: 'baseline', gap: '10px', borderBottom: '2px solid var(--bdr2)', paddingBottom: '4px', marginBottom: '8px' } },
             span({ style: { fontWeight: 800, fontSize: '14px', color: o.org === 'FL' ? '#38bdf8' : '#f5bc00' } }, o.label),
             span({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${sm.nStores} stores · avg FOB ${sm.avgFobPP != null ? sm.avgFobPP + '%' : '—'} · ${sm.overTarget} over target · ${sm.regressing} regressing · ${sm.improving} improving`),
-            sm.oppDollars > 0 ? span({ style: { marginLeft: 'auto', fontSize: '11px', color: '#f87171', fontWeight: 700 } }, `${$(sm.oppDollars)}/mo opportunity`) : null),
+            sm.oppDollars > 0 ? span({ style: { marginLeft: 'auto', fontSize: '11px', color: 'var(--crit)', fontWeight: 700 } }, `${$(sm.oppDollars)}/mo opportunity`) : null),
           o.patches.map(pg => div({ key: pg.patch, style: { marginBottom: '6px' } },
             pg.patch !== '—' ? div({ style: { fontSize: '10px', textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)', fontWeight: 700, margin: '4px 0 2px' } }, pg.patch) : null,
             pg.stores.map(r => {
               const iso = fobRepStore === r.loc;
-              const gc = r.overTarget ? '#f87171' : '#4ade80';
+              const gc = r.overTarget ? 'var(--crit)' : '#4ade80';
               return div({ key: r.loc, style: { borderBottom: '1px solid var(--bdr)' } },
                 div({ onClick: () => setFobRepStore(o => o === r.loc ? null : r.loc), style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '5px 2px', cursor: 'pointer', flexWrap: 'wrap' } },
                   span({ style: { color: 'var(--text3)', fontSize: '10px' } }, iso ? '▾' : '▸'),
@@ -2464,7 +2464,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                   r.actions.length ? div({ style: { marginBottom: '8px' } }, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Action plan'),
                     r.actions.map((a, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', lineHeight: 1.5, marginBottom: '2px' } }, '• ' + a))) : null,
                   r.comps.some(c => c.deltaPP != null) ? div({ style: { marginBottom: '6px' } }, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Components vs target'),
-                    div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '11px' } }, r.comps.filter(c => c.actualPP != null).map(c => span({ key: c.key, style: { color: c.deltaPP > 0.02 ? '#f87171' : 'var(--text3)' } }, `${c.label} ${c.actualPP}%${c.tgtPP != null ? ` (t ${c.tgtPP}%)` : ''}`)))) : null,
+                    div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '11px' } }, r.comps.filter(c => c.actualPP != null).map(c => span({ key: c.key, style: { color: c.deltaPP > 0.02 ? 'var(--crit)' : 'var(--text3)' } }, `${c.label} ${c.actualPP}%${c.tgtPP != null ? ` (t ${c.tgtPP}%)` : ''}`)))) : null,
                   r.topItems.length ? div(null, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Top item losers'),
                     div({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}`).join(' · '))) : null,
                   r.masking ? div({ style: { fontSize: '10.5px', color: '#f5bc00', marginTop: '4px' } }, `Masking: ${$(r.grossLoss)} losses offset by ${$(r.grossGain)} gains (net ${$(r.net)}) — verify the offsetting counts are real.`) : null) : null);
@@ -2487,7 +2487,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' } },
             sumTile('Stores', String(R.summary.nStores), 'var(--text)', `${R.summary.overTarget} over target`),
             sumTile('Avg FOB', R.summary.avgFobPP != null ? R.summary.avgFobPP + '%' : '—', 'var(--text)'),
-            sumTile('Regressing', String(R.summary.regressing), '#f87171', `${R.summary.improving} improving`),
+            sumTile('Regressing', String(R.summary.regressing), 'var(--crit)', `${R.summary.improving} improving`),
             sumTile('Opportunity', $(R.summary.oppDollars) + '/mo', '#f5bc00', 'over-target $ vs target'),
             ...Object.keys(R.summary.byOrg).sort().map(k => sumTile(k, (R.summary.byOrg[k].avgFobPP ?? '—') + '%', k === 'FL' ? '#38bdf8' : '#f5bc00', `${R.summary.byOrg[k].overTarget}/${R.summary.byOrg[k].nStores} over tgt`))),
           // Biggest opportunities — distinguish "checked N stores, none over target" (genuinely clean) from
@@ -2497,7 +2497,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px' } }, `Biggest opportunities (${R.opportunities.length})`),
             R.opportunities.slice(0, 8).map(r => div({ key: r.loc, onClick: () => { setFobRepStore(r.loc); }, style: { display: 'flex', gap: '8px', alignItems: 'baseline', padding: '3px 0', fontSize: '12px', cursor: 'pointer', flexWrap: 'wrap' } },
               span({ style: { fontWeight: 700, color: 'var(--text)', minWidth: '150px' } }, `${r.name || nm(r.loc)}`, span({ style: { fontSize: '9px', color: 'var(--text3)', marginLeft: '4px' } }, r.org)),
-              span({ style: { color: '#f87171', fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, ppf(r.fobPct)),
+              span({ style: { color: 'var(--crit)', fontWeight: 800, fontVariantNumeric: 'tabular-nums' } }, ppf(r.fobPct)),
               span({ style: { fontSize: '10px', color: 'var(--text3)' } }, `+${r.gapPP}pp vs tgt`),
               trendChip(r.trend),
               span({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.actions[0] || ''))))
@@ -2527,17 +2527,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             div({ style: { marginTop: '4px' } }, span({ style: { fontWeight: 700, color: '#4ade80' } }, 'FOB Consistency — '), 'each store\'s month-final FOB% across every month on record → the average and the standard deviation (sd). Low sd = repeatable results (dialed in). Dollar-weighted FOB (Σ components ÷ Σ sales), same as everywhere else.')),
           // T1 — Recount Impact
           div({ style: { fontWeight: 700, color: 'var(--text)', margin: '4px 0 6px', fontSize: '13px' } }, '① Recount Impact — the opportunities',
-            harmful.length ? span({ style: { marginLeft: '8px', fontSize: '11px', color: '#f87171', fontWeight: 700 } }, `${harmful.length} store${harmful.length === 1 ? '' : 's'} net-harmful`) : span({ style: { marginLeft: '8px', fontSize: '11px', color: '#4ade80' } }, 'all net-helpful ✓')),
+            harmful.length ? span({ style: { marginLeft: '8px', fontSize: '11px', color: 'var(--crit)', fontWeight: 700 } }, `${harmful.length} store${harmful.length === 1 ? '' : 's'} net-harmful`) : span({ style: { marginLeft: '8px', fontSize: '11px', color: '#4ade80' } }, 'all net-helpful ✓')),
           !R.impact.length ? div({ style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 0 12px' } }, 'No recounted items in the current-period ledger for this scope yet.')
           : div({ style: { overflowX: 'auto', marginBottom: '16px' } }, h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
               h('thead', null, h('tr', null, th('Store'), th('Toward $0', 1), th('Away', 1), th('Net', 1), th('# recounted', 1))),
               h('tbody', null, R.impact.flatMap(s => {
                 const isOpen = riddleStore === s.loc;
-                const c = s.net < 0 ? '#f87171' : '#4ade80';
+                const c = s.net < 0 ? 'var(--crit)' : '#4ade80';
                 const els = [h('tr', { key: s.loc, onClick: () => setRiddleStore(o => o === s.loc ? null : s.loc), style: { borderBottom: isOpen ? 'none' : '1px solid var(--bdr)', cursor: 'pointer' } },
                   h('td', { style: { padding: '5px 9px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, `${isOpen ? '▾' : '▸'} ${nm(s.loc)}`, span({ style: { color: 'var(--text3)', fontWeight: 400, marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '10px' } }, `#${unpad(s.loc)}`)),
                   h('td', { style: { padding: '5px 9px', textAlign: 'right', color: '#4ade80', fontVariantNumeric: 'tabular-nums' } }, $(s.toward)),
-                  h('td', { style: { padding: '5px 9px', textAlign: 'right', color: '#f87171', fontVariantNumeric: 'tabular-nums' } }, $(s.away)),
+                  h('td', { style: { padding: '5px 9px', textAlign: 'right', color: 'var(--crit)', fontVariantNumeric: 'tabular-nums' } }, $(s.away)),
                   h('td', { style: { padding: '5px 9px', textAlign: 'right', fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums' } }, `${s.net >= 0 ? '+' : ''}${$(s.net)}`),
                   h('td', { style: { padding: '5px 9px', textAlign: 'right', color: 'var(--text3)' } }, s.nRecounted))];
                 if (isOpen) els.push(h('tr', { key: s.loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
@@ -2546,7 +2546,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                     s.items.slice(0, 12).map((it, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '1px 0' } },
                       span({ style: { fontWeight: 600, color: 'var(--text)' } }, it.descr), ' — ',
                       span({ style: { fontFamily: 'ui-monospace,Menlo,monospace' } }, `${$(it.baseVar)} → ${$(it.finalVar)}`), ' · ',
-                      span({ style: { fontWeight: 700, color: it.effect < 0 ? '#f87171' : '#4ade80' } }, `${it.effect < 0 ? 'hurt ' : 'helped '}${$(Math.abs(it.effect))}`))))));
+                      span({ style: { fontWeight: 700, color: it.effect < 0 ? 'var(--crit)' : '#4ade80' } }, `${it.effect < 0 ? 'hurt ' : 'helped '}${$(Math.abs(it.effect))}`))))));
                 return els;
               })))),
           // T3 — Consistency
@@ -2557,7 +2557,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               h('tbody', null, R.consistency.map((s, i) => h('tr', { key: s.loc, style: { borderBottom: '1px solid var(--bdr)' } },
                 h('td', { style: { padding: '5px 9px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, i < 3 ? '🟢 ' : '', nm(s.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '10px' } }, `#${unpad(s.loc)}`)),
                 h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' } }, `${s.mean.toFixed(2)}%`),
-                h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: s.sd < 0.3 ? '#4ade80' : s.sd < 0.5 ? '#f5bc00' : '#f87171' } }, s.sd.toFixed(2)),
+                h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: s.sd < 0.3 ? '#4ade80' : s.sd < 0.5 ? '#f5bc00' : 'var(--crit)' } }, s.sd.toFixed(2)),
                 h('td', { style: { padding: '5px 9px', textAlign: 'right', color: 'var(--text3)' } }, s.n)))))),
           div({ style: { marginTop: '12px', fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic' } }, 'Recount impact reads the current selected period\'s ledger; consistency spans all FOB history in scope. Click a store above to see the recounts driving its number.')));
     })(),
@@ -2578,14 +2578,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           : div(null, wasteScan.stores.map(s => {
               const drilled = wasteDrill === s.loc;
               const evs = drilled ? wasteEventsFor(s.loc) : [];
-              return div({ key: s.loc, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${s.flags.some(f => f.sev >= 3) ? '#f87171' : '#fb923c'}`, borderRadius: '7px', background: 'var(--surf2)', padding: '10px 12px', marginBottom: '8px' } }, [
+              return div({ key: s.loc, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${s.flags.some(f => f.sev >= 3) ? 'var(--crit)' : '#fb923c'}`, borderRadius: '7px', background: 'var(--surf2)', padding: '10px 12px', marginBottom: '8px' } }, [
               div({ key: 'h', style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '5px' } },
                 span({ onClick: () => setWasteDrill(d => d === s.loc ? null : s.loc), style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', cursor: 'pointer' }, title: 'Show / hide the raw waste events behind these flags' }, `${drilled ? '▾' : '▸'} ${nm(s.loc)}`),
                 span({ style: { color: 'var(--text3)', fontSize: '10px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(s.loc)}`),
                 span({ style: { marginLeft: 'auto', color: 'var(--text3)', fontSize: '10.5px' } }, `$${Math.round(s.total).toLocaleString()} waste · ${s.nEvents} entries`),
                 h('button', { onClick: () => askSageWaste(s), title: 'Open SAGE with this store\'s waste picture — coaching questions, not accusations', style: { background: 'none', color: 'var(--accent,#f5bc00)', border: '1px solid var(--accent,#f5bc00)', borderRadius: '5px', padding: '1px 7px', fontSize: '10px', fontWeight: 700, cursor: 'pointer' } }, '🧠 Ask SAGE')),
               ...s.flags.map((f, i) => div({ key: 'f' + i, style: { display: 'flex', gap: '7px', alignItems: 'baseline', fontSize: '12px', color: 'var(--text2)', padding: '2px 0' } },
-                span({ style: { fontSize: '9px', fontWeight: 700, color: f.sev >= 3 ? '#f87171' : f.sev >= 2 ? '#fb923c' : '#f5bc00', border: `1px solid ${f.sev >= 3 ? '#f87171' : f.sev >= 2 ? '#fb923c' : '#f5bc00'}`, borderRadius: '4px', padding: '0 5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, f.kind),
+                span({ style: { fontSize: '9px', fontWeight: 700, color: f.sev >= 3 ? 'var(--crit)' : f.sev >= 2 ? '#fb923c' : '#f5bc00', border: `1px solid ${f.sev >= 3 ? 'var(--crit)' : f.sev >= 2 ? '#fb923c' : '#f5bc00'}`, borderRadius: '4px', padding: '0 5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, f.kind),
                 span(null, f.label))),
               drilled && div({ key: 'drill', style: { marginTop: '7px', borderTop: '1px dashed var(--bdr)', paddingTop: '6px' } }, [
                 div({ key: 'dh', style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', marginBottom: '3px' } }, `Waste events (largest first) — ${evs.length}`),
@@ -2669,7 +2669,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
               ? span(null, `${t.beganTm} → ${t.endedTm} · `, span({ style: { fontWeight: 700, color: 'var(--text)' } }, fmtDurationHMS(t.durationMs)))
               : span({ style: { color: 'var(--text3)' } }, 'no time recorded — duration unknown'),
             t.nDays > 1 ? span({ style: { color: 'var(--text3)' } }, ` · counted over ${t.nDays} days`) : null,
-            t.bulkSubmit ? span({ style: { color: '#f87171', fontWeight: 700, display: 'block', marginTop: '3px' }, title: 'A single timestamp accounts for the whole count — submitted all at once instead of the lock-in-as-you-go travel path. Variance for items in active use during the count may be skewed.' },
+            t.bulkSubmit ? span({ style: { color: 'var(--crit)', fontWeight: 700, display: 'block', marginTop: '3px' }, title: 'A single timestamp accounts for the whole count — submitted all at once instead of the lock-in-as-you-go travel path. Variance for items in active use during the count may be skewed.' },
               t.allSame
                 ? '⚠ All counts submitted at once — travel-path process not followed (in-use items may be skewed)'
                 : `⚠ Whole count submitted at once — ${t.domCount} of ${t.domCount + t.nStragglers} items @ ${t.domTm}${t.nStragglers ? `, ${t.nStragglers} added after` : ''}; travel-path not followed (in-use items may be skewed)`) : null); })(),
@@ -2693,7 +2693,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}
           .md-rpt .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
           .md-rpt .chip-warn{background:rgba(245,188,0,.14);border-color:#f5bc00;color:#f5bc00}
-          .md-rpt .chip-bad{background:rgba(248,113,113,.14);border-color:#f87171;color:#f87171}
+          .md-rpt .chip-bad{background:rgba(244,63,94,.14);border-color:var(--crit);color:var(--crit)}
           .md-rpt .chip-good{background:rgba(74,222,128,.14);border-color:#4ade80;color:#4ade80}
           .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
         h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
@@ -2729,7 +2729,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                       span({ style: { color: 'var(--text3)', fontSize: '10.5px' } }, `· ${u.cls || 'item'} · on-hand ${$(u.onHandAmt)}`))),
                   div({ style: { display: 'flex', gap: '4px' } },
                     mk('counted', '✓ Counted', '#38bdf8'),
-                    perish(u.cls) ? mk('wrote_off', '✗ Wrote off', '#f87171') : mk('kept_usable', '◦ Kept (usable)', '#4ade80')));
+                    perish(u.cls) ? mk('wrote_off', '✗ Wrote off', 'var(--crit)') : mk('kept_usable', '◦ Kept (usable)', '#4ade80')));
               }),
               stale.length > 20 ? div({ style: { fontSize: '10.5px', color: 'var(--text3)', padding: '4px' } }, `+${stale.length - 20} more.`) : null));
         })(),
@@ -2834,14 +2834,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => downloadText(`count-reliability_${scope}_${period}.csv`, relCsv()), style: MODAL_TOOLBTN, title: 'Download the full store×item detail as CSV' }, '⤓ Save CSV'),
           h('button', { onClick: () => openPrintWindow('Count Reliability', relPrintHtml()), style: MODAL_TOOLBTN, title: 'Open a printable report (Save as PDF or print)' }, '⎙ Print')) : null,
         relBusy ? div({ style: { padding: '30px', textAlign: 'center', color: 'var(--text3)' } }, 'Scoring count consistency across the scope…')
-          : rel?.error ? div({ style: { padding: '20px', textAlign: 'center', color: '#f87171', fontSize: '13px' } }, `Scan failed: ${rel.error}`)
+          : rel?.error ? div({ style: { padding: '20px', textAlign: 'center', color: 'var(--crit)', fontSize: '13px' } }, `Scan failed: ${rel.error}`)
           : rel && !rel.stores.length ? div({ style: { padding: '20px', textAlign: 'center', color: '#f5bc00', fontSize: '13px' } },
               !rel.nRows ? 'No variance history for this scope/window — run the Variance pull or widen the look-back.'
                 : rel.periods && rel.periods.length < 2 ? `Only 1 period in this window (${rel.nRows.toLocaleString()} rows) — consistency needs at least 2 periods to compare. Choose a 2+ look-back.`
                 : `Read ${rel.nRows.toLocaleString()} rows, but no store has enough multi-period items to score yet — widen the look-back.`)
           : rel ? div({ style: { display: 'flex', flexDirection: 'column', gap: '5px' } },
               rel.stores.map(s => {
-                const gc = s.grade === 'A' ? '#4ade80' : s.grade === 'B' ? '#a3e635' : s.grade === 'C' ? '#f5bc00' : s.grade === 'D' ? '#fb923c' : '#f87171';
+                const gc = s.grade === 'A' ? '#4ade80' : s.grade === 'B' ? '#a3e635' : s.grade === 'C' ? '#f5bc00' : s.grade === 'D' ? '#fb923c' : 'var(--crit)';
                 const isOpen = relOpenRows[s.loc];
                 const canOpen = (s.worst || []).length > 0;
                 return div({ key: s.loc, style: { background: 'var(--surf3)', borderRadius: '6px', borderLeft: `3px solid ${gc}`, overflow: 'hidden' } },
@@ -2861,7 +2861,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                       (s.worst || []).map(w => div({ key: w.wrin, style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', fontSize: '11.5px' } },
                         span({ style: { color: 'var(--text)', fontWeight: 600 } }, w.descr || w.wrin),
                         span({ style: { color: 'var(--text3)', fontSize: '10px' } }, `${w.cls || ''} · WRIN ${w.wrin}`),
-                        span({ style: { color: '#f87171', fontWeight: 700 } }, `swing $${Math.round(w.swing || 0).toLocaleString()}`),
+                        span({ style: { color: 'var(--crit)', fontWeight: 700 } }, `swing $${Math.round(w.swing || 0).toLocaleString()}`),
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.swingHi || 0).toLocaleString()} (${w.swingHiP || ''}) → -$${Math.abs(Math.round(w.swingLo || 0)).toLocaleString()} (${w.swingLoP || ''})`))))));
               }))
           : null)),
@@ -2886,7 +2886,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           h('button', { onClick: () => downloadText(`rubber-band_${scope}_${period}.csv`, rbCsv()), style: MODAL_TOOLBTN, title: 'Download the full store×item detail as CSV' }, '⤓ Save CSV'),
           h('button', { onClick: () => openPrintWindow('Rubber-band', rbPrintHtml()), style: MODAL_TOOLBTN, title: 'Open a printable report' }, '⎙ Print')) : null,
         rbBusy ? div({ style: { padding: '30px', textAlign: 'center', color: 'var(--text3)' } }, 'Scanning for padding→collapse across the scope…')
-          : rb?.error ? div({ style: { padding: '20px', textAlign: 'center', color: '#f87171', fontSize: '13px' } }, `Scan failed: ${rb.error}`)
+          : rb?.error ? div({ style: { padding: '20px', textAlign: 'center', color: 'var(--crit)', fontSize: '13px' } }, `Scan failed: ${rb.error}`)
           : rb && !rb.stores.length ? div({ style: { padding: '20px', textAlign: 'center', color: rb.nRows ? '#4ade80' : '#f5bc00', fontSize: '13px' } },
               !rb.nRows ? 'No variance history for this scope/window — run the Variance pull or widen the look-back.'
                 : rb.periods && rb.periods.length < 3 ? `Only ${rb.periods.length} period(s) in this window — rubber-band needs at least 3 to see a run then a snap. Choose a 3+ look-back.`
@@ -2939,11 +2939,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             h('button', { onClick: () => openPrintWindow('District EOM Summary', sumPrintHtml()), style: MODAL_TOOLBTN }, '⎙ Print')),
           // FOB roll-up strip
           div({ style: { display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '10px' } },
-            div({ style: box }, span({ style: lab }, 'District FOB'), span({ style: big(fobOver ? '#f87171' : '#f5bc00') }, `${pctS(r.fobPct)} · ${$(r.fob$)}`),
-              r.fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? '#f87171' : '#4ade80' } }, `${r.fobPct != null ? `${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${pctS(r.fobTgt)}`) : null),
+            div({ style: box }, span({ style: lab }, 'District FOB'), span({ style: big(fobOver ? 'var(--crit)' : '#f5bc00') }, `${pctS(r.fobPct)} · ${$(r.fob$)}`),
+              r.fobTgt != null ? span({ style: { fontSize: '8.5px', fontWeight: 600, color: fobOver ? 'var(--crit)' : '#4ade80' } }, `${r.fobPct != null ? `${r.fobPct >= r.fobTgt ? '+' : ''}${((r.fobPct - r.fobTgt) * 100).toFixed(2)} vs ` : ''}tgt ${pctS(r.fobTgt)}`) : null),
             ...COMP_META.map(m => { const dpp = r.compDeltaPp && r.compDeltaPp[m.k]; const tgt = r.compTgt && r.compTgt[m.k]; const over = dpp != null && dpp > 0.001;
               return div({ key: m.k, style: box }, span({ style: lab }, m.label), span({ style: big() }, $(r.comps[m.k])),
-                span({ style: { fontSize: '8.5px', fontWeight: 600, color: dpp == null ? 'var(--text3)' : over ? '#f87171' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+                span({ style: { fontSize: '8.5px', fontWeight: 600, color: dpp == null ? 'var(--text3)' : over ? 'var(--crit)' : '#4ade80', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
                   `${pctS(r.compPct[m.k])}${dpp != null ? ` · ${dpp >= 0 ? '+' : ''}${dpp.toFixed(2)}` : ''}${tgt != null ? ` (tgt ${pctS(tgt)})` : ''}`)); }),
             div({ style: box }, span({ style: lab }, 'Prod Sales'), span({ style: big() }, $(r.sales)),
               span({ style: { fontSize: '8.5px', fontWeight: 600, color: 'var(--text3)' } }, `${r.nStores} ${scopeLabel()} store${r.nStores === 1 ? '' : 's'} · MTD`))),
@@ -2972,7 +2972,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 h('th', { style: { textAlign: 'left', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase' } }, 'Store'),
                 th('FOB % (±tgt)'), th('FOB $'), ...COMP_META.map(m => th(m.label)), th('Count'), ...CLASS_META.map(m => th(m.short)), th('Ready'), th('$ over'))),
               h('tbody', { key: 'b' }, stores.map((s, i) => {
-                const sc = s.deltaPp > 0.001 ? '#f87171' : s.deltaPp < -0.001 ? '#4ade80' : 'var(--text)';
+                const sc = s.deltaPp > 0.001 ? 'var(--crit)' : s.deltaPp < -0.001 ? '#4ade80' : 'var(--text)';
                 return h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
                   h('td', { style: { padding: '4px 7px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap' } }, nm(s.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: '9px', marginLeft: '4px' } }, `#${unpad(s.loc)}`)),
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: sc, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, `${pctS(s.fobPct)}${s.deltaPp != null ? ` (${s.deltaPp >= 0 ? '+' : ''}${s.deltaPp.toFixed(2)})` : ''}`),
@@ -2990,7 +2990,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     // ── Change Monitor modal — day-2 diff of live state vs the locked baseline ──────
     monOpen && (() => {
-      const V = { helping: '#4ade80', hurting: '#f87171', flat: 'var(--text3)', unknown: 'var(--text3)', tie: 'var(--text3)', counted: '#38bdf8' };
+      const V = { helping: '#4ade80', hurting: 'var(--crit)', flat: 'var(--text3)', unknown: 'var(--text3)', tie: 'var(--text3)', counted: '#38bdf8' };
       const VLABEL = { helping: 'helping', hurting: 'hurting', flat: 'flat', unknown: '—', counted: 'var posted' };
       const box = { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '7px', padding: '7px 10px', display: 'flex', flexDirection: 'column', gap: '1px', minWidth: '96px' };
       const lab = { fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text3)', fontWeight: 700 };
@@ -3029,10 +3029,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
             // District roll-up strip
             div({ key: 'roll', style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' } },
               div({ style: box }, span({ style: lab, title: 'Stores that recounted flagged items and moved the variance toward zero (better FOB)' }, 'Improving'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#4ade80' } }, String(d.improved))),
-              div({ style: box }, span({ style: lab, title: 'Stores whose recounts moved the variance away from zero (worse FOB)' }, 'Made worse'), span({ style: { fontSize: '17px', fontWeight: 800, color: '#f87171' } }, String(d.worsened))),
+              div({ style: box }, span({ style: lab, title: 'Stores whose recounts moved the variance away from zero (worse FOB)' }, 'Made worse'), span({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--crit)' } }, String(d.worsened))),
               div({ style: box }, span({ style: lab, title: 'Stores with no qualifying recount on their flagged items since count-completion' }, 'No action'), span({ style: { fontSize: '17px', fontWeight: 800, color: 'var(--text)' } }, String(d.noAction ?? (d.nStores - d.improved - d.worsened)))),
               div({ style: box }, span({ style: lab }, '$ moved toward 0'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#4ade80' } }, money(d.totalHelped))),
-              div({ style: box }, span({ style: lab }, '$ moved away'), span({ style: { fontSize: '15px', fontWeight: 800, color: '#f87171' } }, money(d.totalHurt)))),
+              div({ style: box }, span({ style: lab }, '$ moved away'), span({ style: { fontSize: '15px', fontWeight: 800, color: 'var(--crit)' } }, money(d.totalHurt)))),
             d.active === 0 ? div({ key: 'noact', style: { color: 'var(--text3)', fontSize: '12px', padding: '4px 2px 12px' } }, 'No recounts since count-completion — nothing has moved. This is the honest read for a period the stores have finished; the signal fills in when they recount flagged items.') : null,
             div({ key: 'floor', style: { color: 'var(--text3)', fontSize: '10.5px', marginBottom: '10px', lineHeight: 1.5 } },
               'Baseline = each store\'s variance ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'at count-completion'), ' (from the ledger). Helped / hurt count only ', span({ style: { fontWeight: 700, color: 'var(--text2)' } }, 'material recounts (≥ $25 toward/away zero)'), '. ', span({ style: { color: '#f5bc00', fontWeight: 700 } }, '↻'), ' = a recount actually occurred since count-completion. The ', span({ style: { fontWeight: 700 } }, 'Verdict'), ' is the store\'s engagement: did it act on its flagged items and improve FOB.'),
@@ -3056,20 +3056,20 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', color: 'var(--text2)' } }, `${pct2(s.fob.baseFobPct)} → ${pct2(s.fob.curFobPct)}`),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: V[s.fob.verdict] } }, dpp(s.fob.dFobPct)),
                       (() => {
-                        const EV = { improving: '#4ade80', worsened: '#f87171', mixed: '#f5bc00', 'no-action': 'var(--text3)' };
+                        const EV = { improving: '#4ade80', worsened: 'var(--crit)', mixed: '#f5bc00', 'no-action': 'var(--text3)' };
                         const e = s.engagement || {};
                         return h('td', { title: e.readLabel || '', style: { padding: '5px 7px', textAlign: 'right', fontWeight: 700, color: EV[e.verdict] || 'var(--text3)' } }, e.label || '—');
                       })(),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text3)', whiteSpace: 'nowrap' } }, s.count.basePct != null && s.count.curPct != null ? `${(s.count.basePct * 100).toFixed(2)}→${(s.count.curPct * 100).toFixed(2)}%` : '—'),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHelped ? '#4ade80' : 'var(--text3)', fontWeight: s.nHelped ? 700 : 400 } }, s.nHelped || ''),
-                      h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? '#f87171' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),
+                      h('td', { style: { padding: '5px 7px', textAlign: 'right', color: s.nHurt ? 'var(--crit)' : 'var(--text3)', fontWeight: s.nHurt ? 700 : 400 } }, s.nHurt || ''),
                       h('td', { title: s.nRecounted ? `${s.nRecounted} item${s.nRecounted === 1 ? '' : 's'} were RE-COUNTED since the baseline (their last-counted date changed). ↻ = a recount occurred, not a recommendation.` : '', style: { padding: '5px 7px', textAlign: 'right', color: s.nRecounted ? '#f5bc00' : 'var(--text3)', fontWeight: s.nRecounted ? 700 : 400 } }, s.nRecounted ? `↻ ${s.nRecounted}` : ''),
                       h('td', { style: { padding: '5px 7px', textAlign: 'right', whiteSpace: 'nowrap' }, onClick: e => e.stopPropagation() },
                         h('button', { onClick: () => markSecondary(loc, sr.status === 'reviewed' ? 'pending' : 'reviewed'),
-                          style: { fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 7px', cursor: 'pointer', border: '1px solid', ...(sr.status === 'reviewed' ? { color: '#4ade80', borderColor: '#4ade80', background: 'transparent' } : sr.status === 'flagged' ? { color: '#f87171', borderColor: '#f87171', background: 'transparent' } : { color: 'var(--text3)', borderColor: 'var(--bdr2)', background: 'var(--surf3)' }) } },
+                          style: { fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 7px', cursor: 'pointer', border: '1px solid', ...(sr.status === 'reviewed' ? { color: '#4ade80', borderColor: '#4ade80', background: 'transparent' } : sr.status === 'flagged' ? { color: 'var(--crit)', borderColor: 'var(--crit)', background: 'transparent' } : { color: 'var(--text3)', borderColor: 'var(--bdr2)', background: 'var(--surf3)' }) } },
                           sr.status === 'reviewed' ? '✓ reviewed' : sr.status === 'flagged' ? '⚑ flagged' : 'mark'),
                         h('button', { onClick: () => markSecondary(loc, sr.status === 'flagged' ? 'pending' : 'flagged'), title: 'Flag for follow-up',
-                          style: { marginLeft: '4px', fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 6px', cursor: 'pointer', border: '1px solid var(--bdr2)', background: 'var(--surf3)', color: sr.status === 'flagged' ? '#f87171' : 'var(--text3)' } }, '⚑'))),
+                          style: { marginLeft: '4px', fontSize: '10px', fontWeight: 700, borderRadius: '5px', padding: '2px 6px', cursor: 'pointer', border: '1px solid var(--bdr2)', background: 'var(--surf3)', color: sr.status === 'flagged' ? 'var(--crit)' : 'var(--text3)' } }, '⚑'))),
                   ];
                   if (open) {
                     const its = s.items.slice(0, 40);
@@ -3086,7 +3086,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                     };
                     // Per-recount columns (Notes 45 #83): show the variance at the SESSION (original) count and
                     // at EACH recount in the close window — as many R-columns as the busiest item needs (capped).
-                    const RDIR = { helped: '#4ade80', hurt: '#f87171', held: '#f5bc00' };
+                    const RDIR = { helped: '#4ade80', hurt: 'var(--crit)', held: '#f5bc00' };
                     const maxR = Math.min(6, its.reduce((m, it) => Math.max(m, (it.recounts || []).length), 0));
                     rowEls.push(h('tr', { key: loc + '-d' }, h('td', { colSpan: 9, style: { padding: '2px 7px 10px 24px', background: 'var(--surf2)' } },
                       s.items.length === 0 ? div({ style: { color: 'var(--text3)', fontSize: '11px', padding: '6px 0' } }, 'No item-level changes since baseline.')
@@ -3167,7 +3167,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         h('button', { onClick: () => setXcOpen(false), style: MODAL_X }, '✕'),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
           'Paste an external AI\'s FOB analysis (one store per line — store number, then Prod Sales, FOB$, FOB%, and the 6 components). Meridian reconciles it against its own real numbers and flags: ',
-          span({ style: { color: '#f87171', fontWeight: 700 } }, 'fabricated'), ' (the external row\'s own components don\'t sum to its stated FOB$), ',
+          span({ style: { color: 'var(--crit)', fontWeight: 700 } }, 'fabricated'), ' (the external row\'s own components don\'t sum to its stated FOB$), ',
           span({ style: { color: '#f5bc00', fontWeight: 700 } }, 'diverge'), ' (>$50 off Meridian), and ',
           span({ style: { color: '#4ade80', fontWeight: 700 } }, 'match'), '.'),
         h('textarea', {
@@ -3182,7 +3182,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
           div({ key: 'sum', style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', fontSize: '12px', fontWeight: 700 } },
             span({ style: { color: '#4ade80' } }, `✓ ${xcResult.tally.match || 0} match`),
             span({ style: { color: '#f5bc00' } }, `⚠ ${xcResult.tally.diverge || 0} diverge`),
-            span({ style: { color: '#f87171' } }, `🚩 ${xcResult.tally.fabricated || 0} fabricated`),
+            span({ style: { color: 'var(--crit)' } }, `🚩 ${xcResult.tally.fabricated || 0} fabricated`),
             (xcResult.tally['no-meridian'] || 0) ? span({ style: { color: 'var(--text3)' } }, `· ${xcResult.tally['no-meridian']} no Meridian data`) : null,
             span({ style: { color: 'var(--text3)', fontWeight: 400 } }, `of ${xcResult.total} parsed`)),
           !xcResult.total ? div({ key: 'none', style: { padding: '16px', textAlign: 'center', color: '#f5bc00', fontSize: '12.5px' } }, 'No store rows recognized — check the paste includes store numbers (one of your 27) at the start of each line.')
@@ -3190,7 +3190,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                 h('thead', null, h('tr', null, ['Store', 'Meridian FOB$', 'External FOB$', 'Δ$', 'Meridian FOB%', 'External FOB%', 'Δ%', 'Status'].map((hd, i) =>
                   h('th', { key: i, style: { textAlign: i >= 1 && i <= 6 ? 'right' : 'left', color: 'var(--text3)', fontWeight: 600, padding: '5px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', letterSpacing: '.04em', whiteSpace: 'nowrap' } }, hd)))),
                 h('tbody', null, xcResult.rows.map((r, i) => {
-                  const sc = r.status === 'match' ? '#4ade80' : r.status === 'diverge' ? '#f5bc00' : r.status === 'fabricated' ? '#f87171' : 'var(--text3)';
+                  const sc = r.status === 'match' ? '#4ade80' : r.status === 'diverge' ? '#f5bc00' : r.status === 'fabricated' ? 'var(--crit)' : 'var(--text3)';
                   const label = r.status === 'no-meridian' ? 'no Meridian data' : r.status;
                   const merFob = r.meridian ? `$${Math.round(r.meridian.fob).toLocaleString()}` : '—';
                   const merPct = r.meridian && r.meridian.fobPct != null ? `${(r.meridian.fobPct * 100).toFixed(2)}%` : '—';
@@ -3260,13 +3260,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
                         it.descr || it.wrin, span({ style: { color: 'var(--text3)', fontWeight: 400 } }, ` · WRIN ${it.wrin}`)),
                       worstMeta ? div({ style: { marginTop: '3px' } }, h(PatternChip, { chip: { ...worstMeta, id: it.worst }, title: `worst pattern across ${it.nStores} store(s)` })) : null),
                     div({ style: { textAlign: 'right', flexShrink: 0 } },
-                      div({ style: { fontSize: '13px', fontWeight: 800, color: '#f87171' } }, `${it.nStores} store${it.nStores === 1 ? '' : 's'}`),
+                      div({ style: { fontSize: '13px', fontWeight: 800, color: 'var(--crit)' } }, `${it.nStores} store${it.nStores === 1 ? '' : 's'}`),
                       div({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${dolStr(it.totalDol)} at stake`))),
                   isOpen && div({ style: { padding: '2px 10px 9px 28px', borderTop: '1px solid var(--bdr)' } },
                     it.stores.map(s => div({ key: s.loc, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 0', borderBottom: '1px solid var(--bdr)', fontSize: '11.5px' } },
                       span({ style: { minWidth: '120px', color: 'var(--text2)', fontWeight: 600 } }, nm(s.loc)),
                       s.primary ? h(PatternChip, { chip: s.primary }) : null,
-                      span({ style: { marginLeft: 'auto', fontWeight: 700, color: s.latestDol < 0 ? '#f87171' : '#fbbf24' } }, dolStr(s.latestDol)),
+                      span({ style: { marginLeft: 'auto', fontWeight: 700, color: s.latestDol < 0 ? 'var(--crit)' : '#fbbf24' } }, dolStr(s.latestDol)),
                       span({ style: { color: 'var(--text3)', fontSize: '10.5px', minWidth: '150px', textAlign: 'right' } },
                         s.series.map(p => dolStr(p.dol)).join(' → '))))));
               }),

@@ -14,7 +14,7 @@
 
 export const SEV = { crit: 3, warn: 2, info: 1 };
 export const SEV_META = {
-  crit: { word: 'Critical', color: '#f87171' },
+  crit: { word: 'Critical', color: 'var(--crit)' },
   warn: { word: 'Watch', color: '#f5bc00' },
   info: { word: 'FYI', color: '#38bdf8' },
 };
