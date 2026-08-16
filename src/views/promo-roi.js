@@ -52,7 +52,7 @@ function LeverSection({ title, icon, data, marginRate }) {
     rows.length ? h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden', maxHeight: 300, overflowY: 'auto' } },
       h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
         h('thead', null, h('tr', null, th('Store'), th('Days', 1), th('Lift %', 1), th('Sales/day', 1), th('Give-away/day', 1), th('GP Δ/day', 1), th('Verdict', 1))),
-        h('tbody', null, rows.map(s => h('tr', { key: s.loc, style: { borderTop: '.5px solid rgba(255,255,255,.05)' } },
+        h('tbody', null, rows.map(s => h('tr', { key: s.loc, style: { borderTop: '.5px solid var(--bdr)' } },
           td(sName(s.loc)),
           td(s.nDays, 1, 'var(--text3)'),
           td(fPct(s.liftSalesPct), 1, s.liftSalesPct >= 0 ? '#10b981' : '#ef4444'),

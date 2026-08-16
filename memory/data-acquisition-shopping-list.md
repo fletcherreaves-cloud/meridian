@@ -300,3 +300,107 @@ For each report, in DevTools → Network, with the report actually loaded:
 5. **SMG VOICE (C)** — check for a QSRSoft mirror before standing up a second auth stack.
 6. **Labor punch exceptions (H)** — small, and it carries regulatory exposure via minors.
 7. **EcoSure (E)** — blocked on access; nothing to build until that clears.
+
+---
+
+# ADDENDUM 2026-08-15 — two endpoints arrived ready to build
+
+Both were captured by the owner on 2026-08-15 and measured against the real payloads. Full schema,
+grain, sanitation rules and traps are in **`memory/qsrsoft-report-catalog.md`**; this section is the
+build order only.
+
+## K. Product Outage — NEW, and the cheapest pull on the whole list
+
+`GET /reporting/v2/product/outages` with `catalogType=outages&reportType=currentOutages&nsd=d&dsd=d`
+returned **27 stores × 14 days in a single HTTP request** — 142 rows, every one carrying `storeNum`
+and `date`. There is nothing else on this list with that work-to-value ratio.
+
+**What it unlocks that nothing in Meridian can express today:** an out-of-stock. Joined to Product
+Mix on `(store, date, menuItemNumber)` it turns *"Fried Apple Pie was out at five stores"* into
+lost-sales dollars at each store's own sell rate. It is a plausible partial explanation for
+unexplained sales softness and for VOICE accuracy complaints, and a repeat outage on one item is an
+ordering failure with a name — which feeds FOB and inventory directly.
+
+**Nothing is now blocked on the owner. Two build constraints:**
+
+1. ✅ **Pull `reportType=allOutages`, NOT `currentOutages`** (resolved 2026-08-15 — the owner found
+   the report's **All / Current** toggle and re-captured). `restoredTimestamp` is populated, so
+   duration IS available. **`currentOutages` ≡ `allOutages WHERE restoredTimestamp IS NULL`** —
+   verified exactly, not assumed: 63 `allOutages` rows for 2 stores over 14 days, 5 null-restored,
+   and those five are the same five `currentOutages` returned, matching to the second.
+   **The first capture undercounted by ~12× (5 of 63, 8%)** — the 142-row district figure is the
+   still-open tail only; real 14-day district volume is ~1,300–1,800 rows. Size against `allOutages`.
+2. **Key on `(loc, dt, item, outage_ts)`, not `(loc, dt, item)`.** The narrow key has 0 duplicates
+   on this sample — which is exactly how #292's `(loc, date, item)` looked before measurement showed
+   it dropped 29% of rows. An item can go out, be restored and go out again in one day.
+
+**Durations are real and some are long:** a Caramel Frappe machine at 3708 was out **239 hours
+(≈10 days)**, 08-01 → 08-11. Snr Sweet Iced Tea 55 h. Milk 47 h at 3708 and 27 h at 5183. Nothing in
+Meridian can express any of it today.
+
+⚠️ **The timestamp is a POLL time, not the moment the manager acted.** Every 3708 timestamp ends
+`:48` and every 5183 ends `:23`, outage and restore alike, and **every duration across all 63 rows
+is a whole number of hours** — QSRSoft samples hourly on a per-store minute offset. Resolution is
+±1 h: never present duration to the minute, expect sub-hour outages to be missing entirely, and do
+not compare raw timestamps across stores as event times.
+
+⚠️ **Never dedupe or join on `description`.** `3499`/`3502` are both "S Caramel Frappe",
+`3498`/`3500` both "S Mocha Frappe", `2842`/`4301` both "M Caramel Frappe" — parallel item-number
+sets for one product name. Join on `menuItemNumber` only.
+
+**And it must not be ranked by row count.** 42 real events produced 142 rows; one event at 38609
+flagged 12 SKUs (every Caramel-Apple-Pie beverage size) and one at 33109 flagged 10 (every XS
+drink). Collapse to `(storeNum, outageTimestamp)` first, then normalise per trading day. Same
+un-normalised-count trap as `security/top_contributors`.
+
+⚠️ **An outage row is a manager's POS action, not a measured out-of-stock** (owner, 2026-08-15).
+Equipment down (ABS, beverage dispenser) and routine shake/sundae-machine cleaning produce identical
+rows — which is exactly what the 12-SKU and 10-SKU events look like. **Never label it "out of
+stock"; do not route it to ordering or FOB as a supply signal without a cause dimension.** Lost
+sales is valid regardless of cause, so it is the right first build.
+
+**KB read 2026-08-15 — it confirms this and closes the reason-code question.** QSRSoft's own
+definition: *"Menu Items that are not being sold. This is often because a machine is not working or
+needs to be cleaned. For Menu Items to appear on this list, a Manager must perform the POS function
+called Product Outage."* **There is no reason code**, so cause must be inferred from clustering
+permanently — not a gap a better `selectCols` closes. The KB also shows a **"Trailing 365 Days"**
+date option, so this stream is **backfillable to at least a year** and must not be built
+forward-only. Full detail in `qsrsoft-report-catalog.md`.
+
+## L. Menu Price Comparison ("RFM Price Comparison") — the per-store list price book
+
+`GET /reports/mcd/product/menuPriceComparison` with `nsd=d` and a comma NSN list. Grain is a clean
+`(nsn, menuItemNumber)` — **0 duplicates in 1,966 rows**. Native `startDate`/`endDate`, so price
+history is backfillable.
+
+**It is not a shortcut for F (Product Mix).** It carries no volume, no dollars and no cost — it is
+the **list** price where Product Mix carries the **realized** price. The pair is what measures
+discount depth; neither does it alone.
+
+**Two findings are already available from a single day's capture, with no dependency on F:**
+
+- **114 clean product rows (7.2%) have a delivery premium of exactly zero** — sold on a 3PO platform
+  at the in-store price, with the platform commission coming out of the same margin.
+- **9 rows are negative**, delivery priced *below* in-store. `3655 Sau Egg McMuff Ml-Hb` is negative
+  at **all three** sampled stores (−11.1% / −7.9% / −10.5%), so it is a configuration pattern rather
+  than a fat finger.
+
+These are the first concrete Pricing-Engine outputs and they do not wait on #292.
+
+A dated price book is also the only way to settle *when* a price action took effect — the missing
+half of the owner's *"WE DID NOT PARTICIPATE IN THE WHOLE PRICE CHANGE STRATEGY."* Confirm or refute
+it per store per item from the record, not from memory.
+
+## Revised order
+
+K first — it is one request, it is new capability rather than a refinement, and it is small enough
+to ship inside the existing `qsrsoft-ops-pull.mjs` auth. Then A (Register Audit) as before. L slots
+in beside F, since both live in the same script and answer the same question from two sides.
+
+**Schema note for L, carried forward deliberately:** `priceEatin` and `priceTakeout` are identical
+to `price` on all 1,966 rows — but that is a fact about **Florida and Oklahoma**, not about the API.
+The POS exposes the split because some states tax prepared food differently for eat-in versus
+take-out. **Persist all three columns anyway.** Collapsing them would look like a tidy simplification
+and would silently break the first multi-tenant deployment into such a state, invisibly — the columns
+agree right up until they don't. Suppress the derived comparison in the UI if you like; do not
+collapse the schema.

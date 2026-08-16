@@ -52,7 +52,7 @@ function SageRunsTile() {
       h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Auto-run prompt results · manage in SAGE → 📚 Prompts')));
   if (runs === null) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
   if (!runs.length) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'No scheduled runs yet. In SAGE, save a prompt (📚 Prompts) and set a schedule to have it run automatically — results land here.'));
-  return card(head, h('div', null, ...runs.map(r => h('div', { key: r.id, style: { padding: '8px 14px', borderBottom: '.5px solid rgba(255,255,255,.05)' } },
+  return card(head, h('div', null, ...runs.map(r => h('div', { key: r.id, style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
       h('span', { style: { width: 6, height: 6, borderRadius: '50%', background: r.ok ? '#10b981' : '#ef4444', flexShrink: 0 } }),
       h('div', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text,#e8eaed)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.title || 'Prompt'),
@@ -829,7 +829,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   const KpiRow=({label,val,okAvg,flAvg,tgt,fmtFn,goodDir})=>{
     const tgtClr=tgt!=null&&val!=null?(goodDir==='low'?val<=tgt:val>=tgt)?'#10b981':'#f87171':'transparent';
-    return div({style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'.5px solid rgba(255,255,255,.04)'}},
+    return div({style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:'.5px solid var(--bdr)'}},
       div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},label),
       div({style:{fontSize:'11px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text)',width:70}},(fmtFn?fmtFn(val):(val!=null?val.toFixed(1):' — '))),
       tgt!=null&&div({style:{width:8,height:8,borderRadius:'50%',background:tgtClr,flexShrink:0}}),
@@ -950,7 +950,6 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // the auto feed on days without a manual upload. Fall back to labInRange.
     const cRows=ctrlEffective.rows.length?ctrlEffective.rows:[];
     const lRows=labInRange;
-    if(!cRows.length&&!lRows.length)return null;
     const cScoped=cRows.filter(r=>allLocs.includes(String(r.loc)));
     const lScoped=lRows.filter(r=>allLocs.includes(String(r.loc)));
     // Labor %/TPPH now auto-first per-day via metric-source.js (2026-08-06) instead of pooling
@@ -966,7 +965,22 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // TPPH "--" gap first reported 2026-08-04 (v4.808's fix didn't fully close it).
     const laborPct=metricAvg(ds,allLocs,effectiveDateRange,'laborPct');
     const tpph=metricAvg(ds,allLocs,effectiveDateRange,'tpph');
-    const avn=avgOf(cScoped,'actVsNeed')||avgOf(lScoped,'actVsNeed');
+    // #303/2026-08-15 review: this gate used to run BEFORE laborPct/tpph existed, on raw
+    // cRows/lRows presence alone -- a device with real auto-pulled data (glimpse/cash/DAR
+    // rollup, all reachable via metricAvg's own auto-first chain) but zero manual ctrlRows
+    // upload and zero labInRange rows would fail this check and show "No labor data for this
+    // period" while Labor Analytics (already auto-first via the same metricAvg) showed a real
+    // number for the identical range. Gate on whether ANY of the raw rows or the auto-first
+    // resolutions found something, not on raw-row presence alone.
+    if(!cRows.length&&!lRows.length&&laborPct==null&&tpph==null)return null;
+    // #303/2026-08-15 review: was avgOf(cScoped,'actVsNeed')||avgOf(lScoped,'actVsNeed') --
+    // avgOf's default x>0 filter (see its definition) drops every negative AND zero reading.
+    // actVsNeed is a SIGNED hour difference (actual-needed) where negative = understaffed and
+    // 0 = dead on target -- both real, both dropped by that filter, per metric-source.js:178's
+    // own "mode:'any' is load-bearing" comment. The result was silently biased positive, which
+    // is also why the tile's color (line ~2134, `clr:(laborSec.avn||0)>=0?...`) almost always
+    // painted its "good" branch -- not a color-token bug, a data bug wearing one.
+    const avn=metricAvg(ds,allLocs,effectiveDateRange,'actVsNeed');
     const otHrs=sumOf(cScoped,'otHrs')||sumOf(lScoped,'otHrs');
     const actHrs=sumOf(cScoped,'actHrs')||sumOf(lScoped,'actHrs');
     const crewHrs=sumOf(cScoped,'crewHrs');
@@ -1498,9 +1512,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             letterSpacing:'-0.5px',lineHeight:1.1,transition:'font-size .2s ease'}},
             'At a Glance'),
           !headerScrolled&&(userName
-            ?div({style:{fontSize:'13px',color:'rgba(255,255,255,.8)',marginTop:2,fontWeight:500}},
+            ?div({style:{fontSize:'13px',color:'var(--text)',marginTop:2,fontWeight:500}},
                 greetWord+', '+userName+'!')
-            :div({style:{fontSize:'12px',color:'rgba(255,255,255,.5)',marginTop:2}},
+            :div({style:{fontSize:'12px',color:'var(--text2)',marginTop:2}},
                 greetWord+'!  ',
                 span({style:{fontSize:'10px',color:'rgba(245,158,11,.6)',cursor:'pointer'},
                   onClick:()=>{}/* Settings is a separate nav */,
@@ -1509,7 +1523,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         ),
         // Period label — always visible
         div({style:{fontSize:'10px',padding:'4px 10px',borderRadius:4,
-          background:'rgba(255,255,255,.18)',border:'.5px solid rgba(255,255,255,.4)',
+          background:'rgba(255,255,255,.18)',border:'.5px solid var(--bdr2)',
           color:'#fff',fontWeight:500,letterSpacing:'.2px',whiteSpace:'nowrap'}},
           dateRange&&dateRange.s?
             dateRange.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+
@@ -1521,7 +1535,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       !headerScrolled&&div(null,
         div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
           div({style:{flex:1,fontSize:'11px',lineHeight:1.5,
-            color:commentMode==='ai'&&aiComment?'rgba(255,255,255,.85)':ruleComment.color}},
+            color:commentMode==='ai'&&aiComment?'var(--text)':ruleComment.color}},
             commentMode==='rule'?ruleComment.text:
             aiLoading?'Generating...':(aiComment||ruleComment.text)),
           div({style:{display:'flex',gap:4}},
@@ -1529,7 +1543,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               style:{fontSize:'9px',padding:'2px 8px',borderRadius:3,cursor:'pointer',fontWeight:500,
                 background:commentMode===m?'rgba(245,158,11,.35)':'rgba(255,255,255,.18)',
                 color:commentMode===m?'var(--amber)':'#fff',
-                border:commentMode===m?'.5px solid rgba(245,158,11,.6)':'.5px solid rgba(255,255,255,.4)'},
+                border:commentMode===m?'.5px solid rgba(245,158,11,.6)':'.5px solid var(--bdr2)'},
               onClick:()=>{setCommentMode(m);if(m==='ai'&&!aiComment)fetchAIComment();}},
               m==='rule'?'Rule-Based':'AI Narrative'))
           )
@@ -1607,7 +1621,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               borderRadius:5,background:item.priority==='high'?'rgba(248,113,113,.08)':
                 item.priority==='medium'?'rgba(245,158,11,.08)':'rgba(255,255,255,.04)',
               border:'.5px solid '+(item.priority==='high'?'rgba(248,113,113,.2)':
-                item.priority==='medium'?'rgba(245,158,11,.2)':'rgba(255,255,255,.08)')}},
+                item.priority==='medium'?'rgba(245,158,11,.2)':'var(--bdr)')}}, // #296 step 2 review: missed by step 1 -- the border: key sat on the line above this occurrence, outside step 1's same-line classifier window
               btn({style:{flexShrink:0,width:16,height:16,borderRadius:3,
                 border:'.5px solid var(--bdr)',background:'transparent',cursor:'pointer',
                 display:'flex',alignItems:'center',justifyContent:'center',marginTop:1},
@@ -1685,7 +1699,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           return sources.map(src=>{
             const rows=src.rows||[];
             if(!rows.length)return div({key:src.name,style:{fontSize:'9px',
-              color:'rgba(255,255,255,.25)',padding:'2px 8px',borderRadius:3,
+              color:'var(--text3)',padding:'2px 8px',borderRadius:3,
               background:'rgba(255,255,255,.04)',border:'.5px solid var(--bdr)'}},
               src.icon+' '+src.name+': Not loaded');
             // Robust across streams: some (qsr_fob) carry string dates + zero-padded locs.
@@ -1738,7 +1752,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           // Signal row helper
           const sigRow=(icon,label,valStr,subStr,col,statusDot,navFn)=>
             div({key:label,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 12px',
-              borderBottom:'.5px solid rgba(255,255,255,.05)',cursor:navFn?'pointer':'default'},
+              borderBottom:'.5px solid var(--bdr)',cursor:navFn?'pointer':'default'},
               onClick:navFn||undefined},
               span({style:{fontSize:'14px',width:20,textAlign:'center'}},icon),
               div({style:{flex:1,minWidth:0}},
@@ -1919,12 +1933,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 weeklyTrend.map((wk,i)=>{
                   const barH=Math.max(3,Math.round((wk.sales/maxS)*44));
                   const x=i*(bw+gap)+2, y=48-barH;
-                  const clr=wk.vsLY==null?'rgba(255,255,255,.25)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'var(--warn)':'var(--crit)';
+                  const clr=wk.vsLY==null?'var(--text3)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'var(--warn)':'var(--crit)';
                   return h('g',{key:i},
-                    h('rect',{x,y,width:bw,height:barH,rx:2,fill:clr,fillOpacity:.8}),
-                    wk.sales>0&&h('text',{x:x+bw/2,y:y-2,textAnchor:'middle',fontSize:'9',fontWeight:'700',fill:'rgba(255,255,255,.85)'},
+                    h('rect',{x,y,width:bw,height:barH,rx:2,style:{fill:clr},fillOpacity:.8}),
+                    wk.sales>0&&h('text',{x:x+bw/2,y:y-2,textAnchor:'middle',fontSize:'9',fontWeight:'700',style:{fill:'var(--text)'}},
                       '$'+(wk.sales/1000).toFixed(0)+'K'),
-                    h('text',{x:x+bw/2,y:54,textAnchor:'middle',fontSize:'6',fill:'rgba(255,255,255,.4)'},
+                    h('text',{x:x+bw/2,y:54,textAnchor:'middle',fontSize:'6',style:{fill:'var(--text2)'}},
                       wk.label||'—'),
                     wk.vsLY!=null&&h('text',{x:x+bw/2,y:58,textAnchor:'middle',fontSize:'8',fontWeight:'600',
                       fill:wk.vsLY>=0?'#10b981':'#f87171'},
@@ -2097,7 +2111,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             ].map((row,i)=>{
               const clr=row.tgt!=null&&row.val!=null?(row.goodDir==='low'?row.val<=row.tgt:row.val>=row.tgt)?'#10b981':'#f87171':'var(--text)';
               return div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',
-                borderBottom:i<4?'.5px solid rgba(255,255,255,.04)':'none'}},
+                borderBottom:i<4?'.5px solid var(--bdr)':'none'}},
                 div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},row.label),
                 div({style:{fontSize:'11px',fontFamily:'var(--mono)',fontWeight:600,color:clr,width:48}},
                   row.val!=null?row.fmt(row.val):'—'),
@@ -2131,7 +2145,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                    fmt:v=>(v||0).toFixed(1),clr:(laborSec.tpph||0)>=5?'#10b981':(laborSec.tpph||0)>=4?'var(--warn)':'var(--crit)'},
                   {lbl:'Act vs Need',v:laborSec.avn,ok:null,fl:null,
                    fmt:v=>(v>=0?'+':'')+((v||0).toFixed(1)),
-                   clr:(laborSec.avn||0)>=0?'rgba(255,255,255,.8)':'#f87171'},
+                   clr:(laborSec.avn||0)>=0?'var(--text)':'#f87171'}, // #296 step 2: was rgba(255,255,255,.8) -- literally the light themes' own text-on-surface identity, invisible
                   {lbl:'OT Hours',v:laborSec.otHrs,ok:null,fl:null,
                    fmt:v=>(v||0).toFixed(1)+'h',
                    clr:(laborSec.otHrs||0)<20?'#10b981':(laborSec.otHrs||0)<50?'var(--warn)':'var(--crit)'},
@@ -2158,7 +2172,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               {label:'OT Hours',val:ctrlSec.otHrs,ok:null,fl:null,fmt:v=>(v||0).toFixed(1)+'h',goodDir:'low'},
             ].map((row,i)=>
               div({key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'3px 0',
-                borderBottom:i<8?'.5px solid rgba(255,255,255,.04)':'none'}},
+                borderBottom:i<8?'.5px solid var(--bdr)':'none'}},
                 div({style:{fontSize:'9px',color:'var(--text3)',width:130,flexShrink:0}},row.label),
                 div({style:{fontSize:'10px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text)',width:64}},
                   row.val!=null?row.fmt(row.val):'—'),
@@ -2237,7 +2251,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 )
               ),
               // Disc/Coupon — tracked but not included in FOB calculation
-              div({style:{marginTop:4,paddingTop:4,borderTop:'.5px dashed rgba(255,255,255,.1)'}},
+              div({style:{marginTop:4,paddingTop:4,borderTop:'.5px dashed var(--bdr)'}},
                 div({style:{display:'flex',flexDirection:'column',
                   padding:'2px 5px',borderRadius:3,background:'rgba(255,255,255,.02)'}},
                   div({style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -2245,12 +2259,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       'Disc/Coupon ',
                       span({style:{fontSize:'7px',color:'var(--amber)',fontWeight:600},
                         title:'Disc/Coupon is tracked for awareness but is NOT included in the FOB calculation.'},'*')),
-                    span({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,color:'rgba(255,255,255,.5)'}},
+                    span({style:{fontSize:'9px',fontFamily:'var(--mono)',fontWeight:600,color:'var(--text2)'}},
                       fobSec.discCoupon!=null?((fobSec.discCoupon||0)*100).toFixed(2)+'%':'—')
                   ),
                   (fobSec.okDiscCoupon!=null||fobSec.flDiscCoupon!=null)&&div({style:{marginTop:1}},
                     MktBadge({ok:fobSec.okDiscCoupon,fl:fobSec.flDiscCoupon,fmt:v=>((v||0)*100).toFixed(2)+'%'})),
-                  div({style:{fontSize:'7px',color:'rgba(255,255,255,.3)',marginTop:2}},
+                  div({style:{fontSize:'7px',color:'var(--text3)',marginTop:2}},
                     '* Not included in FOB calculation — monitored for trend only')
                 )
               )
@@ -2306,7 +2320,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   fontSize:'7px',color:'#fff',fontWeight:700,overflow:'hidden'}},
                   ((digitalSec.digitalPct||0)*100)>8?((digitalSec.digitalPct||0)*100).toFixed(2)+'%':''),
                 div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
-                  fontSize:'7px',color:'rgba(255,255,255,.4)'}},
+                  fontSize:'7px',color:'var(--text2)'}},
                   (((1-(digitalSec.digitalPct||0))*100).toFixed(2))+'%')
               )
             ),
@@ -2319,7 +2333,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 {icon:'\uD83D\uDCF2',label:'MOP',pct:digitalSec.mopPct,ok:digitalSec.okMopPct,fl:digitalSec.flMopPct,clr:'#34d399'},
                 {icon:'\u2328\uFE0F',label:'Kiosk',pct:digitalSec.kioskPct,ok:digitalSec.okKioskPct,fl:digitalSec.flKioskPct,clr:'#a78bfa'},
               ].map((ch,i)=>div({key:'ch'+i,style:{padding:'6px',borderRadius:5,textAlign:'center',
-                background:'rgba(255,255,255,.03)',border:'.5px solid rgba(255,255,255,.07)'}},
+                background:'rgba(255,255,255,.03)',border:'.5px solid var(--bdr)'}},
                 div({style:{fontSize:'10px',marginBottom:2}},ch.icon),
                 div({style:{fontSize:'12px',fontWeight:800,fontFamily:'var(--mono)',color:ch.clr}},
                   ch.pct!=null?((ch.pct||0)*100).toFixed(2)+'%':'--'),
@@ -2392,13 +2406,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   // Background pentagons
                   ...[1,.67,.33].map((pct,gi)=>
                     h('polygon',{key:'g'+gi,points:gPoly(maxR*pct),
-                      fill:'none',stroke:'rgba(255,255,255,.08)',strokeWidth:.5})
+                      fill:'none',stroke:'var(--bdr)',strokeWidth:.5})
                   ),
                   // Axis spokes
                   ...METRICS.map((m,i)=>{
                     const [ax,ay]=pt(m.angle,maxR);
                     return h('line',{key:'sp'+i,x1:100,y1:100,x2:ax.toFixed(1),y2:ay.toFixed(1),
-                      stroke:'rgba(255,255,255,.12)',strokeWidth:.5});
+                      stroke:'var(--bdr)',strokeWidth:.5});
                   }),
                   // Data fill polygon
                   h('polygon',{points:dataPoly,
@@ -2417,7 +2431,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                     const ta=lx<cx-4?'end':lx>cx+4?'start':'middle';
                     return h('g',{key:'lab'+i},
                       h('text',{x:lx.toFixed(1),y:(ly-3).toFixed(1),textAnchor:ta,fontSize:6.5,
-                        fill:'rgba(255,255,255,.6)',fontWeight:'600'},m.short),
+                        style:{fill:'var(--text2)'},fontWeight:'600'},m.short),
                       h('text',{x:lx.toFixed(1),y:(ly+5).toFixed(1),textAnchor:ta,fontSize:5.5,
                         fill:scoreClr,fontFamily:'monospace'},m.display)
                     );
@@ -2426,7 +2440,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   h('circle',{cx:100,cy:100,r:16,fill:scoreBg,stroke:scoreClr,strokeWidth:.5}),
                   h('text',{x:100,y:98,textAnchor:'middle',dominantBaseline:'middle',
                     fontSize:13,fontWeight:700,fill:scoreClr,fontFamily:'monospace'},overallScore),
-                  h('text',{x:100,y:111,textAnchor:'middle',fontSize:4.5,fill:'rgba(255,255,255,.35)'},'SCORE')
+                  h('text',{x:100,y:111,textAnchor:'middle',fontSize:4.5,style:{fill:'var(--text3)'}},'SCORE')
                 )
               ),
               // Metric legend
@@ -2445,7 +2459,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                       div({style:{width:pct+'%',height:'100%',background:barClr,
                         borderRadius:2,transition:'width .6s ease'}})
                     ),
-                    div({style:{fontSize:'6px',color:'rgba(255,255,255,.25)',marginTop:1}},m.hint)
+                    div({style:{fontSize:'6px',color:'var(--text3)',marginTop:1}},m.hint)
                   );
                 }),
                 div({style:{marginTop:8,paddingTop:6,borderTop:'.5px solid var(--bdr)',
@@ -2491,7 +2505,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                 const medal=['🥇','🥈','🥉'];
                 const vsAvg=avg&&avg>0?((s.value-avg)/avg*100):null;
                 const barPct=maxV>0?Math.min(100,s.value/maxV*100):0;
-                const clr=isTop?(rank===0?'var(--warn)':rank===1?'rgba(255,255,255,.6)':'rgba(180,120,60,.9)'):'var(--crit)';
+                const clr=isTop?(rank===0?'var(--warn)':rank===1?'var(--text2)':'rgba(180,120,60,.9)'):'var(--crit)';
                 return div({style:{marginBottom:5,padding:'4px 6px',borderRadius:5,
                   background:isTop?'rgba(16,185,129,.06)':'rgba(248,113,113,.06)',
                   border:'.5px solid '+(isTop?'rgba(16,185,129,.15)':'rgba(248,113,113,.15)')}},
@@ -2523,8 +2537,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   textTransform:'uppercase',marginBottom:4}},'▲ Top 3 — '+label),
                 ...top3.map((s,i)=>h(StoreRow,{key:'t'+s.loc,s,rank:i,isTop:true})),
                 avg!=null&&div({style:{textAlign:'center',fontSize:'8px',color:'var(--text3)',
-                  padding:'4px 0',borderTop:'.5px dashed rgba(255,255,255,.1)',
-                  borderBottom:'.5px dashed rgba(255,255,255,.1)',margin:'4px 0'}},
+                  padding:'4px 0',borderTop:'.5px dashed var(--bdr)',
+                  borderBottom:'.5px dashed var(--bdr)',margin:'4px 0'}},
                   'District Avg: '+fmt(avg)+' ('+data.length+' stores)'),
                 div({style:{fontSize:'8px',color:'#f87171',fontWeight:700,letterSpacing:'.5px',
                   textTransform:'uppercase',margin:'4px 0'}},'▼ Bottom 3 — '+label),
@@ -2600,7 +2614,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   const vsClr=vsLYNum==null?'var(--text3)':vsLYNum>=0?'#10b981':'#f87171';
                   const vsLYActNum=vsLYAct!=null?parseFloat(vsLYAct):null;
                   const vsActClr=vsLYActNum==null?'var(--text3)':vsLYActNum>=0?'#10b981':'#f87171';
-                  return h('tr',{key:sp.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
+                  return h('tr',{key:sp.loc,style:{borderBottom:'.5px solid var(--bdr)',
                     background:si%2===0?'transparent':'rgba(255,255,255,.02)'}},
                     h('td',{style:{padding:'4px 6px',color:'var(--text)',whiteSpace:'nowrap',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',fontSize:'10px'}},
                       span({style:{marginRight:4,fontSize:'7px',color:sp.org==='MCDOK'?'#60a5fa':'#34d399'}},sp.org==='MCDOK'?'OK':'FL'),

@@ -58,21 +58,141 @@ settled something the PM asserted from inference. See the corrections register i
 
 **Merged in the last two days:** #280 (v5.011), #284, #282 (v5.012), #293 (docs).
 
+**Merged 2026-08-15 (this session):** #297, #298 (v5.014), #301 (v5.015, +#306), #307, #308,
+#310 (v5.017), #321 (v5.018), #309 (v5.019), #323 (v5.020), #325 (v5.021).
+`main` at `799c8709`. Build **508.55 KB gzip / 341.45 KB headroom**, **1371/1371** tests.
+
+> **Version numbering is not dense and that is fine.** v5.016 is unused — #309 was authored as
+> 5.016, sat open while #310 and #321 landed as 5.017/5.018, and had to renumber to 5.019 to avoid
+> walking `window.__MERIDIAN_VERSION__` backwards. `changelog-version.test.js` guards **desync
+> between `changelog-data.js` and `changelog-latest.js`, NOT monotonicity** — a backwards version
+> ships green. Check the ordering by hand on every changelog-touching PR; this was the single most
+> recurring near-miss of the session.
+
 ### Open PRs — the live board
 
 | PR | What | PM state |
 |---|---|---|
-| **#298** | v5.014 — #295 Bullseye tile invisible in light mode | **NEW, unreviewed** |
-| **#301** | v5.015 — #296 step 1: border/stroke `rgba(255,255,255,X)` → tokens | **NEW, unreviewed** |
-| **#297** | #294 — retention probe drops a reconfirmed correction's history | **NEW, unreviewed** |
-| **#292** | #291 Product Mix real pull | **HELD** — primary-key blocker, see below |
-| **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase onto latest `main` |
+| **#292** | #291 Product Mix real pull | **REVIEWED 08-15, held** — `nsd=d` is now a code test, not a capture request; see below |
+| **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase **and renumber** (5.013 is now eight versions below `main`) |
 | **#269** | #263 + #265 pull-failure detection + completeness ledger | **HELD** — owner must run the SQL; plus one residual |
 
-**#292's blocker, quantified (this is the review note to repeat):** a primary key of
-`(loc, date, item)` drops **127 of 441 rows (29%)** and retains only **42% of dollars**,
-non-deterministically — and the rows it drops are exactly the **price tiers the issue exists to
-measure**. The PK must include the price point. Do not merge until the rebuild lands.
+### The OT/labor thread, closed out (#322 → #323 → #324 → #325)
+
+Owner reported OT Cost reading `—` everywhere, then `0.0`/`$0` after the first fix. Three distinct
+causes stacked, found in order, each only visible once the one above it was removed:
+
+1. **#323 (v5.020)** — `qsrsoft-ops-pull.mjs` read `process.env.QSRSOFT_TOKEN` directly: a ~1h-TTL
+   Cognito token in a GitHub secret, stale ~23 of every 24 hours. Converted to `getFreshToken()`,
+   made the cache expiry-aware (decodes the JWT `exp`, 5-min margin) because the script is
+   backfill-capable and a ~1.5h backfill outruns a ~1h token. Owner authorized a full backfill:
+   **36,913 rows** added, gaps closed to 2024-01-01.
+2. **#325 (v5.021)** — the data then reached `ds.opsLaborRows` and stopped. `LaborAnalyticsPanel`
+   never called the resolver; `grep -n opsLaborRows src/views/labor-tools.js` returned **one** hit,
+   a comment on the *other* panel. Five metrics routed through `metricAvg`; `otCostEst`'s
+   `hrs×0.5×rate` estimate retired (1647/1647 rows carry the real dollar figure).
+3. **#327 ✅ SHIPPED v5.022** (was: Labor % on At A Glance reads "No labor data" while Labor
+   Analytics shows 22.47%). `laborPct` got a `derive` fallback — crew labor $ ÷ DAR sales — on
+   `tpph`'s precedent. Both legs were wrong in the first pass and were corrected against real
+   data: `gross_dollars` includes salaried-manager pay (store 6178, gross 2978.60 vs crew 2661.50,
+   a $317.10 gap that IS that day's `salaried_manager_dollars`), and `net_sales_amt` carries a
+   ~0.2–0.3pp low bias where `product_sales_amt` reconciles. Units confirmed as a fraction, so
+   `d/s` not `d/s*100`.
+
+   **Shipped knowingly at 89.8%** (582/648 store-days within 0.001). The deciding fact: the derive
+   is **last-resort only** — `metric-source.js:491` skips it whenever a real source answered — so
+   it can only ever replace a **blank**, never a better number. "Within 0.1pp nine days in ten vs
+   nothing" is an easy yes; it would have been a hard no if it could displace a real value.
+
+   ⭐ **The verification took two passes and the first was a tautology — this is the reusable
+   lesson.** It built `glimpseRows` into the `ds` and compared `metricSeries('laborPct')` against
+   Glimpse. But the derive is a *fallback*, so the resolver returned **Glimpse's own value** and
+   the comparison was Glimpse against itself: a perfect 192/192 that **would have passed with the
+   derivation deleted.** Two tells caught it: 8 stores × 24 days = *exactly* 192 with zero gaps
+   anywhere (real float division across two tables never agrees to 4dp on 100% of a sample), and
+   the engineer had already used the strip-`glimpseRows` trick for their `avgRate` check but not
+   for the reconciliation. **Ask of any verification: would this still pass if the feature were
+   removed?** The honest re-run (582/648, 66 documented misses) is a *better* result than the
+   perfect one. The 192/192 is preserved in-code as a documented retraction.
+
+4. **#330 (open)** — the residual 10.2%. `laborPct`'s derive divides a **calendar-day numerator by
+   a trading-day denominator**: `labor-summary` pulls `compType:'calendar'`
+   (`qsrsoft-ops-pull.mjs:94`), the DAR `daily-activity-raw` pulls `compType:'trading'`
+   (`qsrsoft-dar-pull.mjs:260`). Late-night volume straddling midnight lands in a different bucket
+   on each side, which matches the measured day-specific/store-spread pattern (66 misses over
+   25/27 stores, none at 100%). **The parameter mismatch is measured; it is NOT confirmed as the
+   cause of the + skew** (58/8), and store 31357 on 07-19 shows the numerator off on its own terms,
+   so there may be more than one cause. Test is one parameter and proven in-repo (`qtr-hr-sales`
+   uses `trading` in the same script). **Do not flip it in production first** — `compType` is
+   shared by five sub-endpoints there, and three of them feed tiles that currently reconcile fine.
+   Re-measure the 89.8% if it lands; that number lives in three files.
+
+**#324 CLOSED 2026-08-15, owner-confirmed on his own screen** — `OT HRS/DAY 1.5`,
+`OT COST $24,352`, `ACT VS NEED +3 hrs`, and per-store OT cost varying store-by-store
+($1,358 / $773 / $457 / $392 / $173 / $73) with the colour thresholds firing. The per-store column
+is the real proof: it was `—` on **every** row before. Holding the issue open for his screen rather
+than closing it on the engineer's (correct, real-resolver) numbers was the right call — v5.020 had
+already been correct-and-still-broken once.
+
+Expected and **not** a failure: a store with genuinely $0 OT still renders `—` per-store, because
+that cell gates on `otCost>0`. Pre-dates #325, left alone on purpose. The district total
+distinguishes null from zero correctly. Next null-vs-zero pass should convert the per-store row.
+
+### Open issues that are now the real queue
+
+| Issue | What | State |
+|---|---|---|
+| **#312** | Mint the QSRSoft Cognito token at runtime | **probe dispatched 08-15** — see §3 note 1 |
+| **#296 step 2** + **#303** | Remaining ~265 white-alpha sites; `actVsNeed` sourcing | **dispatched 08-15**, land together |
+| **#311** | Fallback masks token expiry | **superseded in part by #312** — do #312 first |
+| **#306** | Bullseye dark-mode tab | ✅ closed via #301 |
+
+**#296 step 2 is not the low-urgency half, and the reason is an identity, not a threshold.**
+White-alpha over a white surface *is* that surface, so every alpha from `.01` to `.85` composites to
+the identical pixel on the two pure-white light themes (`command`, `dualbrand`) — measured against the
+built `dist`. Of the 265 remaining sites, **23 are colour-role: invisible TEXT**, which reads to a user
+as "no data" rather than as a rendering fault. Light is the shipped default (owner-confirmed), so this
+is the default path. **`at-a-glance.js:2134` is not a colour fix** — it shares `actVsNeed` with #303,
+both panels bypass `metric-source.js`, and `at-a-glance` additionally calls `avgOf` without `anyMode`,
+dropping every negative and zero. It biases the number positive and then paints positive white-on-white,
+so fixing only the colour would surface a systematically wrong value. Route both through
+`metricAvg(ds,loc,range,'actVsNeed')`.
+
+**#292's blocker, quantified:** a primary key of `(loc, date, item)` drops **127 of 441 rows (29%)**
+and retains only **42% of dollars**, non-deterministically — and the rows it drops are exactly the
+**price tiers the issue exists to measure**. The PK must include the price point.
+
+> ⚠️ **CORRECTION (2026-08-15, verified on the branch): the PK rebuild is DONE. Do not dispatch it.**
+> `supabase/schema-product-mix.sql` on `claude/issue-291-product-mix-pull` declares
+> `primary key (loc, date, item, price)`, and `savePmixRows` upserts on
+> `onConflict: 'loc,date,item,price'` to match. The engineer corrected it *before* this handoff was
+> written; the board entry above was never updated. This is the CLAUDE.md "verify against the actual
+> code before assuming a next-up item is undone" rule earning its place a second time — dispatching
+> the rebuild would have been a duplicate reimplementation of work already sitting in the PR.
+>
+> **#292's real remaining blocker** is the one the PR body flags itself: `mapRow()`'s
+> `loc: nsn7(r.storeNum ?? r.nsn ?? '')` is a **guess**. #293's capture was single-store, so the field
+> QSRSoft uses to identify the store in a genuine multi-store response is unconfirmed. If wrong it
+> fails closed — drops rows rather than misattributing them — and silently upserts **zero** rows with
+> no error beyond a debug log. Needs a real multi-store capture (**strip `x-auth-token`**) or a
+> watched first live run. #292 needs a PM review, not an engineer dispatch.
+
+> ⚠️ **UPDATE (2026-08-15, measured on two new owner captures): the multi-store capture arrived, and
+> it reframes this blocker.** The store field was never missing because `mapRow()` guessed the wrong
+> name — it was missing because **`nsd=s&dsd=s` asked the API to roll the stores and dates away.**
+> Evidence, all measured: a `product/outages` call with **`nsd=d&dsd=d`** returned 27 stores × 14 days
+> in one request with **`storeNum` and `date` on every row** — neither of which was in `selectCols`,
+> so the API supplies grain columns once the grain is requested. A `menuPriceComparison` call with
+> `nsd=d` returned `nsn` per row. Both existing `product-mix-bundles` captures used `nsd=s&dsd=s` and
+> returned neither. Separately, the owner's 2,485-row Product Mix payload was **proven** to be a
+> multi-store roll-up by price-book cross-match (list-price dollar share 23.9% against one store's
+> book → 39.2% against three; Big Mac at 12 price points where three stores list three).
+>
+> **The test is one capture: re-run `product-mix-bundles` changing only `nsd=s&dsd=s` → `nsd=d&dsd=d`.**
+> If it confirms, #292 is one request per day rather than 27 and `mapRow()` reads a real field. If it
+> refutes, #292 must pull one NSN per request and stamp `loc`/`dt` from the request parameters, never
+> from the response. **This is a hypothesis with a named test — do not build on it until the capture
+> lands.** Full evidence table in `memory/qsrsoft-report-catalog.md`.
 
 **#269's residual:** in `scripts/check-data-completeness.mjs`,
 `if (inc.date_start < startDate || inc.date_end > endDate) continue;` means an out-of-window incident
@@ -81,17 +201,56 @@ by `detected_at` ascending.
 
 ### Engineer queue (dispatch order, as sent)
 
-#295 ✅ → #296 step 1 ✅ → **#292 PK rebuild** → **#286 rebase** → **#269 residual** → #294 ✅
+#295 ✅ → #296 step 1 ✅ → #294 ✅ → #312 probe ✅ → #321 ✅ → #323 ✅ (+ backfill) → #325 ✅
 
-So the next three engineer items are **#292, #286, #269**, in that order. The first three are already
-in PRs #298/#301/#297 awaiting PM review.
+**Next: #292, #286, #269** — with **#330** (the `compType` boundary mismatch) available whenever
+someone wants a self-contained, well-scoped piece. #330 is *not* urgent: v5.022 already closed the
+user-facing gap, and #330 only tightens the residual 10%.
+
+**The stop-condition pattern worked and should be reused.** #327's dispatch stated the blocking
+measurement as a stop condition, not a suggestion — *"if Glimpse is current through Aug 15 the
+premise is refuted; re-diagnose, don't build anyway."* The engineer measured it first
+(`max(date) = 2026-08-11`) and reported it before writing code. Write dispatches that way.
+
+**Note the column names differ across these tables** — `daily_glimpse_daily` uses `date`,
+`qsr_labor_summary` uses `dt`. Cost a round of 42703 errors; check before querying.
+
+**The PM environment cannot verify any of this.** Anon returns `[]` on `qsr_labor_summary`,
+`daily_glimpse_daily`, `cash_sheet_daily`, `sales_ledger_daily`. Confirmed that is RLS and not
+absence with the discriminating test — `qsr_labor_summary` returns `content-range: */0` for
+**2026-08-11**, a date #323 measured at 135 rows via service-role. **Run that test before treating
+any empty anon result as a finding**; it is two seconds and it is the difference between a
+measurement and a fabrication.
+
+**Held deliberately, do not dispatch:**
+- **#312 scope 4** (deleting the `QSRSOFT_TOKEN` / `QSRSOFT_COGNITO_TOKEN` secrets) — waits until
+  the converted pulls run green on their *real* schedules for several consecutive days. A
+  `workflow_dispatch` run proving out is not the same as the cron proving out.
+- **#311** stays open until all 14 QSRSoft scripts convert. Two done (`turnover-pull`, `ops-pull`),
+  **12 queued** behind the same several-days bar.
+- Both were converted on the same premise; converting the remaining 12 before that premise is
+  tested on a real schedule would multiply an unverified change by twelve.
 
 ---
 
 ## 3. What the owner owes (his action list — keep it in front of him)
 
-1. **Cycle the QSRSoft session — URGENT.** He has pasted a live `x-auth-token` in plaintext at least
-   **four** times. Strip `x-auth-token` from every capture; never write one to a file or a commit.
+1. ✅ **Cycle the QSRSoft session — DONE 2026-08-15**, and both token secrets rotated. **Do not
+   re-raise the cycle itself.** Strip `x-auth-token` from every capture regardless; never write one to
+   a file or a commit.
+   ⚠️ **But rotation is a stopgap that cannot hold, and this is the important part.** The two secrets
+   are **one credential** (owner-confirmed; `qsrsoft-variance-pull.mjs:176` falls back
+   `COGNITO || TOKEN`), and it is a Cognito **ID token with a ~1h TTL**
+   (`qsrsoft-variance-pull.mjs:74-77`). A stored secret is therefore expired for ~23 of every 24
+   hours, so **all 14 QSRSoft scripts have been running on the Playwright fallback permanently, by
+   construction** — the leg CLAUDE.md records as unreliable as of 2026-08. This was already visible
+   and mis-filed as a performance note on 2026-07-28 (*"stale/401 — refresh for faster runs, not
+   blocking"*). **#312 is the fix**: mint the token per-run via Cognito `InitiateAuth`, delete both
+   secrets, and the "paste a live token" exposure stops existing as a category. Config is already
+   known — pool `us-east-1_OdhPNFLDP`, client `2vt4qrqcakbeo9sh0ivli3lbui`, `us-east-1`, using the
+   existing `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`. Confirmed clear: not federated SSO
+   (`qsrsoft-ops-pull.mjs:197-201` fills a plain email/password form, no IdP redirect) and **MFA is
+   off** (owner-confirmed). Expect SRP rather than `USER_PASSWORD_AUTH`.
 2. **Run `supabase/schema-data-completeness.sql`** — this is the only thing blocking #269.
 3. Rate the **remaining 12 stores** — the cohort closes **2026-09-03**.
 4. **Reconcile the 5-of-20 binary to exactly five** *before* looking at scheduling data.
@@ -231,6 +390,22 @@ Recorded because they are the cheapest thing a successor can inherit.
   of theorising and found the grand-total row. That is the habit.
 - **Could not measure Supabase contents** — the anon key returns zero rows under RLS. That is RLS, not
   absence. Never report an unverifiable count as confirmed.
+- **Wrote a stale blocker into this handoff without checking the branch — in the document whose whole
+  purpose is to prevent that.** §2 said #292's primary key still needed rebuilding and "do not merge
+  until the rebuild lands." The engineer had already fixed it: the branch declares
+  `primary key (loc, date, item, price)` with a matching `onConflict`. The next PM caught it before
+  it became a duplicate dispatch, which is the review gate working. This is the CLAUDE.md rule
+  *"before assuming a 'next up' item is undone, verify against the actual code"* — a rule added after
+  a near-duplicate reimplementation — earning its place a second time, and the second time it was the
+  PM who tripped it. **A handoff board entry is a snapshot; verify any 'still open' item against the
+  branch before dispatching from it.** Owner's own note on this: the register is more useful than the
+  board.
+- **Framed an expected database behaviour as a caveat.** Reported `qsr_daily_activity` timing out on
+  an unfiltered `select=*` as though it constrained how a measurement should be scoped. It is a table
+  of 27 stores × hourly slots × years with a dedicated index file
+  (`supabase/schema-qsr-daily-activity-index.sql`, indexed on `dt`) — an unfiltered scan timing out is
+  what that table is supposed to do. Filter by `loc` and a date range. Scope a query around the index,
+  not around the symptom.
 - **Cited pre-squash commit hashes in durable docs, then squash-merged them out of existence.** This
   handoff and issues #302/#303 pointed at `6d732fd` / `771b186`; #304 squashed four commits into
   `0359b4e`, so those SHAs were never on `main` and every citation was dead on arrival. It was invisible
@@ -240,13 +415,57 @@ Recorded because they are the cheapest thing a successor can inherit.
   branch SHAs survive none of them. If a hash is genuinely needed, verify it with
   `git merge-base --is-ancestor <sha> origin/main` **before** writing it down, and never verify a
   cross-session reference from a working copy that still holds the branch.
+- **⭐ Told the owner a metric had "no cloud stream behind it" — about his own auto-pulled data.**
+  Wrote in #322 that `otHrs`/`otDollar` source only from `opsLaborRows`/`ctrlRows`/`laborRows`, "all
+  three manual uploads." Owner: *"not accurate and has been an ongoing patch to data sources… All of
+  this data is auto pulled as well."* He was right. `loadOpsLaborSummary` (`src/lib/supabase.js:2242`)
+  reads `qsr_labor_summary` — an **auto** table — and maps `over_time_total_hours`/`_dollars` straight
+  into `opsLaborRows`. The chain was built and correct; it was *empty*, for an unrelated reason
+  (#323's token). **A source name in `METRIC_SOURCES` does not tell you whether it is manual or auto
+  — follow it to its loader before characterising it.** Worse, `changelog-data.js:434` already
+  documented this. The correction was written into #322 as a banner rather than a silent edit.
+- **Diffed a PR against `origin/main` and nearly rejected a good one.** #309 showed 40 files /
+  1,359 deletions — including my own memory docs — because the branch was behind `main`. Real diff
+  via `git merge-base`: **4 files, 39 insertions.** `git diff origin/main..branch` is a lie for any
+  behind-main branch. Always `MB=$(git merge-base origin/main <branch>); git diff $MB..<branch>`.
+- **Dispatched an instruction the engineer refused, and the engineer was right.** Told them to remove
+  `QSRSOFT_COGNITO_TOKEN` from `qsrsoft-inventory-history-pull.yml`; they measured instead of
+  complying. `scripts/lib/ebos-auth.mjs:116` reads it as the primary env var. **An engineer pushing
+  back with a measurement outranks a PM dispatch written from a grep.** Verify, then concede plainly.
+- **Declared a question "closed for good" before testing the one control that could reopen it.** Said
+  the Product Mix store question was settled; the owner found a `Show Location Names` toggle minutes
+  later. His test confirmed the original conclusion — *and that is not exoneration.* A conclusion that
+  turns out true is not evidence the reasoning behind it was sound. Retracted in writing anyway.
+- **Asked the owner to re-capture a request with modified parameters.** He runs the reports **from the
+  website**, not from DevTools — he cannot edit a query string. Route parameter experiments to the
+  engineer as a code test; ask the owner only for what a UI can actually produce.
+- **⭐ A verification that would still pass with the feature removed (caught at review, #329).** The
+  reconciliation built `glimpseRows` into the `ds` and compared `metricSeries('laborPct')` against
+  Glimpse — but the derive is a **fallback** (`metric-source.js:491` skips it when a real source
+  answered), so the resolver returned Glimpse's own value and the test compared Glimpse to itself.
+  It reported a flawless **192/192**. The honest re-run was **582/648**. **Standing question for
+  every verification, yours and the engineer's: would this still pass if the feature were deleted?**
+  The tells were both statistical and behavioural — 8 stores × 24 days = *exactly* 192 with zero
+  gaps (real division across two tables never agrees to 4dp on 100% of a sample), and the author had
+  already applied the strip-the-winning-source trick to a *different* check in the same PR. **A
+  suspiciously perfect number deserves more scrutiny than a mediocre one**, and 66 documented misses
+  is a better deliverable than a perfect result nobody can reproduce.
+- **Nearly flagged a false discrepancy on that same PR.** Grepped for `192/192` expecting it removed,
+  found it in three files, and almost reported the fix as incomplete — the engineer had kept it as a
+  *documented retraction* ("an earlier draft reported a tautological 192/192"), which is the practice
+  this register itself recommends. **Read the context around a grep hit before calling it drift.**
 
 ---
 
 ## 8. Security constraints (verbatim intent — preserve on every future handoff)
 
-- **Strip `x-auth-token` from every capture.** Never write one to a file or a commit. The owner must
-  **cycle the QSRSoft session** — still outstanding after four exposures.
+- **Strip `x-auth-token` from every capture.** Never write one to a file or a commit. The session
+  cycle is ✅ **done (2026-08-15)** — do not re-raise it. The standing constraint is the stripping,
+  not the cycle.
+  **Sequence any future capture request behind a rotation**, never alongside one: asking for a
+  capture asks the owner to handle a live token again, so a request that unblocks work would
+  otherwise be the same thing keeping the exposure open. **#312 removes the need entirely** by
+  minting the token per-run — treat it as a security item, not a performance one.
 - **Never pull or persist `ssn`.** `geid` + `payrollID` identify a person adequately for every analysis
   Meridian performs. Roster workbooks carrying SSNs/DOBs/addresses are to be deleted.
 - Supabase **anon/publishable key is public by design**; the **service-role key is exported into the

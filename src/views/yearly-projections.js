@@ -106,7 +106,7 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
   }, [ds, actuals, year, curMonth, dayFrac]);
 
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
-  const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid rgba(255,255,255,.04)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
+  const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
   const pctCell = v => ({ ...td, fontWeight: 700, color: v == null ? 'var(--text3)' : v >= 0 ? '#10b981' : v >= -3 ? '#f59e0b' : '#ef4444' });
   const monthsTitle = r => 'Monthly target / actual:\n' + r.months.map(mo => `${MONTHS[mo.m - 1]}: ${money(mo.tgt)}${mo.state !== 'future' ? ' / ' + money(mo.act) + (mo.state === 'current' ? ' (MTD)' : '') : ' (plan)'}`).join('\n');
 

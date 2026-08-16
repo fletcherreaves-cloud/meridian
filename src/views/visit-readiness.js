@@ -123,7 +123,7 @@ function StoreRow({ s, expanded, onToggle }) {
   const sub = (label, sc) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'var(--text3)' } },
     h('span', { style: { width: 62, textAlign: 'right' } }, label), h(Bar, { score: sc, w: 54 }),
     h('span', { style: { fontFamily: 'var(--mono)', color: scoreColor(sc), width: 26 } }, sc == null ? '—' : Math.round(sc)));
-  return h('div', { style: { borderTop: '.5px solid rgba(255,255,255,.05)' } },
+  return h('div', { style: { borderTop: '.5px solid var(--bdr)' } },
     h('div', { onClick: onToggle, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', cursor: 'pointer', flexWrap: 'wrap' } },
       h('div', { style: { width: 44, textAlign: 'center' } },
         h('div', { style: { fontSize: 19, fontWeight: 900, fontFamily: 'var(--mono)', color: b.c, lineHeight: 1 } }, Math.round(s.readiness)),

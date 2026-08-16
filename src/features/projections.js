@@ -150,7 +150,7 @@ function LockConfirmationModal({storeSummaries, periodLabel, lockType, onConfirm
           )),
           h('tbody',null,...storeSummaries.map((s,i)=>{
             const isWarn = s.mape>15;
-            return tr({key:s.loc,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
+            return tr({key:s.loc,style:{borderBottom:'.5px solid var(--bdr)',
               background:isWarn?'rgba(245,158,11,.04)':i%2?'rgba(255,255,255,.015)':'transparent'}},
               td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',whiteSpace:'nowrap',fontSize:'8.5px'}},s.name),
               td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},s.weekTotal>0?f$(s.weekTotal):'—'),
@@ -271,7 +271,7 @@ function LockHistoryPanel({stores, onClose}) {
           h('tbody',null,...rows.map((r,i)=>{
             const dt=r.lockedAt?new Date(r.lockedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit',hour:'2-digit',minute:'2-digit'}):null;
             const scope=r.scope||'week'; // entries logged before v4.193 had no scope field — assume week (the only thing that existed then)
-            return tr({key:i,style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
+            return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',
               background:i%2?'rgba(255,255,255,.015)':'transparent'}},
               td({style:{padding:'4px 8px 4px 14px',fontWeight:600,color:'var(--amber)',fontSize:'8.5px',whiteSpace:'nowrap'}},r.storeName||r.loc),
               td({style:{padding:'4px 8px',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:'8px'}},r.wk||'—'),

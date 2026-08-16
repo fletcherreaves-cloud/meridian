@@ -48,6 +48,50 @@ npm run build && npx --yes serve -s dist -l 4173
 # then page.goto('http://localhost:4173/')
 ```
 
+### 1b. Serve `dist`. NEVER the dev server. (2026-08-15)
+
+This line of the recipe is not a stylistic preference and skipping it produces a **false
+negative that looks exactly like a sandbox limitation.** Three PR bodies (#295/#298, #301)
+independently reported that "`meridian.css` never attaches as a real stylesheet, so every CSS
+custom property reads empty regardless of theme" and downgraded their verification to a
+token-mechanism argument on the strength of it. That limitation does not exist. All three used
+`npm run dev`, where Vite injects CSS through JS — so `document.styleSheets` has no
+`meridian.css` entry and every `getPropertyValue('--bdr')` returns `''`.
+
+Against the built `dist`, measured the same day: **one stylesheet, 241 rules**, `href`
+`/assets/index-*.css`, every `html[data-theme][data-mode]` block present, and all of
+`--bdr`/`--bdr2`/`--surf2` resolving to real values in all 4 theme families × 2 modes. The
+built `index.html` carries a genuine `<link rel="stylesheet">`; the dev server does not.
+
+If you find yourself about to write "CSS custom properties can't be verified here," you are on
+the dev server. Rebuild and re-serve before believing it.
+
+### 1c. Resolve colours through canvas pixels, not string parsing
+
+Theme tokens are a mix of hex (`#c8d8e8`) and `oklch()` (the `command` dark family), and
+`getComputedStyle` hands each back in its authored notation. A regex that scrapes digits out of
+those strings silently returns garbage for both — `#ddd0a0` yields `[0, 0]` and every derived
+contrast ratio comes out `NaN`. Paint the colour instead and read the pixel back; the browser
+does the conversion and every format measures identically:
+
+```js
+const cv = document.createElement('canvas'); cv.width = cv.height = 4;
+const g = cv.getContext('2d', { willReadFrequently: true });
+const px = (color, backdrop) => {            // backdrop set first => alpha composites for real
+  g.clearRect(0, 0, 4, 4);
+  if (backdrop) { g.fillStyle = backdrop; g.fillRect(0, 0, 4, 4); }
+  g.fillStyle = color; g.fillRect(0, 0, 4, 4);
+  const d = g.getImageData(2, 2, 1, 1).data;
+  return [d[0], d[1], d[2]];
+};
+```
+
+Painting an `rgba()` over its real backdrop is also what turns "this looks low-contrast" into a
+number: it is how #295's ring guides were shown to composite to **exactly `(255,255,255)` on
+`(255,255,255)`** — contrast 1.000, the same pixel — in the `command` and `dualbrand` light
+themes, rather than merely being hard to see. Read the token through a real element
+(`el.style.stroke = 'var(--bdr)'`) so the CSSOM path React uses is the one under test.
+
 ### 2. CORS — a genuine hard stop
 
 Every Supabase call from `http://localhost:4173` fails preflight; the origin is not

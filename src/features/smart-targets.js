@@ -413,7 +413,7 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
               const store=(stores||[]).find(s=>s.loc===loc)||{};
               const locApproved=activeMetrics.every(m=>approved[loc+'_'+m.k]);
               return h('tr',{key:loc,
-                style:{borderBottom:'.5px solid rgba(255,255,255,.04)',
+                style:{borderBottom:'.5px solid var(--bdr)',
                   background:selLoc===loc?'var(--adim)':'transparent'}},
                 // Store name cell
                 h('td',{style:{padding:'5px 10px',position:'sticky',left:0,
