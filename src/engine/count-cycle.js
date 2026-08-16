@@ -101,31 +101,59 @@ export function detectSessions(rows = []) {
       const n = Object.values(counts).reduce((a, b) => a + b, 0);
       const covered = CLASSES.filter(c =>
         (counts[c] || 0) > 0 && (counts[c] || 0) >= (totals[loc][c] || Infinity) * COVER_FRAC);
-      return { loc, date, counts, n, covered, kind: sessionKind(date, covered, n) };
+      const q = sessionQualities(date, covered, n);
+      // #357-A — touchedWeeklyClasses is independent of `covered` (which requires
+      // COVER_FRAC): a Paper-only session touches ZERO Food/Condiment items, so it must
+      // never be mistaken for a partial/botched weekly attempt (#357-B1) even though it
+      // can still fail to reach `satisfiesWeekly`.
+      const touchedWeeklyClasses = (counts.Food || 0) > 0 || (counts.Condiment || 0) > 0;
+      return { loc, date, counts, n, covered, touchedWeeklyClasses,
+        ...q, kind: sessionLabel(q) };
     });
   }
   return { sessions: out, classTotals: totals };
 }
 
 /**
- * What kind of count this was.
- *   eom       — in the close window and covering Food+Condiment+Paper
- *   mid-paper — Paper covered OUTSIDE the close window. Paper is only counted mid-month
- *               and at EOM, so a non-EOM paper count IS the mid-month count.
- *   weekly    — Food and Condiment both covered
- *   partial   — a real session that failed to cover the weekly classes
- *   spot      — a handful of items; not a cycle count
+ * #357-A — a session has INDEPENDENT qualities, not one mutually-exclusive `kind`. The
+ * original if/else chain returned on the first match, so a session that satisfied BOTH
+ * the weekly requirement (Food+Condiment) and the mid-month-paper requirement (Paper,
+ * outside the close window) was stamped only 'mid-paper' and the weekly check never ran
+ * — the exact bug that graded Marietta's 2026-08-11 session (Cond✓ Food✓ Pape✓) as if it
+ * never satisfied a weekly count at all, because `lastWeekly` only matched kind==='weekly'.
+ *
+ *   satisfiesWeekly   — Food AND Condiment both covered (the owner's weekly rule)
+ *   satisfiesMidPaper — Paper covered, OUTSIDE the close window (the floating mid-month count)
+ *   isEom             — a large count (n>=50) INSIDE the close window, covering Paper —
+ *                        the close-window count that covers Paper is EOM, not mid-paper
+ *   isPartial/isSpot  — display-only buckets for a session that satisfies none of the
+ *                        above; never consulted for compliance, only for the session label
+ *                        and (isPartial) as the substantial-but-incomplete signal B1 gates on.
  */
-export function sessionKind(date, covered, n) {
+export function sessionQualities(date, covered, n) {
   const has = (c) => covered.includes(c);
   const eomWindow = inCloseWindow(date);
-  // EOM: a large count inside the close window. Requires Paper, because Paper is only
-  // counted mid-month and at close — that is what separates it from a weekly.
-  if (eomWindow && has('Paper') && n >= 50) return 'eom';
-  if (has('Paper') && !eomWindow) return 'mid-paper';
-  if (has('Food') && has('Condiment')) return 'weekly';
-  if (n >= 25) return 'partial';
-  return 'spot';
+  const satisfiesWeekly = has('Food') && has('Condiment');
+  const satisfiesMidPaper = has('Paper') && !eomWindow;
+  const isEom = eomWindow && has('Paper') && n >= 50;
+  const satisfiesAny = satisfiesWeekly || satisfiesMidPaper || isEom;
+  return {
+    satisfiesWeekly, satisfiesMidPaper, isEom,
+    isPartial: !satisfiesAny && n >= 25,
+    isSpot: !satisfiesAny && n < 25,
+  };
+}
+
+/** Human-readable label derived from the qualities — for display ONLY, never for grading.
+ *  A session can legitimately earn more than one label, e.g. "Weekly + Mid-Month Paper"
+ *  (Marietta's 2026-08-11 session — the exact case #357-A was filed over). */
+export function sessionLabel(q) {
+  const parts = [];
+  if (q.isEom) parts.push('End of month');
+  if (q.satisfiesWeekly) parts.push('Weekly');
+  if (q.satisfiesMidPaper) parts.push('Mid-month paper');
+  if (parts.length) return parts.join(' + ');
+  return q.isPartial ? 'Partial' : 'Spot check';
 }
 
 /**
@@ -139,18 +167,21 @@ export function cycleCompliance(rows = [], { asOf = null } = {}) {
 
   return Object.keys(sessions).sort().map(loc => {
     const all = sessions[loc];
-    const cycles = all.filter(s => s.kind !== 'spot');
-    const lastWeekly = [...all].reverse().find(s => s.kind === 'weekly' || s.kind === 'eom') || null;
+    // #357-A — was s.kind !== 'spot'; kind was a single mutually-exclusive label so a
+    // session satisfying multiple qualities (weekly AND mid-paper) collapsed to whichever
+    // the if/else chain hit first. Now every consumer below reads the independent flags.
+    const cycles = all.filter(s => !s.isSpot);
+    const lastWeekly = [...all].reverse().find(s => s.satisfiesWeekly || s.isEom) || null;
     const lastAny = cycles.length ? cycles[cycles.length - 1] : null;
     // A partial session more recent than the last good weekly is the actionable case:
     // they counted, but not completely.
-    const lastPartial = [...all].reverse().find(s => s.kind === 'partial') || null;
+    const lastPartial = [...all].reverse().find(s => s.isPartial) || null;
 
     const daysSinceWeekly = lastWeekly ? daysBetween(lastWeekly.date, today) : null;
     const overdue = daysSinceWeekly == null || daysSinceWeekly > WEEKLY_DUE_DAYS;
 
     // Mid-month paper: has a non-EOM paper count happened this month?
-    const paperThisMonth = all.some(s => s.date.slice(0, 7) === month && s.kind === 'mid-paper');
+    const paperThisMonth = all.some(s => s.date.slice(0, 7) === month && s.satisfiesMidPaper);
     const dayNum = Number(today.slice(8, 10));
     const lastDay = lastDayOf(today);
     // Only meaningful once the month is far enough along to expect it, and it stops being
@@ -165,7 +196,13 @@ export function cycleCompliance(rows = [], { asOf = null } = {}) {
         ? 'No complete weekly count on record'
         : `${daysSinceWeekly} days since the last complete Food + Condiment count`,
     });
-    else if (lastPartial && lastWeekly && lastPartial.date > lastWeekly.date) {
+    // #357-B1 — was: any partial session newer than the last weekly fires this warning,
+    // even a session that never touched Food or Condiment at all (e.g. a pure Paper
+    // count). Tecumseh counted Food+Condiment completely on 08-14, then counted Paper on
+    // 08-15 — the 08-15 session was never a weekly attempt, so it must not be graded as
+    // a botched one. Gated on touchedWeeklyClasses: the session actually included at
+    // least one Food or Condiment item.
+    else if (lastPartial && lastWeekly && lastPartial.date > lastWeekly.date && lastPartial.touchedWeeklyClasses) {
       const missing = WEEKLY_CLASSES.filter(c => !lastPartial.covered.includes(c));
       exceptions.push({
         rule: 'weekly-incomplete', severity: 'warn',

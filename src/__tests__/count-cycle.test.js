@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectSessions, sessionKind, cycleCompliance, cycleSummary,
+import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
          inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS } from '../engine/count-cycle.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
@@ -26,29 +26,59 @@ function store(loc, sessions = []) {
 }
 
 describe('session classification', () => {
-  it('a full Food + Condiment count is a weekly', () => {
+  it('a full Food + Condiment count satisfies weekly', () => {
     // Real example: store 6972 on 2026-08-06 counted Condiment 36, Food 118.
     const { sessions } = detectSessions(store('6972', [{ date: '2026-08-06', counts: { Food: 118, Condiment: 36 } }]));
-    expect(sessions['6972'][0].kind).toBe('weekly');
+    const s = sessions['6972'][0];
+    expect(s.satisfiesWeekly).toBe(true);
+    expect(s.isEom).toBe(false);
+    expect(s.satisfiesMidPaper).toBe(false);
+    expect(s.kind).toBe('Weekly');
   });
 
-  it('a close-window count including Paper is an EOM', () => {
+  it('a close-window count including Paper satisfies EOM', () => {
     const { sessions } = detectSessions(store('3708', [{ date: '2026-07-30', counts: { Food: 103, Condiment: 36, Paper: 92 } }]));
-    expect(sessions['3708'][0].kind).toBe('eom');
+    const s = sessions['3708'][0];
+    expect(s.isEom).toBe(true);
+    // #357-A — an EOM session ALSO satisfies the weekly requirement independently
+    // (it covers Food+Condiment too); the old single-label 'eom' hid that.
+    expect(s.satisfiesWeekly).toBe(true);
   });
 
-  it('a Paper count OUTSIDE the close window is the mid-month count', () => {
+  it('a Paper count OUTSIDE the close window satisfies mid-month paper', () => {
     // Paper is only counted mid-month and at close, so this is how the floating
     // mid-month count identifies itself — there is no fixed date to key on.
     const { sessions } = detectSessions(store('5985', [{ date: '2026-08-14', counts: { Paper: 90 } }]));
-    expect(sessions['5985'][0].kind).toBe('mid-paper');
+    const s = sessions['5985'][0];
+    expect(s.satisfiesMidPaper).toBe(true);
+    expect(s.satisfiesWeekly).toBe(false);
+    expect(s.isEom).toBe(false);
+  });
+
+  // #357-A — the actual owner-reported case: Marietta 33109's 2026-08-11 session
+  // covered Cond 33/33, Food 112/112, Pape 85/~90 — ALL THREE classes over threshold,
+  // outside the close window. The pre-fix if/else chain returned 'mid-paper' on the
+  // Paper check and never reached the weekly check, so lastWeekly (which only matched
+  // kind==='weekly'||'eom') found nothing and the store reported "No complete weekly
+  // count on record" — CRITICAL — on the day it did the most complete count of the
+  // month. Independent flags must both be true on the SAME session.
+  it('a session covering Food+Condiment+Paper outside the close window satisfies BOTH weekly and mid-paper (Marietta 2026-08-11)', () => {
+    const { sessions } = detectSessions(store('33109', [
+      { date: '2026-08-11', counts: { Condiment: 33, Food: 112, Paper: 85 } },
+    ]));
+    const s = sessions['33109'][0];
+    expect(s.satisfiesWeekly).toBe(true);
+    expect(s.satisfiesMidPaper).toBe(true);
+    expect(s.isEom).toBe(false);
+    expect(s.kind).toBe('Weekly + Mid-month paper');
   });
 
   it('a substantial count that misses a weekly class is partial, not weekly', () => {
     // Real example: store 5183 on 2026-08-06 counted Food 58 of 118 and Condiment 5 of 36.
     const { sessions } = detectSessions(store('5183', [{ date: '2026-08-06', counts: { Food: 58, Condiment: 5 } }]));
     const s = sessions['5183'][0];
-    expect(s.kind).toBe('partial');
+    expect(s.isPartial).toBe(true);
+    expect(s.satisfiesWeekly).toBe(false);
     expect(s.covered).not.toContain('Food');
     expect(s.covered).not.toContain('Condiment');
   });
@@ -57,7 +87,7 @@ describe('session classification', () => {
     // Real example: store 5985 on 2026-08-05 counted 12 Food items. Calling that a
     // failed weekly count would cry wolf at a store doing ordinary spot checks.
     const { sessions } = detectSessions(store('5985', [{ date: '2026-08-05', counts: { Food: 12 } }]));
-    expect(sessions['5985'][0].kind).toBe('spot');
+    expect(sessions['5985'][0].isSpot).toBe(true);
   });
 
   it('records the class universe so coverage is measured, not assumed', () => {
@@ -134,6 +164,51 @@ describe("the owner's mid-month paper rule", () => {
   it('stops nagging inside the close window, when EOM covers Paper anyway', () => {
     const c = cycleCompliance(store('A', [{ date: '2026-08-25', counts: { Food: 118, Condiment: 36 } }]), { asOf: '2026-08-30' });
     expect(c[0].paperMissing).toBe(false);
+  });
+});
+
+// #357 — the two owner-reported real cases (Marietta 33109, Tecumseh 33704, as of
+// 2026-08-16). Both go RED against the pre-#357 engine — confirmed by running this suite
+// against a stash of the unfixed count-cycle.js before restoring the fix.
+describe('#357 regression — real production cases', () => {
+  it('Marietta 33109: one session covering Food+Condiment+Paper is credited for BOTH weekly and mid-month paper, and the store is not CRITICAL (#357-A)', () => {
+    // Real 2026-08-11 session: Cond 33/33, Food 112/112, Pape 85/85 (all three classes
+    // fully counted, in one session, outside the close window).
+    const rows = [
+      ...mk('33109', 'Food', 112, '2026-08-11'),
+      ...mk('33109', 'Condiment', 33, '2026-08-11'),
+      ...mk('33109', 'Paper', 85, '2026-08-11'),
+    ];
+    const c = cycleCompliance(rows, { asOf: '2026-08-16' });
+    // Pre-fix: sessionKind returned 'mid-paper' first, lastWeekly found nothing, and the
+    // store reported "No complete weekly count on record" — CRITICAL.
+    expect(c[0].status).not.toBe('crit');
+    expect(c[0].status).toBe('ok');
+    expect(c[0].lastWeekly).toBeTruthy();
+    expect(c[0].lastWeekly.date).toBe('2026-08-11');
+    expect(c[0].paperThisMonth).toBe(true);
+    expect(c[0].exceptions).toEqual([]);
+  });
+
+  it('Tecumseh 33704: a Paper-only session the day after a complete weekly does not trigger a false "not fully counted" warning (#357-B1)', () => {
+    // Real: Cond 37/37 + Food 117/117 on 08-14 (a complete weekly), then Paper 79 of a
+    // 107-item universe on 08-15 (73.8% — below COVER_FRAC, so not yet "covered" under
+    // the unchanged 0.75 threshold; #357-B2/3 is the separate fix for THAT number).
+    const rows = [
+      ...mk('33704', 'Food', 117, '2026-08-14'),
+      ...mk('33704', 'Condiment', 37, '2026-08-14'),
+      ...mk('33704', 'Paper', 107, null),
+    ];
+    let done = 0;
+    for (const r of rows) {
+      if (r.cls === 'Paper' && done < 79) { r.last_counted = '2026-08-15'; done++; }
+    }
+    const c = cycleCompliance(rows, { asOf: '2026-08-16' });
+    // Pre-fix: lastPartial (the 08-15 Paper session, which failed the coverage
+    // threshold) is newer than lastWeekly (08-14) → fired "Counted 2026-08-15 but Food
+    // and Condiment not fully counted", even though 08-15 never touched either class.
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-incomplete')).toBeFalsy();
+    expect(c[0].lastWeekly.date).toBe('2026-08-14');
   });
 });
 
