@@ -61,7 +61,7 @@
 // Optional: PMIX_START_DATE / PMIX_END_DATE (YYYY-MM-DD, backfill range — target 2024-01
 //           per the issue, matching DAR/VOICE depth; probe retention depth first per the
 //           standing rule, same as #257/#259 did — do not assume it reaches that far),
-//           PMIX_STORE (comma-separated NSNs, default all 27), QSRSOFT_DEBUG=1.
+//           PMIX_STORE (comma-separated NSNs, default all 27).
 
 import { createClient } from '@supabase/supabase-js';
 import { savePmixRows } from '../src/lib/supabase.js';
@@ -69,7 +69,6 @@ import { savePmixRows } from '../src/lib/supabase.js';
 const BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const REPORT_URL = 'https://v3.myqsrsoft.com/reports/mcd/product/productMixDrillDown';
-const DEBUG  = process.env.QSRSOFT_DEBUG === '1';
 
 const STORE_NSNS = (process.env.PMIX_STORE
   ? process.env.PMIX_STORE.split(',').map(s => s.trim())
@@ -209,16 +208,39 @@ async function probeDistrictMode(date, token, evalPage) {
   return rows;
 }
 
+// Splits WHY a row didn't survive, not just whether it did — a wipeout attributable to `loc`
+// (the multi-store field guess going wrong) is a materially different failure than a normal
+// batch of soldQty=0 catalog placeholders, and upsertAndLog needs to tell them apart rather
+// than reporting one merged "filtered" count that could quietly be masking the former as the
+// latter (#292 review).
 function mappedRows(rows, date, fallbackLoc) {
-  return rows.map(r => mapRow(r, date, fallbackLoc))
-    .filter(r => r.loc && r.loc !== '0000000' && Number(r.soldQty) > 0); // soldQty=0 rows are catalog placeholders — see file header
+  const kept = [], locDropped = [], qtyDropped = [];
+  for (const r of rows) {
+    const m = mapRow(r, date, fallbackLoc);
+    if (!m.loc || m.loc === '0000000') locDropped.push(m);
+    else if (!(Number(m.soldQty) > 0)) qtyDropped.push(m); // soldQty=0 rows are catalog placeholders — see file header
+    else kept.push(m);
+  }
+  return { kept, locDropped, qtyDropped };
 }
 
-async function upsertAndLog(mapped, label, rawCount) {
-  if (!mapped.length) { if (DEBUG) console.log(`[pmix] ${label}: ${rawCount} row(s), all filtered (placeholders)`); return 0; }
-  const { saved, errors } = await savePmixRows(mapped);
+async function upsertAndLog(mappedResult, label, rawCount) {
+  const { kept, locDropped, qtyDropped } = mappedResult;
+  if (!kept.length) {
+    // Unconditional, not DEBUG-gated: a total wipeout is exactly the failure mode this repo
+    // has already been bitten by (a green run that wrote nothing), and if the cause is `loc`
+    // rather than genuinely-empty placeholders, that needs to be loud, not buried behind a
+    // debug flag nobody sets on a scheduled run.
+    if (locDropped.length) {
+      console.error(`[pmix] ${label}: ${rawCount} row(s), ALL dropped — ${locDropped.length} for unresolved/placeholder loc, ${qtyDropped.length} for soldQty=0. A loc-attributed wipeout means the multi-store field guess is wrong, not that the day had no sales.`);
+    } else {
+      console.log(`[pmix] ${label}: ${rawCount} row(s), all filtered (${qtyDropped.length} soldQty=0 placeholder(s))`);
+    }
+    return 0;
+  }
+  const { saved, errors } = await savePmixRows(kept);
   if (errors.length) console.warn(`[pmix] ${label}: ${errors.length} save error(s)`);
-  console.log(`[pmix] ${label}: ${mapped.length}/${rawCount} row(s) upserted (${rawCount - mapped.length} placeholder(s) filtered)`);
+  console.log(`[pmix] ${label}: ${kept.length}/${rawCount} row(s) upserted (${qtyDropped.length} placeholder(s), ${locDropped.length} unresolved-loc filtered)`);
   return saved;
 }
 

@@ -58,16 +58,85 @@ settled something the PM asserted from inference. See the corrections register i
 
 **Merged in the last two days:** #280 (v5.011), #284, #282 (v5.012), #293 (docs).
 
-**Merged 2026-08-15 (this session):** #297, #298 (v5.014), #301 (v5.015, +#306), #307, #308.
-`main` at `d9002fe`. Build **509.61 KB gzip / 340.39 KB headroom**, **1371/1371** tests.
+**Merged 2026-08-15 (this session):** #297, #298 (v5.014), #301 (v5.015, +#306), #307, #308,
+#310 (v5.017), #321 (v5.018), #309 (v5.019), #323 (v5.020), #325 (v5.021).
+`main` at `799c8709`. Build **508.55 KB gzip / 341.45 KB headroom**, **1371/1371** tests.
+
+> **Version numbering is not dense and that is fine.** v5.016 is unused — #309 was authored as
+> 5.016, sat open while #310 and #321 landed as 5.017/5.018, and had to renumber to 5.019 to avoid
+> walking `window.__MERIDIAN_VERSION__` backwards. `changelog-version.test.js` guards **desync
+> between `changelog-data.js` and `changelog-latest.js`, NOT monotonicity** — a backwards version
+> ships green. Check the ordering by hand on every changelog-touching PR; this was the single most
+> recurring near-miss of the session.
 
 ### Open PRs — the live board
 
 | PR | What | PM state |
 |---|---|---|
-| **#292** | #291 Product Mix real pull | **REVIEWED 08-15, held** — needs the multi-store capture; see below |
-| **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase onto latest `main` |
+| **#292** | #291 Product Mix real pull | **REVIEWED 08-15, held** — `nsd=d` is now a code test, not a capture request; see below |
+| **#286** | v5.013 — #276 step 2, lone-red → `var(--crit)` | **HELD** — needs rebase **and renumber** (5.013 is now eight versions below `main`) |
 | **#269** | #263 + #265 pull-failure detection + completeness ledger | **HELD** — owner must run the SQL; plus one residual |
+
+### The OT/labor thread, closed out (#322 → #323 → #324 → #325)
+
+Owner reported OT Cost reading `—` everywhere, then `0.0`/`$0` after the first fix. Three distinct
+causes stacked, found in order, each only visible once the one above it was removed:
+
+1. **#323 (v5.020)** — `qsrsoft-ops-pull.mjs` read `process.env.QSRSOFT_TOKEN` directly: a ~1h-TTL
+   Cognito token in a GitHub secret, stale ~23 of every 24 hours. Converted to `getFreshToken()`,
+   made the cache expiry-aware (decodes the JWT `exp`, 5-min margin) because the script is
+   backfill-capable and a ~1.5h backfill outruns a ~1h token. Owner authorized a full backfill:
+   **36,913 rows** added, gaps closed to 2024-01-01.
+2. **#325 (v5.021)** — the data then reached `ds.opsLaborRows` and stopped. `LaborAnalyticsPanel`
+   never called the resolver; `grep -n opsLaborRows src/views/labor-tools.js` returned **one** hit,
+   a comment on the *other* panel. Five metrics routed through `metricAvg`; `otCostEst`'s
+   `hrs×0.5×rate` estimate retired (1647/1647 rows carry the real dollar figure).
+3. **#327 ✅ SHIPPED v5.022** (was: Labor % on At A Glance reads "No labor data" while Labor
+   Analytics shows 22.47%). `laborPct` got a `derive` fallback — crew labor $ ÷ DAR sales — on
+   `tpph`'s precedent. Both legs were wrong in the first pass and were corrected against real
+   data: `gross_dollars` includes salaried-manager pay (store 6178, gross 2978.60 vs crew 2661.50,
+   a $317.10 gap that IS that day's `salaried_manager_dollars`), and `net_sales_amt` carries a
+   ~0.2–0.3pp low bias where `product_sales_amt` reconciles. Units confirmed as a fraction, so
+   `d/s` not `d/s*100`.
+
+   **Shipped knowingly at 89.8%** (582/648 store-days within 0.001). The deciding fact: the derive
+   is **last-resort only** — `metric-source.js:491` skips it whenever a real source answered — so
+   it can only ever replace a **blank**, never a better number. "Within 0.1pp nine days in ten vs
+   nothing" is an easy yes; it would have been a hard no if it could displace a real value.
+
+   ⭐ **The verification took two passes and the first was a tautology — this is the reusable
+   lesson.** It built `glimpseRows` into the `ds` and compared `metricSeries('laborPct')` against
+   Glimpse. But the derive is a *fallback*, so the resolver returned **Glimpse's own value** and
+   the comparison was Glimpse against itself: a perfect 192/192 that **would have passed with the
+   derivation deleted.** Two tells caught it: 8 stores × 24 days = *exactly* 192 with zero gaps
+   anywhere (real float division across two tables never agrees to 4dp on 100% of a sample), and
+   the engineer had already used the strip-`glimpseRows` trick for their `avgRate` check but not
+   for the reconciliation. **Ask of any verification: would this still pass if the feature were
+   removed?** The honest re-run (582/648, 66 documented misses) is a *better* result than the
+   perfect one. The 192/192 is preserved in-code as a documented retraction.
+
+4. **#330 (open)** — the residual 10.2%. `laborPct`'s derive divides a **calendar-day numerator by
+   a trading-day denominator**: `labor-summary` pulls `compType:'calendar'`
+   (`qsrsoft-ops-pull.mjs:94`), the DAR `daily-activity-raw` pulls `compType:'trading'`
+   (`qsrsoft-dar-pull.mjs:260`). Late-night volume straddling midnight lands in a different bucket
+   on each side, which matches the measured day-specific/store-spread pattern (66 misses over
+   25/27 stores, none at 100%). **The parameter mismatch is measured; it is NOT confirmed as the
+   cause of the + skew** (58/8), and store 31357 on 07-19 shows the numerator off on its own terms,
+   so there may be more than one cause. Test is one parameter and proven in-repo (`qtr-hr-sales`
+   uses `trading` in the same script). **Do not flip it in production first** — `compType` is
+   shared by five sub-endpoints there, and three of them feed tiles that currently reconcile fine.
+   Re-measure the 89.8% if it lands; that number lives in three files.
+
+**#324 CLOSED 2026-08-15, owner-confirmed on his own screen** — `OT HRS/DAY 1.5`,
+`OT COST $24,352`, `ACT VS NEED +3 hrs`, and per-store OT cost varying store-by-store
+($1,358 / $773 / $457 / $392 / $173 / $73) with the colour thresholds firing. The per-store column
+is the real proof: it was `—` on **every** row before. Holding the issue open for his screen rather
+than closing it on the engineer's (correct, real-resolver) numbers was the right call — v5.020 had
+already been correct-and-still-broken once.
+
+Expected and **not** a failure: a store with genuinely $0 OT still renders `—` per-store, because
+that cell gates on `otCost>0`. Pre-dates #325, left alone on purpose. The district total
+distinguishes null from zero correctly. Next null-vs-zero pass should convert the per-store row.
 
 ### Open issues that are now the real queue
 
@@ -132,10 +201,35 @@ by `detected_at` ascending.
 
 ### Engineer queue (dispatch order, as sent)
 
-#295 ✅ → #296 step 1 ✅ → **#292 PK rebuild** → **#286 rebase** → **#269 residual** → #294 ✅
+#295 ✅ → #296 step 1 ✅ → #294 ✅ → #312 probe ✅ → #321 ✅ → #323 ✅ (+ backfill) → #325 ✅
 
-So the next three engineer items are **#292, #286, #269**, in that order. The first three are already
-in PRs #298/#301/#297 awaiting PM review.
+**Next: #292, #286, #269** — with **#330** (the `compType` boundary mismatch) available whenever
+someone wants a self-contained, well-scoped piece. #330 is *not* urgent: v5.022 already closed the
+user-facing gap, and #330 only tightens the residual 10%.
+
+**The stop-condition pattern worked and should be reused.** #327's dispatch stated the blocking
+measurement as a stop condition, not a suggestion — *"if Glimpse is current through Aug 15 the
+premise is refuted; re-diagnose, don't build anyway."* The engineer measured it first
+(`max(date) = 2026-08-11`) and reported it before writing code. Write dispatches that way.
+
+**Note the column names differ across these tables** — `daily_glimpse_daily` uses `date`,
+`qsr_labor_summary` uses `dt`. Cost a round of 42703 errors; check before querying.
+
+**The PM environment cannot verify any of this.** Anon returns `[]` on `qsr_labor_summary`,
+`daily_glimpse_daily`, `cash_sheet_daily`, `sales_ledger_daily`. Confirmed that is RLS and not
+absence with the discriminating test — `qsr_labor_summary` returns `content-range: */0` for
+**2026-08-11**, a date #323 measured at 135 rows via service-role. **Run that test before treating
+any empty anon result as a finding**; it is two seconds and it is the difference between a
+measurement and a fabrication.
+
+**Held deliberately, do not dispatch:**
+- **#312 scope 4** (deleting the `QSRSOFT_TOKEN` / `QSRSOFT_COGNITO_TOKEN` secrets) — waits until
+  the converted pulls run green on their *real* schedules for several consecutive days. A
+  `workflow_dispatch` run proving out is not the same as the cron proving out.
+- **#311** stays open until all 14 QSRSoft scripts convert. Two done (`turnover-pull`, `ops-pull`),
+  **12 queued** behind the same several-days bar.
+- Both were converted on the same premise; converting the remaining 12 before that premise is
+  tested on a real schedule would multiply an unverified change by twelve.
 
 ---
 
@@ -321,6 +415,45 @@ Recorded because they are the cheapest thing a successor can inherit.
   branch SHAs survive none of them. If a hash is genuinely needed, verify it with
   `git merge-base --is-ancestor <sha> origin/main` **before** writing it down, and never verify a
   cross-session reference from a working copy that still holds the branch.
+- **⭐ Told the owner a metric had "no cloud stream behind it" — about his own auto-pulled data.**
+  Wrote in #322 that `otHrs`/`otDollar` source only from `opsLaborRows`/`ctrlRows`/`laborRows`, "all
+  three manual uploads." Owner: *"not accurate and has been an ongoing patch to data sources… All of
+  this data is auto pulled as well."* He was right. `loadOpsLaborSummary` (`src/lib/supabase.js:2242`)
+  reads `qsr_labor_summary` — an **auto** table — and maps `over_time_total_hours`/`_dollars` straight
+  into `opsLaborRows`. The chain was built and correct; it was *empty*, for an unrelated reason
+  (#323's token). **A source name in `METRIC_SOURCES` does not tell you whether it is manual or auto
+  — follow it to its loader before characterising it.** Worse, `changelog-data.js:434` already
+  documented this. The correction was written into #322 as a banner rather than a silent edit.
+- **Diffed a PR against `origin/main` and nearly rejected a good one.** #309 showed 40 files /
+  1,359 deletions — including my own memory docs — because the branch was behind `main`. Real diff
+  via `git merge-base`: **4 files, 39 insertions.** `git diff origin/main..branch` is a lie for any
+  behind-main branch. Always `MB=$(git merge-base origin/main <branch>); git diff $MB..<branch>`.
+- **Dispatched an instruction the engineer refused, and the engineer was right.** Told them to remove
+  `QSRSOFT_COGNITO_TOKEN` from `qsrsoft-inventory-history-pull.yml`; they measured instead of
+  complying. `scripts/lib/ebos-auth.mjs:116` reads it as the primary env var. **An engineer pushing
+  back with a measurement outranks a PM dispatch written from a grep.** Verify, then concede plainly.
+- **Declared a question "closed for good" before testing the one control that could reopen it.** Said
+  the Product Mix store question was settled; the owner found a `Show Location Names` toggle minutes
+  later. His test confirmed the original conclusion — *and that is not exoneration.* A conclusion that
+  turns out true is not evidence the reasoning behind it was sound. Retracted in writing anyway.
+- **Asked the owner to re-capture a request with modified parameters.** He runs the reports **from the
+  website**, not from DevTools — he cannot edit a query string. Route parameter experiments to the
+  engineer as a code test; ask the owner only for what a UI can actually produce.
+- **⭐ A verification that would still pass with the feature removed (caught at review, #329).** The
+  reconciliation built `glimpseRows` into the `ds` and compared `metricSeries('laborPct')` against
+  Glimpse — but the derive is a **fallback** (`metric-source.js:491` skips it when a real source
+  answered), so the resolver returned Glimpse's own value and the test compared Glimpse to itself.
+  It reported a flawless **192/192**. The honest re-run was **582/648**. **Standing question for
+  every verification, yours and the engineer's: would this still pass if the feature were deleted?**
+  The tells were both statistical and behavioural — 8 stores × 24 days = *exactly* 192 with zero
+  gaps (real division across two tables never agrees to 4dp on 100% of a sample), and the author had
+  already applied the strip-the-winning-source trick to a *different* check in the same PR. **A
+  suspiciously perfect number deserves more scrutiny than a mediocre one**, and 66 documented misses
+  is a better deliverable than a perfect result nobody can reproduce.
+- **Nearly flagged a false discrepancy on that same PR.** Grepped for `192/192` expecting it removed,
+  found it in three files, and almost reported the fix as incomplete — the engineer had kept it as a
+  *documented retraction* ("an earlier draft reported a tautological 192/192"), which is the practice
+  this register itself recommends. **Read the context around a grep hit before calling it drift.**
 
 ---
 

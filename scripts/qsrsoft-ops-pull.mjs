@@ -13,13 +13,25 @@
 //   cash-sheet (sales) → qsr_sales_mix     (channel sales breakdown + ly + ybl)
 //   qtr-hr-sales peaks → qsr_peaks_sales   (3 Peaks daypart sales by channel; one row per store×daypart)
 //
-// Auth (tried in order): QSRSOFT_TOKEN (direct) → QSRSOFT_USERNAME/PASSWORD (Playwright fallback:
+// Auth (#312 scope 3, converted 2026-08-15): getFreshToken() mints a Cognito ID token per
+// run (see scripts/lib/qsrsoft-auth.mjs) → QSRSOFT_USERNAME/PASSWORD (Playwright fallback:
 // logs in, opens the Operations Report page, captures the X-Auth-Token, fetches in-browser).
-// Required: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+// QSRSOFT_TOKEN is no longer read here — a stored copy is a ~1h-TTL Cognito token, stale
+// ~23/24 hours (#312's finding chain), which is why this script's own changelog entry
+// already named a stale QSRSOFT_TOKEN as the reason qsr_labor_summary's OT columns were
+// empty (#322). runAll() resolves a token PER (endpoint, date) via getFreshToken() rather
+// than being handed one static value up front — this script is backfill-capable
+// (QSRSOFT_OPS_START_DATE/END_DATE, day-by-day) and CLAUDE.md records a 27-month backfill
+// as routine at ~6.6s/day, ≈1.5h against a ~1h token; a token minted once at the top would
+// sail past expiry mid-backfill. getFreshToken() re-mints proactively near its own expiry,
+// and runAll() forces one extra re-mint-and-retry on an AUTH_FAILED before giving up on a
+// request, in case a nominally-fresh token is rejected anyway (clock skew, early
+// revocation). Required: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 // Optional: QSRSOFT_OPS_DAYS_BACK (first-run history, default 45), QSRSOFT_OPS_DAYS_RECENT (rolling, 4),
 //           QSRSOFT_OPS_START_DATE/END_DATE (explicit backfill), QSRSOFT_OPS_DEBUG=1.
 
 import { createClient } from '@supabase/supabase-js';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -135,8 +147,17 @@ async function upsert(table, records, conflict) {
   return total;
 }
 
-// Run all endpoints (or just `onlyKeys`, e.g. ['cash']) across all dates with a given token
-// (evalPage set → in-browser fetch).
+// Run all endpoints (or just `onlyKeys`, e.g. ['cash']) across all dates. `token` is either a
+// plain string (Playwright mode — evalPage set, one browser-captured token for the whole run)
+// or the getFreshToken function itself (direct-API mode) — resolved per (endpoint, date) so a
+// long backfill re-mints transparently near expiry instead of running out mid-loop (see file
+// header). On an AUTH_FAILED with a function token, one forced re-mint-and-retry is attempted
+// before giving up on that single request — see scripts/lib/qsrsoft-auth.mjs's own header for
+// why both the proactive and reactive paths exist together.
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
 async function runAll(token, dates, evalPage, onlyKeys) {
   let grand = 0;
   for (const ep of ENDPOINTS) {
@@ -144,7 +165,17 @@ async function runAll(token, dates, evalPage, onlyKeys) {
     let epTotal = 0;
     for (const date of dates) {
       try {
-        const rows = await fetchRows(ep.url(date), token, evalPage);
+        const tok = await resolveToken(token, false);
+        let rows;
+        try {
+          rows = await fetchRows(ep.url(date), tok, evalPage);
+        } catch (e) {
+          if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+            console.log(`[ops] ${ep.key} ${date}: cached token rejected — forcing a re-mint and retrying once`);
+            const freshTok = await resolveToken(token, true);
+            rows = await fetchRows(ep.url(date), freshTok, evalPage);
+          } else throw e;
+        }
         if (!rows.length) { if (DEBUG) console.log(`[ops] ${ep.key} ${date}: no data`); continue; }
         let records = rows.map(r => ep.map(r, date)).filter(r => r.loc && r.loc !== '0000000');
         // labor-detail merges its needed-hours into the labor row for the same (loc,dt).
@@ -289,11 +320,8 @@ async function checkCashAnomalies() {
     console.log(`[cash-check] ${anomalies.length} anomaly(s):`, JSON.stringify(anomalies));
     const dates = [...new Set(anomalies.map(a => a.dt))].sort();
     let total = 0;
-    const token = process.env.QSRSOFT_TOKEN;
-    if (token) {
-      try { total = await runAll(token, dates, null, ['cash']); }
-      catch (e) { if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright(dates, ['cash']); } else throw e; }
-    } else { total = await viaPlaywright(dates, ['cash']); }
+    try { total = await runAll(getFreshToken, dates, null, ['cash']); }
+    catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright(dates, ['cash']) || 0; }
     console.log(`[cash-check] re-pull done — ${total} rows upserted for ${dates.join(', ')}.`);
     process.exit(0);
   }
@@ -306,15 +334,12 @@ async function checkCashAnomalies() {
   if (process.env.QSRSOFT_PULSE_PULL === '1') {
     const today = fmtDate(new Date());
     let total = 0;
-    const token = process.env.QSRSOFT_TOKEN;
     // 'service' included too (owner ask) even though the one sample checked had zero rows
     // for today — worth hourly observation to see if/when it starts populating, same
     // reasoning as FOB below.
     const keys = ['cash', 'labor', 'salesMix', 'service'];
-    if (token) {
-      try { total = await runAll(token, [today], null, keys); }
-      catch (e) { if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright([today], keys); } else throw e; }
-    } else { total = await viaPlaywright([today], keys); }
+    try { total = await runAll(getFreshToken, [today], null, keys); }
+    catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright([today], keys) || 0; }
     console.log(`[pulse] done — ${total} rows upserted for ${today} across ${keys.join(', ')}.`);
     process.exit(0);
   }
@@ -322,11 +347,8 @@ async function checkCashAnomalies() {
   const dates = await getDates();
   console.log(`[ops] pulling ${dates.length} date(s): ${dates[0]}…${dates[dates.length - 1]}`);
   let total = 0;
-  const token = process.env.QSRSOFT_TOKEN;
-  if (token) {
-    try { total = await runAll(token, dates, null); }
-    catch (e) { if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright(dates); } else throw e; }
-  } else { total = await viaPlaywright(dates); }
+  try { total = await runAll(getFreshToken, dates, null); }
+  catch (e) { console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`); total = await viaPlaywright(dates) || 0; }
   console.log(`[ops] done — ${total} rows upserted across ${ENDPOINTS.length} endpoints.`);
   process.exit(0);
 })().catch(e => { console.error('[ops] FATAL:', e); process.exit(1); });
