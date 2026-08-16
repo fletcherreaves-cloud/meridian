@@ -276,6 +276,30 @@ actual code — this note nearly caused a duplicate reimplementation.
 - **FL stores (Emerald Arches):** Freeport, Mossy Head, Cottondale, Bonifay, DeFuniak Springs, Chipley-St.Rd.77, Ponce de Leon
 - **OK stores (MCDOK):** Tishomingo, Holdenville, Harrah, Tecumseh, Elgin, Marietta, Sulphur, Pauls Valley, Duncan, Ardmore, OKC-I-240/Sooner, Lindsay, Madill, Purcell, Seminole, Atoka, Ada, Durant, Chickasha, and others
   - Canonical mapping (`getStoreOrg`, `constants.js`): **MCDOK = Oklahoma, Emerald Arches = Florida.** (An earlier draft of this doc — and an `orgOf` helper in analytics.js — had these swapped; fixed v4.497.)
+- **⏰ THE BUSINESS DAY RUNS 4:00am → 4:00am** (owner-stated 2026-08-16). A calendar day is **not**
+  a business day. The 00:00–04:00 block belongs to the **previous** business day — that is when
+  overnight close, clean-up and late-night volume land. Treat this as a first-class fact about the
+  data, not a scheduling detail: **any metric that divides one atom by another must have both legs
+  on the same boundary**, or the ratio silently mixes two different days.
+  - **The app-side helper already exists — do not rebuild it.** `businessDate(now)` and
+    `lastClosedBusinessDay(now)` in **`src/utils/date.js:101,117`** implement the 4am ABC cutover
+    (at 2am the business day is still yesterday's). Moved there from `engine/swing-feed.js` under
+    #131 and re-exported, so all 13 original importers still work; tested in `swing-feed.test.js`.
+    This recurred **five separate times** as "signature #4" (`memory/plan-data-integrity-sweep.md`)
+    before becoming one shared answer. Never re-derive the cutover inline.
+  - **The DAR is ALREADY business-day aligned — this was measured and is not an open question.**
+    `memory/dar-vs-ops-reconciliation.md` (2026-08-07): `hour_slot` runs `05:00 → 28:00`, 24 slots
+    covering 04:00→04:00, matching McDonald's ABC. Corroborated by
+    `memory/project-hourly-projection-accuracy.md:81`. So `compType:'trading'` ≈ the 4am business
+    day. **What `compType:'calendar'` means on `labor-summary` is still unconfirmed** — that is the
+    only live boundary question (#330), and it is on the *numerator* side only.
+  - **Before adding any new derived metric, ask which boundary each input is on.** Both pull
+    scripts already use both `compType` values, so a mismatch is easy to introduce and invisible
+    once shipped — `laborPct` only got caught because it was reconciled against a known-good source.
+  - **Watch for incomplete DAR days, which are a separate trap that looks like a boundary bug.**
+    `dar-vs-ops-reconciliation.md`'s ~0.01% deltas hold only *"on days with a complete 24 slots"*.
+    A short day understates any sales denominator and silently inflates the ratio above it. Check
+    `count(hour_slot)` per `(loc, dt)` before trusting a DAR-denominated derivation.
 - **LifeLenz Business ID:** `01979dbf-a166-759b-8702-aba9915c578e`
 - **Supabase URL:** from `VITE_SUPABASE_URL` env var
 - **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user. **Pronouns: he/him** (stated 2026-08-10 — use them; don't fall back to they/them)

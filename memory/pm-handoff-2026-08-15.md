@@ -118,11 +118,51 @@ causes stacked, found in order, each only visible once the one above it was remo
 4. **#330 (open)** — the residual 10.2%. `laborPct`'s derive divides a **calendar-day numerator by
    a trading-day denominator**: `labor-summary` pulls `compType:'calendar'`
    (`qsrsoft-ops-pull.mjs:94`), the DAR `daily-activity-raw` pulls `compType:'trading'`
-   (`qsrsoft-dar-pull.mjs:260`). Late-night volume straddling midnight lands in a different bucket
-   on each side, which matches the measured day-specific/store-spread pattern (66 misses over
-   25/27 stores, none at 100%). **The parameter mismatch is measured; it is NOT confirmed as the
-   cause of the + skew** (58/8), and store 31357 on 07-19 shows the numerator off on its own terms,
-   so there may be more than one cause. Test is one parameter and proven in-repo (`qtr-hr-sales`
+   (`qsrsoft-dar-pull.mjs:260`).
+
+   ⭐ **UPGRADED 2026-08-16 — the owner supplied the missing number: the business day runs
+   4:00am → 4:00am.** That turns an abstract "different buckets" story into a specific **4-hour
+   offset on both ends**: calendar day N's labor carries 00:00–04:00 of N (which belongs to
+   business day N−1) and omits 00:00–04:00 of N+1 (which belongs to business day N), while the
+   sales denominator covers 04:00 N → 04:00 N+1. The 00:00–04:00 block is overnight close/clean
+   and late-night volume — staffed but low-sales — so the mispairing is between blocks of
+   *unequal* labor-to-sales density, which is why the error is day-specific (heavier Fri/Sat
+   late-nights) rather than a fixed per-store offset. That is exactly the measured shape: 66 misses
+   over 25/27 stores, none at 100%, mean **+0.0050**, skewed 58 positive / 8 negative.
+   Now recorded in **CLAUDE.md's Organization Context** as a standing fact, not just a #330 detail.
+
+   🔻 **PARTLY REFUTED SAME DAY by prior art the owner remembered having done.** He said *"I feel
+   like I addressed this in a previous session"* — he had, in three places, and searching for them
+   first was worth more than the hypothesis was:
+   - **`src/utils/date.js:101,117`** — `businessDate()` / `lastClosedBusinessDay()` already
+     implement the 4am ABC cutover. Recurred **five times** as "signature #4"
+     (`plan-data-integrity-sweep.md`) before becoming one shared helper. Never re-derive it.
+   - **`memory/dar-vs-ops-reconciliation.md` (2026-08-07)** already tested the boundary for this
+     exact denominator and **ruled it out**: DAR `hour_slot` runs `05:00 → 28:00`, 24 slots
+     covering 04:00→04:00 — *"DAR **is** business-day aligned."* Corroborated by
+     `project-hourly-projection-accuracy.md:81`.
+
+   **So the denominator is not the misaligned leg.** What survives: `compType:'trading'` ≈ the 4am
+   business day (supported — the DAR uses it and is confirmed aligned). What's left of #330's
+   original story: only whether `labor-summary`/`'calendar'` is midnight-aligned, on the
+   **numerator** side. Still unconfirmed.
+
+   🔴 **Better-fitting hypothesis, from that same doc — test FIRST because it costs one query.**
+   Its ~0.01% deltas hold only *"on days with a complete 24 slots"*. A DAR day **missing slots**
+   understates the sales denominator and **inflates** derived `laborPct` — which predicts positive
+   skew (measured 58/8), day-specific not per-store (measured, 25/27 stores none at 100%), and a
+   minority of days (measured, 66/648). It also explains store 31357 on 07-19, where #329 found
+   *neither* sales column reconciles — a short day explains that, a boundary offset doesn't.
+   `qsr_daily_activity` is keyed `(loc, dt, hour_slot)`, so it's `count(hour_slot)` per store-day,
+   no re-pull and no writes. If confirmed, the fix is a **completeness guard** (don't derive on an
+   incomplete DAR day; return null so the tile reads "—"), which is also more consistent with
+   #303/#309's null-vs-zero work than shipping a confidently inflated ratio.
+
+   ⚠️ **Do NOT collapse two findings that wear similar percentages.** `dar-vs-ops`'s 77→87%
+   agreement and #329's 89.8% invite "same phenomenon." The arithmetic refutes it: that doc's
+   residual is ~0.01% on sales → ~0.002pp on a labor %, three orders of magnitude short of the
+   +0.5pp here. The definitional sales gap is real, documented and accepted; it does not explain
+   #330. Test is one parameter and proven in-repo (`qtr-hr-sales`
    uses `trading` in the same script). **Do not flip it in production first** — `compType` is
    shared by five sub-endpoints there, and three of them feed tiles that currently reconcile fine.
    Re-measure the 89.8% if it lands; that number lives in three files.
@@ -450,6 +490,18 @@ Recorded because they are the cheapest thing a successor can inherit.
   already applied the strip-the-winning-source trick to a *different* check in the same PR. **A
   suspiciously perfect number deserves more scrutiny than a mediocre one**, and 66 documented misses
   is a better deliverable than a perfect result nobody can reproduce.
+- **⭐ Built a hypothesis on a question the repo had already answered, and wrote it into CLAUDE.md
+  before searching (#330, 2026-08-16).** The owner supplied "the business day runs 4am–4am"; I
+  turned it into a 4-hour-offset story about DAR sales and committed it. *He* then said *"I feel
+  like I addressed this in a previous session"* — and he had:
+  `memory/dar-vs-ops-reconciliation.md` had tested that exact boundary on that exact denominator on
+  2026-08-07 and ruled it out (*"DAR **is** business-day aligned"*), and `src/utils/date.js:101`
+  already carried a `businessDate()` 4am helper that had itself been consolidated after recurring
+  five times. Half my mechanism was refuted by a file already in the repo, and the search that
+  found it took one grep. **Search `memory/` and `src/utils/` for prior art BEFORE writing a
+  mechanism into a durable doc — especially when the fact feels newly learned.** CLAUDE.md's
+  "check whether an affordance already exists before adding one" covers code; it applies just as
+  hard to *explanations*. The owner's vague recollection outranked my fresh reasoning.
 - **Nearly flagged a false discrepancy on that same PR.** Grepped for `192/192` expecting it removed,
   found it in three files, and almost reported the fix as incomplete — the engineer had kept it as a
   *documented retraction* ("an earlier draft reported a tautological 192/192"), which is the practice
