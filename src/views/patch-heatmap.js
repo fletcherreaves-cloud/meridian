@@ -80,6 +80,23 @@ const WATCH_COLOR = '#f5bc00';     // matches SEV_META.warn — kept visually co
 const CRIT_COLOR = 'var(--crit)';      // matches SEV_META.crit
 const UNKNOWN_COLOR = 'var(--text3)';
 
+// #dispatch11 — CRIT_COLOR/UNKNOWN_COLOR are CSS var() references, but every call site below
+// alpha-tints a status color by string-concatenating a 2-digit hex suffix onto it (e.g.
+// status.color+'18'). That only produces valid CSS when the color is a hex literal —
+// concatenating onto var(--crit) yields the literal invalid string "var(--crit)18", which the
+// browser silently drops, so critical cells lost their tinted background/border outright
+// (v5.023's hex->var(--crit) conversion regressed this; UNKNOWN_COLOR has had the same flaw,
+// border-only, since v4.984 — status.color was always var(--text3) for the 'unknown' case).
+// Normalizes both forms: a hex literal keeps the old suffix-concat behavior unchanged; a var()
+// reference goes through color-mix() instead, since a custom property can't be alpha-blended
+// by string concatenation (and reading its resolved value needs a DOM query these plain style
+// objects don't have access to).
+export const withAlpha = (color, hexSuffix) => {
+  if (!color || !color.startsWith('var(')) return color + hexSuffix;
+  const pct = Math.round((parseInt(hexSuffix, 16) / 255) * 100);
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+};
+
 // Converts a "gap past target" into a 0-100 health band: 100 at/better than target,
 // linearly down to 0 once the gap reaches badAt (in the SAME unit as gap — pp or %).
 // A negative gap (better than target) always bands to 100, never above.
@@ -294,8 +311,8 @@ export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
         title: p.status.key === 'unknown' ? 'No data available' : p.status.label ? `Worst: ${p.status.label}` : 'All dimensions healthy',
         style: {
           cursor: 'pointer', borderRadius: 6, padding: '7px 10px', fontSize: '9.5px', minWidth: 130,
-          background: p.status.key === 'clean' ? 'rgba(52,211,153,.08)' : p.status.key === 'unknown' ? 'rgba(148,163,184,.06)' : p.status.color + '18',
-          border: '1.5px solid ' + (selectedPatch === p.patch ? p.status.color : p.status.color + '45'),
+          background: p.status.key === 'clean' ? 'rgba(52,211,153,.08)' : p.status.key === 'unknown' ? 'rgba(148,163,184,.06)' : withAlpha(p.status.color, '18'),
+          border: '1.5px solid ' + (selectedPatch === p.patch ? p.status.color : withAlpha(p.status.color, '45')),
           display: 'flex', flexDirection: 'column', gap: 2,
         },
       },
@@ -309,7 +326,7 @@ export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
     ),
     selectedPatchRow && div({ style: {
       marginBottom: 8, padding: '8px 10px', borderRadius: 6, background: 'var(--surf2)',
-      border: '.5px solid ' + selectedPatchRow.status.color + '40', fontSize: '10px',
+      border: '.5px solid ' + withAlpha(selectedPatchRow.status.color, '40'), fontSize: '10px',
     } },
       div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 } },
         span({ style: { fontWeight: 800, color: 'var(--text)' } }, selectedPatchRow.patch + ' patch'),
@@ -333,8 +350,8 @@ export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
         title: c.status.key === 'unknown' ? 'No data available' : c.status.label ? `Worst: ${c.status.label}` : 'All dimensions healthy',
         style: {
           cursor: 'pointer', borderRadius: 5, padding: '6px 7px', fontSize: '9.5px',
-          background: c.status.key === 'clean' ? 'rgba(52,211,153,.08)' : c.status.key === 'unknown' ? 'rgba(148,163,184,.06)' : c.status.color + '18',
-          border: '1px solid ' + (selected === c.loc ? c.status.color : c.status.color + '35'),
+          background: c.status.key === 'clean' ? 'rgba(52,211,153,.08)' : c.status.key === 'unknown' ? 'rgba(148,163,184,.06)' : withAlpha(c.status.color, '18'),
+          border: '1px solid ' + (selected === c.loc ? c.status.color : withAlpha(c.status.color, '35')),
           display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
         },
       },
@@ -348,7 +365,7 @@ export function PatchHeatmap({ ds, stores, onOpenStore, onCoachingSaved }) {
     ),
     selectedCell && div({ style: {
       marginTop: 8, padding: '8px 10px', borderRadius: 6, background: 'var(--surf2)',
-      border: '.5px solid ' + selectedCell.status.color + '40', fontSize: '10px',
+      border: '.5px solid ' + withAlpha(selectedCell.status.color, '40'), fontSize: '10px',
     } },
       div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 } },
         span({ style: { fontWeight: 800, color: 'var(--text)' } }, sNameC(selectedCell.loc)),

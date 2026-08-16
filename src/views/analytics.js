@@ -3306,6 +3306,20 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
       alert('Invalid date range.');setRunning(false);return;
     }
     const locs=selLoc==='all'?allLocs:[selLoc];
+    // #dispatch11 — the whole body from here down now runs inside try/finally so ANY
+    // future throw (not just the dateKey TDZ bug this fixes) still clears `running` in
+    // finally, instead of leaving the panel wedged on "Computing…" forever with Cancel
+    // unable to help (Cancel only sets a ref the chunk loop checks — it can't unstick an
+    // error that happened before the loop, which is exactly what the TDZ bug did).
+    try{
+    // #dispatch11 — hoisted above the filter below. This was declared further down (right
+    // before the QSRSoft pre-fetch) while the filter here already called it — a temporal-
+    // dead-zone ReferenceError on every run that actually reached this filter with data
+    // loaded, thrown with no enclosing try/catch, so the rejection went unhandled and
+    // setRunning(false) below was never reached: the panel showed "Computing… 0/0 records"
+    // forever. Introduced when the `dateKey(r.date)<businessDate()` predicate was added to
+    // this filter without moving the (pre-existing, lower) declaration up to match.
+    const dateKey=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd;};
     // Guarded ds?.laborRows (was unguarded ds.laborRows) — crashed with
     // "Cannot read properties of null (reading 'laborRows')" when Run
     // Backtest is clicked before any data is loaded. Confirmed pre-existing
@@ -3343,7 +3357,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // Pre-fetch QSRSoft daily projections from qsr_daily_activity for the selected window.
     // Sum proj_sales_dollars across all hour slots per loc+dt to get a daily total,
     // then compare against ds.laborRows actuals to compute QSRSoft's own MAPE.
-    const dateKey=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd;};
+    // (dateKey is declared above now, next to its first use in the rows filter.)
     // Was a BARE select with no pagination — capped at 1000 rows while a 6-week ×
     // 27-store window needs ~28,350, so the Sched Proj MAPE was averaged over roughly a
     // day and a half of data and read far too high. The error was discarded too, so the
@@ -3487,7 +3501,14 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     const rl=range.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'\u2013'+range.e.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     setResults({byStore,dist:{ly:distLY,ai:distAI,blend:distBL,simple:distSP,di:distDI,qsr:distQSR,best:distBest},
       dowBest,totalDays:rows.length,locCount:locs.length,periodLabel:curP.l,rangeLabel:rl});
-    setRunning(false);
+    }finally{
+      // #dispatch11 — this is the actual fix's safety net: whatever throws inside the try
+      // above (the TDZ bug this closes, or any future one), `running` still clears here
+      // instead of leaving the panel wedged on "Computing…" forever. The setRunning(false)
+      // calls at the early-return guards above are redundant-but-harmless now, not load-
+      // bearing — this is the one that always runs.
+      setRunning(false);
+    }
   },[selPeriod,selLoc,allLocs,ds,settings,curP,cStart,cEnd]);
 
   // Sorted stores for display
@@ -3612,7 +3633,13 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
           allLocs.map(l=>h('option',{key:l,value:l},sNameC(l)))),
         div({style:{marginLeft:'auto',display:'flex',gap:8,alignItems:'center'}},
           running&&btn({className:'btn btn-sm',style:{color:'var(--crit)',borderColor:'rgba(244,63,94,.3)'},
-            onClick:()=>{cancelRef.current=true;}},'✕ Cancel'),
+            // #dispatch11 — cancelRef.current=true alone only stops the chunk loop on its
+            // NEXT iteration check; it does nothing if the loop hasn't started yet or has
+            // already thrown (exactly what the dateKey TDZ bug did — the throw happened
+            // before the loop, so this button was a no-op against that specific hang).
+            // setRunning(false) directly so Cancel always unwedges the panel immediately,
+            // matching cancelDistrict's pattern above (line 2630).
+            onClick:()=>{cancelRef.current=true;setRunning(false);}},'✕ Cancel'),
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700,fontSize:'10px',padding:'4px 14px'},
             disabled:running,
             onClick:running?null:runBacktest},
