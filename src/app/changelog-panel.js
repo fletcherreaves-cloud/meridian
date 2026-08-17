@@ -1,15 +1,15 @@
 // @ts-nocheck
 // #230 — lazy-loaded About-modal changelog list. Kept as its own component (rather than inline
 // in App.js) specifically so App.js never statically imports MERIDIAN_CHANGELOG — see
-// changelog-data.js for why, and App.js's ChangelogPanel = lazyPanel(...) declaration for how
+// changelog/index.js for why, and App.js's ChangelogPanel = lazyPanel(...) declaration for how
 // this gets loaded on demand.
 //
-// Sorts newest-first at render (changelog-restructure fix, 2026-08-12) — changelog-data.js's own
-// array is append-only now (new entries land at the tail, not interleaved by version), so display
-// order can no longer be assumed from storage order. `versionSort` compares dotted version
-// strings numerically per segment (5.10 > 5.9, unlike a plain string compare).
+// R6 (dispatch16, 2026-08-17) — changelog/index.js assembles one file per version via
+// import.meta.glob, so array order is whatever the glob happens to return, not commit/append
+// order. `versionSort` compares dotted version strings numerically per segment (5.10 > 5.9,
+// unlike a plain string compare) and is what actually guarantees newest-first display.
 import * as React from 'react';
-import { MERIDIAN_CHANGELOG } from './changelog-data.js';
+import { MERIDIAN_CHANGELOG } from './changelog/index.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);

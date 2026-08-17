@@ -1,0 +1,5 @@
+// @ts-nocheck
+export default {version:'4.526', date:'2026-07-24', changes:[
+  'Fix (the real Org Summary this time): the "everyone ~-32% vs LY" was coming from the Org Summary panel\'s OWN sales/LY calc (a different code path than the one patched in v4.522). It summed the full current window for sales but the full last-year window for LY with no day-matching — so when the current period is missing its most recent days (those land in the auto DAR, not a manual Operations Report), last year looks ~30% bigger on every store. Now the current sales pull is auto-first (manual upload OR the auto-synced DAR, so recent days aren\'t missing) and vs-LY is matched-day (a day counts only when BOTH years have real sales). Applies to the Company / Org / Operator / Patch rollups and the per-store rows.',
+  'Fix: the same artifact made Rankings show "-100%" on GC vs LY (current guests empty vs a full last-year). Now matched-day + auto-first (reads the DAR guest counts) — shows a true YoY or "—" when there is genuinely no comparable data.',
+]};

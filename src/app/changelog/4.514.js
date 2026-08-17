@@ -1,0 +1,5 @@
+// @ts-nocheck
+export default {version:'4.514', date:'2026-07-24', changes:[
+  'SAGE Prompt Library: the ★ Save button is now always clickable — if the box is empty it tells you why instead of looking dead (fixes "Save wasn\'t enabled"). Added a ★ Save prompt button under every SAGE answer that drops the exact question that produced it into the library. And a new "This chat\'s prompts" checklist lets you multi-select the questions you asked in a session and either save each one or combine them into a single saved prompt.',
+  'At-A-Glance "Sales & Guest Counts" tile: restored the vs-LY figures that went blank on devices without a manual Operations Report upload. Guest-count vs LY now falls back to the auto DAR last-year transactions (it previously only read manual uploads), and sales vs LY also reads the emailed Sales Ledger\'s last-year column — so the tile shows real year-over-year again from the cloud streams, not just when a spreadsheet was loaded. (Channel Mix still needs the emailed Sales Ledger stream to be flowing — if that section is empty, the Sales Ledger email isn\'t landing.)',
+]};

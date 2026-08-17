@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.501', date:'2026-07-24', changes:[
+  'New: Visit Readiness (Analytics → 🛡️). Estimates how each store would fare on a 2026 PACE graded visit (Customer First / Running Great Restaurants / EcoSure Food Safety) from the operational metrics you already track — so you coach the at-risk stores before the (mostly unannounced) visit lands. A 0–100 readiness score weighted Speed 35% / Accuracy 30% / Quality 20% / Leadership 15% (each metric scored against that store\'s own target), a separate Food-Safety risk flag from waste/holding proxies, per-store top risk drivers (actual vs target), and last actual visit score when available. Ranked most-at-risk first. Transparent early-warning estimate, not a predicted percentage; Cleanliness is an acknowledged data gap.',
+]};

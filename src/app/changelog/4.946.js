@@ -1,0 +1,6 @@
+// @ts-nocheck
+export default {version:'4.946', date:'2026-08-10', changes:[
+  'Needs Attention — Part 2 of the Attention Now merge: new layout. Instead of a list you click through one store at a time, it\'s now a single ranked list — worst store first, each one expands in place to show every finding. Clickable Critical / Watch / Acknowledged counts at the top act as filters. A clean, non-urgent store now shows up in a collapsed "Running Well" section instead of just not being there, and a district-wide alert that isn\'t tied to any one store (like "sales data is 9 days old, auto-sync may be down") now gets its own pinned strip at the top instead of having nowhere to go.',
+  'New: acknowledge any finding so it moves out of the active list until the situation actually changes — same idea as the sales-swing alarm\'s acknowledgement, extended here. Acknowledging one issue at a store never silently acknowledges a different issue at the same store, and acknowledgements sync across devices the same way the swing alarm\'s do.',
+  '"Attention Now" as a separate menu item is retired — everything it showed (including the sync-health alert) is now inside Needs Attention. Checked carefully that nothing it used to show got lost in the move, since that alert has caught two real multi-day data outages in the past.',
+]};

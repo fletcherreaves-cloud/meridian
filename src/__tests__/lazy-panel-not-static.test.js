@@ -4,7 +4,7 @@
 // in for) a lazyPanel() registration. A module reached by any static path is bundled eagerly
 // regardless of how many dynamic import() paths also reach it — the same INEFFECTIVE_DYNAMIC_IMPORT
 // class of bug #207 fixed for inventory.js/one-pager.js/above-store-onepager.js and #230 fixed for
-// changelog-data.js. This guards the invariant going forward: once a source file is wrapped in
+// the changelog. This guards the invariant going forward: once a source file is wrapped in
 // lazyPanel() (referenced via a bare `import('./x.js')` or a shared `_group()` loader function),
 // App.js must never also reach that same file through a static top-level import.
 import { describe, it, expect } from 'vitest';

@@ -56,17 +56,20 @@ import { execSync } from 'child_process';
 // token system.
 //
 // Excludes __tests__ (this file's own descriptive prose would otherwise match its own guard)
-// and the two changelog files (changelog-data.js / changelog-latest.js -- their entries
-// describe fixes like this one in prose, which legitimately contains the literal string being
-// grepped for; historical/descriptive text, not live style code -- same reasoning #286 used to
-// exclude changelog mentions from its own hex-token sweep).
+// and the changelog files -- their entries describe fixes like this one in prose, which
+// legitimately contains the literal string being grepped for; historical/descriptive text, not
+// live style code -- same reasoning #286 used to exclude changelog mentions from its own
+// hex-token sweep. R6 (dispatch16, 2026-08-17) split the old single changelog-data.js into one
+// file per version under src/app/changelog/, so the exclusion is a directory now, not a filename
+// -- re-measured after the split: 241, unchanged, confirming the new exclude-dir catches exactly
+// what the old --exclude=changelog-data.js did.
 const CEILING = 241;
 
 describe('#296: no new hardcoded rgba(255,255,255,X) in src/**/*.js', () => {
   it('stays at or below the post-step-1 ceiling', () => {
     const out = execSync(
       `grep -rEo "rgba\\(255,\\s*255,\\s*255" src --include="*.js" --exclude-dir=__tests__ ` +
-      `--exclude=changelog-data.js --exclude=changelog-latest.js | wc -l`,
+      `--exclude-dir=changelog --exclude=changelog-latest.js | wc -l`,
       { cwd: process.cwd(), encoding: 'utf8' }
     );
     const count = parseInt(out.trim(), 10);

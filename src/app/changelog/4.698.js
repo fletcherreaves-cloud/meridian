@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.698', date:'2026-07-31', changes:[
+  'EOM diagnosis no longer declares "clean sweep" while a store is OVER its FOB target. Root cause: the Top-5 only inspected item-level Food/Condiment variance, but a FOB overage often lives in the COMPONENTS (raw waste, stat variance, condiments). Now: (1) the FOB headline names the drivers — "Driving the +0.27pp overage: Raw Waste +0.16pp ($1,842) · Stat Variance +0.09pp ($3,313)"; (2) those component levers are folded into the SAME Top-5 ranking (compete by dollars-over-target) so an over-target store always surfaces real actions — "Cut Raw Waste", "Investigate Stat Variance", "Tighten Condiments"; (3) the "🏆 clean sweep" celebration only fires when FOB is genuinely at/under target. Factored the report pipeline into one shared builder (eom-report-build.js) so the dashboard + shared link stay identical.',
+]};

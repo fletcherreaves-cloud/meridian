@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.721', date:'2026-08-01', changes:[
+  'FOB Report (Inventory Control → 📊 FOB Report) — Notes 42 #1. All-location EOM-lean read, scoped to the current filter (one / all / patch): OK/FL summary tiles, a ranked "Biggest opportunities" list, then a market → patch → store hierarchy. Each store shows FOB% vs target, month-over-month trend (▼ improving / ▲ regressing), its worst FOB components vs target, top item losers, a masking flag (large losses offset by gains — the QSRSoft Variance-Card pattern), and a plain-language action plan of easy real-work steps (e.g. "Variance Stat is the driver — audit portioning + waste-recording on [top losers]"). Engine src/engine/fob-report.js, dollar-weighted throughout, +tests. Reports the latest month with real FOB (early in a month the MTD row is all zeros, so it falls back to last completed EOM — same lesson as the count-timing work).',
+]};
