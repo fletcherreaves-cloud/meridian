@@ -564,6 +564,23 @@ Recorded because they are the cheapest thing a successor can inherit.
   one, which is the correct handling of a reviewer's wrong call. The mechanism that refuted me is a
   genuine perf defect (~20 memos in that file never memoize) and is filed as **#369** — the second
   time in two days that reproducing a stated diagnosis beat accepting it.
+- **⭐ Called a documented design an expired secret (#399, owner-refuted same day).** Filed
+  `[auth] QSRSOFT_TOKEN rejected (401/403) — falling back to Playwright` as a dead secret silently
+  degrading every QSRSoft pull, complete with an owner action to rotate it. The owner's reply was
+  four words — *"we have addressed this"* — and he was right: **CLAUDE.md:312 says the DAR endpoint
+  requires browser session cookies and that a server-side token fetch returns 401 by design.** The
+  401 fires on every run, forever; Playwright is the intended mechanism, not a fallback that
+  shouldn't normally trigger. The refuting line was in a file already open in the session.
+  **Why it happened is the reusable part:** 401 read as "expired token" *because that matches a real
+  past incident here* — the LifeLenz token lifecycle — which is exactly the trap CLAUDE.md names
+  (*"Be most suspicious when a cause feels obvious because it matches a past incident in this
+  repo"*). Third time this week that a pattern-match beat a measurement to the conclusion.
+  **What worked:** treating the owner's pushback as a hypothesis to test rather than something to
+  concede or defend. One grep confirmed him and, in the same pass, confirmed the *other* half of the
+  issue at the line level (`getLatestDate()` discards the Supabase `error`, so a failed read returns
+  null → "no existing data" → a 90-day 61k-row pull) and found the same idiom in `ops-pull.mjs:219`
+  under a bare `catch {}`. **A wrong call, measured, still shipped a real defect** — the same shape
+  as the #366 review that produced #369.
 - **⭐ The pattern behind most of this register, named.** Reasoning forward from a symptom to a cause
   has been near-worthless here — #337 alone burned seven refuted hypotheses. Asking *"what single
   query, grep, or diff would discriminate between the possibilities?"* has been reliable. The
