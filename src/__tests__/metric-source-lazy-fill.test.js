@@ -15,8 +15,8 @@ const d = s => new Date(s + 'T00:00:00');
 describe('metric-source lazy-fill (#191)', () => {
   beforeEach(() => { _resetLazyFillForTests(); });
 
-  it('LAZY_FILL_SOURCES is scoped to auditRows + wasteRows (#191, extended by #209)', () => {
-    expect(LAZY_FILL_SOURCES).toEqual(['auditRows', 'wasteRows']);
+  it('LAZY_FILL_SOURCES is scoped to auditRows + wasteRows + pmixRows (#191, extended by #209, #292)', () => {
+    expect(LAZY_FILL_SOURCES).toEqual(['auditRows', 'wasteRows', 'pmixRows']);
   });
 
   it('triggers the loader once and updates ds via setDs when it resolves', async () => {

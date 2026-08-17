@@ -15,11 +15,16 @@
 //
 // Streams enumerated from the LOADERS (App.js's setDs call sites), not from #171's own
 // table — that table is stale by its own admission. As of this writing App.js has ALSO
-// gained opsSalesMixRows/opsCashRows/opsLaborRows/opsServiceRows since #171 was filed;
-// qsr_product_mix (loadPmixRows) and qsr_onhand (loadQsrOnHand) are pulled daily too but
-// NEITHER is wired into the shared `ds` object yet (grep confirms zero call sites in
-// App.js) — they can't be freshness-checked from ds until that wiring lands, so they are
-// deliberately NOT in STREAMS below rather than silently assumed fresh.
+// gained opsSalesMixRows/opsCashRows/opsLaborRows/opsServiceRows since #171 was filed.
+// qsr_onhand (loadQsrOnHand) is pulled daily too but still has zero call sites in App.js —
+// it can't be freshness-checked from ds until that wiring lands, so it stays out of STREAMS
+// below rather than being silently assumed fresh. qsr_product_mix (loadPmixRows) IS now
+// wired into ds (dispatch17/#292), but as a LAZY_FILL_SOURCES entry (metric-source.js) —
+// ds.pmixRows stays absent until a consumer calls ensureLazyFill('pmixRows'), same as
+// auditRows/wasteRows above. That's why it's not in STREAMS either: this function already
+// treats "field absent from ds" as "not loaded this session, no verdict" rather than an
+// incident (see streamFreshness()'s Array.isArray guard below), which is the correct
+// reading for a source that's lazy by design, not a gap to close here.
 //
 // Manual `laborRows` is deliberately EXCLUDED — under the auto-first rule (CLAUDE.md)
 // and #362, a stale device-local upload making the app look healthy is exactly

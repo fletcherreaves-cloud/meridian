@@ -389,7 +389,11 @@ export const MANUAL_ONLY_METRICS = {
 // not through a metricDaily/metricSeries chain — the data-discipline score is a day-presence
 // PATTERN analysis over raw rows (mirrors engine/count-cycle.js's shape), not a per-day scalar
 // value with a fallback chain, so it doesn't fit METRIC_SOURCES' resolver model.
-export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows']);
+// Dispatch17 (#292): pmixRows added — same shape as wasteRows again. Product Mix
+// (loc,date,item,price) is raw item-level price/mix rows for price-change detection and
+// mix-shift analysis, not a per-day scalar metric, so it's a consumer-triggered
+// ensureLazyFill('pmixRows') call, not a METRIC_SOURCES chain entry.
+export const LAZY_FILL_SOURCES = Object.freeze(['auditRows', 'wasteRows', 'pmixRows']);
 
 let _lazyFillHook = null;                 // { setDs, loaders: { [src]: () => Promise<rows> } }
 const _lazyState = {};                    // src -> 'pending' | 'loaded' | 'error'
