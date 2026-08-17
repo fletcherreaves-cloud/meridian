@@ -263,6 +263,7 @@ in the "before you theorize" table because their absence has already cost real w
 ### Process, capacity & planning
 - [systemic-issues-and-next-phase.md](systemic-issues-and-next-phase.md) — **four recurring bug classes measured from 977 commits**, and the structural fix for each
 - [plan-backlog-and-redesign-2026-08-15.md](plan-backlog-and-redesign-2026-08-15.md) — how the open issues collapse into a working order
+- [gate-pmix-backfill.sql](gate-pmix-backfill.sql) — run BEFORE anything reads `qsr_product_mix`. The pmix pull's fail-fast guard (#393) is unmerged, so a green Action does not mean rows landed — the first attempt wrote 0 rows and exited 0. Gates on distinct loc/date, **never `count(*)`** (price is in the conflict key, so a price change adds a row)
 - [probe-g1-shift-dimension.sql](probe-g1-shift-dimension.sql) — the Workstream G screen: does DT speed vary as much *within* a store's own week as *between* stores? Carries the verified DAR facts (business-day-aligned `dt`, 24-slot completeness guard, `dt_untilserve` is **milliseconds**) — read it before writing any new hourly-DAR query
 - [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md) — ⭐ the successor to the above: seven workstreams (forecast off render path · event scope+recurrence · pipeline contract · design-system adoption · routing vs modals · role-based voice), the sequencing gate, and what not to do
 - [feedback-verification-in-sandbox.md](feedback-verification-in-sandbox.md) — what a sandbox session can and cannot prove
