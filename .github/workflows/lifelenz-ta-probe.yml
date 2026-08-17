@@ -1,0 +1,32 @@
+name: LifeLenz T&A Report Slug Probe
+
+# #350 — read-only, workflow_dispatch-only. Probes candidate report-name slugs for the
+# LifeLenz Time & Attendance report against one known schedule + one day, and prints the
+# status code for each so the answer is a log line, not a guess (or ten more days waiting
+# on a DevTools capture). Makes no writes to Supabase or anywhere else.
+
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: 'Schedule-name substring to probe (default: first active store schedule)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Probe Time & Attendance report slug
+        run: node scripts/lifelenz-ta-probe.mjs
+        env:
+          LIFELENZ_TOKEN:    ${{ secrets.LIFELENZ_TOKEN }}
+          LIFELENZ_TA_STORE: ${{ github.event.inputs.store || '' }}
