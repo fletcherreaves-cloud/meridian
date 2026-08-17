@@ -1,6 +1,6 @@
 ---
 name: plan-normalization-2026-08-17
-description: The normalization plan — lift Meridian's hand-rolled mechanisms to industry standards (forecast precompute, query layer, event model, pipeline contract, design-system adoption, routing) plus the role-based voice principle and owner advisory notes. Sequenced behind Phase 0.
+description: The normalization plan — lift Meridian's hand-rolled mechanisms to industry standards (forecast precompute, query layer, event model, pipeline contract, design-system adoption, routing, shift-dimension join) plus the role-based voice principle and owner advisory notes. Sequenced behind Phase 0.
 metadata:
   node_type: memory
   type: plan
@@ -174,6 +174,57 @@ Same data, different product. The second requires knowing which gap matters and 
 
 ---
 
+## Workstream G — join the third dimension: **who was on the shift**
+
+**Owner-directed 2026-08-17**, in answer to *"one opportunity, best advice, something we haven't discussed."*
+
+Meridian pulls and stores three dimensions. Two of them are joined everywhere and the third is joined to almost nothing.
+
+| Dimension | Where it lives | Grain | Joined to outcomes? |
+|---|---|---|---|
+| **Where** | every `(loc, dt)` table | store | ✅ everywhere |
+| **When** | `hour_slot` (24 slots), daypart — **32 files**, a whole DAR Analysis panel | hour | ✅ everywhere |
+| **Who** | `employee_skills`, `roster_role_counts`, LifeLenz shifts, Shift Manager Summary | person / shift | ❌ **almost nowhere** |
+
+**Measured, 2026-08-17 — the capability is built and unused, not missing:**
+
+- `rollupShiftsByEmployee()` — `src/engine/lifelenz-shift-jobs.js:124`. Maps shifts to people. **Its only caller is its own test** (`src/__tests__/lifelenz-shift-jobs.test.js:81`).
+- `SHIFT_ATTRIBUTABLE_ROLES = ['AM','DM','SM']` — `src/engine/review-engine.js:14`, with a comment naming these as the roles whose results attribute to their own shifts. Referenced in **one panel**, `performance-reviews.js` — a twice-a-year artifact.
+
+**So nothing on the daily operating surface knows who was standing there.**
+
+### Why it matters
+
+Every panel answers *what happened at a restaurant*. A restaurant does not run a shift; a person does. "3708's drive-thru is slow" is not coachable — nobody can act on a building. "3708's DT is fine at breakfast and comes apart 5–8pm, Tuesdays and Thursdays" is a conversation with a named person about a named shift.
+
+This is **Workstream F one level deeper**: F fixes the *wording* (say the decision, not just the number); G fixes the *dimension*. A number attached to a building is rarely a decision, because a building cannot change.
+
+It is also the one thing the incumbents structurally cannot do — QSRSoft owns the outcome data, LifeLenz owns the people data, and **neither owns both.** Meridian has both in one database and currently joins them nowhere.
+
+### ⛔ Constraints — these shape the design, they are not footnotes
+
+1. **Attribute to the SHIFT, not the person — at least first.** Daypart × day-of-week × store captures most of the value with none of the HR exposure. `scripts/qsrsoft-employee-roster-pull.mjs:10` states *"No individual-employee data is stored anywhere"* — that was a considered choice; **keep it.** Surface the pattern, let the human take the last step.
+2. **Small n.** A shift manager works ~20 shifts a month. Any per-person metric on that base is mostly noise. Apply the discipline already in Scanner — effect-size floor + FDR — not a naked ranking.
+3. **The confound is real.** Good managers get assigned to hard shifts. A naive ranking punishes exactly the people worth keeping.
+
+**Build it as pattern surfacing, never as scoring.** That is also the version that survives being seen by the people it describes.
+
+### The probe (cheap screen, run before committing to the workstream)
+
+**PROBE G-1 is a screen, not the answer.** It measures whether *within-store* variation exists at all — necessary for a person to have anything to explain, not sufficient to prove people cause it. If a store performs identically across its own week, G is dead and costs nothing further.
+
+Full SQL: `memory/probe-g1-shift-dimension.sql`. Verdict rule:
+
+- `median_within_store_spread` **≥** `between_store_spread` → the dimension is real; build G.
+- Within **< ~half** of between → stores are uniformly good or bad across their own week; **drop G.**
+
+### Findings from writing the probe (already banked, independent of the verdict)
+
+- **`qsr_daily_activity` carries hourly speed-of-service for every station** — `dt_untilserve`/`dt_trans_cnt`, `fc_*`, `mfy1/2_*`, `bev_*` — **and `actual_punched_hours` at the same `hour_slot` grain.** Outcome and labor are already on one row, at one key. The join G needs does not require a new pull.
+- **Unit defect found and fixed (same commit).** `constants.js:521-529` documented 8 DT timing fields as **microseconds** ("divide by 1,000,000"). Every shipped consumer divides by **1,000** — `graded-visits.js:47` `secOf`, and six sites in `dt-speedofservice.js` including that panel's own tooltip. Milliseconds is correct (µs would put DT total time at 0.18s). The field-definition table is **user-visible**, and it is exactly what a person writing a new query would trust — this probe nearly shipped 1000× wrong off it.
+
+---
+
 ## What NOT to do
 
 Optimisation is a candidate list, not a mandate. These cost more than they return:
@@ -217,5 +268,6 @@ Context: 33 years in the industry, every position inside a McDonald's environmen
 5. **Workstream E** — routing rule, before the broad panel conversion.
 6. **Workstream D** — design-system adoption, opportunistic + ratcheted.
 7. **Workstream F** — role-based voice, once the shell is stable.
+8. **Workstream G** — shift dimension. **Gated on PROBE G-1**, which can run any time (it is one read-only query and depends on nothing above).
 
 The query-layer item from the standards artifact (server state ≠ client state) is deliberately last and starts only when something above forces the question — **never as a rewrite.**
