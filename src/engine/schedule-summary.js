@@ -52,7 +52,7 @@ export const FIXED_FLOOR_SEG_MIN = 0.10, FIXED_FLOOR_SEG_MAX = 0.15, FIXED_FLOOR
 
 // Roll a set of daily rows (one store, one week) into the band.
 function rollup(loc, rows) {
-  let fcstSales = 0, fcstGC = 0, schedHrs = 0, fcstHrs = 0, fixHrs = 0, floorHrs = 0, laborPctW = 0, laborSalesW = 0;
+  let fcstSales = 0, fcstGC = 0, schedHrs = 0, fcstHrs = 0, fixHrs = 0, floorHrs = 0, laborPctW = 0, laborSalesW = 0, sales = 0;
   const days = rows
     .slice()
     .sort((a, b) => a.date - b.date)
@@ -61,15 +61,25 @@ function rollup(loc, rows) {
       fcstSales += _n(r.fcstSales); fcstGC += _n(r.fcstTCs);
       schedHrs += sH; fcstHrs += fH; fixHrs += _n(r.schFixHrs); floorHrs += _n(r.schFloor);
       const lp = normLaborPct(r.laborPct); // % scale, or null for future/partial/garbage days
-      if (lp != null) { laborPctW += lp * _n(r.fcstSales); laborSalesW += _n(r.fcstSales); }
+      // #361 -- laborPct = labor$/actualSales, so Σlabor$/Σsales is the leg that reconstructs
+      // exactly, and that's ACTUAL sales (r.sales), not the forecast (r.fcstSales) this used to
+      // weight by. scheduling.js's wAvgLaborPct already used actual sales (that panel was
+      // rebuilt against real Duncan rows for #348); this rollup was the one still wrong, off by
+      // 0.06pp on the same store/week. r.sales is 0/absent on a purely forward-looking week with
+      // no actuals yet, in which case this day contributes nothing to either accumulator, same as
+      // wAvgLaborPct's `s > 0` guard.
+      const s = _n(r.sales);
+      sales += s;
+      if (lp != null && s > 0) { laborPctW += lp * s; laborSalesW += s; }
       return { date: r.date, schedHrs: sH, fcstHrs: fH, hrsDiff: sH - fH, laborPct: lp, fcstSales: r.fcstSales, fcstGC: r.fcstTCs };
     });
   return {
     loc,
-    fcstSales, fcstGC,
+    fcstSales, fcstGC, sales,
     schedHrs, fcstHrs, hrsDiff: schedHrs - fcstHrs,
     // Dollar-weighted labor % over the completed (valid) days only — never a straight
     // average of daily %s, and never contaminated by the current partial day. % scale.
+    // #361 -- weighted by ACTUAL sales (laborSalesW), matching wAvgLaborPct.
     laborPct: laborSalesW > 0 ? laborPctW / laborSalesW : null,
     tpmh: schedHrs > 0 ? fcstGC / schedHrs : null,
     // Fixed / Floor labor as a share of scheduled hours (hours-based). Kept SEPARATE per
@@ -121,11 +131,13 @@ export function computeScheduleSummary(schedRows, opts = {}) {
     const stores = Object.keys(byWeek[wk]).map(loc => rollup(loc, byWeek[wk][loc]));
     stores.sort((a, b) => (b.hrsDiff) - (a.hrsDiff)); // most over-scheduled first
     // District rollup (dollar/hour weighted).
-    let dSales = 0, dGC = 0, dSched = 0, dFcst = 0, dFix = 0, dFloor = 0, dLaborD = 0, dLaborSales = 0;
-    for (const s of stores) { dSales += s.fcstSales; dGC += s.fcstGC; dSched += s.schedHrs; dFcst += s.fcstHrs; if (s.laborPct != null) { dLaborD += s.laborPct * s.fcstSales; dLaborSales += s.fcstSales; } dFix += _n(s.fixHrs); dFloor += _n(s.floorHrs); }
+    let dSales = 0, dActSales = 0, dGC = 0, dSched = 0, dFcst = 0, dFix = 0, dFloor = 0, dLaborD = 0, dLaborSales = 0;
+    // #361 -- same fix as rollup() above: labor % weights by ACTUAL sales (s.sales), not the
+    // forecast (s.fcstSales) this used to weight by.
+    for (const s of stores) { dSales += s.fcstSales; dActSales += _n(s.sales); dGC += s.fcstGC; dSched += s.schedHrs; dFcst += s.fcstHrs; if (s.laborPct != null && s.sales > 0) { dLaborD += s.laborPct * s.sales; dLaborSales += s.sales; } dFix += _n(s.fixHrs); dFloor += _n(s.floorHrs); }
     const district = {
       nStores: stores.length,
-      fcstSales: dSales, fcstGC: dGC, schedHrs: dSched, fcstHrs: dFcst, hrsDiff: dSched - dFcst,
+      fcstSales: dSales, sales: dActSales, fcstGC: dGC, schedHrs: dSched, fcstHrs: dFcst, hrsDiff: dSched - dFcst,
       // District labor % dollar-weighted over stores that have a valid weekly labor %.
       laborPct: dLaborSales > 0 ? dLaborD / dLaborSales : null,
       tpmh: dSched > 0 ? dGC / dSched : null,
