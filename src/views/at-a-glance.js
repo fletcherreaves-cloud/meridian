@@ -26,6 +26,7 @@ import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { worstStream } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark } from '../utils/click-trace.js';
 
 const h=React.createElement;
@@ -317,25 +318,40 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const [showArchive,setShowArchive] = React.useState(false);
   const saveCl = c=>{setCl(c);localStorage.setItem('mf_checklist_v2',JSON.stringify(c));};
 
+  // #171 — was one pooled Math.max across 5 feeds (manual laborRows included), so the
+  // alert only fired once EVERY feed was stale at once. lifelenz_schedules went dark 6
+  // days and sales_ledger_daily 5 days, both invisible here because a sibling feed
+  // stayed fresh and the pool used its date. worstStream() checks each auto stream
+  // independently and names the worst one; manual laborRows is excluded entirely (a
+  // stale device-local upload must never mask an auto stream going dark) and LifeLenz
+  // is clamped to <=today rather than dropped, so its forward schedule can't skew it.
+  //
+  // Defined here, ABOVE autoItems, and consumed by BOTH autoItems and ruleComment below —
+  // a single memo, not two call sites deriving the same value from two separately-
+  // maintained dep arrays (autoItems originally called worstStream(ds,today) directly with
+  // a dep array that only tracked ds?.laborRows?.length — the one stream the fix
+  // deliberately excludes — so the checklist alert computed once against whatever ds
+  // looked like before the async ops/email streams landed, and never revisited: #171's
+  // primary user-facing output could silently never fire).
+  //
+  // `today` is deliberately NOT in the deps: it's `new Date()` (line ~239), a fresh
+  // reference every render, which would defeat memoization entirely and make worstStream
+  // walk all ten streams on every render. Matches the sibling latestLab/dataAge memo
+  // below, which omits it for the same reason.
+  const worstAuto=React.useMemo(()=>worstStream(ds,today),
+    [ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length,
+     ds?.salesLedgerRows?.length,ds?.opsCashRows?.length,ds?.opsLaborRows?.length,ds?.opsServiceRows?.length,
+     ds?.opsSalesMixRows?.length,ds?.schedRows?.length]);
+
   // Auto-generate checklist items from app state
   const autoItems = React.useMemo(()=>_mark('compute:autoItems',()=>{
     const items=[];
-    // Freshness = newest business date across manual labor AND every auto-synced
-    // feed (DAR summary, FOB, Daily Glimpse, Cash Sheet), clamped to today so a
-    // stale manual upload can't mask fresh auto data and LifeLenz's forward
-    // schedule can't skew it.
-    const _tMs=today.getTime();
-    const _pick=arr=>(arr||[]).map(r=>r.date).filter(Boolean)
-      .map(d=>d instanceof Date?d.getTime():new Date(d).getTime());
-    const _freshD=[..._pick(ds?.laborRows),..._pick(ds?.qsrActSummaryRows),..._pick(ds?.qsrFobRows),
-      ..._pick(ds?.glimpseRows),..._pick(ds?.cashRows)].filter(ms=>!isNaN(ms)&&ms<=_tMs);
-    const latestLab = _freshD.length?new Date(Math.max(..._freshD)):null;
-    const dataAge = latestLab?Math.floor((today-latestLab)/864e5):999;
-    if(dataAge>14) items.push({id:'auto_data_stale',priority:'high',
-      text:'Sales data is '+dataAge+' days old — QSRSoft auto-sync may be down',
+    const worst = worstAuto;
+    if(worst?.severity==='crit') items.push({id:'auto_data_stale',priority:'high',
+      text:worst.label+' is '+worst.staleDays+' days old — auto-sync may be down',
       detail:'Check the daily pull (Signals → Sync), or upload an Operations Report as fallback.'});
-    else if(dataAge>7) items.push({id:'auto_data_warn',priority:'medium',
-      text:'Sales data is '+dataAge+' days old — verify auto-sync',detail:''});
+    else if(worst?.severity==='warn') items.push({id:'auto_data_warn',priority:'medium',
+      text:worst.label+' is '+worst.staleDays+' days old — verify auto-sync',detail:''});
     const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
     const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
     const wsKey=dKey(ws);
@@ -359,7 +375,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       text:uncal.length+' stores need Dialed-In calibration (>30 days)',
       detail:'Go to Dialed-In → Run & Apply'});
     return items;
-  }),[ds?.laborRows?.length,allLocs,settings,lockedProjections]);
+  }),[worstAuto,ds?.laborRows?.length,allLocs,settings,lockedProjections]);
 
   const activeCl=cl.filter(c=>!c.archivedAt);
   const archivedCl=cl.filter(c=>c.archivedAt);
@@ -746,6 +762,10 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.qsrFobRows?.length,ds?.glimpseRows?.length,ds?.cashRows?.length]);
   const dataAge=latestLab?Math.floor((today-latestLab)/864e5):999;
   const ageClr=dataAge<=3?'#10b981':dataAge<=7?'var(--warn)':'var(--crit)';
+  // #171 — latestLab/dataAge above answer "what's the freshest data we have" (a pooled
+  // max is the right tool for THAT question); worstAuto (defined near autoItems, above,
+  // and consumed by both autoItems and ruleComment below) answers "is anything dark right
+  // now", which a pool can't — see stream-freshness.js's header for the incident history.
 
   // Sales reconciliation (accuracy layer, Workstream A): cross-check period PRODUCT
   // sales across independent sources for the active scope. Only DAR-summary
@@ -796,8 +816,11 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── Rule-based state comment ───────────────────────────────────
   const ruleComment=React.useMemo(()=>_mark('compute:ruleComment',()=>{
     const issues=[];const good=[];
-    if(dataAge>14)issues.push({lvl:'critical',msg:'data is '+dataAge+' days old'});
-    else if(dataAge>7)issues.push({lvl:'warning',msg:'data is '+dataAge+' days stale'});
+    // #171 — was the same pooled dataAge>14/>7 check as autoItems (same bug, same fix):
+    // named per-stream via worstAuto instead of a pooled max that only alarms once every
+    // feed is stale simultaneously.
+    if(worstAuto?.severity==='crit')issues.push({lvl:'critical',msg:worstAuto.label+' is '+worstAuto.staleDays+' days old'});
+    else if(worstAuto?.severity==='warn')issues.push({lvl:'warning',msg:worstAuto.label+' is '+worstAuto.staleDays+' days stale'});
     else good.push(dataAge===0?'data loaded today':'data is '+dataAge+'d old');
     const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;
     const ws=new Date(today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
@@ -813,7 +836,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     if(issues.length>0)
       return{tone:'warning',color:'#f59e0b',text:'⚠️  A few items need attention: '+issues.map(i=>i.msg).join(', ')+'.'};
     return{tone:'good',color:'#10b981',text:'✅ Things are looking up! '+(good.length?good.join(', ').replace(/^./,s=>s.toUpperCase())+'.':"District is on track.")};
-  }),[dataAge,hlth,allLocs,lockedProjections,ds?.loaded,settings?.weekStartDay]);
+  }),[dataAge,worstAuto,hlth,allLocs,lockedProjections,ds?.loaded,settings?.weekStartDay]);
 
   const fetchAIComment=async()=>{
     const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
