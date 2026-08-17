@@ -83,7 +83,15 @@ export function inCloseWindow(dateStr, closeDays = 4) {
 // status signal, not a "counted recently" proxy in disguise. `r.active !== false` treats
 // missing/null (rows pulled before this column existed, or a store whose current pull
 // hasn't landed yet) as active, so this is a no-op on data that predates the column.
-const isActive = (r) => r.active !== false;
+//
+// Dispatch16 (#374 KB verification, 2026-08-18) — active=false alone is not "safe to
+// exclude": the QSRSoft KB distinguishes Topic 3 ("not in any recipe, inventory > 0" —
+// legacy/obsolete, correctly excluded) from Topic 6 ("not active but part of an ACTIVE
+// recipe" — still real to-count work). Measured live: of 2316 active=false items, 144
+// (6.2%) are recipeItem=true — genuine Topic 6, spread across 23/27 stores. `r.recipeItem
+// === true` rescues exactly those, regardless of the active flag — an item still living in
+// an active recipe is real work even if QSRSoft's own active_in_recipe flag says otherwise.
+const isActive = (r) => r.active !== false || r.recipeItem === true;
 
 /**
  * Group on-hand rows into count SESSIONS — one per (store, last_counted date) — with a

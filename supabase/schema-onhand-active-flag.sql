@@ -23,3 +23,23 @@ comment on column public.qsr_onhand.active is
 -- few hourly runs; prior-month periods stay NULL permanently unless re-pulled with an
 -- ONHAND_DATE/ONHAND_PERIOD override, which is fine since Count Cycle only ever grades
 -- the current period).
+
+-- ── qsr_onhand: add recipe_item (dispatch16, #374 KB verification, 2026-08-18) ─────────────
+-- The KB (QSRSoft's own Inventory Analysis Report) does NOT treat active_in_recipe=false as
+-- one thing. It distinguishes Topic 3 ("items not in any recipe, inventory > 0" — legacy/
+-- obsolete, correctly excluded above) from Topic 6 ("items that are not active but are part
+-- of an Active Recipe" — recommended action is "contact DC to restrict", i.e. still real
+-- to-count work, NOT something to drop from the denominator). Excluding on `active` alone
+-- conflates the two.
+--
+-- MEASURED before adding this column: a second DUMP_RAW_FIELDS run (2026-08-17, live, all 27
+-- stores) confirmed the raw payload carries a SECOND, independent field — `recipe_item`
+-- ('Yes'/'No') — and cross-tabulated it against active_in_recipe=0: of 2316 such items, 144
+-- (6.2%) are recipe_item='Yes', i.e. genuine Topic 6, spread across 23 of 27 stores (Harrah/
+-- 43701 worst, 13 items). Not large enough to invalidate the `active` exclusion itself
+-- (93.8% of active_in_recipe=0 items really are recipe_item='No', matching Topic 3/15) but
+-- real enough that dropping all 2316 uniformly would silently lose 144 items of genuine work.
+alter table public.qsr_onhand add column if not exists recipe_item boolean;
+
+comment on column public.qsr_onhand.recipe_item is
+  'On-Hand API''s recipe_item flag (''Yes''/''No''), normalized to boolean. Used alongside `active` to rescue Topic 6 items (inactive but still in an active recipe) from Count Cycle''s denominator exclusion — count-cycle.js''s isActive() treats `active !== false OR recipe_item === true` as real to-count work. NULL for rows pulled before this column existed, same backward-compat behavior as `active`.';

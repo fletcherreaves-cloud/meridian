@@ -264,6 +264,43 @@ describe('#357-B2/3 active-item denominator', () => {
   });
 });
 
+// Dispatch16 (#374 KB verification, 2026-08-18) — active=false is not one population. The
+// QSRSoft KB splits it into Topic 3 (not in any recipe — correctly excluded above) and
+// Topic 6 (not active but part of an ACTIVE recipe — still real to-count work). Measured
+// live: of 2316 active=false items, 144 (6.2%) are recipeItem=true, i.e. genuine Topic 6.
+describe('dispatch16 — Topic 6 rescue (recipeItem overrides active=false)', () => {
+  it('rescues a Topic-6 item (active=false, recipeItem=true) into the denominator', () => {
+    const rows = [
+      ...mk('A', 'Food', 100, null).map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 5, null, 100).map(r => ({ ...r, active: false, recipeItem: true })), // Topic 6
+    ];
+    const { classTotals } = detectSessions(rows);
+    // 105, not 100 -- the 5 Topic-6 items must NOT be dropped just because active===false.
+    expect(classTotals['A'].Food).toBe(105);
+  });
+
+  it('still excludes a Topic-3-like item (active=false, recipeItem=false) -- the fix does not become a no-op', () => {
+    const rows = [
+      ...mk('A', 'Food', 100, null).map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 5, null, 100).map(r => ({ ...r, active: false, recipeItem: false })), // Topic 3
+    ];
+    const { classTotals } = detectSessions(rows);
+    expect(classTotals['A'].Food).toBe(100);
+  });
+
+  it('a Topic-6 rescued item can satisfy weekly coverage when counted', () => {
+    const rows = [
+      ...mk('A', 'Food', 90, '2026-08-06').map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 1, '2026-08-06', 90).map(r => ({ ...r, active: false, recipeItem: true })), // Topic 6, counted
+      ...mk('A', 'Condiment', 36, '2026-08-06').map(r => ({ ...r, active: true })),
+    ];
+    const { sessions, classTotals } = detectSessions(rows);
+    expect(classTotals['A'].Food).toBe(91);
+    expect(sessions['A'][0].counts.Food).toBe(91);
+    expect(sessions['A'][0].satisfiesWeekly).toBe(true);
+  });
+});
+
 // #357-5 — the panel's per-class "counted / active" display, sourced from cycleCompliance's
 // new `perClass` field.
 describe('#357-5 perClass (counted / active per class)', () => {

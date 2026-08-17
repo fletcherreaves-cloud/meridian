@@ -2973,6 +2973,7 @@ export async function loadQsrOnHand({ period } = {}) {
     cases: r.cases, packs: r.packs, loose: r.loose, totalUnits: r.total_units,
     unitPrice: r.unit_price, onHandAmt: r.on_hand_amt,
     active: r.active,   // #357-B2/3 — On-Hand API's active_in_recipe flag; NULL for pre-migration rows
+    recipeItem: r.recipe_item,   // dispatch16 — On-Hand API's recipe_item flag; rescues Topic 6 items
     lastCounted: _fromISO(r.last_counted), lastSubmitted: _fromISO(r.last_submitted),
     updatedAt: r.updated_at,
   }));
