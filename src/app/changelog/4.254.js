@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.254', date:'2026-07-01', changes:[
+  'EOM Supervisor Summary (nav: EOM Summary): new panel that recreates the monthly supervisor patch summary in-app. Auto-populates Net Sales, Total Food Cost %, Food Over Base %, and Crew Labor % from uploaded FOB reports and Monthly Projections (tProdSales, tFOBTotal, tFOBTarget, tLabor, tOpSupply). DEFAULT_TARGETS used as fallback for sales/labor targets when QSRSoft monthly file not loaded. Yellow editable cells for Op Supplies actual, Cash +/−, OT Hours, OT Dollar, labor Transfers and Unclocked Labor — saved to localStorage per month. Filter by Supervisor, Operator, or All Stores. Patch rollup (sales-weighted %) shown at top. Printable (landscape, no chrome). Variance $ amounts calculated as (actual% − proj%) × actual sales. Total shaded boxes = FC$ + FOB$ + Labor New Total$ + OT$.',
+]};

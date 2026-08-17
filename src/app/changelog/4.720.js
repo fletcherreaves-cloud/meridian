@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.720', date:'2026-08-01', changes:[
+  'Count-timing artifact detection (baked in as a reusable engine, src/engine/count-timing.js). A variance % can be huge yet meaningless when a count lands early in a period — the sales denominator is tiny AND the count reconciles several days of theoretical-only drift since the item’s last physical count. New EOM-diagnosis context note fires ONLY early in a period (≈ first 10% of the month) with material loss: "counted only through day N of ~M — judge the absolute $ and trend, not the %." Stays quiet at month-end. Proven on Durant #5985: 5.60% Variance Stat = $559 loss over 1 day’s $9,979 sales = 0.086% over a full month. Ledger-verified the point-to-point model (Actual Usage = carried POS-Open beginning inv − ending count) to the unit. Shared piece for the coming all-location FOB report.',
+]};

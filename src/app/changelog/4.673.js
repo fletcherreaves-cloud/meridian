@@ -1,0 +1,5 @@
+// @ts-nocheck
+export default {version:'4.673', date:'2026-07-31', changes:[
+  'EOM → 🔒 "Lock baseline" + 📸 "Change Monitor" — freeze every store\'s full EOM state (FOB + all 6 components, per-item count qty / on-hand $ / variance / last-counted, per-class completion) into a snapshot, then watch what changes. The Change Monitor diffs the live pull against the locked baseline and, per store AND per item, shows whether a recount HELPED (variance moved toward $0 / FOB down) or HURT (moved away). Includes a district roll-up (improving vs worse, $ moved toward/away from zero) and a per-store secondary-review mark/flag. A nightly Action auto-locks the baseline at ~4:30am CT and checkpoints at 10a/4p CT.',
+  'Verified the "Product Net sales off by $2.5M" report was NOT a data bug — Meridian\'s per-store Product Sales matches QSRSoft to the dollar; the gap was a scope mismatch (District EOM Summary on OK vs a QSRSoft report on ALL STORE = the 7 FL stores). Added an explicit scope subtitle to the Prod Sales tile so a scoped figure can\'t be eyeballed against an all-store total.',
+]};
