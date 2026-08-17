@@ -1,0 +1,60 @@
+name: QSRSoft Product Mix Pull
+
+# Dispatch17 (#292/#302) — Product Mix is per-item, per-price-point sales facts, the
+# instrument that observes menu price changes directly (grain: loc, date, item, price —
+# see supabase/schema-product-mix.sql's header). Daily like the Operations Report pull:
+# the prior full day is what's worth pulling once it closes, plus a same-day refresh.
+
+on:
+  schedule:
+    - cron: '0 10 * * *'   # ~5:00 AM CDT — previous day fully closed
+    - cron: '0 19 * * *'   # ~2:00 PM CDT — current-day refresh
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date for an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: start_date)'
+        required: false
+        default: ''
+      store:
+        description: 'Comma-separated NSNs to limit the pull (default: all 27)'
+        required: false
+        default: ''
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft Product Mix
+        run: node scripts/qsrsoft-pmix-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_TOKEN:              ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:      ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          PMIX_START_DATE:            ${{ github.event.inputs.start_date || '' }}
+          PMIX_END_DATE:              ${{ github.event.inputs.end_date   || '' }}
+          PMIX_STORE:                 ${{ github.event.inputs.store      || '' }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pmix-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
