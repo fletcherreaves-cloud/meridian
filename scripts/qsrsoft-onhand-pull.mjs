@@ -261,6 +261,14 @@ function toISODate(v) {
   return m ? `${m[3]}-${pad2(+m[1])}-${pad2(+m[2])}` : null;
 }
 
+// #357-B2/3 — active_in_recipe → boolean. Measured (DUMP_RAW_FIELDS probe, 2026-08-17,
+// 7127 items): a real, varying status flag {1: 4807, 0: 2320}, not a constant. Preserves
+// null for a genuinely missing field (rather than defaulting to true/false) so
+// count-cycle.js's `r.active !== false` check treats "field absent" the same as historical
+// rows pulled before this column existed -- included in the denominator, not silently
+// dropped.
+const activeFlag = v => v == null ? null : !!Number(v);
+
 // Map a raw On-Hand record → qsr_onhand row (fields confirmed 2026-07-26).
 function mapOnHandRow(item, nsn, period) {
   return {
@@ -275,6 +283,7 @@ function mapOnHandRow(item, nsn, period) {
     total_units:    num(item.total_units),
     unit_price:     num(item.unit_price),
     on_hand_amt:    Number.isFinite(item.nonRoundedOnHandAmt) ? item.nonRoundedOnHandAmt : num(item.on_hand_amt),
+    active:         activeFlag(item.active_in_recipe),  // #357-B2/3 — denominator status flag
     last_counted:   toISODate(item.last_counted),
     last_submitted: toISODate(item.last_submitted),
     updated_at:     new Date().toISOString(),

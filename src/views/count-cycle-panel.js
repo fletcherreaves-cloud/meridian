@@ -11,7 +11,7 @@
 // carries zero Condiment rows by design — see src/engine/count-cycle.js for why.
 
 import * as React from 'react';
-import { cycleCompliance, cycleSummary, WEEKLY_CLASSES } from '../engine/count-cycle.js';
+import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES } from '../engine/count-cycle.js';
 import { loadQsrOnHand } from '../lib/supabase.js';
 import { sName } from '../constants.js';
 
@@ -80,8 +80,22 @@ function StoreCard({ c, expanded, onToggle }) {
       c.sessions.length
         ? c.sessions.slice().reverse().map(s => h(SessionRow, { key: s.date, s }))
         : div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)', padding: '6px 0' } }, 'None'),
+      // #357-5 — counted / active per class, from perClass (count-cycle.js): `active` is
+      // the ACTIVE-only denominator (#357-B2/3, excludes discontinued items with a
+      // residual on-hand), `counted` is from the most recent session that touched the
+      // class at all.
+      c.perClass ? div({ style: { display: 'flex', gap: 10, flexWrap: 'wrap', margin: '6px 0 4px' } },
+        CLASSES.filter(cls => c.perClass[cls] && c.perClass[cls].active > 0).map(cls => {
+          const pc = c.perClass[cls];
+          const full = pc.active > 0 && pc.counted >= pc.active * 0.75;
+          return span({ key: cls, style: {
+            fontSize: 10, fontFamily: 'var(--mono)',
+            color: full ? CLS_COL[cls] || 'var(--text2)' : 'var(--text3,#6b7280)',
+          }, title: pc.date ? `Last touched ${pc.date}` : 'Not yet counted this period' },
+            `${cls} ${pc.counted}/${pc.active}`);
+        })) : null,
       div({ style: { fontSize: 9.5, color: 'var(--text3,#6b7280)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.5 } },
-        `Item universe — ${Object.entries(c.classTotals).map(([k, v]) => `${k} ${v}`).join(' · ')}. `,
+        `Active item universe — ${Object.entries(c.classTotals).map(([k, v]) => `${k} ${v}`).join(' · ')}. `,
         'A class counts as fully counted at 75% coverage or above.')) : null);
 }
 

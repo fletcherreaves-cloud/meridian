@@ -2972,6 +2972,7 @@ export async function loadQsrOnHand({ period } = {}) {
     loc: String(parseInt(r.loc, 10)), period: r.period, wrin: r.wrin, descr: r.descr, cls: r.cls,
     cases: r.cases, packs: r.packs, loose: r.loose, totalUnits: r.total_units,
     unitPrice: r.unit_price, onHandAmt: r.on_hand_amt,
+    active: r.active,   // #357-B2/3 — On-Hand API's active_in_recipe flag; NULL for pre-migration rows
     lastCounted: _fromISO(r.last_counted), lastSubmitted: _fromISO(r.last_submitted),
     updatedAt: r.updated_at,
   }));
