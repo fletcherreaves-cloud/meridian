@@ -551,6 +551,19 @@ Recorded because they are the cheapest thing a successor can inherit.
   issue."* **A gap in one stream is a work item, not a finding** — check whether a sibling API source
   already covers it before writing a word about loss. The real finding was always the silent alarm
   (#171), not the rows. CLAUDE.md's backfill rule now says this explicitly.
+- **⭐ Blocked a good PR on a memo-staleness diagnosis that did not reproduce (#366).** Held #171's
+  fix claiming `autoItems` could "silently never fire" because its dep array tracked only
+  `laborRows` while the new code read ten `ds` fields. Structurally that reads like a bug. The
+  engineer **tested the claim** — stashed the fix, ran the new panel test against the pre-fix dep
+  array — and it passed: `allLocs` (`at-a-glance.js:239`, a bare `.filter().map()` with no
+  `useMemo`) is a fresh array every render, so the memo had been recomputing unconditionally all
+  along and the failure mode could not exist. **I reasoned from a dep array to a behaviour without
+  rendering anything** — the same forward-from-symptom move this register keeps recording, applied
+  to React instead of SQL. Two lessons: the consolidation was still worth keeping on structure, and
+  the engineer documented it as *not* a red-before/green-after guard rather than dressing it up as
+  one, which is the correct handling of a reviewer's wrong call. The mechanism that refuted me is a
+  genuine perf defect (~20 memos in that file never memoize) and is filed as **#369** — the second
+  time in two days that reproducing a stated diagnosis beat accepting it.
 - **⭐ The pattern behind most of this register, named.** Reasoning forward from a symptom to a cause
   has been near-worthless here — #337 alone burned seven refuted hypotheses. Asking *"what single
   query, grep, or diff would discriminate between the possibilities?"* has been reliable. The
