@@ -561,6 +561,22 @@ function useDebouncedValue(value, delay) {
   return debounced;
 }
 
+// TEMP instrumentation (dispatch18 #1): calendar events vanish after June 2026 in production —
+// 11,163 cloud events hydrate into React state but only 733 end up surviving in localStorage
+// `mf_events`. setItem isn't failing (150 KB used of a ~5 MB quota) and the loc-key format is
+// right, so something writes an OLDER/SMALLER map back over a newer one. Logs every writer with
+// its resulting entry count + a short call stack so the actual last-writer-before-truncation can
+// be named from one reload, instead of guessing. Remove once the real writer is identified and
+// fixed (dispatch18 says: instrument first, do not patch the two candidates on suspicion).
+function _logMfEventsWrite(label, obj) {
+  try {
+    let n = 0;
+    for (const loc of Object.keys(obj || {})) n += Object.keys(obj[loc] || {}).length;
+    const stack = String(new Error().stack || '').split('\n').slice(2, 6).map(s => s.trim()).join(' | ');
+    console.log(`[mf_events write] ${label}: ${n} entries — ${stack}`);
+  } catch {}
+}
+
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
   // from production React, so the v4.917 attempt recorded nothing at all in the deployed app.
@@ -1535,6 +1551,7 @@ function App() {
           }
           if(added||refreshed){
             try{localStorage.setItem('mf_events',JSON.stringify(cur));}catch{}
+            _logMfEventsWrite('orgEvents hydration',cur);
             setUserEvents(cur);
             console.log(`[Meridian] ✓ Hydrated ${orgEvents.length} cloud events (${added} new, ${refreshed} refreshed)`);
           }
@@ -1734,6 +1751,7 @@ function App() {
   const saveUserEvents = useCallback((next)=>{
     setUserEvents(prev=>{syncUserEventsToCloud(prev,next);return next;});
     try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+    _logMfEventsWrite('saveUserEvents',next);
   }, []);
   // ── One-time migration: normalize legacy Date.toString() tag keys → YYYY-MM-DD ──
   // Tags saved before v4_164 used Date.toString() keys like "Thu Jan 23 2026 06:00:00 GMT-0600"
@@ -1758,6 +1776,7 @@ function App() {
       }
       if(changed){
         localStorage.setItem('mf_events',JSON.stringify(evs));
+        _logMfEventsWrite('legacy tag-key migration',evs);
         setUserEvents(evs);
         console.log('[McForecast] Migrated legacy tag keys to ISO format');
       }
@@ -1839,6 +1858,7 @@ function App() {
         tagLocs.forEach(l=>{if(!next[l])next[l]={};next[l][dk]={type,note,icon:et.icon,label:et.label};});
         syncUserEventsToCloud(prev,next);
         try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+        _logMfEventsWrite('mf_tag_event listener',next);
         return next;
       });
     };
@@ -1849,6 +1869,7 @@ function App() {
         if(next[loc]){delete next[loc][dk];if(!Object.keys(next[loc]).length)delete next[loc];}
         syncUserEventsToCloud(prev,next);
         try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+        _logMfEventsWrite('mf_remove_event listener',next);
         return next;
       });
     };
@@ -2225,6 +2246,7 @@ function App() {
     const _prevEventsForSync=userEvents;
     let _uploadEvents=null;
     try{_uploadEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');}catch(e){console.warn('userEvents re-sync after load failed:',e);}
+    if(_uploadEvents) _logMfEventsWrite('pre-transition re-sync READ from localStorage (about to replace React state)',_uploadEvents);
     React.startTransition(()=>{
       setDs(currentDS);
       if(_uploadEvents) setUserEvents(_uploadEvents);
@@ -2826,6 +2848,7 @@ function App() {
             };
             syncUserEventsToCloud(prev,next);
             try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+            _logMfEventsWrite('AIBacktestScanner onTagEvent',next);
             return next;
           });}})
     ),
