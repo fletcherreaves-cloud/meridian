@@ -202,7 +202,19 @@ let dumpedRawFields = false; // #357-B2/3 — see DUMP_RAW_FIELDS note below; fi
 // but one record can't tell us whether it actually VARIES (a flag that's always 1 is useless
 // as a filter). Tally it across every item this run touches and print the distribution once
 // at the end of main(), gated behind the same DUMP_RAW_FIELDS flag — still read-only.
-const rawFieldTally = { total: 0, activeVals: new Map(), staleActive1: 0, staleTotal: 0 };
+//
+// Dispatch16 (#374 KB verification, 2026-08-18) — the raw record ALSO carries a separate
+// `recipe_item` field ('Yes'/'No'), independent of `active_in_recipe`. The QSRSoft KB
+// (Inventory Analysis Report, Topics 3 vs 6) distinguishes two different populations that
+// `active_in_recipe=false` alone conflates: Topic 3 ("not in any recipe, inventory > 0" —
+// legacy/obsolete, correctly excluded) vs Topic 6 ("not active but part of an ACTIVE recipe" —
+// still real to-count work, contact-DC-to-restrict is the recommended action, NOT "exclude from
+// the denominator"). An item with active_in_recipe=0 AND recipe_item='Yes' is exactly Topic 6 —
+// #374's fix would wrongly exclude it. Tallied per-store so a real finding names which stores.
+const rawFieldTally = {
+  total: 0, activeVals: new Map(), staleActive1: 0, staleTotal: 0,
+  inactiveTotal: 0, topic6Total: 0, topic6ByStore: new Map(),
+};
 async function fetchOnHand(token, nsn, dateStr, type) {
   const params = new URLSearchParams({
     date: dateStr, type, recipe: 'all', non_zero_on_hand: 'false', duplicate: 'false',
@@ -246,6 +258,18 @@ async function fetchOnHand(token, nsn, dateStr, type) {
         if (lcPeriod !== periodPrefix) {
           rawFieldTally.staleTotal++;
           if (v === 1 || v === '1') rawFieldTally.staleActive1++;
+        }
+      }
+      // Topic 6 overlap check (#374 KB verification) — among items #374's fix would EXCLUDE
+      // (active_in_recipe===0), how many are recipe_item==='Yes' (still in an active recipe,
+      // real to-count work) vs 'No' (not in any recipe at all, the Durant #5985 / Topic 3 case
+      // the fix is actually targeting)?
+      if (v === 0 || v === '0') {
+        rawFieldTally.inactiveTotal++;
+        if (it.recipe_item === 'Yes') {
+          rawFieldTally.topic6Total++;
+          const key = String(nsn);
+          rawFieldTally.topic6ByStore.set(key, (rawFieldTally.topic6ByStore.get(key) || 0) + 1);
         }
       }
     }
@@ -450,6 +474,14 @@ async function main() {
     const dist = [...rawFieldTally.activeVals.entries()].map(([k, n]) => `${JSON.stringify(k)}:${n}`).join(', ');
     console.log(`[DUMP_RAW_FIELDS] active_in_recipe distribution across ${rawFieldTally.total} items: { ${dist} }`);
     console.log(`[DUMP_RAW_FIELDS] stale items (last_counted in a prior period): ${rawFieldTally.staleTotal} / ${rawFieldTally.total}, of which active_in_recipe===1: ${rawFieldTally.staleActive1}`);
+    // #374 KB verification (dispatch16) — the Topic 6 overlap the dispatch asked to measure
+    // before trusting the active=false exclusion: of the items #374's fix would exclude
+    // (active_in_recipe===0), how many are recipe_item==='Yes' (still IN an active recipe —
+    // Topic 6, real to-count work) vs 'No' (not in any recipe — Topic 3, correctly excluded)?
+    const byStore = [...rawFieldTally.topic6ByStore.entries()].sort((a, b) => b[1] - a[1])
+      .map(([loc, n]) => `${loc}:${n}`).join(', ');
+    const pct = rawFieldTally.inactiveTotal ? (100 * rawFieldTally.topic6Total / rawFieldTally.inactiveTotal).toFixed(1) : '0.0';
+    console.log(`[DUMP_RAW_FIELDS] Topic 6 overlap: of ${rawFieldTally.inactiveTotal} active_in_recipe=0 items, ${rawFieldTally.topic6Total} (${pct}%) are recipe_item='Yes' (Topic 6 — still in an active recipe, NOT Topic 3/15). By store: { ${byStore} }`);
   }
   if (authFailed) process.exit(1);
 
