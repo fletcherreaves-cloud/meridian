@@ -29,7 +29,15 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐ [PM handoff 2026-08-15](pm-handoff-2026-08-15.md)** — **NEWEST. Start here if you are taking the
+- **⭐ [Normalization plan 2026-08-17](plan-normalization-2026-08-17.md)** — **NEWEST plan.** Where the
+  app gets normalized against industry norms and against itself: forecast off the render path
+  (`weekProjections` = 93% of render time), event scope+recurrence instead of 27 copies of one event,
+  pipeline freshness/assertion contract, **design-system adoption** (`PanelControls.js` measured at
+  **0/55** panels for `DateRangeControl` and **1/55** for `LocationSelector`/`ActionMenus` — the
+  standard exists and is unused), routing-vs-modals, and **role-based voice** (say the number AND the
+  decision; preserve analytical depth). Carries the sequencing gate, an explicit what-NOT-to-do list,
+  and 8 advisory notes on running this solo.
+- **⭐ [PM handoff 2026-08-15](pm-handoff-2026-08-15.md)** — **NEWEST handoff. Start here if you are taking the
   PM seat.** The PM/engineer arrangement and its disciplines, the live PR board (#298/#301/#297 awaiting
   review; #292/#286/#269 held and why), the engineer dispatch order, the owner's action list, the three
   Product Mix / `user/settings` captures and what they settled, PM debts not yet filed, the McValue FBP
@@ -255,6 +263,7 @@ in the "before you theorize" table because their absence has already cost real w
 ### Process, capacity & planning
 - [systemic-issues-and-next-phase.md](systemic-issues-and-next-phase.md) — **four recurring bug classes measured from 977 commits**, and the structural fix for each
 - [plan-backlog-and-redesign-2026-08-15.md](plan-backlog-and-redesign-2026-08-15.md) — how the open issues collapse into a working order
+- [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md) — ⭐ the successor to the above: six workstreams (forecast off render path · event scope+recurrence · pipeline contract · design-system adoption · routing vs modals · role-based voice), the sequencing gate, and what not to do
 - [feedback-verification-in-sandbox.md](feedback-verification-in-sandbox.md) — what a sandbox session can and cannot prove
 - [benchmark-daily-readiness.md](benchmark-daily-readiness.md) — read before quoting any readiness number
 - [capacity-and-onboarding-review.md](capacity-and-onboarding-review.md) — how many users can onboard today, and what must land first
