@@ -1550,7 +1550,7 @@ function App() {
             }
           }
           if(added||refreshed){
-            try{localStorage.setItem('mf_events',JSON.stringify(cur));}catch{}
+            try{localStorage.setItem('mf_events',JSON.stringify(cur));}catch(e){console.warn('[Meridian] mf_events write failed:',e);}
             _logMfEventsWrite('orgEvents hydration',cur);
             setUserEvents(cur);
             console.log(`[Meridian] ✓ Hydrated ${orgEvents.length} cloud events (${added} new, ${refreshed} refreshed)`);
@@ -1750,7 +1750,7 @@ function App() {
 
   const saveUserEvents = useCallback((next)=>{
     setUserEvents(prev=>{syncUserEventsToCloud(prev,next);return next;});
-    try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+    try{localStorage.setItem('mf_events',JSON.stringify(next));}catch(e){console.warn('[Meridian] mf_events write failed:',e);}
     _logMfEventsWrite('saveUserEvents',next);
   }, []);
   // ── One-time migration: normalize legacy Date.toString() tag keys → YYYY-MM-DD ──
@@ -1857,7 +1857,7 @@ function App() {
         const next=JSON.parse(JSON.stringify(prev));
         tagLocs.forEach(l=>{if(!next[l])next[l]={};next[l][dk]={type,note,icon:et.icon,label:et.label};});
         syncUserEventsToCloud(prev,next);
-        try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+        try{localStorage.setItem('mf_events',JSON.stringify(next));}catch(e){console.warn('[Meridian] mf_events write failed:',e);}
         _logMfEventsWrite('mf_tag_event listener',next);
         return next;
       });
@@ -1868,7 +1868,7 @@ function App() {
         const next=JSON.parse(JSON.stringify(prev));
         if(next[loc]){delete next[loc][dk];if(!Object.keys(next[loc]).length)delete next[loc];}
         syncUserEventsToCloud(prev,next);
-        try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+        try{localStorage.setItem('mf_events',JSON.stringify(next));}catch(e){console.warn('[Meridian] mf_events write failed:',e);}
         _logMfEventsWrite('mf_remove_event listener',next);
         return next;
       });
@@ -2247,11 +2247,45 @@ function App() {
     let _uploadEvents=null;
     try{_uploadEvents=JSON.parse(localStorage.getItem('mf_events')||'{}');}catch(e){console.warn('userEvents re-sync after load failed:',e);}
     if(_uploadEvents) _logMfEventsWrite('pre-transition re-sync READ from localStorage (about to replace React state)',_uploadEvents);
+    // #391/dispatch19 — this used to be `setUserEvents(_uploadEvents)`, REPLACING React state
+    // wholesale with whatever localStorage held at this instant. That races the async
+    // org-events cloud hydration effect above (:1529-1559), which writes localStorage then
+    // calls setUserEvents with the same object — nothing orders the two. If this synchronous
+    // read runs before that async write lands, `_uploadEvents` is stale (0 entries on a fresh
+    // browser, 733 on production — the exact split #391's instrumentation caught live) and the
+    // wholesale replace wipes out however many entries hydration already put into React state.
+    // Consistent, not intermittent: the re-sync reliably wins the race.
+    //
+    // Fixed by merging instead of replacing, reusing the SAME non-destructive precedence as
+    // the hydration merge (:1541-1551): localStorage entries fill gaps in current React state
+    // or refresh entries previously stamped orgSourced, but a hand-entered event already in
+    // state is never clobbered. A `_uploadEvents` map with FEWER entries than current state is
+    // therefore never grounds to lose data — merging can only add, never shrink, regardless of
+    // which side of the race actually ran first.
+    let _syncedEvents=null;
+    if(_uploadEvents){
+      const _merged=JSON.parse(JSON.stringify(_prevEventsForSync||{}));
+      let _added=0,_refreshed=0;
+      for(const loc of Object.keys(_uploadEvents)){
+        if(!_merged[loc])_merged[loc]={};
+        for(const dk of Object.keys(_uploadEvents[loc])){
+          const ex=_merged[loc][dk];
+          if(!ex){_merged[loc][dk]=_uploadEvents[loc][dk];_added++;}
+          else if(ex.orgSourced){_merged[loc][dk]=_uploadEvents[loc][dk];_refreshed++;}
+          // else: hand-entered (or already-fresher) event present in React state → leave it
+        }
+      }
+      if(_added||_refreshed){
+        try{localStorage.setItem('mf_events',JSON.stringify(_merged));}catch(e){console.warn('[Meridian] mf_events write failed:',e);}
+        _logMfEventsWrite('pre-transition re-sync MERGE result',_merged);
+        _syncedEvents=_merged;
+      }
+    }
     React.startTransition(()=>{
       setDs(currentDS);
-      if(_uploadEvents) setUserEvents(_uploadEvents);
+      if(_syncedEvents) setUserEvents(_syncedEvents);
     });
-    if(_uploadEvents) syncUserEventsToCloud(_prevEventsForSync,_uploadEvents);
+    if(_syncedEvents) syncUserEventsToCloud(_prevEventsForSync,_syncedEvents);
     try { setSignals(_traceMark('computeInsights(live)',()=>computeInsights(currentDS))); } catch(e) { console.warn('[insights] error:', e); }
     // Recompute custom signals and persist history
     if(customSignalDefs.length>0){
@@ -2847,7 +2881,7 @@ function App() {
               ...(opts&&opts.aiMatched?{aiMatched:true,aiConfidence:opts.aiConfidence,source:'AI Batch Scan'}:{source:'Manual'})
             };
             syncUserEventsToCloud(prev,next);
-            try{localStorage.setItem('mf_events',JSON.stringify(next));}catch{}
+            try{localStorage.setItem('mf_events',JSON.stringify(next));}catch(e){console.warn('[Meridian] mf_events write failed:',e);}
             _logMfEventsWrite('AIBacktestScanner onTagEvent',next);
             return next;
           });}})
