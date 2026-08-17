@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { attachFindingMeta } from './finding-rules.js';
-import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS } from '../constants.js';
+import { STORE_NAMES, DEFAULT_TARGETS, STORE_COORDS, DEF_SETTINGS, whoRan } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';
 import { bLocIdx, compute6wk, locRows } from '../engine/forecast.js';
 import { matchedVsLY } from './vs-ly.js';
 import { lastClosedBusinessDay } from './swing-feed.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 import { parseInventoryData } from '../parsers/inventory-parse.js';
-import { STORE_STAFF } from '../features/morning-brief.js';
+import { STORE_STAFF, CONTACTS } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
 import { saveMonthlyTargets } from '../lib/supabase.js';
@@ -448,6 +448,16 @@ function buildStore(loc,ds,settings){
   const strength=!hasCrit?(cs>=90?'Controls: Elite':os>=90?'Ops: Elite':cs>=80?'Controls: Strong':os>=80?'Ops: Strong':null):null;
   const sc2=STORE_COORDS[loc]||{};
   const staff=STORE_STAFF[loc]||{};
+  // #363 — sup/supEmail now resolve LIVE via whoRan (constants.js's effective-dated
+  // supervisor timeline, the same source patch-heatmap.js's patchByLoc and every other
+  // "current patch org" reader already uses) instead of the frozen literal STORE_STAFF[loc]
+  // .sup carried. A reassignment in Management now shows up here without a code change,
+  // matching #220's fix for the identical staleness in patch-heatmap.js. Falls back to the
+  // STORE_STAFF literal only if whoRan finds no assignment (e.g. a store not yet seeded into
+  // DEF_SETTINGS.supervisorGroups), and CONTACTS.supervisors for the matching email so a
+  // reassignment doesn't leave the OLD supervisor's email attached to the NEW name.
+  const supName=whoRan(loc,new Date())||staff.sup||'';
+  const supEmail=(CONTACTS.supervisors[supName]||{}).email||staff.supEmail||'';
   // Find operator name from settings
   let operator='';
   for(const[op,locs] of Object.entries((settings.operators||DEF_SETTINGS.operators))){
@@ -456,7 +466,7 @@ function buildStore(loc,ds,settings){
   return{loc,name,t,p,p2,p4,vel,opsScore:os,ctrlScore:cs,pSales,pLY,findings,hasCrit,concern,strength,
     city:sc2.city||'',state:sc2.state||'',addr:sc2.addr||'',org:sc2.org||'MCDOK',
     gm:staff.gm||'',gmEmail:staff.gmEmail||'',
-    sup:staff.sup||'',supEmail:staff.supEmail||'',
+    sup:supName,supEmail,
     operator,
     hasRecords:!!(ds&&ds.records&&ds.records[loc]&&Object.keys(ds.records[loc]).filter(k=>k!=='loc').length>0)};
 }
