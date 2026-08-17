@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.587', date:'2026-07-29', changes:[
+  'Data-integrity fix: large cloud reads (starting with the QSRSoft daily-activity summary that feeds At-A-Glance + the One-Pager forms) could silently return only PARTIAL data if a read was cut off mid-way — and because they loaded oldest-first, the missing rows were the most RECENT days, so the app quietly showed data "stuck" a couple weeks back while the live data was actually current. Reads now load newest-first (a truncated read keeps the recent days that matter) and a cut-off read now logs a loud warning instead of pretending it was complete. Note: streams fed by the emailed QSRSoft reports (KVS / cash controls / labor %) can still lag until that email pipeline is caught up — that is a separate data-refresh, not a display bug.',
+]};

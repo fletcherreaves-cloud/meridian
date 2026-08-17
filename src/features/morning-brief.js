@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES, whoRan, supervisorGroups } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';
 import { supabase } from '../lib/supabase.js';
 import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
@@ -17,18 +17,6 @@ const { useState: uSt, useEffect: uE, useMemo: uM, useRef: uR, useCallback: uCB 
 // ════════════════════════════════════════════════════════════════════════════════
 // MORNING INTELLIGENCE BRIEF  —  Correlation Engine + Panel
 // ════════════════════════════════════════════════════════════════════════════════
-
-// ── Supervisor patch map (from org structure) ────────────────────────────────
-const SUPERVISOR_PATCHES = {
-  'Spencer':   ['3708','6972','24471','32525'],
-  'Langford':  ['5183','33222','29760','33704'],
-  'Podroza':   ['5985','13113','43380','43701'],
-  'Vaughn':    ['10422','10915','35064','31357'],
-  'Estrada':   ['20475','18213','11657','33109'],
-  'Denley':    ['6178','6838','10034','35242','37566','38609'],
-};
-const LOC_SUPERVISOR = {};
-Object.entries(SUPERVISOR_PATCHES).forEach(([sup,locs])=>locs.forEach(l=>LOC_SUPERVISOR[l]=sup));
 
 // ── Correlation rules engine ─────────────────────────────────────────────────
 // Each rule: { id, name, category, description, evaluate(data) → {severity,headline,detail,action} | null }
@@ -332,7 +320,12 @@ function assembleBriefStoreData(loc, targetDate, ds, darByLoc){
 
   return {
     loc, name: sNameC(loc),
-    supervisor: LOC_SUPERVISOR[locStr]||'Unknown',
+    // #363 — was a stale hardcoded SUPERVISOR_PATCHES map (short last names, several locs
+    // wrong vs the live org — e.g. it had '43701' under 'Podroza' where the live
+    // DEF_SETTINGS.supervisorGroups has it under 'Brad Denley'). whoRan is the same
+    // effective-dated live source patch-heatmap.js's patchByLoc and pipeline.js's sup field
+    // already read.
+    supervisor: whoRan(loc, targetDate)||'Unknown',
     hasData: !!(labor||ctrl||glimpse||cash||peaks.length||dar),
     // Labor fields — DAR fills in when labor not uploaded; email pipeline (glimpse/cash) fills when neither uploaded
     sales:      labor?.sales>0 ? labor.sales : (glimpse?.allNetSales>0 ? glimpse.allNetSales : (cash?.allNetSales>0 ? cash.allNetSales : (darSales || null))),
@@ -773,7 +766,7 @@ function MorningBriefPanel({ds, settings, customSignalDefs, darRows, refreshDar}
 
   const dateStr = briefDate instanceof Date ? briefDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) : '';
   const {red,amber,green,noData,totalFlags} = brief.summary;
-  const supervisors = [...new Set(Object.keys(SUPERVISOR_PATCHES))];
+  const supervisors = uM(()=>Object.keys(supervisorGroups()),[]);
 
   // Data source coverage pills
   const dsCoverage = uM(()=>{
@@ -1122,34 +1115,39 @@ function getReportRecipients(scope, stores, settings) {
   return above;
 }
 
+// #363 — sup/supEmail dropped (were a frozen loc->supervisor-name literal, the same class of
+// staleness bug SUPERVISOR_PATCHES had above — this table's copy happened to still agree
+// with the live org, but nothing kept it that way). pipeline.js resolves sup/supEmail LIVE
+// via whoRan + CONTACTS.supervisors now, so gm/gmEmail (person data that doesn't move with
+// org reassignments) is all this table carries.
 const STORE_STAFF={
-  '3708': {gm:'Cinthya Armedariz',  gmEmail:'Cinthya@mcdok.com',  sup:'Robert Spencer',    supEmail:'Robert@mcdok.com'},
-  '5183': {gm:'Mukarram Norman',    gmEmail:'Mukarram@mcdok.com',  sup:'Krystiana Langford',supEmail:'Krystiana@mcdok.com'},
-  '5985': {gm:'Stacey Hyatt',       gmEmail:'Stacey@mcdok.com',   sup:'Ashley Podroza',    supEmail:'Ashley@mcdok.com'},
-  '6972': {gm:'Nick Rice',          gmEmail:'Nick@mcdok.com',     sup:'Robert Spencer',    supEmail:'Robert@mcdok.com'},
-  '10422':{gm:'Ashleyh Hegwer',     gmEmail:'Ashleyh@mcdok.com',  sup:'Ashley Podroza',    supEmail:'Ashley@mcdok.com'},
-  '10915':{gm:'Caleb Nunnelley',    gmEmail:'Caleb@mcdok.com',    sup:'Steven Vaughn',     supEmail:'Steven@mcdok.com'},
-  '11657':{gm:'Jessie Hiatt',       gmEmail:'Jessie@mcdok.com',   sup:'Amanda Estrada',    supEmail:'Amanda@mcdok.com'},
-  '13113':{gm:'Chris Abbey',        gmEmail:'Chris@mcdok.com',    sup:'Ashley Podroza',    supEmail:'Ashley@mcdok.com'},
-  '18213':{gm:'Cora Bahling',       gmEmail:'Cora@mcdok.com',     sup:'Krystiana Langford',supEmail:'Krystiana@mcdok.com'},
-  '20475':{gm:'Derek McGirt',       gmEmail:'Derek@mcdok.com',    sup:'Amanda Estrada',    supEmail:'Amanda@mcdok.com'},
-  '24471':{gm:'Mystykal Abbey',     gmEmail:'Mystykal@mcdok.com', sup:'Robert Spencer',    supEmail:'Robert@mcdok.com'},
-  '29760':{gm:'Heather Danforth',   gmEmail:'Heather@mcdok.com',  sup:'Krystiana Langford',supEmail:'Krystiana@mcdok.com'},
-  '31357':{gm:'Brady Giambaresi',   gmEmail:'Brady@mcdok.com',    sup:'Amanda Estrada',    supEmail:'Amanda@mcdok.com'},
-  '32525':{gm:'Aliyah Richardson',  gmEmail:'Aliyah@mcdok.com',   sup:'Robert Spencer',    supEmail:'Robert@mcdok.com'},
-  '33109':{gm:'Rey Araiz',          gmEmail:'Rey@mcdok.com',      sup:'Ashley Podroza',    supEmail:'Ashley@mcdok.com'},
-  '33222':{gm:'Carol Escusa',       gmEmail:'Carol@mcdok.com',    sup:'Krystiana Langford',supEmail:'Krystiana@mcdok.com'},
-  '33704':{gm:'Candy Barksdale',    gmEmail:'Candy@mcdok.com',    sup:'Steven Vaughn',     supEmail:'Steven@mcdok.com'},
-  '34222':{gm:'Hunter McKee',       gmEmail:'Hunter@mcdok.com',   sup:'Steven Vaughn',     supEmail:'Steven@mcdok.com'},
-  '35064':{gm:'Lynsey Yahola',      gmEmail:'Lynsey@mcdok.com',   sup:'Steven Vaughn',     supEmail:'Steven@mcdok.com'},
-  '43380':{gm:'Zukarr Eaves',       gmEmail:'Zukarr@mcdok.com',   sup:'Ashley Podroza',    supEmail:'Ashley@mcdok.com'},
-  '6178': {gm:'Janet Jeter',        gmEmail:'Janet@emeraldarches.com',       sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
-  '6838': {gm:'Stephanie Harris',   gmEmail:'Stephanie@emeraldarches.com',   sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
-  '10034':{gm:'Harlee Yates',       gmEmail:'Harlee@emeraldarches.com',      sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
-  '35242':{gm:'Michele Nixon',      gmEmail:'Michele@emeraldarches.com',     sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
-  '37566':{gm:'Debra Herndon',      gmEmail:'Debra@emeraldarches.com',       sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
-  '38609':{gm:'Christina Bencokzy', gmEmail:'Christina@emeraldarches.com',   sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
-  '43701':{gm:'Shannon Hardin',     gmEmail:'Shannon@emeraldarches.com',     sup:'Brad Denley',supEmail:'Brad@emeraldarches.com'},
+  '3708': {gm:'Cinthya Armedariz',  gmEmail:'Cinthya@mcdok.com'},
+  '5183': {gm:'Mukarram Norman',    gmEmail:'Mukarram@mcdok.com'},
+  '5985': {gm:'Stacey Hyatt',       gmEmail:'Stacey@mcdok.com'},
+  '6972': {gm:'Nick Rice',          gmEmail:'Nick@mcdok.com'},
+  '10422':{gm:'Ashleyh Hegwer',     gmEmail:'Ashleyh@mcdok.com'},
+  '10915':{gm:'Caleb Nunnelley',    gmEmail:'Caleb@mcdok.com'},
+  '11657':{gm:'Jessie Hiatt',       gmEmail:'Jessie@mcdok.com'},
+  '13113':{gm:'Chris Abbey',        gmEmail:'Chris@mcdok.com'},
+  '18213':{gm:'Cora Bahling',       gmEmail:'Cora@mcdok.com'},
+  '20475':{gm:'Derek McGirt',       gmEmail:'Derek@mcdok.com'},
+  '24471':{gm:'Mystykal Abbey',     gmEmail:'Mystykal@mcdok.com'},
+  '29760':{gm:'Heather Danforth',   gmEmail:'Heather@mcdok.com'},
+  '31357':{gm:'Brady Giambaresi',   gmEmail:'Brady@mcdok.com'},
+  '32525':{gm:'Aliyah Richardson',  gmEmail:'Aliyah@mcdok.com'},
+  '33109':{gm:'Rey Araiz',          gmEmail:'Rey@mcdok.com'},
+  '33222':{gm:'Carol Escusa',       gmEmail:'Carol@mcdok.com'},
+  '33704':{gm:'Candy Barksdale',    gmEmail:'Candy@mcdok.com'},
+  '34222':{gm:'Hunter McKee',       gmEmail:'Hunter@mcdok.com'},
+  '35064':{gm:'Lynsey Yahola',      gmEmail:'Lynsey@mcdok.com'},
+  '43380':{gm:'Zukarr Eaves',       gmEmail:'Zukarr@mcdok.com'},
+  '6178': {gm:'Janet Jeter',        gmEmail:'Janet@emeraldarches.com'},
+  '6838': {gm:'Stephanie Harris',   gmEmail:'Stephanie@emeraldarches.com'},
+  '10034':{gm:'Harlee Yates',       gmEmail:'Harlee@emeraldarches.com'},
+  '35242':{gm:'Michele Nixon',      gmEmail:'Michele@emeraldarches.com'},
+  '37566':{gm:'Debra Herndon',      gmEmail:'Debra@emeraldarches.com'},
+  '38609':{gm:'Christina Bencokzy', gmEmail:'Christina@emeraldarches.com'},
+  '43701':{gm:'Shannon Hardin',     gmEmail:'Shannon@emeraldarches.com'},
 };
 
 

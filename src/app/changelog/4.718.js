@@ -1,0 +1,4 @@
+// @ts-nocheck
+export default {version:'4.718', date:'2026-08-01', changes:[
+  'Second-Look: new "Count accumulation?" check. When a manager re-enters a full TOTAL on top of an already-submitted count while the device count-timer is still active (the app ADDS unless "Replace Count" is used), the on-hand ~doubles into a large positive overage — a likely driver of FOB worsening after counts post. Fires on a multi-entry session that nets a ≥$150 positive overage (normal area build-up nets ≈ $0, so FRIES-type counts are not flagged). Non-accusatory: recommends verifying the true on-hand and using Replace Count / recounting after the timer resets, and names the honest alternative (an un-approved purchase/transfer also reads as an overage — check receipts). KB-grounded in the Mobile Inventory App counting mechanics.',
+]};

@@ -13,9 +13,13 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOTS = ['src/engine', 'src/views', 'src/lib', 'src/features', 'src/app'];
-// changelog-*.js are prose DATA files, not code — they describe this very guard by name (this
-// commit's own changelog entry names all four fields), which would otherwise self-trigger.
-const ALLOWED_FILES = new Set(['src/engine/salaried-coverage.js', 'src/app/changelog-data.js', 'src/app/changelog-latest.js']);
+// changelog-latest.js and everything under src/app/changelog/ are prose DATA files, not code —
+// they describe this very guard by name (a changelog entry naming all four fields, or a future
+// one), which would otherwise self-trigger. R6 (dispatch16) split the old single
+// changelog-data.js into one file per version under src/app/changelog/, so the exclusion is now
+// a path prefix rather than one filename.
+const ALLOWED_FILES = new Set(['src/engine/salaried-coverage.js', 'src/app/changelog-latest.js']);
+const ALLOWED_PREFIX = 'src/app/changelog/';
 // \.total_hours\b requires a literal dot immediately before "total_hours" — it does NOT match
 // `.over_time_total_hours` (the already-verified-safe OT field, #242's "current state" table),
 // since the text right after the dot there is "over_time_total_hours", not "total_hours".
@@ -40,7 +44,7 @@ function collectJsFiles(dir) {
 }
 
 describe('salaried-manager fields (total_hours/gross_dollars/salaried_manager_*) stay behind salariedCoverage() (#242)', () => {
-  const files = ROOTS.flatMap(collectJsFiles).filter(f => !ALLOWED_FILES.has(f));
+  const files = ROOTS.flatMap(collectJsFiles).filter(f => !ALLOWED_FILES.has(f) && !f.startsWith(ALLOWED_PREFIX));
 
   it('found a non-trivial number of source files to scan (sanity check)', () => {
     expect(files.length).toBeGreaterThan(50);

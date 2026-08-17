@@ -258,6 +258,30 @@ actual code — this note nearly caused a duplicate reimplementation.
   verifying it. **Read the code at the exact LOCATION before writing there** (grep-and-inject
   lands in the wrong function and still compiles), and **check whether an affordance already
   exists** before adding one. A passing build is not verification.
+- **Would this verification still pass if the change were reverted? (sharpened, dispatch16,
+  2026-08-17)** When a fix has an ENGINE and a CALL SITE, the bar must touch the call site.
+  #366's tests exercised `stream-freshness.js` directly and would have passed unchanged with the
+  panel's wiring to it deleted — the engine was right and unused. A test that only imports the
+  engine can't tell "fixed" from "fixed but never wired in"; it has to render or call through the
+  actual consumer (the panel, the export, the report) for a revert of either half to register.
+- **When two panels disagree on one number, diff the two computations before debugging either
+  (dispatch16, 2026-08-17).** #348 cost a wrong theory and a screenshot to reach what one `grep`
+  of both formulas then answered in minutes — the two were never wrong in isolation, only
+  inconsistent with each other (Scheduling weighted by actual sales, Schedule Summary by
+  forecast). Comparing the two computations side by side finds a disagreement bug in one pass;
+  debugging either panel alone against "what should the number be" does not, because either
+  formula can look locally correct.
+- **Check whether a helper exists before writing one (dispatch16, 2026-08-17).** Four copies of
+  the org map, three of scheduled-hours, two of the week anchor — SUPERVISOR_PATCHES (#363),
+  the org-coords duplication, `weekStartOf()` reimplemented instead of imported. A grep for the
+  concept (org map, week start, scheduled hours) before writing a new one is cheaper than the
+  reconciliation bug the second copy inevitably drifts into.
+- **A reviewer's root cause is a hypothesis — reproduce it before fixing it (dispatch16,
+  2026-08-17).** Applies to anything handed to this agent, permanently, including the owner's own
+  diagnosis. Disproving the `autoItems` dependency-array theory in #366's review — rather than
+  implementing the fix as prescribed — surfaced #369, a real defect nobody had seen, that the
+  prescribed fix would have paved over. A wrong call reproduced and found wrong is worth more
+  than a plausible call implemented unverified.
   Full evidence in `memory/feedback-measure-dont-reason.md`.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.

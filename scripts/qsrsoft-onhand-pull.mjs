@@ -30,7 +30,7 @@
 //   any prod.ebos.qsrsoft.com/api/inv/ request → copy X-Auth-Token → update QSRSOFT_EBOS_TOKEN secret.
 
 import { chromium } from 'playwright';
-import { COVER_FRAC, sessionKind } from '../src/engine/count-cycle.js';
+import { COVER_FRAC, sessionQualities, sessionLabel } from '../src/engine/count-cycle.js';
 import { createClient } from '@supabase/supabase-js';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
 import { computeCountProgress, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
@@ -197,6 +197,12 @@ async function resolveEbosToken() {
 }
 
 // ── Fetch one store's On-Hand items for one class type ────────────────────────
+let dumpedRawFields = false; // #357-B2/3 — see DUMP_RAW_FIELDS note below; fire once per run.
+// #357-B2/3 — the one-shot single-record dump (below) confirmed `active_in_recipe` exists,
+// but one record can't tell us whether it actually VARIES (a flag that's always 1 is useless
+// as a filter). Tally it across every item this run touches and print the distribution once
+// at the end of main(), gated behind the same DUMP_RAW_FIELDS flag — still read-only.
+const rawFieldTally = { total: 0, activeVals: new Map(), staleActive1: 0, staleTotal: 0 };
 async function fetchOnHand(token, nsn, dateStr, type) {
   const params = new URLSearchParams({
     date: dateStr, type, recipe: 'all', non_zero_on_hand: 'false', duplicate: 'false',
@@ -214,7 +220,37 @@ async function fetchOnHand(token, nsn, dateStr, type) {
   if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 160)}`);
   const data = await resp.json();
-  return Array.isArray(data?.on_hand_records) ? data.on_hand_records : [];
+  const items = Array.isArray(data?.on_hand_records) ? data.on_hand_records : [];
+  // #357-B2/3 — one-shot probe: does the On-Hand API already carry an active/status/
+  // discontinued flag? mapOnHandRow keeps 13 fields and silently drops whatever else
+  // the API returns; log the full field set + one record ONCE per run so this is a
+  // `grep`-able answer instead of re-guessing. DUMP_RAW_FIELDS=1, read-only (no schema
+  // or upsert change — mapOnHandRow is untouched by this).
+  if (process.env.DUMP_RAW_FIELDS === '1' && items.length) {
+    if (!dumpedRawFields) {
+      dumpedRawFields = true;
+      console.log('[DUMP_RAW_FIELDS] on_hand_records[0] keys:', Object.keys(items[0]));
+      console.log('[DUMP_RAW_FIELDS] on_hand_records[0] full record:', JSON.stringify(items[0]));
+    }
+    const periodPrefix = dateStr.slice(0, 7); // "2026-08"
+    for (const it of items) {
+      rawFieldTally.total++;
+      const v = it.active_in_recipe;
+      rawFieldTally.activeVals.set(v, (rawFieldTally.activeVals.get(v) || 0) + 1);
+      // "stale" per eom-inventory.js's own definition: last_counted falls in a PRIOR period.
+      // Parse MM/DD/YYYY and compare month/year to the query date's period.
+      const lc = String(it.last_counted || '');
+      const m = lc.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m) {
+        const lcPeriod = `${m[3]}-${String(m[1]).padStart(2, '0')}`;
+        if (lcPeriod !== periodPrefix) {
+          rawFieldTally.staleTotal++;
+          if (v === 1 || v === '1') rawFieldTally.staleActive1++;
+        }
+      }
+    }
+  }
+  return items;
 }
 
 const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
@@ -410,6 +446,11 @@ async function main() {
   }
 
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
+  if (process.env.DUMP_RAW_FIELDS === '1' && rawFieldTally.total) {
+    const dist = [...rawFieldTally.activeVals.entries()].map(([k, n]) => `${JSON.stringify(k)}:${n}`).join(', ');
+    console.log(`[DUMP_RAW_FIELDS] active_in_recipe distribution across ${rawFieldTally.total} items: { ${dist} }`);
+    console.log(`[DUMP_RAW_FIELDS] stale items (last_counted in a prior period): ${rawFieldTally.staleTotal} / ${rawFieldTally.total}, of which active_in_recipe===1: ${rawFieldTally.staleActive1}`);
+  }
   if (authFailed) process.exit(1);
 
   // No store-subset override exists for this script today (unlike ROSTER_STORES on the
@@ -428,6 +469,15 @@ main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1
 // tags coverage using the SAME threshold as src/engine/count-cycle.js. Imported from the
 // engine rather than redefined so the script and the UI can never disagree about what
 // "a complete count" means.
+//
+// #357-D — session_kind is stored for display convenience only; it is derived from
+// sessionQualities/sessionLabel (the same independent-flags logic the panel now uses),
+// but it is NOT the source of truth for compliance. count-cycle.js's own header (#357-D
+// correction) says it plainly: this table is built from qsr_onhand's rolling-latest
+// last_counted, the same structural blind spot documented there (a recount overwrites
+// the prior count's date, so an EARLIER session in the same period can silently vanish
+// from this table too). Anything reading inv_count_sessions for compliance should treat
+// session_kind as advisory and recompute qualities at read time if it matters.
 function deriveSessionRows(loc, period, rows) {
   const totals = {};
   for (const r of rows) if (r.cls) totals[r.cls] = (totals[r.cls] || 0) + 1;
@@ -444,7 +494,7 @@ function deriveSessionRows(loc, period, rows) {
     const n = Object.values(counts).reduce((a, b) => a + b, 0);
     const covered = Object.keys(counts).filter(c =>
       counts[c] >= (totals[c] || Infinity) * COVER_FRAC);
-    const kind = sessionKind(date, covered, n);
+    const kind = sessionLabel(sessionQualities(date, covered, n));
     for (const [cls, items] of Object.entries(counts)) {
       out.push({
         loc, count_date: date, cls, period,

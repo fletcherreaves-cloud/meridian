@@ -64,7 +64,6 @@
 //           PMIX_STORE (comma-separated NSNs, default all 27).
 
 import { createClient } from '@supabase/supabase-js';
-import { savePmixRows } from '../src/lib/supabase.js';
 
 const BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -84,6 +83,42 @@ const SELECT_COLS = ['soldQty', 'discQty', 'menuItemNumber', 'description', 'fam
   'dollarsSold', 'promoQty', 'offerAmt', 'unitFoodCost', 'unitPaperCost'].join(',');
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+// Deliberately NOT importing savePmixRows from src/lib/supabase.js: that module reads
+// import.meta.env at load time (Vite-only), which is undefined under plain `node
+// scripts/...` and crashes on import before this script's own env/token handling ever
+// runs. Every sibling pull script (qsrsoft-ebos-pull.mjs, qsrsoft-ops-pull.mjs) upserts
+// directly via its own createClient(process.env...) client for the same reason — this
+// mirrors that pattern. Column mapping/onConflict kept identical to savePmixRows so the
+// browser lazy-fill path (#385) and this pull stay in sync.
+async function savePmixRows(rows) {
+  if (!rows?.length) return { saved: 0, errors: [] };
+  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10);
+  const upsert = rows.map(r => ({
+    loc:             String(r.loc),
+    date:            toDate(r),
+    item:            Number(r.item),
+    price:           Number(r.price),
+    desc_:           r.desc        ?? null,
+    family_group:    r.familyGroup ?? null,
+    sold_qty:        r.soldQty     ?? null,
+    disc_qty:        r.discQty     ?? null,
+    promo_qty:       r.promoQty    ?? null,
+    offer_amt:       r.offerAmt    ?? null,
+    disc_amt:        r.discAmt     ?? null,      // not yet selected upstream — see schema header
+    unit_food_cost:  r.unitFoodCost  ?? null,
+    unit_paper_cost: r.unitPaperCost ?? null,
+    updated_at:      new Date().toISOString(),
+  }));
+  const CHUNK = 500;
+  let saved = 0; const errors = [];
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('qsr_product_mix').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date,item,price' });
+    if (error) { console.warn('[qsr_product_mix] save error:', error); errors.push(error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  return { saved, errors };
+}
 
 const pad2 = n => String(n).padStart(2, '0');
 const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;

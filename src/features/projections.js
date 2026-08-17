@@ -788,11 +788,28 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     delete next[key]; onSaveLocked(next);
   };
 
+  // #dispatch11 — was 7 (or 28-31 in month view) separate setOverride() calls in a
+  // synchronous loop. Each call rebuilt `next` from the SAME stale `lockedProjections`
+  // prop (it can't change mid-forEach) and called onSaveLocked(next) immediately, so
+  // every call's `next` was originalMap+oneDay, not previousResult+oneDay — the last
+  // write won and only the final day of the week ever survived. allLocked (below) then
+  // never saw every day locked, so the row could never fully lock no matter how many
+  // times the button was clicked. Fixed the same way showLockFor/showMonthLockFor
+  // already do it correctly: build ONE `next` across every day, save once.
   const lockRow = (loc) => {
+    const next={...(lockedProjections||{})};
     weekDays.forEach(d=>{
       const amt=getAmt(loc,d);
-      if(amt) setOverride(loc,d,amt,'locked','week');
+      if(!amt) return;
+      const key=loc+'_'+dKey(d);
+      const prev=lockedProjections&&lockedProjections[key];
+      const originalMonthLock=(prev&&prev.source==='month')
+        ?(prev.originalMonthLock||{amt:prev.amt,ts:prev.ts}):(prev&&prev.originalMonthLock)||null;
+      const entry={amt,mode:'locked',source:'week',ts:new Date().toISOString(),by:settings.dmName||'DM'};
+      if(originalMonthLock) entry.originalMonthLock=originalMonthLock;
+      next[key]=entry;
     });
+    onSaveLocked(next);
   };
 
   // Batch lock helpers
@@ -936,13 +953,23 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     setShowLockConfirm(true);
   };
 
+  // #dispatch11 — same last-write-wins defect as lockRow (see its comment): build one
+  // `next` across every day, save once.
   const approveRow = (loc) => {
+    const next={...(lockedProjections||{})};
     weekDays.forEach(d=>{
       const key=loc+'_'+dKey(d);
       const existing=lockedProjections&&lockedProjections[key];
       const amt=existing?existing.amt:getAmt(loc,d);
-      if(amt) setOverride(loc,d,amt,'approved');
+      if(!amt) return;
+      const prev=existing;
+      const originalMonthLock=(prev&&prev.source==='month')
+        ?(prev.originalMonthLock||{amt:prev.amt,ts:prev.ts}):(prev&&prev.originalMonthLock)||null;
+      const entry={amt,mode:'approved',source:'week',ts:new Date().toISOString(),by:settings.dmName||'DM'};
+      if(originalMonthLock) entry.originalMonthLock=originalMonthLock;
+      next[key]=entry;
     });
+    onSaveLocked(next);
   };
 
   // ── Period navigation ────────────────────────────────────
@@ -1182,8 +1209,13 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
         div({style:{display:'flex',gap:2}},
           btn({className:'btn btn-sm',
             style:{fontSize:'8px',padding:'1px 5px',color:allApproved?'#10b981':allLocked?'#a5b4fc':'var(--text3)'},
-            title:allApproved?'Approved':'Lock this store row',
-            onClick:()=>allApproved?approveRow(loc):lockRow(loc)},
+            title:allApproved?'Approved':allLocked?'Approve this store row':'Lock this store row',
+            // #dispatch11 — was allApproved?approveRow:lockRow, an inverted condition that
+            // made mode:'approved' unreachable from the UI: approveRow only ever fired once
+            // a row was ALREADY approved (re-approving, a no-op), and a not-yet-locked row
+            // always went to lockRow no matter how many times it was clicked. Lock → Approve
+            // is a two-step progression, so the gate belongs on allLocked, not allApproved.
+            onClick:()=>allLocked?approveRow(loc):lockRow(loc)},
             allApproved?'✅':allLocked?'🔒':'Lock'),
           btn({className:'btn btn-sm',
             style:{fontSize:'8px',padding:'1px 5px'},
@@ -1696,7 +1728,16 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
 
         loading&&!Object.keys(weekData).length
           ? div({style:{padding:40,textAlign:'center',color:'var(--text3)'}},'⏳ Computing projections for all '+Object.keys(STORE_NAMES).length+' stores…')
-          : tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+          // #dispatch11 — width:'100%' with no minWidth locks the table to its
+          // overflowX:'auto' wrapper's width, so there's nothing to scroll TO;
+          // the browser compresses/cuts columns instead (same #192-class defect
+          // scroll-table-width.test.js already guards elsewhere — this table uses
+          // the tbl() alias and sits ~85 lines past its wrapper, both outside that
+          // guard's textual scan window, so it went unguarded). Month view makes
+          // the squeeze worse: a 12th column ('As Locked (Month Plan)') plus every
+          // header's whiteSpace:'nowrap'. max-content+minWidth:100% matches the
+          // fix already used correctly on MonthlyProjectionsPanel's own table.
+          : tbl({style:{width:'max-content',minWidth:'100%',borderCollapse:'collapse',fontSize:'10px'}},
               h('thead',null,
                 // Sticky header (v4.195): column headers now stay visible while
                 // scrolling through 27 stores, since the layered Month view

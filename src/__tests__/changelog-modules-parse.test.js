@@ -22,24 +22,27 @@
 // App.js, which changelog-version.test.js's own header explains can't be imported directly.
 import { describe, it, expect } from 'vitest';
 import { LATEST_CHANGELOG_ENTRY } from '../app/changelog-latest.js';
-import { MERIDIAN_CHANGELOG } from '../app/changelog-data.js';
+import { MERIDIAN_CHANGELOG } from '../app/changelog/index.js';
 
 describe('changelog modules actually parse as JS, not just as regex-matchable text', () => {
   it('changelog-latest.js imports cleanly and exports the expected shape', () => {
+    // R6 (dispatch16): changelog-latest.js is generated and deliberately carries only
+    // version+date now, not the newest entry's prose — App.js never read .changes (that was
+    // #234: dead weight in the entry chunk every version file already carries once, correctly,
+    // for the lazy changelog panel).
     expect(LATEST_CHANGELOG_ENTRY).toBeTruthy();
     expect(typeof LATEST_CHANGELOG_ENTRY.version).toBe('string');
     expect(LATEST_CHANGELOG_ENTRY.version).toMatch(/^\d+\.\d+$/);
     expect(LATEST_CHANGELOG_ENTRY.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(Array.isArray(LATEST_CHANGELOG_ENTRY.changes)).toBe(true);
-    expect(LATEST_CHANGELOG_ENTRY.changes.length).toBeGreaterThan(0);
-    for (const c of LATEST_CHANGELOG_ENTRY.changes) expect(typeof c).toBe('string');
   });
 
-  it('changelog-data.js imports cleanly and exports a well-formed array', () => {
+  it('src/app/changelog/index.js (via import.meta.glob) imports cleanly and exports a well-formed array', () => {
     expect(Array.isArray(MERIDIAN_CHANGELOG)).toBe(true);
-    // A parse failure (most likely an unescaped apostrophe terminating a string early, or a
-    // conflict marker landing at statement level) throws at import time, before this line ever
-    // runs — the count check below is just a sanity floor on top of that.
+    // A parse failure in any one of the 400+ version files (most likely an unescaped apostrophe
+    // terminating a string early, or a leftover conflict marker landing at statement level)
+    // throws at import time, before this line ever runs — the count check below is just a
+    // sanity floor on top of that. Each version file is independently tiny now, so this test
+    // also proves the glob actually discovers all of them, not just a subset.
     expect(MERIDIAN_CHANGELOG.length).toBeGreaterThan(300);
     for (const entry of MERIDIAN_CHANGELOG) {
       expect(typeof entry.version).toBe('string');
