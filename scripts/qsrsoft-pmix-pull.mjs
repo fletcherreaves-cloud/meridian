@@ -279,9 +279,18 @@ async function upsertAndLog(mappedResult, label, rawCount) {
   return saved;
 }
 
+// #263 — a run that upserts 0 rows must be distinguishable from one that never got real
+// data in the first place: tallying per-store kept-row counts across the whole run (not
+// just the per-date log lines already printed) makes a partial pull visible as "4/27 stores"
+// instead of silently averaging into a total that still looks plausible.
+function tally(perStoreCounts, kept) {
+  for (const r of kept) perStoreCounts.set(r.loc, (perStoreCounts.get(r.loc) || 0) + 1);
+}
+
 async function runAll(token, dates, evalPage) {
   let grand = 0;
   let mode = null; // decided once, from the first date's probe, and reused for the rest of this run
+  const perStoreCounts = new Map(); // loc -> rows kept, across the whole run
 
   for (const date of dates) {
     if (mode === null) {
@@ -296,7 +305,9 @@ async function runAll(token, dates, evalPage) {
       }
       if (districtRows) {
         mode = 'district';
-        grand += await upsertAndLog(mappedRows(districtRows, date, null), date, districtRows.length);
+        const mr = mappedRows(districtRows, date, null);
+        tally(perStoreCounts, mr.kept);
+        grand += await upsertAndLog(mr, date, districtRows.length);
         await new Promise(r => setTimeout(r, 120));
         continue;
       }
@@ -313,7 +324,9 @@ async function runAll(token, dates, evalPage) {
         console.error(`[pmix] ${date} ERROR: ${e.message}`);
         continue;
       }
-      grand += await upsertAndLog(mappedRows(rows, date, null), date, rows.length);
+      const mr = mappedRows(rows, date, null);
+      tally(perStoreCounts, mr.kept);
+      grand += await upsertAndLog(mr, date, rows.length);
       await new Promise(r => setTimeout(r, 120));
       continue;
     }
@@ -328,18 +341,20 @@ async function runAll(token, dates, evalPage) {
         console.error(`[pmix] ${date} store ${nsn} ERROR: ${e.message}`);
         continue;
       }
-      grand += await upsertAndLog(mappedRows(rows, date, nsn), `${date} store ${nsn}`, rows.length);
+      const mr = mappedRows(rows, date, nsn);
+      tally(perStoreCounts, mr.kept);
+      grand += await upsertAndLog(mr, `${date} store ${nsn}`, rows.length);
       await new Promise(r => setTimeout(r, 120));
     }
   }
-  return grand;
+  return { grand, perStoreCounts };
 }
 
 // ── Playwright fallback — mirrors qsrsoft-ops-pull.mjs exactly, pointed at the Product
 // Mix report page instead of the Operations Report.
 async function viaPlaywright(dates) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
-  if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return null; }
+  if (!u || !pw) throw new Error('AUTH_FAILED:playwright — no QSRSOFT_USERNAME/PASSWORD, cannot use Playwright fallback'); // #263 — was a silent `return null`, indistinguishable from a clean zero-row run
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
   const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
@@ -377,7 +392,12 @@ async function viaPlaywright(dates) {
       await new Promise(r => setTimeout(r, 2000));
       await snap('pmix-03-post-trigger.png');
     }
-    if (!token) { console.error('[auth] ✗ could not capture token from the Product Mix report page'); return 0; }
+    // #263 — this used to `return 0` on a failed token capture, indistinguishable from a
+    // clean run that genuinely wrote nothing. That is precisely the failure mode caught live
+    // 2026-08-17: a backfill run exited 0 after failing to capture a token, no error, no
+    // signal past a log line nobody was watching. Throwing here instead makes main()'s catch
+    // handle it as the real failure it is.
+    if (!token) throw new Error('AUTH_FAILED:playwright — could not capture token from the Product Mix report page');
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${dates.length} date(s)…`);
     return await runAll(token, dates, page);
   } finally { await browser.close(); }
@@ -390,19 +410,41 @@ async function main() {
   console.log(`[pmix] window: ${start}…${end} (${dates.length} day(s)) — ${STORE_NSNS.length} store(s)`);
 
   const token = (process.env.QSRSOFT_TOKEN || process.env.QSRSOFT_COGNITO_TOKEN || '').trim();
-  let total = 0;
+  let result = { grand: 0, perStoreCounts: new Map() };
   if (token) {
     console.log('[auth] using direct token');
-    try { total = await runAll(token, dates, null); }
+    try { result = await runAll(token, dates, null); }
     catch (e) {
-      if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); total = await viaPlaywright(dates) || 0; }
+      if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); result = await viaPlaywright(dates); }
       else throw e;
     }
   } else {
     console.log('[auth] no direct token — falling back to Playwright');
-    total = await viaPlaywright(dates) || 0;
+    result = await viaPlaywright(dates);
   }
+  const { grand: total, perStoreCounts } = result;
+
+  // #263 — per-store counts, always logged, so a partial pull (e.g. 4/27 stores) is visible
+  // directly rather than averaging into a plausible-looking total.
+  const storesWithRows = perStoreCounts.size;
+  console.log(`[pmix] per-store: ${storesWithRows}/${STORE_NSNS.length} store(s) had at least one row upserted.`);
+  if (storesWithRows > 0 && storesWithRows < STORE_NSNS.length) {
+    const missing = STORE_NSNS.filter(nsn => !perStoreCounts.has(nsn7(nsn)));
+    console.warn(`[pmix] ${missing.length} store(s) with zero rows across the whole window: ${missing.join(', ')}`);
+  }
+
   console.log(`[pmix] done — ${total} row(s) upserted.`);
+
+  // #263 — a run that upserts 0 rows over a non-empty requested window must exit non-zero.
+  // Caught live 2026-08-17: a Playwright token-capture failure returned 0 with no thrown
+  // error, and the run reported success anyway — the third failure-reports-success path
+  // found this week (after mf_events's bare catch{} and _pagedParallel dropping its error).
+  // A day with genuinely zero sales across all 27 real stores is not a plausible outcome to
+  // guard against silently; an auth/pull failure that yields exactly the same shape is.
+  if (total === 0 && dates.length > 0) {
+    console.error(`[pmix] ✗ 0 rows upserted across ${dates.length} requested day(s) — treating as a failed run, not an empty one. See auth/error output above.`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 
