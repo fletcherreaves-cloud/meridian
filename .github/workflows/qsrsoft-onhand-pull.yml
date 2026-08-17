@@ -18,6 +18,10 @@ on:
         description: 'Override period being counted (YYYY-MM, default: current month)'
         required: false
         default: ''
+      date:
+        description: 'Override the business date queried (YYYY-MM-DD, default: today UTC) -- ONHAND_DATE was already read by the script but had no workflow_dispatch input to set it'
+        required: false
+        default: ''
       debug:
         description: 'Verbose logging (1 = on)'
         required: false
@@ -57,6 +61,7 @@ jobs:
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
           ONHAND_FORCE:              ${{ github.event.inputs.force  || '0' }}
           ONHAND_PERIOD:             ${{ github.event.inputs.period || ''  }}
+          ONHAND_DATE:               ${{ github.event.inputs.date   || ''  }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}
           DUMP_RAW_FIELDS:           ${{ github.event.inputs.dump_raw_fields || '0' }}
 
