@@ -50,11 +50,24 @@ order by days asc, loc, mo;
 
 -- ── GATE 3 — stores absent entirely (invisible to GATE 2, which can only ────
 --            list stores that have at least one row).
-select d.loc
-from (select distinct loc from qsr_product_mix) d
-right join (select distinct loc from qsr_daily_activity
-            where dt >= '2026-01-01') a on a.loc = d.loc
-where d.loc is null;
+--
+-- ⚠ CORRECTED 2026-08-18. The first version of this query selected `d.loc` from
+-- the pmix side while filtering on `d.loc is null` — which returns a column of
+-- NULLs and names nothing. It gave a COUNT of missing stores and no identity,
+-- which is the one thing this gate exists to provide. Select from the side that
+-- HAS the rows (the DAR), and null-test the side that is missing them.
+select a.loc
+from      (select distinct loc from qsr_daily_activity where dt   >= '2026-01-01') a
+left join (select distinct loc from qsr_product_mix   where date >= '2026-01-01') p
+  on p.loc = a.loc
+where p.loc is null;
+
+-- Measured 2026-08-18: `select count(distinct loc) from qsr_product_mix where
+-- date = '2026-02-11'` (an ordinary Wednesday, deliberately not a holiday)
+-- returned 26, against ~27 stores. One store is genuinely absent from pmix for
+-- the backfilled window. Run the query above to name it BEFORE task #153 reads
+-- this table — an absent store reads downstream as "this restaurant took no
+-- price change," which is the exact wrong answer to the question #153 asks.
 
 
 -- ── ONLY AFTER ALL THREE PASS: the task #153 measurement ────────────────────
