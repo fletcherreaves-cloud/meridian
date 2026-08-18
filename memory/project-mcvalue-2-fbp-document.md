@@ -245,6 +245,44 @@ organization for growth and lease rewrites, a sustained district-wide traffic de
 numbers used to assess the organization for expansion — not merely a quarterly performance note.
 **Keep this out of the findings-only version**, which stays strictly descriptive.
 
+## ⛔ Tishomingo's open date — MEASURED 2026-08-18, supersedes "early 2025"
+
+**Opened 16 December 2024.** Not "early 2025" (this file's earlier wording, an inference
+never measured) and not later in 2025 (the owner's recollection). Both were wrong.
+
+| date | guests | reading |
+|---|---:|---|
+| 2024-11-29 → 12-12 | 0 | in the system, not trading |
+| **2024-12-13** | **14** | 105 in sales — a training/test day, **not** an opening |
+| 2024-12-14 → 12-15 | 0 | |
+| **2024-12-16** | **816** | **first real trading day** |
+| 2024-12-17 | 1,224 | grand-opening peak |
+| 2024-12-21 → 12-28 | ~750–900 | decay |
+| 2024-12-25 | 0 | closed Christmas — correct, not a gap |
+
+**Not a backfill artifact:** the table floor is 2024-01-01 and Tishomingo's first row is
+2024-11-29 — **333 days after the floor**, so this is a genuine opening.
+
+⚠️ **Method note worth keeping.** A first pass asked for `min(dt) where product_sales > 0`
+and returned **2024-12-13** — the 14-guest training day. **First sales is not first day of
+business.** The shape query caught it; the date query alone would have shipped a wrong date
+for the second time. Use a volume threshold, or read the ramp.
+
+### Why this strengthens the exclusion rather than weakening it
+
+The pre-window's LY twin is Jan–Apr 2025. Opening 16 Dec 2024 puts the store at **two to
+six weeks old across that entire LY leg**, in the steepest part of its grand-opening decay
+— visibly 1,224 → ~800 guests within a fortnight, and the 17.6% within-2025 sales decline
+already on file is the same curve continuing.
+
+**Direction of the bias, now by mechanism rather than assertion:** the 2026 pre-window
+compares against an *inflated* LY baseline (Tishomingo looks bad in pre); the post-window
+compares against a *settled* one (looks good in post). **That manufactures a positive DiD.**
+Excluding it therefore makes the finding more conservative, which is worth saying aloud.
+
+**Document edit required:** replace "opened early 2025" with "opened 16 December 2024", and
+state the two-to-six-weeks-old fact — it is stronger than the vaguer wording it replaces.
+
 ## Two stores excluded, with reasons
 
 Both are opening artifacts. Documented exclusions, never silent drops.
