@@ -1,152 +1,159 @@
 ---
 name: analysis-labor-allocation-2026-08-18
-description: Measured finding — labor hours sit in the wrong dayparts. The two highest-volume dayparts run UNDER guide while the three softest run OVER it. Owner-requested write-up, 2026-08-18.
+description: PROVEN — labor hours sit in the wrong dayparts. The two busiest dayparts run UNDER the VLH guide while the three softest run OVER it, and the surplus covers the deficit 1.6x. Includes the schedule-vs-execution split, the overnight reframe, the actions, and every query.
 metadata:
   node_type: memory
   type: analysis
 ---
 
-# Hours are in the wrong dayparts
+# Hours are in the wrong dayparts — PROVEN, with the hours to pay for it
 
-**Owner-requested 2026-08-18.** Surfaced by PROBE G-3/G-4 while investigating something
-else entirely (drive-thru speed variance). **Nobody hypothesised this** — it fell out of a
-cut built for a different question, which is the main reason it is worth writing down.
+**Owner-directed 2026-08-18.** Surfaced by PROBE G-3/G-4 while investigating drive-thru
+speed. **Nobody hypothesised it** — it fell out of a cut built for a different question.
 
----
-
-## The finding in one line
-
-**58% of your drive-thru volume is served UNDER the VLH guide. 42% is served OVER it.
-The hours already exist — they are in the wrong dayparts.**
+> **This file supersedes the first version.** The original ran on invented daypart
+> boundaries. Everything below is on the **VLH guide's own boundaries** (Breakfast 5a–11a,
+> Lunch 11a–2p, Afternoon 2p–5p, Dinner 5p–11p, Late Night 11p–5a). Queries in
+> `analysis-labor-allocation-queries.sql`.
 
 ---
 
-## The evidence
+## The measured picture (27 stores, 90 days, ~1.71M drive-thru cars)
 
-Measured across 27 stores, 90 days, ~1.7M cars (PROBE G-3):
+| daypart | sec/car | TPPH | punched vs guide | sched vs guide | punched vs sched | cars | punched hrs | needed hrs |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Breakfast | 154.3 | 6.43 | **0.915** | 1.046 | 0.875 | 620,325 | 134,684 | 147,174 |
+| Lunch | 202.9 | 5.90 | **0.922** | 1.075 | 0.858 | 369,709 | 94,871 | 102,866 |
+| Afternoon | 183.8 | 4.83 | 1.171 | **1.376** | 0.851 | 267,769 | 80,002 | 68,298 |
+| Dinner | 220.8 | 4.56 | 1.091 | **1.306** | 0.836 | 432,263 | 134,217 | 122,971 |
+| Late Night | 276.2 | **1.05** | **1.590** | 1.426 | **1.115** | 21,081 | 26,280 | 16,529 |
 
-| daypart | cars | share | punched vs guide | |
-|---|---:|---:|---:|---|
-| Breakfast | 620,752 | 36% | **0.928** | under |
-| Lunch | 369,709 | 22% | **0.922** | under |
-| Afternoon | 267,769 | 16% | 1.171 | over |
-| Dinner | 248,625 | 15% | 1.085 | over |
-| Late | 204,292 | 12% | 1.207 | over |
-
-**The two busiest dayparts are the two run leanest.** Breakfast alone carries more cars
-than Afternoon + Dinner combined and is staffed at 93% of guide.
-
-### It is not noise, and it is not a few stores
-
-Store-day counts from PROBE G-4, split by whether the shift actually earned its volume:
-
-| | busy days UNDER guide | soft days OVER guide |
-|---|---:|---:|
-| Breakfast | **826** | — |
-| Afternoon | — | **1,324** |
-| Dinner | — | **1,245** |
-
-826 breakfasts where sales **met or beat** projection were staffed below guide. In the same
-window, **2,569** afternoon and dinner store-days where sales **missed** projection were
-staffed above it.
-
-The pattern is exactly inverted: **lean when busy, fat when slow.**
+**58% of drive-thru volume is served UNDER guide; 42% is served OVER it.**
+(990,034 cars under · 721,113 over.)
 
 ---
 
-## What it costs
+## ⭐ THE PROOF — the surplus covers the deficit 1.6×
 
-From PROBE G-4, holding daypart and volume constant, going from **under guide** to
-**over guide** at Breakfast is worth **19.4 seconds per car** (162.8s → 143.4s).
+| daypart | punched − needed |
+|---|---:|
+| Breakfast | **−12,490** |
+| Lunch | **−7,995** |
+| Afternoon | +11,704 |
+| Dinner | +11,246 |
+| Late Night | +9,751 |
+| **deficit** | **−20,485** |
+| **surplus** | **+32,701** |
+| **net district-wide** | **+12,216 over guide** |
 
-That is the speed cost alone. It does not price the sales effect of a slow breakfast
-drive-thru, the labour-hour waste on the soft afternoons, or the CSAT consequence.
+Totals: **470,054 punched** vs **457,838 needed** over 90 days.
 
-**Do not quote a dollar figure yet.** The exact hour transfer needs one more query, since
-G-3 gives ratios rather than absolute hours per daypart:
-
-```sql
--- Absolute punched vs needed hours by daypart. Run with the CORRECTED boundaries
--- (memory/probe-g1-shift-dimension.sql header).
-with complete_days as (
-  select loc, dt from qsr_daily_activity
-  where dt >= current_date - interval '90 days'
-  group by loc, dt having count(distinct hour_slot) = 24
-)
-select
-  case
-    when substring(a.hour_slot,1,2)::int between  6 and 11 then '1 Breakfast'
-    when substring(a.hour_slot,1,2)::int between 12 and 14 then '2 Lunch'
-    when substring(a.hour_slot,1,2)::int between 15 and 17 then '3 Afternoon'
-    when substring(a.hour_slot,1,2)::int between 18 and 23 then '4 Dinner'
-    else                                                        '5 Late Night'
-  end                                                        as daypart,
-  round(sum(a.actual_punched_hours)::numeric, 0)             as punched_hrs,
-  round(sum(a.total_needed_hours)::numeric, 0)               as needed_hrs,
-  round((sum(a.actual_punched_hours) - sum(a.total_needed_hours))::numeric, 0) as gap_hrs
-from qsr_daily_activity a
-join complete_days c on c.loc = a.loc and c.dt = a.dt
-group by 1 order by 1;
-```
-
-`gap_hrs` summed across the over-guide dayparts is the pool available to move. If it
-roughly covers the under-guide deficit, this is **cost-neutral** — a reallocation, not a
-labour increase. That is what makes it worth doing.
+**You can fully staff breakfast and lunch to guide out of hours you are already paying
+for, and still hand back 12,216 hours.** Cost-neutral is no longer a hope; it is
+arithmetic. This is what makes it the highest-value item on the board — every other speed
+lever costs money or headcount; this one is a transfer.
 
 ---
 
-## Why this is probably the biggest item on the board
+## ⭐ THE KEY INSIGHT — AM and PM are DIFFERENT problems with DIFFERENT owners
 
-1. **It is cost-neutral if the hours net out.** Every other speed lever costs money or
-   headcount. This one is a transfer.
-2. **It hits the largest volume.** Breakfast is 36% of cars, more than Afternoon and
-   Dinner combined.
-3. **The guide already says so.** VLH is a guest-count step function — the guide is
-   *telling* each store the hours breakfast needs. This is not a modelling question; it is
-   an adherence question.
-4. **It is a scheduling decision, not a coaching one.** It changes when hours are placed,
-   which is a weekly action with a named owner, not a behaviour change across 27 crews.
+Read where each daypart loses its hours:
 
----
+| daypart | sched vs guide | punched vs sched | diagnosis |
+|---|---:|---:|---|
+| Breakfast | **1.046** | **0.875** | schedule is right — **12.5% doesn't show up** |
+| Lunch | 1.075 | 0.858 | same: schedule fine, execution loses it |
+| Afternoon | **1.376** | 0.851 | **padded 38% over guide when written** |
+| Dinner | **1.306** | 0.836 | **padded 31% over guide when written** |
+| Late Night | 1.426 | **1.115** | padded **and** runs long |
 
-## ⚠️ Caveats — read before acting
-
-1. **Daypart boundaries were wrong when this was measured.** G-3/G-4 ran on invented
-   boundaries (Breakfast 4a–11a, Dinner 5p–8p, Late 8p–4a) rather than the VLH guide's
-   (5a–11a, 5p–11p, 11p–5a). The arithmetic is sound — Σ/Σ over the same hour set is valid
-   whatever the buckets — but **every number here must be re-run on corrected boundaries
-   before it drives a schedule change.** Direction is unlikely to flip (breakfast under,
-   afternoon/dinner over is a wide margin) but magnitudes will move.
-2. **The staffing buckets contain different stores.** A chronically-under-guide restaurant
-   may also be a slow restaurant, so part of the 19.4s is store identity rather than
-   staffing. Needs a within-store comparison before any number reaches a GM.
-3. **`total_needed_hours` is assumed to be the VLH guide.** Strong supporting evidence:
-   `scheduled_vs_guide` runs 1.056–1.376, systematically ≠ 1.0, so it is demonstrably not
-   a copy of `total_scheduled_hours`. Not yet confirmed against the workbook tables.
-4. **Guides are per-configuration.** 48 variants × 2 workbooks. Per-store work must join
-   `store_vlh_config` (see below).
+**The PM surplus is a SCHEDULING problem. The AM deficit is an EXECUTION problem.**
+They are not two ends of one behaviour and they do not share a fix.
 
 ---
 
-## Related: the schedule-to-punch gap
+## What to do
 
-Separate but adjacent, from the same cut. **`punched_vs_scheduled` is below 1.0 in every
-daypart** — 0.879 / 0.858 / 0.851 / **0.808** / 0.935. Managers schedule *above* guide
-(1.056 → 1.376), then lose **12–19% at the punch**, landing at or below guide.
+### Action 1 — PM padding (scheduling · weekly · GM)
+Afternoon and dinner are written **30–38% above guide before anyone clocks in.** That is a
+pen stroke, not a behaviour change, and it is where 22,950 of the surplus hours come from.
+**Instruction: schedule afternoon and dinner to guide.**
 
-**This is not automatically a defect** — cutting early when the rush does not materialise
-is correct management. But it means the schedule is not the plan of record; the punch is.
-Any allocation fix that changes only the schedule will lose 12–19% of its intended effect
-on the way to the floor.
+### Action 2 — AM show-rate (floor execution · daily · GM/shift manager)
+Breakfast's schedule is essentially correct and **12.5% of it does not arrive** — on the
+highest-volume daypart in the business. Attendance, late clock-ins, or early cuts. Harder
+than Action 1 because it is people rather than planning.
+
+> **Do both or neither.** Cut PM alone and you bank hours without fixing speed. Fix AM
+> alone and you spend more. Together it is the cost-neutral trade, and the 1.6× surplus
+> means it closes with room to spare.
+
+### Action 3 — overnight: decide the question before touching the hours
+**Is overnight open to serve customers, or to produce?** At **8.7 cars per store per
+night** it is plainly not a sales daypart — that is ~2 people, ~9 cars, 6 hours.
+
+If that crew is closing, deep-cleaning, stocking and prepping breakfast, the work is
+legitimate — but it should be **planned production time with a task list and a stated
+finish time**, not open-ended coverage. The guide already prices overnight
+non-transactional work at 16,529 hours; **26,280 are being punched.**
+
+**The handle is `punched_vs_scheduled` = 1.115** — the ONLY daypart above 1.0. Every other
+daypart cuts early; overnight runs *past* schedule. Compare punch-out times to scheduled
+end times, set a close-completion standard, hold to it.
+
+⛔ **Do not cut overnight blind.** Strip hours without knowing what that crew produces and
+you get dirty restaurants and late breakfast openings — landing straight on the daypart
+that is already short.
+
+### Action 4 — run the concentration check FIRST (query 2)
+Five stores is five conversations; twenty-seven is a broken standard. Read
+`scheduled_vs_guide` on the PM rows to find who pads, and `punched_vs_scheduled` on the
+Breakfast rows to find who loses people at the punch. **Two different name lists.**
 
 ---
 
-## Where the store configuration lives
+## ⚠️ The overnight reframe — a walk-back, recorded deliberately
 
-**`store_vlh_config` (Supabase), edited in Data Manager → VLH Settings**
-(`src/views/analytics.js:1983-2075`). Per-store: `aot`, `dt_type`, `in_store`, `kitchen`,
-`vlh_guide` (standard | high productivity), `coffee`. The code comment states its purpose
-outright: *"used to select correct VLH guide page."*
+An earlier read called low night productivity a **capability problem** (least experienced
+managers, least oversight). On corrected boundaries that framing does not survive intact:
 
-Recorded here because a PM claim that this mapping did not exist was wrong — it exists,
-and it exists for exactly this purpose.
+**TPPH at Late Night is 1.05 against 6.43 at breakfast — a 6× gap that is too extreme to
+be a performance story.** Overnight labour does overnight *work*: close, deep clean, stock,
+receive, prep. **TPPH measures transactions per hour and overnight hours mostly do not
+produce transactions.** It is the wrong lens for that shift, and `punched_vs_scheduled` at
+1.115 fits — close-and-clean overruns, it does not get cut early.
+
+**What survives is the guide gap**, not the productivity gap: 26,280 punched vs 16,529
+needed = **9,751 excess hours, 59% over**, against a guide that already accounts for
+non-transactional overnight work.
+
+**The Elgin-vs-Tishomingo comparison was measured on the OLD bucket (8pm–4am), so it was
+largely an EVENING comparison, not an overnight one. Re-run before trusting it.**
+
+---
+
+## ⚠️ Caveats
+
+1. **The 19.4s speed payoff for staffing breakfast to guide was measured on the wrong
+   boundaries.** Hours arithmetic above is solid; the seconds figure is not. **Re-run
+   before telling any GM "this buys you X seconds."**
+2. **`total_needed_hours` is assumed to be the VLH guide.** Strong evidence — `sched vs
+   guide` runs 1.046–1.426, systematically ≠ 1.0, so it is demonstrably not a copy of
+   `total_scheduled_hours` — but not confirmed against the workbook tables.
+3. **Per-store rates mix stores.** A chronically-under-guide restaurant may also be a slow
+   restaurant. Query 2 gives the per-store split.
+4. **Guides are per-configuration** — 48 variants × 2 workbooks. Store mapping lives in
+   **`store_vlh_config`**, edited at **Data Manager → VLH Settings**
+   (`src/views/analytics.js:1983-2075`): `aot`, `dt_type`, `in_store`, `kitchen`,
+   `vlh_guide`, `coffee`.
+5. **Approximate divisors:** per-store-night figures use 27 × 90 = 2,430 store-days; the
+   24-slot completeness guard drops some, so treat those as close rather than exact.
+
+---
+
+## Still to run
+
+- **Query 3** — `actual_punched_dollars` converts the 12,216 excess hours to money at the
+  real blended wage rather than an assumed one.
+- **Re-run the under/over-guide speed effect** on corrected boundaries (caveat 1).
+- **Re-run the per-store TPPH/speed table** on corrected boundaries (overnight reframe).

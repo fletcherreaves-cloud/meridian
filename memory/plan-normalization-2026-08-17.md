@@ -568,6 +568,53 @@ TPPH currently reaches the app **only** via manual upload (`ctrl.tpph` / `lab.tp
 - Watch the denominator: `transactions` is all channels while `dt_trans_cnt` is drive-thru
   only. Pick one deliberately and label it.
 
+### ✅ PROBE G-3 RE-RUN on CORRECTED boundaries — 2026-08-18. Prediction held; one walk-back.
+
+| daypart | sec/car | TPPH | punched/guide | sched/guide | punched/sched | cars | punched hrs | needed hrs |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Breakfast | 154.3 | 6.43 | 0.915 | 1.046 | 0.875 | 620,325 | 134,684 | 147,174 |
+| Lunch | 202.9 | 5.90 | 0.922 | 1.075 | 0.858 | 369,709 | 94,871 | 102,866 |
+| Afternoon | 183.8 | 4.83 | 1.171 | 1.376 | 0.851 | 267,769 | 80,002 | 68,298 |
+| Dinner | 220.8 | 4.56 | 1.091 | 1.306 | 0.836 | 432,263 | 134,217 | 122,971 |
+| Late Night | **276.2** | **1.05** | **1.590** | 1.426 | **1.115** | **21,081** | 26,280 | 16,529 |
+
+**The prediction held.** Late Night sharpened on every axis: cars 204,292 → **21,081**
+(≈**90% of the old bucket was actually Dinner**), sec/car 246.5 → 276.2, punched-vs-guide
+1.207 → 1.590, and punched-vs-scheduled 0.935 → **1.115** — the only daypart above 1.0.
+
+### ⚠️ WALK-BACK — "night shift is a capability problem" does not survive the correction
+
+TPPH at Late Night is **1.05** against 6.43 at breakfast. A 6× gap is too extreme to be a
+performance story. Work it out: 21,081 cars over ~2,430 store-days ≈ **8.7 cars per store
+per night**; 26,280 hrs ≈ **10.8 hrs per store-night** ≈ 2 people over 6 hours.
+**Two people, nine cars, six hours.**
+
+That crew is not failing to serve customers — **it is doing overnight work that is not
+transactional** (close, deep clean, stock, receive, breakfast prep). **TPPH is the wrong
+lens for that shift.** `punched_vs_scheduled` = 1.115 fits: close-and-clean overruns, it
+does not get cut early like every other daypart.
+
+**What survives is the GUIDE gap, not the productivity gap:** 26,280 punched vs 16,529
+needed = **9,751 excess hours (59% over)**, against a guide that already prices
+non-transactional overnight work.
+
+⚠️ **The Elgin-vs-Tishomingo G-5 comparison used the OLD bucket (8pm–4am), so it was
+largely an EVENING comparison, not an overnight one. Re-run before trusting it.**
+
+### ⭐ The allocation finding is now PROVEN — full write-up in its own file
+
+Deficit **−20,485 hrs** (Breakfast −12,490, Lunch −7,995). Surplus **+32,701 hrs**
+(Afternoon +11,704, Dinner +11,246, Late +9,751). **Surplus covers deficit 1.6×**, net
+**+12,216 hrs over guide** district-wide (470,054 punched vs 457,838 needed).
+
+**AM and PM are different problems with different owners:** breakfast is scheduled to
+guide (1.046) and loses **12.5% at the punch** — an EXECUTION problem; afternoon/dinner are
+**padded 30–38% above guide when written** — a SCHEDULING problem.
+
+**Actions, caveats and all four queries:**
+[analysis-labor-allocation-2026-08-18.md](analysis-labor-allocation-2026-08-18.md) ·
+[analysis-labor-allocation-queries.sql](analysis-labor-allocation-queries.sql)
+
 ### Next, in order
 
 1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
