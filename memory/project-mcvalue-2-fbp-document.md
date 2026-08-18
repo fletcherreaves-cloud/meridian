@@ -282,6 +282,16 @@ Excluding it therefore makes the finding more conservative, which is worth sayin
 
 **Document edit required:** replace "opened early 2025" with "opened 16 December 2024", and
 state the two-to-six-weeks-old fact — it is stronger than the vaguer wording it replaces.
+✅ **Done 2026-08-18** in the live draft.
+
+### ✅ LY-twin question CLOSED — the exclusion reason is "opening ramp", not "no LY twin"
+
+Measured 2026-08-18: across the 2026 pre-window (Jan 1 → Apr 21, **111 days**), Tishomingo
+has an LY twin on **109** of them — **98% coverage**. It was genuinely trading through the
+baseline period, so it is NOT the Ponce de Leon case.
+
+**Confirmed wording: "opening ramp".** The two zero-LY days are immaterial and consistent
+with 2025 closure days (Oklahoma weather). This question is settled — do not re-raise.
 
 ## Two stores excluded, with reasons
 
