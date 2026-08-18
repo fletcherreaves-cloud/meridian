@@ -224,3 +224,103 @@ largely an EVENING comparison, not an overnight one. Re-run before trusting it.*
   real blended wage rather than an assumed one.
 - **Re-run the under/over-guide speed effect** on corrected boundaries (caveat 1).
 - **Re-run the per-store TPPH/speed table** on corrected boundaries (overnight reframe).
+
+---
+
+# Overnight labour — the owner's operational standards (2026-08-18)
+
+**These are OPERATIONAL standards, not the VLH guide, and they DISAGREE with it.** The
+guide is guest-count driven, so for a closed restaurant it returns near-zero and cannot
+say what a close-down *should* cost. These can.
+
+| standard | value | crew |
+|---|---|---|
+| **Close-down** | **3–4 combined labour hours** after close | manager + 3 crew (or + 2 at a low-volume store) |
+| **Pre-open** | crew clocks in **1 hour before open** | **1 manager + 2 crew = 3 labour hours** |
+
+Owner: *"anything more than that is typically viewed as overkill."*
+
+⚠️ **The pre-open hour crosses a daypart boundary depending on open time:**
+
+- store opens **5:00am** → crew in 4–5am → **3 labour hrs land in LATE NIGHT**
+- store opens **6:00am** → crew in 5–6am → **3 labour hrs land in BREAKFAST**
+- store opens **5:30am** (Lindsay) → half in each
+
+## Where the hours-of-operation data lives — it EXISTS, do not re-request it
+
+**`store_labor_config`** (Supabase), populated 2026-07-22 for all 27 stores, parsed from
+`MBI_Labor_Analysis.xlsx` (cols AI–BE). Loader `loadStoreLaborConfig()`
+(`src/lib/supabase.js:2632`); parser `src/parsers/index.js:2185-2200`.
+
+- `hours_json` — per weekday `{open, close, hours}` as **Excel day-fractions**
+- `is_24hr` (bool) · `is_24_note` (raw string — **preserves the "24 HR W/E" nuance**)
+
+⚠️ **`store_labor_config.loc` is UNPADDED (`'3708'`) while `qsr_daily_activity.loc` is
+zero-padded to 7 (`'0003708'`). A naive join silently returns zero rows.**
+
+### Decoded time fractions — do not re-derive
+
+| fraction | time | | fraction | time |
+|---|---|---|---|---|
+| 0.1666667 | 4:00am | | 0.875 | 9:00pm |
+| 0.2083333 | 5:00am | | 0.9166667 | 10:00pm |
+| 0.2291667 | 5:30am | | 0.9583333 | **11:00pm** |
+| 0.25 | 6:00am | | 0 | **midnight** |
+| | | | 0.0416667 | 1:00am |
+
+`close <= open` means the close wrapped past midnight — add 24.
+
+## Result: nine stores are closed for the ENTIRE 11pm–5am block
+
+Every punched hour is close-down or pre-open, so the standards apply directly.
+
+| store | opens | pre-open in LN | expected | actual/night | excess/night | 90d hrs |
+|---|---:|---:|---:|---:|---:|---:|
+| **Ardmore-Cooper/12th** | 5:00 | 3.0 | 6–7 | **13.9** | **+6.9** | **621** |
+| Sulphur | 6:00 | 0 | 3–4 | 7.4 | +3.4 | 306 |
+| Holdenville | 6:00 | 0 | 3–4 | 6.6 | +2.6 | 234 |
+| Elgin | 5:00 | 3.0 | 6–7 | 9.4 | +2.4 | 216 |
+| DeFuniak Springs | 5:00 | 3.0 | 6–7 | 7.9 | +0.9 | 81 |
+| Seminole | 5:00 | 3.0 | 6–7 | 7.5 | +0.5 | 45 |
+| Marietta | 5:00 | 3.0 | 6–7 | 4.7 | **UNDER** | 0 |
+| Tishomingo | 6:00 | 0 | 3–4 | 3.1 | **on target** | 0 |
+| Lindsay-Wal-Mart | 5:30 | 1.5 | 4.5–5.5 | 1.1 | **anomaly** | 0 |
+
+**Total ≈ 1,503 hrs / 90 days = $19,975 ≈ $81k/yr** at the measured $13.29 late-night wage.
+
+### ⚠️ CORRECTION — an earlier figure of ~$143k/yr was WRONG
+
+It treated *every* overnight hour at a closed store as close-down, ignoring pre-open crew
+entirely. Adding the 3-hour opening allowance cuts it to ~$81k and **changes three
+verdicts**: DeFuniak and Seminole drop from "2× standard" to essentially on target, and
+**Marietta flips from at-standard to UNDER**.
+
+- **Lindsay is an anomaly, owner-confirmed** — Walmart location, very small footprint,
+  genuinely quick to reset. **The wage-and-hour concern raised against it is WITHDRAWN.**
+- **Tishomingo at 3.1 proves the standard is achievable** — not theoretical, one of the
+  restaurants already hits it.
+- **Ardmore-Cooper survives every adjustment** and is the one unexplained store.
+- **Ponce de Leon validates the method**: config says 6.00 open hrs in Late Night (24-hour,
+  corporate requirement for year one), punched 13.4 ≈ 2.2 crew straight through. Config and
+  punch data agree independently.
+
+### ⚠️ Mixed-hours stores need a DAY-OF-WEEK cut before judging
+
+A weekly average erases variable hours. **Chickasha** reads 32.0 punched vs 2.43 average
+open hours — but that blends a genuinely 24-hour Saturday with a Monday closing at
+midnight, and `is_24_note = "24 HR W/E"` says so. Same caution for Bonifay, Atoka, Durant,
+OKC-I240, Tecumseh, Pauls Valley, Ardmore-Broadway, Harrah, Purcell, Chipley.
+**Only the nine fully-closed stores are safe to act on from this cut.**
+
+## ⭐ Knock-on: the Breakfast deficit is UNDERSTATED
+
+For **6am-opening** stores the pre-open hour sits at 5–6am inside **Breakfast**, with the
+store closed, zero guests, and therefore a near-zero guide — while 3 people are punched in.
+
+Full-week 6am openers: **Duncan, Sulphur, Holdenville, Tishomingo, Harrah**; Sunday-only:
+Purcell, OKC-I240, Pauls Valley, Tecumseh, Lindsay. That is roughly **1,550 hours over 90
+days of non-service labour sitting in the Breakfast bucket**, making those stores look
+better staffed for service than they are.
+
+**So the true Breakfast service deficit is worse than the measured 12,491 hrs — nearer
+14,000 — and the allocation case gets stronger, not weaker.**
