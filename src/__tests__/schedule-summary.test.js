@@ -3,6 +3,7 @@ import {
   computeScheduleSummary, computeScheduleRollup, weekStartOf, WEEK_START_DOW,
   FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX,
 } from '../engine/schedule-summary.js';
+import { wAvgLaborPct } from '../views/scheduling.js';
 
 // Real store week from the LifeLenz screenshot — DeFuniak Springs (0006838),
 // week of Wed Jul 22 → Tue Jul 28 2026. Per-day scheduled/forecast HOURS (decimal),
@@ -20,7 +21,13 @@ const rows = DAYS.map(d => ({
   loc: '0006838', date: new Date(d.dt + 'T12:00:00'),
   schVLH: d.sched, schFixHrs: 0, schFloor: 0,       // scheduled hours total on schVLH
   projVLH: d.fcst, fixGuideHrs: 0, projFloor: 0,    // forecast hours total on projVLH
-  fcstSales: d.sales, laborPct: d.laborPct, fcstTCs: d.gc,
+  // #361 -- `sales` (actual) set equal to `fcstSales` here since this fixture's own daily
+  // labor % values were reconciled against the screenshot's forecast-sales column, not a
+  // separately-known actual figure; with the two equal, rollup()'s weighting basis (actual
+  // vs forecast) can't change the result, so this fixture keeps validating the hours/GC/TPMH
+  // reconciliation unaffected by #361. See the dedicated describe block below for a case
+  // where sales and fcstSales actually diverge.
+  fcstSales: d.sales, sales: d.sales, laborPct: d.laborPct, fcstTCs: d.gc,
 }));
 
 describe('schedule-summary — reconciles to the LifeLenz screenshot band', () => {
@@ -50,10 +57,10 @@ describe('schedule-summary — labor% ignores partial-day / garbage / null days'
   // Wed+Thu completed (24% / 26%), Fri = today mid-day partial (409.74% on tiny sales),
   // Sat future (null). The weekly figure must weight only the two completed days.
   const rows = [
-    { loc: '0001', date: new Date('2026-07-22T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, laborPct: 24,     fcstTCs: 1000 },
-    { loc: '0001', date: new Date('2026-07-23T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, laborPct: 26,     fcstTCs: 1000 },
-    { loc: '0001', date: new Date('2026-07-24T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 500,   laborPct: 409.74, fcstTCs: 50   },
-    { loc: '0001', date: new Date('2026-07-25T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, laborPct: null,   fcstTCs: 1000 },
+    { loc: '0001', date: new Date('2026-07-22T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, sales: 10000, laborPct: 24,     fcstTCs: 1000 },
+    { loc: '0001', date: new Date('2026-07-23T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, sales: 10000, laborPct: 26,     fcstTCs: 1000 },
+    { loc: '0001', date: new Date('2026-07-24T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 500,   sales: 500,   laborPct: 409.74, fcstTCs: 50   },
+    { loc: '0001', date: new Date('2026-07-25T12:00:00'), schVLH: 100, projVLH: 100, fcstSales: 10000, sales: 10000, laborPct: null,   fcstTCs: 1000 },
   ];
   const s = computeScheduleSummary(rows).weeks[0].stores[0];
 
@@ -74,7 +81,7 @@ describe('schedule-summary — Fixed / Floor viewed separately vs the standard',
   //   Combined = 24% (≤ 25% cap)
   const rows = [
     { loc: '0001', date: new Date('2026-07-22T12:00:00'), schVLH: 76, schFixHrs: 12, schFloor: 12,
-      projVLH: 76, fixGuideHrs: 12, projFloor: 12, fcstSales: 10000, laborPct: 24, fcstTCs: 1000 },
+      projVLH: 76, fixGuideHrs: 12, projFloor: 12, fcstSales: 10000, sales: 10000, laborPct: 24, fcstTCs: 1000 },
   ];
   const s = computeScheduleSummary(rows).weeks[0].stores[0];
 
@@ -100,7 +107,7 @@ describe('schedule-summary — Fixed / Floor viewed separately vs the standard',
   it('breaches the 25% combined cap when Fixed+Floor run heavy', () => {
     const heavy = [
       { loc: '0002', date: new Date('2026-07-22T12:00:00'), schVLH: 60, schFixHrs: 22, schFloor: 18,
-        projVLH: 60, fixGuideHrs: 22, projFloor: 18, fcstSales: 10000, laborPct: 24, fcstTCs: 1000 },
+        projVLH: 60, fixGuideHrs: 22, projFloor: 18, fcstSales: 10000, sales: 10000, laborPct: 24, fcstTCs: 1000 },
     ];
     const h2 = computeScheduleSummary(heavy).weeks[0].stores[0];
     expect(h2.fixedLaborPct).toBeCloseTo(0.22, 6);  // > 15% band → amber in UI
@@ -113,7 +120,7 @@ describe('schedule-summary — Fixed / Floor viewed separately vs the standard',
     const two = [
       ...rows,
       { loc: '0003', date: new Date('2026-07-22T12:00:00'), schVLH: 180, schFixHrs: 8, schFloor: 12,
-        projVLH: 180, fixGuideHrs: 8, projFloor: 12, fcstSales: 20000, laborPct: 24, fcstTCs: 2000 },
+        projVLH: 180, fixGuideHrs: 8, projFloor: 12, fcstSales: 20000, sales: 20000, laborPct: 24, fcstTCs: 2000 },
     ];
     const dist = computeScheduleSummary(two).weeks[0].district;
     // Σ sched = 100 + 200 = 300; Σ fixed = 12 + 8 = 20; Σ floor = 12 + 12 = 24.
@@ -180,5 +187,51 @@ describe('computeScheduleRollup — scope+range band reconciles to the weekly ro
     expect(band.nStores).toBe(2);
     expect(band.schedHrs).toBeCloseTo(1460.5 * 2, 4);
     expect(band.laborPct).toBeCloseTo(24.50, 2); // identical stores → same weighted %
+  });
+});
+
+// ── #361 ─────────────────────────────────────────────────────────────────────
+// #348 rebuilt scheduling.js's wAvgLaborPct to weight by ACTUAL sales (r.sales) — the
+// correct leg, since laborPct = labor$/actualSales, so Σlabor$/Σsales = Σ(laborPct×sales)/
+// Σsales reconstructs exactly. This rollup() weighted by FORECAST sales (r.fcstSales)
+// instead, so the two panels disagreed on the same store/week whenever a day's actual sales
+// diverged from its forecast (found on a real store: 23.29% vs 23.35%, a 0.06pp gap). Every
+// other test in this file uses fcstSales===sales fixtures, where the weighting basis can't
+// matter — this block is the one that actually exercises the divergence.
+describe('#361 rollup() weights labor % by ACTUAL sales, matching wAvgLaborPct', () => {
+  // Two days. Day 1 forecast $20,000 but actually did only $5,000 (a slow day nobody
+  // predicted); day 2 forecast $5,000 but actually did $20,000 (an unplanned rush). Same
+  // two laborPct readings either way -- only the WEIGHTING BASIS differs between the two
+  // possible answers, so this isolates exactly what #361 changed.
+  const rows = [
+    { loc: '0001', date: new Date('2026-08-12T12:00:00'), schVLH: 100, projVLH: 100,
+      fcstSales: 20000, sales: 5000,  laborPct: 20, fcstTCs: 1000 },
+    { loc: '0001', date: new Date('2026-08-13T12:00:00'), schVLH: 100, projVLH: 100,
+      fcstSales: 5000,  sales: 20000, laborPct: 30, fcstTCs: 1000 },
+  ];
+  const forecastWeighted = (20 * 20000 + 30 * 5000) / 25000;   // = 22 -- the OLD (wrong) answer
+  const actualWeighted   = (20 * 5000 + 30 * 20000) / 25000;   // = 28 -- the NEW (correct) answer
+
+  it('weights by actual sales, not forecast sales', () => {
+    const s = computeScheduleSummary(rows).weeks[0].stores[0];
+    expect(s.laborPct).toBeCloseTo(actualWeighted, 5);
+    expect(s.laborPct).not.toBeCloseTo(forecastWeighted, 1);
+  });
+
+  it('matches wAvgLaborPct (scheduling.js) on the identical rows -- the two panels no longer disagree', () => {
+    const s = computeScheduleSummary(rows).weeks[0].stores[0];
+    expect(s.laborPct).toBeCloseTo(wAvgLaborPct(rows), 5);
+  });
+
+  it('district rollup also weights by actual sales', () => {
+    const two = [...rows, ...rows.map(r => ({ ...r, loc: '0002' }))];
+    const dist = computeScheduleSummary(two).weeks[0].district;
+    expect(dist.laborPct).toBeCloseTo(actualWeighted, 5); // identical stores → same weighted %
+  });
+
+  it('exposes actual sales (sales) alongside the forecast (fcstSales)', () => {
+    const s = computeScheduleSummary(rows).weeks[0].stores[0];
+    expect(s.fcstSales).toBeCloseTo(25000, 5); // unchanged -- still the forecast total
+    expect(s.sales).toBeCloseTo(25000, 5);     // same total here (5000+20000 = 20000+5000), NEW field
   });
 });
