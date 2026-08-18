@@ -494,6 +494,80 @@ restaurant maps to one page with its own labor step-tables.
 guide analysis needs it first. Guide tables are guest-count step functions
 (e.g. Drive Thru Breakfast: 1 crew for 0–9 guests, 2 for 10–43, 3 for 44–65…).
 
+### ✅ PROBE G-5 (Late TPPH by store) — owner-run 2026-08-18. **Capability, not floor.**
+
+The open question was whether low night TPPH is a **staffing floor** (mechanically lower
+at low volume — you cannot run below a minimum crew) or **capability**. The discriminator
+is whether stores at comparable volume differ. They do, enormously.
+
+**The killer pair — near-identical late volume, opposite everything else:**
+
+| | cars | TPPH | punched hrs | vs guide | sec/car |
+|---|---:|---:|---:|---:|---:|
+| **Tishomingo-Main & Refuge** (43380) | 4,603 | **3.93** | **1,392** | 0.939 | **141.7** |
+| **Elgin** (33222) | 4,752 | **2.49** | **2,737** | **1.693** | 205.8 |
+
+Same number of cars. Elgin uses **twice the hours**, is **58% less productive per hour**,
+runs **69% above guide**, and is **64 seconds slower per car**. Volume cannot explain any
+of it. **The floor hypothesis is dead; this is capability.**
+
+District TPPH spread: **2.49 → 4.46**, a **1.79×** range across 27 stores.
+
+**TPPH and speed are DIFFERENT axes — do not collapse them.**
+
+- Chipley-St Rd 77 (6178): TPPH **3.86** (above median) but **405.4s** — slowest store.
+- Tishomingo (43380): TPPH **3.93** and **141.7s** — fastest store.
+
+A store can be efficient with labour and still slow to the customer, and vice versa. Any
+panel must show both; ranking on either alone will mislead.
+
+**Speed outliers worth naming** (vs 141.7s best): Chipley 405.4 · DeFuniak Springs 382.9 ·
+Bonifay 337.8 · Freeport 329.2 · OKC-I240/Sooner 305.8. That is **2.1–2.9×** the best store.
+Note all five are FL except OKC — worth checking whether configuration or market explains it
+before assuming execution.
+
+**Illustrative, NOT a promise:** Elgin does ~6,815 late transactions in 2,737 hrs. At
+Tishomingo's 3.93 TPPH that is ~1,734 hrs — a ~1,000-hour difference over 90 days at one
+store, one daypart. Treat as an order-of-magnitude sketch only; see caveats.
+
+⚠️ **Ran on the OLD Late boundary** (8pm–4am, including 3 hours of real Dinner). Relative
+store-to-store comparison is unaffected — every store used the same bucket — but the
+absolute figures and the "late night" label are wrong. **Re-run on corrected boundaries.**
+
+⚠️ TPPH here is total `transactions / actual_punched_hours` — it mixes drive-thru and
+in-store, while `sec_per_car` is drive-thru only. Not wrong, but they are not the same
+denominator.
+
+### ✅ CORRECTION — store configuration DOES exist. PM was wrong.
+
+Claimed twice that nothing holds each store's VLH configuration. It does:
+**`store_vlh_config` (Supabase), edited in Data Manager → VLH Settings**
+(`src/views/analytics.js:1983-2075`). Per store: `aot`, `dt_type`, `in_store`, `kitchen`,
+`vlh_guide` (standard | high-productivity), `coffee`. The code comment states the purpose
+outright — *"used to select correct VLH guide page"* — i.e. it exists for precisely the
+job it was declared missing for.
+
+**Third time in one session** an affordance was declared absent when it was present
+(after `businessDate()` and the `dt_untilserve` unit). CLAUDE.md's *"check whether an
+affordance already exists before adding one"* applies to **claims about the codebase**, not
+just to new code. One grep would have prevented each.
+
+### 📋 ENGINEER TASK — TPPH from DAR (owner-approved 2026-08-18)
+
+TPPH currently reaches the app **only** via manual upload (`ctrl.tpph` / `lab.tpph`,
+`graded-visits.js:362`). Derive it instead from `qsr_daily_activity`:
+
+    TPPH = sum(transactions) / sum(actual_punched_hours)     -- ratio of sums, per hour_slot
+
+- **Finer than the manual version** — hour_slot grain rather than daily.
+- **Auto-first**, removing a manual dependency; keeps `MANUAL_ONLY_METRICS` empty per the
+  standing rule, and prefers deriving from already-pulled atoms over a new upload.
+- Add to `METRIC_SOURCES` (`src/engine/metric-source.js`) so every panel picks it up in one
+  line; keep the manual upload as last-resort fill, never as primary.
+- Use the **corrected** daypart boundaries for any daypart cut.
+- Watch the denominator: `transactions` is all channels while `dt_trans_cnt` is drive-thru
+  only. Pick one deliberately and label it.
+
 ### Next, in order
 
 1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
