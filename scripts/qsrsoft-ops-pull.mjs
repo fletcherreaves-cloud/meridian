@@ -216,7 +216,17 @@ async function getDates() {
   const today = new Date();
   if (START_DATE) { const e = END_DATE || fmtDate(today); const out = []; for (let d = new Date(START_DATE); fmtDate(d) <= e; d = addDay(d, 1)) out.push(fmtDate(d)); return out; }
   let latest = null;
-  try { const { data } = await supabase.from('qsr_cash_sheet').select('dt').order('dt', { ascending: false }).limit(1).single(); latest = data?.dt || null; } catch {}
+  {
+    // #399: was `try { ... } catch {}` -- a bare catch dropped the Supabase `error`
+    // entirely (network, RLS, timeout, Cloudflare 522...), leaving `latest` at its
+    // null default and falling through to the DAYS_BACK branch below, exactly like
+    // dar-pull's identical bug. Only PGRST116 ("Results contain 0 rows") means a
+    // genuinely empty table; anything else must abort, not silently pick the biggest
+    // pull window.
+    const { data, error } = await supabase.from('qsr_cash_sheet').select('dt').order('dt', { ascending: false }).limit(1).single();
+    if (error && error.code !== 'PGRST116') throw new Error(`[ops-pull] getDates() latest-date read failed -- ${error.code}: ${error.message}`);
+    latest = data?.dt || null;
+  }
   const daysSince = latest ? Math.floor((today - new Date(latest + 'T12:00:00Z')) / 86400000) : DAYS_BACK;
   const back = Math.min(Math.max(DAYS_RECENT, daysSince + DAYS_RECENT), DAYS_BACK);
   const out = []; for (let i = back; i >= 0; i--) out.push(fmtDate(addDay(today, -i)));

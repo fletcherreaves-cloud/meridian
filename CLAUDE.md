@@ -126,6 +126,22 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
   dark-theme nicety for two months when they were in fact default-path bugs (#295, #296, #306), and
   it is guarded by `src/__tests__/light-mode-white-alpha.test.js`'s ratcheting ceiling.
 - **Density:** power-user tool — dense, data-first layouts (not consumer-friendly)
+- **Voice by role — say the number AND the decision (standing rule, owner-stated 2026-08-17).**
+  *"The information needs to be able to be presented to an average user at a level to which they
+  will actually understand and act upon it"* — and, explicitly, **without giving up the analytical
+  depth**. These are not a trade-off to be split; both ends get preserved. An analyst needs a
+  number; an operator needs a decision. The owner is the outlier user (33 years, every position in
+  a restaurant short of owning one) and has the curse-of-knowledge problem that comes with it: a
+  panel that reads as obvious to him is not evidence a GM can act on it.
+  - **The default surface of any panel states what to do, in one line, in restaurant words.** The
+    supporting metric, its window, and its comparison basis stay visible next to it — never
+    replaced by the plain-language line, never hidden behind a click that an operator won't make.
+  - **The depth stays reachable and stays exact.** Drill-downs, model diagnostics, DiD tables,
+    backtest matrices, engineered models: preserved, not simplified. Same standing protection the
+    engineered forecast models already carry.
+  - **A number nobody acts on is not a shipped feature.** Before adding a metric, name the decision
+    it changes and who makes it. If neither has an answer, it belongs in a drill-down, not on a tile.
+  - Full rationale + the workstream that lands it: `memory/plan-normalization-2026-08-17.md` (F).
 - **Location selectors:** pill-style, All → State → Org/Patch → Store hierarchy on all filters
 - **Print/PDF:** export formatting should match existing workbook aesthetic
 - No emoji in UI unless already used for nav icons

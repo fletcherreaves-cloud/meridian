@@ -651,7 +651,12 @@ async function getLatestDate() {
     .order('date', { ascending: false })
     .limit(1)
     .single();
-  if (error || !data) return null;
+  // #399: `error || !data` collapsed a genuinely-empty table (PGRST116) and a FAILED
+  // read (network/RLS/timeout/522) into the same "no existing data" null -- and null
+  // here selects the largest backfill window below. Only PGRST116 means empty; any
+  // other error must abort, not escalate to the biggest pull.
+  if (error && error.code !== 'PGRST116') throw new Error(`[lifelenz-pull] getLatestDate() read failed -- ${error.code}: ${error.message}`);
+  if (!data) return null;
   return new Date(data.date + 'T00:00:00');
 }
 

@@ -72,12 +72,22 @@ const supabase = createClient(
 
 // ── Gap detection ─────────────────────────────────────────────────────────────
 async function getLatestDate() {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('qsr_daily_activity')
     .select('dt')
     .order('dt', { ascending: false })
     .limit(1)
     .single();
+  if (error) {
+    // PGRST116 = "Results contain 0 rows" -- .single() rejects a genuinely empty
+    // table the same way it rejects a failed query, so this is the ONLY error code
+    // that means "no existing data" rather than "the read didn't happen". Anything
+    // else (network, RLS, timeout, Cloudflare 522...) must abort, not fall through
+    // to the DAYS_BACK branch below -- a failed read has no business picking the
+    // 91-day/61k-row branch over the 5-day one (#399).
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`[dar-pull] getLatestDate() read failed -- ${error.code}: ${error.message}`);
+  }
   return data?.dt ? new Date(data.dt + 'T12:00:00Z') : null;
 }
 

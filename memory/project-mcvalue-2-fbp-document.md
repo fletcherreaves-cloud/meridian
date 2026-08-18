@@ -20,6 +20,95 @@ this section is preserved as the evidence trail, but where it conflicts with thi
 section wins. A reader who starts at the top of the file and stops early will otherwise publish a
 claim this project already withdrew.
 
+## ⛔ Measured figures — 2026-08-16 re-run. These supersede every DiD number elsewhere in this file.
+
+**Scope correction, owner-stated 2026-08-16:** *"I am good with FL being used for context, this will be
+an FBP over the OK stores only though."* **Oklahoma is the subject; Florida is an external control**
+(separate DO, ~900 mi, different competitive set) whose only job is to show the cause is not local
+execution. Do not lead with FL or with pooled district figures — the district mixes a market that is
+not under review.
+
+Source `qsr_daily_activity_rollup`, matched-day `ly_` legs, PRE = 2026-01-01→04-21,
+POST = 2026-04-22→08-11, excluding 43380 (opening ramp) and 43701 (no LY twin).
+**Every figure is a ratio of summed counts** — Σtransactions ÷ Σly_transactions — never an average of
+per-store or per-block rates.
+
+| | Oklahoma (19) | Florida (6) — control |
+|---|---|---|
+| Traffic vs LY, pre-launch | **+1.13 %** | **+5.16 %** |
+| Traffic vs LY, post-launch | **−2.83 %** | **−2.68 %** |
+| **Traffic DiD** | **−3.96 pp** | **−7.83 pp** |
+| **Sales DiD** | **−3.61 pp** | −8.01 pp |
+| Check vs LY, pre-launch | **+22.3 ¢** | +36.6 ¢ |
+| Check vs LY, post-launch | **+27.4 ¢** | +40.1 ¢ |
+| **Check DiD** | **+5.1 ¢** | +3.5 ¢ |
+
+### The check claim is WITHDRAWN — this is the biggest change
+
+The document was going to carry **+10.4 ¢ as a McValue 2.0 effect.** It cannot. Three independent tests:
+
+1. **The gain predates the launch.** OK check was already **+22.3 ¢** over LY before 2.0 existed. The
+   incremental figure is **+5.1 ¢**, not +10.4 ¢.
+2. **It NARROWS in the only block where price is impossible.** B1 (04-22→05-05) closes before the
+   05-14 Round 1 deadline, effective dates later still. OK B1 = **+15.5 ¢, ~7 ¢ BELOW its own
+   pre-trend.** FL independently: +36.6 ¢ pre → **+25.3 ¢** in B1.
+3. **The step-up arrives with the price round, not the offer.** OK sits at pre-trend through B1–B3
+   (15.5 / 21.7 / 22.7 ¢) then jumps at **B4, opening 06-03** — Price Round 2 recommendations ran
+   06-01→06-26 — and stays elevated (35.4 / 34.3 / 34.7 / 28.2 / 28.0 ¢).
+
+**Say it as:** check was already ahead of LY before launch, incremental movement is small, and the
+visible step-up aligns with the June price round. Withdrawing a number you proposed yourself is the
+most credible thing in the document — and far better done by us than by the FBP.
+
+### Per-block Oklahoma series (exact, for the methodology section)
+
+| Block | Dates | Traffic vs LY | Check vs LY |
+|---|---|---|---|
+| PRE | 01-01→04-21 | +1.13 % | +22.3 ¢ |
+| B1 | 04-22→05-05 | +0.14 % | +15.5 ¢ |
+| B2 | 05-06→05-19 | −2.68 % | +21.7 ¢ |
+| B3 | 05-20→06-02 | −3.42 % | +22.7 ¢ |
+| B4 | 06-03→06-16 | −0.74 % | +35.4 ¢ |
+| B5 | 06-17→06-30 | −3.03 % | +34.3 ¢ |
+| B6 | 07-01→07-14 | −3.10 % | +34.7 ¢ |
+| B7 | 07-15→07-28 | −4.92 % | +28.2 ¢ |
+| B8 | 07-29→08-11 | −4.90 % | +28.0 ¢ |
+
+### Why the earlier traffic figures are retired rather than reconciled
+
+**Sales reproduces (−3.61 vs −3.69 pp on file). Traffic does not** (−3.96 vs −4.55; FL −7.83 vs −5.49).
+Two contradictions, both independent of weighting:
+
+- **Weighting is NOT the cause — hypothesis tested and REFUTED.** Unweighted mean of per-store DiDs
+  gives OK **−3.81**, FL **−7.97**; volume-weighted gives **−3.98 / −7.85**. The two methods agree
+  within 0.2 pp and *neither* is near the published numbers. Do not re-raise averaging as the
+  explanation.
+- **No positive Florida store exists** (best −1.88 pp), contradicting the "Mossy Head +0.63 pp"
+  outlier on file. The single positive restaurant is in Oklahoma at **+6.34 pp**.
+
+So the pre-08-16 traffic set was computed over different data — different source, window, or exclusion
+set. **Decision: retire it, do not reverse-engineer it.** Reconstructing a figure from a session
+nobody has could consume the remaining days and produce nothing usable, and the goal is a number that
+reproduces when the FBP asks — not an explanation of an old one. Ours derives from a stated source,
+window, exclusion and weighting, computed two ways that agree.
+
+**Coverage guard: ✅ PASSED 2026-08-16.** Per-store day counts are `min = max` on both phases —
+**111 PRE / 112 POST across all 25 stores**, no store short a single day. So the ratio is not
+distorted by missing days on one side, which is the failure mode CLAUDE.md warns about for any
+DAR-denominated derivation. Note the guard had to be run **per store**: a district-level
+`count(distinct dt)` returns 112 whether or not an individual store is missing twenty days — that
+weaker query was written and caught on the same day. If this is ever re-checked, check `min`/`max`
+of a per-`loc` count, not a global one.
+
+**Still to re-run correctly:** the three-operator spread (0.38 pp on file) and the Tishomingo
+exclusion effect (−4.37→−4.55 pp on file). Both come from the retired traffic set, so both are
+presumed wrong until re-measured. The operator spread was doing real rhetorical work in an early
+draft; it may widen.
+
+**Live draft:** https://claude.ai/code/artifact/2dafe570-6ee1-424b-ac8d-dd39c90e1e24
+
+---
+
 ## What is verified and stands
 
 - **Launch date 2026-04-21**, from the April 2026 calendar issue. Independently confirmed to be a
@@ -138,8 +227,11 @@ showing the same signature in the same fortnight:
 
 | market | n | traffic DiD |
 |---|---|---|
-| Oklahoma | 19 | **−4.55 pp** |
-| Florida | 6 | **−5.49 pp** |
+| Oklahoma | 19 | ~~−4.55 pp~~ → **−3.96 pp** |
+| Florida | 6 | ~~−5.49 pp~~ → **−7.83 pp** |
+
+> ⛔ **SUPERSEDED 2026-08-16 — the figures above the arrows DO NOT REPRODUCE. Do not quote them.**
+> See "Measured figures — 2026-08-16 re-run" immediately below.
 
 The three-operator consistency inside Oklahoma becomes a **secondary corroboration**, not the
 load-bearing claim.
@@ -174,6 +266,13 @@ of only two stores with positive traffic DiD, and the effect is spurious.
 −4.37 → **−4.55 pp**. It also explains why Ryan Thorley looked better than the other operators
 (−3.10 vs −3.48/−3.62) — Tishomingo is his. Excluded, he is at −3.86 and the three-operator
 spread tightens from 0.52 pp to **0.38 pp**.
+
+⛔ **SUPERSEDED 2026-08-16.** The 2026-08-16 re-run measures **no positive Florida store** — FL's best
+is **−1.88 pp** — so Mossy Head is not an outlier and the "+0.63 pp" below does not reproduce. The one
+positive restaurant in the whole set is in **Oklahoma at +6.34 pp**, which nothing in this file
+identifies. This is the second independent contradiction of the pre-08-16 traffic figures and it is
+what makes the whole earlier traffic set untrustworthy, not just its headline. Original text kept
+below as the evidence trail:
 
 Checked and **kept**: 37566 Mossy Head (+0.63 pp traffic DiD) — established Florida store, no
 opening artifact, a genuine outlier.

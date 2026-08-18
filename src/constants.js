@@ -518,15 +518,15 @@ const QSR_DAR_FIELDS = {
   ly_avg_check:         {label:'LY Avg Check',      desc:'Last year average check for this slot',                                unit:'$'},
 
   // ── Drive-Thru Speed ───────────────────────────────────────────────────
-  dt_untilserve:        {label:'DT Until Serve',    desc:'Cumulative microseconds from car arrival at speaker to food delivery window (OEPE). Divide by 1,000,000 for seconds. Divide by dt_trans_cnt for per-car avg.',  unit:'µs'},
+  dt_untilserve:        {label:'DT Until Serve',    desc:'Cumulative MILLISECONDS from car arrival at speaker to food delivery window (OEPE). Per-car seconds = sum(dt_untilserve)/sum(dt_trans_cnt)/1000 — a ratio of sums, never an average of averages.',  unit:'ms'},
   dt_trans_cnt:         {label:'DT Trans Count',    desc:'Number of drive-thru transactions in this slot. Use as denominator for all DT timing averages.',  unit:'#'},
-  dt_pullforward:       {label:'DT Pull-Forward',   desc:'Cumulative µs cars were held in pull-forward queue during this slot',   unit:'µs'},
-  dt_greet:             {label:'DT Greet',          desc:'Cumulative µs from car arrival to greeting (speaker activation)',       unit:'µs'},
-  dt_menu:              {label:'DT Menu',           desc:'Cumulative µs from greeting to order completion at speaker',           unit:'µs'},
-  dt_payment:           {label:'DT Payment',        desc:'Cumulative µs from order completion to payment at window',             unit:'µs'},
-  dt_cashier:           {label:'DT Cashier / Pick-Up', desc:'Cumulative µs at the pick-up / cashier window before food delivery', unit:'µs'},
-  dt_avgspeed:          {label:'DT Avg Speed',      desc:'QSRSoft computed average DT speed (may duplicate dt_untilserve/dt_trans_cnt calculation)',  unit:'µs'},
-  ly_dt_untilserve:     {label:'LY DT Until Serve', desc:'Last year DT Until Serve for this slot',                               unit:'µs'},
+  dt_pullforward:       {label:'DT Pull-Forward',   desc:'Cumulative ms cars were held in pull-forward queue during this slot',   unit:'ms'},
+  dt_greet:             {label:'DT Greet',          desc:'Cumulative ms from car arrival to greeting (speaker activation)',       unit:'ms'},
+  dt_menu:              {label:'DT Menu',           desc:'Cumulative ms from greeting to order completion at speaker',           unit:'ms'},
+  dt_payment:           {label:'DT Payment',        desc:'Cumulative ms from order completion to payment at window',             unit:'ms'},
+  dt_cashier:           {label:'DT Cashier / Pick-Up', desc:'Cumulative ms at the pick-up / cashier window before food delivery', unit:'ms'},
+  dt_avgspeed:          {label:'DT Avg Speed',      desc:'QSRSoft computed average DT speed (may duplicate dt_untilserve/dt_trans_cnt calculation)',  unit:'ms'},
+  ly_dt_untilserve:     {label:'LY DT Until Serve', desc:'Last year DT Until Serve for this slot',                               unit:'ms'},
   ly_dt_trans_cnt:      {label:'LY DT Trans Count', desc:'Last year drive-thru transaction count for this slot',                  unit:'#'},
 
   // ── Labor ──────────────────────────────────────────────────────────────
