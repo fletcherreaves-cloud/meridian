@@ -362,6 +362,67 @@ match, staffing is not the lever and speed is about flow and process.
 Matched pair confirmed in the pull script: `prod_sales_scrubbed` (actual) ↔
 `proj_prod_sales_scrubbed` (projected).
 
+### ✅ PROBE G-4 RESULT — owner-run 2026-08-18. Night-shift hypothesis SUPPORTED.
+
+Daypart x volume x staffing, median sec/car. **sales MET/BEAT rows only** (shifts
+that earned their volume):
+
+| daypart | under guide | at guide | over guide | staffing buys |
+|---|---|---|---|---|
+| Breakfast | 162.8 | 153.6 | 143.4 | **19.4s** |
+| Lunch | 204.7 | 198.2 | 194.6 | 10.1s |
+| Afternoon | 204.7 | 205.1 | 188.0 | 16.7s |
+| Dinner | 224.4 | 230.6 ⚠️n=68 | 202.9 | 21.5s |
+| **Late** | 243.5 | 246.3 | 238.9 | **4.6s** |
+
+**1. The ecological illusion reversed, as predicted.** ACROSS dayparts (G-3) more
+staff looked slower. WITHIN a daypart, volume held constant, more staff is faster
+in all five. The G-3 caution was load-bearing — building on that aggregate would
+have inverted the conclusion.
+
+**2. ⭐ Late is the daypart where staffing barely matters.** Over-guide buys
+10–21s everywhere else and **4.6s** at night — a quarter of the effect. And
+**1,064 of 1,488** busy Late store-days are ALREADY over guide. Bodies are being
+thrown at it and are not working: a **capability constraint, not a headcount
+one.** This is the owner's hypothesis (least experienced managers, least
+oversight, universal industry issue) and it is what the data shows.
+
+**3. Corroborating:** Late degrades far more steeply under volume than anything
+else. Busy-vs-soft costs Breakfast 18.9s; it costs Late **42.3s**. When cars
+arrive at night the operation comes apart faster than at any other hour.
+
+### ⭐ Unlooked-for finding: hours are in the wrong dayparts
+
+| | busy days UNDER guide | soft days OVER guide |
+|---|---|---|
+| Breakfast | **826** | — |
+| Afternoon | — | **1,324** |
+| Dinner | — | **1,245** |
+
+**Breakfast runs lean exactly when busy; Afternoon/Dinner run fat exactly when
+soft.** Breakfast is the highest-volume daypart (620,752 cars, 3x Late) and 826
+busy store-days sit under guide at ~19s/car, while 2,569 soft afternoon/dinner
+store-days carry hours above guide. **An allocation problem, not a coaching one —
+and it is the same hours either way.**
+
+### ⚠️ Two caveats before anyone acts on these numbers
+
+1. **The buckets contain different stores.** A chronically-under-guide restaurant
+   may simply be a slow restaurant, so part of the 19.4s is store identity rather
+   than staffing. **G-5 must compare each store against ITSELF** on its own under-
+   vs over-guide days. Do not put the 19.4s in front of a GM before that runs.
+2. **Thin cells:** Dinner at-guide n=68, Afternoon at-guide n=92. Dinner's
+   at-guide reading slower than its under-guide (230.6 vs 224.4) is small-sample
+   noise, not a real inversion. Do not interpret it.
+
+### 📌 Side opportunity: TPPH should be auto-sourced
+
+TPPH currently reaches the app only via manual upload (`ctrl.tpph`/`lab.tpph`,
+`graded-visits.js:362`). It is derivable from DAR as
+`transactions / actual_punched_hours` at **hour_slot** grain — finer than the
+manual version. Squarely the standing rule: derive from already-pulled atoms
+rather than add a manual upload, and keep `MANUAL_ONLY_METRICS` empty.
+
 ### Next, in order
 
 1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
