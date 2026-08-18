@@ -601,11 +601,110 @@ non-transactional overnight work.
 ⚠️ **The Elgin-vs-Tishomingo G-5 comparison used the OLD bucket (8pm–4am), so it was
 largely an EVENING comparison, not an overnight one. Re-run before trusting it.**
 
+### ✅ PROBE G-5 RE-RUN on CORRECTED boundaries — 2026-08-18 (dispatch20 §4). **The "killer pair" is void, not just rescaled.**
+
+Pulled directly from Supabase via the anon-key REST API (not blocked by RLS for
+`qsr_daily_activity`, confirmed by this session's Ponce de Leon verification) — the same
+6 Late-Night `hour_slot`s (`05:00`, `24:00`–`28:00`) the corrected `daypartOf()` in
+`src/engine/labor-standard.js` produces, 90 days (`dt >= 2026-05-20`), 24-slot-equivalent
+completeness guard (only `(loc,dt)` with all 6 Late-Night slots kept — 2,457/2,457 kept,
+zero dropped). District totals reconcile with the already-recorded G-3 corrected rerun:
+cars 21,203 vs 21,081, punched hrs 26,532 vs 26,280, needed hrs 16,696 vs 16,529, TPPH 1.052
+vs 1.05, sec/car 275.8 vs 276.2 — small gap is just a slightly different 90-day window,
+methodology confirmed consistent.
+
+**First finding: classify open-vs-closed before reading ANY ratio (Query 5's own rule) — and
+the two classification methods almost, but do not exactly, agree; checked, not assumed.**
+Applying `pct_slots_with_cars` (threshold 5%, data-driven — did a car actually show up in a
+Late-Night slot, last 90 days) to all 27 stores finds 9 closed-overnight stores. That count
+matches trap #4's "only 9 fully-closed stores" — but checking identity, not just count
+(CLAUDE.md: "diff the two computations before debugging either"), the two 9-store sets are
+**8/9 the same, not identical**: `store_labor_config`'s schedule-based table above (lines
+277–287, built from configured open/close times) lists **Ardmore-Cooper/12th** as fully
+closed; the data-driven classifier instead finds **Freeport** closed and Ardmore-Cooper/12th
+genuinely open (20.9% of Late-Night slots have a car, 814 cars / 91 nights — not a trickle).
+Two real possibilities, not yet distinguished: the labor config is stale for Ardmore-Cooper
+(scheduled hours no longer match actual operation), or Freeport's DT genuinely runs later
+than its configured close time suggests. Either way, **schedule config and actual DT activity
+are two different signals that can disagree per-store**, and a real panel should show both
+rather than silently picking one. Left as a named follow-up, not resolved here.
+
+**The "killer pair" doesn't survive reclassification.** Under the OLD boundary, Tishomingo
+(43380) and Elgin (33222) looked like a matched pair at real overnight volume with opposite
+capability. Under the CORRECTED boundary, both are **closed overnight** —
+Tishomingo at 0.5% of Late-Night slots with any car (3 cars / 91 nights), Elgin at 2.9%
+(47 cars / 91 nights). Query 5's own warning fires exactly as designed: on a closed store
+the guide-ratio "explodes" (or, per Tishomingo's case, reads deceptively clean) and only
+`gapHrs` (punched − needed) is meaningful. Read that way:
+
+| store | loc | pct LN slots w/ cars | cars/91 nights | punched hrs | needed hrs | gapHrs |
+|---|---|---:|---:|---:|---:|---:|
+| Sulphur | 32525 | 0.0% | 0 | 672.1 | 168.0 | **+504.1** |
+| Freeport | 38609 | 2.9% | 26 | 767.5 | 303.2 | **+464.2** |
+| Holdenville | 35064 | 0.4% | 3 | 601.0 | 188.0 | **+413.0** |
+| Elgin | 33222 | 2.9% | 47 | 853.4 | 581.5 | **+271.9** |
+| Defuniak Springs | 6838 | 1.8% | 26 | 713.7 | 548.0 | +165.7 |
+| Lindsay-Wal-Mart | 18213 | 0.2% | 1 | 98.1 | 80.5 | +17.6 |
+| Tishomingo-Main & Refuge | 43380 | 0.5% | 3 | 287.3 | 286.0 | +1.3 |
+| Seminole-Milt Phillips | 10915 | 0.4% | 3 | 686.0 | 685.0 | +1.0 |
+| Marietta | 33109 | 0.0% | 0 | 427.9 | 479.0 | −51.1 |
+
+Tishomingo isn't "3.93 TPPH, best in district" — it's a closed store running almost exactly
+to the guide's non-transactional overnight allowance (gap +1.3 hrs). Elgin isn't "58% less
+productive" — it's a closed store running **272 excess hours** over 90 days, the same shape
+of finding as Sulphur/Freeport/Holdenville above it. **The old TPPH-based "capability"
+framing was comparing two closed stores on a ratio that Query 5 itself warns is meaningless
+for a closed store; it never should have been read as a productivity comparison.** This is
+exactly the class of question `overnightExcessByStore()` in the new labor-standard engine
+(#409) is built to answer properly — against the owner's 3-4hr close-down / 3hr pre-open
+standard, not the VLH guide ratio, which is what it was flagged as unable to grade in the
+first place.
+
+**Second finding: among the 18 genuinely-open-overnight stores, TPPH and speed re-rank
+cleanly** (ratio-of-sums, corrected boundary, sorted by TPPH):
+
+| store | loc | pct LN slots w/ cars | cars | TPPH | sec/car | vs guide |
+|---|---|---:|---:|---:|---:|---:|
+| Ponce de Leon-Hwy 81/I-10 | 43701 | 74.2% | 1,228 | 2.74 | 268 | 1.074 (24hr, see §3b) |
+| Durant-US Hwy 70/22 | 5985 | 22.0% | 2,367 | 1.96 | 242 | 2.365 |
+| Ada-Country Club | 6972 | 21.8% | 2,542 | 1.86 | 257 | 2.878 |
+| Duncan-Hwy 81 | 29760 | 16.8% | 2,048 | 1.75 | 183 | 1.100 |
+| Chickasha-So 4th | 5183 | 41.8% | 4,075 | 1.60 | 301 | 1.398 |
+| Cottondale | 35242 | 16.3% | 641 | 1.48 | 275 | 0.873 |
+| Mossy Head | 37566 | 15.4% | 668 | 1.35 | 334 | 1.216 |
+| OKC-I240/Sooner | 20475 | 22.3% | 1,412 | 1.16 | 367 | 1.865 |
+| Purcell | 11657 | 19.6% | 1,282 | 1.08 | 343 | 6.165 (needed-hrs looks thin — flag, don't trust in isolation) |
+| Madill-Hwy 70 | 13113 | 16.3% | 1,138 | 1.03 | 260 | 2.858 |
+| Ardmore-Cooper/12th | 24471 | 20.9% | 814 | 0.93 | 308 | 2.289 |
+| Atoka-Mississippi | 10422 | 16.7% | 1,043 | 0.92 | 269 | 1.441 |
+| Harrah | 34222 | 5.1% | 286 | 0.84 | 193 | 1.011 |
+| Ardmore-Broadway | 3708 | 5.5% | 295 | 0.58 | 269 | 2.760 |
+| Tecumseh | 33704 | 5.5% | 437 | 0.50 | 219 | 1.595 |
+| Pauls Valley-Ballard Rd | 31357 | 5.1% | 389 | 0.46 | 216 | 1.533 |
+| Bonifay | 10034 | 5.7% | 206 | 0.33 | 293 | 2.245 |
+| Chipley-St Rd 77 | 6178 | 5.5% | 223 | 0.33 | **461** | 1.003 |
+
+Chipley remains the slowest overnight-open store (461s/car, previously 405.4s under the old
+mixed Dinner+Late bucket) — that finding survives the correction, it just gets a cleaner
+number. Ponce de Leon leads TPPH, expected since it's the district's only true 24-hour store
+(see §3b's `overnightExcessByStore` — correctly routes it to `{na:true}` rather than
+grading it against a close-down standard that doesn't apply to a store that never closes).
+
+**Takeaway for any future panel:** classify open/closed FIRST (Query 5's rule, now also
+`overnightOpenness()` in code), then apply TPPH/speed ranking only within the open group and
+`gapHrs`-vs-standard only within the closed group. Mixing the two groups on one ratio is
+what produced the invalid "killer pair" story in the first place.
+
 ### ⭐ The allocation finding is now PROVEN — full write-up in its own file
 
 Deficit **−20,485 hrs** (Breakfast −12,490, Lunch −7,995). Surplus **+32,701 hrs**
 (Afternoon +11,704, Dinner +11,246, Late +9,751). **Surplus covers deficit 1.6×**, net
 **+12,216 hrs over guide** district-wide (470,054 punched vs 457,838 needed).
+
+⚠️ Breakfast's −12,490 is the raw ratio-of-sums figure. Dispatch20 §4 re-measured the
+pre-open-hours-mislabelled-as-Breakfast effect at **1,716 hrs** (not the ~1,550 estimate) —
+**true Breakfast service deficit ≈ −14,207**. See `analysis-labor-allocation-2026-08-18.md`'s
+"RE-MEASURED" section. Quote 14,207, not 12,490, going forward.
 
 **AM and PM are different problems with different owners:** breakfast is scheduled to
 guide (1.046) and loses **12.5% at the punch** — an EXECUTION problem; afternoon/dinner are

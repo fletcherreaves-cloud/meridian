@@ -37,7 +37,7 @@ speed. **Nobody hypothesised it** — it fell out of a cut built for a different
 
 | daypart | punched − needed |
 |---|---:|
-| Breakfast | **−12,490** |
+| Breakfast | **−12,490** (raw Σpunched−Σneeded; see "RE-MEASURED" below — true service deficit ≈−14,207 once mislabelled pre-open hours are pulled back out) |
 | Lunch | **−7,995** |
 | Afternoon | +11,704 |
 | Dinner | +11,246 |
@@ -324,3 +324,33 @@ better staffed for service than they are.
 
 **So the true Breakfast service deficit is worse than the measured 12,491 hrs — nearer
 14,000 — and the allocation case gets stronger, not weaker.**
+
+### ✅ RE-MEASURED (dispatch20 §4, 2026-08-18) — 1,716 hrs, not the ~1,550 estimate; corrected deficit ≈14,206
+
+The "~1,550 hrs" above was a rough estimate from a manual full-week/Sunday-only store
+grouping. Measured directly instead: pulled `store_labor_config.hours_json` for all 27
+stores (every weekday, not just the worked Monday example), applied
+`preOpenLateNightFraction(openHour)` from `src/engine/labor-standard.js` per store per
+weekday, and multiplied by each weekday's actual occurrence count in the 90-day window
+(13 of each weekday, 91 days total, `dt >= 2026-05-20`). 24hr stores (Ponce de Leon)
+excluded — the pre-open standard doesn't apply to a store that never closes.
+
+**Measured total: 1,716.0 hrs**, not ~1,550 — about 11% more than the estimate.
+
+| store | hidden pre-open-in-Breakfast hrs (90d) |
+|---|---:|
+| Duncan-Hwy 81 | 273.0 |
+| Sulphur | 273.0 |
+| Harrah | 273.0 |
+| Holdenville | 273.0 |
+| Tishomingo-Main & Refuge | 273.0 |
+| Lindsay-Wal-Mart | 156.0 |
+| OKC-I240/Sooner | 78.0 |
+| Purcell | 39.0 |
+| Pauls Valley-Ballard Rd | 39.0 |
+| Tecumseh | 39.0 |
+
+**Corrected Breakfast deficit: 12,491 + 1,716 ≈ 14,207 hrs** — matching "nearer 14,000" but
+with a measured number in place of the estimate. Use **14,207**, not 12,491 or a rounded
+"~14,000", in any future reporting of the Breakfast execution deficit — per dispatch20 §4's
+explicit instruction to fold this in rather than quote the raw (understated) figure.
