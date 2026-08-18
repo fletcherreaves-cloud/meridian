@@ -62,12 +62,22 @@ left join (select distinct loc from qsr_product_mix   where date >= '2026-01-01'
   on p.loc = a.loc
 where p.loc is null;
 
--- Measured 2026-08-18: `select count(distinct loc) from qsr_product_mix where
--- date = '2026-02-11'` (an ordinary Wednesday, deliberately not a holiday)
--- returned 26, against ~27 stores. One store is genuinely absent from pmix for
--- the backfilled window. Run the query above to name it BEFORE task #153 reads
--- this table — an absent store reads downstream as "this restaurant took no
--- price change," which is the exact wrong answer to the question #153 asks.
+-- ✅ RESOLVED 2026-08-18 — ran, answered, no gap. Do not re-raise.
+--   `count(distinct loc) … where date = '2026-02-11'` returned 26 against ~27
+--   stores, which looked like a missing store. It is not. GATE 3 above returned
+--   ZERO rows: every store the DAR sees since Jan 1 is present in pmix.
+--   The 26 is Ponce de Leon (loc 43701), which OPENED 03/13/26 and therefore did
+--   not exist in February. Already recorded in src/constants.js:93 and :346
+--   ("0 valid LY rows", recentOnly, tagged new-location/insufficient-history) —
+--   the codebase knew before this gate asked.
+--
+-- ⚠ CARRY THIS INTO TASK #153: 43701 has no pre-March baseline, so it cannot
+--   take part in any pre/post price comparison. EXCLUDE IT AND NAME IT in the
+--   output — a store excluded for a legitimate reason and a store missing
+--   because a pull dropped it look identical in a results table and mean
+--   opposite things. It is already one of the two exclusions in the McValue
+--   analysis, whose coverage guard (111 PRE / 112 POST, min = max, 25 stores)
+--   would have dropped it regardless.
 
 
 -- ── ONLY AFTER ALL THREE PASS: the task #153 measurement ────────────────────
