@@ -237,7 +237,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('AtAGlance', 'render+commit', performance.now() - _rt0); });
   const today = new Date();
-  const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
+  // #369 — was a bare .filter().map() re-running (and allocating a fresh array) on every
+  // render regardless of whether `stores` changed. allLocs appears in ~20 dependency-array
+  // positions in this file, so an unstable identity here defeated every memo that lists it —
+  // pure overhead (allocation + comparison) with none of the caching benefit. Memoizing here
+  // only helps if `stores` itself is stable at its source; see App.js's #386 fix (mergedTargets
+  // was forcing rawStores — and therefore `stores` — to rebuild on every raw `ds` change).
+  const allLocs = React.useMemo(
+    () => (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc),
+    [stores]
+  );
   // Market split by store state (STORE_COORDS carries no org, so it defaulted
   // every store to MCDOK and left the FL pill empty). OK: = Oklahoma stores,
   // FL: = Florida (panhandle) stores — matching the pill labels.

@@ -1862,18 +1862,28 @@ function App() {
     };
   },[userEvents,saveUserEvents]);
 
+  // #386 — mergedTargets used raw `ds` here while rawStores (below) already debounces/defers
+  // `ds` via dsDebounced/dsDeferred specifically to cut how often the 27-store buildStore pass
+  // reruns. Since rawStores's own deps include mergedTargets, a mergedTargets that recomputes on
+  // every raw `ds` identity change forces rawStores to recompute just as often — silently
+  // defeating the debounce. MEASURED (#386): rawStores(buildStore x27) ran 10x in one real
+  // session despite the debounce already being in place; this is why. dsDebounced/dsDeferred are
+  // declared once, immediately below, and reused here instead of a second copy.
+  const dsDebounced = useDebouncedValue(ds, 250);
+  const dsDeferred = React.useDeferredValue(dsDebounced);
+
   const mergedTargets = useMemo(()=>{
     const merged={};
-    const locs = ds?ds.storeIds:Object.keys(DEFAULT_TARGETS);
+    const locs = dsDeferred?dsDeferred.storeIds:Object.keys(DEFAULT_TARGETS);
     const curYm=ymKey(new Date());
     const v2=loadTargetsV2();
     const v2cur=v2[curYm]||{};
     locs.forEach(loc=>{
       // Priority: v2 monthly override > user flat override > monthly projections targets > yearly targets > DEFAULT_TARGETS
-      merged[loc]={...DEFAULT_TARGETS[loc],...(ds&&ds.targets&&ds.targets[loc]||{}),...(ds&&ds.monthlyTargets&&ds.monthlyTargets[loc]||{}),...(userTargets[loc]||{}),...(v2cur[loc]||{})};
+      merged[loc]={...DEFAULT_TARGETS[loc],...(dsDeferred&&dsDeferred.targets&&dsDeferred.targets[loc]||{}),...(dsDeferred&&dsDeferred.monthlyTargets&&dsDeferred.monthlyTargets[loc]||{}),...(userTargets[loc]||{}),...(v2cur[loc]||{})};
     });
     return merged;
-  },[ds,userTargets]);
+  },[dsDeferred,userTargets]);
 
   // ── rawStores: the single most expensive computation in the app ──────────────
   // buildStore runs compute6wk + buildBrief for all 27 stores. MEASURED with ?clicktrace=1 on
@@ -1901,8 +1911,7 @@ function App() {
   // loaders that are genuinely spaced out (each of those settles on its own well before the
   // next arrives, same as today). Debounce BEFORE deferring: coalesce first, then keep the
   // eventual real update non-blocking for whatever the user is doing when it lands.
-  const dsDebounced = useDebouncedValue(ds, 250);
-  const dsDeferred = React.useDeferredValue(dsDebounced);
+  // dsDebounced/dsDeferred are declared once, above mergedTargets — see #386 comment there.
   const rawStores = useMemo(()=>{
     if(!dsDeferred) return [];
     return _traceMark('rawStores(buildStore x27)', () => dsDeferred.storeIds.filter(loc=>/^\d+$/.test(loc)).sort((a,b)=>+a-+b).map(loc=>buildStore(loc,dsDeferred,{...settings,targets:mergedTargets})));
