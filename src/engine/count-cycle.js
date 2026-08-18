@@ -117,8 +117,23 @@ export function detectSessions(rows = []) {
     out[loc] = Object.keys(byDate[loc]).sort().map(date => {
       const counts = byDate[loc][date];
       const n = Object.values(counts).reduce((a, b) => a + b, 0);
-      const covered = CLASSES.filter(c =>
-        (counts[c] || 0) > 0 && (counts[c] || 0) >= (totals[loc][c] || Infinity) * COVER_FRAC);
+      // Dispatch20 §3 investigation, 2026-08-18 — a class with ZERO active items in this
+      // store's own universe is trivially "covered": there is nothing to count, so it can
+      // never gate compliance. The prior `(totals[loc][c] || Infinity) * COVER_FRAC` fell
+      // through to Infinity for exactly that case, making the class permanently
+      // uncoverable regardless of what the store actually does — a real, structural bug,
+      // not a stale-feed artifact (re-graded against several asOf dates, all showed the
+      // same 27/27 crit; only a genuine logic bug produces that, per CLAUDE.md's own
+      // "measure before theorizing" standard). Measured live: 967/978 (98.9%) of ALL
+      // Condiment-class rows district-wide read active=false (none Topic-6-rescued),
+      // leaving 17/27 stores with a totals[loc].Condiment of 0 or undefined — their
+      // Food+Condiment weekly requirement was mathematically impossible to satisfy no
+      // matter how well they counted. Full writeup: memory/count-cycle-condiment-bug-2026-08-18.md.
+      const covered = CLASSES.filter(c => {
+        const universe = totals[loc][c] || 0;
+        if (universe === 0) return true;
+        return (counts[c] || 0) > 0 && (counts[c] || 0) >= universe * COVER_FRAC;
+      });
       const q = sessionQualities(date, covered, n);
       // #357-A — touchedWeeklyClasses is independent of `covered` (which requires
       // COVER_FRAC): a Paper-only session touches ZERO Food/Condiment items, so it must

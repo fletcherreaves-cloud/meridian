@@ -8,7 +8,7 @@ import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, ge
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
-import { matchedVsLY } from '../engine/vs-ly.js';
+import { matchedVsLY, lyQuality } from '../engine/vs-ly.js';
 import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -16,6 +16,7 @@ import { ModelHealthBadge } from './model-health-badge.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engine/monthly-targets-v2.js';
+import { lastPriceChangeByStore } from '../engine/price-events.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -1739,7 +1740,7 @@ aside::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px;}
 }
 
 // DISTRICT GRID (SECTION 13a)
-function StoreCard({store, onSelect}) {
+function StoreCard({store, onSelect, priceChange}) {
   const {p, t, opsScore, ctrlScore, name, loc, vel, pSales, pLY} = store;
   const combined = Math.round(opsScore*0.6+ctrlScore*0.4);
 
@@ -1845,6 +1846,19 @@ function StoreCard({store, onSelect}) {
           combined)
       ),
 
+      // Last price change (dispatch20 addendum, 2026-08-18) — src/engine/price-events.js's
+      // confirmed-step detector, so this is a real menu reprice (14/14-day-flat validated),
+      // never a promo-tier blip. Only rendered when a confirmed change exists for this store.
+      priceChange&&div({style:{
+        fontSize:'7.5px',borderTop:'.5px solid var(--bdr)',paddingTop:4,marginTop:1,
+        color:'var(--text3)',display:'flex',alignItems:'center',gap:3,overflow:'hidden'}},
+        span(null,'💲'),
+        span({style:{fontWeight:600,flexShrink:0,color:'var(--text2)'}},'Last price change'),
+        span({style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+          ': '+priceChange.date+' ('+priceChange.itemsChanged+' item'+(priceChange.itemsChanged===1?'':'s')
+          +(priceChange.meanStepPct!=null?', '+(priceChange.meanStepPct>=0?'+':'')+priceChange.meanStepPct.toFixed(1)+'%':'')+')')
+      ),
+
       // Critical/Watch flag (top issue, truncated)
       topIssue&&div({style:{
         fontSize:'7.5px',borderTop:'.5px solid var(--bdr)',paddingTop:4,marginTop:1,
@@ -1916,6 +1930,11 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
       {id:'lo',  label:'Low Volume',   col:'#a78bfa', stores:lo,  avgScore:tierScore(lo)},
     ].filter(t=>t.stores.length);
   },[stores]);
+
+  // Dispatch20 addendum, 2026-08-18 — "last price change" per store for StoreCard, the
+  // Store Dashboard consumer of src/engine/price-events.js. Computed once here (not inside
+  // each StoreCard) since it walks the district-wide ds.pmixRows array once for all stores.
+  const priceChanges = useMemo(()=>lastPriceChangeByStore(ds&&ds.pmixRows||[]),[ds&&ds.pmixRows]);
 
   const distScore = stores.length?Math.round(stores.reduce((a,s)=>a+(s.opsScore*0.6+s.ctrlScore*0.4),0)/stores.length):0;
   const critCount = stores.reduce((a,s)=>a+s.findings.filter(f=>f.t==='crit').length,0);
@@ -1999,7 +2018,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
                 color:i===0?tier.col:i<3?'var(--text2)':'var(--text3)',
                 border:'.5px solid '+(i===0?tier.col+'55':'var(--bdr)')
               }},['#1','#2','#3'][i]||(i===tier.stores.length-1?'↓last':'#'+(i+1))),
-              h(StoreCard,{store:s,onSelect:onSelectStore})
+              h(StoreCard,{store:s,onSelect:onSelectStore,priceChange:priceChanges[s.loc]})
             ))
         )
       ))
@@ -2007,7 +2026,7 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
 
     // Normal store cards grid
     div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:8}},
-      sorted.map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore}))
+      sorted.map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore,priceChange:priceChanges[s.loc]}))
     )
   );
 }
@@ -2037,7 +2056,7 @@ function OrgView({stores, settings, onSelectStore}) {
         crits>0&&div({style:{fontSize:'9px',color:'var(--crit)',fontWeight:700}},crits+' crit')
       ),
       div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:6,padding:10}},
-        group.stores.map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore}))
+        group.stores.map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore,priceChange:priceChanges[s.loc]}))
       )
     );
   };
@@ -2048,7 +2067,7 @@ function OrgView({stores, settings, onSelectStore}) {
     ),
     view==='operator'&&(byOp.length>0?byOp.map((g,i)=>h(GroupCard,{key:i,group:g,onSelectStore})):div({style:{color:'var(--text3)',padding:16,fontSize:'11px'}},'Configure operator groups in Settings → Operator Groups')),
     view==='supervisor'&&(bySup.length>0?bySup.map((g,i)=>h(GroupCard,{key:i,group:g,onSelectStore})):div({style:{color:'var(--text3)',padding:16,fontSize:'11px'}},'Configure supervisor patches in Settings → Supervisor Patches')),
-    view==='all'&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8}},stores.filter(s=>/^\d+$/.test(s.loc)).map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore})))
+    view==='all'&&div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:8}},stores.filter(s=>/^\d+$/.test(s.loc)).map(s=>h(StoreCard,{key:s.loc,store:s,onSelect:onSelectStore,priceChange:priceChanges[s.loc]})))
   );
 }
 
@@ -2153,16 +2172,28 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
   });
   const [activePreset, setActivePreset] = React.useState('l4w');
   const DR = rankRange;
-  const gcVsLYMap=React.useMemo(()=>{
+  // gcLyQualityMap: the young-restaurant vs-LY trap (dispatch20 addendum, 2026-08-18;
+  // src/engine/vs-ly.js's lyQuality). A store under ~24 months old is still lapping its own
+  // grand-opening honeymoon and its vs-LY improves on its own regardless of operations —
+  // Tishomingo ranked 2nd-best of 26 stores on this exact GC-vs-LY ranking purely from that
+  // artifact. `reliable:false` = real LY data exists but sits inside the honeymoon window
+  // (flag, don't hide); `reliable:null` = no comparable LY data at all (Ponce de Leon —
+  // render "no LY", not a dash that reads the same as "we don't have this metric"). Computed
+  // in the SAME memo/dependency-array as gcVsLYMap (not a second one) — src/__tests__/
+  // ratchet-raw-metric-rows.test.js caps raw ds row-field reads (laborRows etc) in src/views/,
+  // and a second memo would have added a second, redundant hit for the same two fields.
+  const {gcVsLYMap,gcLyQualityMap}=React.useMemo(()=>{
     // GC vs LY via the shared auto-first + matched-day helper (engine/vs-ly.js) — same
     // ONE implementation used by Org Summary etc. Null when there's no comparable LY data
     // (instead of the old false -100% from empty current guests vs a full last year).
-    const res={};
+    const pct={},qual={};
     (stores||[]).forEach(s=>{
-      const mv=matchedVsLY(ds,String(s.loc),DR,'gc');
-      res[String(s.loc)]=mv.ly>10?mv.pct:null;
+      const loc=String(s.loc);
+      const mv=matchedVsLY(ds,loc,DR,'gc');
+      pct[loc]=mv.ly>10?mv.pct:null;
+      qual[loc]=lyQuality(ds,loc,DR);
     });
-    return res;
+    return {gcVsLYMap:pct,gcLyQualityMap:qual};
   },[stores,ds.laborRows,ds.qsrActSummaryRows,DR.s,DR.e]);
 
   // Quick date presets for Rankings
@@ -2330,13 +2361,26 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
       ),
       div({style:{overflowY:'auto',flex:1}},
         sorted.map((s,i)=>{
-          const val=m.fn(s);const fmt=m.fmt(val);
-          const color=i===0?'var(--warn)':i<3?'#34d399':i>=sorted.length-3?'var(--crit)':'var(--text)';
+          const val=m.fn(s);let fmt=m.fmt(val);
+          // gc-vs-LY only: the young-restaurant honeymoon-ramp trap. A store's own real LY
+          // quality (never the group's, even when grouped by patch/operator/state) — s.loc
+          // is only a single store's loc when groupDim==='store'; group rollups don't carry
+          // a single meaningful "age," so this only applies ungrouped, matching what the
+          // dispatch's verification bar actually asks for (Tishomingo/Ponce as INDIVIDUAL
+          // stores, not a patch rollup).
+          const lyq = metric==='gc' && !s.isGroup ? gcLyQualityMap[String(s.loc)] : null;
+          const lyFlagged = lyq && lyq.reliable===false;
+          if (metric==='gc' && !s.isGroup && lyq && lyq.reliable===null && val<=-999) fmt='no LY';
+          const color=lyFlagged?'var(--text3)':i===0?'var(--warn)':i<3?'#34d399':i>=sorted.length-3?'var(--crit)':'var(--text)';
           return div({key:s.loc,style:{display:'flex',alignItems:'center',gap:12,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',cursor:s.isGroup?'default':'pointer',background:'transparent'},
             onClick:s.isGroup?undefined:()=>{onSelectStore(s);onClose();}},
             div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,color,minWidth:24,textAlign:'right'}},i+1),
             div({style:{flex:1}},
-              div({style:{fontWeight:600,fontSize:'12px'}},s.isGroup?(s.name+(groupDim==='state'?(s.name==='OK'?' — Oklahoma':s.name==='FL'?' — Florida':''):'')):s.name),
+              div({style:{fontWeight:600,fontSize:'12px',display:'flex',alignItems:'center',gap:5}},
+                s.isGroup?(s.name+(groupDim==='state'?(s.name==='OK'?' — Oklahoma':s.name==='FL'?' — Florida':''):'')):s.name,
+                lyFlagged&&span({title:'Opened '+lyq.firstTradingDate+' — vs-LY still reflects the grand-opening ramp, not steady-state performance',
+                  style:{fontSize:'7.5px',fontWeight:700,padding:'1px 5px',borderRadius:99,background:'rgba(245,158,11,.15)',color:'var(--warn)',border:'.5px solid rgba(245,158,11,.4)'}},'🔰 New store')
+              ),
               div({style:{fontSize:'9px',color:'var(--text3)'}},s.isGroup?s.city:(s.city+' · #'+s.loc))
             ),
             div({style:{fontFamily:'var(--mono)',fontSize:'16px',fontWeight:700,color}},fmt)

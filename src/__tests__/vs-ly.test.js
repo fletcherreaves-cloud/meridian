@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { autoFirstDaily, matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
+import { autoFirstDaily, matchedVsLY, autoFirstTotal, firstRealTradingDate, lyQuality } from '../engine/vs-ly.js';
 
 const d = s => new Date(s + 'T00:00:00');
 const range = { s: d('2026-06-01'), e: d('2026-06-28') };
@@ -93,4 +93,101 @@ describe('vs-ly shared helper', () => {
     const r = matchedVsLY(ds, ['1', '2'], range, 'sales');
     expect(r.cur).toBe(310); expect(r.ly).toBe(300);
   });
+});
+
+// dispatch20 addendum, 2026-08-18 — the young-restaurant vs-LY trap. Fixtures below are the
+// REAL measured qsr_daily_activity_rollup numbers for Tishomingo (loc 43380, opened
+// 2024-12-16) verified live this session, not invented: 2024-12-13 = $104.97/14 transactions
+// (a training/soft-open day), 2024-12-14 and 12-15 both zero, 2024-12-16 = $10,058.48/816
+// transactions (real trading start, sustained the following days at 1224/1200/1146/1043).
+describe('firstRealTradingDate — the young-restaurant anchor', () => {
+  const tishomingoRows = [
+    { loc: '43380', date: d('2024-12-13'), transactions: 14 },
+    { loc: '43380', date: d('2024-12-14'), transactions: 0 },
+    { loc: '43380', date: d('2024-12-15'), transactions: 0 },
+    { loc: '43380', date: d('2024-12-16'), transactions: 816 },
+    { loc: '43380', date: d('2024-12-17'), transactions: 1224 },
+    { loc: '43380', date: d('2024-12-18'), transactions: 1200 },
+    { loc: '43380', date: d('2024-12-19'), transactions: 1146 },
+    { loc: '43380', date: d('2024-12-20'), transactions: 1043 },
+  ];
+
+  it('skips the isolated training-day spike and anchors on the real, sustained start', () => {
+    const ds = { qsrActSummaryRows: tishomingoRows };
+    expect(firstRealTradingDate(ds, '43380')).toBe('2024-12-16'); // NOT '2024-12-13'
+  });
+
+  it('accepts a genuine grand-opening day with immediate sustained volume (Ponce de Leon, ' +
+     'loc 43701, opened 2026-03-13 -- real measured figures: 514/623/558/526/562/569 ' +
+     'transactions the first 6 days, no training-day noise)', () => {
+    const ponceRows = ['2026-03-13','2026-03-14','2026-03-15','2026-03-16','2026-03-17','2026-03-18']
+      .map((dt, i) => ({ loc: '43701', date: d(dt), transactions: [514,623,558,526,562,569][i] }));
+    const ds = { qsrActSummaryRows: ponceRows };
+    expect(firstRealTradingDate(ds, '43701')).toBe('2026-03-13');
+  });
+
+  it('returns null when no data is available for the loc (safe non-flagging default)', () => {
+    expect(firstRealTradingDate({ qsrActSummaryRows: [] }, '43380')).toBeNull();
+  });
+
+  it('does not anchor on a day whose immediate next day is missing entirely (a gap, not ' +
+     'confirmed sustained trading)', () => {
+    const ds = { qsrActSummaryRows: [
+      { loc: '1', date: d('2026-01-01'), transactions: 500 },
+      { loc: '1', date: d('2026-01-05'), transactions: 500 }, // gap -- 01-02 through 01-04 missing
+    ] };
+    expect(firstRealTradingDate(ds, '1')).toBeNull();
+  });
+});
+
+describe('lyQuality', () => {
+  it('flags Tishomingo unreliable when the LY leg falls inside its first 24 months', () => {
+    const ds = { qsrActSummaryRows: tishomingoRowsFor('43380') };
+    // A comparison window whose LY leg (364 days back) lands ~7 months after the 2024-12-16
+    // open -- well inside the 24-month honeymoon-ramp window.
+    const r = { s: d('2026-07-01'), e: d('2026-07-28') };
+    const q = lyQuality(ds, '43380', r);
+    expect(q.reliable).toBe(false);
+    expect(q.firstTradingDate).toBe('2024-12-16');
+    expect(q.monthsOld).toBeGreaterThan(0);
+    expect(q.monthsOld).toBeLessThan(24);
+  });
+
+  it('does not flag a store whose LY leg lands well past the 24-month mark', () => {
+    const ds = { qsrActSummaryRows: tishomingoRowsFor('43380') };
+    // LY leg ~10 years after opening -- clearly past the honeymoon-ramp window.
+    const r = { s: d('2036-07-01'), e: d('2036-07-28') };
+    const q = lyQuality(ds, '43380', r);
+    expect(q.reliable).toBe(true);
+  });
+
+  it('returns reliable:null (not false) when there is no trading-date data to judge from -- ' +
+     'an established store simply outside the loaded ds window must never read as "flagged"', () => {
+    const q = lyQuality({ qsrActSummaryRows: [] }, '3708', range);
+    expect(q.reliable).toBeNull();
+  });
+
+  it('matchedVsLY surfaces flagged locs additively -- cur/ly/pct/days are unchanged, callers ' +
+     'opt into excluding a flagged store themselves rather than having the aggregate silently ' +
+     'change under every existing caller', () => {
+    const ds = { qsrActSummaryRows: [
+      ...tishomingoRowsFor('43380'),
+      { loc: '43380', date: d('2026-07-01'), sales: 1000, lySales: 900 },
+      { loc: '3708', date: d('2026-07-01'), sales: 500, lySales: 480 },
+    ] };
+    const r = matchedVsLY(ds, ['43380', '3708'], { s: d('2026-07-01'), e: d('2026-07-28') }, 'sales');
+    expect(r.cur).toBe(1500); expect(r.ly).toBe(1380); // both stores still summed
+    expect(r.flagged).toHaveLength(1);
+    expect(r.flagged[0].loc).toBe('43380');
+  });
+
+  function tishomingoRowsFor(loc) {
+    return [
+      { loc, date: d('2024-12-13'), transactions: 14 },
+      { loc, date: d('2024-12-14'), transactions: 0 },
+      { loc, date: d('2024-12-15'), transactions: 0 },
+      { loc, date: d('2024-12-16'), transactions: 816 },
+      { loc, date: d('2024-12-17'), transactions: 1224 },
+    ];
+  }
 });

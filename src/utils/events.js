@@ -1,6 +1,42 @@
 // @ts-nocheck
+import { priceChangeEvents } from '../engine/price-events.js';
+
+// Dispatch20 addendum, 2026-08-18 — forecast models calibrated straight through repricing
+// weeks: computeEventFactors only ever saw hand-entered/org-sourced calendar events, so a
+// real district price round (e.g. 2026-06-13/06-26, 14 + 13 stores) was invisible to it —
+// its sales step got averaged into "ordinary" trailing data instead of being recognized as
+// its own event type. Merges auto-detected price-change events (from ds.pmixRows via
+// src/engine/price-events.js) into the userEvents shape ON THE WAY IN, additively — a real
+// hand-entered event on the same date keeps its own tags AND gains 'price_change' alongside
+// them, never replaced. No-op (byte-identical to the un-augmented map) when ds.pmixRows is
+// absent or empty, so every existing caller/test without product-mix data is unaffected.
+function _withPriceEvents(ds, userEvents) {
+  if (!ds || !ds.pmixRows || !ds.pmixRows.length) return userEvents;
+  const events = priceChangeEvents(ds.pmixRows);
+  if (!events.length) return userEvents;
+  const out = {};
+  for (const [loc, evMap] of Object.entries(userEvents || {})) out[loc] = { ...evMap };
+  for (const e of events) {
+    if (!out[e.loc]) out[e.loc] = {};
+    const existing = out[e.loc][e.date];
+    if (existing) {
+      const tags = existing.tags && existing.tags.length ? existing.tags.slice() : [{ type: existing.type || 'other' }];
+      if (!tags.some(t => t.type === 'price_change')) tags.push({ type: 'price_change' });
+      out[e.loc][e.date] = { ...existing, tags };
+    } else {
+      out[e.loc][e.date] = {
+        type: 'price_change', tags: [{ type: 'price_change' }],
+        label: `Price change (${e.itemsChanged} item${e.itemsChanged === 1 ? '' : 's'})`,
+        synthetic: true, itemsChanged: e.itemsChanged, meanStepPct: e.meanStepPct,
+      };
+    }
+  }
+  return out;
+}
+
 function computeEventFactors(ds, userEvents) {
   if(!ds||!ds.laborRows||!userEvents) return {};
+  userEvents = _withPriceEvents(ds, userEvents);
   const factors = {};
 
   // Index laborRows by loc (all rows, order preserved) and by loc+dow (sales>0
@@ -62,4 +98,4 @@ function computeEventFactors(ds, userEvents) {
   return factors;
 }
 
-export { computeEventFactors };
+export { computeEventFactors, _withPriceEvents };
