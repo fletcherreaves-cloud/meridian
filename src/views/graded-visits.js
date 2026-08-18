@@ -93,6 +93,12 @@ export const hourMetrics = (x, cutoff) => {
   const kvsHealthy = kvsDen > 0 ? (x.healthy_count || 0) / kvsDen * 100 : null;           // KVS Healthy Usage %
   const pullFwd = (x.dt_trans_cnt || 0) > 0 ? (x.dt_carsheld || 0) / x.dt_trans_cnt * 100 : null; // DT Pull Forward %
   const laborPct = (x.prod_sales_scrubbed || 0) > 0 ? (x.actual_punched_dollars || 0) / x.prod_sales_scrubbed * 100 : null; // Punch Labor %
+  // TPPH (dispatch20 #2) — transactions per punched hour, ALL-CHANNEL (x.transactions), not
+  // drive-thru-only (x.dt_trans_cnt is a different, smaller number — see the label below).
+  // Ratio of sums, not average-of-hourly-ratios: this fn runs once on the raw row for a single
+  // hour_slot, and once on aggregateHours()'s summed pseudo-row for the Day total, so both legs
+  // are already summed before this divides — same pattern as laborPct/oepe above.
+  const tpph = (x.actual_punched_hours || 0) > 0 ? (x.transactions || 0) / x.actual_punched_hours : null;
   const prodSales = x.product_sales != null ? x.product_sales : null;
   const prodSalesCompPct = (x.ly_product_sales || 0) >= MIN_LY_SALES_FOR_COMP ? ((x.product_sales || 0) - x.ly_product_sales) / x.ly_product_sales * 100 : null;
   const stwGc = x.transactions != null ? x.transactions : null;
@@ -101,7 +107,7 @@ export const hourMetrics = (x, cutoff) => {
   const gap = (punch != null && need != null) ? punch - need : null;
   const rel = cutoff ? parseInt(x.hour_slot, 10) - cutoff : null; // 0 = during, -1 = before, +1 = after
   return { hourSlot: x.hour_slot, label: hourLabel(x.hour_slot),
-    prodSales, prodSalesCompPct, stwGc, stwGcCompPct, oepe, dt, ctp, r2p, kit, kvsHealthy, bev, pullFwd, laborPct, punch, sched, need, gap,
+    prodSales, prodSalesCompPct, stwGc, stwGcCompPct, oepe, dt, ctp, r2p, kit, kvsHealthy, bev, pullFwd, laborPct, tpph, punch, sched, need, gap,
     rel, visitHr: rel === 0, nearVisit: rel === -1 || rel === 1 };
 };
 
@@ -326,6 +332,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     { key: 'bev',              label: 'Bev TTL',           fmt: _mSec },
     { key: 'pullFwd',          label: 'DT Pull Forward %', fmt: _mPct1, warn: 10 },
     { key: 'laborPct',         label: 'Labor %',           fmt: _mPct1 },
+    { key: 'tpph',             label: 'TPPH (all-channel)', fmt: v => v == null ? '—' : v.toFixed(1) },
     { key: 'punch',            label: 'Act Punch Hours',   fmt: _mHr },
     { key: 'sched',            label: 'Sched Hours',       fmt: _mHr },
     { key: 'need',             label: 'Needed Hours',      fmt: _mHr },
@@ -359,7 +366,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
       r2p:    _num(ops && ops.r2p, psvc.length ? psvc.reduce((a, r) => a + (r.r2p || 0), 0) / psvc.filter(r => r.r2p).length : null),
       laborPct: _num(g && g.labor_pct, ctrl && ctrl.laborPct, lab && lab.laborPct),  // fraction
       parked: _num(g && g.parked_pct, ops && ops.park),            // fraction
-      tpph:   _num(ctrl && ctrl.tpph, lab && lab.tpph),
+      // dispatch20 #2 — `qsr` (qsrActSummaryRows, DAR-derived) was already fetched above
+      // for sales/gc but never consulted here, so this figure was manual-only in practice
+      // even though metric-source.js's own tpph chain already prioritizes qsrActSummaryRows
+      // first. Same priority order as that chain: auto (DAR) before manual Controls/Labor.
+      tpph:   _num(qsr && qsr.tpph, ctrl && ctrl.tpph, lab && lab.tpph),
       sales:  _num(qsr && qsr.sales, lab && lab.sales, g && g.all_net_sales),
       gc:     _num(qsr && qsr.gc, lab && lab.gc, g && g.gc),
     };
@@ -551,7 +562,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
                 return h('td', { key: j, style: { ...td2, color: col, fontWeight: fw } }, mt.fmt(val));
               }));
           })))),
-      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 } }, 'Day vs Visit-hour + hourly, from qsr_daily_activity (QSRSoft formulas): OEPE = (DT serve − store − held)/GC, w/o parked · DT TTL = DT serve/GC · Avg CTP = (DT serve − recall)/GC · R2P = (FC serve − close-drawer)/GC, front counter · KVS Time Per GC = (MFY1+MFY2 serve)/kitchen GC · KVS Healthy = healthy/(healthy+unhealthy) · Labor % = punch $ / prod sales · DT Pull Forward % = cars-held/GC · +/- % = vs last year (hourly cell shows “—” below a measured-stable LY count: <40 transactions or <$800 sales — a thinner LY hour swings too wildly to trust, e.g. -100%/+2200% at a single-digit count). Day totals are dollar/count-weighted, not averaged. R2P & Avg CTP show “—” until a DAR re-pull backfills fc-close-drawer / dt-recall. Print / CSV export this summary + the chosen hourly rows.'));
+      div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 } }, 'Day vs Visit-hour + hourly, from qsr_daily_activity (QSRSoft formulas): OEPE = (DT serve − store − held)/GC, w/o parked · DT TTL = DT serve/GC · Avg CTP = (DT serve − recall)/GC · R2P = (FC serve − close-drawer)/GC, front counter · KVS Time Per GC = (MFY1+MFY2 serve)/kitchen GC · KVS Healthy = healthy/(healthy+unhealthy) · Labor % = punch $ / prod sales · TPPH = all-channel transactions / punch hours · DT Pull Forward % = cars-held/GC · +/- % = vs last year (hourly cell shows “—” below a measured-stable LY count: <40 transactions or <$800 sales — a thinner LY hour swings too wildly to trust, e.g. -100%/+2200% at a single-digit count). Day totals are dollar/count-weighted, not averaged. R2P & Avg CTP show “—” until a DAR re-pull backfills fc-close-drawer / dt-recall. Print / CSV export this summary + the chosen hourly rows.'));
   };
 
   return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },

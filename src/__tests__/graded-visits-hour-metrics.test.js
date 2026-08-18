@@ -41,3 +41,39 @@ describe('hourMetrics — LY comp% floor', () => {
     expect(noLy.prodSalesCompPct).toBeNull();
   });
 });
+
+// dispatch20 #2 — TPPH = transactions per punched hour, hour_slot grain (previously absent
+// from hourMetrics entirely; only a manual-only DAILY figure existed elsewhere).
+describe('hourMetrics — tpph', () => {
+  const base = {
+    hour_slot: '13', dt_untilserve: 0, dt_trans_cnt: 0, fc_untilserve: 0, fc_untilclosedrawer: 0,
+    fc_trans_cnt: 0, mfy1_untilserve: 0, mfy1_trans_cnt: 0, mfy2_untilserve: 0, mfy2_trans_cnt: 0,
+    bev_untilserve: 0, bev_trans_cnt: 0, healthy_count: 0, unhealthy_count: 0, dt_carsheld: 0,
+    prod_sales_scrubbed: 0, actual_punched_dollars: 0,
+  };
+
+  it('divides ALL-channel transactions by actual punched hours', () => {
+    const m = hourMetrics({ ...base, transactions: 42, actual_punched_hours: 6 }, null);
+    expect(m.tpph).toBeCloseTo(7, 5);
+  });
+
+  it('uses transactions (all-channel), not dt_trans_cnt (drive-thru-only)', () => {
+    // If this ever silently switched to dt_trans_cnt, a store with heavy in-store/kiosk
+    // volume would report a TPPH far lower than reality -- transactions=42 but
+    // dt_trans_cnt=10 must produce 42/6=7, not 10/6.
+    const m = hourMetrics({ ...base, transactions: 42, dt_trans_cnt: 10, actual_punched_hours: 6 }, null);
+    expect(m.tpph).toBeCloseTo(7, 5);
+  });
+
+  it('is null when punched hours is zero (not a divide-by-zero artifact)', () => {
+    const m = hourMetrics({ ...base, transactions: 42, actual_punched_hours: 0 }, null);
+    expect(m.tpph).toBeNull();
+  });
+
+  it('is 0 (not null) when hours are real but transactions genuinely are 0 -- a signal, not a gap', () => {
+    // Meaningful for the overnight/close-down analysis: real punched hours with zero guests
+    // is exactly the "closed-but-staffed" case that analysis needs to see, not hide as "—".
+    const m = hourMetrics({ ...base, actual_punched_hours: 6 }, null);
+    expect(m.tpph).toBe(0);
+  });
+});
