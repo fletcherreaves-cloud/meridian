@@ -218,6 +218,45 @@ Full SQL: `memory/probe-g1-shift-dimension.sql`. Verdict rule:
 - `median_within_store_spread` **≥** `between_store_spread` → the dimension is real; build G.
 - Within **< ~half** of between → stores are uniformly good or bad across their own week; **drop G.**
 
+### ✅ PROBE G-1 RESULT — owner-run 2026-08-18. Verdict: **GO, with one qualifier.**
+
+| | |
+|---|---|
+| stores | **27** (all of them) |
+| avg cells per store | **35.0** — every 5 dayparts × 7 days cleared the 200-car floor |
+| median sec per car | **179.7s** — sanity gate PASSED (expected 150–300) |
+| median WITHIN-store spread | **86.7s** |
+| BETWEEN-store spread | **95.3s** |
+| ratio | **0.91** |
+
+Kill threshold was "within < half of between." It returned **91%**. A single
+restaurant's own week varies nearly as much as the whole district varies
+store-to-store, on full data, in all 27 stores.
+
+**Side benefit: this independently confirms the milliseconds fix.** 179.7s is
+right for DT total experience; the microseconds reading `constants.js` used to
+document would have produced 0.18s.
+
+### ⚠️ WHAT THIS DOES NOT SHOW — read before building anything
+
+The probe conflates two effects and only one is actionable:
+
+1. **Structural daypart difference** — dinner is slower than breakfast at *every*
+   store. Real, not coachable.
+2. **Execution difference** — *this* store's Tuesday dinner is slow *for a
+   Tuesday dinner*. The coachable one.
+
+Some share of the 86.7s is category 1. **Treating the whole 86.7s as opportunity
+is the overclaim to avoid.** The discriminating follow-up (PROBE G-2, in
+`probe-g1-shift-dimension.sql`) normalizes each cell against the district median
+for the SAME daypart+dow and measures the residual spread:
+
+- `median_execution_spread` **> ~40s** → variance is execution; G has a real target.
+- collapses toward **0** → the 86.7s was structural; G shrinks to a much smaller idea.
+
+**G stays gated on G-2, not on G-1.** G-1 only established that there is
+something to decompose.
+
 ### Findings from writing the probe (already banked, independent of the verdict)
 
 - **`qsr_daily_activity` carries hourly speed-of-service for every station** — `dt_untilserve`/`dt_trans_cnt`, `fc_*`, `mfy1/2_*`, `bev_*` — **and `actual_punched_hours` at the same `hour_slot` grain.** Outcome and labor are already on one row, at one key. The join G needs does not require a new pull.
