@@ -347,3 +347,44 @@ the effect being pointed at. That is precisely the trap this whole price analysi
 existed to avoid walking into. Cut the line. What survives is the honest and
 narrower version: **the deterioration after 2 June is our price, not the offer
 failing harder** — which is why the clean six weeks are the read that matters.
+
+
+---
+
+## 4. Query F — the March free-item footprint test (Defect 2). RAN 2026-08-18. CLOSED.
+
+Per the document's own spec, using each March-2026 row's built-in `ly_` twin rather
+than a separate 2025 pull — comparing March's vs-LY reading against the rest of the
+pre-window as baseline.
+
+| bucket | traffic vs LY | avg check | check vs LY |
+|---|---|---|---|
+| rest_of_pre (Jan–Feb, Apr 1–21) | +1.45 % | $10.42 | +$0.20 |
+| march | +0.35 % | $10.58 | +$0.29 |
+
+A free-item, $1-minimum promo predicts a traffic **spike** (March higher) and a
+check **dip** (March lower). **Both came back the opposite way:** traffic is
+**1.10 pp lower** in March than the rest of the window, and check is **9 ¢ higher**.
+
+**This is stronger evidence than a null result would be.** A cancellation scenario
+— 2025 ran a comparable offer, so the LY twin absorbs it — predicts a delta near
+zero, not a reversal. An inverted signature on both dimensions argues the offer
+simply didn't move behavior detectably in either year, or that something else
+entirely (other Jan–early-Apr activity inflating the baseline) is driving the
+rest-of-pre numbers. Either way, the practical answer is the same.
+
+**Defect 2 is closed. The 2026 pre-window is not shown to be inflated on traffic or
+depressed on check by the March free-item promotion.** The 2025 calendar pull is no
+longer required to publish — the document's own test, run as specified, did not
+find the confound it was designed to detect.
+
+### Where this leaves the two gating measurements
+- **Defect 2 (March free-item promo): CLOSED**, per above.
+- **Defect 1 (pre/post boundary)**: not re-litigated here, but note that **every
+  query in this file already uses the corrected 04-22 boundary** the document's fix
+  prescribes — Query C, Query E, and Query F all match blocks to launch rather than
+  the original 7-block layout. Defect 1's fix has been the standing convention
+  throughout this whole price analysis, not a separate outstanding action.
+
+**Both of the document's publish gates are now satisfied.** Nothing found in this
+project's price/traffic work blocks reporting the DiD numbers.

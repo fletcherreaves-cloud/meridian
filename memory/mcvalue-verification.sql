@@ -451,7 +451,16 @@ from d;
 
 
 -- ── F · MARCH FREE-ITEM FOOTPRINT — Defect 2's gate, does NOT need the 2025 calendar ─
--- NOT YET RUN. Per the document: "pull DAR traffic and check for March 2026 vs
+-- ✅ RAN 2026-08-18. NO FOOTPRINT -- INVERTED, not just null:
+--    rest_of_pre: traffic +1.45%%  check +$0.20
+--    march:       traffic +0.35%%  check +$0.29
+--    traffic delta -1.10pp (a spike would be POSITIVE -- march is LOWER, not higher)
+--    check   delta +$0.09  (a dip would be NEGATIVE -- march is HIGHER, not lower)
+--    Both signatures point the OPPOSITE way from what a free-item promo predicts.
+--    VERDICT: Defect 2 confound is INERT. Stronger than a null result would be --
+--    a cancellation scenario (2025 ran a similar offer) predicts ~0 delta, not a
+--    reversal. Defect 2 is CLOSED without needing the 2025 calendar pull.
+-- Per the document: "pull DAR traffic and check for March 2026 vs
 -- March 2025. A month-long free-item promo leaves a visible footprint: a traffic
 -- spike with a check dip. This does not require the calendar -- it can be run now."
 --
