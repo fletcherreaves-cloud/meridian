@@ -171,8 +171,16 @@ order by loc, rn;
 
 
 -- ── D · THE STAGGER AS A NATURAL EXPERIMENT — price effect vs McValue effect ─
--- NOT YET RUN. This is the payoff of B2's finding and the cleanest causal read
--- available in the dataset.
+-- ✅ RAN 2026-08-18. RESULT:
+--    wave2_early (took price Jun 13): control -2.83% -> treated -2.82%  did +0.01pp
+--    wave3_later (not yet priced):    control -1.84% -> treated +0.40%  did +2.24pp
+--    => price effect while in force = 0.01 - 2.24 = -2.23 pp of guest counts.
+--    Mid-June carries a seasonal lift; the un-priced cohort caught it (+2.24) and
+--    the priced cohort did not (+0.01). Price suppressed a rising tide.
+--    Exposure-weighted over the 112-day post window (w2 60/112, w3 47/112, avg 48%)
+--    => ~-1.07 pp of the post-window traffic DiD is PRICE, not McValue.
+--    That is ~27%% of the OK -3.96pp and ~14%% of the FL -7.83pp headline.
+--    ⚠ GATED on D-PLACEBO and D-ROBUST below. Do not quote until both pass.
 --
 -- Between 2026-06-13 and 2026-06-25, WAVE 2 restaurants had the new prices and
 -- WAVE 3 restaurants did not — and BOTH cohorts had McValue running the whole
@@ -221,3 +229,82 @@ order by grp;
 -- round is costing guest counts and part of the post-window decline the FBP
 -- attributes to McValue is in fact price. If the two are close, price is not the
 -- driver and the McValue attribution stands.
+
+
+-- ── D-PLACEBO · does the parallel-trends assumption hold? RUN THIS FIRST ────
+-- NOT YET RUN. D is only valid if the two cohorts move TOGETHER absent treatment.
+-- This re-runs D on windows where NEITHER cohort had moved: entirely after the
+-- 2026-02-25 district-wide round and entirely before the 2026-06-13 wave.
+-- Same shape (20-day control, 13-day "treated"), same cohorts, no real treatment.
+--
+--   |did_pp difference| near 0  -> parallel trends holds, D's -2.23pp stands.
+--   |did_pp difference| near 2  -> D is measuring cohort composition, NOT price.
+--                                  Discard D entirely and say so.
+with cohort as (
+  select unnest(array[
+    '0005183','0005985','0006178','0006838','0010422','0011657','0013113',
+    '0018213','0020475','0033109','0033704','0034222','0035242','0038609'
+  ]) as loc, 'wave2_early' as grp
+  union all
+  select unnest(array[
+    '0003708','0006972','0010034','0010915','0024471','0029760','0031357',
+    '0032525','0033222','0035064','0037566','0043380'
+  ]), 'wave3_later'
+), d as (
+  select c.grp,
+    sum(r.transactions)    filter (where r.dt between '2026-04-20' and '2026-05-09') as ctl,
+    sum(r.ly_transactions) filter (where r.dt between '2026-04-20' and '2026-05-09') as ctl_ly,
+    sum(r.transactions)    filter (where r.dt between '2026-05-10' and '2026-05-22') as trt,
+    sum(r.ly_transactions) filter (where r.dt between '2026-05-10' and '2026-05-22') as trt_ly
+  from qsr_daily_activity_rollup r
+  join cohort c on c.loc = r.loc
+  where r.dt between '2026-04-20' and '2026-05-22'
+  group by 1
+)
+select grp,
+  round((100.0*ctl/nullif(ctl_ly,0) - 100)::numeric, 2) as control_vs_ly_pct,
+  round((100.0*trt/nullif(trt_ly,0) - 100)::numeric, 2) as treated_vs_ly_pct,
+  round(((100.0*trt/nullif(trt_ly,0))
+       - (100.0*ctl/nullif(ctl_ly,0)))::numeric, 2)     as placebo_did_pp
+from d order by grp;
+
+
+-- ── D-ROBUST · D again, minus the two restaurants that could be driving it ──
+-- NOT YET RUN. Both of the set's "improvers" sit in wave3_later, which is the
+-- cohort that produced the +2.24pp:
+--   43380 Tishomingo — improves MECHANICALLY as its 2024-12-16 opening honeymoon
+--     decays out of the LY base. That is a TREND difference, exactly what breaks
+--     DiD, and it is the sharpest threat to D.
+--   33222 Elgin — the only genuinely positive restaurant in the district (+6.34pp).
+--
+-- Arithmetic says neither can explain it: each is ~2-2.5% of cohort volume, so a
+-- 2.24pp cohort swing would need a ~90-110pp single-store move. But that is
+-- REASONING, not measurement — run it anyway, it costs nothing.
+-- If did_pp stays near +2.2 for wave3_later, D survives.
+with cohort as (
+  select unnest(array[
+    '0005183','0005985','0006178','0006838','0010422','0011657','0013113',
+    '0018213','0020475','0033109','0033704','0034222','0035242','0038609'
+  ]) as loc, 'wave2_early' as grp
+  union all
+  select unnest(array[
+    '0003708','0006972','0010034','0010915','0024471','0029760','0031357',
+    '0032525','0035064','0037566'          -- 33222 and 43380 removed
+  ]), 'wave3_later_trimmed'
+), d as (
+  select c.grp,
+    sum(r.transactions)    filter (where r.dt between '2026-05-24' and '2026-06-12') as ctl,
+    sum(r.ly_transactions) filter (where r.dt between '2026-05-24' and '2026-06-12') as ctl_ly,
+    sum(r.transactions)    filter (where r.dt between '2026-06-13' and '2026-06-25') as trt,
+    sum(r.ly_transactions) filter (where r.dt between '2026-06-13' and '2026-06-25') as trt_ly
+  from qsr_daily_activity_rollup r
+  join cohort c on c.loc = r.loc
+  where r.dt between '2026-05-24' and '2026-06-25'
+  group by 1
+)
+select grp,
+  round((100.0*ctl/nullif(ctl_ly,0) - 100)::numeric, 2) as control_vs_ly_pct,
+  round((100.0*trt/nullif(trt_ly,0) - 100)::numeric, 2) as treated_vs_ly_pct,
+  round(((100.0*trt/nullif(trt_ly,0))
+       - (100.0*ctl/nullif(ctl_ly,0)))::numeric, 2)     as did_pp
+from d order by grp;

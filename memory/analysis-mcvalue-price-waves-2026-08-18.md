@@ -56,14 +56,60 @@ Partial mitigation worth stating: the **pre-window carries a price round too**
 contamination is partly symmetric — but not equal: the post-window gets a *second*
 increase stacked on the first.
 
-### The natural experiment the stagger hands us — RUN THIS (Query D)
+### The natural experiment the stagger gave us — Query D, RAN 2026-08-18
+
 Between **2026-06-13 and 2026-06-25**, wave-2 restaurants had the new prices and
 wave-3 restaurants did not — and **both cohorts had McValue the whole time.**
-Comparing the two cohorts' matched-day vs-LY traffic across those 13 days isolates
-the **price** effect from the **McValue** effect. This separation exists only
-because the rollout was staggered, and it is the cleanest causal read available
-anywhere in this dataset. Caveats to carry: n=14 vs 13, 13 days is short, and the
-cohorts are not randomly assigned — so treat it as directional, not decisive.
+
+| Cohort | control (May 24–Jun 12) | treated (Jun 13–25) | did |
+|---|---|---|---|
+| wave2_early — priced Jun 13 | −2.83 % | −2.82 % | **+0.01 pp** |
+| wave3_later — not yet priced | −1.84 % | **+0.40 %** | **+2.24 pp** |
+
+**Price effect while in force = 0.01 − 2.24 = −2.23 pp of guest counts.**
+
+Read the mechanism, not just the number: **mid-June carries a seasonal lift.** The
+un-priced cohort caught it and went positive vs LY (+0.40 %). The priced cohort did
+not move at all. Price did not push traffic down so much as **suppress a rising
+tide** — which is the harder kind of loss to see, because nothing looks like it
+got worse.
+
+### What that means for the FBP's headline
+Exposure over the 112-day post window: wave 2 priced for 60 days (53.6 %), wave 3
+for 47 (42.0 %) — **48 % average exposure**. So the post-window-average drag is
+roughly **2.23 × 0.48 ≈ −1.07 pp**.
+
+Against the 2026-08-16 measured headline that is
+**~27 % of Oklahoma's −3.96 pp and ~14 % of Florida's −7.83 pp.**
+
+**So about a quarter of the Oklahoma traffic decline the document attributes to
+McValue is in fact the June price rounds.** McValue attribution survives — it is
+still the majority of the effect — but the document cannot keep claiming the whole
+decline, and now it has a measured number to subtract rather than a caveat to hedge
+with. That is a strictly better position than the one the file was in.
+
+Assumes the price effect is constant over the post window, which 13 days cannot
+establish. It is a first-order estimate; present it as a bound.
+
+### ⚠ D IS GATED ON TWO CHECKS — do not quote −1.07 pp until both pass
+Both queries are written in the .sql file and neither has been run.
+
+1. **D-PLACEBO — parallel trends.** DiD is only valid if the two cohorts move
+   *together* absent treatment. Re-runs D on windows after Feb 25 and before
+   Jun 13, when neither cohort had moved. Near 0 → D stands. Near 2 → D is
+   measuring cohort composition and must be discarded outright.
+2. **D-ROBUST — the two improvers are both in wave 3.** **Tishomingo (43380)
+   improves mechanically** as its 2024-12-16 honeymoon decays out of the LY base —
+   that is a *trend* difference, precisely what breaks DiD, and it is the sharpest
+   threat to this result. **Elgin (33222)** is the only genuinely positive
+   restaurant. Both sit in the cohort that produced the +2.24 pp.
+   Arithmetic says neither can explain it — each is ~2–2.5 % of cohort volume, so a
+   2.24 pp cohort swing would need a ~90–110 pp single-store move — but **that is
+   reasoning, not measurement.** Run it.
+
+This does **not** unblock the document's existing publish gate (the March 2026 vs
+March 2025 comparison and the free-item footprint check, both still unrun). It adds
+a fourth thing the document must state.
 
 ---
 
