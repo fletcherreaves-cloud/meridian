@@ -87,10 +87,16 @@ export function inCloseWindow(dateStr, closeDays = 4) {
 // Dispatch16 (#374 KB verification, 2026-08-18) — active=false alone is not "safe to
 // exclude": the QSRSoft KB distinguishes Topic 3 ("not in any recipe, inventory > 0" —
 // legacy/obsolete, correctly excluded) from Topic 6 ("not active but part of an ACTIVE
-// recipe" — still real to-count work). Measured live: of 2316 active=false items, 144
-// (6.2%) are recipeItem=true — genuine Topic 6, spread across 23/27 stores. `r.recipeItem
-// === true` rescues exactly those, regardless of the active flag — an item still living in
-// an active recipe is real work even if QSRSoft's own active_in_recipe flag says otherwise.
+// recipe" — still real to-count work). `r.recipeItem === true` rescues exactly those,
+// regardless of the active flag — an item still living in an active recipe is real work
+// even if QSRSoft's own active_in_recipe flag says otherwise.
+//
+// Re-verified against production Supabase data (dispatch20 §1, 2026-08-18, period 2026-08,
+// all 27 stores, post-migration): of 2,368 active=false items, 167 (7.1%) are recipeItem=true,
+// spread across 25/27 stores — supersedes the earlier pre-migration DUMP_RAW_FIELDS probe
+// (2,316 / 144 / 6.2% / 23 stores), which ran before `recipe_item` existed as a real column.
+// Full acceptance-criteria verification (Tecumseh Paper before/after, per-store active-vs-full
+// table, 27-store re-grade diff) in memory/374-recipe-item-verification-2026-08-18.md.
 const isActive = (r) => r.active !== false || r.recipeItem === true;
 
 /**
