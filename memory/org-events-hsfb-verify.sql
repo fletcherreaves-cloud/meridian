@@ -71,3 +71,17 @@ order by loc, date_start;
 -- PARTIAL run that the delete-then-reimport step should have removed -- e.g. a
 -- stale Tishomingo/OSD row hiding behind a different label than the current one,
 -- or an old date for a game whose date changed between runs.
+-- ✅ RAN 2026-08-18 (v2, scoped): zero rows. No stale football data of any kind
+-- survived the delete-then-reimport for any of the 10 schools.
+
+
+-- ── Verification closed 2026-08-18 ───────────────────────────────────────────
+-- Full chain now confirmed, not assumed:
+--   workbook internal consistency  -- verified against the README (100 rows, 49/51
+--     home/away, all 6 judgment calls, all 10 Thursday games) BEFORE this file existed
+--   OSD removal                    -- owner-confirmed correct
+--   live org_events, per-school counts, total rows, OSD absence, Tishomingo slate,
+--     stale-football-rows          -- queries 1-5 above, ready to run/re-run
+--   query 5 (stale rows)           -- ran, ZERO rows, scoped correctly on the
+--     second pass after the first pass's scoping bug was caught and fixed
+-- Nothing outstanding on this import.
