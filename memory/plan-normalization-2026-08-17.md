@@ -257,6 +257,63 @@ for the SAME daypart+dow and measures the residual spread:
 **G stays gated on G-2, not on G-1.** G-1 only established that there is
 something to decompose.
 
+### ✅ PROBE G-2 RESULT — owner-run 2026-08-18. **Workstream G CONFIRMED.**
+
+`median_execution_spread` = **53.4s** across **27 stores**. Threshold was ~40s.
+
+| | |
+|---|---|
+| raw within-store spread (G-1) | 86.7s |
+| **after removing daypart+dow structure (G-2)** | **53.4s** |
+| structural component removed | 33.3s |
+| surviving share | **62%** |
+| vs. the whole between-store spread (95.3s) | **56%** |
+
+Comparing a restaurant's own shift-slots against how that SAME slot runs
+district-wide, its worst slot is 53 seconds per car worse than its best — after
+subtracting everything every store shares. **One restaurant's internal variance
+is more than half the entire fastest-to-slowest store spread.**
+
+### ⚠️ 53.4s is a FLOOR, not the total — owner correction, 2026-08-18
+
+I discarded the 33.3s structural component on the assumption that dayparts differ
+because dayparts differ ("dinner is slower than breakfast everywhere — real, not
+coachable"). **The owner refuted that:** average check does run higher at dinner,
+but **the VLH guide is built to staff for it.** If speed still degrades at dinner,
+that is staffing not tracking the guide, or a guide wrong for that store — both
+actionable. "Structural" was a category asserted from outside the restaurant.
+
+**The design consequence matters more than the correction.** G-2 normalizes each
+cell against the district median for the same daypart — so if all 27 stores
+under-staff to guide at dinner, that district-wide coachable problem normalizes
+to ZERO residual and the query reports "structural." Same class as averaging
+averages: erasing a real effect by assuming it was structure. G-2 stayed useful
+only because it is the *conservative* cut; it cannot see a district-common
+failure, by construction.
+
+**The better normalizer is already on the same row.** `qsr_daily_activity` carries
+`total_needed_hours`, `total_scheduled_hours` and `actual_punched_hours` at the
+same `hour_slot` grain as the speed data:
+
+- scheduled vs needed → did the manager **schedule** to guide
+- punched vs scheduled → did the shift **execute** the schedule
+- punched vs needed → net staffing vs guide
+
+⚠️ **Blocked on one known ambiguity:** CLAUDE.md flags `total_needed_hours` as
+*"either the algorithmic recommendation for projected volume, or the actual hours
+the manager scheduled — ambiguous without further API investigation."* If it is
+the VLH guide, this entire line runs off data already pulled nightly. If not, the
+denominator is wrong. **Owner is sending the VLH guides to settle it.**
+
+### Next, in order
+
+1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
+   ratios. Tests the owner's claim directly and reclaims the 33.3s if he is right.
+   Gated on the `total_needed_hours` ambiguity above.
+2. **G-2b** — the 25 worst slot-vs-peers gaps, in `probe-g1-shift-dimension.sql`.
+   The artifact a DO uses: names a store, a daypart and a day against what every
+   other store does in that same slot.
+
 ### Findings from writing the probe (already banked, independent of the verdict)
 
 - **`qsr_daily_activity` carries hourly speed-of-service for every station** — `dt_untilserve`/`dt_trans_cnt`, `fc_*`, `mfy1/2_*`, `bev_*` — **and `actual_punched_hours` at the same `hour_slot` grain.** Outcome and labor are already on one row, at one key. The join G needs does not require a new pull.
