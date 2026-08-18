@@ -333,3 +333,45 @@ select grp,
   round(((100.0*trt/nullif(trt_ly,0))
        - (100.0*ctl/nullif(ctl_ly,0)))::numeric, 2)     as did_pp
 from d order by grp;
+
+
+-- ── D-PLACEBO-TRIMMED · the band-tightener ─────────────────────────────────
+-- D-PLACEBO's windows with D-ROBUST's cohorts. Tests whether the +0.72pp cohort
+-- drift D-PLACEBO found is caused by Tishomingo, whose honeymoon decaying out of
+-- the LY base is itself a TREND -- precisely what a placebo detects.
+--
+-- READ:  gap = placebo_did(wave2_early) - placebo_did(wave3_later_trimmed)
+--   ~0        -> trimmed cohorts DO have parallel trends. The trimmed effect
+--               (-2.74pp) needs no correction. Band tightens from ~1.5pp wide to
+--               ~0.5pp: drag ~-1.3pp, ~32-34%% of Oklahoma's -3.96pp. Quotable.
+--   ~+0.7     -> the drift is general cohort composition, not Tishomingo. Keep the
+--               wide -1.5 to -3.0pp band as published.
+--   larger or -> the design resolves less than assumed. Widen further and say the
+--   negative     stagger cannot separate price from McValue at this precision.
+with cohort as (
+  select unnest(array[
+    '0005183','0005985','0006178','0006838','0010422','0011657','0013113',
+    '0018213','0020475','0033109','0033704','0034222','0035242','0038609'
+  ]) as loc, 'wave2_early' as grp
+  union all
+  select unnest(array[
+    '0003708','0006972','0010034','0010915','0024471','0029760','0031357',
+    '0032525','0035064','0037566'          -- 33222 Elgin and 43380 Tishomingo removed
+  ]), 'wave3_later_trimmed'
+), d as (
+  select c.grp,
+    sum(r.transactions)    filter (where r.dt between '2026-04-20' and '2026-05-09') as ctl,
+    sum(r.ly_transactions) filter (where r.dt between '2026-04-20' and '2026-05-09') as ctl_ly,
+    sum(r.transactions)    filter (where r.dt between '2026-05-10' and '2026-05-22') as trt,
+    sum(r.ly_transactions) filter (where r.dt between '2026-05-10' and '2026-05-22') as trt_ly
+  from qsr_daily_activity_rollup r
+  join cohort c on c.loc = r.loc
+  where r.dt between '2026-04-20' and '2026-05-22'
+  group by 1
+)
+select grp,
+  round((100.0*ctl/nullif(ctl_ly,0) - 100)::numeric, 2) as control_vs_ly_pct,
+  round((100.0*trt/nullif(trt_ly,0) - 100)::numeric, 2) as treated_vs_ly_pct,
+  round(((100.0*trt/nullif(trt_ly,0))
+       - (100.0*ctl/nullif(ctl_ly,0)))::numeric, 2)     as placebo_did_pp
+from d order by grp;
