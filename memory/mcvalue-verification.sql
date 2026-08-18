@@ -270,7 +270,18 @@ from d order by grp;
 
 
 -- ── D-ROBUST · D again, minus the two restaurants that could be driving it ──
--- NOT YET RUN. Both of the set's "improvers" sit in wave3_later, which is the
+-- ✅ RAN 2026-08-18. D SURVIVES AND STRENGTHENS:
+--    wave2_early        (14) control -2.83% -> treated -2.82%  did +0.01pp
+--    wave3_later_trimmed(10) control -2.83% -> treated -0.08%  did +2.75pp
+--    => price effect -2.74pp (vs -2.23pp untrimmed). The two removed stores were
+--       DAMPENING the estimate, not inflating it -- both were already improving in
+--       the control period so their control-to-treated delta was small.
+--    => the cohorts sit at an IDENTICAL -2.83%% control, then diverge 2.74pp the
+--       moment one takes price. That is a match in LEVEL; D-PLACEBO still has to
+--       establish the match in TREND.
+--    Carry as a bound: effect -2.23 to -2.74pp, post-window drag -1.07 to -1.32pp,
+--    = 27-33%% of OK -3.96pp and 14-17%% of FL -7.83pp.
+-- (original note follows) Both of the set's "improvers" sit in wave3_later, which is the
 -- cohort that produced the +2.24pp:
 --   43380 Tishomingo — improves MECHANICALLY as its 2024-12-16 opening honeymoon
 --     decays out of the LY base. That is a TREND difference, exactly what breaks

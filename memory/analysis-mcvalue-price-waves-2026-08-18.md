@@ -91,21 +91,51 @@ with. That is a strictly better position than the one the file was in.
 Assumes the price effect is constant over the post window, which 13 days cannot
 establish. It is a first-order estimate; present it as a bound.
 
-### ⚠ D IS GATED ON TWO CHECKS — do not quote −1.07 pp until both pass
-Both queries are written in the .sql file and neither has been run.
+### D-ROBUST — RAN 2026-08-18. D strengthens, and the cohorts match exactly.
 
-1. **D-PLACEBO — parallel trends.** DiD is only valid if the two cohorts move
-   *together* absent treatment. Re-runs D on windows after Feb 25 and before
-   Jun 13, when neither cohort had moved. Near 0 → D stands. Near 2 → D is
-   measuring cohort composition and must be discarded outright.
-2. **D-ROBUST — the two improvers are both in wave 3.** **Tishomingo (43380)
-   improves mechanically** as its 2024-12-16 honeymoon decays out of the LY base —
-   that is a *trend* difference, precisely what breaks DiD, and it is the sharpest
-   threat to this result. **Elgin (33222)** is the only genuinely positive
-   restaurant. Both sit in the cohort that produced the +2.24 pp.
-   Arithmetic says neither can explain it — each is ~2–2.5 % of cohort volume, so a
-   2.24 pp cohort swing would need a ~90–110 pp single-store move — but **that is
-   reasoning, not measurement.** Run it.
+Re-ran D with the two restaurants that could have been driving it removed —
+**Tishomingo (43380)**, which improves mechanically as its 2024-12-16 honeymoon
+decays out of the LY base, and **Elgin (33222)**, the only genuinely positive
+restaurant. Both sat in wave 3.
+
+| Cohort | control | treated | did |
+|---|---|---|---|
+| wave2_early (14) | **−2.83 %** | −2.82 % | +0.01 pp |
+| wave3_later_trimmed (10) | **−2.83 %** | −0.08 % | **+2.75 pp** |
+
+Two things, and the second is the important one.
+
+**1. The effect got bigger, not smaller: −2.74 pp.** Elgin and Tishomingo were
+*dampening* the estimate, not inflating it — both were already improving in the
+control period, so their control-to-treated *delta* was small and diluted the
+cohort average. I had predicted they could not explain the result; they could not,
+but I had the direction of their influence backwards. Removing them raises the
+price effect from −2.23 pp to −2.74 pp.
+
+**2. The two cohorts sit at an identical −2.83 % in the control period** — then
+diverge by 2.74 pp the moment one takes price and the other does not. Matching to
+two decimals is partly luck and should not be oversold, but it kills the
+"the cohorts are just different restaurants" objection about as completely as
+observational data can. Note this is a match in *level*; **trend** is what
+D-PLACEBO still has to establish.
+
+### The number to carry: a bound, not a point
+- Price effect while in force: **−2.23 pp to −2.74 pp** of guest counts
+- Post-window-average drag (48 % exposure): **−1.07 pp to −1.32 pp**
+- **≈ 27–33 % of Oklahoma's −3.96 pp; ≈ 14–17 % of Florida's −7.83 pp**
+
+**So roughly a quarter to a third of the Oklahoma traffic decline the document
+attributes to McValue is in fact the June price rounds.** Reporting it as a bound
+matches this file's own standing instruction to state the DiD as a bound rather
+than a point estimate.
+
+### ⚠ ONE CHECK LEFT — D-PLACEBO. Do not quote the range until it passes.
+Written in the .sql file, not yet run. DiD is valid only if the cohorts move
+*together* absent treatment. D-PLACEBO re-runs D on windows after the Feb 25
+district-wide round and before the Jun 13 wave, when neither cohort had moved.
+**Near 0 → the −1.07/−1.32 pp range stands. Near 2 → D is measuring a trend
+difference between cohorts and must be discarded outright**, identical control
+levels notwithstanding — matching levels is not matching trends.
 
 This does **not** unblock the document's existing publish gate (the March 2026 vs
 March 2025 comparison and the free-item footprint check, both still unrun). It adds
