@@ -39,10 +39,21 @@ Only 2 rows fall elsewhere: **2026-03-28** at Bonifay (10034) and Mossy Head (37
 — a small FL-only round inside the pre-window — and **2026-04-15** at Ponce de Leon,
 which is menu setup a month after it opened 2026-03-13. Ignore Ponce's.
 
-### Both waves cross both states
-Four FL restaurants are in wave 1 and three in wave 2. So the June round was **not**
-"all Oklahoma took the recommended change" — it reached Florida too, in both waves.
-**The owner's account needs reconciling against this before the document is final.**
+### Both waves cross both states — and this is NOT a contradiction (corrected 2026-08-18)
+Four FL restaurants are in wave 1 and three in wave 2.
+
+**An earlier draft of this file said the owner's account "does not survive this" and
+needed reconciling. That was an overreach and is withdrawn.** The account was
+specifically that *every Oklahoma restaurant* took the recommended June change, and
+B2 confirms exactly that — all 19 OK restaurants appear in one of the two waves.
+Nothing is contradicted.
+
+What the data *adds* is that **Florida took the June rounds too**, which the account
+did not speak to. That matters for a different reason than contradiction: Florida is
+the external control, so **price cannot explain the OK-vs-FL gap** — both markets
+repriced, and Florida is still ~4.6 pp worse. Something else drives that gap and this
+analysis has not identified it. Carry it as an open limitation, not as a conflict
+with what the owner said.
 
 ### Why this matters to the FBP
 Post-window is 2026-04-22 → 2026-08-11 (112 days). Wave 2 lands on day 53, wave 3 on
