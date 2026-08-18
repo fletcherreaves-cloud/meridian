@@ -305,6 +305,63 @@ the manager scheduled — ambiguous without further API investigation."* If it i
 the VLH guide, this entire line runs off data already pulled nightly. If not, the
 denominator is wrong. **Owner is sending the VLH guides to settle it.**
 
+### ✅ PROBE G-3 RESULT — owner-run 2026-08-18. Both explanations dead; a new finding.
+
+| daypart | sec/car | punched/guide | sched/guide | punched/sched | cars |
+|---|---|---|---|---|---|
+| Breakfast | **154.3** | **0.928** | 1.056 | 0.879 | 620,752 |
+| Lunch | 202.9 | 0.922 | 1.075 | 0.858 | 369,709 |
+| Afternoon | 183.8 | 1.171 | 1.376 | 0.851 | 267,769 |
+| Dinner | 204.3 | 1.085 | 1.342 | **0.808** | 248,625 |
+| Late | **246.5** | **1.207** | 1.292 | 0.935 | 204,292 |
+
+**Speed runs INVERSE to staffing.** Best-staffed daypart is slowest; leanest is
+fastest. What speed tracks is **volume** — Breakfast runs 3× Late's cars and is
+92s/car faster. Flow, not headcount.
+
+So **both** prior explanations are refuted: dinner is not slow from check size
+(PM's "structural" claim) and not from under-staffing to guide (it sits at 1.085
+OF guide). The owner's mechanism was right — the guide does compensate — but the
+resulting prediction did not hold either.
+
+### ⭐ The finding neither query was looking for
+
+**`punched_vs_scheduled` < 1.0 in EVERY daypart** (0.879 / 0.858 / 0.851 /
+**0.808** / 0.935). Across ~1.7M cars, stores punch **12–19% fewer hours than
+they scheduled**, worst at dinner. Consistent pattern: **schedule above guide
+(1.056→1.376) → lose 15–19% at the punch → land at or below guide.** The two
+highest-volume dayparts (Breakfast, Lunch) end up BELOW guide, at 0.928/0.922.
+
+**NOT yet called a defect.** Cutting early when the rush does not materialise is
+correct management. Punched < scheduled may be good behaviour, not a gap.
+
+### ⚠️ Two methodological cautions on the table above
+
+1. **Ecological correlation.** These are daypart aggregates. The inverse
+   staffing/speed relationship holds ACROSS dayparts and says nothing about what
+   happens WITHIN one. Inferring within-daypart causation from it is the classic
+   fallacy. G-4 fixes this by holding daypart and volume constant.
+2. `sec_per_car` and staffing ratios are ratio-of-sums throughout; the 24-slot
+   completeness guard is applied. No averaging of averages.
+
+### 🔓 The `total_needed_hours` ambiguity is now mostly resolved — WITHOUT the guides
+
+`scheduled_vs_guide` runs **1.056–1.376**, systematically ≠ 1.0, so
+`total_needed_hours` is demonstrably **not** a copy of `total_scheduled_hours` —
+the two columns diverge by daypart in a stable way. That is consistent with it
+being the real algorithmic guide, which is what CLAUDE.md left open. Not proof;
+the owner's VLH guides now **confirm** rather than **decide**.
+
+### G-4 — the decisive cut (query in `probe-g1-shift-dimension.sql`)
+
+Splits store-days by daypart × (sales met/missed projection) × (under/at/over
+guide), then medians `sec_per_car`. Read the **sales MET/BEAT** rows: if
+`under guide` is materially slower than `at guide` inside the same daypart, then
+understaffing a shift that earned its volume is real and coachable. If they
+match, staffing is not the lever and speed is about flow and process.
+Matched pair confirmed in the pull script: `prod_sales_scrubbed` (actual) ↔
+`proj_prod_sales_scrubbed` (projected).
+
 ### Next, in order
 
 1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
