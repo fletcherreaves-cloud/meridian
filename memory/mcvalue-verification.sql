@@ -448,3 +448,64 @@ from d;
 -- measured table starts POST at 04-22. One day. Defect 1 in the file already
 -- flags the pre/post boundary as unsettled -- this query uses 04-22 to match the
 -- figures that produced the -3.96pp headline. Do not silently switch conventions.
+
+
+-- ── F · MARCH FREE-ITEM FOOTPRINT — Defect 2's gate, does NOT need the 2025 calendar ─
+-- NOT YET RUN. Per the document: "pull DAR traffic and check for March 2026 vs
+-- March 2025. A month-long free-item promo leaves a visible footprint: a traffic
+-- spike with a check dip. This does not require the calendar -- it can be run now."
+--
+-- Every March 2026 row already carries its own ly_ twin (matched-day ly_transactions
+-- / ly_product_sales), so March 2026 vs "March 2025" is already computable without a
+-- separate 2025 pull. The test isolates March by comparing its vs-LY reading against
+-- the REST of the pre-window (Jan 1 - Apr 21, minus March) as the baseline -- a
+-- promo unique to March shows up as a deviation from that baseline, not as a raw
+-- number that needs outside context to interpret.
+--
+-- 19 Oklahoma restaurants, ratio of summed counts, average check = product_sales /
+-- transactions (never averaged per-store).
+with ok19 as (
+  select unnest(array[
+    '0003708','0005183','0005985','0006972','0010422','0010915','0011657',
+    '0013113','0018213','0020475','0024471','0029760','0031357','0032525',
+    '0033109','0033222','0033704','0034222','0035064'
+  ]) as loc
+), agg as (
+  select
+    case when r.dt between '2026-03-01' and '2026-03-31' then 'march' else 'rest_of_pre' end as bucket,
+    sum(r.transactions)     as trans,
+    sum(r.ly_transactions)  as trans_ly,
+    sum(r.product_sales)    as sales,
+    sum(r.ly_product_sales) as sales_ly
+  from qsr_daily_activity_rollup r
+  join ok19 o on o.loc = r.loc
+  where r.dt between '2026-01-01' and '2026-04-21'
+  group by 1
+)
+select
+  bucket,
+  round((100.0*trans/nullif(trans_ly,0) - 100)::numeric, 2)      as traffic_vs_ly_pct,
+  round((sales/nullif(trans,0))::numeric, 2)                     as avg_check,
+  round((sales_ly/nullif(trans_ly,0))::numeric, 2)               as avg_check_ly,
+  round((sales/nullif(trans,0) - sales_ly/nullif(trans_ly,0))::numeric, 2) as check_vs_ly_dollars
+from agg
+order by bucket desc;
+
+-- READ:
+--   traffic_vs_ly_pct(march) noticeably HIGHER than rest_of_pre  -> traffic spike, as
+--     a free-item promo predicts.
+--   check_vs_ly_dollars(march) noticeably LOWER (more negative, or less positive)
+--     than rest_of_pre -> check dip, as a $1-minimum free item predicts.
+--   BOTH present together -> the confound is LIVE. Defect 2's math applies as written:
+--     the 2026 pre-window is inflated on traffic and depressed on check, which makes
+--     the traffic DiD MORE negative than reality and the check DiD LARGER than
+--     reality -- both currently OVERSTATED, exactly the opposite direction from the
+--     June price confound this analysis already corrected for.
+--   NEITHER shows -> March is not distinguishable from the rest of the pre-window in
+--     this data, and the safest reading is that the 2025 twin absorbed a comparable
+--     offer (cancels) or 2026's offer didn't move behavior. Either way the confound
+--     can be described as inert without needing the 2025 calendar to prove why.
+--   ⚠ This measures WHETHER a footprint exists, not its full 2025-calendar context.
+--     If a footprint IS found, still get the March 2025 calendar issue per the
+--     document's step 1 -- confirming cancellation needs to know what ran last year,
+--     not just what this query shows about this year.
