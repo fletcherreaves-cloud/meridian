@@ -299,3 +299,51 @@ Query B shows missing/depressed rows across **2026-01-24 → 01-25** at many sto
 `constants.js:85` already documents a **Jan 2026 OK snow-storm closure** tagged as an
 event for 33222 — so this is a real closure, not a pull gap. Confirm the tag covers
 *every* affected store before any window including January is graded.
+
+
+---
+
+## 4. Query E — the six clean weeks, MEASURED 2026-08-18
+
+| | pre (Jan 1 – Apr 21) | B1–B3 clean (Apr 22 – Jun 1) | B4–B8 (Jun 2 – Aug 11) |
+|---|---|---|---|
+| Traffic vs LY | **+1.13 %** | **−2.01 %** | **−3.32 %** |
+| Traffic DiD | — | **−3.14 pp** | **−4.45 pp** |
+
+**Sanity check passed first:** pre reproduces at **+1.13 %**, exactly the 2026-08-16
+measured table. Cohort definition and window boundaries are validated, so the two
+new figures can be trusted to the same standard.
+
+### ⭐ −3.14 pp is the number the document leads with
+Six weeks, McValue alone — no national marketing, no price round. **It requires no
+correction and carries no caveat.** It is also the most conservative-against-us
+framing available, which is exactly why it is the strongest: leading with a number
+that needs defending is worse than leading with a slightly worse number that does
+not.
+
+### The two methods disagree by ~0.4 pp, and the disagreement is informative
+- **Method 1** — correct the full window for price: **−2.50 to −2.79 pp**
+- **Method 2** — measure the clean window directly: **−3.14 pp**
+
+Method 1 assumes price is the *only* confound. Method 2 assumes nothing. **Prefer
+method 2.** And note the sign of the gap: method 1 lands *less* negative, which is
+what you would see if the national marketing inside B4–B8 was mildly **positive**,
+inflating the full-window figure and causing a price-only correction to over-credit
+McValue.
+
+### ⛔ RETIRE the "traffic got worse as national marketing support increased" line
+This file's B4–B8 section builds a framing on that sentence — *"the period with the
+most promotional support is the period with the worst traffic performance."* The
+sentence is still literally true. **It is no longer safe to say.**
+
+Deterioration from clean to confounded is **−1.31 pp**. Price exposure inside B4–B8
+is **75.8 %** (10 OK restaurants priced for 60 of 71 days, 9 for 47), so price alone
+accounts for **−1.84 to −2.31 pp** in that stretch. **Our own price increase more
+than covers the entire deterioration, with room to spare.**
+
+Saying "traffic worsened as marketing increased" in the room invites one reply —
+*you raised prices in June* — and it is correct, it is ours, and it is bigger than
+the effect being pointed at. That is precisely the trap this whole price analysis
+existed to avoid walking into. Cut the line. What survives is the honest and
+narrower version: **the deterioration after 2 June is our price, not the offer
+failing harder** — which is why the clean six weeks are the read that matters.

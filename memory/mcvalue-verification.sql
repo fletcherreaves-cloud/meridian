@@ -386,7 +386,18 @@ from d order by grp;
 
 
 -- ── E · THE B1-B3 CLEAN-WINDOW DiD — the number to LEAD the document with ──
--- NOT YET RUN. Higher priority than anything else remaining here.
+-- ✅ RAN 2026-08-18.  pre +1.13%%  |  B1-B3 clean -2.01%%  |  B4-B8 -3.32%%
+--    => CLEAN DiD -3.14pp   CONFOUNDED DiD -4.45pp   (full window was -3.96pp)
+--    Sanity: pre reproduces the 08-16 table exactly at +1.13%%, so cohort and
+--    window boundaries are validated.
+--    -3.14pp IS THE HEADLINE. Six weeks, McValue alone, no correction, no caveat.
+--    Two methods for 'McValue alone' disagree ~0.4pp: correcting the full window
+--    for price gives -2.50 to -2.79pp, measuring the clean window gives -3.14pp.
+--    Method 2 assumes nothing; prefer it. The sign of the gap is what a mildly
+--    POSITIVE national-marketing contribution inside B4-B8 would produce.
+--    ⛔ RETIRE the 'traffic got worse as national marketing increased' framing:
+--       deterioration clean->confounded is -1.31pp, price exposure inside B4-B8 is
+--       75.8%%, so price alone accounts for -1.84 to -2.31pp -- MORE than all of it.
 --
 -- WHY: every price round lands in B4 or later (wave 2 on 06-13 in B4, wave 3 on
 -- 06-26 in B5). B1-B3 (04-22 -> 06-01) is therefore clean of national marketing
