@@ -1,6 +1,15 @@
 # Dispatch #20 — price is a data stream we do not have, and a vs-LY trap we do not guard
 
-**Board:** `main` at v5.060. #409 and #410 in flight, #410 deployed clean. The McValue price
+**✅ DELIVERED 2026-08-18.** All three items shipped in PR #411 (v5.062), merged to `main` clean —
+`src/engine/price-events.js` verified against 763k real `qsr_product_mix` rows reproducing the exact
+14/13 wave split with no tuning, wired to Signal Lab + `computeEventFactors()` + Store Dashboard;
+`firstRealTradingDate()`/`lyQuality()` added to `vs-ly.js`, wired into `RankingView` so a young store
+like Tishomingo renders flagged instead of ranking as a top performer; the 27-store `crit` finding
+chased (not left flagged) to a real bug — 98.9% of Condiment items reading `active=false`
+district-wide — fixed, with real-data impact 27/27 crit → 10 ok/5 warn/12 crit. #409 and #410 also
+merged the same day. Kept below as the original ask, for the record.
+
+**Board (at time of writing):** `main` at v5.060. #409 and #410 in flight, #410 deployed clean. The McValue price
 question is now *measured* — six queries, in `memory/mcvalue-verification.sql`, findings in
 `memory/analysis-mcvalue-price-waves-2026-08-18.md`.
 
