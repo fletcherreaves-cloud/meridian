@@ -423,6 +423,77 @@ TPPH currently reaches the app only via manual upload (`ctrl.tpph`/`lab.tpph`,
 manual version. Squarely the standing rule: derive from already-pulled atoms
 rather than add a manual upload, and keep `MANUAL_ONLY_METRICS` empty.
 
+### 🛑 CORRECTION 2026-08-18 — the G-probe daypart boundaries were INVENTED and 3 of 5 are wrong
+
+Owner supplied the **2022 VLH Workbooks** (Standard + High Productivity). They
+define the dayparts the guide itself is built on:
+
+| daypart | PM used | **VLH guide (authoritative)** |
+|---|---|---|
+| Breakfast | 4am–11am | **5am–11am** |
+| Lunch | 11am–2pm | 11am–2pm ✓ |
+| Afternoon | 2pm–5pm | 2pm–5pm ✓ |
+| Dinner | 5pm–**8pm** | **5pm–11pm** |
+| Late Night | **8pm**–4am | **11pm–5am** |
+
+**What went wrong:** the boundaries were built from general knowledge of a
+McDonald's day instead of the authoritative source, which the owner held all
+along. The guides were requested only to settle the `total_needed_hours` column
+ambiguity; they turned out to redefine the axis every G-3/G-4 conclusion groups
+on. Same failure as the `dt_untilserve` microseconds/milliseconds defect — a
+plausible assumption used where a source of truth existed.
+
+**Blast radius:** the "Late Night" bucket carried **8–11pm**, which the guide
+calls Dinner — three hours of real dinner volume diluting the night bucket.
+"Dinner" was only the first half of dinner. "Breakfast" absorbed the 4–5am hour
+the guide calls Late Night.
+
+**Not corrupt, mislabelled.** `Σpunched / Σneeded` over the same hour set on both
+sides is arithmetically valid whatever the buckets. But every conclusion attached
+to a daypart NAME needs re-running. Expectation: the night-shift finding
+**strengthens** once 8–11pm dinner volume is stripped out.
+
+### ✅ CORRECTED daypart mapping — use this, do not re-derive
+
+`hour_slot` is the END of the block and runs `05:00`→`28:00` across the 4am
+business day, so `'05:00'` = 4–5am — Late Night sitting at the START of the
+business day while the rest of Late Night sits at the end. The `else` catches both.
+
+```sql
+case
+  when substring(a.hour_slot,1,2)::int between  6 and 11 then '1 Breakfast'    -- 5a-11a
+  when substring(a.hour_slot,1,2)::int between 12 and 14 then '2 Lunch'        -- 11a-2p
+  when substring(a.hour_slot,1,2)::int between 15 and 17 then '3 Afternoon'    -- 2p-5p
+  when substring(a.hour_slot,1,2)::int between 18 and 23 then '4 Dinner'       -- 5p-11p
+  else                                                        '5 Late Night'  -- 11p-5a (24..28 + 05)
+end
+```
+
+6 + 3 + 3 + 6 + 6 = **24 slots**, reconciling exactly with the DAR's 24.
+
+### ⭐ The guide independently supports the night-shift hypothesis
+
+**IPO by daypart** (identical in both workbooks): Breakfast 3.294 · Lunch 4.391 ·
+Afternoon 4.279 · **Dinner 4.854** · **Late Night 3.321**.
+
+The guide **already expects** night productivity ~30% below dinner and staffs for
+it — which is exactly the owner's "the VLH guide is designed to compensate,"
+stated by the guide in its own numbers. **Night still finishes last on speed with
+that allowance built in.** That is the strongest support the capability
+hypothesis has had, not a weakening of it.
+
+### ⚠️ There is no single VLH guide — 48 configurations × 2 workbooks
+
+Guides are per **restaurant configuration**: Drive Thru (Side-by-Side/Tandem ·
+Single Lane 2 Booth · Single Lane 1 Booth · No Drive Thru) × In-Store (Self Serve
+· Crew Pour) × Kitchen (Fryer Same Side · Fryer Opposite · OPL · COPL) × AOT
+(Yes/No) = 48 pages, and **two** workbooks (Standard vs High Productivity). Each
+restaurant maps to one page with its own labor step-tables.
+
+**We do not currently hold each store's configuration anywhere.** Any per-store
+guide analysis needs it first. Guide tables are guest-count step functions
+(e.g. Drive Thru Breakfast: 1 crew for 0–9 guests, 2 for 10–43, 3 for 44–65…).
+
 ### Next, in order
 
 1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
