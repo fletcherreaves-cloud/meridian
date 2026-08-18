@@ -129,13 +129,54 @@ attributes to McValue is in fact the June price rounds.** Reporting it as a boun
 matches this file's own standing instruction to state the DiD as a bound rather
 than a point estimate.
 
-### ⚠ ONE CHECK LEFT — D-PLACEBO. Do not quote the range until it passes.
-Written in the .sql file, not yet run. DiD is valid only if the cohorts move
-*together* absent treatment. D-PLACEBO re-runs D on windows after the Feb 25
-district-wide round and before the Jun 13 wave, when neither cohort had moved.
-**Near 0 → the −1.07/−1.32 pp range stands. Near 2 → D is measuring a trend
-difference between cohorts and must be discarded outright**, identical control
-levels notwithstanding — matching levels is not matching trends.
+### D-PLACEBO — RAN 2026-08-18. Not zero. Judgment call, stated as such.
+
+Windows entirely after the Feb 25 district round and before the Jun 13 wave, when
+neither cohort had moved.
+
+| Cohort | control (Apr 20–May 9) | treated (May 10–22) | placebo did |
+|---|---|---|---|
+| wave2_early | −2.11 % | −3.71 % | −1.60 pp |
+| wave3_later | +0.32 % | −2.00 % | −2.32 pp |
+
+**Cohort drift with no treatment = −1.60 − (−2.32) = +0.72 pp.**
+
+I pre-registered "near 0 → stands, near 2 → discard." **+0.72 landed between the
+two thresholds**, so this is a judgment call and is recorded as one rather than
+rounded to whichever side is convenient.
+
+**The call: D stands, with a wider band.** Two reasons.
+
+1. **The drift has the wrong sign to explain the result.** Absent treatment wave 2
+   runs *0.72 pp better* than wave 3. In the treatment window wave 2 ran **2.23 pp
+   worse**. A bias pointing that direction cannot manufacture the finding — to do
+   that it would have to be −2.23 pp itself. If anything the true effect is larger
+   than measured, and the placebo-corrected point estimate is **−2.95 pp**.
+2. **But parallel trends does not hold exactly**, and pretending otherwise would be
+   the error. +0.72 pp is ~32 % of the effect's magnitude. That is the noise floor
+   on any single run of this design and it has to widen the band.
+
+### THE NUMBER TO CARRY — final, placebo-widened
+- Price effect while in force: **−1.5 pp to −3.0 pp** of guest counts
+  (raw −2.23, trimmed −2.74, placebo-corrected −2.95, pessimistic −1.51)
+- Post-window-average drag at 48 % exposure: **−0.7 pp to −1.4 pp**
+- **≈ 18–36 % of Oklahoma's −3.96 pp; ≈ 9–18 % of Florida's −7.83 pp**
+
+**Roughly a fifth to a third of the Oklahoma traffic decline the document
+attributes to McValue is in fact the June price rounds.** The substantive
+conclusion is unchanged from the pre-placebo read — price is a material minority,
+McValue remains the majority — but the band is now honest about how much the
+design can actually resolve. Report the band; never the midpoint as a point.
+
+### Optional last tightening (D-PLACEBO-TRIMMED) — worth one query, not required
+D-PLACEBO ran on **full** cohorts, so Tishomingo is in it — and Tishomingo's
+mechanical improvement as its honeymoon decays out of the LY base is precisely a
+*trend*, which is exactly what a placebo detects. It is therefore likely that
+Tishomingo causes most of the +0.72 pp drift. Re-running D-PLACEBO on the
+**trimmed** cohorts tests that: if it comes back near 0, the trimmed effect
+(−2.74 pp) needs no correction and the band tightens from 1.5 pp wide to roughly
+0.5 pp. Swap the two window pairs in D-ROBUST for D-PLACEBO's. Nice to have; the
+band above is already usable without it.
 
 This does **not** unblock the document's existing publish gate (the March 2026 vs
 March 2025 comparison and the free-item footprint check, both still unrun). It adds

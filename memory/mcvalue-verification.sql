@@ -231,8 +231,22 @@ order by grp;
 -- driver and the McValue attribution stands.
 
 
--- ── D-PLACEBO · does the parallel-trends assumption hold? RUN THIS FIRST ────
--- NOT YET RUN. D is only valid if the two cohorts move TOGETHER absent treatment.
+-- ── D-PLACEBO · does the parallel-trends assumption hold? ──────────────────
+-- ✅ RAN 2026-08-18. NOT ZERO -- landed between the pre-registered thresholds:
+--    wave2_early control -2.11%% -> treated -3.71%%   placebo_did -1.60pp
+--    wave3_later control +0.32%% -> treated -2.00%%   placebo_did -2.32pp
+--    => cohort drift with NO treatment = +0.72pp.
+--    Parallel trends does NOT hold exactly. But the drift has the WRONG SIGN to
+--    explain the result: absent treatment wave2 runs 0.72pp BETTER, and in the
+--    treatment window it ran 2.23pp WORSE. Bias cannot manufacture the finding;
+--    placebo-corrected point estimate is -2.95pp.
+--    VERDICT: D stands with a WIDER BAND. Effect -1.5 to -3.0pp while in force,
+--    post-window drag -0.7 to -1.4pp, = 18-36%% of OK -3.96pp / 9-18%% of FL -7.83pp.
+--    Report the band, never the midpoint as a point.
+--    OPTIONAL: re-run this on the D-ROBUST trimmed cohorts. Tishomingo's honeymoon
+--    decay is itself a TREND, so it likely causes most of the +0.72pp. If a trimmed
+--    placebo is ~0, the trimmed -2.74pp needs no correction and the band tightens.
+-- (original note follows) D is only valid if the two cohorts move TOGETHER absent treatment.
 -- This re-runs D on windows where NEITHER cohort had moved: entirely after the
 -- 2026-02-25 district-wide round and entirely before the 2026-06-13 wave.
 -- Same shape (20-day control, 13-day "treated"), same cohorts, no real treatment.
