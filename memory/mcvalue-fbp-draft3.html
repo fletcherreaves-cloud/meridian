@@ -1,0 +1,430 @@
+<title>McValue 2.0 in Oklahoma</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600;6..72,700&family=Inter:wght@400;600;700;750;800&display=swap">
+<style>
+  :root{
+    --paper:#f6f7f9; --card:#ffffff;
+    --ink:#12151c; --ink-2:#3d4552; --ink-3:#697386;
+    --rule:#dfe3ea; --rule-2:#eceef3;
+    --gold:#a67806; --gold-soft:#fdf4dd;
+    --neg:#a8302a; --neg-soft:#fbeceb;
+    --pos:#0f6d63; --pos-soft:#e7f2f0;
+    --gate:#5b3fa8; --gate-soft:#f1ecfb;
+    --serif:"Newsreader",ui-serif,Georgia,"Iowan Old Style","Times New Roman",serif;
+    --sans:"Inter",ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#0f1117; --card:#161a22;
+      --ink:#e8ebf0; --ink-2:#b3bbc9; --ink-3:#7c8698;
+      --rule:#272d38; --rule-2:#1e232c;
+      --gold:#f5bc00; --gold-soft:#2a2410;
+      --neg:#f08079; --neg-soft:#2c1917;
+      --pos:#5fc4b6; --pos-soft:#12241f;
+      --gate:#b49bf0; --gate-soft:#1e1930;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0f1117; --card:#161a22;
+    --ink:#e8ebf0; --ink-2:#b3bbc9; --ink-3:#7c8698;
+    --rule:#272d38; --rule-2:#1e232c;
+    --gold:#f5bc00; --gold-soft:#2a2410;
+    --neg:#f08079; --neg-soft:#2c1917;
+    --pos:#5fc4b6; --pos-soft:#12241f;
+    --gate:#b49bf0; --gate-soft:#1e1930;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--paper);color:var(--ink);font-family:var(--serif);
+    font-size:17px;line-height:1.62;margin:0;padding:0 20px 96px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:790px;margin:0 auto}
+  p{margin:0 0 1.05em;max-width:68ch}
+  strong{font-weight:700;color:var(--ink)}
+  .eyebrow{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+  header{padding:64px 0 0}
+  h1{font-family:var(--sans);font-size:clamp(34px,6vw,52px);line-height:1.02;
+    letter-spacing:-.03em;font-weight:800;margin:0 0 18px;text-wrap:balance}
+  .standfirst{font-size:20px;line-height:1.5;color:var(--ink-2);max-width:60ch;margin:0 0 30px}
+  .meta{display:flex;flex-wrap:wrap;gap:0 34px;font-family:var(--sans);font-size:12.5px;
+    line-height:2.1;color:var(--ink-3);border-top:1px solid var(--rule);
+    border-bottom:1px solid var(--rule);padding:12px 0;margin-bottom:44px}
+  .meta b{color:var(--ink);font-weight:650}
+  h2{font-family:var(--sans);font-size:13px;font-weight:750;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink-3);margin:56px 0 6px;padding-bottom:9px;
+    border-bottom:1px solid var(--rule)}
+  h3{font-family:var(--sans);font-size:22px;font-weight:700;letter-spacing:-.017em;
+    line-height:1.25;margin:30px 0 10px;text-wrap:balance}
+  h2 + h3{margin-top:22px}
+  .chip{display:inline-block;font-family:var(--sans);font-size:10.5px;font-weight:750;
+    letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px;
+    vertical-align:2px;margin-left:9px;white-space:nowrap}
+  .chip.verified{background:var(--pos-soft);color:var(--pos)}
+  .chip.bounded{background:var(--gold-soft);color:var(--gold)}
+  .chip.gated{background:var(--gate-soft);color:var(--gate)}
+  .chip.dropped{background:var(--neg-soft);color:var(--neg)}
+  .callout{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--gate);
+    padding:22px 24px;margin:26px 0 32px;border-radius:2px}
+  .callout.warn{border-left-color:var(--gold)}
+  .callout.stop{border-left-color:var(--neg)}
+  .callout.good{border-left-color:var(--pos)}
+  .callout h4{font-family:var(--sans);font-size:14.5px;font-weight:750;letter-spacing:-.01em;
+    margin:0 0 10px;color:var(--ink)}
+  .callout p{font-size:16px}
+  .callout p:last-child{margin-bottom:0}
+  .tablewrap{overflow-x:auto;margin:22px 0 30px}
+  table{border-collapse:collapse;width:100%;min-width:440px;font-family:var(--sans);
+    font-size:14px;font-variant-numeric:tabular-nums}
+  caption{text-align:left;font-family:var(--sans);font-size:12px;color:var(--ink-3);
+    padding-bottom:9px}
+  th{text-align:left;font-weight:700;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-3);border-bottom:1px solid var(--rule);padding:0 14px 8px 0}
+  td{padding:9px 14px 9px 0;border-bottom:1px solid var(--rule-2);color:var(--ink-2);
+    vertical-align:top}
+  td:first-child{color:var(--ink);font-weight:600}
+  td.num,th.num{text-align:right;padding-right:0}
+  tr.total td{border-top:1px solid var(--rule);border-bottom:none;font-weight:700;color:var(--ink)}
+  .neg{color:var(--neg);font-weight:700}
+  .pos{color:var(--pos);font-weight:700}
+  .figrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;
+    background:var(--rule);border:1px solid var(--rule);margin:26px 0 8px;border-radius:2px;
+    overflow:hidden}
+  .fig{background:var(--card);padding:18px 20px 16px}
+  .fig .k{font-family:var(--sans);font-size:10.5px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+  .fig .v{font-family:var(--sans);font-size:31px;font-weight:800;letter-spacing:-.035em;
+    line-height:1;font-variant-numeric:tabular-nums}
+  .fig .n{font-family:var(--sans);font-size:12px;color:var(--ink-3);margin-top:7px;line-height:1.4}
+  .figcap{font-family:var(--sans);font-size:12.5px;color:var(--ink-3);margin:0 0 34px;max-width:68ch}
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:22px 0 30px}
+  ol.steps > li{counter-increment:s;position:relative;padding-left:44px;margin-bottom:22px;
+    max-width:68ch}
+  ol.steps > li::before{content:counter(s);position:absolute;left:0;top:2px;font-family:var(--sans);
+    font-size:12px;font-weight:750;width:26px;height:26px;border-radius:50%;display:flex;
+    align-items:center;justify-content:center;background:var(--card);border:1px solid var(--rule);
+    color:var(--ink-3)}
+  ol.steps > li > b{display:block;font-family:var(--sans);font-size:16px;font-weight:700;
+    letter-spacing:-.012em;margin-bottom:3px;color:var(--ink)}
+  ul.plain{padding-left:20px;margin:16px 0 26px;max-width:68ch}
+  ul.plain li{margin-bottom:9px}
+  .say{font-family:var(--serif);font-size:18.5px;line-height:1.5;font-style:italic;
+    border-left:2px solid var(--gold);padding-left:20px;margin:24px 0 28px;color:var(--ink);
+    max-width:60ch}
+  code{font-family:var(--mono);font-size:.87em;background:var(--rule-2);padding:1px 5px;
+    border-radius:3px}
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--rule);font-family:var(--sans);
+    font-size:12.5px;color:var(--ink-3)}
+  a{color:var(--gate)}
+  a:focus-visible,*:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
+  @media (max-width:560px){body{font-size:16.5px}header{padding-top:40px}.meta{gap:0 22px}}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Field Business Partner · Oklahoma · Draft 3</p>
+  <h1>McValue 2.0 in Oklahoma</h1>
+  <p class="standfirst">In the six weeks after launch when nothing else was running — no national
+  promotion, no price change — traffic fell 3.14 points against last year. That figure needs no
+  caveat, and it is the whole case.</p>
+  <div class="meta">
+    <span><b>Subject</b> 19 Oklahoma restaurants</span>
+    <span><b>Control</b> 6 Florida restaurants</span>
+    <span><b>Launch</b> 21 Apr 2026</span>
+    <span><b>Data through</b> 11 Aug 2026</span>
+    <span><b>Meeting</b> 25 Aug 2026</span>
+  </div>
+</header>
+
+<h2>What changed in this revision</h2>
+<p><strong>The price question is answered.</strong> Last revision said the check gain "steps up
+during the June price-round window" and called that alignment rather than proof. It also concluded
+that the within-Oklahoma test we wanted — comparing restaurants that changed price against ones
+that didn't — was off the table, because every Oklahoma restaurant took the change.</p>
+
+<p><strong>That conclusion was wrong, and being wrong about it is the best thing that happened to
+this document.</strong> Every Oklahoma restaurant did take the change — but not on the same day.
+It went out in two waves, thirteen days apart. Those thirteen days are the control we thought we
+didn't have, and they let us put a number on how much of the traffic decline is the offer and how
+much is us.</p>
+
+<div class="callout good">
+  <h4>What this buys</h4>
+  <p>Walking into the meeting saying "traffic is down 4 points and it's your offer" invites the
+  obvious reply: <em>you raised prices in June.</em> Walking in having already measured that,
+  subtracted it, and shown the six weeks where neither price nor national marketing moved is a
+  different conversation. The finding gets smaller and considerably harder to dismiss.</p>
+</div>
+
+<h2>The claim under test</h2>
+<p>McValue 2.0 launched 21 April 2026. The claim is that it has not delivered traffic in these
+restaurants, and that the shortfall is demand-side — the offer is not bringing people in — rather
+than execution.</p>
+
+<h2>Finding: traffic <span class="chip verified">measured</span></h2>
+
+<div class="figrow">
+  <div class="fig"><div class="k">Six clean weeks</div><div class="v neg">−3.14 pp</div>
+    <div class="n">McValue alone — lead with this</div></div>
+  <div class="fig"><div class="k">Full window</div><div class="v neg">−3.96 pp</div>
+    <div class="n">carries price and six promotions</div></div>
+  <div class="fig"><div class="k">After 2 June</div><div class="v neg">−4.45 pp</div>
+    <div class="n">the extra is our own price</div></div>
+</div>
+<p class="figcap">Pre-launch 1 Jan – 21 Apr, post-launch 22 Apr – 11 Aug. Every figure is a ratio of
+summed guest counts, never an average of per-restaurant rates.</p>
+
+<div class="tablewrap">
+<table>
+  <caption>Traffic against last year, matched day for day</caption>
+  <thead><tr><th>&nbsp;</th><th class="num">Oklahoma (19)</th><th class="num">Florida (6) — control</th></tr></thead>
+  <tbody>
+    <tr><td>Before launch</td><td class="num">+1.13 %</td><td class="num">+5.16 %</td></tr>
+    <tr><td>After launch</td><td class="num">−2.83 %</td><td class="num">−2.68 %</td></tr>
+    <tr class="total"><td>Difference</td><td class="num neg">−3.96 pp</td><td class="num neg">−7.83 pp</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Florida says the cause is not Oklahoma</h3>
+<p>Six Florida restaurants, a separate District Officer, nine hundred miles away, a different
+competitive set — and they fell further. Whatever is happening is not local execution and not one
+operator. State the caveat before the FBP does: these markets share an ownership umbrella and a
+person above both. It is a strong control, not a clean one. Saying so first costs nothing.</p>
+
+<h2>The price change, measured <span class="chip verified">new</span></h2>
+
+<p>Product Mix holds every item's price, per restaurant, per day. A menu price change is a price
+that moves and <em>stays</em> moved — as distinct from a promotion, which moves for a day and
+comes back. Requiring a price to hold flat for fourteen trading days on both sides of a change
+separates the two cleanly.</p>
+
+<p>Run that across January to August and three price rounds fall out, and nothing else does:</p>
+
+<div class="tablewrap">
+<table>
+  <caption>Price rounds detected — persistent step changes in base menu price</caption>
+  <thead><tr><th>Date</th><th class="num">Restaurants</th><th>Falls in</th></tr></thead>
+  <tbody>
+    <tr><td>25 Feb 2026</td><td class="num">all 27</td><td>pre-launch window</td></tr>
+    <tr><td>13 Jun 2026</td><td class="num">14 — wave one</td><td>post-launch, block 4</td></tr>
+    <tr><td>26 Jun 2026</td><td class="num">13 — wave two</td><td>post-launch, block 5</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Fourteen plus thirteen is twenty-seven. <strong>Every restaurant appears exactly once.</strong>
+The owner's account — that every Oklahoma restaurant took the recommended June change — is
+confirmed. What the data adds is that it went out in two waves, and that Florida took it too.</p>
+
+<h3>The thirteen days that do the work</h3>
+
+<p>Between 13 and 26 June, half the district was on the new prices and half was not. Both halves
+had McValue 2.0 running the whole time. The only systematic difference between them is price.</p>
+
+<div class="tablewrap">
+<table>
+  <caption>Guest counts vs last year, before and during the thirteen-day gap</caption>
+  <thead><tr><th>&nbsp;</th><th class="num">24 May – 12 Jun</th><th class="num">13 – 25 Jun</th><th class="num">Change</th></tr></thead>
+  <tbody>
+    <tr><td>Repriced 13 June</td><td class="num">−2.83 %</td><td class="num">−2.82 %</td><td class="num">+0.01 pp</td></tr>
+    <tr><td>Not yet repriced</td><td class="num">−2.83 %</td><td class="num">−0.08 %</td><td class="num pos">+2.75 pp</td></tr>
+    <tr class="total"><td>Price effect</td><td class="num">&nbsp;</td><td class="num">&nbsp;</td><td class="num neg">−2.74 pp</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Read the left-hand column before the right. <strong>The two groups sit at an identical −2.83 %
+before either one moves</strong>, then separate by nearly three points the moment one takes price
+and the other doesn't. That is about as close as observational data gets to a controlled test, and
+it was sitting in the data the whole time.</p>
+
+<div class="callout warn">
+  <h4>The mechanism matters more than the number</h4>
+  <p>Mid-June carries a seasonal lift. The restaurants that hadn't repriced caught it and went
+  positive against last year. The restaurants that had repriced didn't move at all.</p>
+  <p><strong>Price didn't push traffic down. It stopped traffic going up.</strong> That is the
+  version of this loss nobody notices on a report, because nothing ever looks like it got worse —
+  it just quietly stops getting better while everyone else's does.</p>
+</div>
+
+<h3>What we did to try to break it</h3>
+<p>Two checks, both run, both reported whatever they returned:</p>
+
+<ol class="steps">
+  <li><b>Remove the two restaurants that could be driving it</b>
+  Tishomingo, which improves on its own for reasons explained below, and Elgin, the one restaurant
+  genuinely growing. Both sat in the not-yet-repriced group. Removing them made the effect
+  <em>larger</em> — −2.74 pp instead of −2.23 pp. They were damping it, not creating it.</li>
+  <li><b>Re-run the whole test on a period when neither group had moved</b>
+  If the two groups drift apart on their own, the result is worthless. They drift by
+  +0.31 pp — about a ninth of the effect, and in the direction that would <em>hide</em> it, not
+  manufacture it.</li>
+</ol>
+
+<p>Scaled across the post-launch window — the first wave carried new prices for 60 of its 112 days,
+the second for 47 — that is <strong>1.2 to 1.5 points of the 3.96</strong>. Report it as a range.
+The design does not resolve it more finely than that, and pretending otherwise is how a number gets
+taken apart in the room.</p>
+
+<h2>The six clean weeks <span class="chip verified">measured</span></h2>
+
+<p>Map the price rounds onto the reporting blocks and something useful happens.</p>
+
+<div class="tablewrap">
+<table>
+  <caption>What is running inside each block</caption>
+  <thead><tr><th>Block</th><th>Window</th><th>National activity</th><th>Price</th></tr></thead>
+  <tbody>
+    <tr><td>B1 – B3</td><td>22 Apr – 1 Jun</td><td class="pos">clean</td><td class="pos">clean</td></tr>
+    <tr><td>B4</td><td>2 – 15 Jun</td><td>World Cup Happy Meal</td><td class="neg">wave one</td></tr>
+    <tr><td>B5</td><td>16 – 29 Jun</td><td>Fried Apple Pie LTO</td><td class="neg">wave two</td></tr>
+    <tr><td>B6 – B8</td><td>30 Jun – 10 Aug</td><td>rehit, two flavour launches</td><td class="neg">both in force</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Every price round lands in block 4 or later. <strong>The first six weeks after launch are clean
+of national marketing and clean of price at the same time.</strong> The previous revision already
+argued this window was the strongest evidential unit in the analysis and was buried in an
+eight-block average. It now stands on two independent grounds, and the second one was unknown when
+that recommendation was written.</p>
+
+<div class="tablewrap">
+<table>
+  <caption>Oklahoma traffic against last year, by what was running</caption>
+  <thead><tr><th>&nbsp;</th><th class="num">vs last year</th><th class="num">vs pre-launch</th></tr></thead>
+  <tbody>
+    <tr><td>Before launch</td><td class="num">+1.13 %</td><td class="num">—</td></tr>
+    <tr><td>Six clean weeks</td><td class="num">−2.01 %</td><td class="num neg">−3.14 pp</td></tr>
+    <tr><td>2 Jun onward</td><td class="num">−3.32 %</td><td class="num neg">−4.45 pp</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout good">
+  <h4>−3.14 pp is the number to put in front of the FBP</h4>
+  <p>Six weeks. McValue and nothing else. No promotion to argue about, no price change to be
+  accused of, no correction applied and no assumption made. Every other figure in this document
+  needs a sentence of defence; this one does not.</p>
+  <p>It is also slightly worse for us than the corrected full-window estimate of −2.5 to −2.8 pp.
+  <strong>Lead with it anyway.</strong> A number that needs no defending beats a better number
+  that does.</p>
+</div>
+
+<h3>What the gap after 2 June actually is</h3>
+<p>Traffic deteriorates by 1.31 points between the clean weeks and everything after. Our June price
+increase was in force for roughly three-quarters of that stretch, and on its own accounts for
+<strong>1.8 to 2.3 points</strong> of it — more than the entire deterioration.</p>
+
+<div class="callout stop">
+  <h4>A line from the previous revision has to go</h4>
+  <p>Earlier drafts built a framing on <em>"traffic got worse as national marketing support
+  increased"</em> — the period with the most promotional support showing the worst performance.
+  The sentence is still literally true. It is no longer safe to say.</p>
+  <p>Say it in the room and the reply is one sentence long: <em>you raised prices in June.</em>
+  That reply is correct, the price rise is ours, and it is larger than the effect being pointed
+  at. This is precisely the trap the price work existed to avoid walking into.</p>
+  <p>What survives is narrower and true: <strong>the decline after 2 June is our price, not the
+  offer failing harder.</strong> Which is exactly why the six clean weeks are the read that
+  matters.</p>
+</div>
+
+<h2>Not a finding: average check <span class="chip dropped">withdrawn</span></h2>
+
+<p>The original draft carried +10.4¢ as a McValue effect. Measured properly against the pre-launch
+trend it is +5.1¢, half the figure — and the price dates now explain the timing directly. Check
+sat at its pre-launch level through the first six weeks and stepped up in the block containing
+13 June. That is the block the first price wave lands in.</p>
+
+<p><strong>This is not our number to claim.</strong> Handing the FBP a check gain that turns out to
+be our own price increase costs more credibility than the point is worth. Drop it, and say why we
+dropped it — a document that retires its own best-sounding number is a document whose remaining
+numbers get believed.</p>
+
+<h2>One restaurant grew <span class="chip verified">measured</span></h2>
+
+<p>The district figure hides a 17.7-point spread. Per restaurant, the traffic difference runs from
++6.34 pp to −11.34 pp. <strong>Exactly one restaurant is genuinely positive: Elgin, at +6.34 pp</strong>
+— growing before launch, growing faster after.</p>
+
+<p>That is worth putting in front of the FBP, and worth being honest about: one restaurant out of
+twenty-six is not a pattern, and Elgin is a travel-stop location whose customer base is not the
+same as the others'. It is a lead to pull, not a defence.</p>
+
+<div class="callout stop">
+  <h4>Tishomingo looks positive and is not — this correction matters</h4>
+  <p>Tishomingo ranks second best in the district at +4.06 pp. Read the two halves: −10.58 % before
+  launch, −6.51 % after. Both deeply negative. It is not improving; it is lapping a less inflated
+  base.</p>
+  <p>The restaurant opened <strong>16 December 2024</strong>, so "last year" for the pre-launch
+  window is months two through five of its life — peak grand-opening — and "last year" for the
+  post-launch window is months five through nine, already decayed. The improvement is the honeymoon
+  fading out of the comparison.</p>
+  <p>This sharpens why it is excluded. Not <em>"the restaurant is in its opening ramp"</em> — it is
+  twenty months old. <strong>Its last-year comparison is the opening ramp.</strong> An earlier
+  figure set described Tishomingo as showing positive traffic movement; that line is retired and
+  must not reach the meeting.</p>
+</div>
+
+<h2>Supporting: it is not an execution problem <span class="chip verified">verified</span></h2>
+
+<ul class="plain">
+  <li><strong>Satisfaction held throughout.</strong> The slope turned positive after launch and
+  every dimension held during the FIFA promotion, accuracy peaking in June. If restaurants were
+  failing customers, this is where it would show.</li>
+  <li><strong>The FIFA Happy Meal did not move traffic</strong> — owner-confirmed as a commercial
+  miss, and corroborated by satisfaction holding right through it. Demand, not execution.</li>
+  <li><strong>Florida fell further</strong> under a different District Officer.</li>
+</ul>
+
+<p>Four independent lines now, counting the price test, and none depends on another. Challenging
+one does not collapse the argument. They converge on the same place: this is demand-side. That
+moves the conversation from <em>your operators need to execute better</em> to <em>the offer is not
+working.</em></p>
+
+<h2>Limitations, stated first</h2>
+
+<ul class="plain">
+  <li><strong>The post-launch window is not a clean treatment period.</strong> Six national events
+  and two price rounds sit inside it. That is precisely why the six clean weeks are the number to
+  lead with.</li>
+  <li><strong>The price test is thirteen days across two groups of unequal size</strong>, and the
+  groups were not randomly assigned. Directional and bounded, which is why it is reported as a
+  range rather than a point.</li>
+  <li><strong>Florida took the June price rounds too</strong>, in both waves. So price does not
+  explain why Florida is worse — something else does, and we have not identified it.</li>
+  <li><strong>The 2026 calendar was not symmetric with 2025's</strong>, and the asymmetry flatters
+  our finding. State it as a bound.</li>
+  <li><strong>The earlier traffic figures are retired, not reconciled.</strong> They were computed
+  over different data and do not reproduce. Nothing from that set appears above.</li>
+</ul>
+
+<h2>Two exclusions, both documented</h2>
+<ul class="plain">
+  <li><strong>Tishomingo</strong> — last-year comparison is an opening ramp. Excluding it
+  <em>strengthens</em> the finding.</li>
+  <li><strong>Ponce de Leon</strong> — opened 13 March 2026, no last-year comparison exists at all.</li>
+</ul>
+
+<h2>Open before the 25th</h2>
+<ol class="steps">
+  <li><b>March 2026 against March 2025</b>
+  Settles whether last year's month-long free-item offer inflates the pre-launch baseline. Still
+  gates publication.</li>
+  <li><b>Write the ask</b>
+  The one section no query produces. What are we requesting — offer changes, marketing weight,
+  relief, a review? The analysis is nearly closed; the request is not written.</li>
+</ol>
+
+<h2>The line built to be retold</h2>
+<p class="say">For six weeks after launch there was no promotion running and no price change in
+our restaurants. Traffic fell 3.14 points against last year. That is McValue on its own, with
+nothing else to blame and nothing subtracted — and everything that happened after June is our own
+price, which we measured before you had to ask.</p>
+
+<footer>
+  Draft 3 · 18 August 2026 · Meridian BI. Figures measured 16–18 August against
+  <code>qsr_daily_activity_rollup</code> and <code>qsr_product_mix</code>. Queries and full working
+  in <code>memory/mcvalue-verification.sql</code> and
+  <code>memory/analysis-mcvalue-price-waves-2026-08-18.md</code>.
+</footer>
+</div>

@@ -12,6 +12,53 @@ the owner 2026-08-14 — an earlier "Morhininweg" was voice-input garble).
 
 ---
 
+# ⭐⭐⭐ 2026-08-18 UPDATE — read this before the FINAL EDIT SET below; it supersedes it
+
+The price-and-traffic work below was done blind to menu pricing — it inferred price rounds from
+calendar deadlines because nobody had yet measured the actual dates restaurants took price. That
+inference was **wrong**, and it drove real content below (the "Correction — B1–B3 is clean was
+wrong" section, further down) to a wrong conclusion. A full session of measurement on 2026-08-18
+replaced inference with fact. **Full working, every query, every result: `memory/analysis-mcvalue-
+price-waves-2026-08-18.md`. Runnable SQL with each result recorded inline: `memory/mcvalue-
+verification.sql`. Current draft, incorporating all of this: `memory/mcvalue-fbp-draft3.html`.**
+
+**What changed, in order of importance:**
+
+1. **Actual price effective dates, measured from `qsr_product_mix` (persistent 14-day-flat step
+   change in base price, not calendar deadlines or promotional noise): 2026-02-25 (all 27
+   restaurants), 2026-06-13 (14), 2026-06-26 (13).** Not 5/14 and 6/26 as the calendar deadlines
+   implied. Every restaurant appears exactly once across the two June waves.
+2. **B1–B3 (2026-04-22 → 06-01) IS clean of both price and national marketing — confirmed by
+   measurement, not calendar reasoning.** The "Correction — 'B1–B3 is clean' was wrong" section
+   below is itself now wrong; it was built on assumed deadline dates that the actual data
+   contradicts. Left in place as evidence trail per this file's own convention, not deleted.
+3. **The headline number the document should lead with: −3.14 pp, the six clean weeks (B1–B3),
+   McValue alone.** Needs no price correction and no calendar caveat — nothing else was running.
+   This supersedes the −3.96 pp full-window figure as the number to lead with (that figure still
+   holds as the district full-window measurement; it's just not the lead anymore).
+4. **The June price rounds cost roughly a fifth to a third of the *full-window* Oklahoma traffic
+   decline** (−1.17 to −1.46 pp of −3.96 pp), measured via the two-wave stagger as a natural
+   experiment — thirteen days where one cohort had the new price and the other didn't, both
+   running McValue. Gated on a placebo check; the placebo came back non-zero but with the wrong
+   sign to explain the finding, so it stands with a widened band. Full derivation, including two
+   robustness passes, in the price-waves file.
+5. **⛔ RETIRE the "traffic got worse as national marketing support increased" framing**, wherever
+   it appears below (see "The framing this unlocks" section). It is literally true and unsafe to
+   say: the June price rounds alone account for more than the entire B1–B3-to-B4–B8 deterioration.
+   Saying it in the room invites "you raised prices in June" — correct, ours, bigger than the
+   effect being pointed at.
+6. **Defect 2 (the March free-item promo) is CLOSED, without the 2025 calendar pull.** The gate
+   section below ("The two measurements that gate publishing the DiD") is resolved — see the
+   updated note inline at that section.
+7. **Two exclusions sharpened, not changed:** Tishomingo's exclusion reason is now precisely "its
+   LY twin is an opening ramp" (it opened 2024-12-16; the store itself is 20 months old). The
+   retired figure set's "Tishomingo showed positive traffic" line must never reach the FBP —
+   confirmed an artifact of a decaying honeymoon base, not real improvement.
+8. **Still open, not a data question:** the ask section — what is actually being requested of the
+   FBP. No query produces this.
+
+---
+
 # ⭐ FINAL EDIT SET — read this first; it supersedes earlier guidance below
 
 Written 2026-08-15, ten days out. **This file accumulated three generations of guidance as calendar
@@ -134,6 +181,8 @@ draft; it may widen.
 | "Traffic got worse as national marketing support increased" | §"The framing this unlocks" | **Retracted.** It assumed the support converted. With the World Cup Happy Meal confirmed as a commercial failure, B4–B8 carried *nominal* support that did not translate. |
 | Calendar→block table with `B1 = 04-21 → 05-04` | §"six national events" | **Stale by one day** — built on the pre-re-anchoring layout. Under the corrected layout Happy Meal #4 (05-05) falls inside **B1**, not B2. Use the launch-anchored table instead. |
 | "Required edits: split B1–B3 from B4–B8" | §"Required edits before 25 August" | Superseded by the narrowing above — **split B1 out**, not B1–B3. |
+| "B1 alone is the cleanest block" (i.e. B2/B3 carry pricing) | this table, row above, and §"Correction — B1–B3 is clean was wrong" | **⛔ Wrong, measured 2026-08-18.** Built on the *assumed* Round 1 deadline (5/14). Actual price effective dates, measured from `qsr_product_mix`: 2026-02-25, 06-13, 06-26 — not 5/14. **B1–B3 (04-22 → 06-01) IS clean of price**, confirmed by direct measurement, not calendar inference. See `memory/analysis-mcvalue-price-waves-2026-08-18.md`. |
+| "Traffic got worse as national marketing support increased" — second, independent reason | §"The framing this unlocks" | **⛔ Retracted again, 2026-08-18, for a second and separate reason.** The June price rounds alone account for −1.84 to −2.31 pp inside B4–B8 — more than the entire B1–B3-to-B4–B8 deterioration (−1.31 pp). The apparent worsening is priced by us, not caused by more marketing support converting worse. |
 
 ## The three edits the document needs
 
@@ -150,7 +199,23 @@ draft; it may widen.
    is smaller than −4.55pp because the LY baseline was more heavily promoted"* — a number offered
    with its own limitation is far harder to dismiss than a number offered bare.
 
-## The two measurements that gate publishing the DiD — NOT yet run
+## The two measurements that gate publishing the DiD — BOTH RESOLVED 2026-08-18
+
+**⛔ Superseded — see the 2026-08-18 UPDATE at the top of this file.** Both gates below are now
+closed, though by sharper measurements than the two originally proposed here:
+
+- **Gate 1 (March 2026 vs March 2025)** — closed by Query F in `memory/analysis-mcvalue-price-
+  waves-2026-08-18.md`, run directly against March 2026's own matched-day `ly_` twin rather than a
+  separate 2025 pull. Result: **inverted signature** (traffic 1.10 pp lower in March than the rest
+  of the pre-window; check 9¢ higher) — the opposite of what a free-item promo predicts, which is
+  stronger evidence of "inert" than a plain null would be. **No 2025 calendar pull required.**
+- **Gate 2 (block-level check decomposition)** — answered by the actual measured price effective
+  dates rather than the proposed B1-vs-B2–B8 split: check sits at its pre-launch level through the
+  first six weeks and steps up in the block containing 13 June 2026, the wave-2 price date measured
+  from `qsr_product_mix`. Mix, not price, explains B1–B3; price explains the step from B4 onward.
+
+**The standing instruction below is satisfied. The DiD numbers, and the −3.14 pp six-week figure,
+are clear to publish** — original text preserved below as the evidence trail.
 
 Both are read-only. Both were flagged in this file as runnable; neither has been run.
 
@@ -244,6 +309,54 @@ control, not a clean one.
 organization for growth and lease rewrites, a sustained district-wide traffic decline feeds the
 numbers used to assess the organization for expansion — not merely a quarterly performance note.
 **Keep this out of the findings-only version**, which stays strictly descriptive.
+
+## ⛔ Tishomingo's open date — MEASURED 2026-08-18, supersedes "early 2025"
+
+**Opened 16 December 2024.** Not "early 2025" (this file's earlier wording, an inference
+never measured) and not later in 2025 (the owner's recollection). Both were wrong.
+
+| date | guests | reading |
+|---|---:|---|
+| 2024-11-29 → 12-12 | 0 | in the system, not trading |
+| **2024-12-13** | **14** | 105 in sales — a training/test day, **not** an opening |
+| 2024-12-14 → 12-15 | 0 | |
+| **2024-12-16** | **816** | **first real trading day** |
+| 2024-12-17 | 1,224 | grand-opening peak |
+| 2024-12-21 → 12-28 | ~750–900 | decay |
+| 2024-12-25 | 0 | closed Christmas — correct, not a gap |
+
+**Not a backfill artifact:** the table floor is 2024-01-01 and Tishomingo's first row is
+2024-11-29 — **333 days after the floor**, so this is a genuine opening.
+
+⚠️ **Method note worth keeping.** A first pass asked for `min(dt) where product_sales > 0`
+and returned **2024-12-13** — the 14-guest training day. **First sales is not first day of
+business.** The shape query caught it; the date query alone would have shipped a wrong date
+for the second time. Use a volume threshold, or read the ramp.
+
+### Why this strengthens the exclusion rather than weakening it
+
+The pre-window's LY twin is Jan–Apr 2025. Opening 16 Dec 2024 puts the store at **two to
+six weeks old across that entire LY leg**, in the steepest part of its grand-opening decay
+— visibly 1,224 → ~800 guests within a fortnight, and the 17.6% within-2025 sales decline
+already on file is the same curve continuing.
+
+**Direction of the bias, now by mechanism rather than assertion:** the 2026 pre-window
+compares against an *inflated* LY baseline (Tishomingo looks bad in pre); the post-window
+compares against a *settled* one (looks good in post). **That manufactures a positive DiD.**
+Excluding it therefore makes the finding more conservative, which is worth saying aloud.
+
+**Document edit required:** replace "opened early 2025" with "opened 16 December 2024", and
+state the two-to-six-weeks-old fact — it is stronger than the vaguer wording it replaces.
+✅ **Done 2026-08-18** in the live draft.
+
+### ✅ LY-twin question CLOSED — the exclusion reason is "opening ramp", not "no LY twin"
+
+Measured 2026-08-18: across the 2026 pre-window (Jan 1 → Apr 21, **111 days**), Tishomingo
+has an LY twin on **109** of them — **98% coverage**. It was genuinely trading through the
+baseline period, so it is NOT the Ponce de Leon case.
+
+**Confirmed wording: "opening ramp".** The two zero-LY days are immaterial and consistent
+with 2025 closure days (Oklahoma weather). This question is settled — do not re-raise.
 
 ## Two stores excluded, with reasons
 
@@ -578,7 +691,10 @@ McValue's effect decaying, or a failed tentpole dragging — and nothing in our 
 
 This is now evidenced from three directions that do not depend on each other:
 
-1. **Traffic DiD −4.55pp, check +10.4¢** — customers visiting less often, spending more per visit.
+1. **⛔ Stale, see the 2026-08-18 UPDATE at the top of this file.** Both numbers below are
+   superseded: traffic DiD is **−3.96 pp** (the 08-16 re-run), and the check gain is **withdrawn as
+   a claim entirely** — draft3 drops it, because the timing lines up with a measured price round,
+   not mix. **Traffic DiD −4.55pp, check +10.4¢** — customers visiting less often, spending more per visit.
 2. **Satisfaction stable through the period** (slope flipped positive post-launch; every dimension
    held during the tentpole) — operations are not the problem.
 3. **A World Cup Happy Meal, in a World Cup year, in a host country, failed to move traffic** —
@@ -800,6 +916,13 @@ pricing event.
 I asserted the clean window before having the calendar for it, then had to narrow it twice as
 coverage arrived. Recorded so the file shows the correction rather than only the conclusion.
 
+**⛔ This correction is ITSELF superseded — see the 2026-08-18 UPDATE at the top of this file.**
+It was built on the assumption that restaurants took price on the corporate deadline dates
+(Round 1 due 5/14, Round 2 submissions due 6/26). **The actual effective dates, measured from
+`qsr_product_mix`, are 2026-02-25, 06-13, and 06-26 — not 5/14.** B1–B3 (04-22 → 06-01) is clean of
+price by direct measurement. Left in place, not deleted, so this file shows both corrections rather
+than erasing the wrong one — the second correction is the one to trust.
+
 ## Also new
 
 **`7/15 — Menu Item Sequencing begins deploying`** (B7). An operational deployment changing order
@@ -972,6 +1095,14 @@ separate observations and become **one coherent mechanism**.
 2026 Rounds 1 and 2. Until confirmed this is stated as the owner's account, not as verified fact —
 but the structural argument above means even moderate price action would have to fall inside the
 Jan–Aug 2026 window to matter at all.
+
+**⛔ CONFIRMED, 2026-08-18 — and the answer breaks this section's premise.** Price actions and
+effective dates are now measured, not inferred: 2026-02-25, 06-13, and 06-26, both Oklahoma and
+Florida. Price **was** taken, materially, inside the window this section's own math says matters.
+The "mix, not price" interpretation above does not survive that fact — the whole "one coherent
+mechanism" reading was built on "no price was taken," and that premise is now known false. See the
+2026-08-18 UPDATE at the top of this file and `memory/analysis-mcvalue-price-waves-2026-08-18.md`
+for what actually happened instead.
 
 **Worth noting for context, not for the finding:** if most of the system took price and this
 organisation did not, then any comparison against a national or co-op benchmark is not like-for-like
