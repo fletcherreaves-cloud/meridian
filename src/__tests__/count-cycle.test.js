@@ -212,6 +212,119 @@ describe('#357 regression — real production cases', () => {
   });
 });
 
+// #357-B2/3 — the denominator must be ACTIVE items, not "every WRIN the API ever returned."
+// Measured live (DUMP_RAW_FIELDS probe, 2026-08-17): active_in_recipe genuinely varies
+// (1: 4807, 0: 2320 across 7127 items) rather than being a constant, so it's a real filter.
+describe('#357-B2/3 active-item denominator', () => {
+  it('excludes inactive items from the class universe (classTotals)', () => {
+    const rows = [
+      ...mk('A', 'Food', 100, null).map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 20, null, 100).map(r => ({ ...r, active: false })),   // discontinued, residual on-hand
+      ...mk('A', 'Condiment', 30, null).map(r => ({ ...r, active: true })),
+    ];
+    const { classTotals } = detectSessions(rows);
+    // 100 active Food, not 120 -- the 20 inactive items must not inflate the denominator.
+    expect(classTotals['A'].Food).toBe(100);
+    expect(classTotals['A'].Condiment).toBe(30);
+  });
+
+  it('treats a missing/null active field as active (backward-compatible with pre-migration rows)', () => {
+    const rows = mk('A', 'Food', 118, null); // no `active` key at all, same as every existing fixture
+    const { classTotals } = detectSessions(rows);
+    expect(classTotals['A'].Food).toBe(118);
+  });
+
+  it('a count of an inactive item does not count toward coverage of the active universe', () => {
+    const rows = [
+      ...mk('A', 'Food', 90, null).map((r, i) => ({ ...r, active: true, last_counted: i < 90 ? '2026-08-06' : null })),
+      ...mk('A', 'Food', 10, '2026-08-06', 90).map(r => ({ ...r, active: false })),  // 10 inactive items also counted the same day
+      ...mk('A', 'Condiment', 36, '2026-08-06').map(r => ({ ...r, active: true })),
+    ];
+    const { sessions, classTotals } = detectSessions(rows);
+    // Active universe is 90 Food (the 10 inactive ones excluded), and all 90 were counted
+    // -- full coverage -- even though 10 additional (inactive) items were also touched.
+    expect(classTotals['A'].Food).toBe(90);
+    const s = sessions['A'][0];
+    expect(s.counts.Food).toBe(90);
+    expect(s.satisfiesWeekly).toBe(true);
+  });
+
+  it('a discontinued item with a stale last_counted no longer masks an otherwise-overdue store', () => {
+    // The Durant #5985 case, generalized: a store's active universe is fully counted, but
+    // an inactive item that was counted long ago must not artificially help OR hurt the
+    // active-only compliance check -- it is simply excluded either way.
+    const rows = [
+      ...mk('A', 'Food', 118, '2026-08-06').map(r => ({ ...r, active: true })),
+      ...mk('A', 'Condiment', 36, '2026-08-06').map(r => ({ ...r, active: true })),
+      { loc: 'A', cls: 'Food', wrin: 'discontinued-1', last_counted: '2026-01-01', active: false },
+    ];
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' });
+    expect(c[0].status).toBe('ok');
+    expect(c[0].classTotals.Food).toBe(118); // the discontinued item is not in the denominator
+  });
+});
+
+// Dispatch16 (#374 KB verification, 2026-08-18) — active=false is not one population. The
+// QSRSoft KB splits it into Topic 3 (not in any recipe — correctly excluded above) and
+// Topic 6 (not active but part of an ACTIVE recipe — still real to-count work). Measured
+// live: of 2316 active=false items, 144 (6.2%) are recipeItem=true, i.e. genuine Topic 6.
+describe('dispatch16 — Topic 6 rescue (recipeItem overrides active=false)', () => {
+  it('rescues a Topic-6 item (active=false, recipeItem=true) into the denominator', () => {
+    const rows = [
+      ...mk('A', 'Food', 100, null).map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 5, null, 100).map(r => ({ ...r, active: false, recipeItem: true })), // Topic 6
+    ];
+    const { classTotals } = detectSessions(rows);
+    // 105, not 100 -- the 5 Topic-6 items must NOT be dropped just because active===false.
+    expect(classTotals['A'].Food).toBe(105);
+  });
+
+  it('still excludes a Topic-3-like item (active=false, recipeItem=false) -- the fix does not become a no-op', () => {
+    const rows = [
+      ...mk('A', 'Food', 100, null).map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 5, null, 100).map(r => ({ ...r, active: false, recipeItem: false })), // Topic 3
+    ];
+    const { classTotals } = detectSessions(rows);
+    expect(classTotals['A'].Food).toBe(100);
+  });
+
+  it('a Topic-6 rescued item can satisfy weekly coverage when counted', () => {
+    const rows = [
+      ...mk('A', 'Food', 90, '2026-08-06').map(r => ({ ...r, active: true })),
+      ...mk('A', 'Food', 1, '2026-08-06', 90).map(r => ({ ...r, active: false, recipeItem: true })), // Topic 6, counted
+      ...mk('A', 'Condiment', 36, '2026-08-06').map(r => ({ ...r, active: true })),
+    ];
+    const { sessions, classTotals } = detectSessions(rows);
+    expect(classTotals['A'].Food).toBe(91);
+    expect(sessions['A'][0].counts.Food).toBe(91);
+    expect(sessions['A'][0].satisfiesWeekly).toBe(true);
+  });
+});
+
+// #357-5 — the panel's per-class "counted / active" display, sourced from cycleCompliance's
+// new `perClass` field.
+describe('#357-5 perClass (counted / active per class)', () => {
+  it('reports counted from the most recent session that touched each class, against the active denominator', () => {
+    const rows = [
+      ...mk('A', 'Food', 118, '2026-08-06').map(r => ({ ...r, active: true })),
+      ...mk('A', 'Condiment', 36, '2026-08-06').map(r => ({ ...r, active: true })),
+    ];
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' });
+    expect(c[0].perClass.Food).toEqual({ active: 118, counted: 118, date: '2026-08-06' });
+    expect(c[0].perClass.Condiment).toEqual({ active: 36, counted: 36, date: '2026-08-06' });
+    expect(c[0].perClass.Paper).toEqual({ active: 0, counted: 0, date: null });
+  });
+
+  it('picks up the LATER of two sessions touching the same class, not the first', () => {
+    const rows = [
+      ...mk('A', 'Food', 118, null).map((r, i) => ({ ...r, active: true, last_counted: i < 60 ? '2026-08-01' : '2026-08-08' })),
+    ];
+    const c = cycleCompliance(rows, { asOf: '2026-08-09' });
+    expect(c[0].perClass.Food.date).toBe('2026-08-08');
+    expect(c[0].perClass.Food.counted).toBe(58);
+  });
+});
+
 describe('date helpers', () => {
   it('knows month lengths including February', () => {
     expect(lastDayOf('2026-02-10')).toBe(28);

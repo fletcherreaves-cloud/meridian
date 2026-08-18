@@ -75,16 +75,34 @@ export function inCloseWindow(dateStr, closeDays = 4) {
   return day > lastDayOf(dateStr) - closeDays;
 }
 
+// #357-B2/3 — the denominator (classTotals / `totals` below) must be ACTIVE items, never
+// "counted recently" (that's circular — it would make a store's own count history define
+// what counts as required, which the owner explicitly forbade). Measured via a live
+// DUMP_RAW_FIELDS probe (2026-08-17, 7127 items): the On-Hand API's active_in_recipe flag
+// really does vary (1: 4807, 0: 2320 — not a constant), so it's a genuine, independent
+// status signal, not a "counted recently" proxy in disguise. `r.active !== false` treats
+// missing/null (rows pulled before this column existed, or a store whose current pull
+// hasn't landed yet) as active, so this is a no-op on data that predates the column.
+//
+// Dispatch16 (#374 KB verification, 2026-08-18) — active=false alone is not "safe to
+// exclude": the QSRSoft KB distinguishes Topic 3 ("not in any recipe, inventory > 0" —
+// legacy/obsolete, correctly excluded) from Topic 6 ("not active but part of an ACTIVE
+// recipe" — still real to-count work). Measured live: of 2316 active=false items, 144
+// (6.2%) are recipeItem=true — genuine Topic 6, spread across 23/27 stores. `r.recipeItem
+// === true` rescues exactly those, regardless of the active flag — an item still living in
+// an active recipe is real work even if QSRSoft's own active_in_recipe flag says otherwise.
+const isActive = (r) => r.active !== false || r.recipeItem === true;
+
 /**
  * Group on-hand rows into count SESSIONS — one per (store, last_counted date) — with a
- * per-class item count and the store's class universe for comparison.
- * `rows`: [{ loc, cls, wrin, last_counted, last_submitted }]
+ * per-class item count and the store's ACTIVE class universe for comparison.
+ * `rows`: [{ loc, cls, wrin, last_counted, last_submitted, active }]
  */
 export function detectSessions(rows = []) {
-  const totals = {};      // loc → cls → universe size
-  const byDate = {};      // loc → date → cls → n
+  const totals = {};      // loc → cls → ACTIVE universe size
+  const byDate = {};      // loc → date → cls → n (counted ACTIVE items)
   for (const r of (rows || [])) {
-    if (!r || !r.cls) continue;
+    if (!r || !r.cls || !isActive(r)) continue;
     const loc = unpad(r.loc);
     (totals[loc] || (totals[loc] = {}));
     totals[loc][r.cls] = (totals[loc][r.cls] || 0) + 1;
@@ -216,6 +234,7 @@ export function cycleCompliance(rows = [], { asOf = null } = {}) {
 
     return {
       loc, sessions: all, classTotals: classTotals[loc] || {},
+      perClass: perClassCounted(all, classTotals[loc] || {}),
       lastWeekly, lastAny, lastPartial, daysSinceWeekly,
       paperThisMonth, paperMissing, overdue,
       exceptions,
@@ -223,6 +242,24 @@ export function cycleCompliance(rows = [], { asOf = null } = {}) {
             : exceptions.length ? 'warn' : 'ok',
     };
   });
+}
+
+// #357-5 — "counted / active per class" for the panel rows. `counted` is the item count
+// from the MOST RECENT session that touched the class at all (not necessarily a session
+// that satisfied any rule) — the most current read on where that class's count stands,
+// independent of the weekly/mid-paper grading above. `active` is the same ACTIVE-only
+// denominator as classTotals (#357-B2/3), so a store showing "36/36 Condiment" means every
+// active Condiment item, not every WRIN the API has ever returned for that store.
+function perClassCounted(sessions, classTotals) {
+  const out = {};
+  for (const cls of CLASSES) {
+    let counted = 0, date = null;
+    for (const s of sessions) {
+      if ((s.counts[cls] || 0) > 0) { counted = s.counts[cls]; date = s.date; }
+    }
+    out[cls] = { active: classTotals[cls] || 0, counted, date };
+  }
+  return out;
 }
 
 /** District rollup for a tile header. */
