@@ -50,14 +50,24 @@ order by date_start;
 
 
 -- ── 5 · Stale rows check — anything from the OLD (pre-swap) import still present ─
--- entered_by/method distinguish the bulk seed from anything hand-entered later.
--- If the delete-before-reimport step missed rows, they'd carry an OLDER
--- entered_at than this run's. Adjust the date below to the actual run timestamp
--- if it's not exactly today.
+-- ⚠ FIXED 2026-08-18: v1 of this query filtered only on loc + entered_at, with no
+-- label/category restriction. Run that way it returns every OTHER event type ever
+-- entered for these 10 stores -- holidays, LTO calendar, tax-free weekend, Black
+-- Friday, community events, college football, school-district calendar -- all of
+-- which are UNRELATED to the HS football swap and are SUPPOSED to have an old
+-- entered_at. That is correct, not a defect, and running v1 doesn't test what it
+-- claims to. Confirmed by eye across the full v1 return: zero rows contained the
+-- word "Football" -- reassuring, but an eyeball scan of ~430 rows isn't the same
+-- rigor as a scoped query. Run v2 below for the real answer.
+--
+-- v2 -- scoped to football rows only:
 select loc, date_start, label, entered_by, entered_at
 from org_events
 where loc in ('10422','33222','35064','18213','13113','33109','31357','11657','32525','43380')
+  and label ilike '%football%'
   and entered_at < '2026-08-18'
 order by loc, date_start;
--- Expect ZERO rows. Any row here is a leftover from the 2026-08-02 PARTIAL run
--- that the delete-then-reimport step should have removed.
+-- Expect ZERO rows. Any row here is a leftover FOOTBALL row from the 2026-08-02
+-- PARTIAL run that the delete-then-reimport step should have removed -- e.g. a
+-- stale Tishomingo/OSD row hiding behind a different label than the current one,
+-- or an old date for a game whose date changed between runs.
