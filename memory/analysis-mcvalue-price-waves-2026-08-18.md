@@ -168,15 +168,69 @@ conclusion is unchanged from the pre-placebo read — price is a material minori
 McValue remains the majority — but the band is now honest about how much the
 design can actually resolve. Report the band; never the midpoint as a point.
 
-### Optional last tightening (D-PLACEBO-TRIMMED) — worth one query, not required
-D-PLACEBO ran on **full** cohorts, so Tishomingo is in it — and Tishomingo's
-mechanical improvement as its honeymoon decays out of the LY base is precisely a
-*trend*, which is exactly what a placebo detects. It is therefore likely that
-Tishomingo causes most of the +0.72 pp drift. Re-running D-PLACEBO on the
-**trimmed** cohorts tests that: if it comes back near 0, the trimmed effect
-(−2.74 pp) needs no correction and the band tightens from 1.5 pp wide to roughly
-0.5 pp. Swap the two window pairs in D-ROBUST for D-PLACEBO's. Nice to have; the
-band above is already usable without it.
+### D-PLACEBO-TRIMMED — RAN 2026-08-18. Band tightens as pre-registered.
+
+| Cohort | control | treated | placebo did |
+|---|---|---|---|
+| wave2_early (14) | −2.11 % | −3.71 % | −1.60 pp |
+| wave3_later_trimmed (10) | −0.84 % | −2.74 % | −1.91 pp |
+
+**Residual drift +0.31 pp**, down from +0.72 pp on full cohorts. So Tishomingo and
+Elgin caused **0.41 pp — well over half — of the drift**, which is the mechanism
+that was predicted: a store improving mechanically as its opening honeymoon decays
+out of the LY base *is* a trend difference, and a placebo is exactly what detects
+one. +0.31 pp against a −2.74 pp effect is ~11 %. **Call it a pass.**
+
+(It again landed between pre-registered buckets — nearer 0 than +0.7 — so this is
+again a judgment call, recorded as one. The pre-registered prediction for the
+"near 0" branch was *"drag ≈ −1.3 pp, about a third of Oklahoma's −3.96 pp"*; the
+measured band came in at −1.17 to −1.46 pp, ~29–37 %. The read rule was written
+before the result and held.)
+
+### ⭐ FINAL NUMBER
+Primary estimate is the **trimmed** cohorts — the cleaner design, since Elgin and
+Tishomingo were excluded for confounded *LY baselines*, not for a different price
+response, so applying it district-wide is sound.
+
+- Price effect while in force: **−2.43 to −3.05 pp** of guest counts
+- Post-window-average drag at 48 % exposure: **−1.17 to −1.46 pp**
+- **≈ 29–37 % of Oklahoma's −3.96 pp; ≈ 15–19 % of Florida's −7.83 pp**
+
+**About a third of the Oklahoma traffic decline the document attributes to McValue
+is in fact the June price rounds.** Note the band did not merely narrow, it moved
+*up* — trimming and the smaller placebo correction both push the same way.
+
+---
+
+## ⭐ THE THING THAT MATTERS MOST: B1–B3 IS CLEAN OF PRICE TOO
+
+Map the waves onto the document's own 14-day block layout:
+
+| block | window | national events | **price** |
+|---|---|---|---|
+| **B1** | 04-21 → 05-04 | — clean — | **— clean —** |
+| **B2** | 05-05 → 05-18 | — clean — | **— clean —** |
+| **B3** | 05-19 → 06-01 | — clean — | **— clean —** |
+| B4 | 06-02 → 06-15 | World Cup Happy Meal (6/9) | **wave 2 (6/13)** |
+| B5 | 06-16 → 06-29 | Apple Pie LTO (6/23) | **wave 3 (6/26)** |
+| B6–B8 | 06-30 → 08-10 | rehit, flavour launches | both waves in force |
+
+**Every price round lands in B4 or later. B1–B3 is clean of national events AND
+clean of price.**
+
+This does not complicate the document — **it reinforces a decision it had already
+made.** The file already argues B1–B3 is "the only clean McValue read" and "the
+strongest evidential unit in the whole analysis, currently buried in an eight-block
+average." That case now rests on **two independent grounds**, one of which was
+unknown when the recommendation was written.
+
+And the practical consequence: **the B1–B3 clean read needs NO price correction at
+all.** The −1.17/−1.46 pp drag applies to the *full-window* figure. Lead with the
+clean window and the price confound simply does not apply to the headline.
+
+**So the next query is not another robustness check — it is Query E, the B1–B3
+clean-window DiD for the 19 Oklahoma restaurants.** That is the number the document
+should lead with, and nothing in this analysis touches it.
 
 This does **not** unblock the document's existing publish gate (the March 2026 vs
 March 2025 comparison and the free-item footprint check, both still unrun). It adds

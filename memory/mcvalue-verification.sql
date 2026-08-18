@@ -336,6 +336,14 @@ from d order by grp;
 
 
 -- ── D-PLACEBO-TRIMMED · the band-tightener ─────────────────────────────────
+-- ✅ RAN 2026-08-18. PASSES.
+--    wave2_early         (14) placebo_did -1.60pp
+--    wave3_later_trimmed (10) placebo_did -1.91pp   => residual drift +0.31pp
+--    Down from +0.72pp untrimmed, so Tishomingo/Elgin caused 0.41pp -- over half
+--    -- exactly the predicted mechanism (honeymoon decay IS a trend).
+--    +0.31pp against a -2.74pp effect is ~11%%. Pass.
+--    FINAL: effect -2.43 to -3.05pp, post-window drag -1.17 to -1.46pp,
+--           = 29-37%% of OK -3.96pp and 15-19%% of FL -7.83pp.
 -- D-PLACEBO's windows with D-ROBUST's cohorts. Tests whether the +0.72pp cohort
 -- drift D-PLACEBO found is caused by Tishomingo, whose honeymoon decaying out of
 -- the LY base is itself a TREND -- precisely what a placebo detects.
@@ -375,3 +383,57 @@ select grp,
   round(((100.0*trt/nullif(trt_ly,0))
        - (100.0*ctl/nullif(ctl_ly,0)))::numeric, 2)     as placebo_did_pp
 from d order by grp;
+
+
+-- ── E · THE B1-B3 CLEAN-WINDOW DiD — the number to LEAD the document with ──
+-- NOT YET RUN. Higher priority than anything else remaining here.
+--
+-- WHY: every price round lands in B4 or later (wave 2 on 06-13 in B4, wave 3 on
+-- 06-26 in B5). B1-B3 (04-22 -> 06-01) is therefore clean of national marketing
+-- events AND clean of price. The document already calls B1-B3 "the only clean
+-- McValue read" and "the strongest evidential unit, currently buried in an
+-- eight-block average" -- that case now rests on two independent grounds.
+--
+-- Consequence: the -1.17/-1.46pp price drag applies to the FULL-window figure and
+-- does NOT apply to this one. Lead with this number and the price confound is moot.
+--
+-- Oklahoma only (owner, 2026-08-16: "an FBP over the OK stores only"), 19 stores,
+-- 43380 Tishomingo excluded (LY twin is an opening ramp) and 43701 Ponce (no LY).
+-- Ratio of summed counts, matched-day, never an average of per-store rates.
+with ok19 as (
+  select unnest(array[
+    '0003708','0005183','0005985','0006972','0010422','0010915','0011657',
+    '0013113','0018213','0020475','0024471','0029760','0031357','0032525',
+    '0033109','0033222','0033704','0034222','0035064'
+  ]) as loc
+), d as (
+  select
+    sum(r.transactions)    filter (where r.dt between '2026-01-01' and '2026-04-21') as pre,
+    sum(r.ly_transactions) filter (where r.dt between '2026-01-01' and '2026-04-21') as pre_ly,
+    sum(r.transactions)    filter (where r.dt between '2026-04-22' and '2026-06-01') as post_clean,
+    sum(r.ly_transactions) filter (where r.dt between '2026-04-22' and '2026-06-01') as post_clean_ly,
+    sum(r.transactions)    filter (where r.dt between '2026-06-02' and '2026-08-11') as post_conf,
+    sum(r.ly_transactions) filter (where r.dt between '2026-06-02' and '2026-08-11') as post_conf_ly
+  from qsr_daily_activity_rollup r
+  join ok19 o on o.loc = r.loc
+  where r.dt between '2026-01-01' and '2026-08-11'
+)
+select
+  round((100.0*pre/nullif(pre_ly,0) - 100)::numeric, 2)                as pre_vs_ly_pct,
+  round((100.0*post_clean/nullif(post_clean_ly,0) - 100)::numeric, 2)  as b1b3_clean_vs_ly_pct,
+  round(((100.0*post_clean/nullif(post_clean_ly,0))
+       - (100.0*pre/nullif(pre_ly,0)))::numeric, 2)                    as clean_traffic_did_pp,
+  round((100.0*post_conf/nullif(post_conf_ly,0) - 100)::numeric, 2)    as b4b8_confounded_vs_ly_pct,
+  round(((100.0*post_conf/nullif(post_conf_ly,0))
+       - (100.0*pre/nullif(pre_ly,0)))::numeric, 2)                    as confounded_traffic_did_pp
+from d;
+
+-- READ: clean_traffic_did_pp is McValue with nothing else running -- no national
+-- events, no price round. It is the one number in this project that needs no
+-- caveat. confounded_traffic_did_pp is everything after, and the gap between the
+-- two is where the price rounds and the six national events live.
+--
+-- NOTE the boundary: the document's block layout starts B1 at 04-21 but its
+-- measured table starts POST at 04-22. One day. Defect 1 in the file already
+-- flags the pre/post boundary as unsettled -- this query uses 04-22 to match the
+-- figures that produced the -3.96pp headline. Do not silently switch conventions.
