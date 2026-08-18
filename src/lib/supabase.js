@@ -1668,11 +1668,21 @@ export async function loadSelfServeTowerLocs() {
   } catch (e) { console.warn('[Meridian] loadSelfServeTowerLocs:', e?.message || e); return new Set(); }
 }
 
+// #365 -- MEASURED against live Supabase, not assumed: `lte('date', `${y}-${m}-31`)` throws
+// Postgres error 22008 ("date/time field value out of range") for every month with fewer than
+// 31 days -- confirmed live with a direct REST call for 2026-02-31. The old comment ("gt/lte
+// bounds handle varying month lengths") was simply wrong. Because the error was swallowed by
+// `if (error) { ...; return {}; }`, this silently returned an EMPTY op-supplies map for Feb,
+// Apr, Jun, Sep, Nov -- 5 of 12 months, every year -- with nothing visible beyond a
+// console.error nobody was watching. Fixed by computing the real last day of the month (same
+// `new Date(year, month, 0)` idiom eom-supervisor.js's own monthRange.e already uses) instead
+// of hardcoding 31.
 export async function loadEbosMonthlyByStore(year, month) {
   if (!supabase) return {};
   const y = String(year), m = String(month).padStart(2, '0');
-  const start = `${y}-${m}-01`;
-  const end   = `${y}-${m}-31`; // gt/lte bounds handle varying month lengths
+  const start   = `${y}-${m}-01`;
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  const end     = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
   const { data, error } = await supabase
     .from('qsr_ebos_daily')
     .select('loc,ops_purchases')
