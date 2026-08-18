@@ -1,3 +1,29 @@
+-- ############################################################################
+-- ⛔ DAYPART BOUNDARIES — CORRECTED 2026-08-18. DO NOT RE-DERIVE THEM.
+--
+-- The first version of every query in this file used daypart boundaries built
+-- from general knowledge of a McDonald's day rather than from the authoritative
+-- source. Three of five were wrong. The 2022 VLH Workbooks (Standard and High
+-- Productivity, both identical on this) define them as:
+--
+--     Breakfast   5am - 11am        (was wrongly 4am-11am)
+--     Lunch      11am -  2pm        ok
+--     Afternoon   2pm -  5pm        ok
+--     Dinner      5pm - 11pm        (was wrongly 5pm-8pm)
+--     Late Night 11pm -  5am        (was wrongly 8pm-4am)
+--
+-- hour_slot is the END of the block and runs 05:00 -> 28:00 across the 4am
+-- business day. So '05:00' = 4-5am and belongs to LATE NIGHT sitting at the
+-- START of the business day, while the rest of Late Night (24:00-28:00) sits at
+-- the end. The else branch catches both. 6+3+3+6+6 = 24 slots, reconciling
+-- exactly with the DAR's 24.
+--
+-- Results produced BEFORE this correction (G-1 0.91, G-2 53.4s, G-3, G-4) are
+-- arithmetically sound — sum/sum over the same hour set is valid whatever the
+-- buckets — but their daypart LABELS are wrong, so any conclusion attached to a
+-- daypart name must be re-run on the boundaries above.
+-- ############################################################################
+
 -- ============================================================================
 -- PROBE G-1 — is there headroom inside a store's own week?
 -- Workstream G, memory/plan-normalization-2026-08-17.md
@@ -47,11 +73,11 @@ cells as (                         -- store x daypart x day-of-week
   select
     a.loc,
     case
-      when substring(a.hour_slot,1,2)::int between  5 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
       when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
       when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
-      when substring(a.hour_slot,1,2)::int between 18 and 20 then 'Dinner'
-      else                                                        'Late'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
     end                     as daypart,
     to_char(a.dt,'Dy')      as dow,
     sum(a.dt_untilserve)    as ms,
@@ -105,11 +131,11 @@ cells as (
   select
     a.loc,
     case
-      when substring(a.hour_slot,1,2)::int between  5 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
       when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
       when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
-      when substring(a.hour_slot,1,2)::int between 18 and 20 then 'Dinner'
-      else                                                        'Late'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
     end                  as daypart,
     to_char(a.dt,'Dy')   as dow,
     sum(a.dt_untilserve) as ms,
@@ -161,3 +187,108 @@ from (
 ) d
 group by loc
 order by complete_days asc;
+
+-- ============================================================================
+-- PROBE G-2 — is the within-store spread EXECUTION, or just dayparts being dayparts?
+-- Added 2026-08-18 after G-1 returned 0.91. THIS is the query Workstream G now
+-- hangs on; G-1 only established there is something worth decomposing.
+--
+-- G-1 measured raw within-store spread (86.7s median). That number mixes:
+--   1. STRUCTURAL — dinner is slower than breakfast at every store. Real, not coachable.
+--   2. EXECUTION  — THIS store's Tuesday dinner is slow FOR a Tuesday dinner. Coachable.
+-- Only (2) is a target. Treating the whole 86.7s as opportunity is the overclaim.
+--
+-- This normalizes each cell against the district median for the SAME daypart+dow,
+-- so structural daypart effects cancel, and measures what spread survives.
+--
+-- VERDICT:
+--   median_execution_spread > ~40s  -> variance is execution; G has a real target.
+--   collapses toward 0              -> it was structural; G shrinks to a smaller idea.
+-- ============================================================================
+with complete_days as (
+  select loc, dt from qsr_daily_activity
+  where dt >= current_date - interval '90 days'
+  group by loc, dt having count(distinct hour_slot) = 24
+),
+cells as (
+  select a.loc,
+    case
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
+      when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
+    end as daypart,
+    to_char(a.dt,'Dy') as dow,
+    sum(a.dt_untilserve) as ms, sum(a.dt_trans_cnt) as cars
+  from qsr_daily_activity a
+  join complete_days c on c.loc = a.loc and c.dt = a.dt
+  group by 1,2,3
+),
+cell_rate as (
+  select loc, daypart, dow, (ms::numeric / nullif(cars,0)) / 1000 as spc
+  from cells where cars >= 200
+),
+district as (            -- what a typical store does in THIS daypart+dow
+  select daypart, dow, percentile_cont(0.5) within group (order by spc) as district_spc
+  from cell_rate group by 1,2
+),
+resid as (               -- how far this store sits from that, same slot
+  select r.loc, r.daypart, r.dow, r.spc, d.district_spc,
+         r.spc - d.district_spc as resid_sec
+  from cell_rate r join district d on d.daypart = r.daypart and d.dow = r.dow
+),
+per_store as (
+  select loc,
+         percentile_cont(0.9) within group (order by resid_sec)
+       - percentile_cont(0.1) within group (order by resid_sec) as exec_spread
+  from resid group by loc having count(*) >= 20
+)
+select count(*)                                                                as stores,
+       round(percentile_cont(0.5) within group (order by exec_spread)::numeric,1)
+                                                                               as median_execution_spread
+from per_store;
+
+
+-- ── G-2b — the coachable list, if G-2 clears. The 25 worst slot-vs-peers gaps. ──
+-- This is the artifact a DO would actually use: it names a store, a daypart and a
+-- day, benchmarked against what every other store does in that same slot — which
+-- is a conversation, where a store-level average is not.
+with complete_days as (
+  select loc, dt from qsr_daily_activity
+  where dt >= current_date - interval '90 days'
+  group by loc, dt having count(distinct hour_slot) = 24
+),
+cells as (
+  select a.loc,
+    case
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
+      when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
+    end as daypart,
+    to_char(a.dt,'Dy') as dow,
+    sum(a.dt_untilserve) as ms, sum(a.dt_trans_cnt) as cars
+  from qsr_daily_activity a
+  join complete_days c on c.loc = a.loc and c.dt = a.dt
+  group by 1,2,3
+),
+cell_rate as (
+  select loc, daypart, dow, cars, (ms::numeric / nullif(cars,0)) / 1000 as spc
+  from cells where cars >= 200
+),
+district as (
+  select daypart, dow, percentile_cont(0.5) within group (order by spc) as district_spc
+  from cell_rate group by 1,2
+)
+select r.loc,
+       r.daypart || ' ' || r.dow                        as slot,
+       round(r.spc::numeric, 1)                         as this_store_sec,
+       round(d.district_spc::numeric, 1)                as district_sec,
+       round((r.spc - d.district_spc)::numeric, 1)      as gap_sec,
+       r.cars
+from cell_rate r
+join district d on d.daypart = r.daypart and d.dow = r.dow
+order by gap_sec desc
+limit 25;

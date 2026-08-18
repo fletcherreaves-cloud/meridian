@@ -218,6 +218,291 @@ Full SQL: `memory/probe-g1-shift-dimension.sql`. Verdict rule:
 - `median_within_store_spread` **≥** `between_store_spread` → the dimension is real; build G.
 - Within **< ~half** of between → stores are uniformly good or bad across their own week; **drop G.**
 
+### ✅ PROBE G-1 RESULT — owner-run 2026-08-18. Verdict: **GO, with one qualifier.**
+
+| | |
+|---|---|
+| stores | **27** (all of them) |
+| avg cells per store | **35.0** — every 5 dayparts × 7 days cleared the 200-car floor |
+| median sec per car | **179.7s** — sanity gate PASSED (expected 150–300) |
+| median WITHIN-store spread | **86.7s** |
+| BETWEEN-store spread | **95.3s** |
+| ratio | **0.91** |
+
+Kill threshold was "within < half of between." It returned **91%**. A single
+restaurant's own week varies nearly as much as the whole district varies
+store-to-store, on full data, in all 27 stores.
+
+**Side benefit: this independently confirms the milliseconds fix.** 179.7s is
+right for DT total experience; the microseconds reading `constants.js` used to
+document would have produced 0.18s.
+
+### ⚠️ WHAT THIS DOES NOT SHOW — read before building anything
+
+The probe conflates two effects and only one is actionable:
+
+1. **Structural daypart difference** — dinner is slower than breakfast at *every*
+   store. Real, not coachable.
+2. **Execution difference** — *this* store's Tuesday dinner is slow *for a
+   Tuesday dinner*. The coachable one.
+
+Some share of the 86.7s is category 1. **Treating the whole 86.7s as opportunity
+is the overclaim to avoid.** The discriminating follow-up (PROBE G-2, in
+`probe-g1-shift-dimension.sql`) normalizes each cell against the district median
+for the SAME daypart+dow and measures the residual spread:
+
+- `median_execution_spread` **> ~40s** → variance is execution; G has a real target.
+- collapses toward **0** → the 86.7s was structural; G shrinks to a much smaller idea.
+
+**G stays gated on G-2, not on G-1.** G-1 only established that there is
+something to decompose.
+
+### ✅ PROBE G-2 RESULT — owner-run 2026-08-18. **Workstream G CONFIRMED.**
+
+`median_execution_spread` = **53.4s** across **27 stores**. Threshold was ~40s.
+
+| | |
+|---|---|
+| raw within-store spread (G-1) | 86.7s |
+| **after removing daypart+dow structure (G-2)** | **53.4s** |
+| structural component removed | 33.3s |
+| surviving share | **62%** |
+| vs. the whole between-store spread (95.3s) | **56%** |
+
+Comparing a restaurant's own shift-slots against how that SAME slot runs
+district-wide, its worst slot is 53 seconds per car worse than its best — after
+subtracting everything every store shares. **One restaurant's internal variance
+is more than half the entire fastest-to-slowest store spread.**
+
+### ⚠️ 53.4s is a FLOOR, not the total — owner correction, 2026-08-18
+
+I discarded the 33.3s structural component on the assumption that dayparts differ
+because dayparts differ ("dinner is slower than breakfast everywhere — real, not
+coachable"). **The owner refuted that:** average check does run higher at dinner,
+but **the VLH guide is built to staff for it.** If speed still degrades at dinner,
+that is staffing not tracking the guide, or a guide wrong for that store — both
+actionable. "Structural" was a category asserted from outside the restaurant.
+
+**The design consequence matters more than the correction.** G-2 normalizes each
+cell against the district median for the same daypart — so if all 27 stores
+under-staff to guide at dinner, that district-wide coachable problem normalizes
+to ZERO residual and the query reports "structural." Same class as averaging
+averages: erasing a real effect by assuming it was structure. G-2 stayed useful
+only because it is the *conservative* cut; it cannot see a district-common
+failure, by construction.
+
+**The better normalizer is already on the same row.** `qsr_daily_activity` carries
+`total_needed_hours`, `total_scheduled_hours` and `actual_punched_hours` at the
+same `hour_slot` grain as the speed data:
+
+- scheduled vs needed → did the manager **schedule** to guide
+- punched vs scheduled → did the shift **execute** the schedule
+- punched vs needed → net staffing vs guide
+
+⚠️ **Blocked on one known ambiguity:** CLAUDE.md flags `total_needed_hours` as
+*"either the algorithmic recommendation for projected volume, or the actual hours
+the manager scheduled — ambiguous without further API investigation."* If it is
+the VLH guide, this entire line runs off data already pulled nightly. If not, the
+denominator is wrong. **Owner is sending the VLH guides to settle it.**
+
+### ✅ PROBE G-3 RESULT — owner-run 2026-08-18. Both explanations dead; a new finding.
+
+| daypart | sec/car | punched/guide | sched/guide | punched/sched | cars |
+|---|---|---|---|---|---|
+| Breakfast | **154.3** | **0.928** | 1.056 | 0.879 | 620,752 |
+| Lunch | 202.9 | 0.922 | 1.075 | 0.858 | 369,709 |
+| Afternoon | 183.8 | 1.171 | 1.376 | 0.851 | 267,769 |
+| Dinner | 204.3 | 1.085 | 1.342 | **0.808** | 248,625 |
+| Late | **246.5** | **1.207** | 1.292 | 0.935 | 204,292 |
+
+**Speed runs INVERSE to staffing.** Best-staffed daypart is slowest; leanest is
+fastest. What speed tracks is **volume** — Breakfast runs 3× Late's cars and is
+92s/car faster. Flow, not headcount.
+
+So **both** prior explanations are refuted: dinner is not slow from check size
+(PM's "structural" claim) and not from under-staffing to guide (it sits at 1.085
+OF guide). The owner's mechanism was right — the guide does compensate — but the
+resulting prediction did not hold either.
+
+### ⭐ The finding neither query was looking for
+
+**`punched_vs_scheduled` < 1.0 in EVERY daypart** (0.879 / 0.858 / 0.851 /
+**0.808** / 0.935). Across ~1.7M cars, stores punch **12–19% fewer hours than
+they scheduled**, worst at dinner. Consistent pattern: **schedule above guide
+(1.056→1.376) → lose 15–19% at the punch → land at or below guide.** The two
+highest-volume dayparts (Breakfast, Lunch) end up BELOW guide, at 0.928/0.922.
+
+**NOT yet called a defect.** Cutting early when the rush does not materialise is
+correct management. Punched < scheduled may be good behaviour, not a gap.
+
+### ⚠️ Two methodological cautions on the table above
+
+1. **Ecological correlation.** These are daypart aggregates. The inverse
+   staffing/speed relationship holds ACROSS dayparts and says nothing about what
+   happens WITHIN one. Inferring within-daypart causation from it is the classic
+   fallacy. G-4 fixes this by holding daypart and volume constant.
+2. `sec_per_car` and staffing ratios are ratio-of-sums throughout; the 24-slot
+   completeness guard is applied. No averaging of averages.
+
+### 🔓 The `total_needed_hours` ambiguity is now mostly resolved — WITHOUT the guides
+
+`scheduled_vs_guide` runs **1.056–1.376**, systematically ≠ 1.0, so
+`total_needed_hours` is demonstrably **not** a copy of `total_scheduled_hours` —
+the two columns diverge by daypart in a stable way. That is consistent with it
+being the real algorithmic guide, which is what CLAUDE.md left open. Not proof;
+the owner's VLH guides now **confirm** rather than **decide**.
+
+### G-4 — the decisive cut (query in `probe-g1-shift-dimension.sql`)
+
+Splits store-days by daypart × (sales met/missed projection) × (under/at/over
+guide), then medians `sec_per_car`. Read the **sales MET/BEAT** rows: if
+`under guide` is materially slower than `at guide` inside the same daypart, then
+understaffing a shift that earned its volume is real and coachable. If they
+match, staffing is not the lever and speed is about flow and process.
+Matched pair confirmed in the pull script: `prod_sales_scrubbed` (actual) ↔
+`proj_prod_sales_scrubbed` (projected).
+
+### ✅ PROBE G-4 RESULT — owner-run 2026-08-18. Night-shift hypothesis SUPPORTED.
+
+Daypart x volume x staffing, median sec/car. **sales MET/BEAT rows only** (shifts
+that earned their volume):
+
+| daypart | under guide | at guide | over guide | staffing buys |
+|---|---|---|---|---|
+| Breakfast | 162.8 | 153.6 | 143.4 | **19.4s** |
+| Lunch | 204.7 | 198.2 | 194.6 | 10.1s |
+| Afternoon | 204.7 | 205.1 | 188.0 | 16.7s |
+| Dinner | 224.4 | 230.6 ⚠️n=68 | 202.9 | 21.5s |
+| **Late** | 243.5 | 246.3 | 238.9 | **4.6s** |
+
+**1. The ecological illusion reversed, as predicted.** ACROSS dayparts (G-3) more
+staff looked slower. WITHIN a daypart, volume held constant, more staff is faster
+in all five. The G-3 caution was load-bearing — building on that aggregate would
+have inverted the conclusion.
+
+**2. ⭐ Late is the daypart where staffing barely matters.** Over-guide buys
+10–21s everywhere else and **4.6s** at night — a quarter of the effect. And
+**1,064 of 1,488** busy Late store-days are ALREADY over guide. Bodies are being
+thrown at it and are not working: a **capability constraint, not a headcount
+one.** This is the owner's hypothesis (least experienced managers, least
+oversight, universal industry issue) and it is what the data shows.
+
+**3. Corroborating:** Late degrades far more steeply under volume than anything
+else. Busy-vs-soft costs Breakfast 18.9s; it costs Late **42.3s**. When cars
+arrive at night the operation comes apart faster than at any other hour.
+
+### ⭐ Unlooked-for finding: hours are in the wrong dayparts
+
+| | busy days UNDER guide | soft days OVER guide |
+|---|---|---|
+| Breakfast | **826** | — |
+| Afternoon | — | **1,324** |
+| Dinner | — | **1,245** |
+
+**Breakfast runs lean exactly when busy; Afternoon/Dinner run fat exactly when
+soft.** Breakfast is the highest-volume daypart (620,752 cars, 3x Late) and 826
+busy store-days sit under guide at ~19s/car, while 2,569 soft afternoon/dinner
+store-days carry hours above guide. **An allocation problem, not a coaching one —
+and it is the same hours either way.**
+
+### ⚠️ Two caveats before anyone acts on these numbers
+
+1. **The buckets contain different stores.** A chronically-under-guide restaurant
+   may simply be a slow restaurant, so part of the 19.4s is store identity rather
+   than staffing. **G-5 must compare each store against ITSELF** on its own under-
+   vs over-guide days. Do not put the 19.4s in front of a GM before that runs.
+2. **Thin cells:** Dinner at-guide n=68, Afternoon at-guide n=92. Dinner's
+   at-guide reading slower than its under-guide (230.6 vs 224.4) is small-sample
+   noise, not a real inversion. Do not interpret it.
+
+### 📌 Side opportunity: TPPH should be auto-sourced
+
+TPPH currently reaches the app only via manual upload (`ctrl.tpph`/`lab.tpph`,
+`graded-visits.js:362`). It is derivable from DAR as
+`transactions / actual_punched_hours` at **hour_slot** grain — finer than the
+manual version. Squarely the standing rule: derive from already-pulled atoms
+rather than add a manual upload, and keep `MANUAL_ONLY_METRICS` empty.
+
+### 🛑 CORRECTION 2026-08-18 — the G-probe daypart boundaries were INVENTED and 3 of 5 are wrong
+
+Owner supplied the **2022 VLH Workbooks** (Standard + High Productivity). They
+define the dayparts the guide itself is built on:
+
+| daypart | PM used | **VLH guide (authoritative)** |
+|---|---|---|
+| Breakfast | 4am–11am | **5am–11am** |
+| Lunch | 11am–2pm | 11am–2pm ✓ |
+| Afternoon | 2pm–5pm | 2pm–5pm ✓ |
+| Dinner | 5pm–**8pm** | **5pm–11pm** |
+| Late Night | **8pm**–4am | **11pm–5am** |
+
+**What went wrong:** the boundaries were built from general knowledge of a
+McDonald's day instead of the authoritative source, which the owner held all
+along. The guides were requested only to settle the `total_needed_hours` column
+ambiguity; they turned out to redefine the axis every G-3/G-4 conclusion groups
+on. Same failure as the `dt_untilserve` microseconds/milliseconds defect — a
+plausible assumption used where a source of truth existed.
+
+**Blast radius:** the "Late Night" bucket carried **8–11pm**, which the guide
+calls Dinner — three hours of real dinner volume diluting the night bucket.
+"Dinner" was only the first half of dinner. "Breakfast" absorbed the 4–5am hour
+the guide calls Late Night.
+
+**Not corrupt, mislabelled.** `Σpunched / Σneeded` over the same hour set on both
+sides is arithmetically valid whatever the buckets. But every conclusion attached
+to a daypart NAME needs re-running. Expectation: the night-shift finding
+**strengthens** once 8–11pm dinner volume is stripped out.
+
+### ✅ CORRECTED daypart mapping — use this, do not re-derive
+
+`hour_slot` is the END of the block and runs `05:00`→`28:00` across the 4am
+business day, so `'05:00'` = 4–5am — Late Night sitting at the START of the
+business day while the rest of Late Night sits at the end. The `else` catches both.
+
+```sql
+case
+  when substring(a.hour_slot,1,2)::int between  6 and 11 then '1 Breakfast'    -- 5a-11a
+  when substring(a.hour_slot,1,2)::int between 12 and 14 then '2 Lunch'        -- 11a-2p
+  when substring(a.hour_slot,1,2)::int between 15 and 17 then '3 Afternoon'    -- 2p-5p
+  when substring(a.hour_slot,1,2)::int between 18 and 23 then '4 Dinner'       -- 5p-11p
+  else                                                        '5 Late Night'  -- 11p-5a (24..28 + 05)
+end
+```
+
+6 + 3 + 3 + 6 + 6 = **24 slots**, reconciling exactly with the DAR's 24.
+
+### ⭐ The guide independently supports the night-shift hypothesis
+
+**IPO by daypart** (identical in both workbooks): Breakfast 3.294 · Lunch 4.391 ·
+Afternoon 4.279 · **Dinner 4.854** · **Late Night 3.321**.
+
+The guide **already expects** night productivity ~30% below dinner and staffs for
+it — which is exactly the owner's "the VLH guide is designed to compensate,"
+stated by the guide in its own numbers. **Night still finishes last on speed with
+that allowance built in.** That is the strongest support the capability
+hypothesis has had, not a weakening of it.
+
+### ⚠️ There is no single VLH guide — 48 configurations × 2 workbooks
+
+Guides are per **restaurant configuration**: Drive Thru (Side-by-Side/Tandem ·
+Single Lane 2 Booth · Single Lane 1 Booth · No Drive Thru) × In-Store (Self Serve
+· Crew Pour) × Kitchen (Fryer Same Side · Fryer Opposite · OPL · COPL) × AOT
+(Yes/No) = 48 pages, and **two** workbooks (Standard vs High Productivity). Each
+restaurant maps to one page with its own labor step-tables.
+
+**We do not currently hold each store's configuration anywhere.** Any per-store
+guide analysis needs it first. Guide tables are guest-count step functions
+(e.g. Drive Thru Breakfast: 1 crew for 0–9 guests, 2 for 10–43, 3 for 44–65…).
+
+### Next, in order
+
+1. **G-3 (guide adherence)** — daypart × sec_per_car × punched/scheduled/needed
+   ratios. Tests the owner's claim directly and reclaims the 33.3s if he is right.
+   Gated on the `total_needed_hours` ambiguity above.
+2. **G-2b** — the 25 worst slot-vs-peers gaps, in `probe-g1-shift-dimension.sql`.
+   The artifact a DO uses: names a store, a daypart and a day against what every
+   other store does in that same slot.
+
 ### Findings from writing the probe (already banked, independent of the verdict)
 
 - **`qsr_daily_activity` carries hourly speed-of-service for every station** — `dt_untilserve`/`dt_trans_cnt`, `fc_*`, `mfy1/2_*`, `bev_*` — **and `actual_punched_hours` at the same `hour_slot` grain.** Outcome and labor are already on one row, at one key. The join G needs does not require a new pull.
