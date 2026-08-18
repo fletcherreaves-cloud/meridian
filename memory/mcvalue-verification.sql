@@ -1,5 +1,11 @@
 -- ============================================================================
--- McValue 2.0 — the three verifications still open before the 25th
+-- McValue 2.0 — verification queries, 2026-08-18 session
+-- ⛔ STALE TITLE, kept for history: the "three verifications" this file opened with
+-- (A1-A3 Tishomingo open date, B price-change dates, C traffic DiD) are all CLOSED,
+-- and seven more were added and closed the same day (B2, D, D-ROBUST, D-PLACEBO,
+-- D-PLACEBO-TRIMMED, E, F). Every query below is marked inline with its actual
+-- result. NOTHING in this file is still open.
+-- Full narrative: memory/analysis-mcvalue-price-waves-2026-08-18.md
 -- Run in the Supabase SQL Editor. loc is ZERO-PADDED to 7 in these tables.
 -- ============================================================================
 

@@ -16,6 +16,7 @@ memory files weren't. The answer existed and nothing pointed at it.
 
 | If you are about to ask… | Read this FIRST | It already says |
 |---|---|---|
+| "Has the June McValue price increase been separated from the McValue traffic effect?" | [analysis-mcvalue-price-waves-2026-08-18.md](analysis-mcvalue-price-waves-2026-08-18.md) | **Yes — measured 08-18.** Price alone costs −1.17 to −1.46 pp of the full-window OK decline (gated, band-widened after a non-zero placebo). The clean six weeks (B1–B3, −3.14 pp) need no correction at all — lead with that number, not the full-window one |
 | "Is the DAR aligned to the 4am business day?" | [dar-vs-ops-reconciliation.md](dar-vs-ops-reconciliation.md) | **Yes — measured 08-07.** `hour_slot` runs `05:00→28:00` = 04:00→04:00. Boundary RULED OUT as the cause of DAR-vs-Ops deltas. Also: deltas are ~0.01% **only on days with a complete 24 slots** |
 | "Which labor % basis do we use, and does it include managers?" | [project-labor-pct-punched-vs-crew.md](project-labor-pct-punched-vs-crew.md) | Standardized on **Punched (all-hourly)** so FL and OK compare like-for-like. Crew Labor % silently includes salaried-manager $ where a store is configured that way (**FL is, OK isn't**). *"Read before touching any labor-basis code"* |
 | "What's the 4am cutover helper?" | `src/utils/date.js:101,117` (code, not memory) | `businessDate()` / `lastClosedBusinessDay()`. Consolidated after recurring **five times** as signature #4 — see [plan-data-integrity-sweep.md](plan-data-integrity-sweep.md). Never re-derive inline |
@@ -29,6 +30,30 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐ [McValue price-wave analysis 2026-08-18](analysis-mcvalue-price-waves-2026-08-18.md)** —
+  **NEWEST work, and the McValue 2.0 FBP document's current source of truth for anything price or
+  traffic.** Located three district-wide price rounds by measuring persistent step changes in
+  `qsr_product_mix` base price (2026-02-25 all 27 restaurants, 06-13 wave of 14, 06-26 wave of 13)
+  after a naive tier-set comparison failed (preserved marked FAILED in the same file so it isn't
+  retried). The two-wave stagger became a natural experiment isolating the price effect from
+  McValue itself (four gated checks: D, D-ROBUST, D-PLACEBO, D-PLACEBO-TRIMMED — final band −1.17
+  to −1.46 pp of the full-window Oklahoma traffic decline). Query E then found the **six clean
+  weeks after launch (B1–B3) are clean of price too**, giving a −3.14 pp headline that needs no
+  correction — and forced **retiring a load-bearing framing** ("traffic got worse as national
+  marketing support increased") that the price data contradicts. Query F closed the document's
+  second publish gate (March free-item promo) without needing the 2025 calendar. Runnable SQL with
+  every result recorded inline: [mcvalue-verification.sql](mcvalue-verification.sql). Current
+  draft: [mcvalue-fbp-draft3.html](mcvalue-fbp-draft3.html). **`project-mcvalue-2-fbp-document.md`
+  has a 2026-08-18 top section pointing back here — read that file's top section before its body,
+  same as this one.**
+- **[HS Football 2026 org_events verification](org-events-hsfb-verify.sql)** — 2026-08-18. The
+  10-school PARTIALS-completion swap (43→100 games) cross-checked three ways: workbook internal
+  consistency against its own README (100 rows, 49/51 home/away, all 6 judgment calls, all 10
+  Thursday games — all reproduced exactly), the one contested removal (Tishomingo vs. Oklahoma
+  School for the Deaf) owner-confirmed correct, and the live Supabase table confirmed to carry zero
+  stale rows post-swap. Note the first version of the stale-rows check was unscoped and answered
+  nothing (caught after running it, fixed in the same file) — a reminder that a query returning
+  rows is not the same as a query answering the question it was written for.
 - **⭐ [Normalization plan 2026-08-17](plan-normalization-2026-08-17.md)** — **NEWEST plan.** Where the
   app gets normalized against industry norms and against itself: forecast off the render path
   (`weekProjections` = 93% of render time), event scope+recurrence instead of 27 copies of one event,

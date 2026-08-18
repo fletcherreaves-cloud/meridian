@@ -351,7 +351,7 @@ failing harder** — which is why the clean six weeks are the read that matters.
 
 ---
 
-## 4. Query F — the March free-item footprint test (Defect 2). RAN 2026-08-18. CLOSED.
+## 5. Query F — the March free-item footprint test (Defect 2). RAN 2026-08-18. CLOSED.
 
 Per the document's own spec, using each March-2026 row's built-in `ly_` twin rather
 than a separate 2025 pull — comparing March's vs-LY reading against the rest of the
