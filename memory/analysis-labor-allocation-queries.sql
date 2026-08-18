@@ -161,3 +161,45 @@ select
 from f
 group by 1,2,3
 order by 1,2,3;
+
+
+-- ── QUERY 5 — IS THE STORE ACTUALLY OPEN OVERNIGHT? Run before touching Late Night. ──
+-- Purcell reads 6.174x guide. That is almost certainly an ARTIFACT: a store that CLOSES
+-- overnight has total_needed_hours ~ 0 for those slots, so any close-and-clean hours make
+-- the ratio explode. On Late Night read gap_hrs, never the ratio, until this query says
+-- which stores are open.
+--   pct_slots_with_cars near 0   -> closed overnight; punched hours are production, and
+--                                   the guide is not claiming they are wrong
+--   pct_slots_with_cars near 100 -> genuinely open; the gap is real coverage
+with complete_days as (
+  select loc, dt
+  from qsr_daily_activity
+  where dt >= current_date - interval '90 days'
+  group by loc, dt
+  having count(distinct hour_slot) = 24
+),
+late as (
+  select
+    a.loc,
+    count(*) filter (where a.dt_trans_cnt > 0) as slots_with_cars,
+    count(*)                                   as slots_total,
+    count(distinct a.dt)                       as nights,
+    sum(a.dt_trans_cnt)                        as cars,
+    sum(a.transactions)                        as transactions,
+    sum(a.actual_punched_hours)                as punched,
+    sum(a.total_needed_hours)                  as needed
+  from qsr_daily_activity a
+  join complete_days c on c.loc = a.loc and c.dt = a.dt
+  where substring(a.hour_slot,1,2)::int not between 6 and 23   -- Late Night = 24..28 plus 05
+  group by 1
+)
+select
+  loc,
+  round(100.0 * slots_with_cars / nullif(slots_total,0), 1) as pct_slots_with_cars,
+  round(cars::numeric        / nullif(nights,0), 1)         as cars_per_night,
+  round(punched::numeric     / nullif(nights,0), 1)         as punched_hrs_per_night,
+  round(needed::numeric      / nullif(nights,0), 2)         as needed_hrs_per_night,
+  round(transactions::numeric / nullif(punched,0), 2)       as tpph,
+  round((punched - needed)::numeric, 0)                     as gap_hrs
+from late
+order by pct_slots_with_cars asc, gap_hrs desc;

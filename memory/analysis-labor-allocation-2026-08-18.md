@@ -112,6 +112,73 @@ Breakfast rows to find who loses people at the punch. **Two different name lists
 
 ---
 
+## ✅ CONCENTRATION ANSWERED (Query 2, owner-run 2026-08-18)
+
+**Different answer per finding — do not treat these as one programme.**
+
+| finding | verdict | implication |
+|---|---|---|
+| **Afternoon padding** | **23 of 27 stores over guide** | district standard |
+| **Dinner padding** | 19 of 27 over guide | district standard |
+| **Late Night excess** | **74% of the 9,751 hrs in 10 stores** | specific restaurants |
+| **Breakfast deficit** | **two opposite causes** | two different name lists |
+
+### ⭐ The breakfast deficit is TWO problems. The district average hid it.
+
+The district figure — *"scheduled to guide (1.046), loses 12.5% at the punch"* — is the
+**average of stores scheduling 0.741 and stores scheduling 1.216.** Averaging them produced
+a number that describes no actual restaurant and implies the wrong fix for both halves.
+
+**Group A — the schedule itself is short. Execution is fine.**
+
+| store | sched vs guide | punched vs sched |
+|---|---:|---:|
+| Bonifay | **0.753** | 0.964 |
+| Sulphur | **0.741** | 0.929 |
+| Tecumseh | **0.801** | 0.953 |
+| Harrah | 0.838 | 0.861 |
+| Ardmore-Cooper/12th | 0.861 | 0.906 |
+| Holdenville | 0.930 | 0.894 |
+| OKC-I240/Sooner | 0.938 | 0.860 |
+
+Bonifay punches **96%** of what it schedules. Nothing is wrong with its execution — the
+schedule was written 25% below guide. **Fix: rewrite the breakfast schedule.**
+
+**Group B — the schedule is right; the people do not arrive.**
+
+| store | sched vs guide | punched vs sched |
+|---|---:|---:|
+| **Lindsay-Wal-Mart** | 1.011 | **0.692** |
+| Cottondale | 1.216 | 0.799 |
+| Ponce de Leon | 1.130 | 0.815 |
+| Seminole-Milt Phillips | 1.010 | 0.819 |
+| Mossy Head | 1.060 | 0.837 |
+| Tishomingo | 1.043 | 0.853 |
+
+**Fix: attendance.** Telling Bonifay to work on attendance, or Lindsay to fix its schedule,
+would each be exactly wrong.
+
+### Two stores to look at before anything else
+
+**Ada-Country Club — over guide in EVERY daypart.** +1,031 / +804 / +1,420 / +2,188 / +985
+= **+6,428 hours** over 90 days, the largest single block in the district. Schedules
+1.392 → 1.481 → 1.809 → 1.857 → 2.334, padding harder as the day goes on. One store, one
+schedule, one conversation.
+
+**Lindsay-Wal-Mart — the opposite pathology.** Schedules 1.011 / 1.263 / **2.179** /
+**2.071** and punches **0.692 / 0.559 / 0.614 / 0.561**. Nearly half the scheduled labour
+never clocks in. **The schedule there is not a plan, it is a wish** — and no allocation fix
+survives contact with it.
+
+### ⚠️ Late Night ratios are unsafe until Query 5 runs
+
+**Purcell reads 6.174× guide.** Almost certainly an artifact: a store that CLOSES overnight
+has `total_needed_hours` ≈ 0, so any close-and-clean hours make the ratio explode. Purcell's
+guide is ~2.2 hrs/night against ~13.8 punched. **On Late Night read `gap_hrs`, never the
+ratio, until Query 5 says which stores are actually open.** Sulphur (punched/scheduled
+**2.097**) and Holdenville (**2.241**) raise the same question — both punch more than double
+their overnight schedule.
+
 ## ⚠️ The overnight reframe — a walk-back, recorded deliberately
 
 An earlier read called low night productivity a **capability problem** (least experienced
