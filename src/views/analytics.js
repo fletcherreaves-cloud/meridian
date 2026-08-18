@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE } from '../constants.js';
-import { dKey, addD, dowOf, dFmt, nDK } from '../utils/date.js';
+import { dKey, addD, dowOf, dFmt, nDK, weekStartOf } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, fetchRow } from '../engine/forecast.js';
 import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionAcked, ATTENTION_ACK_SETTING_KEY, buildAckHistory } from '../engine/swing-feed.js';
@@ -6805,11 +6805,17 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
 // whole 316 KB module into the entry chunk via store-dash.js's static import.
 
 function DialedInComparisonReport({stores, ds, settings, userEvents, onClose}) {
-  const [weekStart, setWeekStart] = React.useState(()=>{
-    const d=new Date(); const diff=(3-d.getDay()+7)%7||7;
-    const w=new Date(d); w.setDate(d.getDate()-diff*2); // last complete week
-    return dKey(w);
-  });
+  // #367 — was hand-rolled getDay() arithmetic: diff=(3-d.getDay()+7)%7||7 computed the
+  // FORWARD distance to the NEXT Wednesday, then subtracted it TWICE (diff*2) trying to land
+  // on "the last complete week." Measured against every day of the week: it lands on a
+  // DIFFERENT weekday depending on what day today happens to be (Mon/Thu/Sun/Wed/Sat/Tue/Fri
+  // across Sun-Sat) — correct only on the one day today is itself Wednesday. weekStartOf is
+  // the shared helper this file already imports mwStart's sibling from (utils/date.js's own
+  // header: "23 distinct week-boundary computations across 13 files... use this instead of
+  // writing getDay() arithmetic"); the current week's start minus 7 days is always the prior,
+  // fully-elapsed week regardless of where in the week today falls.
+  const [weekStart, setWeekStart] = React.useState(()=>
+    dKey(addD(weekStartOf(new Date(), settings?.weekStartDay), -7)));
   const [groupBy,   setGroupBy]  = React.useState('patch');
   const [computing, setComputing]= React.useState(false);
   const [report,    setReport]   = React.useState(null);
