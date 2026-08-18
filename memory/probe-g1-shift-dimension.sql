@@ -1,3 +1,29 @@
+-- ############################################################################
+-- ⛔ DAYPART BOUNDARIES — CORRECTED 2026-08-18. DO NOT RE-DERIVE THEM.
+--
+-- The first version of every query in this file used daypart boundaries built
+-- from general knowledge of a McDonald's day rather than from the authoritative
+-- source. Three of five were wrong. The 2022 VLH Workbooks (Standard and High
+-- Productivity, both identical on this) define them as:
+--
+--     Breakfast   5am - 11am        (was wrongly 4am-11am)
+--     Lunch      11am -  2pm        ok
+--     Afternoon   2pm -  5pm        ok
+--     Dinner      5pm - 11pm        (was wrongly 5pm-8pm)
+--     Late Night 11pm -  5am        (was wrongly 8pm-4am)
+--
+-- hour_slot is the END of the block and runs 05:00 -> 28:00 across the 4am
+-- business day. So '05:00' = 4-5am and belongs to LATE NIGHT sitting at the
+-- START of the business day, while the rest of Late Night (24:00-28:00) sits at
+-- the end. The else branch catches both. 6+3+3+6+6 = 24 slots, reconciling
+-- exactly with the DAR's 24.
+--
+-- Results produced BEFORE this correction (G-1 0.91, G-2 53.4s, G-3, G-4) are
+-- arithmetically sound — sum/sum over the same hour set is valid whatever the
+-- buckets — but their daypart LABELS are wrong, so any conclusion attached to a
+-- daypart name must be re-run on the boundaries above.
+-- ############################################################################
+
 -- ============================================================================
 -- PROBE G-1 — is there headroom inside a store's own week?
 -- Workstream G, memory/plan-normalization-2026-08-17.md
@@ -47,11 +73,11 @@ cells as (                         -- store x daypart x day-of-week
   select
     a.loc,
     case
-      when substring(a.hour_slot,1,2)::int between  5 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
       when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
       when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
-      when substring(a.hour_slot,1,2)::int between 18 and 20 then 'Dinner'
-      else                                                        'Late'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
     end                     as daypart,
     to_char(a.dt,'Dy')      as dow,
     sum(a.dt_untilserve)    as ms,
@@ -105,11 +131,11 @@ cells as (
   select
     a.loc,
     case
-      when substring(a.hour_slot,1,2)::int between  5 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
       when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
       when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
-      when substring(a.hour_slot,1,2)::int between 18 and 20 then 'Dinner'
-      else                                                        'Late'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
     end                  as daypart,
     to_char(a.dt,'Dy')   as dow,
     sum(a.dt_untilserve) as ms,
@@ -187,11 +213,11 @@ with complete_days as (
 cells as (
   select a.loc,
     case
-      when substring(a.hour_slot,1,2)::int between  5 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
       when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
       when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
-      when substring(a.hour_slot,1,2)::int between 18 and 20 then 'Dinner'
-      else                                                        'Late'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
     end as daypart,
     to_char(a.dt,'Dy') as dow,
     sum(a.dt_untilserve) as ms, sum(a.dt_trans_cnt) as cars
@@ -236,11 +262,11 @@ with complete_days as (
 cells as (
   select a.loc,
     case
-      when substring(a.hour_slot,1,2)::int between  5 and 11 then 'Breakfast'
+      when substring(a.hour_slot,1,2)::int between  6 and 11 then 'Breakfast'
       when substring(a.hour_slot,1,2)::int between 12 and 14 then 'Lunch'
       when substring(a.hour_slot,1,2)::int between 15 and 17 then 'Afternoon'
-      when substring(a.hour_slot,1,2)::int between 18 and 20 then 'Dinner'
-      else                                                        'Late'
+      when substring(a.hour_slot,1,2)::int between 18 and 23 then 'Dinner'
+      else                                                        'Late Night'
     end as daypart,
     to_char(a.dt,'Dy') as dow,
     sum(a.dt_untilserve) as ms, sum(a.dt_trans_cnt) as cars
