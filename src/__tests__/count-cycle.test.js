@@ -395,3 +395,81 @@ describe('row-shape compatibility', () => {
     expect(() => cycleCompliance(rows, { asOf: '2026-08-07' })).not.toThrow();
   });
 });
+
+// Dispatch20 §3 investigation, 2026-08-18 — "all 27 stores read crit/weekly-overdue on one
+// day" (surfaced in #410, chased per the dispatch's own instruction: re-grade against several
+// asOf dates before theorizing; every date read crit, which is the discriminator for a logic
+// bug, not a stale feed). Root cause measured live: 967/978 (98.9%) of ALL Condiment-class
+// qsr_onhand rows district-wide read active=false, none Topic-6-rescued (recipe_item never
+// true for a Condiment row in the pulled data) -- leaving totals[loc].Condiment at 0 or
+// undefined for 17/27 stores. The old `(totals[loc][c] || Infinity) * COVER_FRAC` threshold
+// made a 0-item class permanently uncoverable: no session, however complete, could ever
+// satisfy `has('Condiment')`, so satisfiesWeekly was mathematically impossible regardless of
+// what the store actually counted. Bonifay (10034, real store) is the fixture below.
+describe('zero-active-item class cannot permanently block compliance', () => {
+  const bonifayNoActiveCondiment = (sessions = []) => {
+    const rows = [
+      ...mk('10034', 'Food', 119, null),
+      ...mk('10034', 'Paper', 74, null),
+      ...mk('10034', 'Non-Product', 5, null),
+      // Condiment rows exist in the RAW data (36 of them, matching the real district-wide
+      // pattern) but every single one reads active:false, recipeItem:false -- so NONE
+      // contribute to totals['10034'].Condiment, which the fix must not choke on.
+      ...Array.from({ length: 36 }, (_, i) => ({ loc: '10034', cls: 'Condiment', wrin: `C${i}`, active: false, recipeItem: false, last_counted: null })),
+    ];
+    for (const s of sessions) {
+      for (const [cls, n] of Object.entries(s.counts)) {
+        let done = 0;
+        for (const r of rows) {
+          if (r.cls === cls && r.active !== false && done < n) { r.last_counted = s.date; done++; }
+        }
+      }
+    }
+    return rows;
+  };
+
+  it('totals.Condiment is 0/undefined when every Condiment row reads inactive', () => {
+    const { classTotals } = detectSessions(bonifayNoActiveCondiment());
+    expect(classTotals['10034'].Condiment).toBeUndefined();
+    expect(classTotals['10034'].Food).toBe(119);
+  });
+
+  it('a complete Food count alone now satisfies weekly -- Condiment is trivially covered, ' +
+     'not permanently blocking (the bug: this used to be impossible no matter what)', () => {
+    const rows = bonifayNoActiveCondiment([{ date: '2026-08-12', counts: { Food: 119 } }]);
+    const { sessions } = detectSessions(rows);
+    const s = sessions['10034'][0];
+    expect(s.covered).toContain('Condiment'); // trivially covered -- nothing active to count
+    expect(s.covered).toContain('Food');
+    expect(s.satisfiesWeekly).toBe(true);
+    expect(s.kind).toBe('Weekly');
+  });
+
+  it('cycleCompliance no longer grades this store permanently crit -- a complete Food count ' +
+     'satisfies the weekly-overdue check (Paper is a separate, correctly-still-required rule, ' +
+     'not touched by this fix -- it fires "warn" here because no Paper session happened, which ' +
+     'is real and correct, not the bug)', () => {
+    const rows = bonifayNoActiveCondiment([{ date: '2026-08-12', counts: { Food: 119 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-14' });
+    expect(c[0].status).toBe('warn'); // NOT 'crit' -- weekly-overdue no longer fires
+    expect(c[0].exceptions.map(e => e.rule)).toEqual(['mid-month-paper']);
+    expect(c[0].lastWeekly).not.toBeNull();
+  });
+
+  it('a store WITH real active Condiment items still requires counting them -- the fix only ' +
+     'exempts a class with ZERO active items, it does not weaken the rule generally', () => {
+    // Same store shape, but this time 2 Condiment items are genuinely active (matches real
+    // stores like 24471/33222/43701 which had 1-2 active Condiment rows in the live pull).
+    const rows = [
+      ...mk('X', 'Food', 119, null),
+      { loc: 'X', cls: 'Condiment', wrin: 'C1', active: true, last_counted: null },
+      { loc: 'X', cls: 'Condiment', wrin: 'C2', active: true, last_counted: null },
+    ];
+    // Count Food fully, but never touch the 2 active Condiment items.
+    for (const r of rows) if (r.cls === 'Food') r.last_counted = '2026-08-12';
+    const { sessions } = detectSessions(rows);
+    const s = sessions['X'][0];
+    expect(s.covered).not.toContain('Condiment'); // 2 active items exist and were never counted
+    expect(s.satisfiesWeekly).toBe(false);
+  });
+});

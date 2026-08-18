@@ -1,5 +1,6 @@
 // @ts-nocheck
 // Signal Registry — metric definitions + extraction engine + custom signal computation
+import { priceDailySeries } from './price-events.js';
 
 // ── Metric Categories ─────────────────────────────────────────────────────────
 // source: ds array key; field: row field name; granularity: which modes work;
@@ -168,6 +169,23 @@ export const METRIC_CATEGORIES = [
       { key: 'wxWind', label: 'Wind Speed (mph)', source: 'weatherRows', field: 'wspd', granularity: ['daily','monthly'], better: null, unit: 'mph' },
     ],
   },
+  // ── Pricing (derived from ds.pmixRows via src/engine/price-events.js) ────────
+  // Dispatch20 addendum, 2026-08-18 — Meridian could not see a price change: forecast
+  // models calibrated straight through repricing weeks, and Signal Lab/Scanner had no
+  // way to correlate on the single largest deliberate lever the business pulls. Three
+  // metrics from the same confirmed-step detector (14-day-flat-before/after; the naive
+  // day-over-day tier diff is pure noise — independently re-measured, 50-170+ "changes"
+  // per store on literally every date including a control date with no known event).
+  // daysSinceChange is the only one useful monthly (a ramp); the other two are event-day
+  // spikes, same shape as the Controls count/$ metrics, so daily-only.
+  {
+    key: 'pricing', label: 'Pricing', color: '#f472b6',
+    metrics: [
+      { key: 'pxDaysSince', label: 'Days Since Price Change', source: '__priceEvents', field: 'daysSinceChange', granularity: ['daily','monthly'], better: null, unit: 'days' },
+      { key: 'pxItemsChanged', label: 'Items Repriced', source: '__priceEvents', field: 'itemsChanged', granularity: ['daily'], better: null, unit: 'count', allowZero: true },
+      { key: 'pxMeanStepPct', label: 'Mean Price Step %', source: '__priceEvents', field: 'meanStepPct', granularity: ['daily'], better: null, unit: 'pct', allowZero: true },
+    ],
+  },
   // ── Calendar (synthesized from the date — no source table) ───────────────────
   // Day-of-week / calendar factors so common-sense patterns surface in the Scanner
   // and Signal Lab (Notes 28 #4), not just raw metric pairs. Each is a 0/1 flag per
@@ -279,6 +297,21 @@ function _calendarUniverse(ds, scopeLoc) {
   return out;
 }
 
+// priceDailySeries() walks every (loc,item) pair in ds.pmixRows to detect confirmed steps
+// — real work, and the Scanner calls extractMetricValues once per metric (3x for the
+// pxDaysSince/pxItemsChanged/pxMeanStepPct trio alone). Cache by ds.pmixRows array
+// identity so one Scanner pass computes it once, matching the "compute once per call"
+// discipline elsewhere in this codebase (see computeEventFactors's byLoc/byLocDow index).
+const _priceSeriesCache = new WeakMap();
+function _priceDailySeriesCached(pmixRows) {
+  if (!pmixRows || !pmixRows.length) return [];
+  const cached = _priceSeriesCache.get(pmixRows);
+  if (cached) return cached;
+  const series = priceDailySeries(pmixRows);
+  _priceSeriesCache.set(pmixRows, series);
+  return series;
+}
+
 export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
   const meta = findMetric(metricKey);
   if (!meta) return [];
@@ -291,6 +324,33 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
     const fn = CAL_FIELDS[field];
     if (!fn) return [];
     return _calendarUniverse(ds, scopeLoc).map(u => ({ loc: u.loc, date: u.date, value: fn(u.date) }));
+  }
+
+  // Pricing metrics are derived from ds.pmixRows through price-events.js's confirmed-step
+  // detector, not read directly — same "derived series with no source table of its own"
+  // shape as Calendar, but computed from real data instead of synthesized from the date.
+  if (meta.source === '__priceEvents') {
+    if (granularity !== 'daily' && field !== 'daysSinceChange') return [];
+    const series = _priceDailySeriesCached(ds.pmixRows);
+    const rows = scopeLoc ? series.filter(r => _normLoc(r.loc) === _normLoc(scopeLoc)) : series;
+    if (granularity === 'daily') {
+      return rows.flatMap(r => {
+        const v = r[field];
+        if (v == null || isNaN(v) || (v === 0 && !meta.allowZero)) return [];
+        return [{ loc: _normLoc(r.loc), date: new Date(r.date + 'T00:00:00'), value: v }];
+      });
+    }
+    // Monthly: daysSinceChange only, as the LAST observed value in the month (a ramp, not
+    // a sum — averaging or summing "days since" across a month is meaningless).
+    const byKey = {};
+    for (const r of rows) {
+      if (r.daysSinceChange == null) continue;
+      const loc = _normLoc(r.loc);
+      const mk = loc + '|' + _mKey(r.date + 'T00:00:00');
+      const date = new Date(r.date + 'T00:00:00');
+      if (!byKey[mk] || date > byKey[mk].date) byKey[mk] = { loc, date, value: r.daysSinceChange };
+    }
+    return Object.values(byKey);
   }
 
   const src = ds[meta.source] || [];
@@ -675,4 +735,5 @@ export const SEEDED_SIGNALS = [
   { id: 'seed-temp-sales',  name: 'High Temp → Net Sales',            xMetric: 'wxTmax',   yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Does warmer weather move the top line? Watch for the divergent Spearman flag — the effect is often nonlinear.' },
   { id: 'seed-rain-gc',     name: 'Rainfall → Guest Count',           xMetric: 'wxRain',   yMetric: 'gc',        granularity: 'daily',   seeded: true, rationale: 'Rain days vs traffic — does weather pull guests, and does the drive-thru pick up the slack?' },
   { id: 'seed-fri-sales',   name: 'Friday → Net Sales',               xMetric: 'calFri',   yMetric: 'sales',     granularity: 'daily',   seeded: true, rationale: 'Friday lift — the anchor for the eventual Filet-O-Fish-Fridays product-mix check.' },
+  { id: 'seed-price-gc',    name: 'Days Since Price Change → Guest Count', xMetric: 'pxDaysSince', yMetric: 'gc', granularity: 'daily', seeded: true, rationale: 'Price↔traffic, the sibling to weather↔sales — does a fresh reprice cost guests, and does it recover as days-since-change grows?' },
 ];
