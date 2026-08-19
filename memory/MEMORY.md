@@ -30,8 +30,24 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐ [Dispatch #26 — Workstream D: adopt the design system](dispatch-26.md)** — **NEWEST
-  dispatch, 2026-08-19.** Re-measured `PanelControls.js` adoption fresh against `main`: unchanged
+- **⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #27 — Workstream E: routing vs modals](dispatch-27.md)** — **NEWEST
+  dispatch, 2026-08-19.** Confirms the plan's hybrid routing architecture is unchanged in current
+  `App.js`: a `view` state var plus `anyModalOpen` (`App.js:2486-2489`) that unmounts the
+  background view behind any open modal. DI Compare, Forecast Accuracy, and Projections are still
+  modals; "Date-Range Report" is registered `kind:'nav'` but still opens as a modal. **Correction**:
+  the unmount-on-modal-open behavior is not an accident — `App.js:2470-2485`'s own comment records
+  it as a deliberate v4.212 perf fix (AtAGlance kept recomputing while hidden), so the plan's cited
+  "4.3s modal-close" figure is a side effect of that fix, not a bug, and should be re-measured
+  post-Workstream-A (cache hits likely already cut it) rather than cited as-is. **New scoping
+  fact**: zero URL-routing infrastructure exists anywhere in `App.js` (no `pushState`, no router) —
+  shareable URLs are new plumbing, not a relabel. Points at `src/app/panel-registry.js` +
+  `panel-registry.test.js` as the existing enforcement infra to extend with a route-vs-modal
+  distinction, rather than building parallel bookkeeping. Carries the owner-endorsed rule (route =
+  destination you'd link to, modal = interruption) and flags DI Compare/Forecast
+  Accuracy/Projections/Date-Range Report as the four still-misclassified panels to start with.
+  Notes Workstream D's broad panel-shell sweep waits on this workstream's routing decision; the
+  ratchet/hand-conversion mechanics do not.
+- **⭐⭐⭐⭐⭐⭐⭐ [Dispatch #26 — Workstream D: adopt the design system](dispatch-26.md)** — 2026-08-19. Re-measured `PanelControls.js` adoption fresh against `main`: unchanged
   since the 2026-08-17 plan despite three workstreams' worth of merged PRs —
   `DateRangeControl` 0/55, `LocationSelector`/`ActionMenus` 1/55 (`eom-dashboard.js`), `ModalShell`
   9/55, `dateRange`-prop panels 8/55. Flags that the plan's bypass-volume counts (inline styles,
