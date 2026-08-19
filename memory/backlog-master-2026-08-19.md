@@ -899,6 +899,17 @@ previously documented — is the raw per-event log to build against, and settled
   all before `project-rls-hardening-plan.md`'s fix lands — this backlog's own §13 already tracks
   92-107 tables on wide-open `using(true)` RLS policies, which is not a bar this kind of data
   should sit behind in the meantime. See plan file §5 for the full framing.
+- [ ] **Fourth axis of the same gate, added 2026-08-19 — identity architecture (PII/pseudonymization).**
+  Owner ran a follow-up question through Grok/Gemini/ChatGPT on how security apps handle employee
+  PII; logged + checked against this org's actual code in
+  `memory/plan-security-pii-architecture-2026-08-19.md`. **Verified finding, not a design guess:**
+  `audit_rows`/`analyzeRegisterAudit` key and store the employee's plaintext name today, with zero
+  pseudonymization or logged identity-reveal step anywhere in the pipeline
+  (`src/parsers/index.js:974`, `src/utils/register-audit.js:7-8,56`). Two directions laid out
+  (extend the existing role+subject disclosure gate with a logged reveal, vs. a real token/identity-
+  vault architecture) — **not decided.** Also flags that GDPR/CCPA (what the AI research leaned on)
+  almost certainly don't apply to an FL/OK-only operation — the real compliance anchor is state
+  law/HR practice, needs real verification, not further AI reasoning.
 - [ ] Phase 1 MVP (once Phase 0a lands): cash-drawer variance + peer ranking, TvA inventory
   variance (this slice already runs on data this org has — extends existing FOB math), explanation
   surfacing built in from day one rather than retrofitted.

@@ -30,6 +30,16 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security PII/identity architecture — logged, not decided](plan-security-pii-architecture-2026-08-19.md)** —
+  2026-08-19. **NEWEST.** Owner follow-up research (Grok/Gemini/ChatGPT) on how security apps
+  handle employee PII, checked against a **verified** current-code finding: `audit_rows`/
+  `analyzeRegisterAudit` store and key on the employee's **plaintext name today, with zero
+  pseudonymization or logged identity-reveal step anywhere** (`src/parsers/index.js:974`,
+  `src/utils/register-audit.js:7-8,56`). Two directions laid out (extend the existing role+subject
+  disclosure gate with a logged reveal, vs. a real token/identity-vault architecture) — **not
+  decided**, added as a fourth axis to `plan-security-loss-prevention.md` §5's existing owner-gated
+  decision. Also flags GDPR/CCPA likely don't apply to this FL/OK-only operation — needs real
+  HR/counsel verification, not more AI reasoning.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #35 — Register Audit: implement against the confirmed endpoint](dispatch-35.md)** —
   2026-08-19. **NEWEST, ready to dispatch to an engineer now.** The implementation step on top of
   dispatch #34's capture below: restructure the pull shape (one call covers all 27 stores × a date
