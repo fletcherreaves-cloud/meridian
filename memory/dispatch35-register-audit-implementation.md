@@ -114,8 +114,34 @@ A session (or the owner) with real QSRSoft credentials + network access needs to
 `workflow_dispatch` once against the 2026-08-12 → 2026-08-18 window, (2) spot-check a handful of
 resulting `audit_rows` rows against dispatch #34's own capture, (3) confirm the response envelope
 shape (`fetchChunk()`'s array/`.result`/`.data` fallback is a defensive guess, not confirmed),
-and (4) confirm or fix the Playwright fallback's guessed UI navigation URL
-(`v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit`) if the direct-token path ever needs it.
+(4) confirm or fix the Playwright fallback's guessed UI navigation URL
+(`v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit`) if the direct-token path ever needs it, and
+(5) resolve the `refundCnt` semantic drift flagged below.
+
+**PM verification pass, 2026-08-19 (PR #448 review, before merge):** independently re-checked the
+load-bearing field-mapping claims against `main`'s actual `src/utils/register-audit.js` and
+`src/parsers/index.js`, not just the summary text. `drawerGC`/`avgCheck`, the five confirmed-
+unconsumed pct/avg fields, and `manualRefAmt` vs `posOverAmt`/`posOverCnt` staying distinct all
+checked out exactly as claimed. CI's `verify` job passed independently, corroborating the
+1596/1596-tests/clean-build claim.
+
+**One real, non-blocking finding from that pass — `refundCnt` semantics diverge between manual
+and auto rows.** `analyzeRegisterAudit`'s own comment (directly above `e.refundCnt+=(r.refundCnt
+||0)`) explains the manual-upload path's `refundCnt` is cash-only *by construction*:
+`parseRegisterAudit`'s Excel schema has no cashless-refund-**count** column
+(`refundCnt: fc(h,'Refund Cnt','Cash Refund Cnt')`, only a cashless-refund-**dollar** column,
+`refundCashless`). This dispatch's `mapRow()` sums `refundCashQty + refundCashlessQty` from the
+real API (which does carry both counts) — a reasonable reading of dispatch #34's own guidance
+(refundCnt was marked "high-confidence: sum of both"), which didn't cross-check this against the
+comment already sitting in the consumer. Net effect: the same real employee's `refundCnt` will
+mean "cash refunds only" on manually-uploaded rows and "cash+cashless refunds" on auto-pulled
+rows, for dates that can sit side-by-side in `audit_rows` under the freshest-wins model.
+**Not currently a scoring bug** — `avgRefundCnt`/`refundCnt` isn't one of the fields
+`analyzeRegisterAudit` feeds into its risk score (only `avgDrawerOpens`, `cashOSTotal`,
+`avgTRedA`, `avgTRedB`, `manualRef`, `posOver` do) — but it is a real, silent inconsistency in a
+displayed metric, worth resolving during the live-verification pass above: either match the
+manual path's cash-only convention for consistency, or keep the richer auto-pull definition and
+document the historical undercounting explicitly. Not decided here.
 
 ## Verified
 

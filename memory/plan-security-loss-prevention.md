@@ -671,15 +671,22 @@ research question; per §0 above, it's not — `data-acquisition-shopping-list.m
 ladder already answers it, in more concrete detail than this file could add. The real Phase 0a is
 two small, already-scoped engineering/investigation tasks, not open research:
 
-1. **Dispatch the Register Audit auto-pull.** Parser (`parseRegisterAudit`), Supabase table
-   (`audit_rows`), and scoring engine (`analyzeRegisterAudit`) already exist. Dispatch #33 shipped
-   the pull-script scaffold and dispatch #34 (2026-08-19, `dispatch-34-phase0a-findings.md` Part 1)
-   confirmed the real endpoint + field names — **implementation is the one remaining piece**:
-   `fetchRegisterAuditDay()`/`mapRow()` need writing against the confirmed shape, with a few field
-   translations (POS over-ring vs. `manOverringAmt`, cash-O/S %, avg check, T-Red rate/avg) needing
-   to be checked against `parseRegisterAudit`'s own derivation logic before this goes live, since
-   it's personnel-sensitive scoring data. This closes rung 2 (employee × store × day) for nearly
-   all of §2.1's methods once done.
+1. ~~Dispatch the Register Audit auto-pull~~ **IMPLEMENTED, 2026-08-19 (dispatch #35, PR #448).**
+   Parser (`parseRegisterAudit`), Supabase table (`audit_rows`), and scoring engine
+   (`analyzeRegisterAudit`) already existed; dispatch #33 shipped the pull-script scaffold,
+   dispatch #34 confirmed the real endpoint + field names, and dispatch #35 implemented
+   `mapRow()` against them — field-by-field, cross-referenced against `analyzeRegisterAudit`'s
+   actual field usage rather than guessed, independently re-verified during PM review before
+   merge (`dispatch35-register-audit-implementation.md`'s "PM verification pass" note). Cron
+   enabled, `sync-failure-watch.yml` entry added. **Two things still genuinely open, not
+   silently closed:** (a) **not yet live-verified** — no session in this build's history has had
+   real QSRSoft credentials, so the mapping is verified against fixture data and code cross-
+   reference, not a real API response; run `workflow_dispatch` once and spot-check real rows
+   before trusting risk-scoring output built on this. (b) a real, non-blocking `refundCnt`
+   semantic drift between manually-uploaded rows (cash-only, by construction) and auto-pulled
+   rows (cash+cashless) — not risk-scored today, but should resolve one way or the other during
+   the live-verification pass. This closes rung 2 (employee × store × day) for nearly all of
+   §2.1's methods, pending that verification.
 2. ~~Run the Any Transaction probe~~ **DONE, 2026-08-19.** Tier A (district-wide daily
    exception-only standing pull) is settled dead — the report has no server-side or even
    UI-level exception-type filter (two corroborating captures, `dispatch-34-phase0a-findings.md`
@@ -690,8 +697,11 @@ two small, already-scoped engineering/investigation tasks, not open research:
    as a standing feed; §3's sequence-detection ambitions stay at whatever grain Register Audit and
    `Security Events` provide (daily / per-session), not true continuous transaction time.
 
-**Item 1 is the only thing left blocking Phase 1** — it was already scoped before the three-engine
-research existed and is now most of the way to shippable. Item 2 needs no further work.
+**Phase 0a is code-complete.** Both items are implemented and merged. What remains before Phase 1
+(cash-drawer variance + peer ranking) should build on trusted data: live-verify item 1's real
+output (needs QSRSoft access nobody in this build has had yet) and resolve the `refundCnt` drift.
+Neither blocks starting Phase 1's design/scaffolding, but both should close before Phase 1's
+output is treated as reliable.
 
 ### Phase 0b — substrate (build once, everything else depends on it)
 - Event normalization / Event DNA schema — for rung 2 (Register Audit), this is close to already
