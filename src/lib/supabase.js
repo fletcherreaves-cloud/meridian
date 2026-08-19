@@ -3350,9 +3350,15 @@ export async function loadOrgEvents() {
     expectedSalesDelta: r.expected_sales_delta, expectedGcDelta: r.expected_gc_delta,
     url: r.url, verification: r.verification, note: r.note,
     enteredBy: r.entered_by, enteredAt: r.entered_at, method: r.method,
+    // Dispatch24 Workstream B (#388) — scope + resolved store list. Absent (undefined) on a DB
+    // that hasn't run schema-org-events-scope.sql yet; orgEventsToDayMap() already treats a
+    // missing/'store' scope as "expand to just [loc]", so this degrades to the old behavior.
+    scope: r.scope ?? 'store', scopeState: r.scope_state ?? null, scopeLocs: r.scope_locs ?? null,
   }));
 }
-// Bulk upsert (import). Events keyed by (loc, date_start, label). Chunked to stay under limits.
+// Bulk upsert (import). Events keyed by (loc, date_start, label) -- for scope<>'store' rows, `loc`
+// is a synthetic sentinel (collapseScopedEvents(), events-import.js) so this key stays unique and
+// this upsert mechanism is completely unchanged. Chunked to stay under limits.
 export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy = null } = {}) {
   if (!supabase || !events?.length) return { saved: 0, errors: [] };
   const nowIso = new Date().toISOString();
@@ -3366,7 +3372,12 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
     url: e.url ?? null, verification: e.verification ?? null, note: e.note ?? null,
     entered_by: e.enteredBy ?? enteredBy, entered_at: e.enteredAt ?? nowIso, method: e.method ?? method,
     updated_at: nowIso,
+    scope: e.scope ?? 'store', scope_state: e.scopeState ?? null, scope_locs: e.scopeLocs ?? null,
   }));
+  // Strip scope/scope_state/scope_locs if that migration hasn't run yet (schema-org-events-scope.sql)
+  // so imports never break; self-heals once the columns exist. Mirrors the existing sports-columns
+  // self-heal immediately below.
+  const stripScope = arr => arr.map(({ scope, scope_state, scope_locs, ...rest }) => rest);
   // Strip opponent/kickoff if that migration hasn't run yet (schema-org-events-sports.sql) so imports
   // never break; self-heals once the columns exist.
   const stripSports = arr => arr.map(({ opponent, kickoff, ...rest }) => rest);
@@ -3374,8 +3385,16 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     let { error, count } = await supabase.from('org_events').upsert(chunk, { onConflict: 'loc,date_start,label', count: 'exact' });
+    let attempt = chunk;
+    if (error && /column .*(scope_state|scope_locs|scope).* does not exist/i.test(error.message || '')) {
+      attempt = stripScope(attempt);
+      ({ error, count } = await supabase.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' }));
+    }
+    // Chained onto whatever `attempt` already is (not the original chunk) so a DB missing BOTH
+    // migrations doesn't reintroduce the just-stripped scope columns on this second retry.
     if (error && /column .*(opponent|kickoff).* does not exist/i.test(error.message || '')) {
-      ({ error, count } = await supabase.from('org_events').upsert(stripSports(chunk), { onConflict: 'loc,date_start,label', count: 'exact' }));
+      attempt = stripSports(attempt);
+      ({ error, count } = await supabase.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' }));
     }
     if (error) errors.push(error.message); else saved += count ?? chunk.length;
   }
@@ -3420,6 +3439,32 @@ export async function updateOrgEvent(id, patch = {}) {
     const { status, ...rest } = row;
     ({ error } = await supabase.from('org_events').update(rest).eq('id', id));
   }
+  return { error: error?.message || null };
+}
+// Dispatch24 Workstream B (#388), open design question #1 — per-store overrides for a scoped
+// event (RFC 5545 "exception" model: keyed by (event_id, loc), never mutates the parent scoped
+// row). `loadOrgEventExceptions()` returns the shape orgEventsToDayMap()'s `exceptions` param
+// expects directly: `{ [eventId]: { [loc]: {status, overrides} } }`.
+export async function loadOrgEventExceptions() {
+  if (!supabase) return {};
+  const data = await fetchAll((from, to) => supabase.from('org_event_exceptions').select('*').range(from, to), 1000, 'org_event_exceptions');
+  const map = {};
+  for (const r of (data || [])) {
+    (map[r.event_id] = map[r.event_id] || {})[String(r.loc)] = { status: r.status, overrides: r.overrides || null };
+  }
+  return map;
+}
+export async function saveOrgEventException(eventId, loc, { status = 'canceled', overrides = null, note = null, enteredBy = null } = {}) {
+  if (!supabase || eventId == null || !loc) return { error: 'missing-id-or-loc' };
+  const { error } = await supabase.from('org_event_exceptions').upsert(
+    { event_id: eventId, loc: String(loc), status, overrides, note, entered_by: enteredBy },
+    { onConflict: 'event_id,loc' },
+  );
+  return { error: error?.message || null };
+}
+export async function deleteOrgEventException(eventId, loc) {
+  if (!supabase || eventId == null || !loc) return { error: 'missing-id-or-loc' };
+  const { error } = await supabase.from('org_event_exceptions').delete().eq('event_id', eventId).eq('loc', String(loc));
   return { error: error?.message || null };
 }
 export async function loadOrgSchoolConfig() {
