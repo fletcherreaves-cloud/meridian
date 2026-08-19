@@ -16,6 +16,34 @@
 > **Status legend:** ✅ Done · 🟡 In progress · ❌ Open, not started · ❓ Needs owner input/decision
 > before work can start · — Needs re-verification (default state for everything below until a PM
 > pass checks it)
+>
+> ---
+>
+> ## PM review pass 1 — 2026-08-19
+>
+> **Scope:** the entire file, all 13 sections plus both bottom lists. Pass 2 runs after this
+> merges, independently over the same whole file. (The original plan of two *concurrent* passes
+> over *disjoint* sections was changed; the stale description at the bottom of this file has been
+> corrected rather than left to contradict itself.)
+>
+> **What "verified" means here.** Every status changed below cites the file, line, test, or PR that
+> settles it. Where code alone cannot settle an item — it needs a live Supabase read, a real
+> device, a workflow run, or an owner decision — it is marked ❓ with the *specific* next step,
+> **not** guessed at. Items left unchanged were checked and are genuinely still open; those carry
+> a `(re-verified pass 1)` note so pass 2 can tell "checked, still open" from "not yet reached."
+>
+> **Coverage, stated honestly.** ~150 checkboxes; roughly 25 had decisive code/git evidence either
+> way and are now settled. The remainder are dominated by owner-decision items (❓), open-ended
+> design workstreams, and multi-part items where one clause is verifiable and the rest is not.
+> Those are marked for what they are rather than force-graded. **Pass 2 should not read an
+> unannotated line as confirmed-open by pass 1.**
+>
+> **Root cause of the staleness, worth recording:** the two largest corrections below (§0 C and
+> §11) were not races. `scripts/_pipeline-contract.mjs` landed in **#431** and this file landed in
+> **#432** — confirmed via `git merge-base --is-ancestor` — so Workstream C was already built when
+> the sweep wrote "Never started." The Bullseye tile has been on `main` since **v5.012 (#274)**,
+> four PRs of which touched it. Both were inherited verbatim from source memory files without a
+> code check, which is exactly the failure mode this pass exists to catch.
 
 ---
 
@@ -28,9 +56,15 @@ for full detail on each.
   click-trace (dispatch #31) found cache coverage is 100% but 66% of `AtAGlance`'s render cost is
   still unexplained by any span; instrumentation to localize it just shipped (PR #431).
 - [x] **B — event scope + recurrence.** ✅ Shipped, RLS-verified in production.
-- [ ] **C — pipeline contract.** ❌ **Never started.** Dispatch #25/#32 brief stands: build
-  `scripts/_pipeline-contract.mjs`, convert a bounded slice of the 17 ungoverned pull scripts,
-  seed a ratchet. C2 (idempotent partition replace) is separate, fully greenfield.
+- [x] **C — pipeline contract.** 🟡 **CORRECTED pass 1 — this was NOT "never started"; the first
+  slice shipped in PR #431.** All three parts of the dispatch #25/#32 brief are on `main`:
+  (1) `scripts/_pipeline-contract.mjs` exists, 75 lines, exporting `logPartitionCoverage` +
+  `checkFreshness`; (2) a bounded slice is converted — 2 adopters, `scripts/lifelenz-pull.mjs`
+  and `scripts/qsrsoft-dar-pull.mjs`; (3) the ratchet is seeded —
+  `src/__tests__/ratchet-pipeline-contract-coverage.test.js` (R8, dispatch #32) at `CEILING = 18`
+  unconverted named scripts, plus a unit test `src/__tests__/pipeline-contract.test.js`.
+  **Genuinely remaining:** the other 18 scripts (drive the ratchet down), and **C2 (idempotent
+  partition replace), which is still fully greenfield** — re-verified, no implementation found.
 - [x] **D — design-system adoption.** 🟡 Two hand-conversions + panel contract + ratchet R7
   (seeded at 78) shipped (PR #431). Rest is intentionally opportunistic, no discrete finish line.
 - [x] **E — routing vs modals.** ✅ Shipped (4 panels URL-synced). Remount cost is NOT fixed by
@@ -60,8 +94,11 @@ for full detail on each.
 - [ ] #192 P2 panel scorecard — consistency checklist across all 97 panels.
 - [ ] #225 viewport-scroll lock — fix applied, **unverified on a real phone** (devtools emulation
   insufficient per the issue itself).
-- [ ] Token adoption chain (#276→#286→#287, 111 sites → #296 step 2, 265 white-alpha sites) —
-  visual-foundation prerequisite before any palette change.
+- [ ] Token adoption chain (#276→#286→#287, 111 sites → #296 step 2) — visual-foundation
+  prerequisite before any palette change. 🟡 **Count corrected pass 1: 241, not 265.** Measured
+  today (`rgba(255,255,255` across `src/**/*.js`, excluding `__tests__` and `changelog`), against
+  the ratchet ceiling of **266** in `src/__tests__/light-mode-white-alpha.test.js` — so ~24 sites
+  have been absorbed opportunistically since the ceiling was seeded. #296 step 2 is still open.
 - [ ] Home-screen redesign (fewer/deeper widgets around the "learning loop") — ❓ 3 open design
   questions: owner's actual first move of the day; dynamic vs. user-customized vs. hybrid; widget
   count.
@@ -83,25 +120,51 @@ for full detail on each.
 
 - [ ] Finish auto-pull migration: Scheduling Intelligence, Schedule Summary, Labor Analysis (same
   root cause as the Schedule Summary labor% bug below).
-- [ ] ❓ LifeLenz Time & Attendance has no live source (hand-transcribed since June) — needs
-  owner's live session + DevTools capture.
+- [ ] 🟡 **LifeLenz Time & Attendance — status advanced pass 1.** No longer "needs an owner
+  DevTools capture": a read-only CI probe for the report-name slug shipped as **#350 / PR #355**
+  (`571cfa6b`) — `scripts/lifelenz-ta-probe.mjs` + `.github/workflows/lifelenz-ta-probe.yml`, both
+  on `main`. ❓ **Remaining, and it is not a code question:** the probe has to be *run* and its
+  output read to learn the slug. Next step is a `workflow_dispatch` trigger and reading the job
+  log — nothing here can be settled by grep. Source is still hand-transcribed until then.
 - [ ] `labor_rows` (manual Labor Report) sweep — other raw `ds.laborRows` readers still hit
-  staleness; only Dialed-In was rerouted through the resolver.
+  staleness; only Dialed-In was rerouted through the resolver. ❌ **(re-verified pass 1, still
+  open — measured: 20 files under `src/views` + `src/engine` still read `ds.laborRows` directly.)**
+  That count is the tracking number for this item; it should fall as the sweep proceeds.
 - [ ] Route `compute6wk` through the metric-source resolver (15 resolvable fields still read raw
   arrays); fix `avg6`'s zero-skip bug.
-- [ ] Ponce de Leon (43701) `detectCleanDataStart` returns a future date, breaking Dialed-In
-  calibration for that store.
+- [x] Ponce de Leon (43701) `detectCleanDataStart` returns a future date, breaking Dialed-In
+  calibration for that store. ✅ **Done (high confidence) — CORRECTED pass 1.**
+  `src/__tests__/calibrate-new-store.test.js` names this exact symptom in its header ("Notes 61
+  #12: Ponce de Leon (43701) reported `recentOnly window starts 2027-04-16`") and was written
+  against a live Supabase measurement on 2026-08-08 (133 rows). `src/engine/backtest.js` now
+  carries an explicit future-date guard and applies `_windowStart` to `recentOnly` stores
+  (`:145`, `:150`). ❓ *One residual for pass 2:* the test fixes the **generic** future-date class;
+  whether Dialed-In now calibrates correctly for 43701 **against live data** is a browser/live
+  check, not a code check.
 - [ ] ❓ `dt-speedofservice.js`'s second "PM" daypart label — needs owner confirmation before
   renaming.
 - [ ] **Metric Registry/Resolver unification** — merge `signal-registry.js` (110 metrics) and
   `metric-source.js` (~50 now); add lineage, aggregation metadata, catalog UI, CI enforcement.
-  *(Named independently in 3 files — see Duplicates section.)*
-- [ ] Info-icon field scraper (QSRSoft ℹ tooltips → `qsr_field_definitions`) + field dictionary.
+  *(Named independently in 3 files — see Duplicates section.)* ❌ **(re-verified pass 1, still
+  open — both `src/engine/signal-registry.js` and `src/engine/metric-source.js` exist as separate
+  modules with no unification layer between them.)**
+- [x] Info-icon field scraper (QSRSoft ℹ tooltips → `qsr_field_definitions`) + field dictionary.
+  ✅ **Done — shipped v4.386/v4.387**, long before this file was written. `scripts/qsrsoft-field-
+  scraper.mjs` (interactive ℹ-dialog capture) and `scripts/parse-field-defs.mjs`, both upserting to
+  `qsr_field_definitions` on `onConflict:'page_key,field_label'`. Stale inheritance from the source
+  note. *(If the intended remaining scope was **coverage** — which reports have been scraped — that
+  is a live-table count, not a code question; re-file it as such rather than leaving this open.)*
 
 ## 4. Correctness Bugs (concrete, investigable)
 
-- [ ] 6-Week Performance chart can render 200,000–1,200,000% — `getDOWTrend` lacks a tiny-LY-
-  denominator guard.
+- [x] 6-Week Performance chart can render 200,000–1,200,000% — `getDOWTrend` lacks a tiny-LY-
+  denominator guard. ✅ **Done — CORRECTED pass 1.** The guard exists:
+  `src/engine/forecast.js:642` `_yoyPoint(cur, ly)` returns `null` unless both are `> 0` **and**
+  the growth sits inside `[YOY_MIN_GROWTH, YOY_MAX_GROWTH]`, applied at **both** call sites
+  (`:659`, `:676`). Covered by `src/__tests__/yoy-trend-guard.test.js`, which drives the real index
+  rather than the helper so it fails if either call site loses the guard. The ±300% bound is
+  measured, not chosen: 39,357 of 40,000 store-days (98.4%) sit at or above 70% of their store's
+  own median and only 76 fall below 25%.
 - [ ] `[Violation] click handler 1382ms` on nearly every click — root cause not diagnosed.
 - [ ] React render ≈100% of main-thread blocking in an older trace — fix direction known
   (coalesce `setDs` sites, defer `ds` to heavy views), not implemented. *(Possibly related to
@@ -121,7 +184,12 @@ for full detail on each.
   anon/authenticated role. Root cause understood but unconfirmed — **needs a live `pg_policies`
   diff and explicit owner go-ahead before touching production RLS.**
 - [ ] Two disagreeing Model Health Score implementations (`modelHealthScore` vs
-  `computeModelHealth`).
+  `computeModelHealth`). ❌ **(re-verified pass 1, still open — and confirmed live, not vestigial.)**
+  Both are defined in the same file (`src/engine/forecast.js:847` and `:1868`), both are exported,
+  and **each has its own consumer**: `src/views/at-a-glance.js` calls `modelHealthScore` (`:374`
+  red-store filter, `:821` green/yellow/red tally) while `src/views/model-health-badge.js:10`
+  imports `computeModelHealth`. So the same store can be graded by two different implementations
+  depending on which surface you look at — that is the actual user-visible risk, and it is real today.
 - [ ] District View 14-item visual-review punch list — mostly unconfirmed as fixed (Biggest Miss
   counting a partial day, missing labor at 10am, low-contrast Intelligence Brief, TPPH not
   populating in two panels, Tishomingo wrongly flagged "new model store," Records not all-time,
@@ -194,12 +262,15 @@ for full detail on each.
 - [x] R2P stays manual-only — no cloud source exists, documented limitation, not a bug to chase.
 - [ ] ❓ Labor% current-day DAR fallback — deliberately deferred pending owner's explanation of
   FL-vs-OK labor-usage differences.
-- [ ] Cleanup: stray CloudDocs duplicate files (`src/**/* 2.js`).
+- [x] Cleanup: stray CloudDocs duplicate files (`src/**/* 2.js`). ✅ **Done — CORRECTED pass 1.**
+  `find src -name '* 2.js'` returns **0**. Nothing to clean; strike this item.
 
 ## 9. SAGE Enhancements
 
 - [ ] Tool-breadth expansion — give SAGE the metric resolver as a generic query tool (flagged as
-  the single biggest win available).
+  the single biggest win available). ❌ **(re-verified pass 1, still open — grepped
+  `supabase/functions` for a resolver-backed tool (`query_metric`/`metric_resolver`/`queryMetric`):
+  zero hits. SAGE's tools remain the fixed per-table set.)**
 - [ ] Feed CLAUDE.md/memory standing rules into the system prompt.
 - [ ] Pass active panel state as context (not screenshots).
 - [ ] Personality tuning (system-prompt only).
@@ -222,8 +293,17 @@ for full detail on each.
 
 ## 11. Bullseye Tile & State-of-Business Engine
 
-- [ ] Bullseye distribution chart (full spec: angle=market sector, radius=signed %-vs-target,
-  equal-area rings, palette fix) — not built.
+- [x] Bullseye distribution chart (full spec: angle=market sector, radius=signed %-vs-target,
+  equal-area rings, palette fix). ✅ **Done — CORRECTED pass 1; this is the largest stale entry in
+  the file.** `src/views/bullseye-tile.js`, 354 lines, shipped **v5.012 (#274)** and embedded in At
+  A Glance. Every clause of the "full spec" is implemented and documented in the component's own
+  header: **angle** = market/state sector, subdividing to patch once a state is selected, arc width
+  proportional to member count (`:44–49`); **equal-area rings** = three bands with boundaries at
+  `maxR*sqrt(1/3)` and `maxR*sqrt(2/3)`, explicitly *not* equal-radius (`:17`, `:36–42`);
+  **radius** = signed % vs the store's own target, positive = good, continuous across band edges
+  (`:35–37`); **palette fix** = converted to `var(--good)`/`var(--warn)`/`var(--crit)` in #280/#282
+  and the light-mode ring-stroke bug fixed in **#298** (the strokes had composited to contrast
+  1.000 — literally the same pixel as the backdrop). Four PRs have touched this file. Strike it.
 - [ ] ❓ State-of-business walkthrough engine (evidence-first, learning loop) — presentation
   format still undecided, not built.
 
@@ -231,6 +311,13 @@ for full detail on each.
 
 - [ ] 🟡 `store_assessments` table — 8/20 scheduling-workshop stores rated as of 2026-08-14,
   remaining 12 due 2026-09-03; top-5-of-20 binary reconciliation also due then.
+  ❓ **Cannot be verified from code (pass 1): `store_assessments` has ZERO references anywhere in
+  `src/`, `supabase/`, or `scripts/`.** So this is a Supabase-side + owner-tracking item with no
+  application surface — the rating count can only be settled by a live table read, and the anon key
+  returns zero rows under RLS. **Two things pass 2 should not conclude from that zero:** it is not
+  evidence the table is missing, and it is not evidence the ratings are undone. Someone with
+  service-role read has to count it. Separately worth deciding: whether a table with no code
+  reference should have a panel at all, or stays a spreadsheet-grade artifact.
 - [ ] Living risk-factor engine for food cost + labor (computed track vs. assessed track, stored
   for trending) — owner suggests starting as a chip.
 
@@ -292,13 +379,58 @@ pass consolidates rather than tracks both copies:
 - **Simple Models across projection streams** — shows as open in `notes-26` #6 and `notes-28` #1,
   but is confirmed **DONE** (v4.532) per CLAUDE.md. Stale duplicate, safe to remove.
 
+**Added by pass 1 (2026-08-19), each with the evidence that settled it:**
+
+- **Bullseye distribution chart** (§11) — `src/views/bullseye-tile.js`, v5.012 (#274), full spec
+  implemented; palette fixed in #280/#282, light mode in #298.
+- **`getDOWTrend` tiny-LY guard** (§4) — `src/engine/forecast.js:642` `_yoyPoint`, both call sites,
+  `src/__tests__/yoy-trend-guard.test.js`.
+- **Info-icon field scraper** (§3) — v4.386/v4.387, `scripts/qsrsoft-field-scraper.mjs` +
+  `scripts/parse-field-defs.mjs` → `qsr_field_definitions`.
+- **Stray CloudDocs `* 2.js` duplicates** (§8) — `find` returns 0.
+- **Ponce de Leon future clean-data-start** (§4) — `src/__tests__/calibrate-new-store.test.js`,
+  guard in `src/engine/backtest.js`. *(Code-level only; live Dialed-In behaviour unverified.)*
+- **Workstream C first slice** (§0) — not "done", but decisively **not** "never started": module,
+  2 adopters, unit test, and ratchet R8 all shipped in #431/#432.
+
+---
+
+## What pass 1 did NOT settle — read this before assuming coverage
+
+Listed explicitly so pass 2 can target them rather than re-walk the whole file blind. These were
+looked at and left unresolved **on purpose**, because code alone cannot answer them:
+
+1. **§2 #225 viewport-scroll lock** — searched `src/meridian.css` and `src/app` for
+   `overscroll-behavior` / `touch-action` / scroll-lock idioms and found nothing conclusive. The
+   item's own text says devtools emulation is insufficient, so this needs **a real phone**, not a
+   deeper grep. Unchanged.
+2. **§10 Swing Watch "Acknowledged" placement** — the acknowledge *mechanism* exists
+   (`src/app/App.js`, `src/__tests__/swing-feed.test.js`), but the ask is specifically about
+   **placement at the top of Needs Attention**, which is a rendering-order question this pass did
+   not trace to a conclusion. Do not read the mechanism's existence as the item being done.
+3. **§4 District View 14-item punch list** — a compound item; individual sub-claims were not walked.
+4. **Every ❓ owner-decision item** across §2, §5, §6, §7, §9, §10, §13 — these are decisions, not
+   code states. Grep cannot close them and pass 2 shouldn't try.
+5. **Anything requiring a live Supabase read** — `qsr_fob` RLS (§4), FOB Analysis May-2026 cap
+   (§4), `store_assessments` counts (§12). The anon key returns zero rows under RLS; **a zero is
+   not absence**, and this repo has burned two sessions on exactly that inference before.
+
 ---
 
 ## How to use this file
 
-Two PM review passes are tasked with re-verifying status against actual code (not assumption) and
-correcting the checkboxes/status tags above — see the two scoped prompts prepared alongside this
-file. **Each pass owns a disjoint set of sections** (listed in its prompt) so two sessions can run
-concurrently without touching the same lines. Whoever merges last should diff against the other's
-already-merged changes before pushing, same as any other collision in this repo — combine, never
-silently overwrite.
+Two PM review passes re-verify status against actual code (not assumption) and correct the
+checkboxes/status tags above.
+
+**Corrected 2026-08-19 (pass 1):** an earlier draft of this section described the two passes as
+owning **disjoint sections** and running **concurrently**. That is not the plan. **Both passes
+cover the ENTIRE file, and they run SEQUENTIALLY** — pass 1 verifies and merges, then pass 2 runs
+a full independent pass over the same whole file, partly to sanity-check pass 1's conclusions and
+partly because pass 2 may carry first-hand knowledge of work it personally built or measured.
+Since the passes are sequential there is no concurrent-collision case to manage; pass 2 branches
+off `main` after pass 1 has landed.
+
+**For pass 2 specifically:** treat every pass-1 conclusion as a claim to check, not a result to
+build on — that is the entire point of a second pass, and pass 1 has no special standing. Lines
+carrying `(re-verified pass 1)` were checked and found genuinely open. Lines with no pass-1
+annotation were **not** individually settled and should not be read as confirmed either way.
