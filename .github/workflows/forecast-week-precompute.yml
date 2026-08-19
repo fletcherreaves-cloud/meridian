@@ -1,0 +1,31 @@
+name: Forecast Week Precompute
+
+on:
+  schedule:
+    # Once daily is enough — the panel this feeds (at-a-glance.js weekProjections) always
+    # shows the CURRENT business week, and a day-old forecast for tomorrow is still today's
+    # best number. 11:00 UTC = ~6:00 AM CDT, after the DAR's overnight-catchup runs so
+    # ds.qsrActSummaryRows reflects yesterday's closed day.
+    - cron: '0 11 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  precompute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Precompute this week's forecast
+        run: node scripts/forecast-week-precompute.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
