@@ -30,8 +30,16 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #32 — Workstream C: still fully open](dispatch-32.md)** —
+  **NEWEST, 2026-08-19.** Of the 7 normalization workstreams, C (pipeline contract) is the only
+  one with **zero shipped code** — dispatch #25 (PR #422) was only ever a brief, never picked up.
+  Re-verified every claim in #25 fresh against current `main`: still exactly 2/19 pull scripts
+  guarded, no `_pipeline-contract.mjs` module exists, no ratchet tracks it, `_retry.mjs`'s 7
+  importers unchanged. Nothing has drifted — #25's brief stands as-is; this dispatch's only
+  addition is pointing at Workstream D's just-shipped `ratchet-modal-backdrop-bypass.test.js`
+  (R7) as a **second** working example of the exact bidirectional-ratchet shape C should copy.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #31 — real click trace corrects dispatch #27, finds a bigger
-  problem](dispatch-31.md)** — **NEWEST, 2026-08-19.** Real Mac Mini click trace on v5.069 —
+  problem](dispatch-31.md)** — 2026-08-19. Real Mac Mini click trace on v5.069 —
   the exact real-data verification both dispatch #27 and #29 flagged as unmeasurable from the
   sandbox. **Correction**: dispatch #27's "the 4.3s modal-close figure almost certainly dropped"
   is refuted — modal-close (`✕`) is **32 clicks, avg ~1453ms, total 46,497ms, 52% of all
