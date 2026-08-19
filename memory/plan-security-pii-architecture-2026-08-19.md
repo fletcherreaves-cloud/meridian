@@ -146,6 +146,11 @@ rule-out/evidence-chain mechanism (§5) is scoped into a dispatch, since that me
 where an unpseudonymized, unaudited identity trail would do the most damage if built on the current
 schema.
 
+**Reviewers on this decision (2026-08-19):** **Fletcher Reaves** (owner/developer) — added
+explicitly here rather than left as "the owner" implicitly, since this file also names HR/counsel
+as needing to weigh in on §1's jurisdiction question. Nobody else has been named yet; add further
+reviewers here as they're brought in, rather than leaving this list to be inferred from CLAUDE.md.
+
 ## References
 
 - Full three-engine transcripts: relayed by the owner in-session, 2026-08-19 (not separately filed
