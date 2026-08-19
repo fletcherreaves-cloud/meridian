@@ -80,13 +80,15 @@ Tier A and leave Register Audit carrying all standing attribution). The owner ha
 in the QSRSoft UI — the probe groundwork already exists, this is a "run it and capture the
 response shape" task, not exploratory.
 
-**One settled negative finding, so it isn't re-derived:** deposit lapping (§2.1/§2.3 below) is
-**structurally invisible in QSRSoft** — settled 2026-08-13. A deposit counts as accounted for the
-moment it's entered, so a held/delayed deposit produces no cash-over/short variance at all in this
-org's data. Only bank-side data (actual deposit-clearing timestamps against recorded deposit
-dates) would show the lag. **No amount of transaction detail changes this** — do not scope a
-deposit-lapping detection rule against QSRSoft data; it would silently never fire, not because
-lapping isn't happening but because the data source cannot see it.
+**One settled negative finding, so it isn't re-derived — but actively being worked, not dead:**
+deposit lapping (§2.1/§2.3 below) is **structurally invisible in QSRSoft** — settled 2026-08-13. A
+deposit counts as accounted for the moment it's entered, so a held/delayed deposit produces no
+cash-over/short variance at all in this org's data. Only bank-side data (actual deposit-clearing
+timestamps against recorded deposit dates) would show the lag. **No amount of transaction detail
+changes this — do not scope a detection rule against QSRSoft data**, it would silently never fire.
+**The owner is actively exploring bank-data access (2026-08-19)** as the path to close this gap —
+see §2.1's Deposit lapping row for the two realistic options (bank API feed vs. manual
+statement upload) once the banking setup is confirmed. Treat as pending, not permanently cut.
 
 **Revised understanding of what this file adds on top of that existing roadmap:** the
 attribution-ladder work already answers *where the data comes from*. What all three AI engines'
@@ -406,7 +408,7 @@ every number as a first guess to be tuned against this org's actual data, not a 
 | **Post-tender void/refund skimming** | Employee rings a cash sale, collects payment, then voids or refunds the same transaction after the customer leaves, pocketing the cash while the register balances clean. The single most-cited method across all three sources. | Flag `void_timestamp` or `refund_timestamp` > `tender_timestamp` on cash transactions, especially without manager override. Rank employees by void/refund rate as % of transactions (not raw count); flag >1.5–2× peer average. |
 | **No-sale drawer opens** | Drawer opened via "No Sale" with no transaction, cash pocketed directly. | Flag no-sale events clustered by employee/shift; correlate with subsequent cash-drawer variance. |
 | **Blind-drawer / floating-bank manipulation** | Shift cash shortages between registers or days so no single count ever shows a large variance — e.g. a register hitting exactly $0.00 variance for 30 straight days, which is a statistical near-impossibility at real volume. | Track `σ(variance)` per register over a rolling 30-day window; flag *unnaturally low* variance (forced-perfect numbers), not just high variance. |
-| **Deposit lapping** | Steal today's deposit, cover it with tomorrow's receipts — always one day behind. Classic ACFE-documented scheme, and the method all three AI engines proposed detecting via `LAG()`/`LEAD()` window functions over daily cash variance. **Settled 2026-08-13, `data-acquisition-shopping-list.md` §J: structurally invisible in QSRSoft.** A deposit counts as accounted for the moment it's *entered*, so a held/delayed deposit produces zero cash-over/short variance in any QSRSoft-sourced data — no amount of transaction detail fixes this. | **Do not build this against QSRSoft data — it would never fire, not because lapping isn't happening but because this org's available data cannot see it.** Only a bank feed (actual deposit-clearing timestamps vs. recorded deposit dates) would show the lag; revisit only if a bank data source is ever added. |
+| **Deposit lapping** | Steal today's deposit, cover it with tomorrow's receipts — always one day behind. Classic ACFE-documented scheme, and the method all three AI engines proposed detecting via `LAG()`/`LEAD()` window functions over daily cash variance. **Settled 2026-08-13, `data-acquisition-shopping-list.md` §J: structurally invisible in QSRSoft.** A deposit counts as accounted for the moment it's *entered*, so a held/delayed deposit produces zero cash-over/short variance in any QSRSoft-sourced data — no amount of transaction detail fixes this. | **Do not build this against QSRSoft data — it would never fire, not because lapping isn't happening but because this org's available data cannot see it.** Only a bank feed (actual deposit-clearing timestamps vs. recorded deposit dates) would show the lag. **Owner is actively exploring bank-data access (2026-08-19) — not closed, tracked as pending exploration, not dead.** Two realistic paths once banking setup is known: (1) a bank API feed (e.g. Plaid, or a direct feed if the bank offers one) — standing, daily, backfillable, the strong version; (2) manual bank-statement upload (CSV/PDF export, parsed like this org's other manual-fallback sources) — weaker but ships faster and matches the "manual proves it's worth automating" standing pattern. Which is realistic depends on whether stores share one bank and whether that bank offers exports/API — owner is checking. **Revisit this row once that comes back**, rather than treating it as permanently cut. |
 | **Refund/return abuse (ghost customer)** | Fraudulent refund processed with no actual customer/return, cash pocketed. | Filter refund events with no matching original-sale reference; cross-reference against drive-thru vehicle-presence or video-analytics triggers where available; flag self-authorized refunds (`approving_manager_id == cashier_id`). |
 | **Unauthorized discount / manager-meal abuse** | Privileged override codes (comps, employee meals, promo) used to give away food to friends/family, or to hand cash-paying customers "free" items while pocketing the cash. | Cross-reference `discount_type IN (comp, employee_meal, promo)` against `active_clocked_crew_count` — flag high discount frequency relative to actual headcount on shift. Flag managers repeatedly approving overrides for themselves or one specific ally cashier. |
 | **Sweethearting / unrecorded modifiers** | Cashier keys a cheap item but hands over a premium one (extra bacon, double patty), or keys nothing and hands over a full item. | Join POS line items against kitchen-display/production-printer logs by order ID; flag `KDS_item_complexity > POS_item_complexity` for a given employee. Flag high-modifier-frequency outliers vs. peers. |
@@ -687,7 +689,9 @@ dispatched, dispatch them first; everything else in this file assumes rung 2 is 
 ### Phase 2 — composite scoring
 - Composite risk score combining Phase-1 rules with decay (§3 recurrence scoring).
 - Cash + inventory cross-correlation (unrung-sale inference).
-- ~~Deposit lapping / sequencing checks~~ — **cut, not deferred**: settled 2026-08-13 as structurally invisible in QSRSoft data (§0, §2.1). Revisit only if a bank-feed source is ever added.
+- ~~Deposit lapping / sequencing checks~~ — **pending, not cut**: structurally invisible in
+  QSRSoft data (§0, §2.1), but the owner is actively exploring bank-data access (2026-08-19) as a
+  path to close this. Re-scope once that comes back — don't treat as permanently dead.
 - Opportunity-adjusted risk (§1 principle 3) layered onto existing rules.
 - Segregation-of-duties matrix (§2.5).
 

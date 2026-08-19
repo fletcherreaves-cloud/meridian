@@ -864,9 +864,12 @@ previously documented — is the raw per-event log to build against, and settled
   Run one more Any Transaction capture filtered to an exception type only, to settle the
   server-side-filtering question that decides whether Tier A (district-wide daily standing pull)
   is viable.
-- [ ] **Settled finding, do not re-derive:** deposit lapping is structurally invisible in QSRSoft
-  (a deposit counts as accounted the moment it's entered) — do not scope a detection rule for it
-  against this org's current data; would silently never fire.
+- [ ] **Deposit lapping — invisible in QSRSoft data, but owner is actively exploring a fix
+  (2026-08-19), not a dead end.** A deposit counts as accounted the moment it's entered, so no
+  detection rule against current QSRSoft-sourced data would ever fire. Owner is checking bank-data
+  access; two realistic paths once banking setup is known: a bank API feed (standing, daily,
+  backfillable) or manual bank-statement upload (ships faster, matches this org's manual-fallback
+  pattern). Full framing: `plan-security-loss-prevention.md` §2.1's Deposit lapping row.
 - [ ] **Gating decision needed from the owner before any Phase 4 (employee rule-out/evidence-chain)
   work:** data retention for a named-employee accusation trail, and whether it should be built at
   all before `project-rls-hardening-plan.md`'s fix lands — this backlog's own §13 already tracks
