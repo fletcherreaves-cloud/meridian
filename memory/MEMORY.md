@@ -30,21 +30,24 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐ [Dispatch #23 — precompute event-factor gap + Workstream B](dispatch-23.md)** — **NEWEST
-  dispatch, 2026-08-19.** Two parts: (1) a real correctness gap found reading `forecastDay` to
-  ground this dispatch — `scripts/forecast-week-precompute.mjs` calls `forecastDay` with an empty
-  settings object, so `_evFactor` (`src/engine/forecast.js:1620-1651`) always reads as zero and a
-  cache-hit store's forecast silently omits event lift/dip that the live-computed path would apply;
-  (2) Workstream B itself — `org_events`' `unique(loc, date_start, label)` PK has no scope concept,
-  so `applyEventToStores` (`calendar.js:213`) writes N duplicate rows for an N-store event ("27
-  copies of Thanksgiving"); `RETAIL_EVENT_RULES`/`expandRetailEvents` (`retail-events.js`) already
-  prove the recurrence half works but freeze their output the same way. Fix is upstream of
-  `orgEventsToDayMap` (`events-import.js:146`) — `forecastDay`/`computeEventFactors` need zero
-  changes. **§1 DELIVERED** (PR #417, v5.065) — full trace, verified real-data delta, and an
-  honest scope correction (most real stores' assigned models early-return before the
-  event-adjustment tail, so today's district-wide impact is smaller than this dispatch implied;
-  the fix is still correct and load-bearing for any `di`/`dow`/engineered-model store) in
-  [dispatch23-precompute-event-factors.md](dispatch23-precompute-event-factors.md).
+- **⭐⭐⭐⭐⭐ [Dispatch #24 — Workstream B: event scope + recurrence](dispatch-24.md)** — **NEWEST
+  dispatch, 2026-08-19.** Standalone Workstream B brief, superseding dispatch-23's §2 now that §1
+  is delivered and both of B's prerequisites (Workstream A's render-path fix, §1's precompute
+  event-factor fix) are on `main`. `org_events`' `unique(loc, date_start, label)` PK has no scope
+  concept, so `applyEventToStores` (`calendar.js:213`) writes N duplicate rows for an N-store
+  event ("27 copies of Thanksgiving"); `RETAIL_EVENT_RULES`/`expandRetailEvents`
+  (`retail-events.js`) already prove the recurrence half works but freeze their output the same
+  way via `saveOrgEvents`. Fix is upstream of `orgEventsToDayMap` (`events-import.js:146`) —
+  `forecastDay`/`computeEventFactors` need zero changes. Carries a re-measure reminder:
+  Workstream A only removed the `forecastDay` inner-loop cost for cache-hit stores, not
+  `computeEventFactors`'s own O(events) indexing pass, which still runs every render regardless
+  of cache status.
+- **⭐⭐⭐⭐ [Dispatch #23 — precompute event-factor gap](dispatch-23.md)** — 2026-08-19,
+  **§1 DELIVERED** (PR #417, v5.065; full trace, verified real-data delta, and an honest scope
+  correction — most real stores' assigned models early-return before the event-adjustment tail,
+  so today's district-wide impact was smaller than this dispatch implied — in
+  [dispatch23-precompute-event-factors.md](dispatch23-precompute-event-factors.md)). §2
+  (Workstream B) is **superseded by dispatch #24 above** — read that one, not this section.
 - **⭐⭐⭐ [Dispatch #22 — Workstream A: forecast off the render path](dispatch-22.md)** —
   2026-08-18, **DELIVERED** (PR #415, v5.064). First workstream dispatch since [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md)'s
   sequencing gate cleared (Phase 0 ratchets + the open PR queue all confirmed merged on `main`).
