@@ -47,7 +47,8 @@ seconds, and the theory that survives one costs a PR.
   Accuracy/Projections/Date-Range Report as the four still-misclassified panels to start with.
   Notes Workstream D's broad panel-shell sweep waits on this workstream's routing decision; the
   ratchet/hand-conversion mechanics do not.
-- **⭐⭐⭐⭐⭐⭐⭐ [Dispatch #26 — Workstream D: adopt the design system](dispatch-26.md)** — 2026-08-19. Re-measured `PanelControls.js` adoption fresh against `main`: unchanged
+- **⭐⭐⭐⭐⭐⭐⭐ [Dispatch #26 — Workstream D: adopt the design system](dispatch-26.md)** — 2026-08-19.
+  Re-measured `PanelControls.js` adoption fresh against `main`: unchanged
   since the 2026-08-17 plan despite three workstreams' worth of merged PRs —
   `DateRangeControl` 0/55, `LocationSelector`/`ActionMenus` 1/55 (`eom-dashboard.js`), `ModalShell`
   9/55, `dateRange`-prop panels 8/55. Flags that the plan's bypass-volume counts (inline styles,
