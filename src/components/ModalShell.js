@@ -98,4 +98,33 @@ export function ModalShell({
   );
 }
 
+// Full-page "route" shell (Dispatch27 Workstream E) — same header visual language as
+// ModalShell above (icon/title/subtitle, a single dismiss action) but fills the content area IN
+// PLACE of AtAGlance/StoreDash/DistrictGrid/OrgView rather than overlaying them, since a route
+// REPLACES the view instead of interrupting it (memory/dispatch-27.md's rule). No backdrop, no
+// maxWidth cap, no centering — App.js's own content-area wrapper already supplies the scroll
+// container every other top-level view relies on, so this only needs to be a header + body.
+export function RoutePanelShell({ title, subtitle, icon, onBack, headerExtra, bodyStyle, children }) {
+  return div(
+    { style: { display: 'flex', flexDirection: 'column', minHeight: '60vh' } },
+    div(
+      {
+        style: {
+          padding: '4px 0 14px', borderBottom: '.5px solid var(--bdr)',
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14,
+        },
+      },
+      btn({ className: 'btn btn-sm', style: CLOSE_STYLE, onClick: onBack, 'aria-label': 'Back' }, '←'),
+      icon ? span({ style: { fontSize: '18px' } }, icon) : null,
+      div(
+        { style: { flex: 1, minWidth: 0 } },
+        title != null ? div({ style: { fontSize: '15px', fontWeight: 800, color: 'var(--text)' } }, title) : null,
+        subtitle != null ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, subtitle) : null,
+      ),
+      headerExtra || null,
+    ),
+    div({ style: { flex: 1, ...bodyStyle } }, children),
+  );
+}
+
 export default ModalShell;

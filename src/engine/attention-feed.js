@@ -130,7 +130,11 @@ export function visitRisk(stores = [], storeName = String) {
     if (s.band === 'at-risk') out.push({
       id: 'visit-' + s.loc, severity: 'warn', category: 'Visit Readiness', icon: '🎓',
       title: `${storeName(s.loc)} — visit-readiness at risk`,
-      detail: `Readiness ${Math.round(s.readiness)}/100 (at-risk) — coach before the next CFV/RGR`,
+      // Dispatch28 -- was a generic "coach before the next CFV/RGR" regardless of store; now
+      // the same per-store verdict the Visit Readiness panel itself shows (visit-readiness.js's
+      // buildVerdict), so the two surfaces never disagree about what to coach (the "diff the
+      // two computations" lesson -- this reads s.verdict rather than re-deriving its own text).
+      detail: `Readiness ${Math.round(s.readiness)}/100 (at-risk) — ${s.verdict || 'coach before the next CFV/RGR'}`,
       dollars: 0, loc: s.loc, nav: 'analytics',
     });
   }

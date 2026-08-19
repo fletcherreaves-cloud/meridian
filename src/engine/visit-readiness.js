@@ -151,6 +151,34 @@ function buildWhy(store) {
   return `${bandWord} — the biggest gaps are ${gapList}.${fs}`;
 }
 
+// Dispatch28 Workstream F ("voice by role" / "say the number AND the decision" — CLAUDE.md's
+// standing UI rule, 2026-08-17). buildWhy above is diagnostic: it explains WHY a store landed
+// where it did (worst metrics, actual vs target). It never says what to DO about it — exactly
+// the gap the dispatch's evidence strings ("Not Dialed-In is better — recalibrate", "No complete
+// weekly count on record") reproduce elsewhere in the app. This is the "last mile" the dispatch
+// names: the hard half (WHICH gap matters) is already solved by topDrivers' sort-by-worst-score;
+// this only has to phrase that as an instruction instead of an explanation. Reuses topDrivers
+// and the same 0.85 driver-badness threshold buildWhy already uses — no new threshold invented.
+// The panel shows `verdict` AND `why` side by side (never one replacing the other), per the
+// standing rule's explicit both/and: "say the number AND the decision."
+function buildVerdict(store) {
+  if (store.fsFlag === 'elevated') {
+    return `Address food-safety risk first — waste/holding proxies are elevated${store.fsScore != null ? ` (score ${Math.round(store.fsScore)})` : ''}.`;
+  }
+  const top = (store.topDrivers || []).find(d => d.score < 0.85);
+  if (store.band === 'at-risk') {
+    return top
+      ? `Coach ${top.label} — ${_fmtVal(top.actual, top.unit)} vs ${_fmtVal(top.target, top.unit)} target, the biggest blocker to PACE-ready.`
+      : 'At risk — no single metric stands out; the gap is spread across several areas, review the full breakdown.';
+  }
+  if (store.band === 'watch') {
+    return top
+      ? `Watch ${top.label} — ${_fmtVal(top.actual, top.unit)} vs ${_fmtVal(top.target, top.unit)} target, trending toward the readiness threshold.`
+      : 'On watch — no single metric stands out; keep monitoring.';
+  }
+  return 'On track for a graded visit — no action needed this week.';
+}
+
 // Spearman rank correlation (Pearson on ranks) — robust to the different scales of
 // predicted readiness (0-100) vs an actual graded-visit score. Returns null if n<3.
 function _spearman(xs, ys) {
@@ -430,7 +458,8 @@ export function computeVisitReadiness(ds, opts = {}) {
       notMeasured: [...speed.missing, ...accuracy.missing, ...quality.missing, ...leadership.missing],
       lastVisit: lastVisitByLoc[loc] || null,
     };
-    store.why = buildWhy(store);   // plain-language explanation (explainability & trust)
+    store.why = buildWhy(store);         // plain-language explanation (explainability & trust)
+    store.verdict = buildVerdict(store); // Dispatch28: one-line decision — "so what do I do?"
     stores.push(store);
   }
 

@@ -35,6 +35,12 @@
 //                           rather than silently dead. See ORPHANS below.
 //   section  NEW information architecture (Notes 54). Used by the v2 sidebar only —
 //            the v1 sidebar keeps its existing literal list until v2 is adopted.
+//   route    Dispatch27 Workstream E (the plan's rule: "would I ever want to send someone a link
+//            to this?"). true = a DESTINATION — URL-synced via src/app/routing.js, rendered as a
+//            full-page view that replaces AtAGlance/StoreDash/etc rather than overlaying them.
+//            Omitted (falsy) = an INTERRUPTION — an ordinary modal, no URL footprint. Only the
+//            four panels the plan specifically flagged as misclassified destinations carry this
+//            today; adding it to a panel is a real routing change (see routing.js), not a label.
 export const PANELS = [
   { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'help' },
   { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'reports' },
@@ -49,7 +55,7 @@ export const PANELS = [
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
-  { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
@@ -58,7 +64,7 @@ export const PANELS = [
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
   { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'planning' },
   { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
-  { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
   { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'forecast-audit', label:'Forecast Audit', icon:'🔬', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'help' },
@@ -91,13 +97,13 @@ export const PANELS = [
   { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning' },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'operations' },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
-  { id:'proj', label:'Proj Workflow', icon:'🔒', perm:'analytics.forecasting', kind:'test-kitchen', section:'planning' },
+  { id:'proj', label:'Proj Workflow', icon:'🔒', perm:'analytics.forecasting', kind:'test-kitchen', section:'planning', route:true },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports' },
   { id:'record-day', label:'Record Days', icon:'🏆', perm:'analytics.store', kind:'optional', section:'analytics' },
-  { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'reports' },
+  { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'reports', route:true },
   { id:'revintel', label:'Revenue', icon:'◈', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'sage', label:'SAGE', icon:'🧠', perm:null, kind:'nav', section:'intelligence' },
   { id:'sched-hub', label:'Scheduling', icon:'🗓', perm:'analytics.store', kind:'nav', section:'scheduling' },

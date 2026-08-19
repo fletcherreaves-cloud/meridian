@@ -144,7 +144,7 @@ const MonthlyProjectionsPanel   = lazyPanel(() => _analytics().then(m => ({ defa
 const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ default: m.StoreVlhConfigPanel })));
 
 // #232: projections.js's only two live exports in App.js (ProjectionWorkflow/PreForecastBrief,
-// both gated behind showProj/showProjBriefSA) — its loadLockedProjections/saveLockedProjections/
+// gated behind routePanel==='proj' (Dispatch27)/showProjBriefSA) — its loadLockedProjections/saveLockedProjections/
 // getLockedAmount/lockProjectionWeek exports were dead imports here. Lazy-loading this closes the
 // other static path into analytics.js (ForecastAudit/CurrentMonthPaceSection), which a static
 // projections.js import would otherwise have kept pinning in place no matter what App.js itself did.
@@ -227,7 +227,8 @@ import { SignOutBtn } from '../components/AuthGate.js';
 import { RecordDayPanel } from '../views/record-day.js';
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
-import { ModalShell, Z } from '../components/ModalShell.js';
+import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
+import { parseRoute, pushRoute, onRouteChange } from './routing.js';
 import { buildSwingFeed, acknowledge, pruneAcks, ACK_SETTING_KEY } from '../engine/swing-feed.js';
 import { newsContextFor } from '../engine/swing-context.js';
 import { LocationIntelligence } from '../features/location-intel.js';
@@ -578,6 +579,14 @@ function App() {
   // without a static top-level fetch (entry-chunk budget — CLAUDE.md).
   React.useEffect(() => { configureLazyFill({ setDs, loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows } }); }, []);
   const [view, setView]           = useState('command'); // command | district | store | org
+  // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/fcst-accuracy/
+  // proj/report, per panel-registry.js's route:true). Layered ABOVE `view`, not merged into it:
+  // opening a route panel replaces the content area exactly like a view change, but leaves
+  // view/selStore untouched underneath, so closing it reveals whatever was already selected —
+  // see the render gates below (`view==='command'&&!anyModalOpen&&!routePanel&&...`).
+  const [routePanel, setRoutePanel] = useState(() => parseRoute(typeof location !== 'undefined' ? location.search : ''));
+  const goRoute = (id) => { pushRoute(id); setRoutePanel(id); };
+  React.useEffect(() => onRouteChange(setRoutePanel), []);
   const [selStore, setSelStore]   = useState(null);
   const [locScope,   setLocScope]   = useState('all');
   const [dateRange, setDateRange] = useState(()=>thisWeek());
@@ -661,8 +670,7 @@ function App() {
   const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
   const [showDialedIn, setShowDialedIn]= useState(false);
-  const [showReport,   setShowReport]  = useState(false);
-  const [showProj,     setShowProj]    = useState(false);
+  // showReport/showProj — Dispatch27: replaced by routePanel==='report'/'proj' (see routePanel above).
   const [showProjBriefSA, setShowProjBriefSA] = useState(false); // standalone Pre-Forecast Brief
   const [sessionBanner,   setSessionBanner]   = useState(null);  // IDB restore prompt
   const [showAudit,    setShowAudit]   = useState(false);
@@ -678,7 +686,7 @@ function App() {
   const [showVisitReady,setShowVisitReady]=useState(false); // Visit Readiness
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
-  const [showDICompare,setShowDICompare]= useState(false);
+  // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
   const [showHelp,     setShowHelp]    = useState(false);
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
   const [briefScope,   setBriefScope]  = useState({scope:'district',label:'District'});
@@ -730,7 +738,7 @@ function App() {
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
-  const [showFcstAccuracy, setShowFcstAccuracy] = useState(false);
+  // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy' (see routePanel above).
   const [showDtSoS,       setShowDtSoS]       = useState(false);
   const [showGradedVisits, setShowGradedVisits] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
@@ -2483,17 +2491,23 @@ function App() {
   // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
   // now FAILS the build if any openable panel is missing from it or from the
   // Escape handler below. Keep the list hand-written; the test keeps it honest.
+  // Dispatch27 Workstream E: dicompare/fcst-accuracy/proj/report are deliberately NOT here
+  // any more — they're routePanel now, not showX. A route panel replaces AtAGlance/StoreDash/etc
+  // in the render gates below (view==='command'&&!anyModalOpen&&!routePanel&&...) rather than
+  // overlaying them, so there's nothing left running behind it that anyModalOpen would need to
+  // pause — this is the "converting a panel to a route naturally resolves the concern for that
+  // panel" case the dispatch names, not a regression of the v4.212 fix for what remains a modal.
   const anyModalOpen = showNews||showCountCycle||showAIScan||showAbout||showAttention||showAudit||showBrief||
     showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
-    showDICompare||showDataManager||showDialedIn||showDtSoS||showEvents||showFOB||showFcstAccuracy||
+    showDataManager||showDialedIn||showDtSoS||showEvents||showFOB||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
-    showPerfCalc||showPriorityBrief||showProj||showProjBriefSA||showRanking||
-    showReport||showRevIntel||showSettings||showSmartTargets||showStoreKB||
+    showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
+    showRevIntel||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
@@ -2503,17 +2517,22 @@ function App() {
   React.useEffect(()=>{
     const onKey = (e) => {
       if(e.key!=='Escape') return;
+      // Dispatch27: a route panel isn't a "stuck modal" to reach into show*(false) for (it has
+      // no showX state any more) — Escape still backs out of it, via the same goRoute(null) the
+      // panel's own back button uses, then returns so the showX sweep below doesn't run against
+      // a view that's no longer showing any of them.
+      if(routePanel){goRoute(null);return;}
       setShowAIScan(false);setShowAbout(false);setShowAttention(false);
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
-      setShowCorrExplorer(false);setShowDARDaypart(false);setShowDICompare(false);
+      setShowCorrExplorer(false);setShowDARDaypart(false);
       setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
-      setShowFOB(false);setShowFcstAccuracy(false);setShowDtSoS(false);setShowGradedVisits(false);setShowGMBrief(false);setShowHelp(false);
+      setShowFOB(false);setShowDtSoS(false);setShowGradedVisits(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowEOMDash(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
-      setShowPriorityBrief(false);setShowProj(false);setShowProjBriefSA(false);setShowRanking(false);
-      setShowReport(false);setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
+      setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
@@ -2592,7 +2611,7 @@ function App() {
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
         if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
         if(modal==='perf-reviews')   perm('reviews.view')&&setShowPerfReviews(true);
-        if(modal==='proj')           perm('analytics.forecasting')&&setShowProj(true);
+        if(modal==='proj')           perm('analytics.forecasting')&&goRoute('proj');
         if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
         if(modal==='dialedin')       perm('analytics.forecasting')&&setShowDialedIn(true);
         if(modal==='pvsa')           perm('analytics.forecasting')&&setShowPVSA(true);
@@ -2601,9 +2620,9 @@ function App() {
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),setShowSchedHub(true));
-        if(modal==='dicompare')      perm('analytics.forecasting')&&setShowDICompare(true);
+        if(modal==='dicompare')      perm('analytics.forecasting')&&goRoute('dicompare');
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
-        if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&setShowFcstAccuracy(true);
+        if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&goRoute('fcst-accuracy');
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
@@ -2612,7 +2631,7 @@ function App() {
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
         if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);
-        if(modal==='report')         setShowReport(true);
+        if(modal==='report')         goRoute('report');
         if(modal==='about')          setShowAbout(true);
         if(modal==='targets')        setShowTargets(true);
         if(modal==='events')         setShowEvents(true);
@@ -2715,10 +2734,10 @@ function App() {
           await performFullIDBRestore();
         }
       }),
-      view==='command'&&!anyModalOpen&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
+      view==='command'&&!anyModalOpen&&!routePanel&&h(AtAGlance,{stores:locScope==='ok'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='OK'):locScope==='fl'?stores.filter(s=>INV_ORG_COORDS[s.loc]&&INV_ORG_COORDS[s.loc].state==='FL'):stores,ds,settings,userEvents,lockedProjections,dateRange,
         onOpenStore:s=>{goStore(s);},
         onCoachingSaved:refreshCoachingCycles,
-        onOpenProjections:()=>setShowProj(true),
+        onOpenProjections:()=>goRoute('proj'),
         onOpenPVSA:()=>setShowPVSA(true),
         onOpenBrief:()=>setShowBrief(true),
         onNav:v=>setView(v),
@@ -2731,12 +2750,37 @@ function App() {
           else if(modal==='eom-dashboard')perm('analytics.district')&&setShowEOMDash(true);
           else if(modal==='fob-analysis')setShowFOB&&setShowFOB(true);
           else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');setShowSchedHub&&setShowSchedHub(true);}
-          else if(modal==='fcst-accuracy')setShowFcstAccuracy&&setShowFcstAccuracy(true);
+          else if(modal==='fcst-accuracy')goRoute('fcst-accuracy');
         }}),
-      view==='district'&&!selStore&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&!anyModalOpen&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
-      view==='patch'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&!anyModalOpen&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'})
+      view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
+      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
+      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'}),
+      // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations
+      // ("would I ever want to send someone a link to this?" — yes). routePanel is URL-synced
+      // (src/app/routing.js) and REPLACES whichever view/store was selected, exactly like the
+      // view gates above, rather than overlaying it — see the anyModalOpen comment for why
+      // these four are deliberately absent from that chain now.
+      routePanel==='dicompare'&&h(RoutePanelShell,{
+        title:'⚡ Dialed-In vs Default Comparison',
+        subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
+        onBack:()=>goRoute(null),
+      }, h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      routePanel==='fcst-accuracy'&&h(RoutePanelShell,{
+        title:'🎯 Forecast Accuracy',
+        onBack:()=>goRoute(null),
+      }, h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      routePanel==='proj'&&h(RoutePanelShell,{
+        title:'📋 Projection Workspace',
+        subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
+        onBack:()=>goRoute(null),
+        bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
+      }, h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections})),
+      routePanel==='report'&&h(RoutePanelShell,{
+        title:'📊 Date-Range Comprehensive Report',
+        subtitle:'Compares all metrics for any date range across selected locations.',
+        onBack:()=>goRoute(null),
+      }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)}))
     )  // close main content scroll area
     )  // close right panel flex-col
 
@@ -2846,7 +2890,6 @@ function App() {
     },
       h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff',width:'100%'}})
     ),
-    showFcstAccuracy&&h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>setShowFcstAccuracy(false)}),
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false),onCoachingSaved:refreshCoachingCycles}),
@@ -2889,36 +2932,14 @@ function App() {
             return next;
           });}})
     ),
-    showProj&&h(ModalShell,{
-      title:'📋 Projection Workspace',
-      subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
-      onClose:()=>setShowProj(false),maxWidth:1700,zIndex:Z.modal,
-      bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
-    },
-      h(ProjectionWorkflow,{stores,ds,settings,userEvents,lockedProjections,onSaveLocked:saveLockedProjections})
-    ),
     // ── Standalone Pre-Forecast Brief (from topbar shortcut or nav) ──────
     showProjBriefSA&&h(PreForecastBrief,{
       stores,ds,settings,userEvents,
       weekStart:(()=>{const d=new Date();const wsd=settings.weekStartDay!=null?settings.weekStartDay:3;const diff=(wsd-d.getDay()+7)%7||7;const w=new Date(d);w.setDate(d.getDate()+diff);return dKey(w);})(),
       projPeriod:'week',lockedProjections,
-      onRun:()=>{setShowProjBriefSA(false);setShowProj(true);},
+      onRun:()=>{setShowProjBriefSA(false);goRoute('proj');},
       onClose:()=>setShowProjBriefSA(false)
     }),
-    showReport&&h(ModalShell,{
-      title:'📊 Date-Range Comprehensive Report',
-      subtitle:'Compares all metrics for any date range across selected locations.',
-      onClose:()=>setShowReport(false),maxWidth:1100,zIndex:Z.modal,bodyStyle:{padding:0}
-    },
-      h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>setShowReport(false)})
-    ),
-    showDICompare&&h(ModalShell,{
-      title:'⚡ Dialed-In vs Default Comparison',
-      subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
-      onClose:()=>setShowDICompare(false),maxWidth:1100,zIndex:Z.nested,bodyStyle:{padding:0}
-    },
-      h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>setShowDICompare(false)})
-    ),
     showPVSA&&h(ModalShell,{
       title:'📊 Projection vs Actuals Report',
       subtitle:'AI forecast accuracy vs actual results — click any cell to expand daily detail',

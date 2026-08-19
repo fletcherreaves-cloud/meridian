@@ -120,6 +120,23 @@ describe('visitRisk', () => {
     expect(items.find(i => i.loc === 'b' && i.category === 'Visit Readiness').severity).toBe('warn');
     expect(items.some(i => i.loc === 'a')).toBe(false);
   });
+
+  // Dispatch28 -- was a generic "coach before the next CFV/RGR" for every at-risk store
+  // regardless of what was actually wrong. Now reads the same per-store verdict
+  // computeVisitReadiness/buildVerdict already computes, so this feed and the Visit Readiness
+  // panel never disagree about what to coach.
+  it('uses the store\'s own verdict when present, not the generic fallback', () => {
+    const stores = [{ loc: 'b', band: 'at-risk', fsFlag: 'watch', readiness: 62, fsScore: 60, verdict: 'Coach DT OEPE — 145s vs 120s target, the biggest blocker to PACE-ready.' }];
+    const items = visitRisk(stores, nm);
+    expect(items[0].detail).toContain('Coach DT OEPE');
+    expect(items[0].detail).not.toContain('coach before the next CFV/RGR');
+  });
+
+  it('falls back to the generic phrasing when verdict is missing (older/incomplete data)', () => {
+    const stores = [{ loc: 'b', band: 'at-risk', fsFlag: 'watch', readiness: 62, fsScore: 60 }];
+    const items = visitRisk(stores, nm);
+    expect(items[0].detail).toContain('coach before the next CFV/RGR');
+  });
 });
 
 describe('signalDecay', () => {

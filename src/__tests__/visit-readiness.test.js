@@ -123,6 +123,47 @@ describe('visit-readiness', () => {
     expect(g.why).toMatch(/Ready/i);
   });
 
+  // Dispatch28 Workstream F ("say the number AND the decision" -- CLAUDE.md's standing UI
+  // rule). why (above) is diagnostic; verdict is the decision built from the SAME topDrivers
+  // computation those `why` tests already exercise -- these prove it's a real instruction
+  // (names an action verb + the specific driver + its number), not a relabeled metric string.
+  it('an at-risk store\'s verdict names an action, the worst driver, and its number vs target', () => {
+    // badRows() also trips the food-safety flag (separately tested below, and correctly
+    // prioritized) -- isolate the plain at-risk-on-readiness case by keeping waste/variance
+    // on target while everything else misses, so only the band drives the verdict here.
+    const t = DEFAULT_TARGETS[BAD];
+    const ds = mkDs(badRows(BAD));
+    ds.fobRows = [{ loc: BAD, date: recent(10), compWaste: t.tCompWaste * 0.7, rawWaste: t.tRawWaste * 0.7, statVar: t.tStatLoss * 0.7 }];
+    const res = computeVisitReadiness(ds);
+    const b = res.stores.find(s => s.loc === BAD);
+    expect(b.fsFlag).not.toBe('elevated'); // precondition -- isolating the readiness-band path
+    expect(b.band).toBe('at-risk');
+    expect(typeof b.verdict).toBe('string');
+    expect(b.verdict).toMatch(/^Coach /);
+    expect(b.verdict).toMatch(/vs .* target/i);
+    // The verdict must reference the SAME worst driver topDrivers already identified, not an
+    // independently-picked one -- "which gap matters" stays a single source of truth.
+    const worst = b.topDrivers.find(d => d.score < 0.85);
+    expect(b.verdict).toContain(worst.label);
+  });
+
+  it('a ready store\'s verdict says no action needed, not a copy of the diagnostic "why"', () => {
+    const res = computeVisitReadiness(mkDs(goodRows(GOOD)));
+    const g = res.stores.find(s => s.loc === GOOD);
+    expect(g.verdict).toMatch(/no action needed/i);
+    expect(g.verdict).not.toBe(g.why);
+  });
+
+  it('an elevated food-safety flag takes priority over the readiness band in the verdict', () => {
+    // Food safety is the more severe PACE consequence (criticals, not just a re-visit clock) --
+    // the verdict must lead with it even when the store is also at-risk on readiness, rather
+    // than picking one risk category arbitrarily.
+    const res = computeVisitReadiness(mkDs(badRows(BAD)));
+    const b = res.stores.find(s => s.loc === BAD);
+    expect(b.fsFlag).toBe('elevated'); // precondition, from the existing fs-flag test above
+    expect(b.verdict).toMatch(/food-safety risk/i);
+  });
+
   it('calibration: needs >=3 visits, else reports n and null r', () => {
     const ds = mkDs(goodRows(GOOD), badRows(BAD));
     ds.gradedVisits = [{ store: GOOD, dateISO: '2026-06-15', reportType: 'CFV', score: 90, pass: true }];
