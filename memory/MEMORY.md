@@ -49,7 +49,11 @@ seconds, and the theory that survives one costs a PR.
   (`qsrsoft-dar-pull.mjs`'s `refreshRollup`) and flags that `forecast_snapshots`' existing shape
   (backtest/MAPE record, no LY column) doesn't cleanly fit the weekly-rollup need — an open design
   call for the engineer, not dictated. Carries the Workstream B interaction warning (733 vs ~11,000
-  event entries) as a hard sequencing constraint.
+  event entries) as a hard sequencing constraint. **Full implementation trace:**
+  [dispatch22-workstream-a-forecast-precompute.md](dispatch22-workstream-a-forecast-precompute.md) —
+  the `forecast_snapshots` rejection reasoning, the model-assignment localStorage shim, what was
+  verified against live Supabase data, and what could NOT be verified (no live click-trace) — the
+  same gap dispatch #23 above found reading this code the next day.
 - [Dispatch #20](dispatch-20.md) — price-event detection engine, vs-LY young-store trap, and the
   Condiment count-cycle bug. **Delivered**, shipped in PR #411 (v5.062).
 - [Dispatch #21](dispatch-21.md) — handoff notice (PM session switch), not a task list; the one

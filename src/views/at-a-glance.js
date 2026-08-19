@@ -16,7 +16,7 @@
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEFAULT_TARGETS, STORE_COORDS, INV_ORG_COORDS } from '../constants.js';
 import { dKey, addD, mwStart } from '../utils/date.js';
-import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows } from '../engine/forecast.js';
+import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
@@ -1516,6 +1516,20 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── District weekly projections — memoized so 189 forecastDay calls only fire
   // when ds/stores/settings/userEvents actually change, not on every render
   // (opening Data Manager, state updates, etc. previously re-ran all 189 calls).
+  //
+  // Dispatch22, Workstream A: those 189 calls were still 76,503 ms of 82,221 ms measured
+  // render time (93%) even memoized, because every ds/settings/userEvents change re-ran the
+  // whole thing — up to 4.3s just to close a modal. scripts/forecast-week-precompute.mjs now
+  // runs forecastDay() for the current week server-side, daily, and writes
+  // ds.forecastWeekCache (forecast_week_cache table). A store whose current week is FULLY
+  // covered by the cache skips its 7 forecastDay() calls entirely and reads the cached
+  // {forecast,ly} instead — forecastDay's OWN computation is unchanged, this only changes
+  // where it runs. A store with a partial/missing cache (precompute hasn't run yet, a new
+  // store, a failed run) falls back to the exact live computation this used unconditionally
+  // before, so a stale or absent cache degrades to today's behavior rather than blanking
+  // the panel. The cloud-actuals same-day patch below (freshest-wins for TODAY's sales) is
+  // unchanged and still runs on every day regardless of which path produced the forecast —
+  // it exists specifically because actuals move faster than a once-daily cache should.
   const weekProjections=React.useMemo(()=>_mark('compute:weekProjections',()=>{
     if(!ds||!ds.loaded||!stores||!stores.length)return null;
     const _today=new Date();
@@ -1523,10 +1537,20 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const ws=new Date(_today);while(ws.getDay()!==wsd)ws.setDate(ws.getDate()-1);
     const weekDays=Array.from({length:7},(_,i)=>addD(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12),i));
     const wsKey=dKey(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12));
+    const weekDayKeys=weekDays.map(dKey);
     // computeEventFactors called ONCE here — not 189× inside the loop
     const _eventFactors=settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{};
     const cfg={...settings,_userEvents:userEvents||{},_eventFactors};
     const _allLocs=(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
+    // Precomputed cache lookup: {loc}_{dayKey} -> {forecast,ly} — see the useMemo's own
+    // comment above. Only forecast/ly are read from the cache; actual is ALWAYS recomputed
+    // live below (a once-daily cache would show a stale in-progress day's sales, exactly
+    // what the cloud-actuals patch beneath this already exists to keep fresh).
+    const _cache={};
+    for(const r of (ds.forecastWeekCache||[])){
+      if(!r||r.loc==null||!r.date)continue;
+      _cache[String(r.loc)+'_'+dKey(r.date)]={forecast:r.forecast,ly:r.ly};
+    }
     // Cloud actuals supplement: the forecast engine reads actuals ONLY from manually
     // uploaded laborRows (laborIdx), so the current partial week — whose actuals arrive
     // in the auto-synced qsrActSummaryRows (DAR) — showed blank Actual/vs LY/Acc% all
@@ -1544,11 +1568,28 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     }
     const storeProjs=_allLocs.map(loc=>{
       const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
+      // Cache hit only when EVERY day this week is present for this store — a partial
+      // cache (mid-backfill, a store added after the last precompute run) falls all the
+      // way back to live for the whole store rather than mixing cached and live forecast
+      // numbers within one week's row, which would make wkTotal an inconsistent blend.
+      const _cacheHit=weekDayKeys.every(dk=>_cache[loc+'_'+dk]);
       const rowDays=weekDays.map(d=>{
-        const r=forecastDay(loc,d,ds,cfg,null,t);
-        let act=r.actual||0, ly=r.lyAdj||0;
-        if(act<=0){ const ck=_nl(loc)+'|'+dKey(d); const ca=_cloudAct[ck]; if(ca>0){ act=ca; const cly=_cloudLY[ck]; if(cly>0)ly=cly; } }
-        return{fc:r.forecast||0,act,ly};
+        const dk=dKey(d);
+        let fc,ly,act;
+        if(_cacheHit){
+          const c=_cache[loc+'_'+dk];
+          fc=c.forecast||0; ly=c.ly||0;
+          // Same "most-recent-actual" lookup every forecastDay model branch does internally
+          // (manual laborRows first, DAR fallback) — exported as fetchRecentActual() so a
+          // cache-hit day (which skipped calling forecastDay at all) still gets a correct,
+          // live-fresh actual instead of a second hand-copy of that lookup drifting from it.
+          act=fetchRecentActual(ds,loc,d);
+        }else{
+          const r=forecastDay(loc,d,ds,cfg,null,t);
+          fc=r.forecast||0; act=r.actual||0; ly=r.lyAdj||0;
+        }
+        if(act<=0){ const ck=_nl(loc)+'|'+dk; const ca=_cloudAct[ck]; if(ca>0){ act=ca; const cly=_cloudLY[ck]; if(cly>0)ly=cly; } }
+        return{fc,act,ly};
       });
       const wkTotal=rowDays.reduce((a,r)=>a+r.fc,0);
       const lyTotal=rowDays.reduce((a,r)=>a+r.ly,0);
@@ -1557,7 +1598,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       return{loc,name:STORE_NAMES[String(loc)]||loc,wkTotal,lyTotal,actualTotal,vsLY,org:orgOf(loc),rowDays};
     }).sort((a,b)=>b.wkTotal-a.wkTotal);
     return{storeProjs,weekDays,wsKey};
-  }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,stores,settings,userEvents]);
+  }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.forecastWeekCache?.length,stores,settings,userEvents]);
 
   // ── RENDER ────────────────────────────────────────────────────
   // #225: was overflowY:'auto' with onScroll here AND flex:1/overflowY:'auto' on the
