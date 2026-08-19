@@ -914,7 +914,11 @@ previously documented — is the raw per-event log to build against, and settled
   vault architecture) — **not decided.** Also flags that GDPR/CCPA (what the AI research leaned on)
   almost certainly don't apply to an FL/OK-only operation — the real compliance anchor is state
   law/HR practice, needs real verification, not further AI reasoning.
-- [ ] Phase 1 MVP (once Phase 0a lands): cash-drawer variance + peer ranking, TvA inventory
+- [ ] **Phase 0b dispatched 2026-08-19 (`memory/dispatch-36.md`) — ready for an engineer now,
+  needs no QSRSoft access.** The substrate Phase 1 is gated on: Rules Registry table + interpreter
+  (§6 schema), personal/peer/store/network baseline computation, exposure normalization utilities
+  (reuse `metric-source.js`/`vs-ly.js`, per the standing "check for an existing helper" rule).
+- [ ] Phase 1 MVP (once Phase 0b lands): cash-drawer variance + peer ranking, TvA inventory
   variance (this slice already runs on data this org has — extends existing FOB math), explanation
   surfacing built in from day one rather than retrofitted.
 - [ ] ❓ Middle-tier/API choice for this build — default recommendation is reusing the existing
