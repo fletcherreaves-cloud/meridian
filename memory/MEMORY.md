@@ -30,17 +30,21 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #33 — Security build Phase 0a](dispatch-33.md)** —
+  2026-08-19. **NEWEST.** Two ungated, already-scoped tasks: (1) Register Audit auto-pull —
+  parser/table/scoring-engine all already exist, only the QSRSoft pull itself is missing (today
+  manual-Excel-only); (2) one Any Transaction capture filtered to an exception type, to settle the
+  owner-approved Tier A/B/C design's one open question. Full context:
+  [plan-security-loss-prevention.md](plan-security-loss-prevention.md).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Backlog Master — 2026-08-19](backlog-master-2026-08-19.md)** —
-  **NEWEST.** One consolidated, de-duplicated backlog assembled from a sweep of 20 memory files
+  One consolidated, de-duplicated backlog assembled from a sweep of 20 memory files
   (`project-backlog.md`, `plan-backlog-and-redesign-2026-08-15.md`, `notes-24` through `notes-66`)
-  plus the normalization plan and `vision-and-roadmap.md`. 13 categories, ~130 items, 9 flagged
-  cross-file duplicates (the same ask filed independently in up to 3 files — e.g. Metric
-  Registry/Resolver, Panel Manager, Backup/DR), one item confirmed already-shipped despite still
-  reading "open" in two source files (Simple Models, v4.532). **Status per item is
-  last-known-from-source-file, NOT independently re-verified against current code** — that's the
-  explicit job of the two PM review passes this file names in its own "How to use this file"
-  section, each scoped to a disjoint set of sections so they can run concurrently without
-  colliding on the same lines.
+  plus the normalization plan and `vision-and-roadmap.md`. **Status update:** two full PM review
+  passes have since run **sequentially** over the whole file (not concurrently/disjoint-sectioned,
+  despite an earlier draft of this note saying so), plus a targeted coverage sweep and two
+  follow-on correction rounds (PRs #433–#440) — see the file's own "How to use this file" section
+  for the real history. §15 (Security & Loss Prevention Build) and notes-67's IA-reorg items were
+  added 2026-08-19, same round as dispatch #33.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #32 — Workstream C: pipeline contract, wired](dispatch32-pipeline-contract.md)** —
   2026-08-19. **DELIVERED same day** (v5.072, squashed into PR #431) — the last of the 7
   normalization workstreams to ship real code. **Corrects both this dispatch's and #25's own
