@@ -673,7 +673,14 @@ first below.
 - [ ] Four independently-maintained reimplementations of manual-first/auto-first merge logic
   (`analytics.js`, `store-dash.js`, `smart-targets.js`, `promo-roi.js`) need a consolidation pass —
   distinct from §3's Metric Registry/Resolver unification item, which is about merging
-  `signal-registry.js`/`metric-source.js`, not this (`plan-data-integrity-sweep.md`).
+  `signal-registry.js`/`metric-source.js`, not this (`plan-data-integrity-sweep.md`). **Cross-
+  checked and confirmed still genuinely open** after a concurrent session's PR #438 characterized
+  this whole source file as "not an open-item file... a completed, delivered sweep report, not
+  TODOs" — read the file directly: `plan-data-integrity-sweep.md:327-331` has its own explicit
+  "Deferred, not part of this (HIGH-confidence) pass" section naming this exact item, in these
+  exact words: "a consolidation pass on its own, not attempted, **still open**." The file is mostly
+  a delivered report, but this one item inside it is not — worth recording since another pass
+  concluded the opposite from the same file.
 - [ ] §4's render-storm item currently reads as fully unfixed — it's partial. The tiered loader
   batches 22→3 renders, but ~19 renders remain unbatched across other effects (IDB restore,
   `loadLaborRows` merge, 6 `org_config` syncs, email/PDF auto-ingest, cross-device sync)
@@ -682,8 +689,24 @@ first below.
   silence loud" (parser contracts + loaders distinguishing no-data/error/row-cap) — named
   structural fixes for recurring bug classes, explicitly marked "❌ not planned"
   (`systemic-issues-and-next-phase.md`).
-- [ ] Golden-dataset regression tests still unbuilt — proposed independently in two files
-  (`session-2026-08-07-perf-and-rls.md`, `systemic-issues-and-next-phase.md`).
+- [x] ⚠️ **CORRECTED same-day — golden-dataset regression tests are NOT still unbuilt.** Originally
+  cited to `session-2026-08-07-perf-and-rls.md`'s "Still open" list — that list is dated 2026-08-07
+  and was never updated as its items shipped; the citing agent read the file's own stale claim
+  without checking current code, the exact failure mode both PM passes exist to catch. Checked
+  directly: `src/__tests__/golden-dataset.test.js` exists (157 lines, a frozen 3-store/1-week/198-
+  row real-production fixture testing resolution order + aggregation, built expressly because
+  "none of the 768 existing tests" covered sourcing/aggregation over real row shapes). The same
+  file's other three "Still open" items are also stale-resolved: PR #93 merged (`git log`:
+  `d180f33 Merge pull request #93...`), the rollup table exists (`qsr_daily_activity_rollup`,
+  4 schema files + `at-a-glance.js`), service-role key rotation and the eBOS Action are addressed
+  elsewhere in this backlog/CLAUDE.md. **One real residual, from the test's own header, not a new
+  claim:** it can't catch a LOADER field-mapping change, only resolution/aggregation — closing
+  that needs the loaders to be importable outside a browser context. `systemic-issues-and-next-
+  phase.md`'s "golden-dataset tests, highest-leverage addition" framing is similarly superseded —
+  the addition shipped; broadening it (more windows, more stores) is the only thing left, and nowhere
+  is that specifically asked for. Caught while reconciling this backlog against a concurrent
+  session's PR #438, which flagged the same file's staleness independently — cross-checked myself
+  rather than taking either side's claim on the other's word.
 - [ ] All 27 stores reading `crit`/`weekly-overdue` on Count Cycle compliance simultaneously,
   flagged but never chased — corroborated by **two** independent sources: `dispatch-20.md` §3
   ("Correctly flagged and correctly not chased in #410. Chase it now") and
