@@ -1604,9 +1604,14 @@ export async function loadDailyActivityRange(startDate, endDate) {
   if (!supabase) return [];
   // Paginate — 27 stores × ~25 hour slots exceeds the 1000-row cap after ~1.5 days,
   // so a single select silently truncated any multi-day range.
+  // total_scheduled_hours added (Dispatch29 Workstream G) — labor-standard.js's
+  // allocationByStoreDaypart needs it for scheduledVsGuide/punchedVsScheduled, the SEPARATE
+  // legs that tell a scheduling problem (padded when written) apart from an execution one
+  // (written fine, doesn't show up); this loader was missing it entirely, so both would have
+  // silently resolved to a punchedHrs/0 = null ratio for every caller until this fix.
   return fetchAll((lo, hi) => supabase
     .from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,healthy_count,unhealthy_count')
+    .select('loc,dt,hour_slot,product_sales,mean_sales,dt_untilserve,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours,healthy_count,unhealthy_count')
     .gte('dt', startDate)
     .lte('dt', endDate)
     .order('dt')

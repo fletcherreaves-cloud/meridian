@@ -80,8 +80,24 @@ function ratio(num, den) { return den > 0 ? num / den : null; }
  * Group B in the breakfast-deficit finding), and a single blended ratio erases exactly
  * the distinction that makes the finding actionable.
  *
+ * Also carries `tpph`/`secPerCar` at this SAME (loc, daypart) grain — Dispatch29's
+ * "ENGINEER TASK — TPPH from DAR" step 2, extended to every daypart (not just the Late
+ * Night case it was motivated by), reusing this function's own hour_slot iteration
+ * rather than a separate pass. This is a genuinely finer grain than METRIC_SOURCES'
+ * `tpph` chain (per-day only, via qsrActSummaryRows' daily rollup) — that daily chain
+ * stays exactly as-is; this is an ADDITION for daypart-level panels, not a replacement.
+ * `tpph` uses `dt_trans_cnt` (drive-thru only), matching this function's own `cars` —
+ * deliberately NOT the all-channel `transactions` field, so both figures share one
+ * denominator (Dispatch29's own explicit warning: "pick one deliberately and label it").
+ * `secPerCar` = Σdt_untilserve (already a per-row SUM of milliseconds, confirmed against
+ * graded-visits.js's own secOf()) ÷ Σcars ÷ 1000 — ratio of sums, same discipline as
+ * every other figure in this file.
+ *
  * Returns { [loc]: { [daypart]: { gapHrs, punchedVsGuide, scheduledVsGuide,
- *   punchedVsScheduled, cars, punchedHrs, neededHrs, scheduledHrs } } }.
+ *   punchedVsScheduled, tpph, secPerCar, cars, punchedHrs, neededHrs, scheduledHrs,
+ *   untilserveMs } } } — untilserveMs is the raw Σdt_untilserve for this bucket,
+ *   exposed (like the other raw sums) so allocationDistrict can sum it again rather
+ *   than re-deriving it from secPerCar*cars, which would reintroduce rounding error.
  */
 export function allocationByStoreDaypart(rows) {
   const complete = completeDayKeys(rows);
@@ -92,12 +108,13 @@ export function allocationByStoreDaypart(rows) {
     const loc = unpad(r.loc);
     const dp = daypartOf(r.hour_slot);
     const k = loc + '|' + dp;
-    if (!buckets.has(k)) buckets.set(k, { loc, dp, cars: 0, punchedHrs: 0, neededHrs: 0, scheduledHrs: 0 });
+    if (!buckets.has(k)) buckets.set(k, { loc, dp, cars: 0, punchedHrs: 0, neededHrs: 0, scheduledHrs: 0, untilserveMs: 0 });
     const b = buckets.get(k);
     b.cars += r.dt_trans_cnt || 0;
     b.punchedHrs += r.actual_punched_hours || 0;
     b.neededHrs += r.total_needed_hours || 0;
     b.scheduledHrs += r.total_scheduled_hours || 0;
+    b.untilserveMs += r.dt_untilserve || 0;
   }
   const out = {};
   for (const b of buckets.values()) {
@@ -107,7 +124,10 @@ export function allocationByStoreDaypart(rows) {
       punchedVsGuide: ratio(b.punchedHrs, b.neededHrs),
       scheduledVsGuide: ratio(b.scheduledHrs, b.neededHrs),
       punchedVsScheduled: ratio(b.punchedHrs, b.scheduledHrs),
+      tpph: ratio(b.cars, b.punchedHrs),
+      secPerCar: b.cars > 0 ? (b.untilserveMs / b.cars / 1000) : null,
       cars: b.cars, punchedHrs: b.punchedHrs, neededHrs: b.neededHrs, scheduledHrs: b.scheduledHrs,
+      untilserveMs: b.untilserveMs,
     };
   }
   return out;
@@ -117,7 +137,7 @@ export function allocationByStoreDaypart(rows) {
 export function allocationDistrict(rows) {
   const byStore = allocationByStoreDaypart(rows);
   const totals = {};
-  for (const dp of DAYPARTS) totals[dp] = { cars: 0, punchedHrs: 0, neededHrs: 0, scheduledHrs: 0 };
+  for (const dp of DAYPARTS) totals[dp] = { cars: 0, punchedHrs: 0, neededHrs: 0, scheduledHrs: 0, untilserveMs: 0 };
   for (const storeDp of Object.values(byStore)) {
     for (const dp of DAYPARTS) {
       const c = storeDp[dp];
@@ -126,6 +146,7 @@ export function allocationDistrict(rows) {
       totals[dp].punchedHrs += c.punchedHrs;
       totals[dp].neededHrs += c.neededHrs;
       totals[dp].scheduledHrs += c.scheduledHrs;
+      totals[dp].untilserveMs += c.untilserveMs;
     }
   }
   const out = {};
@@ -136,6 +157,8 @@ export function allocationDistrict(rows) {
       punchedVsGuide: ratio(t.punchedHrs, t.neededHrs),
       scheduledVsGuide: ratio(t.scheduledHrs, t.neededHrs),
       punchedVsScheduled: ratio(t.punchedHrs, t.scheduledHrs),
+      tpph: ratio(t.cars, t.punchedHrs),
+      secPerCar: t.cars > 0 ? (t.untilserveMs / t.cars / 1000) : null,
       cars: t.cars, punchedHrs: t.punchedHrs, neededHrs: t.neededHrs, scheduledHrs: t.scheduledHrs,
     };
   }

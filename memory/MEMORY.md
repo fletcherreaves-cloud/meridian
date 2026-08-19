@@ -32,7 +32,18 @@ seconds, and the theory that survives one costs a PR.
 ## ⭐ READ FIRST — latest handoff & vision
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #29 — Workstream G: join the third dimension (who was on the
   shift)](dispatch-29.md)** — **NEWEST dispatch, 2026-08-19, the last of the 7 workstreams.**
-  Unlike A–F, G's finding is already **proven** by five owner-run probes
+  **DELIVERED same day** (PR #428, v5.069) — `labor-standard.js` wired into a new "Labor
+  Allocation" tab (Scheduling hub): District/By Store/Overnight views, TPPH extended to hour_slot
+  grain (`dt_trans_cnt`-denominated, kept separate from `METRIC_SOURCES`' daily `tpph` chain
+  rather than force-fit into it), Overnight tab classifies open-vs-closed first and shows both the
+  schedule-config and data-driven signals per store rather than picking one. Also found & fixed a
+  real bug while wiring: `loadDailyActivityRange()` was missing `total_scheduled_hours` from its
+  `select()` entirely — every future caller would have gotten `null` for `scheduledVsGuide`/
+  `punchedVsScheduled` forever. Full trace: [dispatch29-labor-allocation-panel.md](dispatch29-labor-allocation-panel.md).
+  Open items, stated plainly in the PR: real-data verification against live Supabase needs a
+  session with real browser+auth access; the 1,716-hr pre-open-hours Breakfast correction isn't
+  yet folded into this panel's own gap figure. Unlike A–F, G's finding is already **proven** by
+  five owner-run probes
   (`plan-normalization-2026-08-17.md` G-1→G-5) — this dispatch grounds what's built vs. what's
   wired up, not what's proposed. `src/engine/labor-standard.js` (the engine behind the proven
   allocation finding — deficit −20,485/−14,207 corrected, surplus +32,701, 1.6× coverage — in
@@ -48,6 +59,12 @@ seconds, and the theory that survives one costs a PR.
   hour_slot grain, leave person-level for later. Also flags an unresolved open/closed classifier
   disagreement (Ardmore-Cooper/12th vs. Freeport) a real panel should show both sides of, not pick.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #28 — Workstream F: role-based voice](dispatch-28.md)** — 2026-08-19.
+  **DELIVERED, first slice** (PR #426, v5.068) — Visit Readiness's `topDrivers` extended with a
+  `buildVerdict()` one-line decision (food-safety risk prioritized over readiness band), wired into
+  the panel's default collapsed row, both printable reports, and `attention-feed.js`'s `visitRisk()`
+  (now reads the same verdict instead of re-deriving its own generic text, so the two surfaces can't
+  disagree). Count Cycle and DI Compare — the dispatch's own two evidence strings — explicitly
+  deferred as next slice, not forgotten. Full trace: [dispatch28-voice-by-role.md](dispatch28-voice-by-role.md).
   Grounds the plan's "role should determine voice, not just visibility"
   premise: both cited evidence strings (`count-cycle.js:235` "No complete weekly count on record",
   `analytics.js:6895` "Not Dialed-In is better — recalibrate") still reproduce unchanged.
@@ -64,7 +81,14 @@ seconds, and the theory that survives one costs a PR.
   *which* gap matters, the hard half of the problem. Reiterates CLAUDE.md's own "Voice by role"
   standing rule is binding already, not new scope to propose.
 - **⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #27 — Workstream E: routing vs modals](dispatch-27.md)** — 2026-08-19.
-  Confirms the plan's hybrid routing architecture is unchanged in current
+  **DELIVERED** (PR #426, v5.067) — the four flagged panels (DI Compare, Forecast Accuracy,
+  Projections, Date-Range Report) are now URL-synced routes (`?panel=`) via new dependency-free
+  `src/app/routing.js`, replacing their `showX` modal state; `panel-registry.js` gets a `route:true`
+  field on exactly those four, ratcheted by `panel-registry.test.js` so a fifth requires deliberate
+  choice. Verified in a real browser via Playwright (deep links, back/forward, in-panel back).
+  Full trace: [dispatch27-routing-vs-modals.md](dispatch27-routing-vs-modals.md). Open item: the
+  4.3s remount re-measurement still needs a session with real auth (the dev sandbox's bypass can't
+  populate real `ds`). Confirms the plan's hybrid routing architecture is unchanged in current
   `App.js`: a `view` state var plus `anyModalOpen` (`App.js:2486-2489`) that unmounts the
   background view behind any open modal. DI Compare, Forecast Accuracy, and Projections are still
   modals; "Date-Range Report" is registered `kind:'nav'` but still opens as a modal. **Correction**:

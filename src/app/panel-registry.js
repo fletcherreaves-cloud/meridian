@@ -77,6 +77,7 @@ export const PANELS = [
   { id:'help', label:'Help', icon:'?', perm:null, kind:'nav', section:'help' },
   { id:'inventory', label:'Inventory', icon:'📦', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'kb', label:'Knowledge Base', icon:'📖', perm:null, kind:'nav', section:'help' },
+  { id:'labor-allocation', label:'Labor Allocation', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
   { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'reports' },

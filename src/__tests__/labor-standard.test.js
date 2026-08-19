@@ -92,6 +92,29 @@ describe('allocationByStoreDaypart — ratio of sums, not average of per-row rat
   });
 });
 
+describe('allocationByStoreDaypart tpph/secPerCar — Dispatch29 hour_slot-grain TPPH', () => {
+  it('tpph and secPerCar are ratio-of-sums, using dt_trans_cnt (drive-thru), not average-of-rows', () => {
+    // hour 06: 100 cars / 10 punched hrs = 10 tpph; 15,000ms untilserve. hour 07: 50 cars /
+    // 5 punched hrs = 10 tpph too, but a naive per-row average would still differ from the
+    // ratio-of-sums on secPerCar: (15000+20000)/(100+50)/1000 = 0.2333s, not the mean of the
+    // two rows' own per-row rates.
+    const rows = mkDay('0003708', '2026-06-01', {
+      '06:00': { dt_trans_cnt: 100, actual_punched_hours: 10, dt_untilserve: 15000 },
+      '07:00': { dt_trans_cnt: 50, actual_punched_hours: 5, dt_untilserve: 20000 },
+    });
+    const b = allocationByStoreDaypart(rows)['3708'].Breakfast;
+    expect(b.tpph).toBeCloseTo(150 / 15, 5); // Σcars / Σpunched
+    expect(b.secPerCar).toBeCloseTo(35000 / 150 / 1000, 5); // Σuntilserve(ms) / Σcars / 1000
+  });
+
+  it('is null (not NaN/0) when a bucket has no cars or no punched hours', () => {
+    const rows = mkDay('0003708', '2026-06-01'); // all zeros, per mkDay's defaults
+    const b = allocationByStoreDaypart(rows)['3708'].Breakfast;
+    expect(b.tpph).toBeNull();
+    expect(b.secPerCar).toBeNull();
+  });
+});
+
 describe('allocationDistrict — district rollup sums across all stores before dividing', () => {
   it('aggregates two stores into one ratio-of-sums per daypart', () => {
     const rows = [
@@ -100,6 +123,16 @@ describe('allocationDistrict — district rollup sums across all stores before d
     ];
     const d = allocationDistrict(rows);
     expect(d.Breakfast.punchedVsGuide).toBeCloseTo(15 / 25, 5);
+  });
+
+  it('sums tpph/secPerCar\'s raw legs (untilserveMs, cars) across stores, not re-derived from each store\'s own rate', () => {
+    const rows = [
+      ...mkDay('0003708', '2026-06-01', { '06:00': { dt_trans_cnt: 100, actual_punched_hours: 10, dt_untilserve: 15000 } }),
+      ...mkDay('0006178', '2026-06-01', { '06:00': { dt_trans_cnt: 50, actual_punched_hours: 5, dt_untilserve: 20000 } }),
+    ];
+    const d = allocationDistrict(rows);
+    expect(d.Breakfast.tpph).toBeCloseTo(150 / 15, 5);
+    expect(d.Breakfast.secPerCar).toBeCloseTo(35000 / 150 / 1000, 5);
   });
 });
 
