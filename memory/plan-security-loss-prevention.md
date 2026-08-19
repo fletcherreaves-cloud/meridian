@@ -704,6 +704,10 @@ Neither blocks starting Phase 1's design/scaffolding, but both should close befo
 output is treated as reliable.
 
 ### Phase 0b — substrate (build once, everything else depends on it)
+
+**Dispatched 2026-08-19 — `memory/dispatch-36.md`, ready for an engineer now.** Needs no QSRSoft
+access (pure schema/utility work), so it isn't blocked on Phase 0a's still-open live-verification.
+
 - Event normalization / Event DNA schema — for rung 2 (Register Audit), this is close to already
   shaped by the existing `audit_rows` columns; extend rather than redesign.
 - Personal + peer + store baseline computation (§1 principle 2).
