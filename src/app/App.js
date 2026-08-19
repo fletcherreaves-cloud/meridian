@@ -219,8 +219,8 @@ const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles } from '../lib/supabase.js';
-import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions } from '../lib/supabase.js';
+import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
@@ -277,7 +277,16 @@ async function syncUserEventsToCloud(prev, next) {
       prev, next, t => (EVENT_TYPES[t] || {}).label || null);
     for (const { loc, dk, label } of deleteKeys) await deleteOrgEventsByLocDate(loc, dk, label);
     for (const { loc, dk, label } of staleKeys) await deleteOrgEventsByLocDate(loc, dk, label);
-    if (upserts.length) await saveOrgEvents(upserts, { method: 'manual' });
+    // Dispatch24 Workstream B (#388) — the same collapse applyEventToStores' bulk-import sibling
+    // uses (calendar.js's approveBulk): a district-wide hand-tag (applyEventToStores looping
+    // locsToTag) produces one upsert per store here too, from the day-map diff. Collapsing them
+    // into one scoped row before they reach org_events is what actually fixes "27 copies of
+    // Thanksgiving" for THIS write path — applyEventToStores itself is unchanged (still loops
+    // locally, per the dispatch's "don't touch consumers" framing; the fix is upstream of the DB).
+    if (upserts.length) {
+      const stateOfLoc = l => (INV_ORG_COORDS[l] || {}).state || null;
+      await saveOrgEvents(collapseScopedEvents(upserts, { allLocs: Object.keys(STORE_NAMES), stateOfLoc }), { method: 'manual' });
+    }
   } catch (e) { console.warn('[Meridian] event cloud sync failed:', e); }
 }
 
@@ -1525,7 +1534,12 @@ function App() {
         const orgEvents=await loadOrgEvents();
         if(orgEvents&&orgEvents.length){
           const iconFor=(t)=>(EVENT_TYPES[t]||EVENT_TYPES.other||{}).icon||'📌';
-          const cloudMap=orgEventsToDayMap(orgEvents,iconFor);
+          // Dispatch24 Workstream B (#388) — per-store overrides on a scoped event (a GM
+          // canceling a district-wide tag locally, or adjusting its impact for just their
+          // store). Missing table (pre-migration) or empty result both degrade to `{}`, which
+          // orgEventsToDayMap treats as "no exceptions" — full expansion, unchanged from before.
+          const exceptions=await loadOrgEventExceptions().catch(()=>({}));
+          const cloudMap=orgEventsToDayMap(orgEvents,iconFor,exceptions);
           const cur=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();
           let added=0,refreshed=0;
           for(const loc of Object.keys(cloudMap)){

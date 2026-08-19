@@ -5,7 +5,7 @@ import { isHoliday, HOLIDAY_MAP } from '../utils/holidays.js';
 import { lookupMissEvent } from '../engine/why.js';
 import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COORDS, sName, sNameC } from '../constants.js';
 import { TH } from '../utils/fmt.js';
-import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap } from '../engine/events-import.js';
+import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap, collapseScopedEvents } from '../engine/events-import.js';
 import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatingDateMismatches } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
 
@@ -393,7 +393,14 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       const enteredBy = (settings&&settings._userEmail) || 'app import';
       let saveMsg='';
       if(bulkPreview.events.length){
-        const res = await saveOrgEvents(bulkPreview.events, {method:bulkPreview.generated?'recurring rule':'bulk upload', enteredBy});
+        // Dispatch24 Workstream B (#388) — collapse the flat per-store rows expandRetailEvents()/the
+        // bulk-import parser produce into one scoped row per district-wide event before it reaches
+        // the DB, instead of writing N per-store rows (the "27 copies of Thanksgiving" problem).
+        // bulkPreview.events itself stays flat — the review grid above and the local dayMap hydration
+        // below both still want one line per store; only what actually reaches org_events changes.
+        const stateOfLoc = l => (INV_ORG_COORDS[l]||{}).state || null;
+        const toSave = collapseScopedEvents(bulkPreview.events, {allLocs: LOCS, stateOfLoc});
+        const res = await saveOrgEvents(toSave, {method:bulkPreview.generated?'recurring rule':'bulk upload', enteredBy});
         if(res.errors&&res.errors.length){ setBulkError('Supabase save error: '+res.errors[0]); setBulkBusy(false); return; }
         saveMsg += res.saved+' events';
       }

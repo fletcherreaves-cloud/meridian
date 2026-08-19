@@ -138,15 +138,34 @@ function combineOrgEntries(a, b) {
   };
 }
 
-// Down-project cloud org_events (one row per event, spans as a range) into the calendar's per-day
-// map shape `{ loc: { 'YYYY-MM-DD': entry } }` that every existing consumer (calendar/pipeline/
-// forecast) already reads from localStorage `mf_events`. Spans expand to one entry per day sharing a
-// rangeId (matching applyEventToStores). Org-sourced entries are tagged so hydration can refresh them
-// from the cloud without clobbering hand-entered events. `iconFor(type)` supplies the display icon.
-export function orgEventsToDayMap(events, iconFor = () => '📌') {
+// Down-project cloud org_events (one row per event, spans as a range, and — Dispatch24 Workstream
+// B (#388) — scope as a store LIST, not a store) into the calendar's per-day map shape
+// `{ loc: { 'YYYY-MM-DD': entry } }` that every existing consumer (calendar/pipeline/forecast)
+// already reads from localStorage `mf_events`. Spans expand to one entry per day sharing a rangeId
+// (matching applyEventToStores). Org-sourced entries are tagged so hydration can refresh them from
+// the cloud without clobbering hand-entered events. `iconFor(type)` supplies the display icon.
+//
+// Scope expansion (the ONE piece Workstream B adds — forecastDay/computeEventFactors are
+// unchanged, they only ever read this function's output, same shape as before): a row with
+// `scope !== 'store'` carries the real store list in `scope_locs` (collapseScopedEvents below is
+// the write-side counterpart that produces it) instead of a single `loc`. Every matching store
+// gets its own day-map entry, same as if N per-store rows had been materialized — except there's
+// only ever one row backing all of them. A `scope==='store'` row (the default, and every row that
+// predates this migration) is unaffected: expands to exactly `[e.loc]`, byte-identical to the old
+// behavior.
+//
+// `exceptions` (optional, from org_event_exceptions — open design question #1's per-store
+// override mechanism) is a `{ [eventId]: { [loc]: {status, overrides} } }` map. A 'canceled'
+// exception drops that one store's entry entirely (the other stores in the same scoped event are
+// untouched); a 'modified' exception merges `overrides` onto that store's entry only. Omitting
+// `exceptions` (every pre-existing call site) is a no-op — full expansion, no skips — so this is
+// purely additive.
+export function orgEventsToDayMap(events, iconFor = () => '📌', exceptions = null) {
   const map = {};
   for (const e of (events || [])) {
-    const loc = String(e.loc);
+    const targetLocs = (e.scope && e.scope !== 'store' && Array.isArray(e.scopeLocs) && e.scopeLocs.length)
+      ? e.scopeLocs.map(String)
+      : [String(e.loc)];
     const start = e.dateStart; const end = e.dateEnd || e.dateStart;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(start || ''))) continue;
     // enumerate ISO days start..end (noon anchor avoids DST/timezone slips)
@@ -159,29 +178,79 @@ export function orgEventsToDayMap(events, iconFor = () => '📌') {
     }
     const multi = days.length > 1;
     const rangeId = multi ? `org_${e.id ?? e.label}_${start}_${end}` : null;
-    days.forEach((dk, i) => {
-      if (!map[loc]) map[loc] = {};
-      const entry = {
-        type: e.type || 'event',
-        label: multi ? `${e.label} (Day ${i + 1} of ${days.length})` : e.label,
-        note: e.note || e.label,
-        icon: iconFor(e.type || 'event'),
-        source: e.method === 'bulk upload' ? 'Bulk Import' : (e.method || 'Bulk Import'),
-        orgSourced: true, orgEventId: e.id ?? null,
-        url: e.url || null,
-        impact: e.impact || null,
-        opponent: e.opponent ?? null,
-        kickoff: e.kickoff ?? null,
-        status: e.status ?? null,
-        expectedSalesDelta: e.expectedSalesDelta ?? null,
-        expectedGcDelta: e.expectedGcDelta ?? null,
-        verification: e.verification || null,
-        ...(multi ? { rangeId, rangeDayNum: i + 1, rangeTotalDays: days.length } : {}),
-      };
-      map[loc][dk] = map[loc][dk] ? combineOrgEntries(map[loc][dk], entry) : entry;
-    });
+    for (const loc of targetLocs) {
+      const exc = exceptions && e.id != null ? (exceptions[e.id] || {})[loc] : null;
+      if (exc && exc.status === 'canceled') continue;
+      days.forEach((dk, i) => {
+        if (!map[loc]) map[loc] = {};
+        const entry = {
+          type: e.type || 'event',
+          label: multi ? `${e.label} (Day ${i + 1} of ${days.length})` : e.label,
+          note: e.note || e.label,
+          icon: iconFor(e.type || 'event'),
+          source: e.method === 'bulk upload' ? 'Bulk Import' : (e.method || 'Bulk Import'),
+          orgSourced: true, orgEventId: e.id ?? null,
+          url: e.url || null,
+          impact: e.impact || null,
+          opponent: e.opponent ?? null,
+          kickoff: e.kickoff ?? null,
+          status: e.status ?? null,
+          expectedSalesDelta: e.expectedSalesDelta ?? null,
+          expectedGcDelta: e.expectedGcDelta ?? null,
+          verification: e.verification || null,
+          ...(e.scope && e.scope !== 'store' ? { scope: e.scope, scopeState: e.scopeState ?? null } : {}),
+          ...(multi ? { rangeId, rangeDayNum: i + 1, rangeTotalDays: days.length } : {}),
+          ...(exc && exc.status === 'modified' && exc.overrides ? exc.overrides : {}),
+        };
+        map[loc][dk] = map[loc][dk] ? combineOrgEntries(map[loc][dk], entry) : entry;
+      });
+    }
   }
   return map;
+}
+
+// Write-side counterpart to the scope expansion above — groups a FLAT per-store event array (the
+// shape expandRetailEvents() and applyEventToStores' cloud-sync diff already produce; deliberately
+// NOT rebuilt, per the dispatch's explicit constraint) into one row per (dateStart, dateEnd, label,
+// type, category) key, computing the scope that row should carry. A single-store group is left
+// completely alone (scope:'store', unchanged shape) — only a group spanning 2+ stores collapses.
+//
+// `allLocs` is the full store roster; `stateOfLoc(loc)` resolves a loc to its state ('OK'/'FL').
+// Both are passed in (not imported from constants.js) so this stays pure/dependency-free and
+// testable, matching diffUserEventsForCloudSync's own pattern in this file.
+//
+// scope is 'all' when the group's loc set is exactly every store in allLocs; 'state' when it's
+// exactly every store of one state (scope_state records which); otherwise 'list' — an explicit,
+// possibly-partial store set (e.g. a manual multi-select tag that isn't a clean state/district
+// split). All three carry the resolved list in `scopeLocs`, so orgEventsToDayMap's expansion above
+// doesn't need to special-case which of the three it is.
+export function collapseScopedEvents(events, { allLocs, stateOfLoc } = {}) {
+  const groups = new Map();
+  for (const e of (events || [])) {
+    const key = [e.dateStart, e.dateEnd || e.dateStart, e.label, e.type || '', e.category || ''].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  const out = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) { out.push({ ...group[0], scope: 'store', scopeState: null, scopeLocs: null }); continue; }
+    const locs = [...new Set(group.map(g => String(g.loc)))].sort();
+    const base = group[0];
+    let scope = 'list', scopeState = null;
+    if (allLocs && locs.length === allLocs.length && locs.every(l => allLocs.includes(l))) {
+      scope = 'all';
+    } else if (stateOfLoc) {
+      const states = new Set(locs.map(stateOfLoc));
+      if (states.size === 1 && allLocs) {
+        const [st] = states;
+        const fullState = allLocs.filter(l => stateOfLoc(l) === st).sort();
+        if (fullState.length === locs.length && fullState.every((l, i) => l === locs[i])) { scope = 'state'; scopeState = st; }
+      }
+    }
+    const sentinelLoc = scope === 'all' ? '*ALL*' : scope === 'state' ? `*STATE:${scopeState}*` : `*LIST:${locs.join(',')}*`;
+    out.push({ ...base, loc: sentinelLoc, scope, scopeState, scopeLocs: locs });
+  }
+  return out;
 }
 
 // Diff two `mf_events` day-maps (prev → next) into the org_events cloud writes needed to upload

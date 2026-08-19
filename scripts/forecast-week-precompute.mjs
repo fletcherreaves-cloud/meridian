@@ -147,7 +147,22 @@ async function loadOrgEvents() {
     expectedSalesDelta: r.expected_sales_delta, expectedGcDelta: r.expected_gc_delta,
     url: r.url, verification: r.verification, note: r.note,
     enteredBy: r.entered_by, enteredAt: r.entered_at, method: r.method,
+    // Dispatch24 Workstream B (#388) — scope + resolved store list (mirrors loadOrgEvents,
+    // src/lib/supabase.js). Undefined on a DB that hasn't run schema-org-events-scope.sql yet;
+    // orgEventsToDayMap() already treats a missing/'store' scope as "expand to just [loc]".
+    scope: r.scope ?? 'store', scopeState: r.scope_state ?? null, scopeLocs: r.scope_locs ?? null,
   }));
+}
+
+// ── org_event_exceptions → per-store overrides on a scoped event (mirrors loadOrgEventExceptions,
+// src/lib/supabase.js) — open design question #1's answer. Missing table (pre-migration) is
+// non-fatal: orgEventsToDayMap treats {} as "no exceptions", same as its other callers.
+async function loadOrgEventExceptions() {
+  const { data, error } = await supabase.from('org_event_exceptions').select('*');
+  if (error) { console.warn(`[forecast-precompute] org_event_exceptions load failed (non-fatal, treated as no exceptions): ${error.message}`); return {}; }
+  const map = {};
+  for (const r of (data || [])) (map[r.event_id] = map[r.event_id] || {})[String(r.loc)] = { status: r.status, overrides: r.overrides || null };
+  return map;
 }
 
 // ── event_impact → the Event Impact Registry (mirrors loadEventImpact, src/lib/supabase.js:3447,
@@ -192,14 +207,15 @@ function currentWeekDays(weekStartDay) {
 
 async function main() {
   console.log('[forecast-precompute] loading source data...');
-  const [laborRowsRaw, qsrActSummaryRows, modelOverrides, orgEvents, eventImpactRows] = await Promise.all([
+  const [laborRowsRaw, qsrActSummaryRows, modelOverrides, orgEvents, eventImpactRows, orgEventExceptions] = await Promise.all([
     loadLaborRows(LABOR_DAYS_BACK),
     loadQsrActSummaryRows(QSR_ACT_DAYS_BACK),
     loadModelAssignmentOverrides(),
     loadOrgEvents(),
     loadEventImpact(),
+    loadOrgEventExceptions(),
   ]);
-  console.log(`[forecast-precompute] labor_rows=${laborRowsRaw.length} qsr_act_summary=${qsrActSummaryRows.length} org_events=${orgEvents.length} event_impact=${eventImpactRows.length}`);
+  console.log(`[forecast-precompute] labor_rows=${laborRowsRaw.length} qsr_act_summary=${qsrActSummaryRows.length} org_events=${orgEvents.length} event_impact=${eventImpactRows.length} org_event_exceptions=${Object.keys(orgEventExceptions).length}`);
 
   const laborRows = supplementLaborWithSched(laborRowsRaw, qsrActSummaryRows);
   const ds = {
@@ -214,7 +230,7 @@ async function main() {
   // Same shape App.js builds on startup (orgEventsToDayMap) and the same module-level cache
   // forecastDay's _evFactor reads first (_EVENT_IMPACT via setEventImpact) — see the loader
   // functions' own comments above for why this was missing and what it silently cost.
-  const userEvents = orgEventsToDayMap(orgEvents, () => '');
+  const userEvents = orgEventsToDayMap(orgEvents, () => '', orgEventExceptions);
   const eventImpactMap = {};
   for (const r of eventImpactRows) {
     const k = String(r.loc).replace(/^0+/, '');
