@@ -200,6 +200,7 @@ function storeAuditHtml(s) {
       <span class="pill" style="background:${bandCol}">${esc(BAND_L[s.band] || s.band)} · ${s.readiness.toFixed(1)}</span>
       <span class="pill2">Data coverage ${pct2(s.coverage)}</span>
       <span class="pill2">Food safety: ${esc(FS_L[s.fsFlag] || s.fsFlag)}${s.fsScore != null ? ' (' + sc0(s.fsScore) + ')' : ''}</span></h2>
+    ${s.verdict ? `<p class="verdict"><b>Coaching action:</b> ${esc(s.verdict)}</p>` : ''}
     <p class="why"><b>Why:</b> ${esc(s.why || '')}</p>
     <h3>How this score was built</h3>
     <table><tr><th>Area</th><th class="n">Nominal weight</th><th class="n">Effective weight</th><th class="n">Area score</th><th class="n">Contribution</th><th>Measured on</th></tr>
@@ -275,6 +276,7 @@ export function readinessReportHTML(res, opts = {}) {
     .nsn{color:#999;font-weight:400;font-size:10px}
     .pill{display:inline-block;padding:1px 8px;border-radius:4px;color:#fff;font-size:10px;font-weight:700;margin-left:6px;vertical-align:middle}
     .pill2{display:inline-block;padding:1px 8px;border-radius:4px;border:1px solid #ccc;color:#555;font-size:9.5px;font-weight:600;margin-left:4px;vertical-align:middle}
+    .verdict{background:#eef7ff;border:1px solid #4a90d9;border-radius:5px;padding:7px 10px;margin:6px 0 0;font-size:11px;font-weight:600}
     .why{background:#fff8e1;border:1px solid #f5bc00;border-radius:5px;padding:7px 10px;margin:6px 0;font-size:10.5px}
     .note{font-size:10px;color:#555;margin:5px 0}
     .gapbox{border:1px solid #e0c9a0;background:#fdf7ee;border-radius:5px;padding:7px 10px;margin:7px 0;font-size:10px}

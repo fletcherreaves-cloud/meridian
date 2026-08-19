@@ -74,6 +74,7 @@ function storeReportHTML(s) {
     .score{display:inline-block;font-size:34px;font-weight:800;color:${b.c};line-height:1}
     .band{display:inline-block;padding:3px 10px;border-radius:5px;color:#fff;background:${b.c};font-weight:700;font-size:12px;vertical-align:super;margin-left:8px}
     .fs{display:inline-block;padding:2px 8px;border-radius:5px;font-weight:700;font-size:11px;margin-left:6px;border:1px solid ${fs.c};color:${fs.c}}
+    .verdict{background:#eef7ff;border:1px solid #4a90d9;border-radius:6px;padding:10px 12px;margin:12px 0 0;font-weight:700}
     .why{background:#fff8e1;border:1px solid #f5bc00;border-radius:6px;padding:10px 12px;margin:12px 0}
     h2{font-size:14px;border-bottom:2px solid #f5bc00;padding-bottom:4px;margin:20px 0 8px}
     table{border-collapse:collapse;width:100%;margin:6px 0}th{background:#f5bc00;color:#111;text-align:left;padding:5px 9px;font-size:11px}
@@ -89,6 +90,7 @@ function storeReportHTML(s) {
     <div class="sub">Visit Readiness coaching report · ${date}</div>
     <div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('FS', 'Food safety:')}</span>
       ${s.coverage < 1 ? `<span style="color:#999;font-size:11px;margin-left:8px">${(s.coverage * 100).toFixed(2)}% data coverage</span>` : ''}</div>
+    ${s.verdict ? `<div class="verdict"><b>Coaching action:</b> ${esc(s.verdict)}</div>` : ''}
     <div class="why"><b>Why:</b> ${esc(s.why || '')}</div>
     <h2>Recommended focus</h2>
     ${focus ? `<ol>${focus}</ol>` : '<p>No material gaps — hold the standard and stay visit-ready.</p>'}
@@ -130,6 +132,12 @@ function StoreRow({ s, expanded, onToggle }) {
         h('div', { style: { fontSize: 7, color: 'var(--text3)', textTransform: 'uppercase' } }, 'ready')),
       h('div', { style: { flex: 1, minWidth: 150 } },
         h('div', { style: { fontSize: 12, fontWeight: 700 } }, sName(s.loc)),
+        // Dispatch28 -- the decision line, on the DEFAULT (collapsed) surface, not behind the
+        // expand click: "the default surface of any panel states what to do, in one line, in
+        // restaurant words" (CLAUDE.md). The supporting number/comparison (`s.why`, below) stays
+        // reachable in the expanded detail -- this doesn't replace it, per the standing rule's
+        // explicit both/and.
+        s.verdict && h('div', { style: { fontSize: 11, fontWeight: 600, color: b.c, marginTop: 2 } }, s.verdict),
         h('div', { style: { display: 'flex', gap: 6, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' } },
           h('span', { style: { fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 4, color: b.c, background: b.c + '22' } }, b.l),
           h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: fs.c, background: fs.c + '18' } }, fs.l),
