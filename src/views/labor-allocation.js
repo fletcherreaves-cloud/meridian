@@ -16,6 +16,7 @@ import {
   DAYPARTS, allocationDistrict, allocationByStoreDaypart, overnightOpenness, overnightExcessByStore,
 } from '../engine/labor-standard.js';
 import { STORE_NAMES } from '../constants.js';
+import { ModalShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
@@ -151,39 +152,56 @@ export function LaborAllocationPanel({ ds, stores, settings, onClose, embedded }
   const openness = useMemo(() => overnightOpenness(rows), [rows]);
   const excessByStore = useMemo(() => overnightExcessByStore(storeLaborConfig, openness), [storeLaborConfig, openness]);
 
-  const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
-  const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1200, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
   const tabBtn = (id, label) => h('button', { key: id, onClick: () => setTab(id),
     style: { padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
       border: '1px solid ' + (tab === id ? 'var(--amber)' : 'var(--bdr)'),
       background: tab === id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
       color: tab === id ? 'var(--amber)' : 'var(--text2)' } }, label);
+  const tabBar = h('div', { style: { display: 'flex', gap: 2 } }, tabBtn('district', 'District'), tabBtn('store', 'By Store'), tabBtn('overnight', 'Overnight'));
 
+  const body = loading ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } }, 'Loading 90 days of hourly activity…')
+    : !rows.length ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
+        h('div', { style: { fontSize: 26, marginBottom: 10 } }, '⚖️'),
+        'No hourly activity data loaded for this window.')
+    : tab === 'district' ? h(DistrictTable, { district })
+    : tab === 'store' ? h('div', null,
+        h('div', { style: { display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' } },
+          ...DAYPARTS.map(dp => h('button', { key: dp, onClick: () => setDaypart(dp),
+            style: { padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
+              border: '1px solid ' + (daypart === dp ? 'var(--amber)' : 'var(--bdr)'),
+              background: daypart === dp ? 'rgba(245,188,0,.14)' : 'var(--surf2)',
+              color: daypart === dp ? 'var(--amber)' : 'var(--text2)' } }, dp))),
+        h(PerStoreTable, { byStore, daypart }))
+    : h(OvernightTable, { byStore, openness, excessByStore, storeLaborConfig });
+
+  const footerNote = 'Ratio of sums, 24-hour-slot completeness guard applied. Daypart boundaries are the VLH guide\'s own (Breakfast 5a–11a, Lunch 11a–2p, Afternoon 2p–5p, Dinner 5p–11p, Late Night 11p–5a). Full analysis: memory/analysis-labor-allocation-2026-08-18.md.';
+
+  // Dispatch30 (Workstream D follow-up): this branch was dead code before this pass —
+  // App.js's SchedulingHubPanel is the only caller and always passes embedded:true — but a
+  // dead code path hand-rolling the exact backdrop/card/close-button shape ModalShell already
+  // standardizes (magic zIndex 460 instead of the shared Z.modal tier included) is precisely
+  // the pattern dispatch #26/#30 flag. Kept reachable (a future standalone caller) but now
+  // built on the shared shell instead of a second hand-copy of it.
+  if (!embedded) {
+    return h(ModalShell, {
+      title: 'Labor Allocation', icon: '⚖️', maxWidth: 1200, onClose,
+      subtitle: `Where hours sit vs the VLH guide, by daypart — last ${DAYS_BACK} days, all stores`,
+      headerExtra: tabBar,
+      bodyStyle: { padding: '14px 16px' },
+      footer: h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, footerNote),
+    }, body);
+  }
+
+  const OUTER = { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' };
+  const CARD = { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
   return h('div', { style: OUTER },
-    !embedded && h('div', { style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
     h('div', { style: CARD },
       h('div', { style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
         h('span', { style: { fontSize: 18 } }, '⚖️'),
         h('div', { style: { flex: 1, minWidth: 180 } },
           h('div', { style: { fontSize: 14, fontWeight: 800 } }, 'Labor Allocation'),
           h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, `Where hours sit vs the VLH guide, by daypart — last ${DAYS_BACK} days, all stores`)),
-        h('div', { style: { display: 'flex', gap: 2 } }, tabBtn('district', 'District'), tabBtn('store', 'By Store'), tabBtn('overnight', 'Overnight')),
-        !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
-      h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
-        loading ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } }, 'Loading 90 days of hourly activity…')
-        : !rows.length ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
-            h('div', { style: { fontSize: 26, marginBottom: 10 } }, '⚖️'),
-            'No hourly activity data loaded for this window.')
-        : tab === 'district' ? h(DistrictTable, { district })
-        : tab === 'store' ? h('div', null,
-            h('div', { style: { display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' } },
-              ...DAYPARTS.map(dp => h('button', { key: dp, onClick: () => setDaypart(dp),
-                style: { padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                  border: '1px solid ' + (daypart === dp ? 'var(--amber)' : 'var(--bdr)'),
-                  background: daypart === dp ? 'rgba(245,188,0,.14)' : 'var(--surf2)',
-                  color: daypart === dp ? 'var(--amber)' : 'var(--text2)' } }, dp))),
-            h(PerStoreTable, { byStore, daypart }))
-        : h(OvernightTable, { byStore, openness, excessByStore, storeLaborConfig })),
-      h('div', { style: { padding: '6px 16px', borderTop: '.5px solid var(--bdr)', flexShrink: 0, fontSize: 9, color: 'var(--text3)' } },
-        'Ratio of sums, 24-hour-slot completeness guard applied. Daypart boundaries are the VLH guide\'s own (Breakfast 5a–11a, Lunch 11a–2p, Afternoon 2p–5p, Dinner 5p–11p, Late Night 11p–5a). Full analysis: memory/analysis-labor-allocation-2026-08-18.md.')));
+        tabBar),
+      h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } }, body),
+      h('div', { style: { padding: '6px 16px', borderTop: '.5px solid var(--bdr)', flexShrink: 0, fontSize: 9, color: 'var(--text3)' } }, footerNote)));
 }

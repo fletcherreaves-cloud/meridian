@@ -27,7 +27,7 @@ import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { worstStream } from '../engine/stream-freshness.js';
-import { reportRender as _traceRender, mark as _mark } from '../utils/click-trace.js';
+import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1539,7 +1539,8 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     const wsKey=dKey(new Date(ws.getFullYear(),ws.getMonth(),ws.getDate(),12));
     const weekDayKeys=weekDays.map(dKey);
     // computeEventFactors called ONCE here — not 189× inside the loop
-    const _eventFactors=settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{};
+    const _eventFactors=_mark('compute:weekProjections:eventFactors',()=>(
+      settings.useEventRegistry!==false?computeEventFactors(ds,userEvents||{}):{}));
     const cfg={...settings,_userEvents:userEvents||{},_eventFactors};
     const _allLocs=(stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
     // Precomputed cache lookup: {loc}_{dayKey} -> {forecast,ly} — see the useMemo's own
@@ -1547,10 +1548,12 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // live below (a once-daily cache would show a stale in-progress day's sales, exactly
     // what the cloud-actuals patch beneath this already exists to keep fresh).
     const _cache={};
-    for(const r of (ds.forecastWeekCache||[])){
-      if(!r||r.loc==null||!r.date)continue;
-      _cache[String(r.loc)+'_'+dKey(r.date)]={forecast:r.forecast,ly:r.ly};
-    }
+    _mark('compute:weekProjections:cacheIndex',()=>{
+      for(const r of (ds.forecastWeekCache||[])){
+        if(!r||r.loc==null||!r.date)continue;
+        _cache[String(r.loc)+'_'+dKey(r.date)]={forecast:r.forecast,ly:r.ly};
+      }
+    });
     // Cloud actuals supplement: the forecast engine reads actuals ONLY from manually
     // uploaded laborRows (laborIdx), so the current partial week — whose actuals arrive
     // in the auto-synced qsrActSummaryRows (DAR) — showed blank Actual/vs LY/Acc% all
@@ -1559,13 +1562,22 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // to the cloud row's REAL last-year sales when present (fixes vs-LY on filled days).
     const _nl=l=>String(parseInt(String(l).replace(/\D/g,''),10)||'');
     const _cloudAct={}, _cloudLY={};
-    for(const r of (ds.qsrActSummaryRows||[])){
-      if(!r||r.loc==null||!r.date)continue;
-      const k=_nl(r.loc)+'|'+dKey(r.date);
-      const s=(r.allNetSales||r.sales)||0;
-      if(s>0&&_cloudAct[k]==null)_cloudAct[k]=s;
-      if(r.lySales>0&&_cloudLY[k]==null)_cloudLY[k]=r.lySales;
-    }
+    _mark('compute:weekProjections:cloudActualsIndex',()=>{
+      for(const r of (ds.qsrActSummaryRows||[])){
+        if(!r||r.loc==null||!r.date)continue;
+        const k=_nl(r.loc)+'|'+dKey(r.date);
+        const s=(r.allNetSales||r.sales)||0;
+        if(s>0&&_cloudAct[k]==null)_cloudAct[k]=s;
+        if(r.lySales>0&&_cloudLY[k]==null)_cloudLY[k]=r.lySales;
+      }
+    });
+    // Dispatch #31: real click-trace data showed compute:weekProjections costing ~1.25s/call
+    // even though a same-session Supabase check found forecast_week_cache 100% complete for
+    // the current week — i.e. the cost isn't (always) live forecastDay fallback. The two marks
+    // below turn "cache coverage vs. everything-else" from a guess into a measured split, and
+    // the count() calls answer "how many of the 27 stores hit the cache THIS render" directly
+    // (mark()'s 1ms floor would silently drop that as a timing — a cache hit is a few object
+    // lookups, not real work — so it needs its own untimed counter).
     const storeProjs=_allLocs.map(loc=>{
       const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       // Cache hit only when EVERY day this week is present for this store — a partial
@@ -1573,6 +1585,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // way back to live for the whole store rather than mixing cached and live forecast
       // numbers within one week's row, which would make wkTotal an inconsistent blend.
       const _cacheHit=weekDayKeys.every(dk=>_cache[loc+'_'+dk]);
+      _count(_cacheHit?'weekProjections:storeCacheHit':'weekProjections:storeCacheMiss');
       const rowDays=weekDays.map(d=>{
         const dk=dKey(d);
         let fc,ly,act;
@@ -1583,9 +1596,9 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
           // (manual laborRows first, DAR fallback) — exported as fetchRecentActual() so a
           // cache-hit day (which skipped calling forecastDay at all) still gets a correct,
           // live-fresh actual instead of a second hand-copy of that lookup drifting from it.
-          act=fetchRecentActual(ds,loc,d);
+          act=_mark('compute:weekProjections:cacheReadDay',()=>fetchRecentActual(ds,loc,d));
         }else{
-          const r=forecastDay(loc,d,ds,cfg,null,t);
+          const r=_mark('compute:weekProjections:liveForecastDay',()=>forecastDay(loc,d,ds,cfg,null,t));
           fc=r.forecast||0; act=r.actual||0; ly=r.lyAdj||0;
         }
         if(act<=0){ const ck=_nl(loc)+'|'+dk; const ca=_cloudAct[ck]; if(ca>0){ act=ca; const cly=_cloudLY[ck]; if(cly>0)ly=cly; } }
