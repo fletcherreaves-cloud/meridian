@@ -606,6 +606,16 @@ without an accusation-trail component — a rule can raise a risk score without 
 persistent, named, evidence-grade employee record. The process-of-elimination/evidence-chain piece
 specifically is what should wait.
 
+**A fourth question was added to this same gate, 2026-08-19 — identity architecture.** Full
+research + a verified, concrete finding: `plan-security-pii-architecture-2026-08-19.md`. Short
+version — `audit_rows` and `analyzeRegisterAudit` store and key on the employee's **plaintext
+name today, with no pseudonymization, masking, or logged "reveal" step anywhere in the pipeline**
+(verified directly against `src/parsers/index.js:974` and `src/utils/register-audit.js:7-8,56`,
+not assumed). Two directions are laid out there (extend the existing role+subject gate with a
+logged reveal vs. a real pseudonymization/identity-vault architecture) — not decided, logged for
+the owner alongside points 1–3 above. Worth resolving before this section's mechanism is scoped,
+since it's exactly where an unpseudonymized, unaudited identity trail would do the most damage.
+
 ---
 
 ## 6. Rules Registry — proposed schema
