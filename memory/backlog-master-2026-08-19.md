@@ -798,6 +798,15 @@ first below.
 
 ---
 
+## Cross-file duplicates — resolve to one canonical entry before triaging
+
+**Header restored 2026-08-19.** PR #437 (the §14 coverage-sweep) deleted this section's header
+line while inserting §14 above it, leaving the list below headerless and orphaned under §14 — as
+if the 9 items below were new coverage-sweep findings rather than the pre-existing cross-file
+duplicate list they actually are. Content was never lost (verified via `git show c62a31b` — the
+diff shows exactly one line deleted, this header, alongside 239 insertions), only its header.
+Restored in place, no content changed.
+
 The sweep found the same ask filed independently in multiple source files. Listed here so a PM
 pass consolidates rather than tracks both copies:
 
