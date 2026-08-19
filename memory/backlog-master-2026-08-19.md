@@ -511,3 +511,25 @@ off `main` after pass 1 has landed.
 build on — that is the entire point of a second pass, and pass 1 has no special standing. Lines
 carrying `(re-verified pass 1)` were checked and found genuinely open. Lines with no pass-1
 annotation were **not** individually settled and should not be read as confirmed either way.
+
+**Targeted `memory/` coverage sweep (2026-08-19, PM, after both passes) — result: no new items
+found, closing the recurring gap both passes hit.** Both passes independently discovered real
+content in memory files the original 20-file sweep never covered (`pm-handoff-2026-08-15.md`,
+`qsrsoft-report-catalog.md`, `dispatch-20.md` — all indexed in `MEMORY.md`, all on `main`). Rather
+than run a third full re-verification pass, this was a bounded, mechanical check: every memory
+file matching the same "handoff/session/plan"-shaped profile as those three, that was **not** in
+the original sweep's file list, checked directly for open content. Five files matched the profile
+(`handoff-data-refresh-sprint.md`, `handoff-smarttargets-graded-accuracy.md`,
+`plan-data-integrity-sweep.md`, `session-2026-08-07-perf-and-rls.md`,
+`session-handoff-2026-07-28.md`) — all five checked individually, not sampled. **Every open item
+found in them is either already resolved (confirmed via `git log`/file existence: PR #93 merged,
+`golden-dataset.test.js` exists, `qsr_daily_activity_rollup` exists, the "NOT STARTED" Smart
+Targets multi-projector shipped in 3 layers per `vision-and-roadmap.md`) or already captured
+elsewhere in this file** (service-role-key rotation traces into `project-rls-hardening-plan.md`,
+already covered by §13's "Security sweep" pointer; the UI/UX items are already in §2).
+`plan-data-integrity-sweep.md` turned out not to be an open-item file at all — a completed,
+delivered sweep report with documented scope decisions, not TODOs. **This does not prove no other
+file was missed** — it closes the specific hypothesis both passes raised (files in this
+handoff/session/plan shape), not every possible gap. If a future pass finds another item claiming
+"not previously written down," the standing instruction (grep `memory/` before trusting that
+claim) still applies.
