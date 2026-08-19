@@ -1,15 +1,18 @@
 name: QSRSoft Register Audit Pull
 
-# NOT scheduled yet (workflow_dispatch only, deliberately no `cron:`) — this pull's
-# fetchRegisterAuditDay() throws until the report's real API endpoint is captured (see
-# scripts/qsrsoft-register-audit-pull.mjs's own header comment, dispatch #33). Running this
-# on a schedule before then would just fail loudly every day for nothing. Once the endpoint
-# is confirmed and filled in, add a `schedule:` block matching the DAR/eBOS cadence (10:00
-# UTC) AND add "QSRSoft Register Audit Pull" to sync-failure-watch.yml's workflows: list in
-# the SAME PR — src/__tests__/sync-failure-watch.test.js only requires a scheduled workflow
-# to be watched, so it's correctly silent about this one until that happens.
+# Dispatch #35: endpoint confirmed (dispatch #34's live capture) and implemented — cron enabled
+# per the dispatch's own checklist item. NOT live-verified from the engineer session that wrote
+# this (no QSRSoft credentials/network access there) — mapRow()'s field derivations are unit-
+# tested against realistic fixture data (src/__tests__/register-audit-pull.test.js) but not
+# against a real response. Before trusting the first scheduled run's output for anything
+# personnel-sensitive, run this once via workflow_dispatch and spot-check a handful of resulting
+# audit_rows entries against dispatch #34's own captured window (2026-08-12 → 2026-08-18, store
+# 3708 and others) — see memory/dispatch35-register-audit-implementation.md.
 
 on:
+  schedule:
+    # 10:00 UTC — matches the DAR/eBOS cadence (5:00 AM CDT, previous business day fully closed).
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       days_back:
@@ -49,6 +52,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
       - name: Pull QSRSoft Register Audit data
         run: node scripts/qsrsoft-register-audit-pull.mjs
         env:
@@ -61,3 +67,12 @@ jobs:
           QSRSOFT_AUDIT_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
           QSRSOFT_AUDIT_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
           QSRSOFT_AUDIT_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: register-audit-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
