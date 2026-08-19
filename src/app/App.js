@@ -206,6 +206,7 @@ const PaceToTargetPanel = lazyPanel(() => import('../views/pace-to-target.js').t
 const YearlyProjectionsPanel = lazyPanel(() => import('../views/yearly-projections.js').then(m => ({ default: m.YearlyProjectionsPanel })));
 import { PromoRoiPanel } from '../views/promo-roi.js';
 const VisitReadinessPanel = lazyPanel(() => import('../views/visit-readiness.js').then(m => ({ default: m.VisitReadinessPanel })));
+const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.js').then(m => ({ default: m.LaborAllocationPanel })));
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
@@ -346,6 +347,7 @@ const SCHED_TABS = [
   { id: 'scheduling', label: 'Scheduling',     icon: '📋', perm: 'analytics.store' },
   { id: 'summary',   label: 'Schedule Summary', icon: '🗓', perm: 'analytics.store' },
   { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
+  { id: 'allocation', label: 'Labor Allocation', icon: '⚖️', perm: 'analytics.store' },
   { id: 'skills',    label: 'Skills',          icon: '🎓', perm: 'analytics.store' },
 ];
 function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose }) {
@@ -358,6 +360,7 @@ function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose })
     tab === 'scheduling' ? h(SchedulingPanel, common) :
     tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
+    tab === 'allocation' ? h(LaborAllocationPanel, common) :
                           h(SkillsMatrixPanel, common);
   // paddingBottom mirrors paddingTop (#192 P1) — without it the sheet's flex:1 fills all the way
   // to the viewport's physical bottom edge, so a horizontally-scrolling table inside gets a
@@ -2662,6 +2665,7 @@ function App() {
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),setShowSchedHub(true));
+        if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),setShowSchedHub(true));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),setShowSchedHub(true));
         if(modal==='sage')              {setShowSage(true);setSageMin(false);}
         if(modal==='feature-requests')  setShowFeatureRequests(true);
