@@ -41,7 +41,14 @@ seconds, and the theory that survives one costs a PR.
   `forecastDay`/`computeEventFactors` need zero changes. Carries a re-measure reminder:
   Workstream A only removed the `forecastDay` inner-loop cost for cache-hit stores, not
   `computeEventFactors`'s own O(events) indexing pass, which still runs every render regardless
-  of cache status.
+  of cache status. **DELIVERED** (PR #420, v5.066) — full design writeup, including the mid-flight
+  RLS finding (a new permissive scope-aware policy would have OR'd past tenant isolation; fixed by
+  replacing `org_events`' one existing RESTRICTIVE per-loc policy instead) and both open design
+  questions' answers (`org_event_exceptions` table for per-store overrides;
+  `collapseScopedEvents()` for one schema holding both rule-based and manual events), in
+  [dispatch24-event-scope-design.md](dispatch24-event-scope-design.md). **Owner action required:**
+  run `supabase/schema-org-events-scope.sql` — until then every write path self-heals to the
+  pre-existing per-store behavior.
 - **⭐⭐⭐⭐ [Dispatch #23 — precompute event-factor gap](dispatch-23.md)** — 2026-08-19,
   **§1 DELIVERED** (PR #417, v5.065; full trace, verified real-data delta, and an honest scope
   correction — most real stores' assigned models early-return before the event-adjustment tail,
