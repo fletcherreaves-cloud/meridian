@@ -131,10 +131,10 @@ describe('every showX has exactly one owner', () => {
     // passing the whole time. Anchor on the actual render call sites so "defined but unused"
     // fails loudly instead of quietly reintroducing the original bug.
     const mustGate = [
-      /view===['"]command['"]\s*&&\s*!anyModalOpen\s*&&\s*h\(AtAGlance/,
-      /view===['"]store['"]&&selStore&&!anyModalOpen&&h\(StoreDash/,
-      /view===['"]patch['"]&&!anyModalOpen&&h\(OrgView/,
-      /view===['"]org['"]&&!anyModalOpen&&h\(OrgView/,
+      /view===['"]command['"]\s*&&\s*!anyModalOpen\s*&&\s*!routePanel\s*&&\s*h\(AtAGlance/,
+      /view===['"]store['"]&&selStore&&!anyModalOpen&&!routePanel&&h\(StoreDash/,
+      /view===['"]patch['"]&&!anyModalOpen&&!routePanel&&h\(OrgView/,
+      /view===['"]org['"]&&!anyModalOpen&&!routePanel&&h\(OrgView/,
     ];
     const missing = mustGate.filter(re => !re.test(APP)).map(re => re.source);
     expect(missing, `render call sites not gated on !anyModalOpen: ${missing.join(', ')}`).toEqual([]);
@@ -154,6 +154,35 @@ describe('every showX has exactly one owner', () => {
     const known = new Set([...ORPHANS.map(o => o.state), ...VESTIGIAL_STATE]);
     const broken = [...declared].filter(s => !known.has(s) && !(opened.has(s) && rendered.has(s)));
     expect(broken).toEqual([]);
+  });
+});
+
+describe('route panels (Dispatch27 Workstream E)', () => {
+  // route:true panels are URL-synced via src/app/routing.js and render as a full-page view
+  // (App.js's routePanel state) instead of a showX-gated modal — see panel-registry.js's field
+  // comment and memory/dispatch-27.md for the "would I ever want to send someone a link to
+  // this?" rule this implements.
+  const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
+
+  it('is exactly the four panels the plan flagged as misclassified destinations', () => {
+    // Ratchet, not a ceiling: adding a fifth route panel is a real routing change (a new
+    // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
+    // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal.
+    expect(ROUTE_IDS.slice().sort()).toEqual(['dicompare', 'fcst-accuracy', 'proj', 'report']);
+  });
+
+  it('every route panel is opened via goRoute(...), not a showX(true) call', () => {
+    for (const id of ROUTE_IDS) {
+      const re = new RegExp(`goRoute\\('${id}'\\)`);
+      expect(re.test(APP), `${id}: no goRoute('${id}') call site found in App.js`).toBe(true);
+    }
+  });
+
+  it('every route panel renders under a routePanel===id gate, not a showX one', () => {
+    for (const id of ROUTE_IDS) {
+      const re = new RegExp(`routePanel===['"]${id}['"]`);
+      expect(re.test(APP), `${id}: no routePanel==='${id}' render gate found in App.js`).toBe(true);
+    }
   });
 });
 
