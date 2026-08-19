@@ -30,8 +30,20 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐ [Dispatch #25 — Workstream C: pipeline contract](dispatch-25.md)** — **NEWEST
-  dispatch, 2026-08-19.** Corrects the plan's own motivation before scoping the work: of the three
+- **⭐⭐⭐⭐⭐⭐⭐ [Dispatch #26 — Workstream D: adopt the design system](dispatch-26.md)** — **NEWEST
+  dispatch, 2026-08-19.** Re-measured `PanelControls.js` adoption fresh against `main`: unchanged
+  since the 2026-08-17 plan despite three workstreams' worth of merged PRs —
+  `DateRangeControl` 0/55, `LocationSelector`/`ActionMenus` 1/55 (`eom-dashboard.js`), `ModalShell`
+  9/55, `dateRange`-prop panels 8/55. Flags that the plan's bypass-volume counts (inline styles,
+  hardcoded px, etc.) do **not** re-measure to the exact same digits under any pattern tried —
+  instructs the engineer to re-measure fresh with the ratchet's own exact pattern before seeding
+  any `CEILING`, per the precedent already written into this repo's own
+  `ratchet-raw-metric-rows.test.js` header. Carries the plan's landing sequence (compliant path
+  cheapest first, two hand conversions before any sweep, ratchet the bypass not the adoption,
+  convert opportunistically) and a reminder that the broad panel-shell conversion specifically
+  waits on Workstream E's routing-vs-modals decision — the ratchet/contract-doc mechanics don't.
+- **⭐⭐⭐⭐⭐⭐ [Dispatch #25 — Workstream C: pipeline contract](dispatch-25.md)** — 2026-08-19.
+  Corrects the plan's own motivation before scoping the work: of the three
   cited "silent success" incidents, #263 (pmix zero-rows) is already fixed (v5.047,
   `qsrsoft-pmix-pull.mjs`) and #360 (`sales_ledger_daily`) was a self-corrected misdiagnosis, not
   a real gap — only the *generalization* is open. Measured directly: **2 of ~19** pull/write
