@@ -40,7 +40,11 @@ seconds, and the theory that survives one costs a PR.
   copies of Thanksgiving"); `RETAIL_EVENT_RULES`/`expandRetailEvents` (`retail-events.js`) already
   prove the recurrence half works but freeze their output the same way. Fix is upstream of
   `orgEventsToDayMap` (`events-import.js:146`) — `forecastDay`/`computeEventFactors` need zero
-  changes.
+  changes. **§1 DELIVERED** (PR #417, v5.065) — full trace, verified real-data delta, and an
+  honest scope correction (most real stores' assigned models early-return before the
+  event-adjustment tail, so today's district-wide impact is smaller than this dispatch implied;
+  the fix is still correct and load-bearing for any `di`/`dow`/engineered-model store) in
+  [dispatch23-precompute-event-factors.md](dispatch23-precompute-event-factors.md).
 - **⭐⭐⭐ [Dispatch #22 — Workstream A: forecast off the render path](dispatch-22.md)** —
   2026-08-18, **DELIVERED** (PR #415, v5.064). First workstream dispatch since [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md)'s
   sequencing gate cleared (Phase 0 ratchets + the open PR queue all confirmed merged on `main`).
