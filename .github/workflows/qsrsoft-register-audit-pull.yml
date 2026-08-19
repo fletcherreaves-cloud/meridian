@@ -1,0 +1,63 @@
+name: QSRSoft Register Audit Pull
+
+# NOT scheduled yet (workflow_dispatch only, deliberately no `cron:`) — this pull's
+# fetchRegisterAuditDay() throws until the report's real API endpoint is captured (see
+# scripts/qsrsoft-register-audit-pull.mjs's own header comment, dispatch #33). Running this
+# on a schedule before then would just fail loudly every day for nothing. Once the endpoint
+# is confirmed and filled in, add a `schedule:` block matching the DAR/eBOS cadence (10:00
+# UTC) AND add "QSRSoft Register Audit Pull" to sync-failure-watch.yml's workflows: list in
+# the SAME PR — src/__tests__/sync-failure-watch.test.js only requires a scheduled workflow
+# to be watched, so it's correctly silent about this one until that happens.
+
+on:
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 90)'
+        required: false
+        default: '90'
+      days_recent:
+        description: 'Rolling re-pull window in days (default: 4)'
+        required: false
+        default: '4'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date to pull an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull QSRSoft Register Audit data
+        run: node scripts/qsrsoft-register-audit-pull.mjs
+        env:
+          VITE_SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:   ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:            ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:            ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_AUDIT_DAYS_BACK:     ${{ github.event.inputs.days_back   || '90' }}
+          QSRSOFT_AUDIT_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '4'  }}
+          QSRSOFT_AUDIT_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
+          QSRSOFT_AUDIT_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
+          QSRSOFT_AUDIT_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}
