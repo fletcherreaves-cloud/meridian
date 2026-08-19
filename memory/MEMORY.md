@@ -30,8 +30,19 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐ [Dispatch #24 — Workstream B: event scope + recurrence](dispatch-24.md)** — **NEWEST
-  dispatch, 2026-08-19.** Standalone Workstream B brief, superseding dispatch-23's §2 now that §1
+- **⭐⭐⭐⭐⭐⭐ [Dispatch #25 — Workstream C: pipeline contract](dispatch-25.md)** — **NEWEST
+  dispatch, 2026-08-19.** Corrects the plan's own motivation before scoping the work: of the three
+  cited "silent success" incidents, #263 (pmix zero-rows) is already fixed (v5.047,
+  `qsrsoft-pmix-pull.mjs`) and #360 (`sales_ledger_daily`) was a self-corrected misdiagnosis, not
+  a real gap — only the *generalization* is open. Measured directly: **2 of ~19** pull/write
+  scripts have the zero-rows-exits-nonzero + per-partition-count discipline; the other 17 are
+  named explicitly. Points at `scripts/_retry.mjs` (6 adopters) as the existing shared-module
+  convention to follow, and confirms C2 (idempotent partition replace) is genuinely greenfield —
+  522 is already a defensive **read**-side failure mode in 5 scripts but no script has
+  delete-then-insert-per-partition on the **write** side. Carries explicit scope guidance: build
+  the module + convert a bounded slice + ratchet-track the rest, not a 19-script sweep.
+- **⭐⭐⭐⭐⭐ [Dispatch #24 — Workstream B: event scope + recurrence](dispatch-24.md)** — 2026-08-19,
+  **DELIVERED** (PR #420, v5.066, migration run and RLS-verified). Standalone Workstream B brief, superseding dispatch-23's §2 now that §1
   is delivered and both of B's prerequisites (Workstream A's render-path fix, §1's precompute
   event-factor fix) are on `main`. `org_events`' `unique(loc, date_start, label)` PK has no scope
   concept, so `applyEventToStores` (`calendar.js:213`) writes N duplicate rows for an N-store
@@ -46,9 +57,11 @@ seconds, and the theory that survives one costs a PR.
   replacing `org_events`' one existing RESTRICTIVE per-loc policy instead) and both open design
   questions' answers (`org_event_exceptions` table for per-store overrides;
   `collapseScopedEvents()` for one schema holding both rule-based and manual events), in
-  [dispatch24-event-scope-design.md](dispatch24-event-scope-design.md). **Owner action required:**
-  run `supabase/schema-org-events-scope.sql` — until then every write path self-heals to the
-  pre-existing per-store behavior.
+  [dispatch24-event-scope-design.md](dispatch24-event-scope-design.md). **Migration run and
+  verified** (2026-08-19) — `supabase/schema-org-events-scope.sql` applied against production;
+  `select policyname, permissive from pg_policies` confirmed `org_events_loc_scope` and
+  `org_event_exceptions_loc_scope` both came back `RESTRICTIVE` (not a new permissive policy),
+  the exact thing the RLS finding above was protecting against.
 - **⭐⭐⭐⭐ [Dispatch #23 — precompute event-factor gap](dispatch-23.md)** — 2026-08-19,
   **§1 DELIVERED** (PR #417, v5.065; full trace, verified real-data delta, and an honest scope
   correction — most real stores' assigned models early-return before the event-adjustment tail,
