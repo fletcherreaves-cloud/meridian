@@ -31,7 +31,19 @@ seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #31 — real click trace corrects dispatch #27, finds a bigger
-  problem](dispatch-31.md)** — **NEWEST, 2026-08-19.** Real Mac Mini click trace on v5.069 —
+  problem](dispatch-31.md)** — **NEWEST, 2026-08-19.** **Instrumentation shipped same day**
+  (PR #431, v5.070) — queried `forecast_week_cache` live and found **100% coverage, all 27
+  stores, for the entire current business week**, ruling out incomplete cache coverage as the
+  cause of the unexplained 66%. New `count()` export in `click-trace.js` (an untimed tally —
+  `mark()`'s 1ms floor would silently drop a cache-hit count) reports
+  `weekProjections:storeCacheHit`/`storeCacheMiss` per render; new `_mark()` spans wrap the
+  three previously-uninstrumented setup blocks (`eventFactors`/`cacheIndex`/`cloudActualsIndex`)
+  and both per-day branches (`cacheReadDay`/`liveForecastDay`) so the next real click-trace
+  session sees exactly which bucket the remaining cost sits in. Purely additive, no computed
+  value changed. Full trace: [dispatch31-weekprojections-instrumentation.md](dispatch31-weekprojections-instrumentation.md).
+  Still needs a real-browser `?clicktrace=1` run to actually populate these marks — the sandbox's
+  in-browser `fetch` to Supabase fails even though server-side reads work (same limitation
+  dispatch #27/#29 already hit). Real Mac Mini click trace on v5.069 —
   the exact real-data verification both dispatch #27 and #29 flagged as unmeasurable from the
   sandbox. **Correction**: dispatch #27's "the 4.3s modal-close figure almost certainly dropped"
   is refuted — modal-close (`✕`) is **32 clicks, avg ~1453ms, total 46,497ms, 52% of all
@@ -46,6 +58,17 @@ seconds, and the theory that survives one costs a PR.
   before assuming either cause. `AtAGlance` render+commit is 92% of all React work measured in
   the session (65.7 of 71.7s).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #30 — Workstream D follow-up](dispatch-30.md)** — 2026-08-19.
+  **DELIVERED same session** (v5.071) — both hand conversions done: `labor-allocation.js`
+  (the "awkward" one — its dead `!embedded` standalone-modal branch, hand-rolled backdrop and
+  all, converted to `ModalShell`) and `report-subscriptions.js` (the "simple" one — converted to
+  `ModalShell` **and** `LocationSelector`, with a small `scope`↔`{level,id}` adapter so the
+  persisted string shape never changes). New ratchet **R7**
+  (`ratchet-modal-backdrop-bypass.test.js`) seeded at a freshly-measured **78** (independently
+  reproduced, not copied from any prior estimate) — bidirectional, catches both a new hand-rolled
+  backdrop and a stale-high ceiling after a future conversion. The panel contract deliverable is
+  written: [panel-contract.md](panel-contract.md) — shell (`ModalShell` for modals,
+  `RoutePanelShell` for `route:true` panels, nothing else rolls its own), grounded in the two real
+  conversions rather than speculated. Full trace: [dispatch30-workstream-d-followup.md](dispatch30-workstream-d-followup.md).
   D was dispatched (#26) but never started — checked, no PR touches
   `PanelControls.js` adoption and no bypass-volume ratchet exists. The one thing that changed:
   D's blocker (Workstream E's routing decision) **cleared** — E shipped in PR #426, but not into
