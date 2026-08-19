@@ -300,6 +300,11 @@ seconds, and the theory that survives one costs a PR.
   lists exactly what is stale in the in-app changelog, CLAUDE.md and the panel catalog
 
 ## 🗂 Owner "Notes" working queues (most recent = most relevant)
+- [Notes 67 queue](notes-67-queue.md) — IA/navigation reorganization (URL-view conversion, section
+  regrouping into Reports/Inventory & Food Cost/Forecasting & Labor Projections/Analysis/HR),
+  right-side-modal exception list, two concrete bugs (Food Cost date-selector defaults to May
+  2026, DT History 15+ sec load), and the security-build directive that spawned
+  [plan-security-loss-prevention.md](plan-security-loss-prevention.md).
 - **⭐ [Panel decisions 2026-08-10](decisions-panel-inventory-2026-08-10.md)** — owner's keep/merge/retire
   call on all 97 panels; **the input the UI/UX redesign scopes from.** Carries the standing rule that
   RETIRE means harvest-then-remove, never delete-on-sight.
@@ -455,6 +460,13 @@ seconds, and the theory that survives one costs a PR.
 - [Panel catalog](panel-catalog.md) — every panel + status.
 
 ## 🔒 Infra / security / deploy
+- [Security & Loss Prevention build](plan-security-loss-prevention.md) — **not RLS/infra security,
+  fraud/theft detection.** Design spec synthesized from three AI-engine research passes
+  (Gemini/Grok/ChatGPT), architecture-first (baselines, exposure normalization, opportunity-
+  adjusted risk, exoneration analytics, Rules Registry), connected to existing prior art
+  ([data-acquisition-shopping-list.md](data-acquisition-shopping-list.md)'s attribution ladder,
+  [attribution-validity-register-login.md](attribution-validity-register-login.md)'s
+  contested-attribution design, SAGE's disclosure-gating policy). Not yet scoped into dispatches.
 - [RLS hardening plan](project-rls-hardening-plan.md) — require-auth policies (Phase 1 done).
 - [Project audit 2026-07-27](project-audit-2026-07-27.md) · [Supabase priority](project-supabase-priority.md)
   · [Data model](project-data-model.md) · [Sync rework](project-sync-rework.md) · [Hosting](project-hosting.md)

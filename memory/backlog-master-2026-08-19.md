@@ -228,6 +228,22 @@ for full detail on each.
   diagnostic screen.
 - [ ] Naming: Pace tab (collides with McDonald's internal "PACE" term), Help rename, Troubleshooting
   mode (End User/Dev).
+- [ ] **IA/navigation reorganization — full detail in `memory/notes-67-queue.md` §1, 2026-08-19.**
+  **Same topic as this section's "Menu restructure (owner's proposed IA) — parked" item three
+  lines above — this is that planning session's actual content, not a separate ask.** New/changed
+  top-level groupings (Reports, Inventory and Food Cost, Forecasting and Labor Projections,
+  Analysis, HR — with Visit Readiness/Graded Visits explicitly flagged as misplaced under
+  People/HR today); URL-view conversion for most standalone panels, with an explicit exception
+  list that stays right-side-modal (SAGE, Knowledge Base, About, Metric Lineage, Feature Requests,
+  Local News) — all of which need a minimize-and-close option that doesn't universally exist
+  today; District Overview needs a back button; Lifelenz Bridge rename to "Recommended WFM
+  Forecast Adjustments"; make all data tables filterable/sortable wherever possible; a design
+  question on what (if anything) should migrate to SAGE vs. stay standalone. **None of this is
+  scoped against current code yet** — needs a real panel/routing inventory before it becomes a
+  dispatch.
+- [ ] **New capability, from `notes-67-queue.md` §3:** side-by-side LifeLenz-forecast-vs-
+  Meridian-forecast comparison view. Worth checking against this backlog's existing Lifelenz Gap /
+  DI Compare items first — may be partially covered already rather than fully new.
 
 ## 3. Data Pipeline / Sourcing Correctness
 
@@ -293,6 +309,20 @@ for full detail on each.
 - [ ] EOM Supervisor Summary: Op Supplies must pull actuals for the selected period.
 - [ ] FOB Analysis panel capped at May 2026 — diagnosed (silent fallback to stale manual rows on
   cloud-read failure), **needs live verification it's actually resolved**.
+- [ ] **New, from `notes-67-queue.md` §2 (2026-08-19):** Food Cost (Original) panel's date
+  selector defaults to May 2026 even though all data displays correctly otherwise — a stale
+  hardcoded default, not a data-availability issue by the owner's own description. **Possibly the
+  same underlying symptom as the FOB Analysis "capped at May 2026" item directly above** — check
+  whether Food Cost (Original) and FOB Analysis share a date-selector component before treating as
+  two separate bugs. If distinct panels with genuinely separate causes, this one sounds like a
+  quick grep for a hardcoded `'2026-05'`-shaped literal, not the deeper cloud-read-fallback issue
+  diagnosed for FOB Analysis.
+- [ ] **New, from `notes-67-queue.md` §2:** Speed of Service panel — DT History takes 15+ seconds
+  to load. Flagged as a performance bug, not a design ask; per this repo's standing performance-
+  budget rule, needs a real before/after measurement if scoped, not just "make it faster."
+- [ ] **New, from `notes-67-queue.md` §2:** Forecast Audit panel appears greyed out — owner asks
+  why. Reads as a gating bug (permissions? a data-readiness check firing false?) rather than a
+  design ask — investigate before scoping as a build item.
 - [ ] ❓ Food Cost Panel (`FOBAnalysisPanel`): `qsr_fob` returns empty under RLS for the
   anon/authenticated role. Root cause understood but unconfirmed — **needs a live `pg_policies`
   diff and explicit owner go-ahead before touching production RLS.**
@@ -419,6 +449,15 @@ for full detail on each.
 - [ ] Personality tuning (system-prompt only).
 - [ ] ❓ Outbound web access — needs a cost/abuse-boundary decision first.
 - [ ] Conversation persistence / self-learning loop — still on CLAUDE.md's own candidate list.
+- [ ] **Corroboration, 2026-08-19 — SAGE self-report converges on the tool-breadth item above.**
+  Asked directly what would expand its usefulness, SAGE named the same gap as its top pick,
+  independently: turning the currently-static baked-in summary domains (food cost, OEPE, SMG
+  VOICE, Controls) into live queryable tools, the same shape as the existing
+  `query_daily_activity`/`query_lifelenz_labor`/`query_forecast_snapshots`/`query_promo_roi` tools.
+  Two additional, more specific asks not previously in this backlog: **document/forms access**
+  (the eBOS form library or Resource Library exposed as a queryable source — currently none of it
+  reaches SAGE), and **deeper history/longer lookback windows** for trend and YoY work (SAGE's
+  tools are described as fixed ~60-day summaries today).
 
 ## 10. Signals / Visit Readiness / Attention
 
@@ -795,6 +834,50 @@ first below.
   records egress as resolved (2026-07-31), so this is unblocked and just needs to actually be run:
   does FL normalize over a full month/YTD range now that `fobByRange` has the `prodSalesAmt<=0`
   guard shipped in the same round of fixes? Not referenced anywhere in this backlog.
+
+---
+
+## 15. Security & Loss Prevention Build — 2026-08-19
+
+**Full spec: `memory/plan-security-loss-prevention.md`.** Owner went "all in" and ran the same
+research question through three AI engines (Gemini, Grok, ChatGPT) plus his own follow-up rounds;
+the plan file synthesizes all three, deduplicated by mechanism, against an architecture-first
+design (baselines, exposure normalization, opportunity-adjusted risk, exoneration analytics,
+sequence detection, a Rules Registry schema). **Not yet scoped into engineer dispatches.**
+
+**Not greenfield — connects to substantial existing prior art**, discovered while writing the
+plan (grep `memory/` before assuming anything is new, same discipline as the two backlog review
+passes): `memory/data-acquisition-shopping-list.md`'s attribution ladder already maps the data
+(Register Audit — parser/table/scoring-engine all built, only auto-pull missing; an owner-approved
+Any Transaction Tier A/B/C design pending one probe capture), `memory/attribution-validity-
+register-login.md` already has an owner-vetted attribution-confidence design (clean/contested/
+unknown) for the "which employee actually did this" problem, and `memory/project-sage-knowledge-
+grounding.md`'s disclosure-gating policy (DO-and-above, mandatory handling notice) already answers
+most of the access-control question this build raises. Real QSRSoft exports captured 2026-08-19
+(Any Transaction, Suspicious Activity, Security Events) confirmed `Security Events` — not
+previously documented — is the raw per-event log to build against, and settled that
+`suspicious_activity` is QSRSoft's own pre-aggregated judgment, not raw fact.
+
+- [ ] **Phase 0a (the real first task, small and already scoped):** dispatch the Register Audit
+  auto-pull (parser/table/scoring engine already exist — `parseRegisterAudit`, `audit_rows`,
+  `analyzeRegisterAudit`; only the QSRSoft pull itself is missing, currently manual-Excel-only).
+  Run one more Any Transaction capture filtered to an exception type only, to settle the
+  server-side-filtering question that decides whether Tier A (district-wide daily standing pull)
+  is viable.
+- [ ] **Settled finding, do not re-derive:** deposit lapping is structurally invisible in QSRSoft
+  (a deposit counts as accounted the moment it's entered) — do not scope a detection rule for it
+  against this org's current data; would silently never fire.
+- [ ] **Gating decision needed from the owner before any Phase 4 (employee rule-out/evidence-chain)
+  work:** data retention for a named-employee accusation trail, and whether it should be built at
+  all before `project-rls-hardening-plan.md`'s fix lands — this backlog's own §13 already tracks
+  92-107 tables on wide-open `using(true)` RLS policies, which is not a bar this kind of data
+  should sit behind in the meantime. See plan file §5 for the full framing.
+- [ ] Phase 1 MVP (once Phase 0a lands): cash-drawer variance + peer ranking, TvA inventory
+  variance (this slice already runs on data this org has — extends existing FOB math), explanation
+  surfacing built in from day one rather than retrofitted.
+- [ ] ❓ Middle-tier/API choice for this build — default recommendation is reusing the existing
+  Supabase Edge Function pattern (matches `sage-chat`) rather than introducing a new framework, but
+  this is an architecture call for the owner, not decided here.
 
 ---
 
