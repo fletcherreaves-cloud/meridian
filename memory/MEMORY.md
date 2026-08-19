@@ -30,6 +30,14 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #35 — Register Audit: implement against the confirmed endpoint](dispatch-35.md)** —
+  2026-08-19. **NEWEST, ready to dispatch to an engineer now.** The implementation step on top of
+  dispatch #34's capture below: restructure the pull shape (one call covers all 27 stores × a date
+  range, not per-store loop), fill in `mapRow()` field-by-field against `parseRegisterAudit`'s own
+  derivation logic for the still-uncertain columns, handle the `nsn`→`loc` zero-pad, verify against
+  real rows before trusting the risk-scoring output, then finish the standing "new automated pull"
+  checklist (cron schedule, sync-failure-watch entry, backfill). This is the last piece of Phase 0a
+  — Phase 1 (cash-drawer variance + peer ranking) starts once this lands.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #34 — Phase 0a live-capture findings](dispatch-34-phase0a-findings.md)** —
   2026-08-19. **NEWEST.** Follow-up to dispatch #33 (below): the owner captured real DevTools
   sessions settling both of #33's open pieces. (1) Register Audit's real endpoint + field names are
