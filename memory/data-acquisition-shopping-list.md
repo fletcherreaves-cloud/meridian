@@ -48,7 +48,7 @@ and already score it.
 | Supabase table | ✅ exists | `audit_rows`, PK `(loc, date, emp)` — `src/lib/supabase.js:832` `saveAuditRows` |
 | Loader | ✅ built | `loadAuditRows`, paged (measured 23 pages 2026-08-07 — real data is in there) |
 | Risk-scoring engine | ✅ built | `src/utils/register-audit.js` `analyzeRegisterAudit` — per-employee aggregation + flags |
-| **Auto pull** | ❌ **missing** | manual Excel upload only; `auditRows` is in `MANUAL_FED_SOURCES` |
+| **Auto pull** | ⚠️ **endpoint confirmed 2026-08-19, implementation not yet complete** | scaffold at `scripts/qsrsoft-register-audit-pull.mjs` (dispatch #33); real endpoint + field-name capture in `memory/dispatch-34-phase0a-findings.md` Part 1 — do not re-probe, but `mapRow()`'s translation still needs finishing against `parseRegisterAudit`'s derivation logic |
 
 **Fields it already carries, per employee per store per business date:** drawer sales, drawer
 GC, average check, drawer opens, cash over/short $ and %, manual refund/over-ring $, refund
@@ -81,7 +81,18 @@ a second entry path** — do not assume the API response matches the Excel expor
 Owner: *"there's a report titled in QSRSoft called any transaction."* Currently the UI makes you
 pick a date **and a time interval within the day**, which he reasonably reads as a volume guard.
 
-Nothing is built for this. It needs a probe before anything is designed.
+**SETTLED 2026-08-19 — Tier A is dead, Tier B is confirmed viable. Do not re-run this probe.**
+Full capture + reasoning: `memory/dispatch-34-phase0a-findings.md` Part 2. Two corroborating
+captures: (1) a live `any_transaction` call took `{store, date, register, time_slice}` with no
+exception-type parameter anywhere, and (2) the report's own `trans_filter_options` endpoint —
+what populates the UI's filter dropdowns — offers only register/manager/cashier, confirming there
+is no transaction-type filter to find, not just that one sample didn't use one. This is Outcome 3
+below, narrower than scoped (also single-register, single-time-slice, not just single-date).
+**Register Audit (§A) carries all standing employee-level attribution, as this section's own
+fallback plan said it would.** A second endpoint, `transaction_detail`, was also captured and
+confirms Tier B (on-demand, full line-item + tender + operator detail per transaction) works —
+build it when an actual investigation needs it, not before. The camera/video-linkage question
+below is still open (untested on an actual exception row).
 
 ### On the volume question — his instinct is right, but for a different reason
 

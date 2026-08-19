@@ -67,18 +67,21 @@ store per day. This is not a future data source to go find; it's sitting in a sp
 owner already downloads, and a parser/table/scoring-engine for it already ships in this codebase.
 **The gap is entirely an auto-pull dispatch, not a design or data-existence question.**
 
-**Rung 3 (`Any Transaction`), already scoped and approved:** the owner already proposed and got
-sign-off (2026-08-14) on a three-tier design — **Tier A**: exception-transactions-only,
-district-wide, daily standing pull (~200–600 rows/day, trivial volume) IF the report can
-server-side-filter to exception types; **Tier B**: full transaction detail for one store × a date
-range, on-demand, triggered by an actual investigation; **Tier C**: full district-wide standing
-transaction pull — explicitly rejected as unnecessary. The design is approved; **only the probe to
-determine which of 3 outcomes the report actually supports is outstanding** (does it server-side
-filter to exceptions? accept a date range? or is it one-date-at-a-time only, which would kill
-Tier A and leave Register Audit carrying all standing attribution). The owner has already confirmed
-(2026-08-19) that Security Events, Suspicious Activity, and Any Transaction have all been explored
-in the QSRSoft UI — the probe groundwork already exists, this is a "run it and capture the
-response shape" task, not exploratory.
+**Rung 3 (`Any Transaction`), SETTLED 2026-08-19 — Tier A dead, Tier B confirmed viable, do not
+re-probe.** Full capture + reasoning: `memory/dispatch-34-phase0a-findings.md` Part 2. The owner
+got sign-off (2026-08-14) on a three-tier design — **Tier A**: exception-transactions-only,
+district-wide, daily standing pull, IF the report can server-side-filter to exception types;
+**Tier B**: full transaction detail for one store × a date range, on-demand; **Tier C**: full
+district-wide standing pull — rejected as unnecessary. Two corroborating live captures settle
+which outcome applies: the `any_transaction` API call itself takes `{store, date, register,
+time_slice}` with no exception-type parameter, and its own `trans_filter_options` endpoint — what
+populates the UI's filter menu — offers only register/manager/cashier, confirming no
+transaction-type filter exists to find. **Tier A is dead; Register Audit carries all standing
+attribution, as this section already said it would if this outcome landed.** A `transaction_detail`
+endpoint was also captured (full line-item + tender + operator/manager detail per transaction) —
+**Tier B is confirmed buildable**, build it when an actual investigation needs it. The
+camera/video-linkage question (below) remains open — the captured detail was for a normal sale,
+not a flagged/exception row.
 
 **One settled negative finding, so it isn't re-derived — but actively being worked, not dead:**
 deposit lapping (§2.1/§2.3 below) is **structurally invisible in QSRSoft** — settled 2026-08-13. A
@@ -193,15 +196,23 @@ wired into this exact report — correcting this file's earlier "no camera integ
 against" framing in §7 even further than the `/security/` menu listing alone suggested). This
 sample was filtered to one store, one register, one 3-hour window (166 rows) — consistent with
 `data-acquisition-shopping-list.md` §B's volume estimate, and confirms the UI supports exactly the
-store/register/date/time-window filtering that section described. **Still open:** whether the
-report can filter server-side to exception types only (the actual Tier A question) — this sample
-was an all-transactions pull, not an exceptions-only one, so it doesn't yet answer that half of
-the probe.
+store/register/date/time-window filtering that section described.
 
-**Net effect on Phase 0a above:** the Any-Transaction-probe task is now partly done — response
-shape, timestamp precision, and register/cashier/manager attribution are confirmed — but the
-single decisive question (server-side exception filtering, for Tier A) still needs one more
-capture with an exception-type filter applied rather than a full-register pull.
+**RESOLVED 2026-08-19 — the decisive Tier A question is answered, no further probe needed.** A
+live API capture plus the report's own `trans_filter_options` endpoint (its filter-menu source,
+offering only register/manager/cashier) confirm there is no server-side exception-type filter.
+Tier A is dead as scoped; see the updated framing above and `dispatch-34-phase0a-findings.md` Part
+2 for the full capture. On the camera question specifically: the live `transaction_detail`
+endpoint capture (a normal, non-flagged `TRX_Sale`) showed **no camera/video field at all** in its
+JSON response — different from this section's note above about an empty-but-present `Camera`
+*column* in a UI export grid. That's not necessarily a contradiction (a grid column and a detail
+API payload can differ, and this sample wasn't a flagged row), but it means the camera-linkage
+question is still genuinely open, not resolved toward "yes" by either capture — it needs a
+`transaction_detail` pull on an actual exception row (a void, refund, or over-ring) to settle.
+
+**Net effect on Phase 0a above:** the Any-Transaction-probe task is now fully done — response
+shape, timestamp precision, register/cashier/manager attribution, and the Tier A/B verdict are all
+confirmed. No further probing needed on this question.
 
 ### The attribution problem is already worked through, with an owner-approved design (`attribution-validity-register-login.md`)
 
@@ -651,22 +662,26 @@ ladder already answers it, in more concrete detail than this file could add. The
 two small, already-scoped engineering/investigation tasks, not open research:
 
 1. **Dispatch the Register Audit auto-pull.** Parser (`parseRegisterAudit`), Supabase table
-   (`audit_rows`), and scoring engine (`analyzeRegisterAudit`) already exist — the only gap is
-   replacing the manual Excel upload with an automated QSRSoft pull, matching the two-path-auth
-   pattern (`CLAUDE.md`'s standing rule for every new automated pull) already used by
-   `lifelenz-pull.mjs`/`qsrsoft-*-pull.mjs`. This alone closes rung 2 (employee × store × day) for
-   nearly all of §2.1's methods.
-2. **Run the Any Transaction probe.** The three-tier Tier A/B/C design is already owner-approved
-   (2026-08-14) — what's outstanding is capturing whether the report server-side-filters to
-   exception types (Tier A viable), accepts a date range without filtering (Tier A needs a
-   judgment call on egress cost), or is one-date-at-a-time only (Tier A dies, rung 2 carries all
-   standing attribution instead). This determines whether true transaction-level timestamps (and
-   therefore §3's sequence-detection ambitions) are reachable at all, or whether this build stays
-   at daily grain indefinitely.
+   (`audit_rows`), and scoring engine (`analyzeRegisterAudit`) already exist. Dispatch #33 shipped
+   the pull-script scaffold and dispatch #34 (2026-08-19, `dispatch-34-phase0a-findings.md` Part 1)
+   confirmed the real endpoint + field names — **implementation is the one remaining piece**:
+   `fetchRegisterAuditDay()`/`mapRow()` need writing against the confirmed shape, with a few field
+   translations (POS over-ring vs. `manOverringAmt`, cash-O/S %, avg check, T-Red rate/avg) needing
+   to be checked against `parseRegisterAudit`'s own derivation logic before this goes live, since
+   it's personnel-sensitive scoring data. This closes rung 2 (employee × store × day) for nearly
+   all of §2.1's methods once done.
+2. ~~Run the Any Transaction probe~~ **DONE, 2026-08-19.** Tier A (district-wide daily
+   exception-only standing pull) is settled dead — the report has no server-side or even
+   UI-level exception-type filter (two corroborating captures, `dispatch-34-phase0a-findings.md`
+   Part 2). Register Audit (item 1 above) carries all standing attribution, as this section's own
+   fallback already assumed it would in that outcome. Tier B (on-demand, full transaction detail)
+   is confirmed buildable via the `transaction_detail` endpoint — build it only when an actual
+   investigation needs it, not as part of Phase 0a. Transaction-level timestamps are NOT reachable
+   as a standing feed; §3's sequence-detection ambitions stay at whatever grain Register Audit and
+   `Security Events` provide (daily / per-session), not true continuous transaction time.
 
-**Neither of these is blocked on the AI research in this file** — they were already scoped before
-the three-engine research existed. If they haven't shipped by the time this file's Phase 1 gets
-dispatched, dispatch them first; everything else in this file assumes rung 2 is flowing.
+**Item 1 is the only thing left blocking Phase 1** — it was already scoped before the three-engine
+research existed and is now most of the way to shippable. Item 2 needs no further work.
 
 ### Phase 0b — substrate (build once, everything else depends on it)
 - Event normalization / Event DNA schema — for rung 2 (Register Audit), this is close to already
