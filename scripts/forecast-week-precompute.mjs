@@ -38,7 +38,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { supplementLaborWithSched } from '../src/engine/labor-supplement.js';
-import { forecastDay, bLocIdx } from '../src/engine/forecast.js';
+import { forecastDay, bLocIdx, setEventImpact } from '../src/engine/forecast.js';
+import { orgEventsToDayMap } from '../src/engine/events-import.js';
+import { computeEventFactors } from '../src/utils/events.js';
 import { DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_NAMES } from '../src/constants.js';
 
 const STORE_LOCS = Object.keys(STORE_NAMES).filter(l => /^\d+$/.test(l));
@@ -117,6 +119,56 @@ async function loadQsrActSummaryRows(daysBack) {
   }));
 }
 
+// ── org_events → userEvents day-map (mirrors loadOrgEvents, src/lib/supabase.js:3342, and
+// App.js's own orgEventsToDayMap(orgEvents, iconFor) hydration) ───────────────────────────
+// Dispatch23 §1: forecastDay's event-adjustment block (_evFactor) reads settings._userEvents
+// and settings._eventFactors and silently returns a 0 lift/dip when either is absent — this
+// script originally called forecastDay with an empty {} settings object, so every cache-hit
+// forecast during a real tagged event (a football game, a district holiday, a price change)
+// was silently the UN-adjusted number, diverging from what the live browser path computes.
+// iconFor is a no-op here (icon is cosmetic UI, never read by computeEventFactors/forecastDay's
+// event-factor logic) — avoids importing EVENT_TYPES just for a display string this script
+// never displays.
+async function loadOrgEvents() {
+  const rows = [];
+  const PAGE = 1000;
+  for (let p = 0; ; p++) {
+    const { data, error } = await supabase.from('org_events').select('*')
+      .order('date_start').range(p * PAGE, p * PAGE + PAGE - 1);
+    if (error) throw new Error(`org_events page ${p} failed: ${error.message}`);
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows.map(r => ({
+    id: r.id, loc: String(r.loc), dateStart: r.date_start, dateEnd: r.date_end, span: !!r.span,
+    category: r.category, type: r.event_type, label: r.label,
+    impact: { magnitude: r.impact_magnitude, daypart: r.impact_daypart, gameDay: !!r.impact_gameday, raw: r.impact_raw },
+    opponent: r.opponent ?? null, kickoff: r.kickoff ?? null, status: r.status ?? null,
+    expectedSalesDelta: r.expected_sales_delta, expectedGcDelta: r.expected_gc_delta,
+    url: r.url, verification: r.verification, note: r.note,
+    enteredBy: r.entered_by, enteredAt: r.entered_at, method: r.method,
+  }));
+}
+
+// ── event_impact → the Event Impact Registry (mirrors loadEventImpact, src/lib/supabase.js:3447,
+// and App.js's _stEventImpact -> setEventImpact()) — the curated per-store x event-type MEASURED
+// lift/dip that forecastDay's _evFactor checks FIRST, before the learned/computed factors. ─────
+async function loadEventImpact() {
+  const rows = [];
+  const PAGE = 1000;
+  for (let p = 0; ; p++) {
+    const { data, error } = await supabase.from('event_impact').select('*')
+      .range(p * PAGE, p * PAGE + PAGE - 1);
+    if (error) throw new Error(`event_impact page ${p} failed: ${error.message}`);
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows.map(r => ({
+    loc: String(r.loc), eventType: r.event_type,
+    homeImpact: r.home_impact, awayImpact: r.away_impact,
+  }));
+}
+
 // ── user_settings(key='model_assignments') → localStorage shim ────────────────────────────
 // Single-tenant today (one real operator) — grabs the most recently updated row for this
 // key rather than filtering by user_id, since the service-role client has no browser
@@ -140,12 +192,14 @@ function currentWeekDays(weekStartDay) {
 
 async function main() {
   console.log('[forecast-precompute] loading source data...');
-  const [laborRowsRaw, qsrActSummaryRows, modelOverrides] = await Promise.all([
+  const [laborRowsRaw, qsrActSummaryRows, modelOverrides, orgEvents, eventImpactRows] = await Promise.all([
     loadLaborRows(LABOR_DAYS_BACK),
     loadQsrActSummaryRows(QSR_ACT_DAYS_BACK),
     loadModelAssignmentOverrides(),
+    loadOrgEvents(),
+    loadEventImpact(),
   ]);
-  console.log(`[forecast-precompute] labor_rows=${laborRowsRaw.length} qsr_act_summary=${qsrActSummaryRows.length}`);
+  console.log(`[forecast-precompute] labor_rows=${laborRowsRaw.length} qsr_act_summary=${qsrActSummaryRows.length} org_events=${orgEvents.length} event_impact=${eventImpactRows.length}`);
 
   const laborRows = supplementLaborWithSched(laborRowsRaw, qsrActSummaryRows);
   const ds = {
@@ -156,6 +210,18 @@ async function main() {
     qsrActSummaryRows,
     targets: {}, // matches real production ds.targets — always {} today, DEFAULT_TARGETS is the live source (see PR body)
   };
+
+  // Same shape App.js builds on startup (orgEventsToDayMap) and the same module-level cache
+  // forecastDay's _evFactor reads first (_EVENT_IMPACT via setEventImpact) — see the loader
+  // functions' own comments above for why this was missing and what it silently cost.
+  const userEvents = orgEventsToDayMap(orgEvents, () => '');
+  const eventImpactMap = {};
+  for (const r of eventImpactRows) {
+    const k = String(r.loc).replace(/^0+/, '');
+    (eventImpactMap[k] = eventImpactMap[k] || {})[r.eventType] = { home: r.homeImpact, away: r.awayImpact };
+  }
+  setEventImpact(eventImpactMap);
+  const eventFactors = computeEventFactors(ds, userEvents);
 
   // forecastDay's internal getModelAssignment() reads this via localStorage in the browser —
   // shimmed here so its UNMODIFIED lookup sees the same cloud-persisted override blob.
@@ -169,11 +235,17 @@ async function main() {
   const weekDays = currentWeekDays(); // weekStartDay override could be added here if a real second tenant needs it
   console.log(`[forecast-precompute] week ${fmtDate(weekDays[0])}..${fmtDate(weekDays[6])}, ${STORE_LOCS.length} stores`);
 
+  // useEventRegistry:true matches DEF_SETTINGS's real default (src/constants.js) — forecastDay's
+  // own _evFactor short-circuits to 0 whenever this is falsy, so leaving it out here would
+  // silently reintroduce the exact gap this fix closes even with _userEvents/_eventFactors
+  // populated correctly above.
+  const cfg = { useEventRegistry: true, _userEvents: userEvents, _eventFactors: eventFactors };
+
   const upsertRows = [];
   for (const loc of STORE_LOCS) {
     const t = DEFAULT_TARGETS[loc] || {};
     for (const d of weekDays) {
-      const r = forecastDay(loc, d, ds, {}, null, t);
+      const r = forecastDay(loc, d, ds, cfg, null, t);
       upsertRows.push({
         loc,
         dt: fmtDate(d),
