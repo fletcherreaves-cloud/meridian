@@ -38,13 +38,29 @@
 > Those are marked for what they are rather than force-graded. **Pass 2 should not read an
 > unannotated line as confirmed-open by pass 1.**
 >
-> **Pass-1 follow-up (same day): three items ADDED that the sweep could not have found.** The sweep
-> reads *written* memory files, so anything that lived only in a session's context died with it.
-> These come from direct PM experience and are marked ⚠️ inline: the **changelog monotonicity gap**
-> (§13), the **capture/PII handling protocol** (§13), and the **At A Glance Act-vs-Need
-> integrity bug** (§4, flagged as a consolidation candidate, not a new discovery). Each carries its
-> provenance. Nothing speculative was added — items I half-remembered but could not verify or
-> attribute were deliberately left out rather than padded in.
+> **Pass-1 follow-up (same day): three items added from direct PM experience, marked ⚠️ inline.**
+> Originally framed as "the sweep could not have found these — they only ever lived in
+> conversation." **PM review of the resulting PR (#434) found that framing wrong for two of the
+> three, and corrected both in place rather than deleting them:**
+>
+> - **The changelog monotonicity gap (§13) and the PII/credential-handling item (§13) were both
+>   already written down** — in `memory/pm-handoff-2026-08-15.md` and `memory/qsrsoft-report-catalog.md`,
+>   neither of which was in this file's original 20-file sweep list. The findings themselves are
+>   accurate (independently re-verified against code/git); only "unwritten, exists only in
+>   conversation" was wrong. **This means the original sweep's file coverage was incomplete, not
+>   just its per-item status grading** — a sharper version of the same lesson §0/§11 already taught
+>   below. If two files were missed, more may have been; a future pass that finds another item
+>   "not previously written down" should grep the full `memory/` directory before trusting that
+>   claim, not just this file's own source list.
+> - **The At A Glance Act-vs-Need item (§4) was struck entirely** — checked directly against
+>   `src/views/at-a-glance.js:2276`, the specific line cited was already fixed by `#296 step 2`
+>   (merged **2026-08-15**, four days before this item was written, not concurrent with it as
+>   framed). Quoting old code as current is a different failure mode than a coverage gap — this one
+>   is a stale-read, and the corrected entry explains it in place.
+>
+> Nothing here was found to be speculative or fabricated — all three items reflected real, accurate
+> content. The errors were both about *provenance* (claiming "unwritten" for things that were
+> written, just not indexed) rather than substance.
 >
 > **Root cause of the staleness, worth recording:** the two largest corrections below (§0 C and
 > §11) were not races. `scripts/_pipeline-contract.mjs` landed in **#431** and this file landed in
@@ -203,17 +219,21 @@ for full detail on each.
   populating in two panels, Tishomingo wrongly flagged "new model store," Records not all-time,
   Critical/Watch chips not clickable, and more — see source file for full list).
 - [ ] `diffUserEventsForCloudSync` multi-day-span label-suffix gap — deliberately deferred.
-- [ ] ⚠️ **At A Glance's Act-vs-Need shows the value only when it is bad news.**
-  `src/views/at-a-glance.js` colours that row
-  `clr:(laborSec.avn||0)>=0 ? 'rgba(255,255,255,.8)' : '#f87171'` — so a **positive** (good)
-  variance renders white-on-white and vanishes in the light themes, while a **negative** (bad) one
-  renders red and is perfectly legible. Verified pass-1 follow-up by reading the line directly.
-  **This is a reporting-integrity bug wearing a theming bug's clothes:** the failure is not "hard to
-  read," it is a panel that systematically displays only the unfavourable half of a metric's range.
-  🔁 **Consolidate, do not double-track** — the current PM surfaced this same site independently on
-  2026-08-19 while scoping #296 step 2 (as one of 23 colour-role invisible-text sites). Check for an
-  existing issue first; recorded here because the *framing* (integrity, not contrast) changes its
-  priority and that framing was not written down anywhere.
+- [x] ✅ **CORRECTION to the pass-1-followup item below, made during PM review of PR #434 — this
+  specific site is already fixed, not open.** The item as originally written quoted
+  `clr:(laborSec.avn||0)>=0 ? 'rgba(255,255,255,.8)' : '#f87171'` for At A Glance's Act-vs-Need
+  tile and attributed it to "#296 step 2" as if that work were still in progress. Checked directly
+  against `src/views/at-a-glance.js:2276`: the code now reads
+  `clr:(laborSec.avn||0)>=0?'var(--text)':'var(--crit)'`, with its own comment recording *"#296
+  step 2: was rgba(255,255,255,.8) -- literally the light themes' own text-on-surface identity,
+  invisible."* `#296 step 2` (19 white-alpha sites, including this one) merged **2026-08-15** —
+  commit `8298632`, PR #310 — four days before this item was written, not concurrent with it. The
+  underlying reporting-integrity framing (a color scheme that shows only the unfavourable half of
+  a metric's range is a correctness bug, not a contrast nit) is still a good general point — worth
+  keeping in mind for whichever of the **241 white-alpha sites still open** (§2) turn out to share
+  this same asymmetric-visibility shape — but nothing supports claiming any specific one does
+  without checking it the same way this one just was. Not re-opening as a new open item on
+  speculation; strike is correct here, not a downgrade to ❓.
 
 ## 5. New Data Sources / Automation
 
@@ -352,34 +372,42 @@ for full detail on each.
 - [ ] Telemetry/usage DB (panel usage, error logs, pipeline health, tamper detection) — schema
   cheap, build is a real project; auto-shutdown should be flag-first, not automatic.
 - [ ] Security sweep (from existing security-notes/RLS-hardening docs).
-- [ ] ⚠️ **`changelog-version.test.js` does not guard version monotonicity — a BACKWARDS
-  `MERIDIAN_VERSION` ships green.** Verified by reading the test: its eleven assertions cover
-  filename↔version match, duplicate-version collisions, the `MERIDIAN_VERSION` ←
-  `LATEST_CHANGELOG_ENTRY` derivation, the import-graph rules, and the *panel display* ordering
-  (`:100–102`) — **none** of them compares the shipped version against the previous one.
-  *Source: not previously written down; from direct PM experience on 2026-08-15, where this was the
-  single most recurring near-miss of the session.* It has already bitten twice in real merges:
-  **v5.016 is permanently unused** because #309 was authored as 5.016, sat open while #310/#321
-  landed as 5.017/5.018, and had to be renumbered to 5.019 to avoid walking the version backwards;
-  and **#298/#301 had to be merged in a specific order** (5.014 before 5.015) or `main` would have
-  shipped a lower version than the commit before it. Both were caught by hand. **Fix is cheap:** one
-  assertion that the newest entry's version is strictly greater than the runner-up. Until it exists,
-  the mitigation is manual and must be repeated on every changelog-touching PR — which is exactly
-  the kind of standing human check that eventually gets skipped.
-- [ ] ⚠️ **No written protocol for handling live credentials and PII in captures.**
-  *Source: not previously written down; from direct PM experience across the 2026-08-13→15 QSRSoft
-  capture work.* Three concrete, separable pieces, all currently unrecorded anywhere in this repo's
-  memory files (`x-auth-token` and `ssn` return zero hits across this file):
-  1. **A live `x-auth-token` was pasted into a session at least five times.** The capture requests
-     that unblock data work are themselves the exposure vector, so the standing order is **cycle the
-     session first, then take the capture**, and strip the token before sending. That ordering is
-     the whole mitigation and it exists only in conversation.
-  2. **`storePeoplePunches` exposes `ssn` and it must never be selected, stored, or logged.**
-     `geid` + `payrollID` identify a person adequately for every analysis Meridian performs. This
-     needs to be a written never-select list, not a remembered one — the next session to read
-     `user/settings` will see `ssn` sitting in `defaultColumns` like any other field.
-  3. **Roster workbooks carrying SSNs, DOBs, and home addresses are pending deletion** (owner
-     action). ❓ Needs owner confirmation that this was done.
+- [ ] ⚠️ **CORRECTED PROVENANCE (made during PM review of PR #434) — `changelog-version.test.js`
+  does not guard version monotonicity, but this was already written down.** The finding itself
+  checks out (confirmed independently: 10 `it()` blocks in the test — not 11, minor miscount —
+  none of them compares the shipped version against the previous one; the v5.016/#309/#310/#321
+  renumbering and the #298-before-#301 merge-order story both check out against real `git log`).
+  **What's wrong is "not previously written down."** `memory/pm-handoff-2026-08-15.md:64-69`
+  records this almost verbatim, same date, same "single most recurring near-miss of the session"
+  framing: *"`changelog-version.test.js` guards desync between `changelog-data.js` and
+  `changelog-latest.js`, NOT monotonicity — a backwards version ships green."* The gap is real; the
+  claim that the original 20-file sweep couldn't have found it is not — `pm-handoff-2026-08-15.md`
+  simply wasn't one of the 20 files swept. **Fix is cheap:** one assertion that the newest entry's
+  version is strictly greater than the runner-up. Until it exists, the mitigation is manual and
+  must be repeated on every changelog-touching PR.
+- [ ] ⚠️ **CORRECTED PROVENANCE (made during PM review of PR #434) — this PII/credential-handling
+  content already exists, in detail, in two memory files the original sweep didn't cover.** Not
+  "unwritten, exists only in conversation" as originally framed — the sweep's 20-file list simply
+  didn't include `memory/qsrsoft-report-catalog.md` or `memory/pm-handoff-2026-08-15.md`, both of
+  which cover this ground more thoroughly than this item did:
+  1. **`x-auth-token` sequencing.** `pm-handoff-2026-08-15.md`'s own "Security constraints (verbatim
+     intent — preserve on every future handoff)" section (§8): *"Sequence any future capture request
+     behind a rotation, never alongside one"* + *"Strip `x-auth-token` from every capture. Never
+     write one to a file or a commit."* Same substance as this item's "cycle the session first, then
+     take the capture."
+  2. **`storePeoplePunches` exposes `ssn`.** `qsrsoft-report-catalog.md` has a dedicated `## ⚠️ PII
+     — storePeoplePunches exposes ssn` section (line 1581) with the full column list spelled out,
+     plus a broader, stricter follow-on instruction that `employeeRoster` exposes far more (SSN,
+     DOB, address, phone, emergency contacts) and needs an explicit field allow-list, not just a
+     `storePeoplePunches` never-select rule.
+  3. **Roster workbook deletion.** Also already referenced in `qsrsoft-report-catalog.md` as
+     *"This repo already has a standing instruction to delete roster workbooks."* ❓ Whether the
+     deletion itself happened is still a real open question — that part of the item stands.
+  **The actual gap, now correctly scoped:** this content is real, correct, and already written —
+  it's just sitting in two files this backlog's sweep missed, which is a discoverability problem
+  (fix: index these files, or fold their PII sections into `CLAUDE.md`'s own standing rules where
+  they'd actually get read), not a "write it down for the first time" problem. Worth noting for
+  whoever runs a future sweep of this backlog file: if two files were missed, more may have been.
   Deliverable is a short written capture protocol + the never-select field list. §13's existing
   "Security sweep" item is about RLS and does not cover this human-process surface at all.
 - [ ] App Store readiness roadmap (deliverable = roadmap doc only).
