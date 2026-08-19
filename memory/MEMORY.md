@@ -30,8 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #30 — Workstream D follow-up](dispatch-30.md)** — **NEWEST
-  dispatch, 2026-08-19.** D was dispatched (#26) but never started — checked, no PR touches
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #31 — real click trace corrects dispatch #27, finds a bigger
+  problem](dispatch-31.md)** — **NEWEST, 2026-08-19.** Real Mac Mini click trace on v5.069 —
+  the exact real-data verification both dispatch #27 and #29 flagged as unmeasurable from the
+  sandbox. **Correction**: dispatch #27's "the 4.3s modal-close figure almost certainly dropped"
+  is refuted — modal-close (`✕`) is **32 clicks, avg ~1453ms, total 46,497ms, 52% of all
+  long-task time** in the session. The Workstream E route-panel back button (`←`) costs the
+  **same** per click as a modal close (~1435ms avg) — routing gave 4 panels URLs, it did not
+  reduce the remount cost for them. **Bigger, unanticipated finding**: `compute:weekProjections`
+  (Workstream A's target) is only **34%** of `AtAGlance`'s own render cost (22,499 of 65,715ms
+  self-time) — the other **66% (43,216ms) has no named span**, meaning either cache coverage is
+  incomplete across the district's 27 stores right now, or the cost has moved to uninstrumented
+  work (event factors, cloud-actuals indexing, React reconciliation/DOM commit) that caching
+  never touched. Recommends instrumenting the cache-hit rate directly (`at-a-glance.js:1575`)
+  before assuming either cause. `AtAGlance` render+commit is 92% of all React work measured in
+  the session (65.7 of 71.7s).
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #30 — Workstream D follow-up](dispatch-30.md)** — 2026-08-19.
+  D was dispatched (#26) but never started — checked, no PR touches
   `PanelControls.js` adoption and no bypass-volume ratchet exists. The one thing that changed:
   D's blocker (Workstream E's routing decision) **cleared** — E shipped in PR #426, but not into
   one unified shell as D expected; `ModalShell.js` now also exports `RoutePanelShell` as a
