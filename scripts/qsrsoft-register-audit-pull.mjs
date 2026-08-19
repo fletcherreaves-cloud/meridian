@@ -1,32 +1,56 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-register-audit-pull.mjs
 // QSRSoft Register Audit — per-employee, per-store, per-day cash/loss-prevention exceptions
-// (drawer sales/opens, T-Reds before/after, POS over-rings, refunds, promo, manager/employee
-// meals, cash over/short). Dispatch #33 (memory/dispatch-33.md), Phase 0a of
-// memory/plan-security-loss-prevention.md — rung 2 of the attribution ladder in
-// memory/data-acquisition-shopping-list.md §A. Everything except the pull already existed:
-// parser (src/parsers/index.js:974 parseRegisterAudit, manual-upload only), Supabase table
-// (audit_rows, PK loc,date,emp), loader (loadAuditRows), risk-scoring engine
-// (src/utils/register-audit.js analyzeRegisterAudit).
+// (drawer sales/GC, T-Reds before/after, POS over-rings, manual refund/overring, refunds,
+// promo, manager/employee meals, cash over/short). Dispatch #35 (memory/dispatch-35.md),
+// implementing against the real endpoint dispatch #34's live captures confirmed
+// (memory/dispatch-34-phase0a-findings.md Part 1) — dispatch #33's shipped scaffold (PR #444)
+// had an unverified, deliberately-not-attempted endpoint guess; this replaces it with the
+// confirmed one. Phase 0a of memory/plan-security-loss-prevention.md — rung 2 of the
+// attribution ladder in memory/data-acquisition-shopping-list.md §A.
 //
-// ── HONEST STATUS: the report endpoint is NOT YET CONFIRMED ─────────────────────────────────
-// This dispatch's own text says finding it requires a live DevTools capture (QSRSoft UI →
-// Network tab, run the Register Audit export, capture the request) — this session has NO
-// QSRSoft credentials and confirmed its network egress to v3.myqsrsoft.com/
-// api.reports.myqsrsoft.com is blocked (proxy 403), so that capture could not be done here.
-// Rather than guess a plausible-looking URL and risk silently writing WRONG rows into
-// personnel-sensitive data (data-acquisition-shopping-list.md §A explicitly flags Register
-// Audit as personnel-sensitive, gated by the 2026-08-13 policy), fetchRegisterAuditDay() below
-// throws a clear, loud error naming exactly what's missing. Everything ELSE in this file —
-// auth, backfill/gap-detection windowing, the save path (a server-side twin of
-// src/lib/supabase.js's saveAuditRows(), see that function's own comment for why it's a twin
-// and not a straight import), coverage/freshness instrumentation — is real, complete, and does
-// not need to change once the endpoint is confirmed; only fetchRegisterAuditDay()'s URL/params
-// and mapRow()'s field names need filling in. See fetchRegisterAuditDay()'s own comment for a
-// grounded starting hypothesis.
+// Confirmed endpoint (dispatch #34's live capture):
+//   GET https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit
+//       ?nsn=<comma-separated, UNPADDED>&orgId=...&enterpriseName=McDonalds
+//       &startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&dsd=d&weekStart=3&nsd=d
+//       &resultType=byDateEmployee&registerType=cashier
+//   Header: X-Auth-Token: <token>
+// ONE call covers a date RANGE across ALL 27 stores (comma-separated nsn) — chunked below into
+// 21-day windows (matching lifelenz-pull.mjs's own chunking convention) so a large backfill
+// doesn't risk one oversized/timing-out response, not because the API requires it.
+//
+// mapRow() field mapping — resolved against src/utils/register-audit.js's analyzeRegisterAudit
+// (the actual consumer) and src/parsers/index.js:974's parseRegisterAudit (the manual-upload
+// path's own column semantics), not fabricated:
+//   - emp = empName (NOT empID). Chosen because parseRegisterAudit's manual-upload path has
+//     always keyed audit_rows' PK on the employee NAME string, never an ID -- switching the
+//     auto-pull to empID would split-brain the (loc,date,emp) history for the same real person
+//     across manual vs auto rows, breaking freshest-wins continuity with 5+ months of existing
+//     manually-uploaded data. A same-name collision at one store is an existing, unchanged risk,
+//     not one this dispatch introduces.
+//   - drawerGC = transactions. parseRegisterAudit's own header list calls this column "Drawer
+//     GC"/"GC" (guest count); analyzeRegisterAudit uses it as the denominator for its own
+//     avgCheck computation (totalSales/totalGC) -- transactions is the only response field that
+//     fits that role.
+//   - manualRefAmt = manOverringAmt, NOT folded into posOverAmt. parseRegisterAudit's Excel
+//     column for this is literally "Manual Refund/Overring $" -- a distinct concept from "POS
+//     Overrings $"/"POS Overrings Cnt" (-> posOverAmt/posOverCnt, from overringAmt/overringQty).
+//     The manual Excel export already treats these as two separate columns; manOverringAmt's own
+//     name matches the "Manual Refund/Overring" concept far better than a fold-in.
+//   - avgCheck, cashOSPct, promoPct, tRedBPct/tRedBAvg, tRedAPct/tRedAAvg are NOT present as
+//     pre-computed fields in the API response (parseRegisterAudit's manual path just READS these
+//     from Excel columns QSRSoft pre-computes there -- it doesn't derive them, so "mirror its
+//     derivation logic" isn't literally available). Derived here the way dispatch #34/#35's own
+//     text suggests (rate = qty/denominator, avg = amt/qty, pct = amt/sales) -- confirmed via
+//     analyzeRegisterAudit that NONE of these five are actually consumed by the risk-scoring
+//     engine today (it recomputes its own avgCheck from drawerSales/drawerGC and never reads
+//     r.cashOSPct/tRedBPct/tRedAPct/tRedBAvg/tRedAAvg/promoPct at all) -- populated anyway for
+//     schema completeness/future panels since the derivation is a straightforward, well-defined
+//     ratio, not a fabricated value, and null would be equally defensible; this is the
+//     documented judgment call, not a silent guess.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, QSRSOFT_USERNAME, QSRSOFT_PASSWORD
-// Optional:     QSRSOFT_AUDIT_DAYS_BACK (first-run history, default 90 — widen once the report's
+// Optional:     QSRSOFT_AUDIT_DAYS_BACK (first-run history, default 90 -- widen once the report's
 //               own retention is confirmed, per CLAUDE.md's "data depth is never the limiter"),
 //               QSRSOFT_AUDIT_DAYS_RECENT (rolling re-pull, default 4),
 //               QSRSOFT_AUDIT_START_DATE/END_DATE (explicit backfill), QSRSOFT_AUDIT_DEBUG=1
@@ -51,27 +75,42 @@ const START_DATE  = (process.env.QSRSOFT_AUDIT_START_DATE || '').trim();
 const END_DATE    = (process.env.QSRSOFT_AUDIT_END_DATE   || '').trim();
 const DEBUG       = process.env.QSRSOFT_AUDIT_DEBUG === '1';
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Guarded, not unconditional -- mapRow() is unit-tested by importing this module directly
+// (no supabase/fetch dependency in that function itself), and vitest's environment has neither
+// env var set. An unconditional createClient() call at module scope would throw at import time
+// before a test could even reach mapRow(), the same class of bug fixed in dispatch #33's own
+// header (that dispatch's own note on why src/lib/supabase.js can't be imported here either).
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 const fmtDate = d => d.toISOString().slice(0, 10);
 const addDay  = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+const nsn7    = n => String(n).padStart(7, '0');
+const num     = v => (v == null || v === '' || isNaN(Number(v))) ? null : Number(v);
+const ratio   = (n, d) => (n == null || d == null || !d) ? null : n / d;
 
-// Server-side twin of src/lib/supabase.js's saveAuditRows() — NOT a straight import, because
-// that file opens its own client via `import.meta.env` (a Vite build-time transform) against
-// the ANON key; both fail outright under plain Node (confirmed: `import.meta.env` is
-// `undefined` here, so the module throws at import time before this script could even call
-// it), which is exactly why every other pull script in this repo (dar-pull, ops-pull, …)
-// reimplements its own local upsert against the SERVICE ROLE key instead of importing
-// src/lib/supabase.js. Column mapping and onConflict below are copied verbatim from that
-// file's saveAuditRows (src/lib/supabase.js:859) so the two stay one contract even though
-// they can't be one function across the browser/Node boundary.
+function chunkDateRange(startDate, endDate, maxDays = 21) {
+  const chunks = [];
+  let cur = new Date(startDate + 'T12:00:00Z');
+  const end = new Date(endDate + 'T12:00:00Z');
+  while (cur <= end) {
+    const chunkEndCandidate = addDay(cur, maxDays - 1);
+    const chunkEnd = chunkEndCandidate > end ? end : chunkEndCandidate;
+    chunks.push({ start: fmtDate(cur), end: fmtDate(chunkEnd) });
+    cur = addDay(chunkEnd, 1);
+  }
+  return chunks;
+}
+
+// Server-side twin of src/lib/supabase.js's saveAuditRows() -- NOT a straight import (confirmed
+// under plain Node: that file's `import.meta.env` is undefined outside Vite and it opens the
+// anon key, not service role -- every pull script in this repo avoids importing it for exactly
+// that reason). Column mapping and onConflict copied verbatim from src/lib/supabase.js:859.
 async function saveAuditRows(rows) {
   if (!rows?.length) return { saved: 0, errors: [] };
-  const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10);
   const upsert = rows.map(r => ({
-    loc:             String(r.loc),
-    date:            toDate(r),
-    emp:             r.emp || '',
+    loc: r.loc, date: r.date, emp: r.emp,
     drawer_sales:    r.drawerSales    ?? null,
     avg_check:       r.avgCheck       ?? null,
     drawer_opens:    r.drawerOpens    ?? null,
@@ -114,9 +153,6 @@ async function saveAuditRows(rows) {
 // ── Gap detection (mirrors qsrsoft-dar-pull.mjs / qsrsoft-ops-pull.mjs exactly) ──────────────
 async function getLatestDate() {
   const { data, error } = await supabase.from('audit_rows').select('date').order('date', { ascending: false }).limit(1).single();
-  // #399's lesson, same as every other pull script's getLatestDate(): only PGRST116 ("0 rows")
-  // means genuinely empty; any other error (network/RLS/timeout/522) must abort, not silently
-  // fall through to the biggest backfill window.
   if (error) {
     if (error.code === 'PGRST116') return null;
     throw new Error(`[audit-pull] getLatestDate() read failed -- ${error.code}: ${error.message}`);
@@ -141,66 +177,182 @@ async function getDateRange() {
   return { startDate: s, endDate: fmtDate(today), latestForFreshness: latest };
 }
 
-// ── THE ONE UNCONFIRMED PIECE ─────────────────────────────────────────────────────────────
-// Fetch Register Audit rows for ONE store × ONE date. Returns an array in the SAME shape
-// parseRegisterAudit's own output uses (src/parsers/index.js:1031-1054 — emp/loc/date plus
-// the 20-ish metric fields saveAuditRows expects), so saveAuditRows() below needs no changes
-// regardless of what the real API response looks like.
-//
-// GROUNDED STARTING HYPOTHESIS (not verified — cross-referenced from existing code, not a
-// DevTools capture): comparing parseRegisterAudit's column list against qsrsoft-ops-pull.mjs's
-// COLS_CASH_EXTRACT (its cash-sheet-extract endpoint), the two are near-identical field-for-
-// field -- T-Reds Before/After count+$, POS over-rings count+$, cash/cashless refunds,
-// promo, employee/manager meal discounts, cash over/short. cash-sheet-extract already
-// aggregates these at STORE grain; Register Audit is very plausibly the SAME underlying report
-// segmented by EMPLOYEE instead, the same way qsr_peaks_sales segments qtr-hr-sales by
-// time_slice via segmentBy=peaks and qsr_service_stats segments service/statistics by
-// segmentBy=summary/segmentNames=timeSlice (see ENDPOINTS in qsrsoft-ops-pull.mjs). Worth
-// trying `${BASE}/reporting/v2/cash/cash-sheet-extract` (or a sibling path) with an added
-// segmentBy=employee/segmentNames=cashier-style param FIRST during the DevTools capture,
-// before assuming an entirely separate report family — but capture and confirm the real
-// request rather than trusting this guess; a wrong-but-200-OK response could silently write
-// incorrect rows into personnel-sensitive data (data-acquisition-shopping-list.md §A), which
-// is exactly why this function throws instead of attempting the guess as live code.
-async function fetchRegisterAuditDay(_token, _date) {
-  throw new Error(
-    '[audit-pull] fetchRegisterAuditDay() not yet implemented -- the Register Audit report ' +
-    'endpoint has not been captured (see this file\'s header comment for the required DevTools ' +
-    'steps and a grounded-but-unverified starting hypothesis). Capture the real request from a ' +
-    'session with live QSRSoft access, then fill in this function\'s URL/params and confirm the ' +
-    'response maps to the field list saveAuditRows() below expects.'
-  );
+// Response row (dispatch #34's captured field names) → the shape saveAuditRows() above expects.
+// Exported for unit testing (no fetch/supabase dependency in this function itself).
+export function mapRow(r) {
+  const sales   = num(r.allNetSales);
+  const trans   = num(r.transactions);
+  const tRedB   = num(r.tRedBeforeQty), tRedBAmt = num(r.tRedBeforeAmt);
+  const tRedA   = num(r.tRedAfterQty),  tRedAAmt = num(r.tRedAfterAmt);
+  const promo   = num(r.promoAmt);
+  const overShort = num(r.overShortAmt);
+  return {
+    loc:  nsn7(r.nsn),
+    date: r.busnDt,
+    emp:  (r.empName || '').trim(),
+    drawerSales:    sales,
+    avgCheck:       ratio(sales, trans),
+    drawerOpens:    num(r.drawerOpens),
+    drawerGC:       trans,
+    empMealDisc:    num(r.empMealDiscAmt),
+    empMealCh:      num(r.empMealDiscQty),
+    manualRefAmt:   num(r.manOverringAmt),
+    refundCnt:      (num(r.refundCashQty) || 0) + (num(r.refundCashlessQty) || 0),
+    refundCash:     num(r.refundCashAmt),
+    refundCashless: num(r.refundCashlessAmt),
+    mgrMealAmt:     num(r.mgrMealDiscAmt),
+    mgrMealCnt:     num(r.mgrMealDiscQty),
+    cashOSDollar:   overShort,
+    cashOSPct:      ratio(overShort, sales),
+    posOverAmt:     num(r.overringAmt),
+    posOverCnt:     num(r.overringQty),
+    promoAmt:       promo,
+    promoCnt:       num(r.promoQty),
+    promoPct:       ratio(promo, sales),
+    tRedBCnt:       tRedB,
+    tRedBDollar:    tRedBAmt,
+    tRedBPct:       ratio(tRedB, trans),
+    tRedBAvg:       ratio(tRedBAmt, tRedB),
+    tRedACnt:       tRedA,
+    tRedADollar:    tRedAAmt,
+    tRedAPct:       ratio(tRedA, trans),
+    tRedAAvg:       ratio(tRedAAmt, tRedA),
+  };
 }
 
-// Response row → the SAME shape parseRegisterAudit's manual-upload path already produces
-// (src/parsers/index.js:1031), so saveAuditRows (src/lib/supabase.js:859) needs no changes.
-// Field NAMES on the left are deliberately whatever the confirmed API returns -- adjust once
-// real field names are known; the shape on the RIGHT (saveAuditRows' contract) must not drift.
-function mapRow(_apiRow, _loc, _date) {
-  throw new Error('[audit-pull] mapRow() depends on fetchRegisterAuditDay()\'s real response shape -- fill in alongside it.');
-}
+// ── Fetch (direct or Playwright in-browser) ──────────────────────────────────────────────────
+const buildUrl = (startDate, endDate) => `${BASE}/reports/mcd/controlsCash/regAudit?` + new URLSearchParams({
+  nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
+  startDate, endDate, dsd: 'd', weekStart: '3', nsd: 'd',
+  resultType: 'byDateEmployee', registerType: 'cashier',
+});
+const HDRS = t => ({ 'X-Auth-Token': t, Accept: 'application/json', Origin: 'https://v3.myqsrsoft.com', Referer: 'https://v3.myqsrsoft.com/', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
 
-async function pullOneDay(token, date, tracker, coveredStores) {
-  let dayTotal = 0;
-  for (const loc of STORE_LOCS) {
-    try {
-      const apiRows = await fetchRegisterAuditDay(token, date, loc);
-      if (!apiRows.length) { if (DEBUG) console.log(`[audit-pull]   ${loc} ${date}: no data`); continue; }
-      const rows = apiRows.map(r => mapRow(r, loc, date));
-      const { saved, errors } = await saveAuditRows(rows);
-      if (errors.length) throw new Error(errors[0]);
-      dayTotal += saved;
-      if (saved > 0) coveredStores.add(loc);
-    } catch (e) {
-      // fetchRegisterAuditDay()'s not-yet-implemented error is the SAME cause for every
-      // (loc, date) pair -- abort the whole run on the first one instead of retrying it
-      // 27×N times and printing the identical message that many times.
-      if (e.message.includes('not yet implemented')) throw e;
-      console.error(`[audit-pull]   ${loc} ${date} ERROR: ${e.message}`);
-      tracker.fail(`${loc} ${date}`, e.message);
-    }
+// Response envelope shape wasn't captured explicitly in dispatch #34's findings (only the
+// per-row field names were) -- accept bare array, {result:[...]}, or {data:[...]}, matching the
+// exact defensive fallback qsrsoft-ops-pull.mjs's own fetchRows() already uses for the same
+// uncertainty across its own six endpoints.
+async function fetchChunk(url, token, evalPage) {
+  if (evalPage) {
+    const res = await evalPage.evaluate(async ({ url, token }) => {
+      try {
+        const r = await fetch(url, { headers: { 'X-Auth-Token': token, Accept: 'application/json', Origin: 'https://v3.myqsrsoft.com', Referer: 'https://v3.myqsrsoft.com/' }, signal: AbortSignal.timeout(30000) });
+        if (!r.ok) return { error: `HTTP ${r.status}` };
+        const body = await r.json();
+        return { rows: Array.isArray(body) ? body : (body?.result || body?.data || []) };
+      } catch (e) { return { error: e.message }; }
+    }, { url, token });
+    if (res.error) throw new Error(res.error);
+    return res.rows || [];
   }
-  return dayTotal;
+  const resp = await fetch(url, { headers: HDRS(token) });
+  if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  const body = await resp.json();
+  return Array.isArray(body) ? body : (body?.result || body?.data || []);
+}
+
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
+// `token` is either a plain string (Playwright mode, one browser-captured token for the whole
+// run) or getFreshToken itself (direct mode) -- resolved per chunk, same re-mint-near-expiry +
+// one forced re-mint-and-retry-on-401 pattern as qsrsoft-ops-pull.mjs's runAll().
+async function runAll(token, chunks, evalPage, tracker, coveredStores) {
+  let total = 0;
+  for (const chunk of chunks) {
+    const unit = `${chunk.start}..${chunk.end}`;
+    try {
+      const tok = await resolveToken(token, false);
+      let rows;
+      try {
+        rows = await fetchChunk(buildUrl(chunk.start, chunk.end), tok, evalPage);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+          console.log(`[audit-pull] ${unit}: cached token rejected — forcing a re-mint and retrying once`);
+          const freshTok = await resolveToken(token, true);
+          rows = await fetchChunk(buildUrl(chunk.start, chunk.end), freshTok, evalPage);
+        } else throw e;
+      }
+      if (!rows.length) { if (DEBUG) console.log(`[audit-pull] ${unit}: no data`); continue; }
+      const mapped = rows.map(mapRow).filter(r => r.emp && r.loc && r.loc !== '0000000' && r.date);
+      if (mapped.length < rows.length && DEBUG) console.log(`[audit-pull] ${unit}: ${rows.length - mapped.length} row(s) dropped (missing emp/loc/date)`);
+      const { saved, errors } = await saveAuditRows(mapped);
+      if (errors.length) throw new Error(errors[0]);
+      total += saved;
+      for (const r of mapped) coveredStores.add(r.loc);
+      console.log(`[audit-pull] ${unit}: ${rows.length} rows → ${saved} saved`);
+    } catch (e) {
+      if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+      console.error(`[audit-pull] ${unit} ERROR: ${e.message}`);
+      tracker.fail(unit, e.message);
+    }
+    await new Promise(r => setTimeout(r, 150));
+  }
+  return total;
+}
+
+// Two-path auth per CLAUDE.md's standing "new automated pull" rule. Direct-first (getFreshToken,
+// matching qsrsoft-ops-pull.mjs's now-proven pattern for this SAME host after #312), Playwright
+// as fallback -- CLAUDE.md's own DAR-era note that api.reports.myqsrsoft.com needs a browser
+// session predates #312's fix making direct-first work for ops-pull's endpoints on this same
+// host, so both paths are implemented rather than assuming either one alone is sufficient.
+// The intermediate report-page navigation URL below is a plausible-but-unconfirmed guess
+// (mirroring the DAR/ops-pull UI<->API path-naming symmetry: api "controlsCash/regAudit" <->
+// v3 "reports/mcd/controlsCash/regAudit") -- if wrong, this degrades gracefully to the same
+// in-browser-fetch-trigger fallback ops-pull's own viaPlaywright() already relies on when its
+// own navigation heuristic doesn't yield a token.
+async function viaPlaywright(chunks, tracker, coveredStores) {
+  const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
+  if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return null; }
+  const { chromium } = await import('playwright');
+  const { mkdirSync } = await import('fs');
+  try { mkdirSync('screenshots', { recursive: true }); } catch {}
+  const browser = await chromium.launch({ headless: true });
+  const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
+  page.setDefaultTimeout(180000);
+  let token = null;
+  page.on('request', req => {
+    if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    const t = req.headers()['x-auth-token'];
+    if (t && t.length > 20 && !token) token = t;
+  });
+  const snap = name => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
+  try {
+    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
+    const userSel = ['input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email', 'input[autocomplete="username"]'].join(', ');
+    await page.waitForSelector(userSel, { timeout: 20000 });
+    await page.fill(userSel, u);
+    await page.fill('input[type="password"], input[name="password"]', pw);
+    await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    console.log('[auth] post-login url:', page.url());
+    await snap('audit-01-post-login.png');
+
+    await page.goto('https://v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 5000));
+    console.log('[auth] report page url:', page.url(), '| token captured:', !!token);
+    await snap('audit-02-report-page.png');
+
+    if (!token) {
+      console.log('[auth] no token from navigation — attempting in-browser fetch to trigger auth…');
+      const triggerUrl = buildUrl(chunks[0].start, chunks[0].end);
+      const testResult = await page.evaluate(async ({ url }) => {
+        try { const r = await fetch(url, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
+        catch (e) { return { error: e.message, name: e.name }; }
+      }, { url: triggerUrl });
+      console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
+      await new Promise(r => setTimeout(r, 2000));
+      await snap('audit-03-post-trigger.png');
+    }
+    if (!token) {
+      console.error('[auth] ✗ could not capture token from report page or an in-browser fetch trigger');
+      return 0;
+    }
+    console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${chunks.length} chunk(s)…`);
+    return await runAll(token, chunks, page, tracker, coveredStores);
+  } finally { await browser.close(); }
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────────────────
@@ -213,25 +365,22 @@ async function main() {
   }
 
   const { startDate, endDate, latestForFreshness } = await getDateRange();
-  // warnAfterHours/errorAfterHours match lifelenz-pull.mjs/qsrsoft-dar-pull.mjs's own
-  // dispatch #32 thresholds -- one/two missed daily runs, same reasoning (this dispatch's own
-  // plan file names Register Audit as the highest-value pull on the security list; a silent
-  // staleness here matters at least as much as on the operational pulls).
   const fresh = checkFreshness(latestForFreshness, { warnAfterHours: 30, errorAfterHours: 54, label: 'audit-pull' });
   if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
 
-  const dates = [];
-  for (let d = new Date(startDate + 'T12:00:00Z'); fmtDate(d) <= endDate; d = addDay(d, 1)) dates.push(fmtDate(d));
-  console.log(`[audit-pull] ${dates.length} date(s) × ${STORE_LOCS.length} store(s): ${startDate} → ${endDate}`);
+  const chunks = chunkDateRange(startDate, endDate, 21);
+  console.log(`[audit-pull] ${chunks.length} chunk(s), ${STORE_LOCS.length} store(s): ${startDate} → ${endDate}`);
 
   const tracker = makeOutcomeTracker('audit-pull');
   const coveredStores = new Set();
-  const requestedUnits = dates.flatMap(d => STORE_LOCS.map(loc => `${loc} ${d}`));
+  const requestedUnits = chunks.map(c => `${c.start}..${c.end}`);
 
   let totalSaved = 0;
-  for (const date of dates) {
-    const token = await getFreshToken();
-    totalSaved += await pullOneDay(token, date, tracker, coveredStores);
+  try {
+    totalSaved = await runAll(getFreshToken, chunks, null, tracker, coveredStores);
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
+    totalSaved = await viaPlaywright(chunks, tracker, coveredStores) || 0;
   }
 
   console.log(`[audit-pull] done — ${totalSaved} rows saved.`);
@@ -243,4 +392,7 @@ async function main() {
   process.exit(code);
 }
 
-main().catch(e => { console.error('[audit-pull] FATAL:', e); process.exit(1); });
+// Only run main() when executed directly (not when imported for mapRow() unit tests).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(e => { console.error('[audit-pull] FATAL:', e); process.exit(1); });
+}
