@@ -702,6 +702,18 @@ first below.
 - [ ] `LocationSelector`'s patch tier reads a static seed (`INV_ORG_COORDS[loc].sup`) while
   Inventory Control's own patch filter reads the live `_liveAssignments` override — unconfirmed
   whether the two stay in sync (`spine1-panel-controls-126.md`).
+- [ ] **New field note (owner, 2026-08-19, explicitly non-urgent, "easy win"):** add Operations
+  Manager (OM) and Director of Operations (DO) as org-structure tiers, under Patches/settings —
+  same area as `_liveAssignments`/`SUPERVISOR_PATCHES` above. Owner: *"I will need to add the
+  ability under patches or a new section for Operations Manager(s) (OM) and we should also
+  include Director of Operations (DO). If you like the abbreviations we can use AS for Area
+  Supervisors."* Adding 2 supervisors and a first Operations Manager; 2 people already function
+  in DO roles today without the tier existing. Owner is updating records "in the next month" —
+  not blocking, sequence whenever convenient. **Bonus context, not a requirement:** QSRSoft's own
+  SSO role model (captured live 2026-08-19, `memory/dispatch-34-phase0a-findings.md` Part 3)
+  already has first-class "Operations Manager" and "Director of Operations" permission groups —
+  external precedent for these exact tier names, though this item only needs Meridian-side
+  additions (RBAC role list / `profiles.role` / patch-assignment UI), not any QSRSoft integration.
 - [ ] `pending_reports.org` column exists but is never written or filtered — a second org would
   see the first org's uploaded files; also a 30-day window means new users miss old uploads
   (`project-sync-rework.md`). More specific than §13's generic multi-tenant item.
@@ -858,12 +870,24 @@ most of the access-control question this build raises. Real QSRSoft exports capt
 previously documented — is the raw per-event log to build against, and settled that
 `suspicious_activity` is QSRSoft's own pre-aggregated judgment, not raw fact.
 
-- [ ] **Phase 0a (the real first task, small and already scoped):** dispatch the Register Audit
-  auto-pull (parser/table/scoring engine already exist — `parseRegisterAudit`, `audit_rows`,
-  `analyzeRegisterAudit`; only the QSRSoft pull itself is missing, currently manual-Excel-only).
-  Run one more Any Transaction capture filtered to an exception type only, to settle the
-  server-side-filtering question that decides whether Tier A (district-wide daily standing pull)
-  is viable.
+- [x] **Phase 0a real endpoints now confirmed (2026-08-19), both halves — full detail in
+  `memory/dispatch-34-phase0a-findings.md`, do NOT re-scope either question:**
+  - **Register Audit** — real endpoint captured (`GET api.reports.myqsrsoft.com/reports/mcd/
+    controlsCash/regAudit`, one call covers all 27 stores × a date range). The shipped scaffold's
+    (`scripts/qsrsoft-register-audit-pull.mjs`) "grounded hypothesis" endpoint guess was wrong;
+    real field names captured but `mapRow()`'s translation to `saveAuditRows()`'s schema is only
+    ~80% mechanical — a few columns (POS over-ring vs. the newly-seen `manOverringAmt`, cash-O/S
+    %, avg check, T-Red rate/avg) need confirming against `parseRegisterAudit`'s own derivation
+    logic before going live, per the dispatch's own caution about writing wrong numbers into
+    personnel-sensitive scoring data. **Still open, not done** — implementation work remains.
+  - **Any Transaction Tier A is SETTLED DEAD** — two corroborating captures (a live query with no
+    exception-type filter available, and the report's own filter-options endpoint offering only
+    register/manager/cashier, no transaction-type dimension). Register Audit carries all standing
+    attribution as the shopping-list's own fallback plan already said. **Tier B is confirmed
+    viable** — a `transaction_detail` endpoint was also captured, returning full line-item +
+    tender + operator/manager detail per transaction. Camera/video linkage question (plan file §7)
+    is still genuinely open — the captured detail was for a normal sale, not an exception row.
+    No further Tier A design work needed; do not re-run this probe.
 - [ ] **Deposit lapping — invisible in QSRSoft data, but owner is actively exploring a fix
   (2026-08-19), not a dead end.** A deposit counts as accounted the moment it's entered, so no
   detection rule against current QSRSoft-sourced data would ever fire. Owner is checking bank-data

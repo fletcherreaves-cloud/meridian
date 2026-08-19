@@ -30,12 +30,27 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #33 — Security build Phase 0a](dispatch-33.md)** —
-  2026-08-19. **NEWEST.** Two ungated, already-scoped tasks: (1) Register Audit auto-pull —
-  parser/table/scoring-engine all already exist, only the QSRSoft pull itself is missing (today
-  manual-Excel-only); (2) one Any Transaction capture filtered to an exception type, to settle the
-  owner-approved Tier A/B/C design's one open question. Full context:
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #34 — Phase 0a live-capture findings](dispatch-34-phase0a-findings.md)** —
+  2026-08-19. **NEWEST.** Follow-up to dispatch #33 (below): the owner captured real DevTools
+  sessions settling both of #33's open pieces. (1) Register Audit's real endpoint + field names are
+  now confirmed — the shipped scaffold's endpoint guess was wrong; `mapRow()` implementation is the
+  remaining work, with a translation table of confirmed vs. still-uncertain field mappings. (2) Any
+  Transaction Tier A is **settled dead** (two corroborating captures: no exception-type filter
+  exists anywhere in the API or its own filter-menu endpoint) — Register Audit carries all standing
+  attribution; Tier B is confirmed buildable via a newly-found `transaction_detail` endpoint.
+  Bonus: QSRSoft's own SSO role model was captured, informing a pending Meridian settings request
+  (Operations Manager/DO/AS tiers, see Backlog Master §14). Full context:
   [plan-security-loss-prevention.md](plan-security-loss-prevention.md).
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #33 — Security build Phase 0a](dispatch-33.md)** —
+  2026-08-19. Two ungated, already-scoped tasks: (1) Register Audit auto-pull —
+  parser/table/scoring-engine all already exist, only the QSRSoft pull itself is missing (today
+  manual-Excel-only) — **scaffold shipped (PR #444), implementation pending real-endpoint data now
+  in dispatch #34 above**; (2) one Any Transaction capture filtered to an exception type, to settle
+  the owner-approved Tier A/B/C design's one open question — **settled in dispatch #34 above, do
+  not re-run.** The engineer's own writeup of what shipped and what blocked them (no QSRSoft
+  credentials/egress in that sandbox) is [dispatch33-register-audit-pull.md](dispatch33-register-audit-pull.md)
+  — superseded by dispatch #34's real capture for the endpoint questions, still useful for the
+  scaffold/save-path implementation notes.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Backlog Master — 2026-08-19](backlog-master-2026-08-19.md)** —
   One consolidated, de-duplicated backlog assembled from a sweep of 20 memory files
   (`project-backlog.md`, `plan-backlog-and-redesign-2026-08-15.md`, `notes-24` through `notes-66`)
