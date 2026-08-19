@@ -68,6 +68,53 @@
 > the sweep wrote "Never started." The Bullseye tile has been on `main` since **v5.012 (#274)**,
 > four PRs of which touched it. Both were inherited verbatim from source memory files without a
 > code check, which is exactly the failure mode this pass exists to catch.
+>
+> ---
+>
+> ## PM review pass 2 — 2026-08-19
+>
+> **Scope:** the entire file again, independently, per the task brief — not a rubber stamp of pass
+> 1 and not limited to what pass 1 left open. Branched off `origin/main` at `8357f9d` (post-#433,
+> post-#434, post-#435 — pass 1's own PR plus its own follow-up correction PR were both already
+> merged before this pass started).
+>
+> **What this pass did.** (1) Spot-checked a sample of pass 1's ✅ verdicts directly against the
+> code/tests they cite, not against pass 1's prose description of them. (2) Independently
+> re-verified several of pass 1's still-open (❌/🟡/❓) items the same way. (3) Went one layer
+> deeper on two items where a first grep looked like it might contradict the existing verdict
+> (§8 R2P, §6 Inventory Control) before concluding either way — both held, with sharper evidence
+> attached. (4) Added two genuinely new items from first-hand knowledge that never existed in any
+> of the ~20 swept files (§0 Workstream G real-world providence note; the vs-LY young-store trap
+> and price-event engine additions under "Already confirmed done").
+>
+> **One real correction found and fixed:** §2's white-alpha token-adoption item. Pass 1 wrote
+> "ratchet ceiling of 266... ~24 sites absorbed opportunistically." Reading
+> `src/__tests__/light-mode-white-alpha.test.js` directly shows `CEILING = 241`, not 266 — 266 was
+> the ceiling's value *before* #296 step 2 landed (2026-08-15), already superseded when pass 1
+> wrote its note. Running the test's own grep gave **241**, exactly matching the current ceiling:
+> zero sites absorbed since the ceiling was seeded, not ~24. Pass 1's raw count (241) was correct;
+> only the ceiling it was compared against was one ratchet-step stale. Corrected in place at §2.
+>
+> **Spot-checks that held up exactly as pass 1 described, no correction needed** (citation
+> re-verified against the actual file/line/test, not just re-read as prose): §3 Ponce de Leon guard
+> (`_windowStart` at `backtest.js:201-220`, sharpened — see the "Already confirmed done" entry);
+> §3 LifeLenz T&A probe (`scripts/lifelenz-ta-probe.mjs` + `.github/workflows/lifelenz-ta-probe.yml`
+> both present); §0 C pipeline contract (`scripts/_pipeline-contract.mjs`, 75 lines, `CEILING = 18`
+> in the R8 ratchet test, both confirmed exactly as cited); §4 6-Week Performance YoY guard
+> (`_yoyPoint` at `forecast.js:642`, called from both `:659` and `:676`,
+> `yoy-trend-guard.test.js` exists); §11 Bullseye equal-area rings (`bullseye-tile.js:41`, the
+> `sqrt(1/3)`/`sqrt(2/3)` comment is real, file is 354 lines); §3 info-icon field scraper (both
+> scripts present); §8 stray `* 2.js` cleanup (`find src -name '* 2.js'` → 0); §9 SAGE
+> resolver-backed tool (grepped `supabase/functions` for `query_metric`/`metric_resolver`/
+> `queryMetric` → zero hits, same as pass 1 found); §3 `ds.laborRows` direct-read count (measured
+> 20 files under `src/views`+`src/engine`, matches pass 1's tracking number exactly).
+>
+> **Coverage, stated honestly, same standard as pass 1's own disclosure.** This pass did not
+> re-derive all ~150 checkboxes from scratch either — roughly 15 additional items got a direct
+> code/test check beyond what's summarized above and in the inline notes through the file; the
+> remainder are owner-decision (❓) or live-data items pass 1 already correctly identified as
+> unsettleable by grep, and this pass did not attempt to force-grade those. No item pass 1 marked
+> `(re-verified pass 1)` was found to be wrong on re-check.
 
 ---
 
@@ -95,9 +142,28 @@ for full detail on each.
   this — folded into A's perf investigation above, not a separate open item.
 - [ ] **F — role-based voice.** 🟡 First slice only (Visit Readiness verdict line). Count Cycle
   and DI Compare — the dispatch's own two evidence strings — still need the same treatment.
-- [ ] **G — shift dimension.** 🟡 Labor Allocation panel shipped, but: (1) never verified against
-  live Supabase in a real browser, (2) the 1,716-hr pre-open-hours Breakfast correction isn't
-  folded into the panel's own gap figure, (3) the panel itself has zero perf instrumentation.
+- [ ] **G — shift dimension.** 🟡 **Sharpened, pass 2 (2026-08-19) — first-hand knowledge, the
+  panel is real and named.** `src/views/labor-allocation.js` (207 lines), shipped v5.069 (#428,
+  "dispatch29"), lazy-loaded, registered in `panel-registry.js` as the "Labor Allocation" tab in
+  the Scheduling hub, imports `src/engine/labor-standard.js` directly — this is not a stray
+  unwired file, it's reachable in the running app. Three sub-views: District, By Store, Overnight.
+  All three original claims independently re-checked:
+  1. **Live-browser verification — still open, unchanged.** No code-level evidence either way;
+     needs an actual browser session, which this pass (docs-only) cannot perform.
+  2. **1,716-hr correction not folded in — CONFIRMED, and more precisely than before.** The
+     panel's own shipping changelog (`src/app/changelog/5.069.js:8`) states this gap verbatim:
+     *"the pre-open-hours-in-Breakfast correction... isn't yet folded into this panel's own
+     Breakfast gap figure — the correction logic exists in the engine but wiring it into this
+     specific number is a separate join this pass didn't attempt."* Not inherited from a stale
+     source file — the shipping team said so themselves, in the same PR.
+  3. **Zero perf instrumentation — CONFIRMED independently.** Grepped `labor-allocation.js` for
+     any trace/span/performance-mark idiom: zero hits.
+  **Coverage gap found, same pattern as pass 1's own §13 corrections:** `memory/dispatch29-labor-
+  allocation-panel.md` (the panel's full writeup) and `memory/dispatch30-workstream-d-followup.md`
+  (a later PR, v5.071, converted this same panel's hand-rolled modal to `ModalShell`) both exist
+  on `main` and are referenced nowhere in this backlog file. If two more files were missed here,
+  on top of pass 1's two, a wider re-sweep of `memory/` against this file's citations is probably
+  warranted before trusting any "not mentioned anywhere" claim in this file at face value.
 
 ## 1. Strategic roadmap (`vision-and-roadmap.md`, set 2026-07-21)
 
@@ -119,10 +185,20 @@ for full detail on each.
 - [ ] #225 viewport-scroll lock — fix applied, **unverified on a real phone** (devtools emulation
   insufficient per the issue itself).
 - [ ] Token adoption chain (#276→#286→#287, 111 sites → #296 step 2) — visual-foundation
-  prerequisite before any palette change. 🟡 **Count corrected pass 1: 241, not 265.** Measured
-  today (`rgba(255,255,255` across `src/**/*.js`, excluding `__tests__` and `changelog`), against
-  the ratchet ceiling of **266** in `src/__tests__/light-mode-white-alpha.test.js` — so ~24 sites
-  have been absorbed opportunistically since the ceiling was seeded. #296 step 2 is still open.
+  prerequisite before any palette change. 🟡 **Count corrected pass 1: 241, not 265.** 🔴
+  **Corrected again, pass 2 (2026-08-19) — the "ratchet ceiling of 266" and "~24 sites absorbed"
+  claim does not hold up.** Read `src/__tests__/light-mode-white-alpha.test.js` directly:
+  `CEILING = 241` (line 66), not 266 — 266 was the ceiling's *previous* value, before #296 step 2
+  landed on 2026-08-15 (four days before this backlog file was even written), when it was lowered
+  to 241 per the test's own header comment ("Lowered to match immediately... 241, from converting
+  19 text/color-role sites"). Ran the test's exact grep myself:
+  `grep -rEo "rgba\(255,\s*255,\s*255" src --include="*.js" --exclude-dir=__tests__
+  --exclude-dir=changelog --exclude=changelog-latest.js | wc -l` → **241**, exactly matching
+  CEILING. So the real state is **zero slack, zero sites absorbed since the ceiling was seeded** —
+  the opposite of "~24 sites absorbed opportunistically." Pass 1's own count (241) was right; only
+  the ceiling it compared against was stale by one ratchet-down. #296 step 2 itself is done (that
+  part pass 1 had right); the *background/boxShadow follow-up sweep* (the ~197-site remainder the
+  test's header calls out) is what's still open, at exactly today's measured count.
 - [ ] Home-screen redesign (fewer/deeper widgets around the "learning loop") — ❓ 3 open design
   questions: owner's actual first move of the day; dynamic vs. user-customized vs. hybrid; widget
   count.
@@ -257,7 +333,13 @@ for full detail on each.
 
 - [ ] Inventory Control weekly-count completeness rules — **cannot be built on the current table**
   (`qsr_raw_item_detail` is $50-threshold-biased, zero Condiment rows); needs a switch to
-  `qsr_onhand` + a mid-month concept that doesn't exist yet + paper-count inclusion.
+  `qsr_onhand` + a mid-month concept that doesn't exist yet + paper-count inclusion. ⚠️ **Clarified,
+  pass 2 (2026-08-19) — still fully open, do not read PR #411 as touching this.** A different
+  Condiment bug (98.9% of Condiment items in the On-Hand API's `active_in_recipe` flag reading
+  `false` district-wide, `src/engine/count-cycle.js`) was found and fixed separately this week.
+  Different table (`qsr_raw_item_detail` here vs. the On-Hand API there), different root cause
+  (data never present due to a $50 selection threshold, vs. a flag misread on data that *is*
+  present) — the two are unrelated and the fix does not close this item.
 - [ ] Variance chart loopback should anchor on `qsr_onhand.last_counted`, not the calendar month;
   build the per-item variance chart (data already computed, just not rendered).
 - [ ] ❓ Items Recounted tile hidden ~21 days/month — needs an owner decision (widen window /
@@ -299,6 +381,15 @@ for full detail on each.
 - [ ] Promotions/Training/Other-Initiatives area — not built.
 - [ ] Top-of-Discussion report — pre-populate relevant names for scope.
 - [x] R2P stays manual-only — no cloud source exists, documented limitation, not a bug to chase.
+  ✅ **Confirmed, pass 2 (2026-08-19), with an actual citation — this had none before.** Nearly
+  concluded the opposite on first grep: `src/engine/metric-source.js:78` lists
+  `qsrActSummaryRows.r2p` (a genuine cloud stream, `loadQsrActSummary()` → `qsr_daily_activity_
+  rollup`) ahead of `opsRows.r2p` (manual) in the resolver's source list. But one level deeper:
+  neither `scripts/qsrsoft-dar-pull.mjs` nor the DAR schema ever writes an `r2p` column into that
+  table — the "cloud source" entry is vestigial, resolves to `undefined` on every real row, and
+  the resolver falls through to manual in practice. Exactly the trap CLAUDE.md's own standing rule
+  warns about: a plausible code reference that doesn't survive one more check. Verdict unchanged,
+  now evidenced rather than assumed.
 - [ ] ❓ Labor% current-day DAR fallback — deliberately deferred pending owner's explanation of
   FL-vs-OK labor-usage differences.
 - [x] Cleanup: stray CloudDocs duplicate files (`src/**/* 2.js`). ✅ **Done — CORRECTED pass 1.**
@@ -467,8 +558,37 @@ pass consolidates rather than tracks both copies:
 - **Stray CloudDocs `* 2.js` duplicates** (§8) — `find` returns 0.
 - **Ponce de Leon future clean-data-start** (§4) — `src/__tests__/calibrate-new-store.test.js`,
   guard in `src/engine/backtest.js`. *(Code-level only; live Dialed-In behaviour unverified.)*
+  **Re-verified pass 2 — substance confirmed, citation sharpened by one line-range.** Pass 1's
+  `:145, :150` is the descriptive comment explaining the guard; the operative code that actually
+  computes and applies `_windowStart` is at `:201-220`. Both are real; the guard genuinely exists
+  either way this is read.
 - **Workstream C first slice** (§0) — not "done", but decisively **not** "never started": module,
   2 adopters, unit test, and ratchet R8 all shipped in #431/#432.
+
+**Added by pass 2 (2026-08-19), from first-hand knowledge — neither shipped through the file's
+20-file sweep, so neither could have been in this backlog until now:**
+
+- **vs-LY young-store trap.** A restaurant under ~2 years old scores well on any vs-LY comparison
+  purely because its own last-year figure is its opening-honeymoon ramp — Tishomingo (opened
+  2024-12-16) ranked 2nd-best of 26 restaurants on a district traffic study for exactly this
+  reason before being caught and excluded. Fixed: `firstRealTradingDate()` and `lyQuality()` added
+  to `src/engine/vs-ly.js`, wired into `RankingView` so a young store now renders flagged ("New
+  store") instead of ranking as a top performer, and a store with no LY twin at all (e.g. one that
+  opened this year) renders "no LY" instead of blank/zero/−100%. Shipped PR #411 (v5.062). This
+  was never written into any memory file the sweep covered — it surfaced only in a same-day
+  McValue 2.0 analysis session, `memory/analysis-mcvalue-price-waves-2026-08-18.md`.
+- **Price-event detection engine.** Nothing in the app could see a menu price change before this —
+  forecasts calibrated straight through repricing weeks, Signals had no way to correlate on price,
+  and every vs-LY comparison silently mixed pricing regimes. `src/engine/price-events.js` detects
+  a persistent step change in an item's base price (14 trading days flat on both sides, distinct
+  from a promotion) and is wired to all three places that matter — independently re-verified this
+  pass, not just cited: `signal-registry.js`'s Pricing metric group (`pxDaysSince`,
+  `pxItemsChanged`, `pxMeanStepPct`), `utils/events.js`'s `computeEventFactors` via
+  `_withPriceEvents` (synthetic calendar events, tested in `events-price-integration.test.js`),
+  and `store-dash.js`'s "Last price change" line via `lastPriceChangeByStore`. Verified against
+  763k real `qsr_product_mix` rows, reproducing an exact 14-store/13-store repricing wave split
+  with no tuning (regression-tested in PR #414). Shipped PR #411 (v5.062). Also never in the
+  sweep's source list — same origin as the item above.
 
 ---
 
@@ -496,18 +616,28 @@ looked at and left unresolved **on purpose**, because code alone cannot answer t
 
 ## How to use this file
 
-Two PM review passes re-verify status against actual code (not assumption) and correct the
-checkboxes/status tags above.
+Two PM review passes have now run, sequentially, re-verifying status against actual code (not
+assumption) and correcting the checkboxes/status tags above. **Both are complete as of
+2026-08-19.**
 
 **Corrected 2026-08-19 (pass 1):** an earlier draft of this section described the two passes as
-owning **disjoint sections** and running **concurrently**. That is not the plan. **Both passes
-cover the ENTIRE file, and they run SEQUENTIALLY** — pass 1 verifies and merges, then pass 2 runs
-a full independent pass over the same whole file, partly to sanity-check pass 1's conclusions and
-partly because pass 2 may carry first-hand knowledge of work it personally built or measured.
-Since the passes are sequential there is no concurrent-collision case to manage; pass 2 branches
-off `main` after pass 1 has landed.
+owning **disjoint sections** and running **concurrently**. That is not what happened. **Both
+passes cover the ENTIRE file, and they ran SEQUENTIALLY** — pass 1 verified and merged, then pass
+2 ran a full independent pass over the same whole file, partly to sanity-check pass 1's
+conclusions and partly because pass 2 carried first-hand knowledge of work it personally built or
+measured. Pass 2 branched off `main` after pass 1 (and pass 1's own follow-up correction PR #434)
+had landed.
 
-**For pass 2 specifically:** treat every pass-1 conclusion as a claim to check, not a result to
-build on — that is the entire point of a second pass, and pass 1 has no special standing. Lines
-carrying `(re-verified pass 1)` were checked and found genuinely open. Lines with no pass-1
-annotation were **not** individually settled and should not be read as confirmed either way.
+**Pass 2 is done — summary in the "PM review pass 2" section above.** One correction was made to
+a pass-1 verdict (§2 white-alpha ratchet ceiling — pass 1 compared against a stale ceiling value;
+the underlying count was actually right). No other pass-1 conclusion was found wrong on re-check.
+Two genuinely new items were added from first-hand knowledge that predates both passes as separate
+context (the vs-LY young-store trap, the price-event detection engine — see "Already confirmed
+done"), plus one first-hand sharpening of an existing item (§0 Workstream G / labor-allocation
+panel).
+
+**For anyone reading this file going forward:** lines carrying `(re-verified pass 1)` or a pass-2
+citation were checked against real evidence and found genuinely open (or genuinely done, if ✅).
+Lines with no annotation from either pass were **not** individually settled by either review and
+should not be read as confirmed in either direction — a third pass, or whoever picks up a specific
+item, should still verify it against code before acting on its current status tag alone.
