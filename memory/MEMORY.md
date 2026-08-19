@@ -30,8 +30,22 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #30 — Workstream D follow-up](dispatch-30.md)** — **NEWEST
+  dispatch, 2026-08-19.** D was dispatched (#26) but never started — checked, no PR touches
+  `PanelControls.js` adoption and no bypass-volume ratchet exists. The one thing that changed:
+  D's blocker (Workstream E's routing decision) **cleared** — E shipped in PR #426, but not into
+  one unified shell as D expected; `ModalShell.js` now also exports `RoutePanelShell` as a
+  deliberate **second** shape (route panels replace the view, no backdrop/centering; modals
+  overlay it) — D's "one layout contract" now has to name both, not unify them. Re-measured
+  adoption fresh (56 panels now, `labor-allocation.js` added): `DateRangeControl` 0/56,
+  `LocationSelector`/`ActionMenus` 1/56, `ModalShell` 9/56, `dateRange` prop 8/56 — zero movement
+  across two more merged workstreams. **Freshest proof**: `labor-allocation.js`, merged this same
+  session, uses **none** of the shared components — rolls its own modal shell and tab styling from
+  scratch, live evidence the compliant path still isn't the cheapest one. Recommends it as one of
+  the two hand-conversions (multi-tab + custom shell = the "awkward" one), alongside D's original
+  five-step sequence, unchanged otherwise.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #29 — Workstream G: join the third dimension (who was on the
-  shift)](dispatch-29.md)** — **NEWEST dispatch, 2026-08-19, the last of the 7 workstreams.**
+  shift)](dispatch-29.md)** — 2026-08-19, the last of the 7 workstreams.
   **DELIVERED same day** (PR #428, v5.069) — `labor-standard.js` wired into a new "Labor
   Allocation" tab (Scheduling hub): District/By Store/Overnight views, TPPH extended to hour_slot
   grain (`dt_trans_cnt`-denominated, kept separate from `METRIC_SOURCES`' daily `tpph` chain
