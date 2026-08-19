@@ -30,8 +30,25 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #28 — Workstream F: role-based voice](dispatch-28.md)** — **NEWEST
-  dispatch, 2026-08-19.** Grounds the plan's "role should determine voice, not just visibility"
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #29 — Workstream G: join the third dimension (who was on the
+  shift)](dispatch-29.md)** — **NEWEST dispatch, 2026-08-19, the last of the 7 workstreams.**
+  Unlike A–F, G's finding is already **proven** by five owner-run probes
+  (`plan-normalization-2026-08-17.md` G-1→G-5) — this dispatch grounds what's built vs. what's
+  wired up, not what's proposed. `src/engine/labor-standard.js` (the engine behind the proven
+  allocation finding — deficit −20,485/−14,207 corrected, surplus +32,701, 1.6× coverage — in
+  `analysis-labor-allocation-2026-08-18.md`) **exists, is tested, and has zero callers outside its
+  own test** — the #366 failure mode, a *third* time this session. TPPH auto-sourcing from the DAR
+  is **partially done**: daily-grain via `qsrActSummaryRows` is already live in
+  `metric-source.js:133`, but the hour_slot-grain TPPH the daypart analysis (G-3/G-4/G-5) actually
+  needs is still probe-SQL-only, not an app metric. `rollupShiftsByEmployee()` remains unwired,
+  unchanged since 2026-08-17 — and per the workstream's own constraints, should **stay** unwired
+  for this first slice (attribute to shift, not person). Gives the engineer a concrete 3-step task:
+  wire `labor-standard.js` into a panel (gated by `overnightOpenness()` — never rank TPPH/speed
+  across open and closed stores on one axis, the G-5 "killer pair" mistake), extend TPPH to
+  hour_slot grain, leave person-level for later. Also flags an unresolved open/closed classifier
+  disagreement (Ardmore-Cooper/12th vs. Freeport) a real panel should show both sides of, not pick.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #28 — Workstream F: role-based voice](dispatch-28.md)** — 2026-08-19.
+  Grounds the plan's "role should determine voice, not just visibility"
   premise: both cited evidence strings (`count-cycle.js:235` "No complete weekly count on record",
   `analytics.js:6895` "Not Dialed-In is better — recalibrate") still reproduce unchanged.
   `src/engine/permissions.js` confirmed access-only (boolean toggles, zero presentation fields) —
