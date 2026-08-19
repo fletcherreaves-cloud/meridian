@@ -1842,6 +1842,24 @@ export async function loadShiftManagerMonthly() {
 // ── eBOS daily op-supplies rows (for ds — feeds Perf-Review opSupplies actual) ─
 // One row per (loc, date) carrying the day's operating-supplies purchases. Paginated —
 // 27 stores × a year exceeds the 1000-row cap. loc unpadded to match the rest of ds.
+// ── forecast_week_cache — dispatch22 Workstream A ─────────────────────────────
+// Written daily by scripts/forecast-week-precompute.mjs (server-side forecastDay() calls,
+// off the render path — see the SQL file's header + at-a-glance.js's weekProjections for the
+// consumer). daysBack defaults to 10 — the cache only ever holds the current 7-day business
+// week, a small pad covers a week boundary landing mid-fetch.
+export async function loadForecastWeekCache(daysBack = 10) {
+  if (!supabase) return [];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);
+  const iso = cutoff.toISOString().slice(0, 10);
+  const { data, error } = await supabase.from('forecast_week_cache')
+    .select('loc,dt,forecast,actual,ly,model_used').gte('dt', iso);
+  if (error) { console.warn('[Meridian] forecast_week_cache load failed:', error.message); return []; }
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), date: _mkDate(r.dt),
+    forecast: r.forecast, actual: r.actual, ly: r.ly, modelUsed: r.model_used,
+  }));
+}
+
 export async function loadEbosDaily(daysBack = 400) {
   if (!supabase) return [];
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysBack);

@@ -35,6 +35,7 @@ on:
       - Data Completeness Check
       - EOM Baseline Snapshot
       - Event Impact — Retail Lift Measurement
+      - Forecast Week Precompute
       - Hourly Projection Accuracy
       - LifeLenz Daily Sync
       - LifeLenz People Skills Sync

@@ -414,6 +414,22 @@ function locRows(idxObj, fallbackRows, loc){
   return (fallbackRows||[]).filter(r=>r.loc===loc);
 }
 
+// Extracted from the 'ae'/'ewma'/'simple' branches' own inline _aeAct/_ewmaAct/_sAct IIFEs
+// (dispatch22, Workstream A) — the SAME "most-recent-actual" lookup those branches already
+// did independently: manual ds.laborRows first (same-day match, excluding period-summary
+// rows), falling back to the auto-synced DAR (_qsrActIdx). Exported so a caller sitting on a
+// PRECOMPUTED forecast (a cache — see scripts/forecast-week-precompute.mjs) can still get a
+// live-fresh actual without re-running forecastDay's whole (expensive) forecast computation
+// just to reach this cheap tail of it — a second hand-copy of this same filter+fallback would
+// only need to drift once to make a cached row and a live-computed row disagree on "actual"
+// for the exact same store/day, which is worse than the render cost this is meant to fix.
+function fetchRecentActual(ds, loc, date, field='sales'){
+  if(!ds) return 0;
+  const _rows = locRows(ds.laborByLoc, ds.laborRows, loc);
+  const rr = _rows.filter(r=>r.date instanceof Date&&Math.abs(r.date-date)<86400000&&!r.isPeriodSummary);
+  return (rr.length ? (rr[0][field]||0) : 0) || fetchRow(_qsrActIdx(ds), loc, date, field);
+}
+
 function avg6(rows,loc,field,wb){
   const cut=new Date(Date.now()-wb*7*86400000);
   let sum=0,cnt=0;
@@ -1970,4 +1986,5 @@ export {
   effectivePlusUp, forecastModels, modelAccuracy,
   getDIRecommendation, computeModelHealth,
   bLocIdx, locRows, avg6, gcCrossCheck, KnowledgeBasePanel, InfoIcon,
+  fetchRecentActual,
 };

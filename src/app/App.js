@@ -219,7 +219,7 @@ const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').th
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles } from '../lib/supabase.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
@@ -236,6 +236,7 @@ import { MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance,
 import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents } from '../features/calendar.js';
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
+import { supplementLaborWithSched } from '../engine/labor-supplement.js';
 import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
 import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
@@ -256,38 +257,9 @@ const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
-// Supplements ds.laborRows (the manual Labor Report) with ds.qsrActSummaryRows (the DAR
-// auto-pull, ~60 days rolling) for the recent window, per the CLAUDE.md standing rule
-// ("Auto/emailed-first, freshest-wins... Manual uploads are last-resort fill only... must
-// never override auto/emailed data"). Auto WINS for any overlapping day here — verified
-// 2026-08-04 against 7 real overlap days (store 3708, 7/15-7/21): DAR matched manual exactly
-// on 4/7 days and within ~1.4% on the rest, zero corrupted/null values. (An earlier attempt
-// using ds.schedRows — LifeLenz's own auto sales sync — was reverted: it had a genuine
-// reliability problem, showing $80.57 and null on 2 of the same 7 days against a real
-// $10,644.71/$9,708.44 — a silent-corruption risk a null-check wouldn't even catch. DAR
-// doesn't share that problem.) Blast radius is naturally bounded to the recent ~60-day
-// window DAR covers — the deep multi-year history "MAPE Full" backtests use is untouched.
-// Closes the gap where ds.laborIdx (the forecast/backtest/DI-Calibration sales history
-// index) was built from laborRows ALONE with zero auto-pull fallback — DI Calibration's
-// trailing 6W/4W/2W/1W MAPE windows went blank whenever the manual Labor Report lapsed
-// (it had, 14 days stale) even though the DAR had real sales data through yesterday.
-function supplementLaborWithSched(laborRows, qsrActSummaryRows) {
-  if (!qsrActSummaryRows?.length) return laborRows;
-  const key = r => String(r.loc) + '|' + (r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date).slice(0, 10));
-  const autoByKey = new Map(qsrActSummaryRows.filter(r => r.sales > 0).map(r => [key(r), r]));
-  if (!autoByKey.size) return laborRows;
-  const manualByKey = new Set((laborRows || []).map(key));
-  let changed = false;
-  const kept = (laborRows || []).map(r => {
-    const auto = autoByKey.get(key(r));
-    if (!auto || auto.sales === r.sales) return r;
-    changed = true;
-    return { ...r, sales: auto.sales };   // auto wins the SALES figure for this day; other manual fields (laborPct/tpph/otHrs) untouched
-  });
-  const fillDays = [...autoByKey.entries()].filter(([k]) => !manualByKey.has(k)).map(([, r]) => r);
-  if (fillDays.length) changed = true;
-  return changed ? [...kept, ...fillDays] : laborRows;
-}
+// supplementLaborWithSched moved to src/engine/labor-supplement.js (dispatch22, Workstream A)
+// so scripts/forecast-week-precompute.mjs can import the exact same function the browser uses
+// to build ds.laborRows, instead of a hand copy that risks drifting from real client behavior.
 
 // ── Event-tag cloud sync (Notes 46 gap, closed) ───────────────────────────────
 // org_events + its RLS + the cloud→local hydration in the effect below were built as "the
@@ -1418,6 +1390,19 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${ebosRows.length} eBOS op-supplies rows`);
         }
       }catch(e){console.warn('[Meridian] eBOS op-supplies load failed:',e);} };
+      // Precomputed weekly forecast (dispatch22, Workstream A) — written daily by
+      // scripts/forecast-week-precompute.mjs. at-a-glance.js's weekProjections reads this
+      // and only falls back to live forecastDay() calls for a store when the cache is
+      // missing/incomplete for the current week, so a slow/failed precompute run degrades
+      // to today's behavior rather than blanking the panel.
+      const _stForecastWeekCache = async () => {
+      try{
+        const forecastWeekCache=await loadForecastWeekCache();
+        if(forecastWeekCache.length>0){
+          setDs(prev=>{if(!prev)return prev;return{...prev,forecastWeekCache};});
+          console.log(`[Meridian] ✓ Loaded ${forecastWeekCache.length} forecast week cache rows`);
+        }
+      }catch(e){console.warn('[Meridian] forecast week cache load failed:',e);} };
       // QSRSoft People reports (monthly per-loc) → Perf-Review People metrics (Notes 32):
       // Roster Statistics (headcount), Employee Roster role counts (shift-cert), Turnover (0-90).
       const _stPeopleReports = async () => {
@@ -1665,6 +1650,7 @@ function App() {
         _timedStage('T2 customSignals', _stCustomSignals, _t2Start),
         _timedStage('T2 qsrFieldDefs', _stQsrFieldDefs, _t2Start),
         _timedStage('T2 ebosOpSupplies', _stEbosOpSupplies, _t2Start),
+        _timedStage('T2 forecastWeekCache', _stForecastWeekCache, _t2Start),
         _timedStage('T2 peopleReports', _stPeopleReports, _t2Start),
         _timedStage('T2 digitalDeliveryShiftmgr', _stDigitalDeliveryShiftmgr, _t2Start),
         _timedStage('T2 lockedProjections', _stLockedProjections, _t2Start),
