@@ -83,17 +83,30 @@
 > re-verified several of pass 1's still-open (❌/🟡/❓) items the same way. (3) Went one layer
 > deeper on two items where a first grep looked like it might contradict the existing verdict
 > (§8 R2P, §6 Inventory Control) before concluding either way — both held, with sharper evidence
-> attached. (4) Added two genuinely new items from first-hand knowledge that never existed in any
-> of the ~20 swept files (§0 Workstream G real-world providence note; the vs-LY young-store trap
-> and price-event engine additions under "Already confirmed done").
+> attached. (4) Sharpened §0 Workstream G with real-world provenance (the labor-allocation panel is
+> live, plus two more un-indexed memory files found). (5) Attempted to add two "never written down"
+> items from first-hand knowledge — both turned out to already be written down; see the correction
+> below.
 >
-> **One real correction found and fixed:** §2's white-alpha token-adoption item. Pass 1 wrote
+> **Two real corrections found and fixed.** §2's white-alpha token-adoption item: pass 1 wrote
 > "ratchet ceiling of 266... ~24 sites absorbed opportunistically." Reading
 > `src/__tests__/light-mode-white-alpha.test.js` directly shows `CEILING = 241`, not 266 — 266 was
 > the ceiling's value *before* #296 step 2 landed (2026-08-15), already superseded when pass 1
 > wrote its note. Running the test's own grep gave **241**, exactly matching the current ceiling:
 > zero sites absorbed since the ceiling was seeded, not ~24. Pass 1's raw count (241) was correct;
 > only the ceiling it was compared against was one ratchet-step stale. Corrected in place at §2.
+>
+> Second, this pass made **the same mistake pass 1 made on 2 of its own 3 additions** (caught by
+> the same fix that caught it there): first drafted the vs-LY young-store trap and the price-event
+> engine as "never written into any memory file the sweep covered," from first-hand knowledge.
+> Grepping the full `memory/` directory (not just this file) before finalizing found both already
+> documented in detail in `memory/dispatch-20.md` — marked "✅ DELIVERED 2026-08-18," indexed in
+> `MEMORY.md:250`, just not one of this backlog's 20 swept source files. Corrected in place under
+> "Already confirmed done," same pattern pass 1 used for its own PR #434→#435 correction. **This is
+> now the third memory file found un-indexed by this backlog's sweep** (pass 1 found two —
+> `pm-handoff-2026-08-15.md`, `qsrsoft-report-catalog.md` — this pass found a third), which is
+> itself the more important finding: the sweep's file-coverage gap, not any single item's status,
+> is the recurring failure mode across both passes.
 >
 > **Spot-checks that held up exactly as pass 1 described, no correction needed** (citation
 > re-verified against the actual file/line/test, not just re-read as prose): §3 Ponce de Leon guard
@@ -565,30 +578,41 @@ pass consolidates rather than tracks both copies:
 - **Workstream C first slice** (§0) — not "done", but decisively **not** "never started": module,
   2 adopters, unit test, and ratchet R8 all shipped in #431/#432.
 
-**Added by pass 2 (2026-08-19), from first-hand knowledge — neither shipped through the file's
-20-file sweep, so neither could have been in this backlog until now:**
+**Added by pass 2 (2026-08-19), from first-hand knowledge — then corrected same-day after
+following this pass's own "grep memory/ before writing 'unwritten'" instruction, which caught
+exactly the provenance mistake pass 1 made on two of its own three additions (PR #434, corrected
+in #435):**
 
-- **vs-LY young-store trap.** A restaurant under ~2 years old scores well on any vs-LY comparison
-  purely because its own last-year figure is its opening-honeymoon ramp — Tishomingo (opened
-  2024-12-16) ranked 2nd-best of 26 restaurants on a district traffic study for exactly this
-  reason before being caught and excluded. Fixed: `firstRealTradingDate()` and `lyQuality()` added
-  to `src/engine/vs-ly.js`, wired into `RankingView` so a young store now renders flagged ("New
-  store") instead of ranking as a top performer, and a store with no LY twin at all (e.g. one that
-  opened this year) renders "no LY" instead of blank/zero/−100%. Shipped PR #411 (v5.062). This
-  was never written into any memory file the sweep covered — it surfaced only in a same-day
-  McValue 2.0 analysis session, `memory/analysis-mcvalue-price-waves-2026-08-18.md`.
-- **Price-event detection engine.** Nothing in the app could see a menu price change before this —
-  forecasts calibrated straight through repricing weeks, Signals had no way to correlate on price,
-  and every vs-LY comparison silently mixed pricing regimes. `src/engine/price-events.js` detects
-  a persistent step change in an item's base price (14 trading days flat on both sides, distinct
-  from a promotion) and is wired to all three places that matter — independently re-verified this
-  pass, not just cited: `signal-registry.js`'s Pricing metric group (`pxDaysSince`,
-  `pxItemsChanged`, `pxMeanStepPct`), `utils/events.js`'s `computeEventFactors` via
-  `_withPriceEvents` (synthetic calendar events, tested in `events-price-integration.test.js`),
-  and `store-dash.js`'s "Last price change" line via `lastPriceChangeByStore`. Verified against
-  763k real `qsr_product_mix` rows, reproducing an exact 14-store/13-store repricing wave split
-  with no tuning (regression-tested in PR #414). Shipped PR #411 (v5.062). Also never in the
-  sweep's source list — same origin as the item above.
+- **vs-LY young-store trap.** ⚠️ **Corrected provenance — this WAS already written down, in
+  `memory/dispatch-20.md` §2 ("The vs-LY trap: a young restaurant scores well for being young"),
+  which is indexed in `MEMORY.md:250` and marked "✅ DELIVERED 2026-08-18" at its own top.** First
+  drafted this as "never written into any memory file the sweep covered" — wrong the same way
+  pass 1's two corrected items were wrong: not in the 20-file sweep list ≠ not written down
+  anywhere. `dispatch-20.md` simply isn't one of the 20 files this backlog swept, same gap pass 1
+  already flagged for `pm-handoff-2026-08-15.md` and `qsrsoft-report-catalog.md`. **The finding
+  itself still checks out independently:** Tishomingo (opened 2024-12-16) ranked 2nd-best of 26
+  restaurants on a district traffic study purely from its own opening-honeymoon LY base;
+  `firstRealTradingDate()`/`lyQuality()` added to `src/engine/vs-ly.js`, wired into `RankingView`
+  so a young store renders flagged ("New store") instead of ranking as a top performer, and a
+  store with no LY twin renders "no LY" instead of blank/zero/−100%. Shipped PR #411 (v5.062).
+  **Actual gap this exposes:** a third memory file (`dispatch-20.md`, in addition to pass 1's two)
+  is on `main`, indexed in `MEMORY.md`, and absent from this backlog's own source list — worth a
+  wider `memory/` re-sweep against this file's citations before trusting any future "not mentioned
+  anywhere" claim at face value, pass 1 said the same thing and it was right twice now.
+- **Price-event detection engine.** ⚠️ **Same correction, same source.** `memory/dispatch-20.md`
+  §1 ("Meridian cannot see a price change. That is the gap.") documents this in full — the three
+  district-wide price rounds found by hand-querying `qsr_product_mix`, the 14-day-flat-both-sides
+  algorithm, and the same three consumers listed below — and is marked delivered at the top of the
+  same file. First drafted as "never in the sweep's source list" with the implication of being
+  unwritten anywhere; correcting to: not swept, but written. **Finding still independently
+  re-verified this pass, not just cited:** `src/engine/price-events.js` detects a persistent step
+  change in an item's base price (14 trading days flat on both sides, distinct from a promotion),
+  wired to `signal-registry.js`'s Pricing metric group (`pxDaysSince`, `pxItemsChanged`,
+  `pxMeanStepPct`), `utils/events.js`'s `computeEventFactors` via `_withPriceEvents` (synthetic
+  calendar events, tested in `events-price-integration.test.js`), and `store-dash.js`'s "Last price
+  change" line via `lastPriceChangeByStore`. Verified against 763k real `qsr_product_mix` rows,
+  reproducing an exact 14-store/13-store repricing wave split with no tuning (regression-tested in
+  PR #414). Shipped PR #411 (v5.062).
 
 ---
 
@@ -628,13 +652,13 @@ conclusions and partly because pass 2 carried first-hand knowledge of work it pe
 measured. Pass 2 branched off `main` after pass 1 (and pass 1's own follow-up correction PR #434)
 had landed.
 
-**Pass 2 is done — summary in the "PM review pass 2" section above.** One correction was made to
+**Pass 2 is done — summary in the "PM review pass 2" section above.** Two corrections were made:
 a pass-1 verdict (§2 white-alpha ratchet ceiling — pass 1 compared against a stale ceiling value;
-the underlying count was actually right). No other pass-1 conclusion was found wrong on re-check.
-Two genuinely new items were added from first-hand knowledge that predates both passes as separate
-context (the vs-LY young-store trap, the price-event detection engine — see "Already confirmed
-done"), plus one first-hand sharpening of an existing item (§0 Workstream G / labor-allocation
-panel).
+the underlying count was actually right), and pass 2's own first attempt to add two "unwritten"
+items, which turned out to already be documented in `memory/dispatch-20.md` — corrected in place
+under "Already confirmed done" once found via a full `memory/` grep, the same fix pass 1 applied
+to its own PR #434. No other pass-1 conclusion was found wrong on re-check. One first-hand
+sharpening of an existing item was added (§0 Workstream G / labor-allocation panel).
 
 **For anyone reading this file going forward:** lines carrying `(re-verified pass 1)` or a pass-2
 citation were checked against real evidence and found genuinely open (or genuinely done, if ✅).
