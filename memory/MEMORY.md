@@ -30,8 +30,24 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #27 — Workstream E: routing vs modals](dispatch-27.md)** — **NEWEST
-  dispatch, 2026-08-19.** Confirms the plan's hybrid routing architecture is unchanged in current
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #28 — Workstream F: role-based voice](dispatch-28.md)** — **NEWEST
+  dispatch, 2026-08-19.** Grounds the plan's "role should determine voice, not just visibility"
+  premise: both cited evidence strings (`count-cycle.js:235` "No complete weekly count on record",
+  `analytics.js:6895` "Not Dialed-In is better — recalibrate") still reproduce unchanged.
+  `src/engine/permissions.js` confirmed access-only (boolean toggles, zero presentation fields) —
+  the plan's "gates access not presentation" claim holds exactly. The one working precedent is
+  SAGE's role framing (`sage-chat/index.ts:690-698`), but it's a binary supervisor/not-supervisor
+  branch that only steers LLM prose, not a finished pattern to copy onto a deterministic panel.
+  **New scoping fact:** the DB only enforces **3** roles (`schema.sql:13` — `admin`/`supervisor`/
+  `manager`), not the 8-tier ladder CLAUDE.md's RBAC table conceptually lists — no tracked migration
+  adds `developer` or the other five values, so voice tiers should target the 3 real roles, not the
+  aspirational 8. Flags Morning Brief (the plan's own "best next home") as still metric-only
+  (zero decision-shaped language, grepped), and `visit-readiness.js:419`'s existing "Top risk
+  drivers" ranking as the cheapest near-miss to extend into a decision line — it already computed
+  *which* gap matters, the hard half of the problem. Reiterates CLAUDE.md's own "Voice by role"
+  standing rule is binding already, not new scope to propose.
+- **⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #27 — Workstream E: routing vs modals](dispatch-27.md)** — 2026-08-19.
+  Confirms the plan's hybrid routing architecture is unchanged in current
   `App.js`: a `view` state var plus `anyModalOpen` (`App.js:2486-2489`) that unmounts the
   background view behind any open modal. DI Compare, Forecast Accuracy, and Projections are still
   modals; "Date-Range Report" is registered `kind:'nav'` but still opens as a modal. **Correction**:
