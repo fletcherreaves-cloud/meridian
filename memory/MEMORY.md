@@ -30,6 +30,19 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐ [Dispatch #22 — Workstream A: forecast off the render path](dispatch-22.md)** — **NEWEST
+  dispatch, 2026-08-18.** First workstream dispatch since [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md)'s
+  sequencing gate cleared (Phase 0 ratchets + the open PR queue all confirmed merged on `main`).
+  Scopes the `weekProjections` render-path migration (`src/views/at-a-glance.js:1519-1560`, 93% of
+  render time, 189 `forecastDay` calls/run) against the repo's real prior art
+  (`qsrsoft-dar-pull.mjs`'s `refreshRollup`) and flags that `forecast_snapshots`' existing shape
+  (backtest/MAPE record, no LY column) doesn't cleanly fit the weekly-rollup need — an open design
+  call for the engineer, not dictated. Carries the Workstream B interaction warning (733 vs ~11,000
+  event entries) as a hard sequencing constraint.
+- [Dispatch #20](dispatch-20.md) — price-event detection engine, vs-LY young-store trap, and the
+  Condiment count-cycle bug. **Delivered**, shipped in PR #411 (v5.062).
+- [Dispatch #21](dispatch-21.md) — handoff notice (PM session switch), not a task list; the one
+  optional ask (price-wave regression test) shipped in PR #414 (v5.063), reviewed 2026-08-18.
 - **⭐⭐ [McValue price-wave analysis 2026-08-18](analysis-mcvalue-price-waves-2026-08-18.md)** —
   **NEWEST work, and the McValue 2.0 FBP document's current source of truth for anything price or
   traffic.** Located three district-wide price rounds by measuring persistent step changes in
@@ -262,6 +275,11 @@ in the "before you theorize" table because their absence has already cost real w
 - [metric-inventory-2026-08-07.md](metric-inventory-2026-08-07.md) · [reference-r2p-formula.md](reference-r2p-formula.md) — R2P reconciled to the penny · [notes-57-metric-registry-plan.md](notes-57-metric-registry-plan.md)
 - [project-noise-measurement-237.md](project-noise-measurement-237.md) · [project-labor-pct-tail-236.md](project-labor-pct-tail-236.md) — the 994 nulled rows (#243)
 - [store-events-material-changes.md](store-events-material-changes.md) — the legitimate-gap ground truth #269's tolerance list is built on
+- [count-cycle-condiment-bug-2026-08-18.md](count-cycle-condiment-bug-2026-08-18.md) — chased #410's
+  "all 27 stores crit" flag to a real cause: 98.9% of Condiment items reading `active=false`
+  district-wide. Fixed in dispatch20/PR #411
+- [374-recipe-item-verification-2026-08-18.md](374-recipe-item-verification-2026-08-18.md) — #374's
+  acceptance-criteria check for the `recipeItem` Topic 6 rescue in `count-cycle.js`'s `isActive()`
 - [project-pull-completeness-263-265.md](project-pull-completeness-263-265.md) — #263 makes a pull say so when it KNOWS it failed; #265 catches the gaps a pull never saw at all (QSRSoft had no row, nothing threw, success was reported truthfully). Neither substitutes for the other — **neither the Sulphur nor the Marietta outage would have been caught by #263 alone**
 
 ### QSRSoft / pulls / auth

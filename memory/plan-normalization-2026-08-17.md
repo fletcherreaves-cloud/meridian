@@ -27,6 +27,20 @@ Owner-directed, afternoon of 2026-08-17. Everything here is **planned and staged
 
 ---
 
+## "Three phases" — resolved 2026-08-18
+
+The owner recalled this plan as "three phases." Confirmed directly: that's not a
+missing structural layer here — it's a loose reference to **three separate
+planning sessions** the owner had with the previous PM (the sessions that
+produced the standardization work below: cross-panel/model design-system
+standards, "well-known standards" for re-implementing hand-rolled mechanisms,
+one consistent system app-wide). Those three conversations are what got
+written down as the **seven workstreams (A–G)** in this file. There is no
+separate three-phase grouping to reconcile against — this file's structure
+*is* the record of those sessions. Don't re-derive or re-ask this.
+
+---
+
 ## The framing that produced all of it
 
 Six bugs on 2026-08-17 were hand-rolled solutions to problems with standard answers, and each failed the way its category is known to fail:
