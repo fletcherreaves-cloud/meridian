@@ -26,6 +26,7 @@ let _on = false;
 let _installed = false;
 let _tasks = [];            // { at, ms, label }
 let _marks = [];            // { at, ms, name } — named spans from mark()
+let _counts = {};           // name -> running total, from count()
 let _lastClick = null;      // { at, label }
 
 function _describe(el) {
@@ -59,6 +60,15 @@ export function mark(name, fn) {
       if (_marks.length > MAX_ENTRIES) _marks.shift();
     }
   }
+}
+
+/** Tally a discrete fact that isn't a duration — e.g. "how many of the 27 stores hit the
+ *  cache this render" (dispatch #31: mark()'s own 1ms floor would silently drop that count,
+ *  since a cache-hit branch is a handful of object lookups, not real work). No floor, no
+ *  timing — just an accumulating total per name, reset alongside marks/tasks. */
+export function count(name, n = 1) {
+  if (!_on) return;
+  _counts[name] = (_counts[name] || 0) + n;
 }
 
 // React commit timings, via the built-in Profiler. mark() can only wrap plain function calls —
@@ -130,7 +140,7 @@ function selfTimeLines() {
 // Builds the same report both printClickTrace() (console) and the on-screen overlay (phones
 // with no attached debugger) render — one source of truth for the numbers, two presentations.
 function buildReportLines() {
-  if (!_tasks.length && !_marks.length && !_renders.length) {
+  if (!_tasks.length && !_marks.length && !_renders.length && !Object.keys(_counts).length) {
     return ['nothing recorded yet — click something first'];
   }
   const lines = [];
@@ -193,6 +203,11 @@ function buildReportLines() {
     lines.push('', `── slowest background/startup renders (${noClick.length} of ${_renders.length} total) ──`);
     [...noClick].sort((a, b) => b.actual - a.actual).slice(0, 5)
       .forEach(r => lines.push(`${Math.round(r.actual)}ms  ${r.id} (${r.phase})`));
+  }
+  if (Object.keys(_counts).length) {
+    lines.push('', '── counters (count(), not timed) ──');
+    Object.entries(_counts).sort((a, b) => b[1] - a[1])
+      .forEach(([name, n]) => lines.push(`${name}: ${n}`));
   }
   lines.push(...selfTimeLines());
   return lines;
@@ -300,7 +315,7 @@ export function initClickTrace() {
     }
 
     window.mfClickTrace = printClickTrace;
-    window.mfClickTrace.reset = () => { _tasks = []; _marks = []; _renders = []; };
+    window.mfClickTrace.reset = () => { _tasks = []; _marks = []; _renders = []; _counts = {}; };
     window.mfClickTrace.off = () => { try { sessionStorage.removeItem(KEY); } catch {} _on = false; };
     console.log('%c[click-trace] on — click around, then run mfClickTrace()', 'color:#f5bc00');
 
