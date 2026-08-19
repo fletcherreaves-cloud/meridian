@@ -535,7 +535,245 @@ for full detail on each.
 
 ---
 
-## Cross-file duplicates — resolve to one canonical entry before triaging
+## 14. Coverage-sweep additions — 2026-08-19 (memory/ files outside the original 20-file sweep)
+
+**Source of this section.** After two independent status-verification passes on this file both
+found real memory files un-indexed by the original 20-file sweep, a follow-on pass grepped every
+remaining file in `memory/` (~96 of ~154 total, after excluding files already cited by this
+backlog and the ~20 originally swept) specifically for open items this backlog is missing —
+not re-verifying status this time, *finding gaps*. Four parallel reads covered the files; two of
+the most surprising/highest-stakes claims below were independently re-measured directly against
+the live repo before being written in here (marked ✅ **re-measured**); the rest carry their
+source file's own citation and should get the same "measure it" treatment before being acted on,
+same as everything else in this backlog. `notes-31-queue.md`, `notes-32-queue.md`,
+`notes-33-queue.md`, `notes-58-queue.md` — the only "notes-NN" files with **zero** citation
+anywhere in this backlog despite the header's "notes-24 through notes-66" framing — were read
+directly rather than delegated; all but one item in them turned out to already be captured
+elsewhere in this file under different wording (§6, §7, §8, §10) — the one exception is listed
+first below.
+
+### Security / RLS — highest priority, three independent sources converge on the same gap
+
+- [ ] **Wide-open RLS is still live, and larger than the fix plan assumed.** ✅ **Re-measured
+  today:** `grep -rEic "using\s*\(\s*true\s*\)" supabase/schema.sql` → **92** (a plain
+  case-sensitive `using(true)` grep returns 0 — the real text is `USING (true)` with a space and
+  mixed case, which is why a naive check would miss this). Across all `supabase/*.sql` files:
+  **107**. `project-audit-2026-07-27.md`'s critical finding A1. `project-rls-hardening-plan.md`'s
+  two-phase fix (Phase 1: close ~30 anonymous-access tables; Phase 2: per-loc isolation via
+  `can_see_loc()`) has been owner-approved-to-draft since 2026-07-27 and never executed — and the
+  real count (92-107) is 3-4× the ~30-table scope the plan assumed. Per
+  `capacity-and-onboarding-review.md`, this is the **sole blocker on onboarding any non-fully-
+  trusted user** — sharper than this backlog's existing generic "Security sweep" line (§13), which
+  itself cites this exact doc as its source. Two more related, unconfirmed pieces: whether
+  `supabase/schema-multitenant-phase3-registry-rls.sql` (closes the `tenants`/`tenant_stores` RLS
+  gap specifically) was ever run in production (`rls-table-audit-119.md`), and whether the
+  Supabase service-role key that was pasted into a chat log ever got rotated
+  (`session-2026-08-07-perf-and-rls.md`) — no evidence either way in the codebase.
+- [ ] `xlsx@0.18.5` has unpatched CVEs on npm (`project-audit-2026-07-27.md` B3) — deferred by its
+  own follow-on doc (`project-security-notes.md`) until untrusted uploads exist; noted here so the
+  two files aren't rediscovered as separate gaps later.
+- [ ] Single global `ErrorBoundary` still wraps the entire app in `meridian.js`
+  (`project-audit-2026-07-27.md` B6) — one runtime error anywhere blanks the whole page.
+- [ ] SAGE knowledge-grounding sensitivity gating (restrict personnel-sensitive findings to DO+
+  role, gate by subject not just caller role, fail-closed frontmatter) is designed but not built —
+  safety-relevant, not just a nice-to-have: `memory/finding-padding-and-cash-hunt-2026-08-13.md`
+  already names a GM by name, and nothing stops that reaching SAGE's context today
+  (`project-sage-knowledge-grounding.md`). Sharper than §9's generic "feed CLAUDE.md/memory
+  standing rules into the system prompt" line.
+
+### Data pipeline / automation
+
+- [ ] QSRSoft Cognito auth conversion is mostly unstarted. ✅ **Re-measured today:**
+  `grep -rl getFreshToken scripts/*.mjs` → 2 files (`turnover-pull`, `ops-pull`);
+  `grep -rl "QSRSOFT_TOKEN\|QSRSOFT_COGNITO_TOKEN" scripts/*.mjs` → 15 files still on the stale
+  ~1h-TTL token, falling through to Playwright on nearly every run (`project-qsrsoft-cognito-
+  auth-312.md`).
+- [ ] Product Outage pull (`GET /reporting/v2/product/outages`) — fully scoped, cheapest pull on
+  the list, backfillable to a year, zero remaining owner blockers (`data-acquisition-shopping-
+  list.md`).
+- [ ] Menu Price Comparison ("RFM Price Comparison") pull — ready-to-build, `nsn`+`menuItemNumber`
+  grain, 0 duplicates measured (`data-acquisition-shopping-list.md`).
+- [ ] Tiered "Any Transaction" exception-pull design (Tier A/B/C) — owner-approved 2026-08-14,
+  pending only a probe run (`data-acquisition-shopping-list.md`).
+- [ ] `parseLaborExceptions` parser exists (missed breaks, minors violations) with **zero**
+  table/loader/pull wired to it (`data-acquisition-shopping-list.md`).
+- [ ] No automated pull populates `qsr_inventory_summary` — `saveQsrInventorySummary` is defined
+  but never called anywhere; the Inventory Intelligence panel reads this table and shows "no cloud
+  data yet" for every store (`project-inventory-auto-wiring-214.md`).
+- [ ] `storewide_controls` QSRSoft endpoint (per-store T-Red/HALO/skim/cash thresholds, discount
+  %s) discovered but no pull script/table built to auto-populate `DEFAULT_TARGETS`/Signals
+  thresholds instead of hardcoding them (`project-qsrsoft-controls-endpoint.md`).
+- [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
+  discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
+  (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).
+- [ ] MOP/app transactions (`mop_transactions`) not yet added to the DAR pull
+  (`project-qsrsoft-dar-columns.md`).
+- [ ] `scripts/qsrsoft-ebos-pull.mjs` still runs the old dead SSO-first auth ladder instead of the
+  working Playwright eBOS login already ported to the variance/on-hand pulls
+  (`project-eom-diagnosis-flow.md`).
+- [ ] #263/#265 pull-completeness ledger system has no backlog presence at all:
+  `supabase/schema-data-completeness.sql` never run in production; only 2 of 7 pull streams have
+  tolerance rules; restricted-handling UI/SAGE gating for the `notes` column not built
+  (`project-pull-completeness-263-265.md`).
+- [ ] **§5 status correction:** the Product Mix → Pricing Engine item currently reads "❓ owner to
+  supply legacy spreadsheet" — stale. PMIX (#291) is now a real, tested pull (schema/loader/pull
+  script all shipped); 5 concrete next steps remain instead: confirm the multi-store `loc` field,
+  wire lazy-fill, add a GitHub Action + `sync-failure-watch.yml` entry, build the
+  `productMixDiscount` pull, fix the manual-parser loc/date handling (`project-product-mix-291.md`).
+- [ ] 994 `labor_rows` (2.36%, all 27 stores, Jan-2025–Jul-2026) still carry a false
+  `labor_pct=0` stub; `scripts/cleanup-labor-pct-stub-zeros.mjs` is dry-run-verified but never
+  executed — needs owner go-ahead, then a re-measurement of #236/#237's noise numbers
+  (`project-labor-pct-tail-236.md`). Distinct from §3's generic `labor_rows` sweep item.
+- [ ] Owner needs to run `supabase/schema-qsr-rollup-scheduled-hours.sql` before the Planning/
+  Execution split (#210, v4.989) rollup-path UI shows anything but "—" in production; two deferred
+  follow-ups also unlisted: rate/hours/sales decomposition (needs `actual_punched_dollars`) and
+  generalizing Signals' `HourlyDetail` into a per-store hour×DOW gap grid
+  (`project-labor-gap-split-210.md`).
+- [ ] Owner needs to run `schema-hourly-projection-accuracy.sql` before any data accumulates for
+  the hourly-projection-accuracy feature; the 8-day afternoon sales-bias pattern that motivated it
+  (-8% to -12%, 3pm-8pm) is an unconfirmed lead needing weeks more data; `dt-speedofservice.js`'s
+  string-keyed `HOUR_LABELS` may silently fail to match integer `hour_slot` values, never checked
+  live (`project-hourly-projection-accuracy.md`).
+
+### Correctness bugs (extends §4)
+
+- [ ] #150 — `metricAvg` discards real KVS Healthy Usage 0% results as missing data, inflating
+  district averages on the One-Pager/Morning Brief (`project-scoring-revisit.md`).
+- [ ] #153 — `computeOpsScore` grades against static `constants.js` `tLabor` instead of the
+  monthly-approved `tCrewLabor` (`project-scoring-revisit.md`).
+- [ ] #156 — monthly-target precedence has device cache beating cloud at `App.js:2279`, backwards
+  from the cloud-first policy (`project-scoring-revisit.md`).
+- [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
+  Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload
+  (`docs-refresh-todo.md`).
+- [ ] Tishomingo (43380) / Ponce de Leon (43701) store numbers collide with Excel's date-serial
+  range; a date-formatted loader silently mangles them. Fix "queued," not shipped
+  (`store-events-material-changes.md`).
+- [ ] Coaching loop #208's core verify mechanism is nonfunctional in production. ✅ **Re-measured
+  today:** `src/engine/coaching-loop.js:58` — `export const NOISE_THRESHOLDS = {};`, still empty,
+  so `computeVerdict()` returns `null` for every cycle. District-differencing was tested as the fix
+  and measured to not work (#237: reduction factor ~0.98-1.07× on FOB components, essentially
+  none); the next candidate (longer measurement windows, or confidence-based non-binary verdicts)
+  has no decision or build (`project-coaching-loop-208.md`, `project-noise-measurement-237.md`).
+  Called "the single genuine differentiator on the table" in its own shipping changelog
+  (`src/app/changelog/4.990.js`) — not referenced anywhere in this backlog until now.
+- [ ] OEPE is a plain unweighted mean at 4 sites (`opsRows` carries no car/GC weighting basis); DAR
+  re-sourcing would fix all four but hasn't been done. `src/views/scheduling.js`'s local
+  `wAvgLaborPct`/`wAvgTPMH` still duplicate `src/engine/weighted.js` (`weighted-rollup-audit.md`).
+- [ ] `LocationSelector`'s patch tier reads a static seed (`INV_ORG_COORDS[loc].sup`) while
+  Inventory Control's own patch filter reads the live `_liveAssignments` override — unconfirmed
+  whether the two stay in sync (`spine1-panel-controls-126.md`).
+- [ ] `pending_reports.org` column exists but is never written or filtered — a second org would
+  see the first org's uploaded files; also a 30-day window means new users miss old uploads
+  (`project-sync-rework.md`). More specific than §13's generic multi-tenant item.
+- [ ] `ds.storeIds` and `ds.loaded` are both manual-labor-derived (set from `laborRows`), the same
+  silent-failure-on-cloud-only-device shape #270 was supposed to fix for SAGE. 10+
+  `if(!ds.loaded)` gates in `analytics.js` alone are unaudited (`project-sage-manual-sourcing-
+  270.md`).
+- [ ] Four independently-maintained reimplementations of manual-first/auto-first merge logic
+  (`analytics.js`, `store-dash.js`, `smart-targets.js`, `promo-roi.js`) need a consolidation pass —
+  distinct from §3's Metric Registry/Resolver unification item, which is about merging
+  `signal-registry.js`/`metric-source.js`, not this (`plan-data-integrity-sweep.md`).
+- [ ] §4's render-storm item currently reads as fully unfixed — it's partial. The tiered loader
+  batches 22→3 renders, but ~19 renders remain unbatched across other effects (IDB restore,
+  `loadLaborRows` merge, 6 `org_config` syncs, email/PDF auto-ingest, cross-device sync)
+  (`project-startup-render-storm.md`).
+- [ ] Canonical loc-identity normalization (a single `normLoc()` at every boundary) and "make
+  silence loud" (parser contracts + loaders distinguishing no-data/error/row-cap) — named
+  structural fixes for recurring bug classes, explicitly marked "❌ not planned"
+  (`systemic-issues-and-next-phase.md`).
+- [ ] Golden-dataset regression tests still unbuilt — proposed independently in two files
+  (`session-2026-08-07-perf-and-rls.md`, `systemic-issues-and-next-phase.md`).
+- [ ] All 27 stores reading `crit`/`weekly-overdue` on Count Cycle compliance simultaneously,
+  flagged but never chased — corroborated by **two** independent sources: `dispatch-20.md` §3
+  ("Correctly flagged and correctly not chased in #410. Chase it now") and
+  `374-recipe-item-verification-2026-08-18.md` (measured `{stores:27, ok:0, warn:0, crit:27,
+  overdue:27}`). Same finding, two dates — worth chasing precisely because it's reproduced, not a
+  one-off. `dispatch-20.md`'s own advice: check several non-today dates first (every date `crit` →
+  a logic bug; only today → a stale feed), one query either way.
+- [ ] Two Supabase tables written by pull scripts but never read anywhere in the app
+  (`eom_count_progress_log`, `staff_assignments`), plus 12 loader functions defined but never
+  called — dead-write/dead-code surface not previously flagged (`metric-inventory-2026-08-07.md`).
+
+### Unbuilt designed features (owner-approved or fully specced, zero backlog presence)
+
+- [ ] **"Opportunity $"** — a fully-designed flagship feature: Labor/Food/GC three-pillar
+  dollar-gap-to-internal-best-in-class engine, complete formulas + UX + phasing, zero new data
+  needed, no build started (`design-opportunity-dollars.md`). §1's "Profit-Leak Index" is a
+  different, vaguer named idea — this one already has a real design doc.
+- [ ] Events redesign (owner signed off 2026-08-11): confirm/dismiss anomaly-tagging queue (the
+  core new build), a Competition/baseline-shift forecast mechanism (owner: "changes everything
+  potentially" — never filed as its own issue), an LTO-asymmetry check, and a school-calendar
+  LY-alignment fix (`project-events-redesign.md`).
+- [ ] Food Cost / Labor enhancement set, researched and prioritized, nothing built: data-discipline
+  score (Missing Waste/Counts insight cards), low-supply depletion projection, masking-detection
+  surfacing, labor 3-way split (Needed→Scheduled→Actual), rate/hours/sales labor-% decomposition,
+  intraday deployment heat map, role-based-routine UX organizing principle
+  (`project-food-cost-labor-enhancements.md`).
+- [ ] Insight ledger (findings-memory design): step 1 instrumentation shipped and returned a first
+  real reading (142 distinct situations/day); step 2 (persistence table + writers, dedupe by
+  situation, close the loop by re-measuring after a fix) explicitly gated on more data and not
+  started (`project-insight-ledger.md`).
+- [ ] EOM count-complete notifications: push/email at 90% count-completion, plus auto-dispatching
+  the FOB pull on count-complete — both deferred (`project-eom-scoreboard-notify.md`).
+- [ ] Printable Forms: extend from 8 pinned forms to the full ~60-form QSRSoft library (pull-filter
+  widen + scored-form field renderers + self-serve "add form" button)
+  (`project-forms-library-index.md`).
+- [ ] Attribution-confidence state (`clean`/`contested`/`unknown`) on employee-attributed exception
+  metrics, detecting register logins that don't match punch times — needs a LifeLenz punch-
+  timestamp extension (raw shifts currently never stored) or QSRSoft transaction-detail
+  (`attribution-validity-register-login.md`).
+- [ ] Six salvage items from the Decisions Panel Inventory retirement sweep, none built: cross-
+  store transfer matcher, duplicate-WRIN detector, OEPE-dollarization for slow-DT ranking,
+  daypart-asymmetry detector, forecast-calibration-gap flag, "This Week's Focus" problem-type
+  ranking (`decisions-panel-inventory-2026-08-10.md`).
+- [ ] VLH guide-based needed-hours calculation (DAR guest counts vs `actual_punched_hours`, per
+  store per hour) — `store_vlh_config` was explicitly built as its foundation; the calculation
+  itself isn't built (`project-vlh-config.md`).
+- [ ] Inventory Control redesign's Labor instantiation of the generic Food-Cost shell
+  (owner-approved 2026-08-11, "it must host Labor too") is on hold pending an owner-run
+  measurement of `qsr_labor_summary` that resolves a contradiction in what "Crew Labor %" actually
+  contains (`project-inventory-control-redesign.md`, `project-labor-pct-punched-vs-crew.md`).
+- [ ] Org-assignment Tier 2 — route perf-review/analysis rollups through `whoRan(loc,date)` for
+  true historical attribution instead of today's flat current-map. Distinct from §7's Tier-3
+  day-weighted-proration item (`project-org-structure.md`).
+- [ ] FS EcoSure/Audits/Tablet scoring mechanism still genuinely open (owner: "figure out
+  together + TEST," no %-of-target design yet); "2026 PACE" review template blocked pending the
+  full current-year Sales/Profit/People PACE weights from the owner (only RGR weights known so
+  far) (`perf-review-excel-audit.md`).
+- [ ] Performance Reviews Phase 2 punch list, none of these 5 in §7: Dev Plan tab, wage-review-
+  section wiring, YoY trend view, hourly-manager reviews, tag/search by score
+  (`project-perf-reviews.md`).
+- [ ] Labor Analysis Config tab's hours-of-operation editor is still read-only (only the
+  maint/prep/lobby fixed-hours inputs are editable) (`project-labor-analysis-flh.md`).
+- [ ] Lazy-fill: dedupe duplicate startup requests (`auth`/`org_config`/`user_settings`); the
+  gap-scoped `(stream,loc,dateRange)` demand queue was never built beyond a simpler whole-table
+  version (`project-lazy-fill-191.md`).
+- [ ] Correlate the Planning/Execution over-scheduling gap against `turnover_monthly` (already
+  pulled) — named as "the strongest available test" to convert the overscheduling-is-chaos-not-cost
+  finding from qualitative to measured (`finding-overscheduling-is-chaos-not-cost.md`).
+- [ ] Two open probes from the register-leak/cash-hunt investigation: whether `qsr_daily_activity`
+  carries register-level controls back to 2025-01 (would make the theory testable pre-dating
+  `cash_sheet_daily`'s 2026-07-01 floor), and probing `inventory_history` retention depth via
+  `workflow_dispatch` (#257 step 0) (`finding-padding-and-cash-hunt-2026-08-13.md`).
+
+### Status corrections to existing items
+
+- [ ] **§7 correction:** "Op Supplies actual, Total Profit-vs-Target derivation" is listed as
+  open/needs-field-confirmation — both are already shipped (v4.540/v4.541) per
+  `perf-review-data-sourcing.md`.
+- [ ] **§7 correction:** the Shift Manager Summary item is stale as worded — the report pull
+  already shipped (v4.550). The real open item is DM/shift-role review wiring: link a review to
+  `geid`, choose which manager-attributed metrics score it (`session-handoff-2026-07-28.md`).
+- [ ] **§8 addition (new, from `notes-31-queue.md`/`notes-32-queue.md`):** Leadership One-Pager FL
+  FOB yearly total read ~14.88% against an expected ~4% (FL) when the owner reviewed the shipped
+  panel live (2026-07-28) — flagged twice, "still to confirm with owner," and explicitly deferred
+  to a fresh session because Supabase egress wasn't allowlisted yet at the time. CLAUDE.md now
+  records egress as resolved (2026-07-31), so this is unblocked and just needs to actually be run:
+  does FL normalize over a full month/YTD range now that `fobByRange` has the `prodSalesAmt<=0`
+  guard shipped in the same round of fixes? Not referenced anywhere in this backlog.
+
+---
 
 The sweep found the same ask filed independently in multiple source files. Listed here so a PM
 pass consolidates rather than tracks both copies:
