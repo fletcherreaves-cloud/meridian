@@ -21,6 +21,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 
 const DAR_BASE  = 'https://api.reports.myqsrsoft.com';
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -293,7 +294,7 @@ async function fetchDayDirect(token, date) {
   return Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
 }
 
-async function runDirect(token, dates, tracker) {
+async function runDirect(token, dates, tracker, coveredStores) {
   let totalRows = 0;
   for (let i = 0; i < dates.length; i++) {
     const date = dates[i];
@@ -303,6 +304,7 @@ async function runDirect(token, dates, tracker) {
       const records = rows.map(r => mapRow(r, date));
       const n = await upsertBatch(records);
       totalRows += n;
+      if (coveredStores) for (const r of records) coveredStores.add(r.loc);
       const rolled = await refreshRollup(records, date);
       console.log(`[dar-pull]   ${date}: ${rows.length} rows → ${n} upserted, ${rolled} rollup`);
     } catch (e) {
@@ -316,7 +318,7 @@ async function runDirect(token, dates, tracker) {
 }
 
 // ── Path B: Playwright login → in-browser fetches ────────────────────────────
-async function pullViaPlaywright(dates, tracker) {
+async function pullViaPlaywright(dates, tracker, coveredStores) {
   const u = process.env.QSRSOFT_USERNAME;
   const pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) {
@@ -438,6 +440,7 @@ async function pullViaPlaywright(dates, tracker) {
         const records = result.rows.map(r => mapRow(r, date));
         const n = await upsertBatch(records);
         totalUpserted += n;
+        if (coveredStores) for (const r of records) coveredStores.add(r.loc);
         // Same rollup refresh as the direct path — without it, any day pulled via the
         // Playwright fallback would land in qsr_daily_activity but never reach the
         // rollup, and the app (which now reads the rollup) would silently miss it.
@@ -461,6 +464,15 @@ async function pullViaPlaywright(dates, tracker) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
+  // Dispatch #32 (Workstream C): freshness SLA, in addition to (not instead of) the
+  // existing gap-detection read inside getDateRange() below. warnAfterHours=30/
+  // errorAfterHours=54 mirror lifelenz-pull.mjs's own thresholds (one/two missed daily
+  // runs + the cron's own scheduling slack) -- this is a second, cheap single-row read,
+  // not a restructure of the working gap-detection logic.
+  const latestForFreshness = await getLatestDate();
+  const fresh = checkFreshness(latestForFreshness, { warnAfterHours: 30, errorAfterHours: 54, label: 'dar-pull' });
+  if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
+
   const { startDate, endDate } = await getDateRange();
 
   const dates = [];
@@ -468,11 +480,19 @@ async function main() {
     dates.push(fmtDate(d));
   }
   console.log(`[dar-pull] ${dates.length} dates × ${STORE_NSNS.length} stores (~${dates.length * STORE_NSNS.length * 25} rows expected)`);
+  const STORE_LOCS = STORE_NSNS.map(n => String(n).padStart(7, '0'));
+  const coveredStores = new Set();
 
   // #263: one tracker for whichever path actually runs -- a date that failed under
   // Path A never gets counted again if Path B doesn't retry it (each path pulls the
   // FULL date list independently, they don't hand off partial progress).
   const finalizeAndExit = (totalSaved, tracker) => {
+    // Dispatch #32: unconditional per-store coverage -- generalizes
+    // qsrsoft-pmix-pull.mjs:427-434's own pattern. tracker.fail() above only logs
+    // DATES that threw; a date that returned 200 with a partial store list (some
+    // stores silently missing from the API response, no error) is invisible to that
+    // -- this catches it.
+    logPartitionCoverage(coveredStores, STORE_LOCS, { label: 'dar-pull', kind: 'store' });
     const code = tracker.finalize({
       requestedUnits: dates, totalSaved,
       formatRerun: failedDates => failedDates
@@ -487,7 +507,7 @@ async function main() {
     console.log('[auth] trying direct server-side fetch with QSRSOFT_TOKEN…');
     const tracker = makeOutcomeTracker('dar-pull');
     try {
-      const total = await runDirect(token, dates, tracker);
+      const total = await runDirect(token, dates, tracker, coveredStores);
       console.log(`[dar-pull] done. Total: ${total} rows`);
       finalizeAndExit(total, tracker);
       return;
@@ -502,7 +522,7 @@ async function main() {
 
   // ── Path B: Playwright ──
   const pwTracker = makeOutcomeTracker('dar-pull');
-  const totalSaved = await pullViaPlaywright(dates, pwTracker);
+  const totalSaved = await pullViaPlaywright(dates, pwTracker, coveredStores);
   if (totalSaved === null) {
     console.error('[dar-pull] no auth method succeeded — set QSRSOFT_TOKEN or QSRSOFT_USERNAME+PASSWORD');
     process.exit(1);

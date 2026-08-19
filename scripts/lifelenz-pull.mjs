@@ -20,6 +20,7 @@
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // Zero-drift: the SAME per-station rollup the client uses (src/engine). The pull
 // pre-aggregates ShiftsForSchedulePeriod → per-role hours/cost so the client just
 // reads the rollup (raw shifts are never stored).
@@ -814,6 +815,14 @@ async function main() {
     console.log(`[lifelenz-pull] start_date override: ${START_DATE} → ${toISO(end)} (${Math.round((end-start)/86400000)} days)`);
   } else {
     const latestDate = await getLatestDate();
+    // Dispatch #32 (Workstream C): freshness SLA — this is the exact source (LifeLenz) that
+    // went silently dark for 6 days (2026-08-06→08-11, CLAUDE.md's own cited incident) before
+    // anyone noticed, because the only prior watch was GitHub Actions run-failure monitoring
+    // (sync-failure-watch.yml), which can't see "the run succeeded but the token silently
+    // stopped refreshing real data." warnAfterHours=30 covers one missed daily run + the
+    // ~10:00 UTC cron's own scheduling slack; errorAfterHours=54 covers two.
+    const fresh = checkFreshness(latestDate, { warnAfterHours: 30, errorAfterHours: 54, label: 'lifelenz-pull' });
+    if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
     let daysBack;
     if (!latestDate) {
       daysBack = DAYS_BACK;
@@ -898,6 +907,12 @@ async function main() {
   // from a schedule that legitimately has zero shifts in a window.
   const tracker = makeOutcomeTracker('lifelenz-pull');
   const requestedUnits = [];
+  // Dispatch #32: per-store coverage, unconditional (not just on failure like tracker.fail
+  // above) -- generalizes qsrsoft-pmix-pull.mjs:427-434's own "N/27 stores had at least one
+  // row" pattern so a partial run (e.g. one store's schedule genuinely returning nothing) is
+  // visible even when nothing THREW and the run still exits 0.
+  const coveredSchedules = new Set();
+  const allScheduleIds = schedules.map(s => s.id || s.scheduleId);
 
   for (const schedule of schedules) {
     const scheduleId = schedule.id || schedule.scheduleId;
@@ -925,10 +940,12 @@ async function main() {
     const saved = await upsertRows(storeRows);
     totalRows  += storeRows.length;
     totalSaved += saved;
+    if (saved > 0) coveredSchedules.add(scheduleId);
     console.log(`  ${name} (#${scheduleId}): ${saved} rows saved`);
   }
 
   console.log(`[lifelenz-pull] ✓ done — ${totalSaved}/${totalRows} rows saved to Supabase`);
+  logPartitionCoverage(coveredSchedules, allScheduleIds, { label: 'lifelenz-pull', kind: 'schedule' });
   const code = tracker.finalize({
     requestedUnits, totalSaved,
     formatRerun: () => `LIFELENZ_START_DATE=${toISO(start)} (no per-chunk rerun flag exists yet — reruns the full range)`,
