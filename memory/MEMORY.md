@@ -42,7 +42,8 @@ seconds, and the theory that survives one costs a PR.
   cheapest first, two hand conversions before any sweep, ratchet the bypass not the adoption,
   convert opportunistically) and a reminder that the broad panel-shell conversion specifically
   waits on Workstream E's routing-vs-modals decision — the ratchet/contract-doc mechanics don't.
-- **⭐⭐⭐⭐⭐⭐ [Dispatch #25 — Workstream C: pipeline contract](dispatch-25.md)** — 2026-08-19. Corrects the plan's own motivation before scoping the work: of the three
+- **⭐⭐⭐⭐⭐⭐ [Dispatch #25 — Workstream C: pipeline contract](dispatch-25.md)** — 2026-08-19.
+  Corrects the plan's own motivation before scoping the work: of the three
   cited "silent success" incidents, #263 (pmix zero-rows) is already fixed (v5.047,
   `qsrsoft-pmix-pull.mjs`) and #360 (`sales_ledger_daily`) was a self-corrected misdiagnosis, not
   a real gap — only the *generalization* is open. Measured directly: **2 of ~19** pull/write
