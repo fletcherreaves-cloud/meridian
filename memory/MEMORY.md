@@ -30,24 +30,31 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #35 — Register Audit implemented, PM-verified](dispatch35-register-audit-implementation.md)** —
+  2026-08-19. **NEWEST, merged (PR #448).** Phase 0a is now code-complete — `mapRow()` implemented
+  against dispatch #34's confirmed endpoint, resolved field-by-field against the actual consumer
+  (`analyzeRegisterAudit`) rather than guessed. **Independently re-verified during PM review, not
+  rubber-stamped**: every load-bearing mapping claim (`drawerGC`=`transactions`, five unconsumed
+  pct/avg fields, `manualRefAmt` vs `posOverAmt` staying distinct) checked out against `main`'s
+  real code. **One real, non-blocking finding from that review: `refundCnt` semantics diverge**
+  between manually-uploaded rows (cash-only, by construction) and auto-pulled rows
+  (cash+cashless) — not risk-scored today, flagged for resolution during the still-needed
+  live-verification pass (no session in this build's history has had real QSRSoft credentials).
+  **Two things remain before this data is trusted**: live-verify against a real API response, and
+  resolve the `refundCnt` drift. Neither blocks starting Phase 1 (cash-drawer variance + peer
+  ranking), but both should close before Phase 1's output is treated as reliable. The original
+  dispatch instructions are [dispatch-35.md](dispatch-35.md) — superseded by the implementation
+  writeup above, kept for the record of what was asked.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security PII/identity architecture — logged, not decided](plan-security-pii-architecture-2026-08-19.md)** —
-  2026-08-19. **NEWEST.** Owner follow-up research (Grok/Gemini/ChatGPT) on how security apps
+  2026-08-19. Owner follow-up research (Grok/Gemini/ChatGPT) on how security apps
   handle employee PII, checked against a **verified** current-code finding: `audit_rows`/
   `analyzeRegisterAudit` store and key on the employee's **plaintext name today, with zero
   pseudonymization or logged identity-reveal step anywhere** (`src/parsers/index.js:974`,
   `src/utils/register-audit.js:7-8,56`). Two directions laid out (extend the existing role+subject
   disclosure gate with a logged reveal, vs. a real token/identity-vault architecture) — **not
   decided**, added as a fourth axis to `plan-security-loss-prevention.md` §5's existing owner-gated
-  decision. Also flags GDPR/CCPA likely don't apply to this FL/OK-only operation — needs real
-  HR/counsel verification, not more AI reasoning.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #35 — Register Audit: implement against the confirmed endpoint](dispatch-35.md)** —
-  2026-08-19. **NEWEST, ready to dispatch to an engineer now.** The implementation step on top of
-  dispatch #34's capture below: restructure the pull shape (one call covers all 27 stores × a date
-  range, not per-store loop), fill in `mapRow()` field-by-field against `parseRegisterAudit`'s own
-  derivation logic for the still-uncertain columns, handle the `nsn`→`loc` zero-pad, verify against
-  real rows before trusting the risk-scoring output, then finish the standing "new automated pull"
-  checklist (cron schedule, sync-failure-watch entry, backfill). This is the last piece of Phase 0a
-  — Phase 1 (cash-drawer variance + peer ranking) starts once this lands.
+  decision. Reviewers named: Fletcher Reaves (owner). Also flags GDPR/CCPA likely don't apply to
+  this FL/OK-only operation — needs real HR/counsel verification, not more AI reasoning.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #34 — Phase 0a live-capture findings](dispatch-34-phase0a-findings.md)** —
   2026-08-19. **NEWEST.** Follow-up to dispatch #33 (below): the owner captured real DevTools
   sessions settling both of #33's open pieces. (1) Register Audit's real endpoint + field names are

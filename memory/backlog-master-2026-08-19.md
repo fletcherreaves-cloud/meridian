@@ -875,11 +875,15 @@ previously documented — is the raw per-event log to build against, and settled
   - **Register Audit** — real endpoint captured (`GET api.reports.myqsrsoft.com/reports/mcd/
     controlsCash/regAudit`, one call covers all 27 stores × a date range). The shipped scaffold's
     (`scripts/qsrsoft-register-audit-pull.mjs`) "grounded hypothesis" endpoint guess was wrong;
-    real field names captured but `mapRow()`'s translation to `saveAuditRows()`'s schema is only
-    ~80% mechanical — a few columns (POS over-ring vs. the newly-seen `manOverringAmt`, cash-O/S
-    %, avg check, T-Red rate/avg) need confirming against `parseRegisterAudit`'s own derivation
-    logic before going live, per the dispatch's own caution about writing wrong numbers into
-    personnel-sensitive scoring data. **Still open, not done** — implementation work remains.
+    real field names captured, and dispatch #35 (PR #448, 2026-08-19) implemented `mapRow()`
+    against them. **Implementation DONE, independently re-verified against the real consumer
+    code during PM review** (`memory/dispatch35-register-audit-implementation.md`'s "PM
+    verification pass" note) — every flagged field translation checked out. **Two things still
+    open before this data is trusted for anything:** (a) not yet live-verified against a real
+    API response (no session in this build's history has had QSRSoft credentials) — run
+    `workflow_dispatch` once and spot-check real rows first; (b) a real, non-blocking `refundCnt`
+    semantic drift between manual (cash-only) and auto-pulled (cash+cashless) rows, not currently
+    risk-scored but should resolve during that same verification pass.
   - **Any Transaction Tier A is SETTLED DEAD** — two corroborating captures (a live query with no
     exception-type filter available, and the report's own filter-options endpoint offering only
     register/manager/cashier, no transaction-type dimension). Register Audit carries all standing
