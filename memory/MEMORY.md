@@ -30,8 +30,19 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐ [Dispatch #22 — Workstream A: forecast off the render path](dispatch-22.md)** — **NEWEST
-  dispatch, 2026-08-18.** First workstream dispatch since [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md)'s
+- **⭐⭐⭐⭐ [Dispatch #23 — precompute event-factor gap + Workstream B](dispatch-23.md)** — **NEWEST
+  dispatch, 2026-08-19.** Two parts: (1) a real correctness gap found reading `forecastDay` to
+  ground this dispatch — `scripts/forecast-week-precompute.mjs` calls `forecastDay` with an empty
+  settings object, so `_evFactor` (`src/engine/forecast.js:1620-1651`) always reads as zero and a
+  cache-hit store's forecast silently omits event lift/dip that the live-computed path would apply;
+  (2) Workstream B itself — `org_events`' `unique(loc, date_start, label)` PK has no scope concept,
+  so `applyEventToStores` (`calendar.js:213`) writes N duplicate rows for an N-store event ("27
+  copies of Thanksgiving"); `RETAIL_EVENT_RULES`/`expandRetailEvents` (`retail-events.js`) already
+  prove the recurrence half works but freeze their output the same way. Fix is upstream of
+  `orgEventsToDayMap` (`events-import.js:146`) — `forecastDay`/`computeEventFactors` need zero
+  changes.
+- **⭐⭐⭐ [Dispatch #22 — Workstream A: forecast off the render path](dispatch-22.md)** —
+  2026-08-18, **DELIVERED** (PR #415, v5.064). First workstream dispatch since [plan-normalization-2026-08-17.md](plan-normalization-2026-08-17.md)'s
   sequencing gate cleared (Phase 0 ratchets + the open PR queue all confirmed merged on `main`).
   Scopes the `weekProjections` render-path migration (`src/views/at-a-glance.js:1519-1560`, 93% of
   render time, 189 `forecastDay` calls/run) against the repo's real prior art
