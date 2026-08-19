@@ -341,6 +341,39 @@ is the name on the **login**, not necessarily the actor. That caveat is a footno
 metric; here it is the difference between an inquiry and an accusation. It must travel with the
 data, not live in a doc.
 
+## ADDENDUM 2026-08-19 — question 1 above answered, and a fifth report explored
+
+Owner supplied three real exports (store 3708, POS Overring exceptions, 2026-08-01→08-18),
+captured while scoping `memory/plan-security-loss-prevention.md`. Two findings that settle open
+items above:
+
+1. **`suspicious_activity` is confirmed pre-aggregated, not raw.** The exported report's columns
+   are `Date, Location, Cashier, Reason, Go To`, and a real row reads `2026-08-03, 3708, Dillon S,
+   "7 POS Overrings totaling $104.36"` — one row summarizing seven individual events. Question 1
+   above is answered: this is QSRSoft's own derived judgment, sits on the far side of the
+   facts-vs-judgments line `#272` drew, and should be gated (supervisor/DO-and-above per that
+   decision, handling notice) rather than treated as a raw fact feed if ever surfaced in Meridian.
+2. **`Security Events` — not previously captured in this file — is the actual raw per-event log,
+   and it's better than `suspicious_activity` for building against.** Columns: `Date, Time, Day
+   Part, Register, Crew, Manager, Manager Code Entered, Tender Type, Overring Amount, View Detail,
+   Camera`. To-the-second timestamps, one row per individual event, crew and manager named
+   separately, and a `Manager Code Entered` boolean per event — a real sample shows Crew and
+   Manager as the same person with `Manager Code Entered: false` (self-override, or an override
+   that didn't require a code — undetermined which, worth a direct question before building a rule
+   on it). `View Detail`/`Camera` columns are present in the schema (empty in this sample), meaning
+   camera linkage may already be wired at the event level.
+
+A fourth export (`Any Transaction`, store 3708, register 13, 2026-08-18 10:00–13:00) confirms the
+report carries `Date & Time` (second precision), `Transaction Type`, `Transaction Status`,
+`Originating Register`/`Final Register` (can differ — e.g. a mobile/kiosk order finalized at a
+different register than it originated), `Order Amount`, `Cashier`, `Manager`, and the same
+`View Details`/`Camera` columns. **Still open:** whether it filters server-side to exception types
+(the actual Tier A question from `data-acquisition-shopping-list.md` §B) — this sample was an
+all-transactions pull on one register/window, not an exceptions-only filter, so that question
+still needs one more capture.
+
+Full writeup: `memory/plan-security-loss-prevention.md` §0.
+
 ---
 
 # `data_layer/v1/service/voice` — SMG VOICE by API (owner-captured 2026-08-14)
