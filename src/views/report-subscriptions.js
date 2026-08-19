@@ -9,6 +9,8 @@ import * as React from 'react';
 import { loadReportSubs, saveReportSubs } from '../lib/supabase.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 import { ONEPAGER_PANELS } from './above-store-onepager.js';
+import { ModalShell } from '../components/ModalShell.js';
+import { LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -28,6 +30,24 @@ const REPORTS = [
     desc: 'Graded-visit readiness + calibration audit: contribution per area, every target and source, declared gaps.' },
 ];
 const PERIODS = [['mtd', 'Month-to-date'], ['lastweek', 'Last 7 days'], ['lastmonth', 'Last month']];
+
+// scope stays a plain string ('all'|'ok'|'fl'|'grp:X'|storeId) — that's the persisted shape
+// (report_subscriptions rows already use it, in the wild), so LocationSelector's {level,id}
+// value is only a UI-layer translation, converted at the edges, never stored.
+const scopeToSelectorValue = (scope) => {
+  if (scope === 'all') return { level: 'all', id: null };
+  if (scope === 'ok') return { level: 'state', id: 'OK' };
+  if (scope === 'fl') return { level: 'state', id: 'FL' };
+  if (String(scope).startsWith('grp:')) return { level: 'patch', id: scope.slice(4) };
+  return { level: 'store', id: scope };
+};
+const selectorValueToScope = (v) => {
+  if (!v || v.level === 'all') return 'all';
+  if (v.level === 'state') return v.id === 'OK' ? 'ok' : v.id === 'FL' ? 'fl' : 'all';
+  if (v.level === 'patch') return 'grp:' + v.id;
+  if (v.level === 'store') return v.id || 'all';
+  return 'all';
+};
 
 const scopeLabel = (scope, groups) => {
   if (scope === 'all') return 'All stores';
@@ -52,6 +72,8 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
 
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
   const rptDef = REPORTS.find(r => r.key === report) || REPORTS[0];
+  // {loc} shape only — LocationSelector derives state/patch from INV_ORG_COORDS itself.
+  const _stores = useMemo(() => Object.keys(STORE_NAMES).map(loc => ({ loc })), []);
 
   useEffect(() => { let live = true; loadReportSubs().then(r => { if (live) setSubs(Array.isArray(r) ? r : []); }).catch(() => { if (live) setSubs([]); }); return () => { live = false; }; }, []);
 
@@ -78,31 +100,21 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
 
   const launch = (sub) => { onLaunch && onLaunch(sub); };
 
-  // ── Scope selector (shared by draft) ──
-  const scopeSelect = () => div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
-    div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-      ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => btn({ key: v, onClick: () => setScope(v),
-        style: { padding: '4px 10px', border: 'none', fontSize: '10px', cursor: 'pointer', background: scope === v ? 'var(--amber)' : 'transparent', color: scope === v ? '#000' : 'var(--text3)', fontWeight: scope === v ? 700 : 400 } }, l))),
-    Object.keys(groups).length ? h('select', { value: String(scope).startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value),
-      style: { fontSize: '10px', padding: '4px 6px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-      h('option', { value: '' }, '— patch —'), Object.keys(groups).sort().map(g => h('option', { key: g, value: 'grp:' + g }, g))) : null,
-    h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value),
-      style: { fontSize: '10px', padding: '4px 6px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-      h('option', { value: '' }, '— store —'),
-      Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l)))));
+  // ── Scope selector (shared by draft) ── LocationSelector (PanelControls.js, issue #126) —
+  // the All/OK/FL toggle + two dropdowns this used to hand-roll are exactly the pill-based
+  // All→State→Patch→Store hierarchy that component already standardizes app-wide
+  // (feedback-selector-ui-standard.md). scope stays a plain string at the edges (above).
+  const scopeSelect = () => h(LocationSelector, {
+    stores: _stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+    value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
+  });
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 462, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, paddingTop: 24 } },
-    div({ style: { background: 'var(--surf)', border: '.5px solid var(--bdr2)', borderRadius: 'var(--rl)', width: '100%', maxWidth: 760, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.5)', overflow: 'hidden' } },
-      // header
-      div({ style: { padding: '12px 16px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10 } },
-        span({ style: { fontSize: 18 } }, '🗂'),
-        div({ style: { flex: 1 } },
-          div({ style: { fontSize: '13px', fontWeight: 800, color: 'var(--text)' } }, 'My Reports'),
-          div({ style: { fontSize: '9px', color: 'var(--text3)' } }, 'Save the reports and groupings you want — one-click, pre-scoped')),
-        msg ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, busy ? '…' : msg) : null,
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
-      // body
-      div({ style: { flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 14 } },
+  return h(ModalShell, {
+    title: 'My Reports', icon: '🗂', maxWidth: 760, onClose,
+    subtitle: 'Save the reports and groupings you want — one-click, pre-scoped',
+    headerExtra: msg ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, busy ? '…' : msg) : null,
+    bodyStyle: { padding: 14, display: 'flex', flexDirection: 'column', gap: 14 },
+  },
         // ── saved list ──
         div(null,
           div({ style: { fontSize: '10px', fontWeight: 800, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 } }, 'Saved (' + ((subs || []).length) + ')'),
@@ -144,5 +156,5 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
             btn({ className: 'btn', style: { fontSize: '11px' }, onClick: () => launch({ report, scope, period, panels: rptDef.panels ? Array.from(panels) : null }) }, '▶ Open now (without saving)'))),
         // footnote
         div({ style: { fontSize: '9px', color: 'var(--text3)', borderTop: '1px solid var(--bdr)', paddingTop: 8 } },
-          'Auto-delivery (scheduled email to supervisors/owners) is coming — for now these open in-app, pre-scoped. Saved per user; synced across your devices when signed in.'))));
+          'Auto-delivery (scheduled email to supervisors/owners) is coming — for now these open in-app, pre-scoped. Saved per user; synced across your devices when signed in.'));
 }
