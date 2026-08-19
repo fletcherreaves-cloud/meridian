@@ -1,11 +1,28 @@
 # Dispatch #32 — Workstream C: still fully open, unchanged since dispatch #25
 
-**Board (2026-08-19):** `main` at v5.070 (`31928bf`). Six of the seven normalization workstreams
-(A, B, D, E, F, G) now have real shipped code. **C does not — it has never been implemented.**
-Dispatch #25 (PR #422) was the brief; no PR since has touched a pipeline-contract module, a
-zero-row guard beyond the two that already existed before the plan, or a ratchet tracking either.
-This dispatch re-verifies dispatch #25's content is still accurate and hands it back unchanged,
-since nothing has drifted — it just needs someone to actually start it.
+> **⚠️ SUPERSEDED THE SAME DAY IT WAS WRITTEN — read `memory/dispatch32-pipeline-contract.md`
+> instead of trusting the numbers below.** While this dispatch was in flight, the engineer
+> started C independently and shipped it (v5.072, same PR as dispatch #31's instrumentation) —
+> **and their own work caught a real error in this dispatch's re-verification.** The "2 of ~19
+> pull/write scripts have a zero-row guard" claim below (inherited unchanged from dispatch #25)
+> missed `scripts/lib/pull-outcome.mjs` — a separate, already-existing shared module (PR #269,
+> well before this session) already imported by **8** scripts, already implementing
+> assert-on-zero-rows via its own `finalize()`. Real prior adoption of that concern was ~40%
+> (8/20), not ~10% (2/19). Both this dispatch and #25 grepped for one inline shape
+> (`qsrsoft-pmix-pull.mjs`'s) instead of checking for other implementations of the same concern
+> — exactly the "check whether an affordance already exists" mistake CLAUDE.md warns about,
+> caught here by the engineer, not by either PM pass. **This file is kept for the record, not as
+> current guidance — the corrected numbers, the actually-shipped module
+> (`scripts/_pipeline-contract.mjs`, which correctly does NOT duplicate `pull-outcome.mjs`), and
+> the new ratchet (R8, ceiling 18) are all in `dispatch32-pipeline-contract.md`.**
+
+**Board (2026-08-19), at time of writing (now stale, see box above):** `main` at v5.070
+(`31928bf`). Six of the seven normalization workstreams (A, B, D, E, F, G) now have real shipped
+code. **C does not — it has never been implemented.** Dispatch #25 (PR #422) was the brief; no PR
+since has touched a pipeline-contract module, a zero-row guard beyond the two that already
+existed before the plan, or a ratchet tracking either. This dispatch re-verifies dispatch #25's
+content is still accurate and hands it back unchanged, since nothing has drifted — it just needs
+someone to actually start it.
 
 ---
 
