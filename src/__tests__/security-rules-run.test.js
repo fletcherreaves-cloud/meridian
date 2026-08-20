@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mapAuditRow, supportsAuditRows, fieldsFromExpr, computeFindingsForRule, buildExplanation,
   dataRequiredList, supportsVarianceStat, mapVarianceStatRow, joinStoreMonthSales, periodEndDate,
-  computeItemFindingsForRule, classifyLifecycle,
+  computeItemFindingsForRule, classifyLifecycle, computeWasteExoneration,
 } from '../../scripts/security-rules-run.mjs';
 import { evaluateRule } from '../engine/security-rules.js';
 
@@ -347,6 +347,35 @@ describe('computeItemFindingsForRule() — z-score wiring (dispatch #42): the ba
     const a = computeItemFindingsForRule(rule, Z_INV_ROWS, Z_INV_WIN).find(f => f.loc === '0000001');
     expect(a.pass).toBe(true);
   });
+
+  // dispatch #45 §A, second cause -- min_stdev wiring at the real call site. Peers B-F cluster
+  // TIGHTLY (rates 0.99-1.01, a real but tiny stdev ~0.0071) -- store A's rate (5.0) is genuinely
+  // far from that cluster, so a naive z (~565) reads as an absurd outlier driven by the peer
+  // population's own near-zero spread, not by A's behavior. This is the exact live pattern
+  // dispatch #45 §A recorded (a stdev that rounds to 0.00 on screen but is not literally zero).
+  const TIGHT_ROWS = [
+    { loc: '0000001', period: '2026-08', date: '2026-08', wrin: 'W200', cls: 'food', variance: 50,   expUsage: 1000 }, // A: rate 5.0
+    { loc: '0000002', period: '2026-08', date: '2026-08', wrin: 'W200', cls: 'food', variance: 10.0,  expUsage: 1000 }, // rate 1.00
+    { loc: '0000003', period: '2026-08', date: '2026-08', wrin: 'W200', cls: 'food', variance: 10.1,  expUsage: 1000 }, // rate 1.01
+    { loc: '0000004', period: '2026-08', date: '2026-08', wrin: 'W200', cls: 'food', variance: 9.9,   expUsage: 1000 }, // rate 0.99
+    { loc: '0000005', period: '2026-08', date: '2026-08', wrin: 'W200', cls: 'food', variance: 10.05, expUsage: 1000 }, // rate 1.005
+    { loc: '0000006', period: '2026-08', date: '2026-08', wrin: 'W200', cls: 'food', variance: 9.95,  expUsage: 1000 }, // rate 0.995
+  ];
+
+  it('min_stdev reaches this call site too -- a tightly-clustered peer population (real, non-zero stdev ~0.007) nulls out instead of producing an absurd z-score', () => {
+    const rule = { ...Z_INV_RULE, logic_expression: { ...Z_INV_RULE.logic_expression, min_value: null, min_stdev: 0.05 } };
+    const a = computeItemFindingsForRule(rule, TIGHT_ROWS, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBeCloseTo(5, 6); // the raw rate is still honestly reported
+    expect(a.pass).toBeNull(); // NOT flagged, despite a naive z in the hundreds
+    expect(a.explanation[0].label).toMatch(/degenerate baseline/);
+  });
+
+  it('the SAME degenerate baseline flags without min_stdev set -- proving the guard, not the data, changed the outcome', () => {
+    const rule = { ...Z_INV_RULE, logic_expression: { ...Z_INV_RULE.logic_expression, min_value: null } }; // no min_stdev
+    const a = computeItemFindingsForRule(rule, TIGHT_ROWS, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.pass).toBe(true);
+    expect(a.explanation[0].zscore).toBeGreaterThan(100); // the absurd z this dispatch exists to catch
+  });
 });
 
 // ── Dispatch #42 §5 -- CASH-domain exposure floor, wiring test through computeFindingsForRule ───
@@ -468,5 +497,49 @@ describe('computeItemFindingsForRule() — lifecycle routing wired at the real c
   it('an unmarked item classifies to null -- the majority path, not a missing-data error', () => {
     const b = computeItemFindingsForRule(RULE, LIFECYCLE_ROWS, WIN).find(f => f.loc === '0000002');
     expect(b.lifecycleCategory).toBeNull();
+  });
+});
+
+// ── Dispatch #46 §C item 6 -- automatic exoneration: computeWasteExoneration() + wiring ──────────
+describe('computeWasteExoneration() — pure, from a subject\'s own qsr_variance_stat rows', () => {
+  it('share = totalWaste / totalVariance, summed across all rows for the subject', () => {
+    const rows = [
+      { variance: 40, rawWaste: 10, compWaste: 5 },
+      { variance: -10, rawWaste: 0, compWaste: 3 }, // variance sign doesn't matter -- abs-summed
+    ];
+    // totalVariance = |40| + |-10| = 50. totalWaste = 10+5+0+3 = 18. share = 18/50 = 0.36.
+    const r = computeWasteExoneration(rows);
+    expect(r.totalVariance).toBeCloseTo(50, 6);
+    expect(r.totalWaste).toBeCloseTo(18, 6);
+    expect(r.share).toBeCloseTo(0.36, 6);
+  });
+  it('returns null when there is no variance to explain -- share against a zero denominator is meaningless, not zero', () => {
+    expect(computeWasteExoneration([{ variance: 0, rawWaste: 5, compWaste: 0 }])).toBeNull();
+    expect(computeWasteExoneration([])).toBeNull();
+  });
+  it('treats missing/null waste fields as zero, never throws', () => {
+    const r = computeWasteExoneration([{ variance: 10, rawWaste: null, compWaste: undefined }]);
+    expect(r.totalWaste).toBe(0);
+    expect(r.share).toBe(0);
+  });
+});
+
+describe('computeItemFindingsForRule() — exoneration wiring (dispatch #46 §C item 6)', () => {
+  // Store A: same outlier fixture as the z-score wiring tests above (variance 50, real flag). Add
+  // waste fields covering more than half of it.
+  const rows = Z_INV_ROWS.map(r => r.loc === '0000001'
+    ? { ...r, rawWaste: 20, compWaste: 10 } // 30 of 50 variance covered -> share 0.6
+    : { ...r, rawWaste: 0, compWaste: 0 });
+
+  it('a flagged subject with logged waste covering the variance carries a real exonerationShare', () => {
+    const a = computeItemFindingsForRule(Z_INV_RULE, rows, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.pass).toBe(true);
+    expect(a.exonerationShare).toBeCloseTo(0.6, 6);
+  });
+
+  it('a subject that does NOT flag (pass:false) carries exonerationShare:null -- nothing to exonerate against a non-flag', () => {
+    const b = computeItemFindingsForRule(Z_INV_RULE, rows, Z_INV_WIN).find(f => f.loc === '0000002');
+    expect(b.pass).toBe(false);
+    expect(b.exonerationShare).toBeNull();
   });
 });

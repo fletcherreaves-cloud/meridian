@@ -3944,6 +3944,7 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
     value: r.value, thresholdUsed: r.threshold_used, pass: r.pass,
     baselineContext: r.baseline_context || {}, explanation: r.explanation || [],
     computedAt: r.computed_at, lifecycleCategory: r.lifecycle_category || null,
+    exonerationShare: r.exoneration_share ?? null,
   }));
 }
 

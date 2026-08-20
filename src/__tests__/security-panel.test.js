@@ -24,6 +24,7 @@ vi.mock('../lib/supabase.js', () => ({
 
 import {
   securityPanelAccess, verdictState, groupFindingsBySubject, scopeMatches, SecurityPanel,
+  classifySubjectTrend, buildDecisionSentence,
 } from '../views/security-panel.js';
 
 // ── Pure logic ────────────────────────────────────────────────────────────────────────────────
@@ -129,6 +130,95 @@ describe('groupFindingsBySubject() — lifecycle routing (dispatch #45 §B): a h
   });
 });
 
+// dispatch #46 §C item 1 -- a subject can carry MULTIPLE windows for the same rule (the batch job
+// runs daily with a rolling window). Alice: CASH-001 flagged on both an older window and today's.
+const MULTI_WINDOW_FINDINGS = [
+  { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 6, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 7, thresholdUsed: 5, windowStart: '2026-08-02', windowEnd: '2026-08-30', computedAt: '2026-08-31T10:00:00Z', baselineContext: {}, explanation: [] },
+];
+describe('groupFindingsBySubject() — multi-window history (dispatch #46 §C item 1)', () => {
+  it('verdicts carries only the LATEST window per rule -- one chip per rule, never a duplicate for an older window', () => {
+    const g = groupFindingsBySubject(MULTI_WINDOW_FINDINGS)[0];
+    expect(g.verdicts).toHaveLength(1);
+    expect(g.verdicts[0].value).toBeCloseTo(7, 6); // the newer window's value, not the older 6
+  });
+  it('historyByRule preserves EVERY window for the rule, oldest to newest, for a trend view', () => {
+    const g = groupFindingsBySubject(MULTI_WINDOW_FINDINGS)[0];
+    expect(g.historyByRule['CASH-001']).toHaveLength(2);
+    expect(g.historyByRule['CASH-001'].map(w => w.value)).toEqual([6, 7]);
+  });
+});
+
+describe('classifySubjectTrend() — chronic vs. new vs. not enough history yet (dispatch #46 §C item 1)', () => {
+  it('fewer than 2 windows is "insufficient-history" -- never guesses new/chronic from one data point', () => {
+    expect(classifySubjectTrend([])).toBe('insufficient-history');
+    expect(classifySubjectTrend([{ pass: true }])).toBe('insufficient-history');
+  });
+  it('flagged now, flagged before -> chronic', () => {
+    expect(classifySubjectTrend([{ pass: true }, { pass: false }, { pass: true }])).toBe('chronic');
+  });
+  it('flagged now, never flagged before -> new', () => {
+    expect(classifySubjectTrend([{ pass: false }, { pass: false }, { pass: true }])).toBe('new');
+  });
+  it('clear now, flagged before -> improving', () => {
+    expect(classifySubjectTrend([{ pass: true }, { pass: false }])).toBe('improving');
+  });
+  it('clear now, never flagged -> clear', () => {
+    expect(classifySubjectTrend([{ pass: false }, { pass: false }])).toBe('clear');
+  });
+});
+
+// dispatch #46 §B -- the decision sentence, matching the dispatch's own worked example: "Discounts
+// here run about 2.6× the peer average -- 120 per $1,000 of sales against a typical 46."
+describe('buildDecisionSentence() — the plain-language line beside (never instead of) the metric (dispatch #46 §B)', () => {
+  const CASH_004 = { ruleId: 'CASH-004', method: 'Promo/discount rate', baselineType: 'peer', investigationAction: 'Pull the Meal Activity log for the flagged employee.' };
+
+  it('a flagged verdict names the real multiple and includes the investigation action', () => {
+    const verdict = { pass: true, value: 120.04, thresholdUsed: 100, baselineContext: { mean: 46.16, stdev: 85.31, n: 49 } };
+    const s = buildDecisionSentence(CASH_004, verdict, 'This employee');
+    expect(s).toMatch(/2\.6× the peer average/);
+    expect(s).toMatch(/120\.04/);
+    expect(s).toMatch(/46\.16/);
+    expect(s).toMatch(/Pull the Meal Activity log/);
+  });
+
+  it('does NOT soften a large magnitude -- a 49x variance reads as a real, stated multiple, per the dispatch\'s own explicit instruction', () => {
+    const verdict = { pass: true, value: 4936.47, thresholdUsed: 2.5, baselineContext: { mean: 276.49, stdev: 900, n: 6 } };
+    const rule = { ruleId: 'INV-001', method: 'Item TvA variance rate', baselineType: 'store', investigationAction: 'Check the item setup.' };
+    const s = buildDecisionSentence(rule, verdict, 'Item 00001-000 (store 0000001)');
+    expect(s).toMatch(/18×/); // 4936.47 / 276.49 ~= 17.86 -> rounds to 18
+  });
+
+  it('a clear verdict never carries the investigation "Next:" clause', () => {
+    const verdict = { pass: false, value: 20, thresholdUsed: 100, baselineContext: { mean: 46.16 } };
+    const s = buildDecisionSentence(CASH_004, verdict, 'This employee');
+    expect(s).not.toMatch(/Next:/);
+  });
+
+  it('an undetermined verdict states what was missing, plainly, and distinguishes itself from "clear"', () => {
+    const verdict = { pass: null, reason: 'denominator below minimum exposure floor (250)' };
+    const s = buildDecisionSentence(CASH_004, verdict, 'This employee');
+    expect(s).toMatch(/Not enough data/);
+    expect(s).toMatch(/denominator below minimum exposure floor/);
+    expect(s).toMatch(/different from "clear"/);
+  });
+
+  it('a hygiene-classified verdict names the lifecycle category, not a security verdict', () => {
+    const verdict = { pass: true, lifecycleCategory: 'deactivated', value: 193 };
+    const rule = { ruleId: 'INV-001' };
+    const s = buildDecisionSentence(rule, verdict, 'Item 00001-000 (store 0000001)');
+    expect(s).toMatch(/deactivated/i);
+    expect(s).toMatch(/not a security question/);
+  });
+
+  it('an inventory subject names the item and store, never a person, per the dispatch\'s explicit instruction', () => {
+    const verdict = { pass: true, value: 40, thresholdUsed: 20, baselineContext: {} };
+    const rule = { ruleId: 'INV-001', baselineType: 'store' };
+    const s = buildDecisionSentence(rule, verdict, 'Item 00001-000 (store 0000001)');
+    expect(s).toMatch(/^Item 00001-000 \(store 0000001\)/);
+  });
+});
+
 describe('scopeMatches() — All -> State -> Org -> Store hierarchy', () => {
   it('"all" matches every loc', () => {
     expect(scopeMatches('0000001', { level: 'all' })).toBe(true);
@@ -216,5 +306,70 @@ describe('SecurityPanel — permission states are visually distinct, and a block
     await flush(container);
     expect(container.textContent).toMatch(/no findings match/i);
     expect(container.textContent).not.toMatch(/not permitted/i);
+  });
+});
+
+// dispatch #46 -- rendering wiring for legend/units/decision-sentence, through the REAL panel
+// component (standing rule from #366: a test that only imports a helper can't tell "built" from
+// "built but never wired in").
+describe('SecurityPanel — dispatch #46: legend, units, and the decision sentence render through the real panel', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'How much cash is over or short at the drawer, sized against how much that employee actually handled.', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'Pull the flagged employee\'s drawer-count photos.' },
+    { ruleId: 'CASH-002', domain: 'cash', method: 'POS over-ring rate', description: 'How often an employee corrects a POS entry, compared to peers.', baselineType: 'peer', logicType: 'ratio', active: true, investigationAction: 'Compare against same-store peers.' },
+  ];
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('the legend shows by default and defines Undetermined as distinct from Clear', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/What am I looking at\?/);
+    expect(container.textContent).toMatch(/NOT the same as Clear/);
+  });
+
+  it('dismissing the legend hides it and is remembered (localStorage), then does not reappear on remount', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const dismissBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Got it, hide this');
+    expect(dismissBtn).toBeTruthy();
+    await act(async () => { dismissBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).not.toMatch(/What am I looking at\?/);
+    // Remount -- the dismissal persisted via localStorage, not just component state.
+    act(() => { root.unmount(); });
+    container.remove();
+    container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).not.toMatch(/What am I looking at\?/);
+  });
+
+  it('expanding a subject renders units, the decision sentence, and the investigation action -- through the real panel, not the pure helper alone', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    // Click Alice's row to expand it (the store label is a span; its grandparent div is the
+    // clickable row -- SubjectRow's onClick sits on the wrapper div, not the span itself).
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const aliceRow = storeLabel?.parentElement;
+    expect(aliceRow).toBeTruthy();
+    await act(async () => { aliceRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // CASH-001: value 12, no baselineContext.mean -> "against a threshold of" branch, real unit.
+    expect(container.textContent).toMatch(/per \$1,000 drawer sales/);
+    expect(container.textContent).toMatch(/Next: Pull the flagged employee's drawer-count photos\./);
+    // The plain-language rule explainer (security_rules.description) renders too.
+    expect(container.textContent).toMatch(/How much cash is over or short/);
   });
 });

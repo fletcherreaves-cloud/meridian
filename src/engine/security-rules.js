@@ -30,7 +30,11 @@
 //              independent of the rate -- a rate can be statistically unusual on a denominator so
 //              large the underlying absolute amount is trivial regardless of the rate (INV-002:
 //              0.09 per $1,000 sales against a $2.1M denominator is still only a few hundred real
-//              dollars). All gates that are SET are required to flag; an unset gate is a no-op.
+//              dollars). `min_stdev` (dispatch #45 §A, second cause, optional) is a floor on the
+//              baseline's own stdev -- below it, a z-score is a degenerate-baseline artifact (a
+//              tiny nonzero stdev turns any real value into a nonsense outlier), not a materiality
+//              question, so it returns an honest null (same class as n < MIN_BASELINE_N), never
+//              pass:false. All gates that are SET are required to flag; an unset gate is a no-op.
 // Threshold/ratio normalize against exposure when a denominator is present (plan §1 principle 1)
 // using `scale`, which IS memory/data-acquisition-shopping-list.md's per-$1,000-sales /
 // per-1,000-transactions convention (scale: 1000) -- not a free parameter each rule invents.
@@ -168,6 +172,21 @@ function evaluateZScoreRule(rule, dataContext, { loc, baseline } = {}) {
   }
   if (!baseline.stdev) {
     return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore: null, reason: 'baseline stdev is zero -- no variation to compare against' };
+  }
+  // dispatch #45 §A, second cause -- widens the exact-zero guard above to "negligible, not just
+  // literally zero." A real live case: INV-002 rendered value 0.04 vs a baseline that displayed as
+  // "mean 0.00, stdev 0.00" -- both were non-zero (else the guard above would have caught it as an
+  // honest null) but rounded away at 2 decimals, and z = (0.04 - ~0) / ~0 exploded into a nonsense
+  // outlier. Measured before choosing the mechanism (live security_findings, 2026-08-20): a
+  // coefficient-of-variation floor does NOT separate this failure -- the actual |z|>10 INV-002
+  // cases have CVs (0.25-3.5) squarely inside the population's own normal CV range (median 0.66),
+  // while their RAW stdev sits in the population's low tail. An absolute per-rule `min_stdev`
+  // floor is what the data supports, same "per-rule data, one shared choke point" shape as
+  // `min_denominator`/`min_numerator`/`min_value` -- and the SAME honest-null class as the
+  // `n < MIN_BASELINE_N` and exact-zero-stdev cases above it: the population genuinely cannot
+  // support a z-score, not a materiality decision (that's what `min_value`/`min_numerator` are for).
+  if (expr.min_stdev != null && baseline.stdev < num(expr.min_stdev)) {
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore: null, reason: `baseline stdev (${baseline.stdev}) is below the minimum ${expr.min_stdev} needed for a meaningful z-score -- a degenerate baseline, not a materiality question` };
   }
   const zscore = (value - baseline.mean) / baseline.stdev;
   if (threshold == null) {

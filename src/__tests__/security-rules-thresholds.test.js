@@ -128,6 +128,14 @@ const MEASURED_NUMERATOR_MAX = {
   'INV-002': 604.49,
 };
 
+// Third map, deliberately separate again: `min_stdev` (dispatch #45 §A, second cause) gates the
+// BASELINE's own stdev, not a subject's value/rate/numerator -- a fourth independent quantity on
+// its own scale. See schema-security-rules-min-stdev.sql's own header for the measured deciles.
+const MEASURED_STDEV_P10 = {
+  'INV-001': 3.309,
+  'INV-002': 0.000861,
+};
+
 describe('security_rules seed/migration SQL — an absolute comparator value must sit inside its own measured range', () => {
   const seedRules = extractInsertRules(readSql('schema-security-rules.sql'));
   const phase1Rules = extractInsertRules(readSql('schema-security-rules-phase1.sql'));
@@ -135,6 +143,7 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
   const phase1cRules = extractUpdateRules(readSql('schema-security-rules-phase1c.sql'));
   const phase1eRules = extractUpdateRules(readSql('schema-security-rules-phase1e.sql'));
   const phase1fRules = extractUpdateRules(readSql('schema-security-rules-phase1f.sql'));
+  const minStdevRules = extractUpdateRules(readSql('schema-security-rules-min-stdev.sql'));
 
   // rule_id -> {entry, logicType}. logicType is read from THIS test file's own knowledge of each
   // rule's real logic_type (phase1.sql's rule inserts don't repeat it in a name=value pair this
@@ -177,6 +186,23 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
 
   it('INV-002\'s min_numerator (15) is a real, non-trivial gate -- sits at this rule\'s own measured median (13.66, rounded), the same "clears roughly half" methodology INV-001\'s min_value used, not an invented number', () => {
     expect(phase1fRules['INV-002'].logic_expression.min_numerator).toBe(15);
+  });
+
+  // dispatch #45 §A, second cause -- min_stdev (schema-security-rules-min-stdev.sql). Both floors
+  // are set NEAR each rule's own measured p10, not chosen from intuition -- see that file's header
+  // for the full measurement (a CV floor was tried first and rejected: the real |z|>10 offenders'
+  // CVs sat inside the population's normal range, so only raw stdev separates the failure).
+  it('INV-001/INV-002 both carry a real, measured min_stdev -- sits near this rule\'s own p10, not invented', () => {
+    expect(minStdevRules['INV-001'].logic_expression.min_stdev).toBe(1);
+    expect(minStdevRules['INV-001'].logic_expression.min_stdev).toBeLessThanOrEqual(MEASURED_STDEV_P10['INV-001']);
+    expect(minStdevRules['INV-002'].logic_expression.min_stdev).toBe(0.001);
+    expect(minStdevRules['INV-002'].logic_expression.min_stdev).toBeLessThanOrEqual(MEASURED_STDEV_P10['INV-002'] * 2); // 0.001 vs p10 0.000861 -- same order of magnitude, not wildly off
+  });
+
+  it('the min-stdev migration preserves each rule\'s OTHER logic_expression keys -- a full-literal replacement must not silently drop min_value/min_denominator/min_numerator', () => {
+    expect(minStdevRules['INV-001'].logic_expression.min_value).toBe(20);
+    expect(minStdevRules['INV-001'].logic_expression.min_denominator).toBe(10);
+    expect(minStdevRules['INV-002'].logic_expression.min_numerator).toBe(15);
   });
 
   it('INV-001\'s min_value (20) is a real, non-trivial gate -- clears roughly half the floor-passing population, not ~0% or ~100%', () => {

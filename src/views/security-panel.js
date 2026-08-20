@@ -68,9 +68,17 @@ const LIFECYCLE_LABEL = { deactivated: 'Deactivated item', obsolete: 'Obsolete i
 
 // Groups mapped security_findings rows (src/lib/supabase.js's loadSecurityFindings() shape) by
 // (loc, subject) -- an employee-token or a WRIN, never both (the DB's own check constraint). One
-// group per subject carries EVERY rule's verdict for them, sorted by how many rules agree
+// group per subject carries EVERY rule's LATEST verdict for them, sorted by how many rules agree
 // (flaggedCount desc), then by the worst flagged value -- convergence across independent signals
 // first, since that is the actual lead a loss-prevention system exists to surface.
+//
+// dispatch #46 §C item 1 -- the batch job runs daily with a ROLLING window, so a subject can
+// legitimately carry more than one (rule, window) row over time (the finding table's own unique
+// key is (rule, loc, window_start, window_end, subject), not (rule, subject) alone). `verdicts`
+// dedupes to each rule's MOST RECENT window (by computedAt) -- what the chips/tally/detail render
+// is always today's answer, never a stale duplicate chip for the same rule. Every window for every
+// rule is preserved separately in `historyByRule` (ruleId -> windows sorted oldest-to-newest) so a
+// trend view can tell chronic from new; see classifySubjectTrend() below.
 export function groupFindingsBySubject(findings) {
   const groups = new Map();
   for (const f of findings) {
@@ -79,32 +87,64 @@ export function groupFindingsBySubject(findings) {
     if (!subjectId || !f.loc) continue; // a malformed row (neither subject set) can't be grouped -- skip, don't crash
     const key = f.loc + '::' + subjectType + ':' + subjectId;
     if (!groups.has(key)) {
-      groups.set(key, { key, loc: f.loc, subjectType, empToken: f.empToken || null, wrin: f.wrin || null, verdicts: [] });
+      groups.set(key, { key, loc: f.loc, subjectType, empToken: f.empToken || null, wrin: f.wrin || null, byRule: new Map() });
     }
-    groups.get(key).verdicts.push({
+    const entry = {
       ruleId: f.ruleId, pass: f.pass, value: f.value, thresholdUsed: f.thresholdUsed,
       baselineContext: f.baselineContext || {}, explanation: f.explanation || [],
       windowStart: f.windowStart, windowEnd: f.windowEnd, computedAt: f.computedAt,
-      lifecycleCategory: f.lifecycleCategory || null,
-    });
+      lifecycleCategory: f.lifecycleCategory || null, exonerationShare: f.exonerationShare ?? null,
+    };
+    const byRule = groups.get(key).byRule;
+    if (!byRule.has(f.ruleId)) byRule.set(f.ruleId, []);
+    byRule.get(f.ruleId).push(entry);
   }
   const out = [...groups.values()].map(g => {
+    const historyByRule = {};
+    const verdicts = [];
+    for (const [ruleId, windows] of g.byRule) {
+      windows.sort((a, b) => (a.windowEnd || '').localeCompare(b.windowEnd || '') || (a.computedAt || '').localeCompare(b.computedAt || ''));
+      historyByRule[ruleId] = windows;
+      verdicts.push(windows[windows.length - 1]); // latest window is what renders as THE verdict
+    }
     // dispatch #45 §B: a lifecycle-classified verdict is EXCLUDED from the security tally
     // (flaggedCount/clearCount/worstValue/sort) -- it routes to a distinct hygiene lane, never
     // counted toward "how many independent signals agree" (the whole point of subject-major
     // grouping) and never contributing to the sort order a real convergence would drive. It still
     // renders (routed, not suppressed) via hygieneCount and the verdicts array itself.
-    const securityVerdicts = g.verdicts.filter(v => !v.lifecycleCategory);
+    const securityVerdicts = verdicts.filter(v => !v.lifecycleCategory);
     const flaggedCount = securityVerdicts.filter(v => v.pass === true).length;
     const clearCount = securityVerdicts.filter(v => v.pass === false).length;
     const undeterminedCount = securityVerdicts.filter(v => v.pass == null).length;
-    const hygieneCount = g.verdicts.filter(v => v.lifecycleCategory).length;
+    const hygieneCount = verdicts.filter(v => v.lifecycleCategory).length;
     const worstValue = securityVerdicts.filter(v => v.pass === true).reduce((m, v) => Math.max(m, v.value || 0), 0);
-    const newestComputedAt = g.verdicts.reduce((m, v) => (!m || (v.computedAt && v.computedAt > m)) ? v.computedAt : m, null);
-    return { ...g, flaggedCount, clearCount, undeterminedCount, hygieneCount, worstValue, newestComputedAt };
+    const newestComputedAt = verdicts.reduce((m, v) => (!m || (v.computedAt && v.computedAt > m)) ? v.computedAt : m, null);
+    return {
+      key: g.key, loc: g.loc, subjectType: g.subjectType, empToken: g.empToken, wrin: g.wrin,
+      verdicts, historyByRule, flaggedCount, clearCount, undeterminedCount, hygieneCount, worstValue, newestComputedAt,
+    };
   });
   out.sort((a, b) => b.flaggedCount - a.flaggedCount || b.worstValue - a.worstValue);
   return out;
+}
+
+// dispatch #46 §C item 1 (named the highest-value item in the dispatch itself) -- is a flag NEW or
+// CHRONIC? `history` is one rule's own windows for one subject, oldest-to-newest (groupFindings
+// BySubject's historyByRule[ruleId]). Deliberately conservative: fewer than 2 distinct windows is
+// NOT "new," it is "insufficient-history" -- a single data point cannot support either label, and
+// claiming "new" from one window would be exactly the kind of confident-sounding wrong answer
+// CLAUDE.md's standing rules warn against. As of this dispatch, EVERY real subject in production
+// has exactly one window (the daily batch job has not yet run long enough to accumulate a second
+// one) -- so 'insufficient-history' is the honest, expected answer today, and this function starts
+// doing real work automatically as soon as tomorrow's run adds a second window, with no code
+// change needed.
+export function classifySubjectTrend(history) {
+  if (!Array.isArray(history) || history.length < 2) return 'insufficient-history';
+  const latest = history[history.length - 1];
+  const prior = history.slice(0, -1);
+  const priorFlagged = prior.some(w => w.pass === true);
+  if (latest.pass === true) return priorFlagged ? 'chronic' : 'new';
+  return priorFlagged ? 'improving' : 'clear';
 }
 
 // Store scope hierarchy (feedback-selector-ui-standard.md): All -> State -> Org -> Store.
@@ -115,6 +155,60 @@ export function scopeMatches(loc, scope) {
   if (scope.level === 'org') return (org.state === 'FL' ? 'emerald' : 'mcdok') === scope.value;
   if (scope.level === 'store') return loc === scope.value;
   return true;
+}
+
+// dispatch #46 §A point 3 -- "units on every number." Five live rules, five units -- a hardcoded
+// map, not a derivation from logic_expression (which the panel doesn't load; deriving it would
+// mean loading and re-parsing jsonb the loader already has no other reason to fetch, for a lookup
+// table this small). Keyed by rule_id, not logic_type -- CASH-001/CASH-004 share a shape but not a
+// unit family with INV-002 despite both being "$ per $1,000." A z-score rule's `value` still uses
+// its OWN unit here; only the SIGMA threshold (rendered separately, see fmtThreshold below) is unitless.
+const RULE_UNITS = {
+  'CASH-001': 'per $1,000 drawer sales',
+  'CASH-002': 'per 1,000 transactions',
+  'CASH-003': 'per 1,000 transactions', // count-based (dispatch #44); inactive today
+  'CASH-004': 'per $1,000 drawer sales',
+  'INV-001':  '% variance vs. expected usage',
+  'INV-002':  'per $1,000 store sales',
+};
+
+function fmtValue(ruleId, v) {
+  if (v == null) return '—';
+  const unit = RULE_UNITS[ruleId];
+  return unit ? `${fNum(v)} ${unit}` : fNum(v);
+}
+// dispatch #46 §A point 3 -- "threshold vs. sigma... two rules on screen use the same word for
+// different units." A z-score rule's threshold is ALWAYS sigma (standard deviations vs. the peer/
+// store baseline), never the rule's own rate unit -- this is the one place that distinction renders.
+function fmtThreshold(logicType, t) {
+  if (t == null) return '—';
+  return logicType === 'z-score' ? `${fNum(t)}σ` : fNum(t);
+}
+
+// dispatch #46 §B -- a decision sentence beside (never instead of) the raw metric line, per
+// CLAUDE.md's standing "say the number AND the decision" voice rule. Pure, testable independent of
+// rendering: takes the rule metadata already loaded (method/description/baselineType/
+// investigationAction), one verdict, and a caller-resolved subject label (RevealName's own async
+// reveal state lives in the component, not here -- this function never triggers a reveal).
+export function buildDecisionSentence(rule, verdict, subjectLabel) {
+  const state = verdictState(verdict.pass, verdict.lifecycleCategory);
+  if (state === 'hygiene') {
+    const label = LIFECYCLE_LABEL[verdict.lifecycleCategory] || verdict.lifecycleCategory;
+    return `${subjectLabel} is marked ${label.toLowerCase()} in QSRSoft — its usage figures aren't reliable for detection right now. This is a data-hygiene fix (the item's setup), not a security question.`;
+  }
+  if (state === 'undetermined') {
+    const why = verdict.reason || explanationReason(verdict.explanation) || 'not enough exposure in this window';
+    return `Not enough data here to form a verdict — ${why}. That is different from "clear": the rule hasn't looked yet, not looked and found nothing.`;
+  }
+  const bc = verdict.baselineContext || {};
+  const unit = RULE_UNITS[rule.ruleId] || '';
+  const mult = (bc.mean && bc.mean > 0 && verdict.value != null) ? verdict.value / bc.mean : null;
+  const magnitude = (mult != null && Number.isFinite(mult))
+    ? `about ${mult < 10 ? mult.toFixed(1) : Math.round(mult)}× the ${rule.baselineType || 'peer'} average — ${fmtValue(rule.ruleId, verdict.value)} against a typical ${fNum(bc.mean)}${unit ? ' ' + unit : ''}`
+    : `${fmtValue(rule.ruleId, verdict.value)} against a threshold of ${fNum(verdict.thresholdUsed)}${unit ? ' ' + unit : ''}`;
+  const verb = state === 'flagged' ? 'runs' : 'stays';
+  const action = (state === 'flagged' && rule.investigationAction) ? ` Next: ${rule.investigationAction}` : '';
+  return `${subjectLabel} ${verb} ${magnitude}.${action}`;
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────
@@ -133,29 +227,49 @@ function VerdictChip({ ruleId, active, verdict, onClick }) {
   }, ruleId, active === false && ' ⏸');
 }
 
-function SubjectDetail({ group, rulesById }) {
+const TREND_META = {
+  chronic:               { label: 'Chronic — flagged before, still flagged', color: 'var(--crit,#ef4444)' },
+  new:                    { label: 'New — first time this has flagged', color: 'var(--amber,#f59e0b)' },
+  improving:              { label: 'Improving — was flagged, now clear', color: 'var(--ok,#10b981)' },
+  clear:                  { label: 'Clear across all known windows', color: 'var(--text3)' },
+  'insufficient-history': { label: 'Not enough history yet to call this new or chronic', color: 'var(--text3)' },
+};
+
+function SubjectDetail({ group, rulesById, subjectLabel }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
     group.verdicts.map((v, i) => {
       const rule = rulesById[v.ruleId] || {};
       const state = verdictState(v.pass, v.lifecycleCategory);
       const meta = VERDICT_META[state];
       const bc = v.baselineContext || {};
+      const trend = classifySubjectTrend(group.historyByRule?.[v.ruleId] || [v]);
+      const trendMeta = TREND_META[trend];
+      const exonerated = v.exonerationShare != null && v.exonerationShare >= 0.5;
       return div({ key: v.ruleId + i, style: { padding: '8px 0', borderBottom: i < group.verdicts.length - 1 ? '1px solid var(--bdr)' : 'none' } },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
           span({ style: { fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } }, rule.method || v.ruleId),
           span({ style: { fontSize: 11, fontWeight: 700, color: meta.color } }, meta.label),
         ),
-        // dispatch #45 §B: a hygiene-classified verdict shows its OWN item-lifecycle explanation,
-        // not the pass/fail one -- it must not read as either a security flag or an exoneration,
-        // even though the real value/threshold below it is still shown (routed, not suppressed).
+        // dispatch #46 §A point 1 -- the per-rule plain-language explainer, always visible, right
+        // under the rule name. Reuses security_rules.description (rewritten to plain language by
+        // schema-security-rules-plain-language.sql, dispatch #46) rather than inventing new copy.
+        rule.description && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 1, fontStyle: 'italic' } }, rule.description),
+        // dispatch #46 §B -- the decision sentence, BESIDE (never instead of) the raw metric line
+        // rendered right below it. state === 'flagged'/'clear'/'undetermined'/'hygiene' all get one.
+        div({ style: { fontSize: 12, color: 'var(--text)', marginTop: 4, lineHeight: 1.4 } },
+          buildDecisionSentence(rule, v, subjectLabel)),
+        // dispatch #46 §C item 6 -- automatic exoneration. Only rendered when logged waste covers
+        // at least half the usage variance; a lower share isn't worth a claim ("largely explained").
+        exonerated && div({ style: { fontSize: 11, color: 'var(--ok,#10b981)', marginTop: 3 } },
+          `✓ ${(v.exonerationShare * 100).toFixed(0)}% of this variance is covered by logged waste (raw + comp) — likely explained by waste, not shrink.`),
+        // dispatch #46 §C item 1 -- chronic vs. new, from the subject's own history for this rule.
+        div({ style: { fontSize: 10.5, color: trendMeta.color, marginTop: 3 } }, trendMeta.label),
         v.lifecycleCategory
-          ? div({ style: { fontSize: 11.5, color: 'var(--accent,#f5bc00)', marginTop: 2 } },
-              `${LIFECYCLE_LABEL[v.lifecycleCategory] || v.lifecycleCategory} — a data-hygiene item, not a security verdict. Real value: ${fNum(v.value)} vs threshold ${fNum(v.thresholdUsed)}.`)
+          ? null // the decision sentence above already carries the full hygiene explanation
           : v.pass == null
-          ? div({ style: { fontSize: 11.5, color: 'var(--text3)', marginTop: 2 } },
-              'No verdict — ', (v.reason || explanationReason(v.explanation) || 'no exposure in window'))
-          : div({ style: { fontSize: 11.5, color: 'var(--text2)', marginTop: 2 } },
-              `${fNum(v.value)} vs threshold ${fNum(v.thresholdUsed)}`,
+          ? null // ditto for undetermined -- the decision sentence already states what was missing
+          : div({ style: { fontSize: 11.5, color: 'var(--text2)', marginTop: 4 } },
+              `${fmtValue(v.ruleId, v.value)} vs threshold ${fmtThreshold(rule.logicType, v.thresholdUsed)}`,
               bc.mean != null && ` — ${rule.baselineType || 'baseline'}: mean ${fNum(bc.mean)}, stdev ${fNum(bc.stdev)}, n ${bc.n ?? '—'}`,
             ),
         div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 2 } },
@@ -178,6 +292,13 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
   const chips = group.verdicts
     .filter(v => !ruleFilter || v.ruleId === ruleFilter)
     .map(v => h(VerdictChip, { key: v.ruleId, ruleId: v.ruleId, active: (rulesById[v.ruleId] || {}).active, verdict: v }));
+  // dispatch #46 §B -- the decision sentence names the subject in restaurant words, not a bare
+  // token. An employee not yet revealed (reveal is a deliberate, logged action -- never automatic)
+  // still gets a real sentence via a generic "This employee," rather than the panel forcing a
+  // reveal just to read the analysis.
+  const subjectLabel = group.subjectType === 'emp'
+    ? (revealed[group.empToken] || 'This employee')
+    : `Item ${group.wrin} (store ${group.loc})`;
   return div(null,
     div({
       onClick: onToggle,
@@ -197,7 +318,35 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
       div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 } }, chips),
       span({ style: { fontSize: 11, color: 'var(--text3)' } }, expanded ? '▲' : '▼'),
     ),
-    expanded && h(SubjectDetail, { group, rulesById }),
+    expanded && h(SubjectDetail, { group, rulesById, subjectLabel }),
+  );
+}
+
+// dispatch #46 §A point 2 -- remembered across sessions the same way every other dismissible UI
+// element in this build persists a choice (a plain localStorage flag, not a Supabase round-trip --
+// this is a per-device UI preference, not data).
+const LEGEND_DISMISSED_KEY = 'mf_security_legend_dismissed_v1';
+
+function Legend({ onDismiss }) {
+  const ROWS = [
+    ['🔴 Flagged', 'The rule found this genuinely unusual AND, where applicable, big enough to matter (materiality floors exist specifically to keep tiny amounts from flagging).'],
+    ['🟢 Clear', 'The rule evaluated and found nothing unusual — a real, decided answer.'],
+    ['⚪ Undetermined', 'The rule could NOT honestly form a verdict — not enough exposure, too few peers to compare against, or below a materiality floor. This is NOT the same as Clear: the rule hasn\'t looked yet, not looked and found nothing.'],
+    ['🟡 Hygiene', 'The subject is a data-hygiene item (a deactivated/new/obsolete item in QSRSoft) — its numbers aren\'t reliable for detection. A setup issue, not a security question.'],
+    ['① signal-count badge', 'How many independent rules flagged this subject. One flag can be noise; several flags on the same person or item agreeing is the real lead — that convergence is the whole reason findings are grouped by subject instead of by rule.'],
+    ['peer / personal / store / network baseline', 'What a subject is compared against: peer = other employees at the same store; personal = this subject\'s own history; store = other stores\' rate for the same item; network = the whole estate.'],
+    ['threshold vs. σ (sigma)', 'A plain rate rule\'s threshold is in the metric\'s own unit (dollars, a percent, a count). A statistical (z-score) rule\'s threshold is in standard deviations from the baseline — a different kind of number that happens to use the same word.'],
+    ['⏸ inactive rule', 'This rule is currently switched off. Its findings are historical output, not current truth — do not read an inactive rule\'s old "Clear" as still true today.'],
+  ];
+  return div({ style: { padding: '12px 14px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf2)', fontSize: 11.5 } },
+    div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 } },
+      span({ style: { fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } }, 'What am I looking at?'),
+      btn({ onClick: onDismiss, style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: 'none', cursor: 'pointer' } }, 'Got it, hide this'),
+    ),
+    ROWS.map(([term, def]) => div({ key: term, style: { display: 'flex', gap: 10, marginBottom: 5 } },
+      span({ style: { minWidth: 150, fontWeight: 700, color: 'var(--text)' } }, term),
+      span({ style: { color: 'var(--text2)', flex: 1 } }, def),
+    )),
   );
 }
 
@@ -216,6 +365,13 @@ export function SecurityPanel({ userRole, onClose }) {
   const [minSignals, setMinSignals] = React.useState(1);
   const [expanded, setExpanded] = React.useState(null);
   const [revealed, setRevealed] = React.useState({});
+  const [showLegend, setShowLegend] = React.useState(() => {
+    try { return localStorage.getItem(LEGEND_DISMISSED_KEY) !== '1'; } catch { return true; }
+  });
+  const dismissLegend = React.useCallback(() => {
+    setShowLegend(false);
+    try { localStorage.setItem(LEGEND_DISMISSED_KEY, '1'); } catch {}
+  }, []);
   const onReveal = React.useCallback((token, name) => setRevealed(r => ({ ...r, [token]: name })), []);
 
   React.useEffect(() => {
@@ -285,15 +441,28 @@ export function SecurityPanel({ userRole, onClose }) {
       span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
       pill('All', scope.level === 'all', () => setScope({ level: 'all' })),
       states.map(st => pill(st, scope.level === 'state' && scope.value === st, () => setScope({ level: 'state', value: st }))),
-      newestBatch && span({ style: { marginLeft: 'auto', fontSize: 10.5, color: 'var(--text3)' } }, `Latest batch: ${fDateTime(newestBatch)}`),
+      btn({
+        onClick: () => setShowLegend(s => !s),
+        style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
+      }, '❓ Legend'),
+      newestBatch && span({ style: { marginLeft: showLegend ? 0 : 'auto', fontSize: 10.5, color: 'var(--text3)' } }, `Latest batch: ${fDateTime(newestBatch)}`),
     ),
+    // dispatch #46 §A point 2 -- a legend defining the vocabulary, dismissible and remembered.
+    showLegend && h(Legend, { onDismiss: dismissLegend }),
     // ── Rule + signal filters ──
-    dataState === 'loaded' && div({ style: { display: 'flex', gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center', fontSize: 11 } },
-      span({ style: { color: 'var(--text3)' } }, 'Rule:'),
-      pill('All', !ruleFilter, () => setRuleFilter(null)),
-      domainRules.map(r => pill(r.ruleId + (r.active ? '' : ' ⏸'), ruleFilter === r.ruleId, () => setRuleFilter(r.ruleId))),
-      span({ style: { color: 'var(--text3)', marginLeft: 12 } }, 'Min signals:'),
-      [1, 2, 3].map(n => pill(String(n) + '+', minSignals === n, () => setMinSignals(n))),
+    dataState === 'loaded' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
+      div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11 } },
+        span({ style: { color: 'var(--text3)' } }, 'Rule:'),
+        pill('All', !ruleFilter, () => setRuleFilter(null)),
+        domainRules.map(r => pill(r.ruleId + (r.active ? '' : ' ⏸'), ruleFilter === r.ruleId, () => setRuleFilter(r.ruleId))),
+        span({ style: { color: 'var(--text3)', marginLeft: 12 } }, 'Min signals:'),
+        [1, 2, 3].map(n => pill(String(n) + '+', minSignals === n, () => setMinSignals(n))),
+      ),
+      // dispatch #46 §A point 1 -- "a small detail under each policy." Shown for the currently
+      // selected rule (or the first domain rule when 'All' is selected, so there is always
+      // something to read rather than nothing until a reader clicks a specific pill).
+      (rulesById[ruleFilter] || domainRules[0]) && div({ style: { fontSize: 11, color: 'var(--text3)', marginTop: 6, fontStyle: 'italic' } },
+        (rulesById[ruleFilter] || domainRules[0]).description),
     ),
     // ── Body ──
     div({ style: { flex: 1, overflowY: 'auto' } },

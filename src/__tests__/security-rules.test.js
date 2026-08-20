@@ -243,6 +243,31 @@ describe('evaluateRule() — z-score logic_type (dispatch #42), against the real
     expect(r.reason).toMatch(/stdev/);
   });
 
+  // dispatch #45 §A, second cause -- widens the exact-zero guard above to "negligible, not just
+  // literally zero." Real live case: a stdev of 0.0001 (non-zero, so the guard above does NOT
+  // catch it) with a mean near zero -- z = (0.04 - ~0) / 0.0001 explodes into a nonsense outlier.
+  it('a NON-zero but negligible stdev (below min_stdev) returns an honest null, not a garbage z-score', () => {
+    const rule = { ...Z_RULE, logic_expression: { ...Z_RULE.logic_expression, min_stdev: 0.001 } };
+    const degenerate = [{ loc: '0000001', wrin: '00001-000', v: 4, d: 100 }]; // value = 4/100*100 = 4
+    const r = evaluateRule(rule, { qsr_variance_stat: degenerate }, { loc: '0000001', baseline: { mean: 0.0001, stdev: 0.0001, n: 26 } });
+    expect(r.value).toBeCloseTo(4, 6); // the raw rate is still honestly reported
+    expect(r.pass).toBeNull(); // NOT a flag, despite what a naive z=(4-0.0001)/0.0001≈40000 would suggest
+    expect(r.zscore).toBeNull(); // never computed against a meaningless denominator
+    expect(r.reason).toMatch(/degenerate baseline/);
+  });
+
+  it('a stdev at or above min_stdev computes normally -- the floor gates degenerate baselines only, not real ones', () => {
+    const rule = { ...Z_RULE, logic_expression: { ...Z_RULE.logic_expression, min_stdev: 0.001 } };
+    const r = evaluateRule(rule, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: GOOD_BASELINE }); // stdev=5, well above 0.001
+    expect(r.zscore).toBeCloseTo(4, 6);
+    expect(r.pass).toBe(true);
+  });
+
+  it('a rule with no min_stdev set behaves exactly as before (backward-compatible) -- only the exact-zero guard applies', () => {
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: { mean: 10, stdev: 0.0001, n: 6 } }); // no min_stdev on Z_RULE itself
+    expect(r.zscore).not.toBeNull(); // tiny but non-zero stdev, no floor set -- computes as before
+  });
+
   it('returns an honest null (not a garbage ratio) when the denominator is below the exposure floor -- the SAME shared mechanism the plain-ratio test above exercises', () => {
     const tinyDenom = [{ loc: '0000001', wrin: '00001-000', v: 30, d: 5 }]; // d=5 < min_denominator=10
     const r = evaluateRule(Z_RULE, { qsr_variance_stat: tinyDenom }, { loc: '0000001', baseline: GOOD_BASELINE });
