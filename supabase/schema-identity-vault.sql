@@ -119,6 +119,17 @@ comment on function public.get_or_create_employee_token(text) is
 -- 4. Log the reveal BEFORE returning the name, so a reveal is recorded even if the caller's
 --    client crashes immediately after this function returns.
 -- 5. Return the name, or raise with no data on any failure above.
+--
+-- SECURITY INCIDENT, fixed same-day (2026-08-20) -- see memory/incident-reveal-rpc-null-role-
+-- bypass-2026-08-20.md. The role gate below is deliberately structured as an IF/ELSIF/ELSE with
+-- the reject case in the trailing ELSE, NOT as an ELSIF whose own condition does the rejecting.
+-- The original shipped version used `elsif v_role not in ('admin','supervisor') then raise...`
+-- with no ELSE -- and `NULL not in (...)` evaluates to NULL, which PL/pgSQL treats as FALSE for
+-- an ELSIF condition, so an anonymous caller (get_my_role() = NULL) fell through the whole
+-- IF/ELSIF untouched and reached the token lookup below, fully unauthenticated. Verified live
+-- against production via the anon key alone, both before and after this fix. Do NOT restructure
+-- this back to a rejecting ELSIF condition -- the reject path must always be the unconditional
+-- final ELSE so a NULL role can never skip it.
 create or replace function public.reveal_employee_identity(p_token uuid, p_reason text)
 returns text
 language plpgsql security definer set search_path = public
@@ -134,13 +145,15 @@ begin
     raise exception 'reveal_employee_identity: reason is required';
   end if;
 
-  if v_role = 'manager' then
+  if v_role in ('admin', 'supervisor') then
+    -- allowed, fall through to the lookup below
+  elsif v_role = 'manager' then
     select coalesce((data->>'enabled')::boolean, false) into v_gm_ok
     from public.org_config where key = 'gm_identity_reveal_enabled';
     if not coalesce(v_gm_ok, false) then
       raise exception 'reveal_employee_identity: manager reveal is not enabled for this org';
     end if;
-  elsif v_role not in ('admin', 'supervisor') then
+  else
     raise exception 'reveal_employee_identity: role % is not permitted to reveal identities', coalesce(v_role, 'none');
   end if;
 
@@ -161,10 +174,18 @@ $$;
 
 -- Explicit grant/revoke (unlike every other function in this repo, which relies on default
 -- PUBLIC execute + an internal role check) -- this is the single most sensitive function in
--- this build, per the dispatch's own framing, and belt-and-suspenders is warranted even though
--- the internal get_my_role() check would already reject an anonymous caller (auth.uid() is
--- null -> get_my_role() returns null -> falls into the "anyone else rejected" branch).
+-- this build, per the dispatch's own framing. `revoke ... from public` alone was NOT sufficient
+-- in production: the same incident probe found the anon key could invoke this function at all
+-- (reaching the internal P0001 exception, not a permission-denied error), which only makes sense
+-- if Supabase's project-level default privileges grant EXECUTE directly to the `anon` role on
+-- newly created functions in this schema -- a grant made straight to a named role, which
+-- `revoke ... from public` (the implicit everyone-pseudo-role) does not touch. Unconfirmed as the
+-- exact mechanism (not independently re-tested against a different function), but the explicit
+-- `revoke ... from anon` below closes the observed gap regardless of the precise cause, and the
+-- restructured role-gate above is now the real backstop either way -- an anon caller reaching the
+-- function body now always hits the trailing ELSE and is rejected.
 revoke all on function public.reveal_employee_identity(uuid, text) from public;
+revoke execute on function public.reveal_employee_identity(uuid, text) from anon;
 grant execute on function public.reveal_employee_identity(uuid, text) to authenticated;
 
 comment on function public.reveal_employee_identity(uuid, text) is
