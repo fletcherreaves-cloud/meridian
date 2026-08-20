@@ -1,10 +1,20 @@
 # Dispatch #38 — Security build: reveal-UI for the Register Audit panel
 
+**⚠️ Implemented 2026-08-20 — see [dispatch38-reveal-ui.md](dispatch38-reveal-ui.md) for the
+actual build.** PM-verified: the implementing session's branch (PR #465) carried a stale copy of
+`supabase/schema-identity-vault.sql` and `memory/dispatch37-identity-vault.md` that reverted the
+same-day `reveal_employee_identity()` security fix — likely a local checkout that predated that
+fix. The genuine dispatch-38 diff (the `RevealName` component, its wiring, the two new test
+files, the changelog entry, and the writeup) was independently re-applied on top of the current,
+already-fixed `main` instead of merging PR #465 as-is; full suite (1639/1639) and build reverified
+clean against that combination. PR #465 itself was left open as a stale draft — do not merge it.
+
 **Board (2026-08-20), at time of writing:** `main` has dispatch #37 (identity vault, PR #459)
-merged. **Owner still needs to run `supabase/schema-identity-vault.sql` and
-`scripts/backfill-identity-vault.mjs` against live Supabase before this dispatch's UI has
-anything real to reveal** — that's a separate, owner-side prerequisite, not blocking the code in
-this dispatch from being written and fixture-tested.
+merged, and the owner has since run both `supabase/schema-identity-vault.sql` and
+`scripts/backfill-identity-vault.mjs` against live Supabase (confirmed live:
+`tokenized: 21929, still_untokenized: 0`) — the vault has real token↔name data for this
+dispatch's UI to reveal. (Original brief below was written before that ran; kept as-written for
+the record.)
 
 **Why this dispatch exists:** dispatch #37's own retrofit of `analyzeRegisterAudit` (§4,
 `memory/dispatch37-identity-vault.md`) deliberately strips plaintext names from its output —

@@ -1156,7 +1156,55 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
 }
 
 // REGISTER AUDIT — NARRATIVE ENGINE
-function RegisterAuditNarrative({auditData, store, ds}) {
+// ── RevealName — dispatch #38, the reveal-UI half of dispatch #37's identity-vault architecture ──
+// analyzeRegisterAudit's employee objects carry only e.id (a token) now, by design (dispatch
+// #37 §4 — "blind mode" default, not a data gap). This is the ONE place that resolves a token
+// back to a real name: a deliberate click, a required reason, logged server-side by
+// reveal_employee_identity() itself — this component does none of the role-gating or logging
+// logic client-side, it only calls the RPC and renders whatever it returns or rejects with.
+// `cache` (token -> name) is lifted to RegisterAuditTab so revealing one employee once resolves
+// them everywhere else in the same panel view without a second prompt or RPC call.
+function RevealName({token, cache, onReveal}) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr]   = React.useState(null);
+
+  // Pre-backfill rows (dispatch #37) have no token yet -- analyzeRegisterAudit falls back to
+  // the literal string 'Unknown' for e.id in that case. Nothing to reveal; render it plainly,
+  // same as before this dispatch, rather than a click target that can never resolve.
+  if (!token || token === 'Unknown') return span({style:{color:'var(--text3)'}}, 'Unknown');
+
+  const name = cache ? cache[token] : null;
+  if (name) return span(null, name);
+
+  const reveal = async (e) => {
+    e?.stopPropagation?.();
+    if (busy) return;
+    const reason = typeof window !== 'undefined'
+      ? window.prompt('Reason for revealing this employee\'s identity (required — logged):', '')
+      : '';
+    if (!reason || !reason.trim()) return; // cancelled or left blank -- no prompt loop, no call
+    if (!supabase) { setErr('Not connected to Supabase'); return; }
+    setBusy(true); setErr(null);
+    try {
+      const { data, error } = await supabase.rpc('reveal_employee_identity', { p_token: token, p_reason: reason.trim() });
+      if (error) { setErr(error.message); return; }
+      onReveal(token, data);
+    } catch (ex) {
+      setErr(ex?.message || 'Reveal failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return span({
+    onClick: reveal,
+    title: err ? err : 'Click to reveal — reason required, logged',
+    style: {cursor: busy?'wait':'pointer', color: err?'var(--crit)':'var(--amber)',
+      textDecoration:'underline dotted', fontSize:'inherit'},
+  }, busy ? 'revealing…' : err ? '⚠ reveal failed' : '🔒 reveal');
+}
+
+function RegisterAuditNarrative({auditData, store, ds, revealed, onReveal}) {
   if(!auditData||!auditData.employees||!auditData.employees.length) return null;
   const {p, t} = store;
   const employees = auditData.employees;
@@ -1196,7 +1244,11 @@ function RegisterAuditNarrative({auditData, store, ds}) {
     paras.push({
       type: Math.abs(worst.cashOS||0)>10?'crit':'watch',
       title: 'Cash Over/Short',
-      text: `The most significant cash variance belongs to ${worst.emp||'Unknown'}, running ${worst.cashOS>=0?'+':'-'}$${Math.abs(worst.cashOS||0).toFixed(2)} over/short across their shifts. ${Math.abs(worst.cashOS||0)>10?'At this level, the variance is too large and consistent to attribute to counting error alone — this warrants a video review of their drawer interactions.':'This is at the upper edge of acceptable variance but not yet in the territory that demands escalation.'} ${patternNote}`
+      text: [
+        'The most significant cash variance belongs to ',
+        h(RevealName,{key:'rn',token:worst.id,cache:revealed,onReveal}),
+        `, running ${worst.cashOS>=0?'+':'-'}$${Math.abs(worst.cashOS||0).toFixed(2)} over/short across their shifts. ${Math.abs(worst.cashOS||0)>10?'At this level, the variance is too large and consistent to attribute to counting error alone — this warrants a video review of their drawer interactions.':'This is at the upper edge of acceptable variance but not yet in the territory that demands escalation.'} ${patternNote}`,
+      ],
     });
   }
 
@@ -1209,7 +1261,11 @@ function RegisterAuditNarrative({auditData, store, ds}) {
     paras.push({
       type: (worst.voids||0)>10||(p.tRedAPct||0)>(.005)?'crit':'watch',
       title: 'Void & Refund Activity',
-      text: `Total void activity across the team averages ${avgVoids.toFixed(1)} per employee. ${worst.emp||'Unknown'} is running at ${worst.voids} voids — ${isConcentrated?`3× the store average, which is statistically significant and not consistent with normal order correction. Voids concentrated in one employee, especially if they cluster after close or in periods of low supervision, are a primary integrity indicator.`:`above average but not at a level that definitively indicates a pattern.`} ${(p.tRedAPct||0)>(t.tRedAPct||.003)*1.5?'Combined with the elevated T-Red After rate for this store, the void pattern strengthens the case for a closer look at specific transactions.':''}`
+      text: [
+        `Total void activity across the team averages ${avgVoids.toFixed(1)} per employee. `,
+        h(RevealName,{key:'rn',token:worst.id,cache:revealed,onReveal}),
+        ` is running at ${worst.voids} voids — ${isConcentrated?`3× the store average, which is statistically significant and not consistent with normal order correction. Voids concentrated in one employee, especially if they cluster after close or in periods of low supervision, are a primary integrity indicator.`:`above average but not at a level that definitively indicates a pattern.`} ${(p.tRedAPct||0)>(t.tRedAPct||.003)*1.5?'Combined with the elevated T-Red After rate for this store, the void pattern strengthens the case for a closer look at specific transactions.':''}`,
+      ],
     });
   }
 
@@ -1219,28 +1275,46 @@ function RegisterAuditNarrative({auditData, store, ds}) {
     paras.push({
       type: (worst.discPct||0)>.25?'crit':'watch',
       title: 'Discount & Meal Activity',
-      text: `${worst.emp||'Unknown'} is applying discounts on ${fP(worst.discPct||0,2)} of transactions — ${(worst.discPct||0)>.20?'well above':(worst.discPct||0)>.12?'above':'near'} the expected range. Discount rates above 15% on a consistent basis either indicate a misunderstanding of discount eligibility, a habit of applying unauthorized discounts to drive tips or personal relationships, or systematic meal fraud. Cross-reference these transactions with the Meal Activity report to determine if the employee meals policy explains the rate or if there's an unexplained gap.`
+      text: [
+        h(RevealName,{key:'rn',token:worst.id,cache:revealed,onReveal}),
+        ` is applying discounts on ${fP(worst.discPct||0,2)} of transactions — ${(worst.discPct||0)>.20?'well above':(worst.discPct||0)>.12?'above':'near'} the expected range. Discount rates above 15% on a consistent basis either indicate a misunderstanding of discount eligibility, a habit of applying unauthorized discounts to drive tips or personal relationships, or systematic meal fraud. Cross-reference these transactions with the Meal Activity report to determine if the employee meals policy explains the rate or if there's an unexplained gap.`,
+      ],
     });
   }
+
+  // Interleaves RevealName elements for a list of employees with ', ' separators — used by
+  // both Drawer Open Frequency below and the Recommended Actions block. Returns an array of
+  // (string|element), never a joined string, since a name can't be a raw string until revealed.
+  const namesList = emps => emps.flatMap((e,i)=>[i>0?', ':null, h(RevealName,{key:'nl'+i,token:e.id,cache:revealed,onReveal})]).filter(Boolean);
 
   // Drawer opens
   if(highOpens.length>0) {
     paras.push({
       type: 'watch',
       title: 'Drawer Open Frequency',
-      text: `${highOpens.map(e=>e.emp||'Unknown').join(', ')} ${highOpens.length>1?'are':'is'} opening the drawer at ${highOpens[0].drawerOpens} times — significantly more than the ${Math.round(avgDrawer)} team average. Every non-tendered drawer open is an integrity exposure. Frequent opens that don't correspond to cash transactions are worth investigating, particularly if they coincide with periods of high cash variance.`
+      text: [
+        ...namesList(highOpens),
+        ` ${highOpens.length>1?'are':'is'} opening the drawer at ${highOpens[0].drawerOpens} times — significantly more than the ${Math.round(avgDrawer)} team average. Every non-tendered drawer open is an integrity exposure. Frequent opens that don't correspond to cash transactions are worth investigating, particularly if they coincide with periods of high cash variance.`,
+      ],
     });
   }
 
-  // What to do
+  // What to do — each entry is either a plain string OR an array of (string|element), since
+  // the "pull video" action embeds up to 2 employee names that may need a reveal click.
   const actions = [];
-  if(highRisk.length>0) actions.push('Pull video on the top '+Math.min(2,highRisk.length)+' risk employee'+(highRisk.length>1?'s':'')+' ('+highRisk.slice(0,2).map(e=>e.emp||'Unknown').join(', ')+') for a representative week of transactions.');
+  if(highRisk.length>0) actions.push(['Pull video on the top '+Math.min(2,highRisk.length)+' risk employee'+(highRisk.length>1?'s':'')+' (', ...namesList(highRisk.slice(0,2)), ') for a representative week of transactions.']);
   if(topVoids.length>0) actions.push('Cross-reference void report with T-Red After report — are voids happening after the transaction is tendered?');
   if(topCash.length>0) actions.push('Implement supervisor double-count at shift change for any drawer running >±$3 consistently.');
   if(topDisc.length>0) actions.push('Pull the Meal Activity log for the high-discount employees and compare to scheduled hours.');
   if(actions.length===0) actions.push('Continue monitoring. Set a 30-day alert threshold — if any metric crosses the amber level, escalate immediately.');
 
-  paras.push({type:'fc',title:'Recommended Actions',text:actions.map((a,i)=>(i+1)+'. '+a).join('\n')});
+  // Flatten numbered actions into ONE children array (mirrors the old '\n'-joined string,
+  // rendered with whiteSpace:'pre-line' below) — each action is prefixed '<n>. ', separated
+  // by '\n' from the next, its body either the plain string or the mixed name-bearing array.
+  const actionParts = actions.flatMap((a,i)=>[
+    (i+1)+'. ', ...(Array.isArray(a)?a:[a]), i<actions.length-1?'\n':'',
+  ]);
+  paras.push({type:'fc',title:'Recommended Actions',text:actionParts});
 
   const colMap={crit:'var(--crit)',watch:'var(--warn)',ok:'#10b981',fc:'#60a5fa'};
   const bgMap={crit:'rgba(239,68,68,.05)',watch:'rgba(245,158,11,.05)',ok:'rgba(16,185,129,.04)',fc:'rgba(96,165,250,.05)'};
@@ -1268,6 +1342,13 @@ function RegisterAuditTab({ds, loc}) {
     const id = setInterval(() => { if (!isLazyFillPending('auditRows')) { setPending(false); clearInterval(id); } }, 300);
     return () => clearInterval(id);
   }, []);
+
+  // dispatch #38 — token->name reveal cache, lifted here so it's shared across the table
+  // sections AND the narrative below: revealing one employee once resolves them everywhere
+  // else in this same panel view, no repeat prompt or RPC call. Declared before any early
+  // return (hooks can't be conditional).
+  const [revealed, setRevealed] = React.useState({});
+  const onReveal = React.useCallback((token, name) => setRevealed(r => ({...r, [token]: name})), []);
 
   const auditRows = ds&&ds.auditRows ? ds.auditRows.filter(r=>r.loc===loc) : [];
   const auditData = auditRows.length>0 ? analyzeRegisterAudit(auditRows) : null;
@@ -1344,7 +1425,7 @@ function RegisterAuditTab({ds, loc}) {
           ColHdr('Refunds','right'),ColHdr('POS Over','right'),ColHdr('O/S','right'),ColHdr('Disc%','right')
         )),
         h('tbody',null,sorted.map((e,i)=>tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},e.emp||'Unknown'),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
           td({style:{padding:'5px 8px'}},span({style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,
             background:riskColor(e.riskScore||0)+'22',color:riskColor(e.riskScore||0),border:`.5px solid ${riskColor(e.riskScore||0)}44`}},riskLabel(e.riskScore||0))),
           Cell(e.txCount||'—','var(--text3)','right'),
@@ -1368,7 +1449,7 @@ function RegisterAuditTab({ds, loc}) {
         )),
         h('tbody',null,sorted.filter(e=>e.tRedACnt>0||e.tRedBCnt>0).map((e,i)=>tr({key:i,
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},e.emp||'Unknown'),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
           Cell(e.tRedACnt, e.tRedACnt>5?'var(--crit)':e.tRedACnt>2?'var(--warn)':'var(--text)','right'),
           Cell('$'+(e.tRedADollar||0).toFixed(2), e.tRedADollar>20?'var(--crit)':e.tRedADollar>5?'var(--warn)':'var(--text)','right'),
           Cell('$'+(e.avgTRedADollar||0).toFixed(2), e.avgTRedADollar>3?'var(--crit)':e.avgTRedADollar>1?'var(--warn)':'var(--text)','right'),
@@ -1389,7 +1470,7 @@ function RegisterAuditTab({ds, loc}) {
         )),
         h('tbody',null,sorted.filter(e=>e.refundCnt>0||e.posOver>0||e.manualRef>0).map((e,i)=>tr({key:i,
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},e.emp||'Unknown'),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
           Cell(e.refundCnt||0, e.refundCnt>5?'#f59e0b':'var(--text)','right'),
           Cell('$'+(e.refundCash||0).toFixed(2),'var(--text)','right'),
           Cell('$'+(e.refundCashless||0).toFixed(2),'var(--text3)','right'),
@@ -1409,7 +1490,7 @@ function RegisterAuditTab({ds, loc}) {
         )),
         h('tbody',null,sorted.map((e,i)=>tr({key:i,
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},e.emp||'Unknown'),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
           Cell(e.txCount||'—','var(--text3)','right'),
           Cell(((e.cashOSTotal||0)>=0?'+':'')+((e.cashOSTotal||0).toFixed(2)), Math.abs(e.cashOSTotal||0)>10?'var(--crit)':Math.abs(e.cashOSTotal||0)>3?'var(--warn)':'var(--text)','right'),
           Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'var(--crit)':Math.abs(e.cashOS||0)>2?'var(--warn)':'var(--text)','right'),
@@ -1421,12 +1502,16 @@ function RegisterAuditTab({ds, loc}) {
       )
     ),
 
-    h(RegisterAuditNarrative,{auditData,store:{p:{},t:{}},ds}),
+    h(RegisterAuditNarrative,{auditData,store:{p:{},t:{}},ds,revealed,onReveal}),
     h(AITabInsight,{label:'AI Register Audit Analysis',
       buildPrompt:()=>{
+        // dispatch #38 §5 — deliberately NOT wired to reveal (no click target/rendered DOM to
+        // attach one to, and prompts regenerate fresh each run). Reads e.id (the token) since
+        // e.emp no longer exists on this object post-dispatch #37 -- was previously e.emp,
+        // which had silently gone stale to always '?' since that retrofit landed.
         if(!auditData||!auditData.employees||!auditData.employees.length) return 'No audit data.';
         const top3=(auditData.employees||[]).slice(0,3).map(e=>
-          (e.emp||'?')+' risk:'+Math.round(e.riskScore||0)+' voids:'+e.tRedACnt+' OS:$'+(e.cashOS||0).toFixed(2)).join('; ');
+          (e.id||'?')+' risk:'+Math.round(e.riskScore||0)+' voids:'+e.tRedACnt+' OS:$'+(e.cashOS||0).toFixed(2)).join('; ');
         const s=auditData.summary||{};
         return 'McDonald\'s register audit for '+loc+'. Top risk: '+top3+'. District: '+(s.totalVoids||0)+' voids, '+(s.highRisk||0)+' high-risk. Provide coaching talking points for high-risk employees and 2-3 process improvements to reduce cash handling errors.';
       }})
@@ -2303,5 +2388,5 @@ function MultiStoreComparison({stores, ds, settings, onSelectStore, onClose}) {
   );
 }
 
-export { ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison };
+export { ShiftAnalysisTab, ModelComparisonPanel, RevenueIntelligence, RegisterAuditTab, StoreDash, StoreRecordsTab, MultiStoreComparison, RevealName };
 

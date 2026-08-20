@@ -30,6 +30,31 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, implemented, PR #465 superseded, 2026-08-20](dispatch38-reveal-ui.md)** —
+  **NEWEST.** The `RevealName` component: click → required reason (`window.prompt`, matching
+  `eom-dashboard.js`'s established pattern) → `reveal_employee_identity()` (dispatch #37's RPC,
+  completely unmodified — no role-gating/logging duplicated client-side) → cached, shared-state
+  reveal lifted to `RegisterAuditTab` so one reveal resolves everywhere in the same panel view.
+  Wired into 4 mechanical table-cell sites + 5 narrative-paragraph sites that needed real
+  restructuring (`text` changed from a flat string to a mixed string/`RevealName`-element array).
+  A real, separate bug found and fixed along the way: `AITabInsight`'s AI-prompt builder still
+  read `.emp`, a field dispatch #37 already removed — silently stale to always `'?'` since PR
+  #459 merged; now reads `e.id`, deliberately still not wired to reveal (no click target).
+  **PM verification caught something real before merge**: the implementing session's own PR
+  (#465) carried a stale copy of `supabase/schema-identity-vault.sql` and
+  `memory/dispatch37-identity-vault.md` that would have **reverted the same-day
+  `reveal_employee_identity()` anonymous-bypass security fix** (see the incident entry below) —
+  almost certainly a local checkout that predated that fix, landing in the same commit as the
+  unrelated dispatch-38 UI work. Rather than merge PR #465 as-is or wait on that session (idle/
+  disconnected at the time), the genuine dispatch-38 diff was extracted and independently
+  re-applied on top of the current, already-fixed `main` — full suite (1639/1639) and build
+  reverified clean against that combination, not against PR #465's own claim. **PR #465 is left
+  open as a stale draft — do not merge it**, its schema/memory-file changes are a regression.
+  9 new tests (7 component-level + 2 integration, the integration test mounting the actual
+  `RegisterAuditTab` consumer per CLAUDE.md's "would this verification still pass if reverted"
+  rule — proving the prop-threading landed at all 9 call sites, not just that the component works
+  standalone). Full writeup: [dispatch38-reveal-ui.md](dispatch38-reveal-ui.md); original brief
+  [dispatch-38.md](dispatch-38.md).
 - **✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅ [Backfill script logged "0 rows updated" for all 449 employees — CLOSED, live data confirmed clean, 2026-08-20](incident-backfill-count-undercount-2026-08-20.md)** —
   First live run of `scripts/backfill-identity-vault.mjs` printed `449 distinct
   untokenized employee name(s) found` / `449 token(s) resolved` / **`0 row(s) updated`** — an
