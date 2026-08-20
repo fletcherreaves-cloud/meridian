@@ -54,14 +54,24 @@ seconds, and the theory that survives one costs a PR.
   **Phase 1/1b is LIVE** — all three schema files run against production 2026-08-20 and
   the batch job completed a real `workflow_dispatch` run: `10330 finding(s) upserted across 6
   rule(s), 0 error(s)`. This dispatch acts on what that run actually produced; every number in it
-  is measured from live `security_findings`, not guessed. **Three findings, in increasing
-  importance:** (1) both INV thresholds are miscalibrated in *opposite* directions — INV-001's
-  threshold (20) sits **below its own median (21.25)** so it flags 50.4% of everything, while
-  INV-002's (10) is **~77× its own maximum (0.13)** so it can never fire. INV-002 is **not** a
-  broken join — `null_value: 0` proves the `qsr_fob` join works; only the constant is wrong.
-  (2) INV-001 needs a minimum-exposure floor: `max_val 36234` vs p95 176 is a near-zero
-  `exp_usage` denominator producing garbage, not a real 36,234% variance. (3) **The important
-  one — `baseline_type` does not currently drive detection at all.** Both rules declare
+  is measured from live `security_findings`, not guessed. **Reordered 2026-08-20 before being
+  dispatched to anyone** — an earlier draft led with threshold recalibration; that was wrong.
+  Writing `analysis-inventory-variance-baseline-2026-08-20.md` surfaced why: **a z-score against
+  peer stores for the same item is robust to the "bent ruler" problem, and absolute thresholds are
+  not.** If `exp_usage` is systematically wrong for item X it's wrong for all 27 stores equally, so
+  a store-relative comparison cancels that bias out while an absolute threshold inherits it whole.
+  So the z-score work is valuable *regardless* of how the measurement-validity question resolves,
+  and threshold tuning is entirely *contingent* on it. Corrected order: **Step 0** — run the
+  analysis file's two concentration queries first (cheap, read-only) to establish uniform (bent
+  ruler) vs concentrated (real signal); **§3, the main deliverable** — implement `z-score`;
+  **§4** — threshold work, scoped by Step 0's answer (if uniform, demote both to permissive
+  materiality floors rather than invest in false precision); **§5** — INV-001's minimum-exposure
+  floor, unconditional, since it's a *prerequisite for measurement* not just noise-suppression.
+  The measured facts behind it: INV-001's threshold (20) sits **below its own median (21.25)** so
+  it flags 50.4% of everything, while INV-002's (10) is **~77× its own maximum (0.13)** so it can
+  never fire — and INV-002 is **not** a broken join, `null_value: 0` proves the `qsr_fob` join
+  works, only the constant is wrong. **The core gap — `baseline_type` does not currently drive
+  detection at all.** Both rules declare
   `baseline_type:'store'` and the batch job computes and persists a real baseline into
   `baseline_context`, but `evaluateRule()` never reads it (`security-rules.js:104-106` is a flat
   `cmp(value, threshold)`). So the rules answer "is this rate absolutely high?" — meaning an
