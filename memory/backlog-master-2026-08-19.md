@@ -878,12 +878,13 @@ previously documented — is the raw per-event log to build against, and settled
     real field names captured, and dispatch #35 (PR #448, 2026-08-19) implemented `mapRow()`
     against them. **Implementation DONE, independently re-verified against the real consumer
     code during PM review** (`memory/dispatch35-register-audit-implementation.md`'s "PM
-    verification pass" note) — every flagged field translation checked out. **Two things still
-    open before this data is trusted for anything:** (a) not yet live-verified against a real
-    API response (no session in this build's history has had QSRSoft credentials) — run
-    `workflow_dispatch` once and spot-check real rows first; (b) a real, non-blocking `refundCnt`
-    semantic drift between manual (cash-only) and auto-pulled (cash+cashless) rows, not currently
-    risk-scored but should resolve during that same verification pass.
+    verification pass" note) — every flagged field translation checked out. **`refundCnt` DECIDED
+    2026-08-20**: keep cash+cashless (owner: "need to account for all refunds," cash flagged as
+    likely the higher-priority security signal — noted for Phase 1 rule design, not resolved
+    there). **Live-verification attempted 2026-08-20 — both runs failed.** Direct-token auth got
+    a 403 (permissions, not expiry — likely the service account's QSRSoft role lacks
+    `registerAudit`) and the Playwright fallback captured no token either. Owner needs to confirm
+    the service account's role; full diagnostic in `dispatch35-register-audit-implementation.md`.
   - **Any Transaction Tier A is SETTLED DEAD** — two corroborating captures (a live query with no
     exception-type filter available, and the report's own filter-options endpoint offering only
     register/manager/cashier, no transaction-type dimension). Register Audit carries all standing
@@ -903,15 +904,16 @@ previously documented — is the raw per-event log to build against, and settled
   all before `project-rls-hardening-plan.md`'s fix lands — this backlog's own §13 already tracks
   92-107 tables on wide-open `using(true)` RLS policies, which is not a bar this kind of data
   should sit behind in the meantime. See plan file §5 for the full framing.
-- [ ] **Fourth axis of the same gate, added 2026-08-19 — identity architecture (PII/pseudonymization).**
-  Owner ran a follow-up question through Grok/Gemini/ChatGPT on how security apps handle employee
-  PII; logged + checked against this org's actual code in
-  `memory/plan-security-pii-architecture-2026-08-19.md`. **Verified finding, not a design guess:**
-  `audit_rows`/`analyzeRegisterAudit` key and store the employee's plaintext name today, with zero
+- [x] **Fourth axis of the same gate — identity architecture (PII/pseudonymization). DECIDED
+  2026-08-20: Direction B (token/identity-vault architecture).** Owner delegated on "compliant,
+  ethical, most functional"; full reasoning in `memory/plan-security-pii-architecture-2026-08-19.md`
+  §4. **Verified finding behind the decision, not a design guess:** `audit_rows`/
+  `analyzeRegisterAudit` key and store the employee's plaintext name today, with zero
   pseudonymization or logged identity-reveal step anywhere in the pipeline
-  (`src/parsers/index.js:974`, `src/utils/register-audit.js:7-8,56`). Two directions laid out
-  (extend the existing role+subject disclosure gate with a logged reveal, vs. a real token/identity-
-  vault architecture) — **not decided.** Also flags that GDPR/CCPA (what the AI research leaned on)
+  (`src/parsers/index.js:974`, `src/utils/register-audit.js:7-8,56`). **Sequencing implication:**
+  should land before/alongside Phase 1, not after — Phase 1 is the first thing that writes new
+  employee-attributed data and should write tokens from day one. **Not yet scoped into a
+  dispatch.** Also flags that GDPR/CCPA (what the AI research leaned on)
   almost certainly don't apply to an FL/OK-only operation — the real compliance anchor is state
   law/HR practice, needs real verification, not further AI reasoning.
 - [x] **Phase 0b IMPLEMENTED and merged, 2026-08-19 (dispatch #36, PR #451) — independently
