@@ -57,14 +57,20 @@ seconds, and the theory that survives one costs a PR.
   fallback logged in but never captured a token (report page likely needs a UI interaction, not
   just navigation). Owner needs to confirm the service account's role; full logs in
   `dispatch35-register-audit-implementation.md`.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0b's SQL run, confirmed — Phase 1 unblocked for real, 2026-08-20](plan-security-loss-prevention.md)** —
+  **NEWEST.** `supabase/schema-security-rules.sql` run against live Supabase — verified
+  independently, not taken on the owner's word: `security_rules` returns `200 []` from the anon
+  key (RLS correctly filtering an unauthenticated request), contrasted against a genuinely
+  nonexistent table returning `404 PGRST205`. **Phase 0b is fully done. Phase 1 is unblocked, not
+  yet dispatched** — next up is either Phase 1 itself or the Direction B identity-vault
+  architecture (§4, `plan-security-pii-architecture-2026-08-19.md`), which the plan's own
+  sequencing note says should land first since Phase 1 is the first thing that will write new
+  employee-attributed data.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #36 — Security build Phase 0b: the substrate, implemented](dispatch36-security-phase0b-substrate.md)** —
-  2026-08-19. **NEWEST, merged (PR #451), independently PM-verified before merge** — interpreter
+  2026-08-19. **Merged (PR #451), independently PM-verified before merge** — interpreter
   logic, baseline math, and the `org_config` RLS pattern-match were all checked line-by-line
   against real code, not taken from the summary; the "no existing normalization helper" claim was
-  independently re-grepped and confirmed. **One real follow-up, not a code problem: the owner
-  needs to run `supabase/schema-security-rules.sql` against live Supabase** — same manual-migration
-  pattern as every other `schema-*.sql` file in this repo, `security_rules` doesn't exist as a real
-  table until then. Phase 1's actual fraud-detection rules
+  independently re-grepped and confirmed. Phase 1's actual fraud-detection rules
   are gated on this landing first (`plan-security-loss-prevention.md` §1: "do not start by coding
   individual fraud rules... a rule written before this substrate exists will need to be rewritten
   once it does"). Part 1: `supabase/schema-security-rules.sql` (`security_rules` table, §6's

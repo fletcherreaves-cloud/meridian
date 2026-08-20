@@ -710,9 +710,11 @@ output is treated as reliable.
 **IMPLEMENTED and merged, 2026-08-19 (dispatch #36, PR #451)** —
 `dispatch36-security-phase0b-substrate.md`. Independently PM-verified before merge: interpreter
 logic, baseline math, and the `org_config` RLS pattern-match all checked against real code, not
-the summary. **One real follow-up, not a code gap: the owner needs to run
-`supabase/schema-security-rules.sql` against live Supabase** before `security_rules` exists as a
-real table — same manual-migration pattern as every other `schema-*.sql` file in this repo.
+the summary. **`supabase/schema-security-rules.sql` run against live Supabase, 2026-08-20 —
+confirmed, not just taken on the owner's word**: `security_rules` returns `200 []` from the anon
+key (RLS correctly filtering an unauthenticated request, not a missing table — verified against a
+genuinely nonexistent table returning `404 PGRST205` for contrast). **Phase 0b is fully done,
+Phase 1 is unblocked for real.**
 
 - ✅ Event normalization / Event DNA schema — confirmed `audit_rows`' existing shape is sufficient
   for `security-baselines.js`'s row shape; no redesign needed.
