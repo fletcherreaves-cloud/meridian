@@ -48,6 +48,43 @@ seconds, and the theory that survives one costs a PR.
   (additive, name path unchanged), reconcile only unambiguous matches — a wrong merge attributes one
   person's findings to another — and switch keys last. Requires one clean dispatch-#47 key-name run
   first: **do not infer the eID field name**, that is what cost a day on `manOverringQty`.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #48 — INV-003/INV-005 + qsr_waste identity-vault extension](dispatch-48-inv003-inv005-identity-vault.md)** —
+  **NEWEST.** Implements two of dispatch #48's three rules (below) plus its INV-004 prerequisite.
+  **INV-003** (`unexplainedVariance = max(0, |variance| - waste)`, dispatch #45 Part C's own
+  evidence that only 44.1% of INV-001 flags carry any logged waste) and **INV-005** (`positiveVariance
+  = max(0, variance)`, "phantom gains," sign confirmed live not assumed: `variance = exp_usage -
+  act_usage` exactly). Both land inactive, both built `min_stdev` in **from the start** — an offline
+  leave-one-out simulation found `positiveVariance`'s peer-baseline stdev distribution measurably
+  degenerate (5.0% exact-zero baselines) BEFORE either rule ran live, pre-empting the same defect
+  class INV-001/INV-002 had to fix after the fact (dispatch #45b). INV-003 reuses
+  `security_findings.exoneration_share` automatically — proven through the real call site, not just
+  asserted. **A correction made mid-build, same session:** dispatch #48's own brief (below) states
+  `qsr_variance_stat` "holds only 2026-08" — re-measured live and found FOUR periods (2026-05 through
+  2026-08, 23,154 rows) — the missing "recent negative-variance history" qualifier is a scope
+  decision this pass, not a data gap (CLAUDE.md's "data depth is never the limiter"). Plus the
+  **identity-vault extension** `qsr_waste.emp_token` (same mechanism as `audit_rows.emp_token`) —
+  with a stated, unresolved limitation: `qsr_waste.manager` is an eID, `audit_rows.emp` is a name,
+  so the two land in separate token spaces for the same real person; no eID↔name mapping exists
+  anywhere in this codebase to close that gap (the Employee Roster pull deliberately discards names
+  for privacy). **INV-004 itself (manager × day-part × store) is NOT built** — ships the vault
+  extension alone per the dispatch's own sequencing note; `qsr_waste` has no `wrin` (event-level, not
+  item-level) and a day-part sales denominator source isn't yet identified. Also adds CASH-003 to
+  `MEASURED_MAX` per the engineer action the CASH-003-resolved entry below flagged.
+- **⭐⭐⭐⭐ [McValue 2.0 FBP document — Draft 4, both publish gates closed](mcvalue-fbp-draft4.html)** —
+  **NEWEST on this thread.** Draft 3's one remaining gate — whether March 2026's month-long
+  free-item promo inflates the pre-launch DiD window — is closed. Query F (run 2026-08-18, in
+  [analysis-mcvalue-price-waves-2026-08-18.md](analysis-mcvalue-price-waves-2026-08-18.md) §5) tested
+  it directly rather than pulling the 2025 calendar: March came back with **lower** traffic and
+  **higher** check than the rest of the pre-window — the opposite of what the confound would
+  predict. Draft 4 folds this into the document body as its own section, updates a Limitations
+  bullet that was still framing it as an open bound, and closes item 1 of "Open before the 25th."
+  **The only thing left before the 25 August meeting is the ask** — what is actually being
+  requested of the FBP. Draft 4 adds three candidate framings (relief-not-blame / a specific ask
+  tied to −3.14 pp / a joint-diagnostic framing) for the owner to pick from; it is a business
+  decision, not something a query resolves. See
+  [project-mcvalue-2-fbp-document.md](project-mcvalue-2-fbp-document.md)'s 2026-08-20 update note
+  for full detail. Branch `claude/mcvalue-2-finish-r9k4t` — no overlap with the security build
+  below (different tables, different files).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #48 — the inventory schemes that need no new data](dispatch-48.md)** —
   **NEWEST, briefed, not implemented.** Three rules, all on tables the batch job already loads.
   **INV-003 (variance unmatched by logged waste)** is the plan's own *"strongest single signal"* and
@@ -81,24 +118,6 @@ seconds, and the theory that survives one costs a PR.
   `MEASURED_MAX` — it was excluded for having no measured range, and now has one. **Standing lesson:**
   when a rule can't fire, the instincts are (1) find the missing data, (2) retire it. Both were wrong.
   Ask what shape the event actually has first.
-  **NEWEST.** After an 80-day Register Audit backfill (14,528 rows, 27/27 stores),
-  `audit_rows.manual_ref_cnt` is **null in all 19,985 rows**: **`manOverringQty` is not a field in
-  the API response.** Dispatch #44 rebuilt CASH-003 around it on a textbook inference — every other
-  override category has an Amt/Qty pair, `manOverringAmt` was the only one without — and the
-  inference was wrong. **The dispatch required measuring the field name before using it; that step
-  was first satisfied by pattern-matching, the engineer caught it mid-session and hedged the claim
-  rather than stating it as fact, and that hedge is why this is a two-hour correction instead of a
-  rule silently scoring an empty column forever.** State is safe and inert: CASH-003 `active=false`,
-  no threshold, column uniformly null, nothing reads it. **Next step is ONE diagnostic run logging
-  the response's top-level key NAMES only** (never values — every row is employee PII), same
-  shape-logging pattern `extractRows()` uses. **Do not guess a second field name** — that is what
-  produced this. Also records the **lifecycle-enrichment reconciliation, resolved against the PM**:
-  13.8% for INV-001 reproduces, but the PM's scoping theory is wrong (both-rules is 10.7%, not the
-  engineer's 2.5%) and the PM's *"roughly 5x enrichment"* was never measured — population rate is
-  **7.8%**, so true enrichment is **~1.8x**. Real but modest; dispatch #46 Part B's scoping is
-  unchanged. A 3x gap between the two population measurements (7.8% vs 2.6%) remains open —
-  likeliest an `ILIKE`/join difference; this query's `max(descr)` per `(loc,wrin)` collapses an item
-  marked in one period and unmarked in another.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The degenerate-stdev guard — dispatch #45 §A, second cause, closed](dispatch45b-degenerate-stdev-guard.md)** —
   **NEWEST.** A real gap left over from this session's own earlier #45 work — the dispatch's own
   "SECOND, INDEPENDENT CAUSE" section was present when #45 was first implemented but only the

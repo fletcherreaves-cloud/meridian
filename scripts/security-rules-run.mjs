@@ -183,11 +183,32 @@ export function computeFindingsForRule(rule, rows, { windowStart, windowEnd }) {
 // would silently break it: a same-length-prefix string ('2026-08') compares LESS than a longer
 // one that starts with it ('2026-08-01'), so an end bound of '2026-08' would wrongly exclude the
 // current month's own row.
+// dispatch #46 (engineer queue, waste-log padding / phantom gains) -- two derived fields, computed
+// once here so every consumer (the batch job, tests, a future panel) reads the SAME derivation.
+// QSRSoft's own sign convention (measured live, 2026-08-20, exact across every sampled row):
+// `variance = exp_usage - act_usage` -- POSITIVE means actual usage came in BELOW theoretical
+// (less consumed than the recipe predicts, i.e. ending inventory reads HIGHER than expected, the
+// "gain" direction phantom-gains targets); NEGATIVE means actual usage exceeded theoretical (the
+// shrink/shortage direction INV-001 already covers without distinguishing).
+//   unexplainedVariance = the portion of |variance| NOT covered by logged waste, floored at 0 --
+//     plan's own "strongest single signal": an unexplained variance with zero waste logged for it.
+//     Same units as `variance`/`rawWaste`/`compWaste` (both waste columns are unit-based, adjacent
+//     to exp_usage/act_usage in the schema, not to dol_diff -- confirmed by computeWasteExoneration
+//     already summing them directly against |variance| with no unit conversion).
+//   positiveVariance = max(0, variance) -- the gain direction alone, zero for every shrink-side
+//     subject (the majority, ~70.7% measured live) so a rule built on it flags ONLY genuine
+//     unexplained gains, never conflating them with ordinary shrinkage.
 export function mapVarianceStatRow(r) {
+  const variance = r.variance;
+  const rawWaste = r.raw_waste, compWaste = r.comp_waste;
+  const absVariance = variance == null ? null : Math.abs(variance);
+  const waste = (Number(rawWaste) || 0) + (Number(compWaste) || 0);
   return {
     loc: r.loc, period: r.period, date: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
-    rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage, actUsage: r.act_usage,
-    variance: r.variance, dolDiff: r.dol_diff,
+    rawWaste, compWaste, expUsage: r.exp_usage, actUsage: r.act_usage,
+    variance, dolDiff: r.dol_diff,
+    unexplainedVariance: absVariance == null ? null : Math.max(0, absVariance - waste),
+    positiveVariance: variance == null ? null : Math.max(0, variance),
   };
 }
 
