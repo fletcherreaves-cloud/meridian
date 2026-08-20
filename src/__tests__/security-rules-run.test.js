@@ -8,6 +8,8 @@ import {
   mapAuditRow, supportsAuditRows, fieldsFromExpr, computeFindingsForRule, buildExplanation,
   dataRequiredList, supportsVarianceStat, mapVarianceStatRow, joinStoreMonthSales, periodEndDate,
   computeItemFindingsForRule, classifyLifecycle, computeWasteExoneration,
+  supportsWasteDaypart, daypartFromBusnTm, mapWasteRow, mapDailyActivityRow,
+  buildDaypartSalesIndex, joinWasteDaypartSales, computeManagerDaypartFindingsForRule,
 } from '../../scripts/security-rules-run.mjs';
 import { evaluateRule } from '../engine/security-rules.js';
 
@@ -651,5 +653,139 @@ describe('computeItemFindingsForRule() — INV-005 wiring: numerator reads posit
     const b = computeItemFindingsForRule(INV005_RULE, ROWS, WIN).find(f => f.loc === '0000002');
     expect(b.value).toBe(0);
     expect(b.pass).toBe(false);
+  });
+});
+
+// ── Dispatch #48/#50 lineage -- INV-004 (waste-log padding, manager x day-part x store) ──────────
+
+describe('supportsWasteDaypart() — requires BOTH qsr_waste and qsr_daily_activity, neither alone', () => {
+  it('true only when both data sources are named', () => {
+    expect(supportsWasteDaypart({ data_required: ['qsr_waste', 'qsr_daily_activity'] })).toBe(true);
+    expect(supportsWasteDaypart({ data_required: ['qsr_waste'] })).toBe(false);
+    expect(supportsWasteDaypart({ data_required: ['qsr_daily_activity'] })).toBe(false);
+    expect(supportsWasteDaypart({ data_required: ['audit_rows'] })).toBe(false);
+  });
+});
+
+describe('daypartFromBusnTm() — wraps a wall-clock hour into daypartOf()\'s own 05:00->28:00 shape, never a second boundary set', () => {
+  it('daytime hours map straight through to daypartOf()\'s own buckets', () => {
+    expect(daypartFromBusnTm('10:30:00')).toBe('Breakfast');
+    expect(daypartFromBusnTm('13:00:00')).toBe('Lunch');
+    expect(daypartFromBusnTm('16:15:00')).toBe('Afternoon');
+    expect(daypartFromBusnTm('20:00:00')).toBe('Dinner');
+    expect(daypartFromBusnTm('23:59:00')).toBe('Dinner');
+  });
+  it('the 00:00-03:59 tail wraps to Late Night (hour+24), matching the DAR\'s own wrapped hour_slot convention, not a fresh calendar-day bucket', () => {
+    expect(daypartFromBusnTm('02:30:00')).toBe('Late Night');
+    expect(daypartFromBusnTm('00:05:00')).toBe('Late Night');
+  });
+  it('05:00 itself is Late Night too, same as daypartOf(\'05:00\') directly', () => {
+    expect(daypartFromBusnTm('05:00:00')).toBe('Late Night');
+  });
+  it('a malformed/missing busn_tm returns null, never a guessed daypart', () => {
+    expect(daypartFromBusnTm(null)).toBeNull();
+    expect(daypartFromBusnTm('')).toBeNull();
+  });
+});
+
+describe('mapWasteRow() — snake_case qsr_waste row -> camelCase, reads emp_token only, never the plaintext manager eID', () => {
+  it('maps busn_dt/busn_tm/amount/emp_token and computes daypart, and does NOT expose manager', () => {
+    const r = mapWasteRow({ loc: '0006178', busn_dt: '2026-07-30', busn_tm: '19:57:20', amount: 24.7, manager: 'Crystal C - eo360686', emp_token: 'tok-crystal' });
+    expect(r).toEqual({ loc: '0006178', date: '2026-07-30', busnTm: '19:57:20', empToken: 'tok-crystal', amount: 24.7, wtype: undefined, daypart: 'Dinner' });
+    expect(r.manager).toBeUndefined();
+  });
+});
+
+describe('mapDailyActivityRow()', () => {
+  it('maps loc/dt/hour_slot/product_sales', () => {
+    expect(mapDailyActivityRow({ loc: '0006178', dt: '2026-07-30', hour_slot: '19:00', product_sales: 150.5 }))
+      .toEqual({ loc: '0006178', date: '2026-07-30', hourSlot: '19:00', productSales: 150.5 });
+  });
+});
+
+describe('buildDaypartSalesIndex() — sums product_sales per (loc,date,daypart), pooling every hour_slot in that day-part', () => {
+  it('two Breakfast hour slots sum into one bucket; a Dinner slot stays separate', () => {
+    const rows = [
+      mapDailyActivityRow({ loc: 'A', dt: '2026-08-01', hour_slot: '06:00', product_sales: 100 }),
+      mapDailyActivityRow({ loc: 'A', dt: '2026-08-01', hour_slot: '07:00', product_sales: 50 }),
+      mapDailyActivityRow({ loc: 'A', dt: '2026-08-01', hour_slot: '19:00', product_sales: 80 }),
+    ];
+    const idx = buildDaypartSalesIndex(rows);
+    expect(idx.get('A::2026-08-01::Breakfast')).toBe(150);
+    expect(idx.get('A::2026-08-01::Dinner')).toBe(80);
+    expect(idx.size).toBe(2);
+  });
+});
+
+describe('joinWasteDaypartSales() — aggregates waste by (loc,date,daypart,empToken), attaches the sales bucket ONCE per date, drops what it cannot price', () => {
+  const salesIdx = new Map([['A::2026-08-01::Dinner', 1000]]);
+
+  it('two waste rows for the same manager/date/day-part sum into one aggregated row, sharing one sales figure (not doubled)', () => {
+    const rows = [
+      mapWasteRow({ loc: 'A', busn_dt: '2026-08-01', busn_tm: '19:00:00', amount: 10, emp_token: 'tok-x' }),
+      mapWasteRow({ loc: 'A', busn_dt: '2026-08-01', busn_tm: '20:30:00', amount: 15, emp_token: 'tok-x' }),
+    ];
+    const out = joinWasteDaypartSales(rows, salesIdx);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ loc: 'A', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-x', wasteAmt: 25, daypartSales: 1000 });
+  });
+
+  it('a waste row with no matching sales bucket is dropped, not carried forward with a null denominator', () => {
+    const rows = [mapWasteRow({ loc: 'A', busn_dt: '2026-08-02', busn_tm: '19:00:00', amount: 10, emp_token: 'tok-x' })];
+    expect(joinWasteDaypartSales(rows, salesIdx)).toHaveLength(0);
+  });
+
+  it('a waste row with no emp_token (pre-backfill) is dropped -- cannot attribute an unattributable finding', () => {
+    const rows = [mapWasteRow({ loc: 'A', busn_dt: '2026-08-01', busn_tm: '19:00:00', amount: 10, emp_token: null })];
+    expect(joinWasteDaypartSales(rows, salesIdx)).toHaveLength(0);
+  });
+});
+
+describe('computeManagerDaypartFindingsForRule() — the third subject grain (loc, empToken, daypart), storeBaseline pre-filtered to the SAME daypart', () => {
+  const INV004_RULE = {
+    rule_id: 'INV-004', logic_type: 'z-score', baseline_type: 'store',
+    data_required: ['qsr_waste', 'qsr_daily_activity'],
+    logic_expression: { numerator: { field: 'wasteAmt', agg: 'sum' }, denominator: { field: 'daypartSales', agg: 'sum' }, scale: 1000, comparator: 'gte', min_value: 13, min_denominator: 250, min_stdev: 1 },
+    threshold: { default: 2.5 }, method: 'Waste $ per day-part sales $, by manager', severity: 3, weight: 1,
+  };
+  // Store A (target manager, Dinner): wasteAmt=50, daypartSales=1000 -> value=50. Peer stores
+  // B-F (same daypart, different stores): wasteAmt/daypartSales = 8/9/11/12/10 per $1,000 -- same
+  // hand-computed peer stats as every other z-score wiring test in this file (mean=10,
+  // stdev=sqrt(2)~=1.4142). z = (50-10)/1.4142 ~= 28.3, comfortably >= threshold 2.5.
+  const ROWS = [
+    { loc: 'A', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-mgr1', wasteAmt: 50, daypartSales: 1000 },
+    { loc: 'B', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-mgr2', wasteAmt: 8,  daypartSales: 1000 },
+    { loc: 'C', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-mgr3', wasteAmt: 9,  daypartSales: 1000 },
+    { loc: 'D', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-mgr4', wasteAmt: 11, daypartSales: 1000 },
+    { loc: 'E', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-mgr5', wasteAmt: 12, daypartSales: 1000 },
+    { loc: 'F', date: '2026-08-01', daypart: 'Dinner', empToken: 'tok-mgr6', wasteAmt: 10, daypartSales: 1000 },
+    // Store A's SAME manager, a DIFFERENT day-part (Breakfast) -- a separate subject entirely, and
+    // it must not pollute Store A's own Dinner peer computation or vice versa. Its own value (5) is
+    // below min_value (13), so it should never flag regardless of peers.
+    { loc: 'A', date: '2026-08-01', daypart: 'Breakfast', empToken: 'tok-mgr1', wasteAmt: 5, daypartSales: 500 },
+  ];
+  const WIN = { windowStart: '2026-08-01', windowEnd: '2026-08-28' };
+
+  it('Store A/Dinner subject reads value=50 and flags -- a real outlier against same-daypart peer stores', () => {
+    const findings = computeManagerDaypartFindingsForRule(INV004_RULE, ROWS, WIN);
+    const a = findings.find(f => f.loc === 'A' && f.daypart === 'Dinner');
+    expect(a.empToken).toBe('tok-mgr1');
+    expect(a.value).toBeCloseTo(50, 6);
+    expect(a.pass).toBe(true);
+    expect(a.baselineContext.mean).toBeCloseTo(10, 6);
+    expect(a.baselineContext.stdev).toBeCloseTo(Math.sqrt(2), 4);
+  });
+
+  it('the SAME manager\'s Breakfast subject at Store A is a SEPARATE finding with its own value -- no peer stores exist for Breakfast in this fixture, so it reads an honest pass:null (insufficient baseline population), never merged with the Dinner subject\'s peer stats', () => {
+    const findings = computeManagerDaypartFindingsForRule(INV004_RULE, ROWS, WIN);
+    const breakfast = findings.find(f => f.loc === 'A' && f.daypart === 'Breakfast');
+    expect(breakfast).toBeTruthy();
+    expect(breakfast.value).toBeCloseTo(10, 6); // 5/500*1000
+    expect(breakfast.pass).toBeNull(); // no peer stores for Breakfast at all -- honest null, not a guessed false
+  });
+
+  it('produces exactly one finding per (loc, empToken, daypart) triple -- 7 rows in, 7 subjects out (no cross-daypart or cross-store merging)', () => {
+    const findings = computeManagerDaypartFindingsForRule(INV004_RULE, ROWS, WIN);
+    expect(findings).toHaveLength(7);
   });
 });
