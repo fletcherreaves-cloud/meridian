@@ -30,8 +30,16 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⚠️ CORRECTION, same day: dispatch #39's "TvA not buildable" claim below was WRONG — see the
+  correction note at the top of `dispatch-39.md`.** QSRSoft already computes TvA-equivalent
+  variance natively, and Meridian already pulls it (`qsr_variance_stat`, `qsr_raw_item_detail`,
+  `src/engine/eom-variance-raw.js`) — the error was "haven't looked" mistaken for "doesn't
+  exist," exactly the mistake CLAUDE.md's own standing rule warns against. Owner caught it
+  same-day. What's actually still missing is narrower: that data is store×item-grain, not
+  employee-attributed — background investigation in progress to scope a real follow-up dispatch.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, dispatched](dispatch-39.md)** —
-  **NEWEST.** Owner chose Phase 1 next. **Real finding that narrowed scope before writing this:**
+  Owner chose Phase 1 next. **Real finding that narrowed scope before writing this — later
+  corrected same day, see the entry above:**
   TvA (theoretical-vs-actual) inventory variance (plan §2.2) is **not buildable** — confirmed
   directly against `src/engine/variance-trace.js`'s own header, which states Meridian has no
   per-item theoretical-usage/BOM coefficient table, the same class of finding as the already-

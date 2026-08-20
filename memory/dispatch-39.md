@@ -16,19 +16,40 @@ identifier in this build is a token, never a plaintext name).
 
 ---
 
-## A real finding that narrows this dispatch's scope — read first
+## CORRECTION, 2026-08-20 (same day) — the TvA exclusion below was WRONG, read this first
 
-**TvA (Theoretical vs. Actual) inventory variance, plan §2.2, is explicitly OUT of this
-dispatch — do not build it, and do not re-propose it without new data.** `src/engine/variance-
-trace.js`'s own header states this directly: *"Meridian has no per-item theoretical-usage-per-unit-
-sold table to build that credibly, and a wrong 'theoretical' curve would be worse than an honest
-one grounded in real snapshots."* TvA requires `theoretical = Σ(items_sold × BOM_coefficient)` —
-a recipe/bill-of-materials coefficient per menu item — which does not exist anywhere in this
-codebase or its data sources. This is the same class of finding as §2.1's deposit-lapping row
-("structurally invisible in QSRSoft, do not build a rule against data that can't see it") — a
-missing-capability finding, not a missing-effort one. If BOM data becomes available later (a new
-QSRSoft report, a vendor recipe export), TvA becomes buildable; until then a rule against it would
-silently never fire, or worse, fire on noise.
+**This dispatch originally excluded TvA inventory variance, reasoning from `variance-trace.js`'s
+comment that "Meridian has no per-item theoretical-usage table." That comment is true narrowly
+(no POS-sales × BOM-coefficient reconstruction exists) but the conclusion drawn from it was
+wrong — treating "we haven't looked" as "the data doesn't exist," exactly the error CLAUDE.md's
+own standing rule warns against ("a missing-data gap is never a finding, it is a work item").
+Owner correctly pushed back same-day.** Re-checked directly, not re-assumed:
+
+- **QSRSoft already computes TvA-equivalent variance natively.** Its own KB (`qsrsoft-kb-
+  digest.md`) documents "Inventory Stat compares expected usage versus actual usage... the
+  Inventory Statistical Loss report" and a "Variance Stat/Yields" page, plus an "Inventory Usage"
+  report whose `Actual Usage = Starting Inventory + Purchases +/- Transfers - Waste/Promo - Ending
+  Inventory` is the "actual" leg computed server-side, per WRIN. There's also a real "Menu Items -
+  Recipes" report (BOM-shaped) and an "Inventory Analysis Report" whose Topics 3/6/7 are
+  explicitly about recipe-membership completeness.
+- **Meridian already PULLS this.** `scripts/qsrsoft-variance-pull.mjs` → `qsr_variance_stat`
+  (the aggregate, confirmed lagging) and `qsr_raw_item_detail` (per-count-event history) are both
+  real, live tables with existing consumer code — `src/engine/eom-variance-raw.js`'s
+  `latestVarianceByWrin()` already computes the more accurate "as-counted" per-WRIN variance from
+  the raw count-event history, built for the EOM inventory workflow, not this security build.
+  `variance-trace.js`'s narrower comment was about a *different*, harder path (reconstructing
+  theoretical usage from POS sales × recipe math) that this org indeed hasn't built — not about
+  whether TvA-shaped variance data exists at all. It does, and it's already flowing.
+
+**What's actually still missing, precisely stated:** `qsr_variance_stat`/`qsr_raw_item_detail`
+are **store × item × date grain, not employee-attributed** — turning "this store's ground beef is
+short 8% this month" into "which employee(s) likely caused it" needs correlating the variance
+window against who had access/opportunity (shift data), which is genuinely a cross-domain
+correlation problem (plan §3), not a single-table ratio rule. A **store-level** TvA-variance-spike
+rule (flag a store/item, no employee attribution) fits Phase 1's existing shape today, using data
+already flowing; an **employee-attributed** one is real Phase 2/3 scope. Being investigated
+further now (background research in progress, same session) — see the follow-up dispatch this
+produces before assuming either path is fully scoped.
 
 **This means Phase 1, as actually dispatched here, is CASH-domain only** — the domain
 `audit_rows` genuinely and fully supports today. This is a legitimate, valuable-on-its-own slice
