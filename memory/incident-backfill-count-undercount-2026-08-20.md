@@ -1,6 +1,6 @@
 ---
 name: incident-backfill-count-undercount-2026-08-20
-description: scripts/backfill-identity-vault.mjs logged "0 row(s) updated" for all 449 employees on its first live run — a broken row-count report, not (as far as measured) a failed write. Root-caused against the actual installed postgrest-js source, fixed same day.
+description: scripts/backfill-identity-vault.mjs logged "0 row(s) updated" for all 449 employees on its first live run — a broken row-count report, not a failed write (confirmed live). Root-caused against the actual installed postgrest-js source, fixed and confirmed same day.
 metadata:
   node_type: memory
   type: incident
@@ -8,10 +8,16 @@ metadata:
 
 # Incident: `backfill-identity-vault.mjs` reported 0 rows updated (2026-08-20)
 
-**Status: root cause identified and fixed same day, against the real installed library source
-(`@supabase/postgrest-js@2.108.2`) — not guessed from memory of the API.** Whether any real rows
-were actually left untouched is **still pending a live check from the owner** — see "What still
-needs confirming" below; this file documents the code-level finding, not a live-data conclusion.
+**Status: CLOSED, same day — root cause identified against the real installed library source
+(`@supabase/postgrest-js@2.108.2`), fixed, and the live-data outcome confirmed by the owner.**
+Read-only check run in the Supabase SQL Editor:
+```
+tokenized: 21929, still_untokenized: 0
+```
+Confirms the hypothesis below exactly: the 449 `PATCH` updates all actually succeeded on first
+run — every `audit_rows` row with a non-null `emp` now carries an `emp_token`, zero left behind.
+The "0 row(s) updated" log was purely a broken count-reporting bug, never a failed write. No data
+re-run needed; the code fix (already merged) prevents the misleading log on any future run.
 
 ## What happened
 
@@ -88,10 +94,10 @@ const { error, count } = await supabase
 trailing `.select('*', {...})` (which was never doing what it looked like it was doing) removed
 entirely, since nothing in this script consumes the row representation, only the count.
 
-## What still needs confirming
+## What was confirmed — CLOSED
 
-Owner should run this read-only check in the Supabase SQL Editor (safe from a phone browser, no
-Mac/terminal needed):
+Owner ran this read-only check in the Supabase SQL Editor (safe from a phone browser, no
+Mac/terminal needed), same day:
 
 ```sql
 select count(*) as tokenized,
