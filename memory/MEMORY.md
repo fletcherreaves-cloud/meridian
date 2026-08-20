@@ -30,6 +30,29 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨 [SECURITY INCIDENT — reveal RPC anonymous role-gate bypass, found + fixed same day, 2026-08-20](incident-reveal-rpc-null-role-bypass-2026-08-20.md)** —
+  **NEWEST.** `reveal_employee_identity()` (dispatch #37's vault, PR #459) shipped with a
+  PL/pgSQL `NULL`-role trap: an anonymous caller's `get_my_role()` is `NULL`, and
+  `NULL not in ('admin','supervisor')` evaluates to `NULL` — which an `ELSIF` with no trailing
+  `ELSE` treats as "skip," not "reject." Result: a fully anonymous caller (public anon key, no
+  login) fell through the entire role gate and reached the token→name lookup. **Found live** by
+  probing production directly with the anon key (per CLAUDE.md's "measure it, don't reason about
+  it" — the PR's own verification had read the function's logic and judged it correct, but never
+  adversarially probed it), **not by re-reading the code**. This was caught the same session the
+  owner ran `scripts/backfill-identity-vault.mjs` for the first time (so real names were freshly
+  in the vault) but **before** dispatch #38's reveal UI exists for any user to have discovered a
+  real token through — no confirmed real-name disclosure, full reasoning in the incident file's
+  "Actual exposure" section. **Fixed same day**: role gate restructured so the reject path is an
+  unconditional trailing `ELSE` (a `NULL` condition can never skip an `ELSE`), plus an explicit
+  `revoke execute ... from anon` (a second, distinct finding — `revoke ... from public` alone did
+  not stop the anon key from invoking the function at all). Owner ran the hotfix live; **re-
+  verified live with the same anon-key probe, confirmed closed** — the exact same call now
+  correctly returns `"role none is not permitted to reveal identities"` instead of reaching the
+  lookup. `supabase/schema-identity-vault.sql` updated to match. **Standing lesson: a security-
+  sensitive `SECURITY DEFINER` function needs a live adversarial probe as part of its own
+  verification — a correct-looking code read is not enough.** Full incident writeup, including an
+  open/unconfirmed hypothesis about a possible project-wide default-privileges gap worth auditing
+  later, in the incident file itself.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, dispatched](dispatch-38.md)** —
   2026-08-20. **NEWEST.** Follow-up to dispatch #37: the vault retrofit deliberately stripped
   plaintext names from `analyzeRegisterAudit`'s output ("blind mode," working as designed), which

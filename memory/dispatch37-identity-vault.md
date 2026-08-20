@@ -1,5 +1,13 @@
 # Dispatch #37 — Security build: identity-vault architecture (Direction B)
 
+**⚠️ Post-merge security fix, same day (2026-08-20) — read
+[incident-reveal-rpc-null-role-bypass-2026-08-20.md](incident-reveal-rpc-null-role-bypass-2026-08-20.md)
+before touching `reveal_employee_identity()`.** The version described below and originally shipped
+in `supabase/schema-identity-vault.sql` had a role-gate bug (a `NULL`-role caller — i.e. anonymous
+— fell through the `IF/ELSIF` untouched and reached the name lookup) — found and fixed live the
+same day, before any confirmed exposure. The current schema file already has the fix; this
+document's function listing below is otherwise still accurate.
+
 2026-08-20. `memory/dispatch-37.md`, implementing the owner's 2026-08-20 Direction B decision
 (`memory/plan-security-pii-architecture-2026-08-19.md` §4) and the access-tier/evidence-grade
 decisions (`memory/plan-security-loss-prevention.md` §5). Lands before Phase 1 per the owner's
