@@ -288,6 +288,27 @@ const HDRS = (_t) => ({
 // per-row field names were) -- accept bare array, {result:[...]}, or {data:[...]}, matching the
 // exact defensive fallback qsrsoft-ops-pull.mjs's own fetchRows() already uses for the same
 // uncertainty across its own six endpoints.
+// Extracts the row array from whatever envelope the API returns, and -- critically -- SAYS SO
+// when it finds nothing. dispatch #34 captured the per-row field names but never the envelope,
+// so the three shapes below are guesses that have never been confirmed against a real response.
+// Run 32397... proved that matters: the request succeeded, the owner's DevTools capture shows a
+// 51KB JSON body, and this returned zero rows -- a wrong envelope key looks exactly like "no
+// data" and was being swallowed silently. Logs the SHAPE only (top-level keys, array lengths),
+// never values: this payload is employee-attributed and every row is PII.
+function extractRows(body, unit) {
+  if (Array.isArray(body)) return body;
+  const rows = body?.result || body?.data;
+  if (Array.isArray(rows)) return rows;
+  if (body && typeof body === 'object') {
+    const shape = Object.entries(body).map(([k, v]) =>
+      Array.isArray(v) ? `${k}[${v.length}]` : `${k}:${v === null ? 'null' : typeof v}`).join(' ');
+    console.error(`[audit-pull] ${unit}: unrecognized envelope -- top-level shape: {${shape}}`);
+  } else {
+    console.error(`[audit-pull] ${unit}: unrecognized body type: ${typeof body}`);
+  }
+  return [];
+}
+
 async function fetchChunk(url, token, evalPage) {
   if (evalPage) {
     // page.request (Playwright's APIRequestContext), NOT page.evaluate(fetch). Two reasons, both
@@ -311,7 +332,7 @@ async function fetchChunk(url, token, evalPage) {
     }
     if (!r.ok()) throw new Error(`HTTP ${r.status()}: ${(await r.text()).slice(0, 200)}`);
     const body = await r.json();
-    return Array.isArray(body) ? body : (body?.result || body?.data || []);
+    return extractRows(body, url.replace(/^.*regAudit\?/, "").slice(0, 60));
   }
   const resp = await fetch(url, { headers: HDRS(token) });
   if (resp.status === 401 || resp.status === 403) {
@@ -333,7 +354,7 @@ async function fetchChunk(url, token, evalPage) {
   }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   const body = await resp.json();
-  return Array.isArray(body) ? body : (body?.result || body?.data || []);
+  return extractRows(body, url.replace(/^.*regAudit\?/, "").slice(0, 60));
 }
 
 async function resolveToken(token, forceRemint) {
@@ -359,7 +380,7 @@ async function runAll(token, chunks, evalPage, tracker, coveredStores) {
           rows = await fetchChunk(buildUrl(chunk.start, chunk.end), freshTok, evalPage);
         } else throw e;
       }
-      if (!rows.length) { if (DEBUG) console.log(`[audit-pull] ${unit}: no data`); continue; }
+      if (!rows.length) { console.log(`[audit-pull] ${unit}: 0 rows returned`); continue; }
       const mapped = rows.map(mapRow).filter(r => r.emp && r.loc && r.loc !== '0000000' && r.date);
       if (mapped.length < rows.length && DEBUG) console.log(`[audit-pull] ${unit}: ${rows.length - mapped.length} row(s) dropped (missing emp/loc/date)`);
       const { saved, errors } = await saveAuditRows(mapped);
