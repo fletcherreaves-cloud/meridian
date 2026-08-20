@@ -30,6 +30,35 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
+  **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
+  **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide
+  uniformity was the whole signature of the measurement problem), INV-001's flag rate **50.4% →
+  4.1%** (2,603 → 188), max value 36,234 → 7,569, and `undetermined` rose 167 → 703 against a ~643
+  prediction derived from a *separate* measurement. **But the survivors are still not shrink** —
+  top items run 827–1,429% median variance (usage 8–14× expected). Two cautions recorded for future
+  sessions: a PM hypothesis that **item lifecycle** explained the remainder was **refuted by its own
+  follow-up query** (marked items are 26/188 = 13.8%, not the explanation — the error was
+  generalising from a top-20 *sorted by magnitude*, where marked items cluster; a sorted head is not
+  a sample), and **the `(loc, wrin)` period fan-out bug recurred for the third time**, hours after
+  being written down — counts inflated ~3.5× (658 vs a true 188). `count(distinct)` and medians are
+  immune, which is why the bias-cancellation conclusion survived it. **Open question:** 162 flags on
+  ordinary, active, unmarked items at ~101% median variance, explained by neither mis-mapping nor
+  lifecycle nor plausibly theft — scoped as dispatch #45 Part C. Also: **INV-002 flags 224
+  financially trivial subjects** (max a few hundred dollars) for want of a numerator-level dollar
+  gate the engine cannot express.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #45 — min_numerator, lifecycle routing, and the unexplained 162](dispatch-45.md)** —
+  **NEWEST, briefed, not yet implemented.** Three parts from the dry run above. **A — `min_numerator`**:
+  let a rule gate on absolute magnitude, not just a rate. INV-002's `min_value` was correctly removed
+  (unreachable at 10) but nothing replaced it, so it flags 224 subjects worth tens-to-hundreds of
+  dollars. Build it exactly like `min_denominator` (per-rule data, one shared choke point) and honour
+  the asymmetry: unmet `min_denominator` → honest null; unmet `min_numerator` → `pass:false`, a real
+  clear. **B — lifecycle routing**: `qsr_variance_stat.descr` carries machine-readable
+  `(Deactivated)`/`(New)`/`(Obsolete NN days left` markers, unused. Worth **13.8%** of the queue —
+  scope it honestly, and **route, don't suppress**: a deactivated WRIN at 193% variance is a real
+  hygiene work item, not a security one. **C — the actual open question**: characterise the 162
+  unmarked flags at ~101% median. Investigation, deliverable is a memory file not code, and an honest
+  "still unexplained" beats a theory. Out of scope: `INV-003`, #43 Phase 2, the 30-WRIN config work.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #44 — close the unreachable-threshold class](dispatch-44.md)** —
   **NEWEST, briefed, not yet implemented.** Two independent parts; B is smaller and unblocks
   nothing, so do it first if A stalls. **Part A — CASH-003 re-expressed as a count rule**, under the
