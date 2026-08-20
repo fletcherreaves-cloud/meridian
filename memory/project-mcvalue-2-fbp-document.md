@@ -14,7 +14,7 @@ the owner 2026-08-14 — an earlier "Morhininweg" was voice-input garble).
 
 # ⭐⭐⭐⭐ 2026-08-20 UPDATE — read this first; it supersedes the 2026-08-18 update below
 
-**Current draft: `memory/mcvalue-fbp-draft4.html`.** Draft 3's one remaining gate — whether the
+**Current draft: `memory/mcvalue-fbp-draft5.html`.** Draft 3's one remaining gate — whether the
 March 2026 free-item promo inflates the pre-launch window — is closed. Query F (already run
 2026-08-18, recorded in `memory/analysis-mcvalue-price-waves-2026-08-18.md` §5) tested it
 directly: March came back with **lower** traffic and **higher** check than the rest of the
@@ -23,6 +23,25 @@ body as its own section ("The pre-window, tested for a hidden promo"), updates t
 Limitations bullet that was still framing this as an open bound, and closes item 1 of "Open before
 the 25th." Draft 3's analysis itself is unchanged — this is presentation and gate-closure, not a
 new finding.
+
+**Draft 5 (same day) adds one thing, no figures changed:** a plain-language callout, right before
+the first "Difference" table, defining what a difference-in-differences (DiD) is and clarifying
+that Oklahoma and Florida are each measured this way *separately* — Florida's number is never
+subtracted from Oklahoma's, it's shown as corroboration. The one genuine two-group subtraction in
+the document is the thirteen-day price test. Owner asked what "DiD" meant while reviewing Draft 4
+and separately noted future documents should spell it out — this was the same-day fix rather than
+carrying the gap into a later draft.
+
+**Freshness check RAN 2026-08-20 — verdict: no refresh needed.** Data through 08-11 was 9 days old
+against the 25 Aug meeting; owner asked whether to pull current data and update. Query G
+(`mcvalue-verification.sql`) compared the tail (08-12→08-20, −4.98% vs LY) against the already-
+documented B6–B8 blend (−4.32% vs LY): gap −0.66pp, inside the no-material-change band. The trend
+continued (B7/B8 were already −4.92%/−4.90%, the tail landed a touch deeper at −4.98%, not a
+reversal and not a sharp new decline) — read as "still declining at the documented rate," not
+"stable." The full-window and post-2-June DiD figures would move by tenths of a point at most if
+extended; not worth re-deriving 5 days out. **The headline (−3.14 pp, six clean weeks) is a closed
+historical window and was never at risk from this question either way.** Document stands as Draft
+5. Only remaining open item is still the ask (item 8, above).
 
 **What is genuinely still open, and it is the only thing left:** item 8 below, the ask — what is
 actually being requested of the FBP. Draft 4 adds three candidate framings (relief-not-blame, a

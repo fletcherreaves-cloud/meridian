@@ -7,6 +7,10 @@
 -- result. NOTHING in this file is still open.
 -- Full narrative: memory/analysis-mcvalue-price-waves-2026-08-18.md
 -- Run in the Supabase SQL Editor. loc is ZERO-PADDED to 7 in these tables.
+--
+-- ⚠ 2026-08-20: Query G added, then RUN the same day — a freshness check, not a
+-- new finding. VERDICT: no material change, refresh not needed. See Query G's own
+-- block at the end of this file for the result and full read.
 -- ============================================================================
 
 
@@ -524,3 +528,66 @@ order by bucket desc;
 --     If a footprint IS found, still get the March 2025 calendar issue per the
 --     document's step 1 -- confirming cancellation needs to know what ran last year,
 --     not just what this query shows about this year.
+
+
+-- ── G · FRESHNESS CHECK — is the post-11-Aug tail more of the same, or different? ──
+-- ✅ RAN 2026-08-20. VERDICT: NO MATERIAL CHANGE. Refresh is not needed before the
+-- 25 Aug meeting.
+--    data_through = 2026-08-20, tail_vs_ly_pct = -4.98%%, b6_b8_vs_ly_pct = -4.32%%
+--    Gap = -0.66pp, inside the ~1pp no-material-change band this query was written
+--    against. Sanity-checked the b6_b8 baseline itself against the document's own
+--    per-block figures before trusting the comparison (see project-mcvalue-2-fbp-
+--    document.md's per-block table): B6 -3.10%%, B7 -4.92%%, B8 -4.90%% -- a
+--    volume-weighted blend of those three landing at -4.32%% is exactly what should
+--    happen, not a surprise. ⚠ CORRECTION to this query's own comment below: it
+--    said the two figures "should sit near -3%%" -- that was B6 alone, written
+--    before checking B7/B8. The real B6-B8 blend is -4.32%%, not -3%%. The ~1pp
+--    THRESHOLD is still the right criterion and still holds; only the expected
+--    MAGNITUDE in the comment was wrong. Left uncorrected below, struck here
+--    instead, per this file's own convention of not editing a stale claim in place.
+--
+-- READ ON THE RESULT: the tail did not reverse and did not accelerate sharply --
+-- it continued the same trajectory B7/B8 already showed (upper -4%%s), landing
+-- 0.66pp deeper. This is NOT "flat" or "improving"; it is "still declining at
+-- about the rate already documented." The full-window (-3.96pp) and post-2-June
+-- (-4.45pp) DiD figures would each nudge a few hundredths to a couple tenths more
+-- negative if extended through 08-20 -- 9 days folded into windows of ~80 and
+-- ~224 days respectively barely moves a ratio-of-sums figure. Not worth
+-- re-deriving 5 days out. The headline (-3.14pp, six clean weeks, B1-B3) is
+-- completely untouched either way -- it is a closed historical window.
+--
+-- The headline (-3.14pp, the six clean weeks, B1-B3) is a closed historical window
+-- and CANNOT change no matter what this returns -- do not re-run E over this.
+--
+-- Same OK-19 cohort as Query C/E (43380 Tishomingo and 43701 Ponce excluded),
+-- ratio of summed counts, matched-day vs LY.
+select
+  (select max(dt) from qsr_daily_activity_rollup) as data_through,
+  round((100.0*sum(r.transactions) filter (where r.dt between '2026-08-12' and (select max(dt) from qsr_daily_activity_rollup))
+       / nullif(sum(r.ly_transactions) filter (where r.dt between '2026-08-12' and (select max(dt) from qsr_daily_activity_rollup)),0)
+       - 100)::numeric, 2)                        as tail_vs_ly_pct,
+  round((100.0*sum(r.transactions) filter (where r.dt between '2026-07-01' and '2026-08-11')
+       / nullif(sum(r.ly_transactions) filter (where r.dt between '2026-07-01' and '2026-08-11'),0)
+       - 100)::numeric, 2)                        as b6_b8_vs_ly_pct
+from qsr_daily_activity_rollup r
+where r.loc in (
+  '0003708','0005183','0005985','0006972','0010422','0010915','0011657',
+  '0013113','0018213','0020475','0024471','0029760','0031357','0032525',
+  '0033109','0033222','0033704','0034222','0035064'
+);
+
+-- READ:
+--   tail_vs_ly_pct within ~1pp of b6_b8_vs_ly_pct (both should sit near -3%) ->
+--     no material change, skip the refresh. The full-window/post-2-June figures
+--     would move by tenths of a point at most; not worth re-verifying 5 days out.
+--   tail_vs_ly_pct notably WORSE (more negative) -> the decline is deepening.
+--     Worth a fuller refresh AND worth flagging in the room -- a document that
+--     understates a still-worsening trend is worse than one that's a week stale.
+--   tail_vs_ly_pct notably BETTER (less negative, or positive) -> traffic may be
+--     recovering. Worth a fuller refresh before the meeting -- do not walk in with
+--     a number that's turned around without knowing it.
+--   Either "notably" case: re-run the full-window and post-2-June figures (the
+--   two callouts in "Finding: traffic") over the extended window, and re-check
+--   whether the June-price-effect band (Query D family) still holds at the new
+--   sample size. Do NOT touch the six-clean-weeks figure -- it is a fixed window
+--   and this query cannot affect it.
