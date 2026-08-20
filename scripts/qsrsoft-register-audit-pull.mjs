@@ -227,12 +227,32 @@ export function mapRow(r) {
 }
 
 // ── Fetch (direct or Playwright in-browser) ──────────────────────────────────────────────────
+// REFERER is the SPECIFIC report page, not the bare site root. This is a real difference from
+// what shipped, and the current best hypothesis for the AUTH_FAILED:403 that has failed every
+// run since 2026-08-20 (memory/dispatch35-register-audit-implementation.md):
+//
+//   qsrsoft-ops-pull.mjs  -- WORKS with a direct minted token against this SAME host --
+//   sends Referer 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport', i.e. the report
+//   page the call belongs to. This script shipped with a bare 'https://v3.myqsrsoft.com/'.
+//
+// That fits the observed symptom specifically: a 403 (authenticated but not authorized for THIS
+// request) rather than a 401 (bad/expired credential) -- and the token is known good, since it
+// is freshly minted and re-minted on retry. It also matches how dispatch #34's capture was
+// necessarily made: the owner's DevTools session was ON the regAudit page, so the real working
+// request carried that page as its Referer.
+//
+// NOT yet verified against live QSRSoft -- no session in this build's history has had real
+// credentials. If a workflow_dispatch run still 403s with this in place, the Referer theory is
+// dead and the next candidate is the UI-interaction hypothesis in dispatch35's own writeup
+// (the report may not fire its API until a date range + run/export click). Record whichever way
+// it goes rather than leaving the next session to re-derive it.
+const REFERER = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit';
 const buildUrl = (startDate, endDate) => `${BASE}/reports/mcd/controlsCash/regAudit?` + new URLSearchParams({
   nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
   startDate, endDate, dsd: 'd', weekStart: '3', nsd: 'd',
   resultType: 'byDateEmployee', registerType: 'cashier',
 });
-const HDRS = t => ({ 'X-Auth-Token': t, Accept: 'application/json', Origin: 'https://v3.myqsrsoft.com', Referer: 'https://v3.myqsrsoft.com/', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
+const HDRS = t => ({ 'X-Auth-Token': t, Accept: 'application/json', Origin: 'https://v3.myqsrsoft.com', Referer: REFERER, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
 
 // Response envelope shape wasn't captured explicitly in dispatch #34's findings (only the
 // per-row field names were) -- accept bare array, {result:[...]}, or {data:[...]}, matching the
@@ -240,9 +260,16 @@ const HDRS = t => ({ 'X-Auth-Token': t, Accept: 'application/json', Origin: 'htt
 // uncertainty across its own six endpoints.
 async function fetchChunk(url, token, evalPage) {
   if (evalPage) {
+    // No Referer/Origin set here, deliberately: both are forbidden header names in browser
+    // fetch() -- the browser sets them itself and ignores attempts to override, so passing them
+    // was always a no-op on this path. The browser supplies the right Referer anyway, since
+    // viaPlaywright() navigates to the regAudit report page before calling this. (Also note
+    // REFERER is a Node-side const and would be a ReferenceError inside this callback, which
+    // Playwright serializes and runs in the page context -- only the explicitly-passed
+    // {url, token} argument crosses that boundary.)
     const res = await evalPage.evaluate(async ({ url, token }) => {
       try {
-        const r = await fetch(url, { headers: { 'X-Auth-Token': token, Accept: 'application/json', Origin: 'https://v3.myqsrsoft.com', Referer: 'https://v3.myqsrsoft.com/' }, signal: AbortSignal.timeout(30000) });
+        const r = await fetch(url, { headers: { 'X-Auth-Token': token, Accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
         if (!r.ok) return { error: `HTTP ${r.status}` };
         const body = await r.json();
         return { rows: Array.isArray(body) ? body : (body?.result || body?.data || []) };
