@@ -78,7 +78,32 @@ were. Two known distortions, both correctable:
 all items including a long low-volume tail. That number is the one worth acting on, and one query
 away.
 
-## The diagnostic that separates (a) from (b)
+## ✅ ANSWERED, same day — it is (a), decisively
+
+The item-concentration query below was run against live data 2026-08-20. **The result is
+"uniform / bent ruler," not close.** The top-30 items by median variance are a catalogue of
+hard-to-count and unit-ambiguous items (bag-in-box syrups, FCB mixes, bulk condiments,
+sprinkle-quantity freeze-dried toppings) plus packaging in mid-promo transition; the magnitudes
+are impossible as shrink (`BREADED CHICKEN BREAST STRIP` at a **798% median** = actual usage ~8×
+expected); and many show at **all 27 stores in every period**, which is the opposite of how an
+operational problem behaves.
+
+Full evidence, the item table, triage order, and a corrected version of the query below (the
+original over-counted via a period fan-out — `store_count` read up to 108, which is 27 stores × 4
+periods, not 108 stores):
+**`memory/project-inventory-data-hygiene-2026-08-20.md`**.
+
+Consequences already applied: `dispatch-42.md` §2 now records this answer and scopes §4 to the
+minimal path (permissive materiality floors, no precise calibration against a known-biased
+measurement). The §5 exposure floor matters *more* under this result, since part of the effect is
+genuinely low-volume items rather than broken mapping, and the floor is what separates the two.
+
+**The caveat that must travel with this result:** "predominantly measurement error" is not
+"entirely measurement error." Real loss can hide inside a noisy signal. This is an argument for
+fixing the measurement and for the peer-relative z-score, **not** for concluding there is nothing
+to find.
+
+## The diagnostic that separates (a) from (b) — kept for the record
 
 Concentration is the discriminator. A measurement problem is roughly uniform; an operational
 problem concentrates.
