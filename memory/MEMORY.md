@@ -30,6 +30,21 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, dispatched](dispatch-38.md)** —
+  2026-08-20. **NEWEST.** Follow-up to dispatch #37: the vault retrofit deliberately stripped
+  plaintext names from `analyzeRegisterAudit`'s output ("blind mode," working as designed), which
+  left `store-analytics.js`'s Register Audit panel showing `'Unknown'`/`'?'` at every one of its
+  10 display sites with no way for an authorized viewer to see who's being flagged. This dispatch
+  closes that the way Direction B intends: a shared `RevealName` component (click → reason prompt
+  → `reveal_employee_identity()` RPC → cached, shared-state reveal), wired into 4 easy table-cell
+  sites and 5 harder narrative-paragraph sites (string → mixed string/element array restructuring)
+  in `RegisterAuditTab`/`RegisterAuditNarrative`. The 10th site (`AITabInsight`'s AI-prompt
+  builder) is explicitly excluded — no click target, out of scope. Not yet implemented by an
+  engineer — this is the dispatch brief, scoped directly against the real code (not from memory).
+  **Prerequisite, owner-side, not blocking this dispatch's code:** run
+  `supabase/schema-identity-vault.sql` (sent via SendUserFile) and then
+  `node scripts/backfill-identity-vault.mjs` against live Supabase — until then the vault has no
+  real token↔name data for the reveal RPC to return.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS anonymous-access question fully CLOSED — three live measurements, 2026-08-20](project-rls-hardening-plan.md)** —
   **NEWEST.** The "92-107 tables wide open to anonymous access" figure repeated across this
   backlog and `plan-security-pii-architecture-2026-08-19.md` was real (a correct grep of
