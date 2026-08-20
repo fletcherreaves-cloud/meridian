@@ -593,17 +593,26 @@ first below.
 
 ### Security / RLS — highest priority, three independent sources converge on the same gap
 
-- [ ] **Wide-open RLS is still live, and larger than the fix plan assumed.** ✅ **Re-measured
-  today:** `grep -rEic "using\s*\(\s*true\s*\)" supabase/schema.sql` → **92** (a plain
+- [x] **Wide-open RLS — SUPERSEDED, 2026-08-20, by a live measurement.** The 92-107 source-text
+  count below was real and correctly grep'd, but measured committed SQL text across superseded
+  schema files, not live database state. A live `pg_policies` query (two read-only diagnostics,
+  `supabase/diagnose-schema-state.sql` + `diagnose-open-policies.sql`, owner-run 2026-08-20)
+  shows the anonymous-access problem is **already substantively closed** — a separate, already-
+  applied multitenant migration replaced the wide-open policies on the overwhelming majority of
+  tables with `tenant_id = current_tenant_id()` checks that correctly reject anonymous callers.
+  Full correction, including the one still-genuinely-open question (whether every table has RLS
+  *enabled* at all, not yet checked) and the one known/intentional exception (`qsrsoft_kb`):
+  `project-rls-hardening-plan.md`'s own correction note at the top of that file. **Do not
+  re-cite 92-107 as a live exposure count anywhere — it never was one.** Original entry, kept
+  below for the record of what was measured and how:
+  ~~`grep -rEic "using\s*\(\s*true\s*\)" supabase/schema.sql` → **92** (a plain
   case-sensitive `using(true)` grep returns 0 — the real text is `USING (true)` with a space and
   mixed case, which is why a naive check would miss this). Across all `supabase/*.sql` files:
   **107**. `project-audit-2026-07-27.md`'s critical finding A1. `project-rls-hardening-plan.md`'s
   two-phase fix (Phase 1: close ~30 anonymous-access tables; Phase 2: per-loc isolation via
   `can_see_loc()`) has been owner-approved-to-draft since 2026-07-27 and never executed — and the
-  real count (92-107) is 3-4× the ~30-table scope the plan assumed. Per
-  `capacity-and-onboarding-review.md`, this is the **sole blocker on onboarding any non-fully-
-  trusted user** — sharper than this backlog's existing generic "Security sweep" line (§13), which
-  itself cites this exact doc as its source. Two more related, unconfirmed pieces: whether
+  real count (92-107) is 3-4× the ~30-table scope the plan assumed.~~ Two more related,
+  unconfirmed pieces, still open regardless of the correction above: whether
   `supabase/schema-multitenant-phase3-registry-rls.sql` (closes the `tenants`/`tenant_stores` RLS
   gap specifically) was ever run in production (`rls-table-audit-119.md`), and whether the
   Supabase service-role key that was pasted into a chat log ever got rotated

@@ -109,7 +109,11 @@ gap on paper. Checked directly against `src/parsers/index.js` and `src/utils/reg
 
 **This matters more than an abstract "should we pseudonymize" question, because of the RLS
 sequencing already agreed in §5 point 3.** That point already says accusation-grade data shouldn't
-land before RLS hardening closes the ~92-107 wide-open `using(true)` tables. **Pseudonymization
+land before RLS hardening closes the anonymous-access gap — **corrected, 2026-08-20**: live
+measurement (`project-rls-hardening-plan.md`'s own correction note) shows that gap is already
+substantively closed via a separate multitenant migration, not the ~92-107 source-text count
+this line originally cited (that number measured committed SQL text across superseded schema
+files, not live database state — see the linked file for the full correction). **Pseudonymization
 would meaningfully shrink that exposure window even before RLS hardening finishes** — a leaked or
 over-broad query against a token-keyed table exposes behavior patterns tied to an opaque ID, not a
 name; the same leak against today's actual schema exposes a real person's name directly next to

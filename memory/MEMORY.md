@@ -30,9 +30,32 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #37 — identity-vault architecture (Direction B), implemented](dispatch37-identity-vault.md)** —
-  2026-08-20. **NEWEST, implemented, awaiting PR merge.** Owner chose to build this before Phase 1,
-  per the plan's own sequencing note. `supabase/schema-identity-vault.sql`: `employee_identity_vault`
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS "wide open" claim corrected — live measurement, 2026-08-20](project-rls-hardening-plan.md)** —
+  **NEWEST.** The "92-107 tables wide open to anonymous access" figure repeated across this
+  backlog and `plan-security-pii-architecture-2026-08-19.md` was real (a correct grep of
+  committed SQL text) but measured the wrong thing — source text across superseded schema files,
+  not live database state. Two live, read-only diagnostics against production (owner-run) show
+  the anonymous-access gap is **already substantively closed** via a separate, already-applied
+  multitenant migration (`tenant_id = current_tenant_id()`, which correctly rejects anonymous
+  callers). A first pass at the second diagnostic misread its own headline number as "70 open
+  policies" before actually inspecting the `WITH CHECK` clauses — corrected same session, before
+  it went further than a chat message. The one real, literal `using(true)` found (`qsrsoft_kb`)
+  is already known/intentional. **One thing genuinely still unchecked**: whether every table has
+  RLS *enabled* at all (not just correctly policied) — the next real question before either
+  phase of `project-rls-hardening-plan.md` gets touched. Full correction, including exactly why
+  the old number was wrong and what's still open: `project-rls-hardening-plan.md`'s own
+  correction note at the top of that file.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #37 — identity-vault architecture (Direction B), merged](dispatch37-identity-vault.md)** —
+  2026-08-20. **NEWEST, merged (PR #459), independently PM-verified before merge** — the schema/
+  RPCs, the shared JS helper, both write-path wirings, the `analyzeRegisterAudit` retrofit, and
+  the backfill script were all read directly and diffed against the claims, not taken from the
+  summary. One correction from the relayed summary: `store-analytics.js`'s affected panel only
+  ever reads `.emp`, never `.id`, so the real behavior is uniformly `'Unknown'`/`'?'` — never a
+  raw token surfacing in the UI (the PR's own memory doc already had this right; only the chat
+  summary was imprecise). **Recommended next dispatch: a reveal-UI wiring a button into those 9
+  sites**, calling `reveal_employee_identity()` per-click with a required reason — not yet
+  dispatched. Owner chose to build this before Phase 1, per the plan's own sequencing note.
+  `supabase/schema-identity-vault.sql`: `employee_identity_vault`
   (token↔name, zero RLS policies for any role) + `identity_reveal_log` (append-only, admin-read-
   only, indefinite retention, no update/delete policy at all) + `audit_rows.emp_token` (additive,
   PK/`emp` untouched) + two `SECURITY DEFINER` RPCs — `get_or_create_employee_token()` (the shared
