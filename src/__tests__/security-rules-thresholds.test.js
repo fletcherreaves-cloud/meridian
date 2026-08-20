@@ -1,9 +1,9 @@
 // @ts-nocheck
 // PR #481 review (dispatch #42): a z-score rule's `min_value` materiality floor can be set ABOVE
 // that rule's own achievable range, silently making the rule incapable of ever flagging while its
-// `logic_type` conversion looks complete. INV-001's original `phase1c.sql` carried forward
-// INV-002's OLD ratio threshold (10) as its new min_value without re-checking it against INV-002's
-// own measured range (max ~0.09) -- the engine has no way to detect this itself, since a value
+// `logic_type` conversion looks complete. `phase1c.sql` originally carried
+// INV-002's OLD ratio threshold (10) forward as INV-002's new min_value, without re-checking it
+// against that rule's own measured range (max ~0.09) -- the engine has no way to detect this itself, since a value
 // that never clears a floor is indistinguishable from a value that's genuinely never large enough.
 //
 // This parses the REAL seed SQL (not a hand-transcribed copy, which could itself drift out of

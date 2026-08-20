@@ -72,6 +72,30 @@ seconds, and the theory that survives one costs a PR.
   used by neither rule. Buildable today with no new data source, and would be the build's first
   implementation of plan §1 principle 4 (exoneration — a rule that searches for its own
   counter-evidence). Scope as `INV-003` after #42.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #43 — the Security panel, an investigation workspace for security findings](dispatch-43.md)** —
+  Owner-requested 2026-08-20: *"we need an entire modal to house security events."* Closes a real
+  gap — the security build has a working backend and **no UI at all**: `security_findings` has
+  **zero references anywhere in `src/`**, so the only way to see a finding is a SQL query, which
+  is why every evaluation that day came back to the owner as a fenced block to run by hand.
+  **The organizing decision is to group by SUBJECT, not by rule.** The batch job's output is
+  rule-major (4 rules × 670 subjects = 2,680 rows); rendered that way, one employee flagged on
+  three independent cash signals becomes three unrelated rows in three lists and the single most
+  informative fact about them is the one thing the UI destroys. Subject-major grouping surfaces
+  convergence for free and implements plan §1 principle 4 (**exoneration**) at no extra cost —
+  showing all four verdicts per subject means the three they passed sit next to the one they
+  failed. Three schema facts drive the rest: `pass` is **nullable and null is not false** (670
+  subjects per cash rule, only 37 flagged — rendering null as "clear" is a correctness bug, not a
+  display nicety); `baseline_context`/`explanation` already persist the evidence, so nothing needs
+  recomputing to justify a finding; and the subject is always a token, so `RevealName`
+  (`store-analytics.js:1167`, already exported) is reused rather than rebuilt. **The permission
+  gate must match the RLS tier exactly, not be looser** — RLS returns `[]` to an unauthorized
+  role, indistinguishable on the wire from "no findings," which is the #192 / v4.870
+  affirmative-no-data-on-a-blocked-read shape this repo has already been bitten by twice. Phase 1
+  is a read-only investigation surface, shippable alone with no new tables; Phase 2 adds triage
+  state (a Supabase table, deliberately separate from the findings the batch job overwrites every
+  run — never let a re-run erase a human judgement). Coexistence elsewhere is limited to deep
+  links into the modal, with one rule: any count on another panel comes from the same loader and
+  the same verdict logic, or the two will drift (dispatch16 / #348).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — baseline-relative detection, implemented](dispatch42-baseline-relative-detection.md)** —
   **NEWEST, implemented, not yet merged.** Two parts. **Part 1 — the z-score `LOGIC_TYPE`**: both
   INV rules declared `baseline_type:'store'` and the batch job computed/persisted a real baseline
@@ -86,8 +110,16 @@ seconds, and the theory that survives one costs a PR.
   shipping**: `fieldsFromExpr()` branched only on `logic_type==='ratio'`, which a z-score rule
   also uses but would have silently fallen into the wrong branch. `INV-001`/`INV-002` converted in
   place (`schema-security-rules-phase1c.sql`): `threshold`→2.5σ, `min_value` carries FORWARD
-  dispatch #40's original ratio thresholds (20/10) as a materiality floor (Step 0's own "uniform /
-  bent ruler" verdict made precise absolute calibration false precision).
+  dispatch #40's original ratio threshold as a materiality floor for **INV-001 only** (20; Step 0's
+  own "uniform / bent ruler" verdict made precise absolute calibration false precision).
+  **INV-002 carries NO `min_value`** — PR #481's review caught that carrying its old threshold (10)
+  forward was not permissive but *unreachable*: re-measured max is **0.0868**, so `materialityOk`
+  would have been false for every subject in the estate and the z-score conversion would have
+  changed the stored `logic_type` and nothing observable. Deliberately left with no floor rather
+  than refitted to a percentile of its own distribution — p95 of the population the z-score already
+  ranks against is not an *independent* second gate, just "top 5%" derived twice. Guarded by
+  `security-rules-thresholds.test.js`, which parses the real seed SQL and fails if any z-score
+  rule's `min_value` exceeds that rule's measured ceiling.
   **Part 2 — the exposure floor, widened mid-dispatch from an INV-001 special case to EVERY
   denominator-bearing rule**, for two reasons: (1) the engine already had ONE shared choke point
   for a zero denominator (`evalRatio`/`evalThreshold` both had the identical `!denominatorSum`
@@ -104,10 +136,13 @@ seconds, and the theory that survives one costs a PR.
   (`drawerSales`, floor 250) converts 24/670 (3.6%). CASH-002 (`drawerGC`, floor 25) converts
   23/670 (3.4%), including 2 real subjects whose raw rates (200, 1692.3) were direct garbage-ratio
   cases. None comes close to nulling the estate. New `schema-security-rules-phase1d.sql` adds the
-  cash floors via an idempotent `jsonb` merge — CASH rules stay `logic_type:'ratio'`, NOT converted
+  cash floors via an idempotent `jsonb` merge (its description append is idempotent too, via a
+  marker-anchored `regexp_replace` — note it strips from its marker to end-of-string, so a future
+  migration appending *after* that sentence would be eaten by a `phase1d` re-run) — CASH rules stay `logic_type:'ratio'`, NOT converted
   to z-score, only floor-protected. §5a's cash-mapping-is-sound finding re-confirmed, not
-  re-litigated. 19 new tests (13 engine, 6 call-site **wiring** tests per the #366 standing rule,
-  spanning both call sites). 1685/1685 suite passes, build clean, no bundle impact. **SQL not yet
+  re-litigated. 24 new tests (13 engine, 6 call-site **wiring** tests per the #366 standing rule,
+  spanning both call sites, 5 seed-SQL threshold-sanity tests). 1690/1690 suite passes, build
+  clean, no bundle impact (512.25 KB eager, 337 KB headroom). **SQL not yet
   run against live Supabase** — handed back per instruction rather than assumed applied.
   `INV-001`/`INV-002` stay `active=false` until a deliberate reactivation decision. Original brief:
   [dispatch-42.md](dispatch-42.md), superseded by the implementation writeup above.
