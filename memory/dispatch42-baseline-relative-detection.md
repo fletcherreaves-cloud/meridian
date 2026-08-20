@@ -158,9 +158,13 @@ same-day, which is *why* §5 widened. Composite scoring, recurrence decay,
 - All floor percentiles/survival rates above are measured against live Supabase 2026-08-20 (the
   same session that implemented this), not estimated.
 
-## SQL to run against live Supabase — NOT yet applied, hand back per instruction
+## SQL applied to live Supabase — confirmed 2026-08-20
 
-Two files, both idempotent, safe to re-run:
+Both files below are applied in production. Confirmed live: `INV-001` is `z-score` with
+`min_value:20`/`min_denominator:10`; `INV-002` is `z-score` with no `min_value`/`min_denominator`;
+`CASH-001`/`CASH-003`/`CASH-004` carry `min_denominator:250`; `CASH-002` carries
+`min_denominator:25`. Both INV rules remain `active=false`, per the note below. Reproduced here for
+the record, both idempotent, safe to re-run:
 
 ```sql
 -- supabase/schema-security-rules-phase1c.sql — see the file for full comments/reasoning
@@ -195,9 +199,10 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 (The full files also update each rule's `description` with the measured reasoning — omitted here
 for brevity; run the actual files, this block is a preview, not a substitute.)
 
-After running: `INV-001`/`INV-002` stay `active = false` until a deliberate reactivation decision
-(they were deactivated as a stopgap ahead of this dispatch). `CASH-001..004` are already
-`active = true` and will pick up both the new floors and (unlike the INV rules) remain on
-`logic_type: 'ratio'` — they are NOT converted to z-score by this dispatch, only floor-protected.
-The real check per dispatch #42 §6 is a live `workflow_dispatch` re-run and a re-query of the
-flagged-count distribution once the SQL is applied.
+`INV-001`/`INV-002` stay `active = false` until a deliberate reactivation decision (they were
+deactivated as a stopgap ahead of this dispatch). `CASH-001..004` are already `active = true` and
+picked up both the new floors and (unlike the INV rules) remain on `logic_type: 'ratio'` — they
+were NOT converted to z-score by this dispatch, only floor-protected. The real check per dispatch
+#42 §6 — a live `workflow_dispatch` re-run and a re-query of the flagged-count distribution now
+that the SQL is applied — is still open; the values above confirm the schema state, not a fresh
+batch run.

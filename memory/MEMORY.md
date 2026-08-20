@@ -72,32 +72,49 @@ seconds, and the theory that survives one costs a PR.
   used by neither rule. Buildable today with no new data source, and would be the build's first
   implementation of plan §1 principle 4 (exoneration — a rule that searches for its own
   counter-evidence). Scope as `INV-003` after #42.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #43 — the Security panel, an investigation workspace for security findings](dispatch-43.md)** —
-  Owner-requested 2026-08-20: *"we need an entire modal to house security events."* Closes a real
-  gap — the security build has a working backend and **no UI at all**: `security_findings` has
-  **zero references anywhere in `src/`**, so the only way to see a finding is a SQL query, which
-  is why every evaluation that day came back to the owner as a fenced block to run by hand.
-  **The organizing decision is to group by SUBJECT, not by rule.** The batch job's output is
-  rule-major (4 rules × 670 subjects = 2,680 rows); rendered that way, one employee flagged on
-  three independent cash signals becomes three unrelated rows in three lists and the single most
-  informative fact about them is the one thing the UI destroys. Subject-major grouping surfaces
-  convergence for free and implements plan §1 principle 4 (**exoneration**) at no extra cost —
-  showing all four verdicts per subject means the three they passed sit next to the one they
-  failed. Three schema facts drive the rest: `pass` is **nullable and null is not false** (670
-  subjects per cash rule, only 37 flagged — rendering null as "clear" is a correctness bug, not a
-  display nicety); `baseline_context`/`explanation` already persist the evidence, so nothing needs
-  recomputing to justify a finding; and the subject is always a token, so `RevealName`
-  (`store-analytics.js:1167`, already exported) is reused rather than rebuilt. **The permission
-  gate must match the RLS tier exactly, not be looser** — RLS returns `[]` to an unauthorized
-  role, indistinguishable on the wire from "no findings," which is the #192 / v4.870
-  affirmative-no-data-on-a-blocked-read shape this repo has already been bitten by twice. Phase 1
-  is a read-only investigation surface, shippable alone with no new tables; Phase 2 adds triage
-  state (a Supabase table, deliberately separate from the findings the batch job overwrites every
-  run — never let a re-run erase a human judgement). Coexistence elsewhere is limited to deep
-  links into the modal, with one rule: any count on another panel comes from the same loader and
-  the same verdict logic, or the two will drift (dispatch16 / #348).
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #43 — the Security panel, Phase 1, implemented](dispatch43-security-panel.md)** —
+  **NEWEST, implemented, not yet merged (same PR/branch as #42, single-branch constraint this
+  session).** Owner-requested UI for the security build: `security_findings` (dispatches
+  #39/#40/#42) had zero references anywhere in `src/` before this — a working backend, no UI.
+  Central design call: **grouped by SUBJECT, not by rule** — `groupFindingsBySubject()` collapses
+  the batch job's rule-major output (4 cash rules × 670 subjects) to one row per subject carrying
+  every rule's verdict, sorted by how many agree — a subject flagged on 3 signals is a lead, on 1
+  is noise, and rule-major rendering destroys that convergence. Implements plan §1 principle 4
+  (exoneration) for free — passed rules render next to the failed one, since every verdict is kept.
+  `verdictState(pass)` is the honest 3-state mapping (true/false/null → flagged/clear/undetermined)
+  — rendering null as clear was named a correctness bug, not a display nicety. **Permission gated
+  to the EXACT RLS tier** in two layers: a static `permissions.js` key (`security.view`) only
+  decides whether the nav entry shows; `securityPanelAccess()` inside the panel does the real,
+  live check (admin/supervisor always; manager only if `org_config.gm_identity_reveal_enabled`,
+  checked live) — since RLS returns `[]` to an unauthorized role, indistinguishable from "no
+  findings" on the wire, and this panel never lets an empty read stand in for a permission check.
+  **A real bug caught by a stricter test, not inspection**: the data-loading `useEffect` depended
+  on `[permState, dataState]` while ALSO setting `dataState` itself — a classic React
+  self-cancellation footgun (the dependency change re-runs the effect, React runs the PREVIOUS
+  instance's cleanup first, that cleanup set `cancelled=true`, discarding the in-flight fetch's own
+  result right before it would have flipped to 'loaded'). Stuck on "Loading findings…" forever. A
+  weaker first test (just "loader was called") missed it; a stricter one pinning the actual end
+  state caught it. Fixed by dropping `dataState` from the effect's own deps. Reuses `RevealName`
+  (dispatch #38) and `ModalShell`, wired through `panel-registry.js`'s existing four-list
+  convention (`panel-registry.test.js`, 20/20, unmodified, confirms it against live code). 15 new
+  tests, 1705/1705 suite passes, build clean, `security-panel` is its own lazy chunk (8.33 KB /
+  3.31 KB gzip). **Not verified**: live browser click-through — this sandbox's Supabase needs real
+  magic-link auth this session can't complete headless, stated plainly. Phase 2 (triage state) and
+  coexistence deep-links (Register Audit markers, `attention-now.js`) explicitly deferred per the
+  dispatch's own scope. Original brief: [dispatch-43.md](dispatch-43.md), superseded by the
+  implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — baseline-relative detection, implemented](dispatch42-baseline-relative-detection.md)** —
-  **NEWEST, implemented, not yet merged.** Two parts. **Part 1 — the z-score `LOGIC_TYPE`**: both
+  Implemented, not yet merged, same PR (#481) as #43 above. **Fixed post-review, 2026-08-20**: a
+  PM review caught that `INV-002`'s `min_value:10` (carried forward from dispatch #40's old ratio
+  threshold) was unreachable against its own measured range (max 0.087) — the z-score conversion
+  changed `logic_type` and nothing observable. Fixed by removing `min_value` entirely for INV-002
+  (no independent materiality number exists yet; reusing a percentile of the same distribution the
+  z-score already ranks against isn't independent) and adding
+  `src/__tests__/security-rules-thresholds.test.js`, which parses the REAL seed SQL and asserts
+  every z-score rule's `min_value` sits inside a measured ceiling — confirmed to fail against the
+  original broken file and pass against the fix. Also fixed `phase1d.sql`'s description column to
+  be genuinely idempotent (was a plain `||` append that grew on every re-run). Two parts. **Part
+  1 — the z-score `LOGIC_TYPE`**: both
   INV rules declared `baseline_type:'store'` and the batch job computed/persisted a real baseline
   into `baseline_context`, but `evaluateRule()` never read it — a flat `cmp(value, threshold)`, so
   an inherently high-variance item flagged at all 27 stores forever. `src/engine/security-
@@ -142,8 +159,9 @@ seconds, and the theory that survives one costs a PR.
   to z-score, only floor-protected. §5a's cash-mapping-is-sound finding re-confirmed, not
   re-litigated. 24 new tests (13 engine, 6 call-site **wiring** tests per the #366 standing rule,
   spanning both call sites, 5 seed-SQL threshold-sanity tests). 1690/1690 suite passes, build
-  clean, no bundle impact (512.25 KB eager, 337 KB headroom). **SQL not yet
-  run against live Supabase** — handed back per instruction rather than assumed applied.
+  clean, no bundle impact (512.25 KB eager, 337 KB headroom). **`phase1c.sql`/`phase1d.sql` are
+  applied in production** — confirmed live 2026-08-20: `INV-001` z-score/20/10, `INV-002`
+  z-score/null/null, `CASH-001/003/004` floor 250, `CASH-002` floor 25.
   `INV-001`/`INV-002` stay `active=false` until a deliberate reactivation decision. Original brief:
   [dispatch-42.md](dispatch-42.md), superseded by the implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #41 — reconcile the two Model Health Score implementations, dispatched](dispatch-41.md)** —

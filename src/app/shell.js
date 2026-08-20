@@ -228,6 +228,11 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),      false),
       pis('analytics.store',    'Visit Readiness',    '🛡️', ()=>onOpenModal('visit-readiness'),    false),
       pis('analytics.store',    'Graded Visits',      '📋', ()=>onOpenModal('graded-visits'),      false),
+      // Dispatch #43: static nav gate only -- admin/supervisor always match security_findings'
+      // RLS tier, but manager also needs org_config.gm_identity_reveal_enabled, a runtime flag
+      // this permission key can't express. security-panel.js's securityPanelAccess() does the
+      // real, live check once opened; this only decides whether the nav entry is worth showing.
+      pis('security.view',      'Security',           '🔒', ()=>onOpenModal('security'),          false),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
       pis('analytics.store',    'Food Cost',          '🥗', ()=>onOpenModal('fob-analysis'),     false),
