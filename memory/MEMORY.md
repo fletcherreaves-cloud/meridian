@@ -103,6 +103,19 @@ seconds, and the theory that survives one costs a PR.
   for full detail. Branch `claude/mcvalue-2-finish-r9k4t` — no overlap with the security build
   below (different tables, different files).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #48 — the inventory schemes that need no new data](dispatch-48.md)** —
+  **INV-003/INV-005 shipped (#498); INV-004 UNBLOCKED 2026-08-20 and dispatched.** The
+  "no day-part sales denominator" blocker was **not real** — `qsr_daily_activity` carries
+  `net_sales`/`product_sales`/`transactions` per `(loc, dt, hour_slot)`, an hourly denominator
+  already pulled daily, finer than day-part. Same failure shape as `manOverringQty`: a
+  reasonable-sounding "we don't have X" that one look at the schema refutes. **Owner directive on
+  the boundary:** *"build it the same way as we have in place. it is universal"* — the 4am→4am
+  business day is universal, use `businessDate()`/`lastClosedBusinessDay()`
+  (`src/utils/date.js:101,117`), never a per-rule convention and never re-derived inline (that has
+  recurred five times). **The real risk is DOUBLE-shifting:** DAR's `hour_slot` is measured
+  business-aligned (`05:00→28:00`) and `qsr_waste`'s date column is named `busn_dt` — a *business*
+  date — so the shift may already be applied. One query settles it (do any rows have `busn_tm` in
+  00:00–03:59, and what `busn_dt` do they carry).
+
   **NEWEST, briefed, not implemented.** Three rules, all on tables the batch job already loads.
   **INV-003 (variance unmatched by logged waste)** is the plan's own *"strongest single signal"* and
   already has its evidence: dispatch #45 Part C measured that only **44.1%** of unexplained INV-001
