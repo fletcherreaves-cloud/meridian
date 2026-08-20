@@ -156,35 +156,60 @@ cash-weighted rule until/unless a separate cash-refund-count column is added. No
 Phase 1's rule design should read this note when it gets there, not re-derive the priority.
 
 ## Register Audit pull — first live run attempts failed, 2026-08-20 (both direct-token and
-## Playwright fallback) — real diagnostic, not yet resolved
+## Playwright fallback) — permissions theory DISPROVEN 2026-08-20, real cause narrowed
 
 Two runs (scheduled 10:36 UTC, manual retrigger 11:43 UTC) both failed identically — not a
-fluke. Full logs pulled via the GitHub Actions API, not summarized secondhand:
+fluke. Full logs pulled via the GitHub Actions API, not summarized secondhand.
 
-- **Direct-token path: `AUTH_FAILED:403` after a forced re-mint**, not a 401. A 403 on a freshly
-  re-minted token means authenticated-but-not-authorized, not expired-credential — this points at
-  a **permissions problem with the `QSRSOFT_USERNAME`/`PASSWORD` service account**, not a token
-  hygiene problem. Worth checking directly: dispatch #34's captured SSO `getOrgInfo` permission
-  dump (Part 3, `dispatch-34-phase0a-findings.md`) shows several QSRSoft roles — Default Role,
-  Crew, Maintenance, Payroll Partner — **missing `registerAudit` from their permission list**
-  while most other roles have it. If the GitHub Actions service account is provisioned under one
-  of those restricted roles, that alone would explain a clean 403 specifically on this endpoint.
-  **Owner action: confirm the service account's QSRSoft role actually includes Register Audit
-  access.**
-- **Playwright fallback also failed** — logged in successfully, navigated to the report page URL,
-  but captured no `x-auth-token` from network traffic during that navigation, and the in-browser
-  fetch trigger of last resort failed with a generic `Failed to fetch`. This is consistent with
-  the report needing an actual UI interaction (date range + register/store pick + a run/export
-  click) before it calls the API, the same way Any Transaction's report worked
-  (`dispatch-34-phase0a-findings.md` Part 2) — not something that fires on page load alone. The
-  script's own header comment already flagged this navigation URL as "plausible-but-unconfirmed"
-  before this test; it's now confirmed insufficient on its own, not confirmed wrong outright.
+**The service-account-permissions theory below is DISPROVEN — owner confirmed directly
+(2026-08-20) that `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` (the GitHub Actions secret pair the pull
+actually authenticates with) IS the owner's own personal login, which has full Register Audit
+access through the QSRSoft UI.** There is no separate, more-restricted service account — do not
+re-raise the "check the service account's role" action item; it's answered and closed.
 
-**Not fixed here** — needs either the service-account permission confirmed/corrected, or a real
-DevTools capture of the actual click-path this report requires (like the ones that unblocked
-dispatch #34), before the Playwright fallback can be taught the right interaction sequence.
+A third run (manual `workflow_dispatch`, 11:43 UTC) was pulled fresh after that correction, same
+failure signature exactly:
+- **Direct-token path: `AUTH_FAILED:403` after a forced re-mint** — now understood as *expected*
+  behavior, not a bug, once the permissions theory fell: CLAUDE.md's own DAR-era finding already
+  says `api.reports.myqsrsoft.com` requires **browser session context**, not a bare Node.js fetch
+  with a token alone, regardless of that token's validity or the account's permissions. The
+  direct path failing and falling through to Playwright is the pull working as designed, not a
+  symptom to chase further.
+- **Playwright fallback logs in successfully** (`post-login url: https://v3.myqsrsoft.com/` — a
+  real logged-in landing page, not a login-page bounce) **and navigates to the guessed report URL
+  without being redirected away** (`report page url: https://v3.myqsrsoft.com/reports/mcd/
+  controlsCash/regAudit`) — so that URL is very likely a real, reachable route for this account,
+  not a wrong guess or a permission wall. But it **captures zero `x-auth-token` traffic**, and the
+  in-browser fetch-trigger of last resort fails with `{"error":"Failed to fetch","name":
+  "TypeError"}` (a browser-level network failure, e.g. a CORS/connection block on that specific
+  call — not itself informative about auth).
+- **Direct comparison against the WORKING `qsrsoft-dar-pull.mjs`** (same account type, same host,
+  confirmed working daily) settles the likely mechanism: DAR's Playwright flow navigates to
+  `https://v3.myqsrsoft.com/reports/mcd/shift/dailyActivity` and captures a token **immediately on
+  page load** — that report page auto-fires its data API call as soon as it renders. Register
+  Audit's page does not do the same thing under an otherwise-identical navigation. **Most likely
+  explanation: the Register Audit report requires an explicit UI interaction (date range +
+  register/store pick + a "Run"/"Search"/"Export" click) before it calls its data API**, the same
+  way Any Transaction's report worked (`dispatch-34-phase0a-findings.md` Part 2) — DAR's report
+  just happens to auto-run on load and Register Audit's does not. This is a real, structural
+  difference between two report pages on the same site, not a permissions or credentials issue at
+  all.
+
+**Not fixed here — cannot be, without a live look at the actual page.** Blindly guessing CSS
+selectors for a report UI never seen from this sandbox and hardcoding a click sequence risks
+shipping something that looks like a fix without confirming it does anything (CLAUDE.md's own
+"reproduce before fixing" rule) — worse, a wrong guess could silently mask this finding rather
+than surface it. **Owner action, next time in the browser (not urgent, no deadline):** open
+`https://v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit` while logged in and note (1) does a
+report render automatically, or is there a date-range/store picker + a button that has to be
+clicked first, and (2) if a click is required, the visible label/selector of that control (a
+screenshot of the page, or even just "there's a green 'Run Report' button under the date fields,"
+is enough) — the same kind of capture that unblocked dispatch #34's Any Transaction report. Once
+that's known, the Playwright script's `viaPlaywright()` can be taught the real interaction
+sequence instead of guessing one.
+
 Script correctly failed loud (exit code 1, zero rows saved, no silent partial write) rather than
-masking the failure — the crash-loud design from dispatch #33/#35 did its job here.
+masking the failure — the crash-loud design from dispatch #33/#35 did its job here, twice.
 
 ## Verified
 
