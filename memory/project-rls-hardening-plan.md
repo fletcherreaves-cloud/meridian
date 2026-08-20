@@ -8,9 +8,57 @@ metadata:
 
 # Supabase RLS Hardening Plan (owner-approved to draft, 2026-07-27)
 
+**MAJOR CORRECTION, 2026-08-20 — read this before anything below.** This plan's own premise
+(A1: ~30 tables wide open to anonymous access) was measured against **live production** today,
+via two purpose-built read-only diagnostics (`supabase/diagnose-schema-state.sql`,
+`supabase/diagnose-open-policies.sql`) — not assumed. The real picture is materially better than
+either this file's original "~30" or `backlog-master-2026-08-19.md` §14's later "92-107."
+
+**That 92-107 figure was itself real and correctly computed — but it measures the wrong thing,
+and this correction got that wrong on a first pass too (fixed before commit, not after).** It's
+a text-grep across **committed `supabase/*.sql` files** for the literal string `using(true)`
+(`grep -rEic "using\s*\(\s*true\s*\)" supabase/*.sql` → 107), i.e. how many times that pattern
+appears in schema files as *written*, including ones later superseded. It is not, and was never
+claimed to be, a live database query — `backlog-master-2026-08-19.md`'s own entry says so
+directly. The gap is that this repo's schema files are cumulative and some *replace* earlier
+policies outright (`schema-multitenant-phase2-rls.sql` explicitly drops-and-recreates the ones
+`schema-rls-phase1.sql`/the base `schema.sql` defined) — so a source-text count over-counts
+policies that were later superseded, in a way a live `pg_policies` query cannot. Today's live
+query is the operative ground truth from here forward; the 107 source-text count was never wrong,
+it was just answering "how much `using(true)` text exists across this repo's history," not "what's
+exposed right now." `plan-security-pii-architecture-2026-08-19.md` repeated the source-text
+number without this caveat — worth a one-line fix there, not urgent.
+
+**What's actually true, measured 2026-08-20:** a separate, already-applied "multitenant" RLS
+migration (`schema-multitenant-phase1.sql`/`schema-multitenant-phase2-rls.sql`, unrelated to
+*this* plan's `can_see_loc()` design — `can_see_loc()` itself is confirmed NOT applied) already
+replaced the wide-open policies on the vast majority of tables with `tenant_id = current_tenant_id()`
+checks. That function returns null for an anonymous caller (`auth.uid()` is null →
+`current_tenant_id()`'s `where id = auth.uid()` matches no row), and `x = null` is never true in
+SQL — so those policies **do** correctly block anonymous access, despite `pg_policies.qual`
+showing null for every one of them. That null is a structural artifact of `INSERT` policies (which
+use `WITH CHECK`, never `USING`, by Postgres design) — not evidence of an open policy. A first
+pass at this diagnostic was misread exactly this way (as "70 open policies," a live incident-level
+alarm) before the `WITH CHECK` clause was actually inspected; corrected same-day. The **one**
+genuinely open policy found (`qsrsoft_kb`, `SELECT`, `using(true)`, both anon+authenticated roles)
+is already known and intentional (CLAUDE.md documents it as a deliberate public-read reference
+table). **This plan's Phase 1 (closing the anonymous hole) already appears substantively done**,
+just via a different mechanism (the multitenant migration) than this plan originally specified.
+
+**Still genuinely open, not yet checked**: whether every `public` table actually has row-level
+security *enabled* at all — a table with RLS never turned on bypasses every policy question above
+entirely, and wouldn't appear in either diagnostic. `diagnose-schema-state.sql` reports "87 tables
+with RLS enabled" but not the total table count to compare against — that comparison is the next
+real check, before either declaring this plan's Phase 1 fully closed or scoping further work.
+**Phase 2 (`can_see_loc()`, per-loc isolation) genuinely has not shipped** — confirmed not applied
+— that part of this plan's original scope may still be real, separate from the anonymous-access
+question. Re-scope this plan's remaining phases only after the RLS-enabled-on-every-table check
+lands, not from the original "~30" or the erroneous "92-107" figures.
+
 Addresses audit A1 (wide-open `using(true)` on ~30 tables), C2 (public buckets),
 B2 (client-only RBAC), M1 (review writes unscoped). **Nothing is changed until the
-owner reviews this plan.**
+owner reviews this plan.** *(Original framing below, kept for the record — see the correction
+above for what's actually true as of 2026-08-20.)*
 
 ## ✅ Why this is LOW-RISK (verified)
 - **Every data-pull script uses `SUPABASE_SERVICE_ROLE_KEY`** (qsrsoft-dar/ebos/onhand/
