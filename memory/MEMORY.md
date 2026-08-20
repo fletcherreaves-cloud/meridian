@@ -30,20 +30,33 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security build — two owner decisions + a live-run diagnostic, 2026-08-20](plan-security-pii-architecture-2026-08-19.md)** —
-  **NEWEST.** (1) **Identity architecture DECIDED**: Direction B, the token/identity-vault
-  pattern (§4 of that file) — owner delegated on "compliant, ethical, most functional" and B wins
-  all three; should land before/alongside Phase 1 so Phase 1 writes tokens from day one, not
-  plaintext to be migrated later. Not yet scoped into a dispatch. (2) **`refundCnt` DECIDED**:
-  keep the richer cash+cashless auto-pull definition
-  (`dispatch35-register-audit-implementation.md`) — owner wants all refunds counted, with cash
-  flagged as the likely higher-priority security signal for future Phase 1 rule design. (3) **Live
-  pull run diagnostic**: both the scheduled and manual `workflow_dispatch` runs of the Register
-  Audit pull failed — direct-token auth got a 403 (permissions, not expiry — likely the service
-  account's QSRSoft role lacks `registerAudit`, cross-referenced against dispatch #34's SSO
-  capture), and the Playwright fallback logged in but never captured a token (report page likely
-  needs a UI interaction, not just navigation). Owner needs to confirm the service account's role;
-  full logs and reasoning in `dispatch35-register-audit-implementation.md`.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security build — six owner decisions in one morning, 2026-08-20](plan-security-loss-prevention.md)** —
+  **NEWEST.** Every open owner-gated question on this build got answered in one sitting —
+  read `plan-security-loss-prevention.md` §4/§5 and `plan-security-pii-architecture-2026-08-19.md`
+  §4 for full reasoning, not just the list below:
+  1. **Identity architecture: Direction B** (token/identity-vault) — owner delegated on
+     "compliant, ethical, most functional," B wins all three. Should land before/alongside
+     Phase 1. Not yet scoped into a dispatch.
+  2. **Phase 4 retention: indefinite, not auto-expiring** — explicitly for cross-case recurrence
+     value ("one that keeps reappearing becomes more focused"); exonerated findings stay as
+     "flagged, then cleared," never deleted.
+  3. **Phase 4 access: Supervisor tier + optional GM** — a real, intentional divergence from the
+     general DO-and-above disclosure-gating policy, scoped to this mechanism only. "Optional" for
+     GM still needs a concrete design (per-case toggle? store setting?) before dispatch-ready.
+  4. **Phase 4 evidence standard: evidence-grade from day one.** Phase 4 is now fully design-
+     decided but still blocked on RLS hardening landing + Direction B landing first.
+  5. **`refundCnt`: keep cash+cashless** (the richer auto-pull definition) — owner wants all
+     refunds counted, cash flagged as the likely higher-priority signal for Phase 1 rule design.
+  6. **Phase 1 rule-compute: scheduled batch job**, not an on-demand Edge Function — a new
+     compute pattern for this repo (every existing scheduled workflow only pulls data, none
+     evaluate rules).
+
+  **Also: both live-run attempts of the Register Audit pull failed, 2026-08-20** — direct-token
+  auth got a 403 (permissions, not expiry — likely the service account's QSRSoft role lacks
+  `registerAudit`, cross-referenced against dispatch #34's SSO capture), and the Playwright
+  fallback logged in but never captured a token (report page likely needs a UI interaction, not
+  just navigation). Owner needs to confirm the service account's role; full logs in
+  `dispatch35-register-audit-implementation.md`.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #36 — Security build Phase 0b: the substrate, implemented](dispatch36-security-phase0b-substrate.md)** —
   2026-08-19. **NEWEST, merged (PR #451), independently PM-verified before merge** — interpreter
   logic, baseline math, and the `org_config` RLS pattern-match were all checked line-by-line

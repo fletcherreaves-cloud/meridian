@@ -899,11 +899,17 @@ previously documented — is the raw per-event log to build against, and settled
   access; two realistic paths once banking setup is known: a bank API feed (standing, daily,
   backfillable) or manual bank-statement upload (ships faster, matches this org's manual-fallback
   pattern). Full framing: `plan-security-loss-prevention.md` §2.1's Deposit lapping row.
-- [ ] **Gating decision needed from the owner before any Phase 4 (employee rule-out/evidence-chain)
-  work:** data retention for a named-employee accusation trail, and whether it should be built at
-  all before `project-rls-hardening-plan.md`'s fix lands — this backlog's own §13 already tracks
-  92-107 tables on wide-open `using(true)` RLS policies, which is not a bar this kind of data
-  should sit behind in the meantime. See plan file §5 for the full framing.
+- [x] **Phase 4 gating questions DECIDED, 2026-08-20 (owner interview) — all three answered.**
+  (1) **Retention: indefinite, not auto-expiring** — the owner's own reasoning is cross-case
+  recurrence value ("one that keeps reappearing becomes more focused"), so an exonerated finding
+  stays as "flagged, then cleared," never deleted. (2) **Access: Supervisor tier can identify
+  employees, GM access is optional/configurable** — a real, intentional divergence from the
+  general DO-and-above disclosure-gating policy, scoped specifically to this mechanism, not a
+  blanket RBAC change; "optional" still needs a concrete design (per-case toggle? store setting?
+  DO-granted permission?) before this is dispatch-ready. (3) **Evidence-grade: yes, build it from
+  day one.** Full reasoning: `plan-security-loss-prevention.md` §5. **Still blocked on two
+  prerequisites unchanged by these answers**: `project-rls-hardening-plan.md` landing, and the
+  Direction B identity-vault architecture (below) landing first — ready to scope once both do.
 - [x] **Fourth axis of the same gate — identity architecture (PII/pseudonymization). DECIDED
   2026-08-20: Direction B (token/identity-vault architecture).** Owner delegated on "compliant,
   ethical, most functional"; full reasoning in `memory/plan-security-pii-architecture-2026-08-19.md`
@@ -927,9 +933,15 @@ previously documented — is the raw per-event log to build against, and settled
 - [ ] Phase 1 MVP (once the owner runs the SQL above): cash-drawer variance + peer ranking, TvA
   inventory variance (this slice already runs on data this org has — extends existing FOB math),
   explanation surfacing built in from day one rather than retrofitted. Not yet dispatched.
-- [ ] ❓ Middle-tier/API choice for this build — default recommendation is reusing the existing
-  Supabase Edge Function pattern (matches `sage-chat`) rather than introducing a new framework, but
-  this is an architecture call for the owner, not decided here.
+- [x] **Rule-evaluation compute DECIDED 2026-08-20: scheduled batch job, not an Edge Function.**
+  Owner chose "scheduled batch job, like the pull scripts" over the Edge Function/`sage-chat`
+  on-demand pattern. Means Phase 1 risk scores get **pre-computed on a schedule** (a new GitHub
+  Actions workflow in the `*-pull.mjs`/`*.yml` family, evaluating `security_rules` against fresh
+  `audit_rows` and writing results to a new table) rather than evaluated live when a panel loads —
+  this is a new *compute* pattern for this repo (every existing scheduled workflow only ever
+  pulls external data, none evaluate rules/scores), not a straight copy of an existing script.
+  Cadence (hourly? daily, matching the DAR/eBOS 10:00 UTC pull?) not yet decided — scope when
+  Phase 1 is dispatched.
 
 ---
 
