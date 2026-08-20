@@ -163,7 +163,7 @@ group by rule_id;
 Either way, state the chosen number **and the volume it produces** in the rule's own
 `description`, so nobody re-derives it later.
 
-## 5. INV-001's minimum-exposure floor — do this regardless of Step 0
+## 5. A minimum-exposure floor for EVERY rule — do this regardless of Step 0
 
 `max_val: 36234.38` against a p95 of 176 is not a real 36,234% variance — it's a near-zero
 `exp_usage` denominator producing a garbage ratio. Below an `exp_usage` floor, the rule returns an
@@ -180,6 +180,76 @@ and why Step 0's queries are more trustworthy re-run after it lands.
 The existing **167 nulls are correct and stay** — items with zero expected usage, the honest-null
 contract working as designed. Don't "fix" them.
 
+### Make it rule-agnostic, not an INV-001 special case (amended 2026-08-20, after the cash data landed)
+
+This section originally scoped the floor to INV-001's `exp_usage`. **Widen it to every rule with a
+denominator.** Two reasons, and the second is new evidence:
+
+**1. The engine already has exactly one choke point, so the general version is the SIMPLER build.**
+`src/engine/security-rules.js` guards the denominator identically in both evaluators — line 65
+(`ratio`) and line 74 (`threshold`) are the same statement:
+
+```js
+if (!denominatorSum) return { value: null, numeratorSum, denominatorSum: 0 };
+```
+
+and line 99 turns that into the honest null (`'no exposure (zero denominator) in window'`). The
+floor is that condition changing from `!denominatorSum` to `denominatorSum < minExposure`, with the
+reason string widened to say which. Carry the floor on the rule row (a `min_exposure` field on the
+rule, or a `min_denominator` key inside `logic_expression` — engineer's call, but it must be
+per-rule data, **not** a constant in the engine, because the sensible floor for `exp_usage` units
+and for `drawerSales` dollars are different numbers). An INV-001-only floor would mean special-
+casing one rule *around* a shared guard that already exists — more code for less coverage.
+
+**2. The cash rules now have data, and they show the same pathology.** `audit_rows` was empty past
+2026-06-30 when this dispatch was written; the Register Audit pull was fixed 2026-08-20 (#487) and
+**9,947 rows across 27/27 stores now cover the window**, so CASH-001..004 fire on their next
+scheduled run (`security-rules-run.yml`, 11:00 UTC) having never once run against real data.
+
+The owner-run value check on that new data found the tiny-denominator signature already present:
+
+| check | value |
+|---|---|
+| `avg(avg_check)` | 11.32 (plausible) |
+| `max(avg_check)` | **318.00** — 1 row |
+| `avg(t_red_b_pct)` | 0.341 |
+| `max(t_red_b_pct)` | **172.0** — i.e. 172 T-Reds per transaction, 3 rows |
+
+Those four rows are not a mapping bug — the mapping was verified sound (see §5a) — they are drawers
+with a near-zero transaction or sales denominator, the exact shape of INV-001's `max_val: 36234.38`.
+CASH-001, CASH-003 and CASH-004 all divide by `sum(drawerSales)`; summing across the window damps
+this but does not remove it, because **an employee with one short shift in the window has a tiny
+Σ drawerSales**, and CASH-001's baseline is `personal`, so that employee is compared against their
+own thin history too.
+
+**Why this matters more on the cash side than the inventory side:** an inventory false positive
+wastes an afternoon on a WRIN. A cash false positive puts a **person's name** in an investigation
+queue. `INV-001`/`INV-002` were deactivated pending this dispatch precisely so nobody would work a
+noise queue; the CASH rules are `active = true` right now and have no such protection. Treat the
+floor as the thing standing between a real employee and a fabricated finding.
+
+**Set the cash floors from measured data, not from a number that feels right** (standing rule). The
+distribution query in §6 should be run for the CASH rules too, and the floor placed where the
+denominator distribution actually goes thin — the same way the swing alarm's −10% came from 676
+measured store-weeks.
+
+### 5a. The cash mapping itself is verified — do not re-litigate it
+
+Checked 2026-08-20 against the newly-landed rows, so the next session doesn't redo it:
+
+- **No rows dropped.** Every chunk logged `N rows → N saved` (3793/3814/2340), so every row carried
+  a usable `emp`, `loc` and `date` — `mapRow()`'s field names match the real response.
+- **Scale agrees with the manual path.** `mapRow()`'s `ratio()` is `n/d` with no ×100, and the
+  manual Register Audit parser's `parsePct()` (`src/parsers/index.js:57`) normalizes its Excel
+  percents down to the same 0..1 fraction. Auto and manual write the same column on the same scale,
+  so freshest-wins can't produce a 100× disagreement.
+- **Nothing reads the stored `_pct` columns anyway.** `analyzeRegisterAudit` recomputes from raw
+  counts (`tRedBCnt/days`), and CASH-001..004 compute their own ratios from `numerator`/
+  `denominator` + `scale` against raw dollar and count fields. The `_pct` columns are stored
+  convenience, not a rule input — which is *why* the 172 above is survivable rather than urgent.
+- Magnitudes are otherwise sane: mean drawer sales $1,690.87, mean check $11.32, worst cash short
+  −$571.86, worst over +$275.64.
+
 ## 6. Verification approach
 
 - Unit-test the z-score branch the way `security-rules.test.js` already covers `threshold`/`ratio`:
@@ -193,6 +263,14 @@ contract working as designed. Don't "fix" them.
 - **The real check is a live re-run**, not a fixture: after landing, trigger
   `security-rules-run.yml` via `workflow_dispatch` and re-run the distribution query. Flagged
   counts should land near the intended volume. Anything near 50% or near 0 means it didn't take.
+- **Run the distribution query for CASH-001..004 too, not just the INV rules** (§5's amendment).
+  Those four have never once run against real data — `audit_rows` was empty past 2026-06-30 until
+  #487 landed 9,947 rows on 2026-08-20 — so their first output is as unexamined as INV-001's was,
+  and it names people rather than items. Measure each cash rule's denominator distribution
+  (`sum(drawerSales)` per subject over the window) before choosing its floor.
+- **Sanity-check the floors against exposure loss**: report how many subjects each floor turns from
+  a verdict into an honest null. A floor that nulls out most of the estate is not protecting
+  anyone, it is switching the rule off — say so plainly rather than shipping it quietly.
 
 ## 7. Explicitly not in this dispatch
 
