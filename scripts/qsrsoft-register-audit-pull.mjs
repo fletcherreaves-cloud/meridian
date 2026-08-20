@@ -385,6 +385,14 @@ async function resolveToken(token, forceRemint) {
 // one forced re-mint-and-retry-on-401 pattern as qsrsoft-ops-pull.mjs's runAll().
 async function runAll(token, chunks, evalPage, tracker, coveredStores) {
   let total = 0;
+  // dispatch #47 -- diagnostic only, DEBUG-gated (QSRSOFT_AUDIT_DEBUG=1), logged ONCE per run (not
+  // per chunk -- three chunks emitting the identical key list is noise, per the dispatch's own
+  // instruction). Key names ONLY, never values: every row is employee-attributed PII, same
+  // discipline extractRows() already uses one level up for the envelope shape. This settles
+  // whether CASH-003's manual_ref_cnt field exists under a different name than manOverringQty
+  // (finding-cash003-manoverringqty-absent-2026-08-20.md measured it null in 19,985 backfilled
+  // rows) -- the field-name guess was wrong, this is the measurement that guess stood in for.
+  let loggedShapeThisRun = false;
   for (const chunk of chunks) {
     const unit = `${chunk.start}..${chunk.end}`;
     try {
@@ -400,6 +408,10 @@ async function runAll(token, chunks, evalPage, tracker, coveredStores) {
         } else throw e;
       }
       if (!rows.length) { console.log(`[audit-pull] ${unit}: 0 rows returned`); continue; }
+      if (DEBUG && !loggedShapeThisRun && rows[0] && typeof rows[0] === 'object') {
+        console.log(`[audit-pull] DEBUG response row shape (key names only): ${Object.keys(rows[0]).join(',')}`);
+        loggedShapeThisRun = true;
+      }
       const mapped = rows.map(mapRow).filter(r => r.emp && r.loc && r.loc !== '0000000' && r.date);
       const dropped = rows.length - mapped.length;
       // UNCONDITIONAL, not DEBUG-gated. A wrong field name in mapRow() drops every row and prints
