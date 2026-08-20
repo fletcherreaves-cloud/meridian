@@ -30,6 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 — Security panel scroll fix + frictionless reveal](dispatch-50.md)** —
+  **NEWEST, briefed.** Two owner-reported items from real use of the shipped panel. **A: the modal
+  doesn't scroll** — diagnosed to the line, not guessed. `security-panel.js:468` is
+  `flex:1 + overflowY:'auto'` with **no `minHeight:0`**; a flex item defaults to `min-height:auto`
+  so it won't shrink below its content, the column grows past `ModalShell`'s 88vh cap, and
+  `overflow:'hidden'` clips instead of the child scrolling. Invisible until the list exceeds the
+  viewport, which is why it shipped. Same shape likely recurs elsewhere in `src/views/`. **B: let
+  Developer/Admin/Owner see names without the click.** The reasoning is the durable part: **the gate
+  never restrained the owner** (service-role access means he can read the vault directly), so it is
+  friction on the one person it cannot constrain — **but the gate and the log are separable and only
+  the gate is theatre.** Keep the log, auto-resolve for the privileged tier with a synthetic reason.
+  A second operator is a stated plan, these findings can lead to discipline (a record of who looked
+  and when protects the owner), and it costs nothing once it isn't a click. New bulk RPC mirroring
+  the existing role gate; `RevealName`'s cache is **already lifted to the parent** so the component
+  needs no change. **Decide log granularity up front** — per-token writes ~100 rows per panel open;
+  prefer one row per session-view. **Adversarial anon probe mandatory**: this exact function shipped
+  with a NULL-role bypass that a green suite missed.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #49 — one human, one token (re-key the vault on eID)](dispatch-49.md)** —
   **NEWEST, owner-approved, gated.** `employee_identity_vault` is `unique (tenant_id,
   employee_name)` — **a name IS the identity**, across 21,929 tokenized rows. So a typo creates a
