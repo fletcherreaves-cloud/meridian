@@ -1,17 +1,23 @@
 // @ts-nocheck
 import { STORE_NAMES } from '../constants.js';
 
+// dispatch #37 (Direction B, identity-vault architecture) — the returned employee objects
+// carry NO plaintext name field. `r.emp` is used transiently below only to build the internal
+// grouping key (never assigned onto the returned `e` object) and is never stored — a caller
+// that needs the real name calls reveal_employee_identity() with e.id (the token), deliberately
+// and logged. `.name` below is the STORE name (STORE_NAMES[r.loc]), not personnel data.
 function analyzeRegisterAudit(auditRows) {
   const byEmp={};
   for(const r of auditRows){
     const key=r.loc+'::'+r.emp;
-    if(!byEmp[key])byEmp[key]={emp:r.emp,loc:r.loc,name:STORE_NAMES[r.loc]||('Store '+r.loc),days:0,
+    if(!byEmp[key])byEmp[key]={empToken:null,loc:r.loc,name:STORE_NAMES[r.loc]||('Store '+r.loc),days:0,
       totalSales:0,totalGC:0,avgCheck:0,drawerOpens:0,cashOSTotal:0,cashOSDays:0,
       tRedACnt:0,tRedBCnt:0,tRedADollar:0,tRedBDollar:0,
       manualRef:0,posOver:0,posOverAmt:0,
       refundCnt:0,refundCash:0,refundCashless:0,
       promoAmt:0,flags:[]};
     const e=byEmp[key];
+    if(!e.empToken && r.empToken) e.empToken = r.empToken; // first non-null wins across this group's rows
     e.days++;e.totalSales=Math.round((e.totalSales+r.drawerSales)*100)/100;e.totalGC+=r.drawerGC;
     e.drawerOpens+=r.drawerOpens;e.cashOSTotal=Math.round((e.cashOSTotal+(r.cashOSDollar||0))*100)/100;
     if(r.cashOSDollar!==0)e.cashOSDays++;
@@ -53,7 +59,9 @@ function analyzeRegisterAudit(auditRows) {
     e.voids    = e.tRedACnt;
     e.discPct  = e.promoAmt>0&&e.totalSales>0 ? Math.round(e.promoAmt/e.totalSales*10000)/10000 : 0;
     e.txCount  = e.days;
-    e.id       = e.emp||'Unknown';
+    // The token is the record's identifier now — falls back to 'Unknown' only for rows that
+    // predate the identity-vault backfill (dispatch #37); once that runs, this should not fire.
+    e.id       = e.empToken||'Unknown';
     return e;
   });
   const emps = results.sort((a,b)=>b.riskScore-a.riskScore);
