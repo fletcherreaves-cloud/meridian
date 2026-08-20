@@ -1,0 +1,15 @@
+-- ── security_findings.exoneration_share — automatic exoneration (dispatch #46 §C item 6) ─────────
+-- memory/dispatch-46.md Part C item 6: "security_rules carries exoneration_rules and
+-- corroboration_rules and nothing reads them." Those two jsonb columns are '{}' (unpopulated) on
+-- every current rule, so reading them would be a no-op -- the real, buildable check the dispatch
+-- names directly is inventory-specific: qsr_variance_stat already carries raw_waste/comp_waste
+-- alongside the variance figure a rule flags on, loaded on every batch run but never read for this
+-- purpose. Variance covered by LOGGED waste is largely explained, not shrink.
+--
+-- Computed only for a real flag (scripts/security-rules-run.mjs's computeWasteExoneration(),
+-- wired into computeItemFindingsForRule) -- a clear/undetermined subject has nothing to exonerate.
+-- share = totalWaste / totalVariance for the subject's own rows; null when there's no variance to
+-- explain (a zero denominator) or the subject wasn't flagged at all.
+--
+-- Idempotent: safe to re-run.
+alter table public.security_findings add column if not exists exoneration_share double precision;

@@ -233,6 +233,25 @@ export function periodEndDate(period) {
 // would discard real signal. Pure, order-checked (Deactivated before Obsolete before New matters
 // only if a descr could ever carry more than one marker; QSRSoft's real strings never do, but the
 // order here is deliberate and stable regardless).
+// dispatch #46 §C item 6 -- automatic exoneration. qsr_variance_stat already carries raw_waste/
+// comp_waste (mapVarianceStatRow's rawWaste/compWaste) alongside the variance figure a rule flags
+// on -- loaded on every run, never read for this purpose before now. security_rules' own
+// exoneration_rules column is '{}' (unpopulated) on every current rule, so reading it would be a
+// no-op; this instead computes the real check the dispatch names directly: variance covered by
+// LOGGED waste is largely explained, not shrink. Pure -- `rows` is a subject's own subjectRows
+// (already available at the call site, no new data source). Returns null when there's no variance
+// to explain at all (share is meaningless against a zero denominator, same honest-null discipline
+// as the engine's own exposure floor).
+export function computeWasteExoneration(rows) {
+  let totalVariance = 0, totalWaste = 0;
+  for (const r of rows) {
+    totalVariance += Math.abs(Number(r.variance) || 0);
+    totalWaste += (Number(r.rawWaste) || 0) + (Number(r.compWaste) || 0);
+  }
+  if (!totalVariance) return null;
+  return { totalVariance, totalWaste, share: totalWaste / totalVariance };
+}
+
 export function classifyLifecycle(descr) {
   if (!descr) return null;
   if (/\(Deactivated\)/i.test(descr)) return 'deactivated';
@@ -292,12 +311,18 @@ export function computeItemFindingsForRule(rule, rows, { windowStart, windowEnd 
     // and is never silently dropped.
     const lifecycleCategory = classifyLifecycle(subjectRows[0]?.descr);
 
+    // dispatch #46 §C item 6 -- only computed for a real flag. A clear/undetermined subject has
+    // nothing to exonerate, and computing it unconditionally would waste a pass over every subject
+    // for a number nobody would ever read (CLAUDE.md's "a number nobody acts on is not a shipped
+    // feature," applied to a compute cost as much as a UI tile).
+    const exoneration = evalResult.pass === true ? computeWasteExoneration(subjectRows) : null;
+
     findings.push({
       wrin, loc, ruleId: rule.rule_id,
       windowStart: `${windowStart}-01`, windowEnd: periodEndDate(windowEnd),
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
-      lifecycleCategory,
+      lifecycleCategory, exonerationShare: exoneration?.share ?? null,
     });
   }
   return findings;
@@ -370,6 +395,7 @@ async function upsertFindings(findings) {
     value: f.value, threshold_used: f.thresholdUsed, pass: f.pass,
     baseline_context: f.baselineContext, explanation: f.explanation, computed_at: now,
     lifecycle_category: f.lifecycleCategory ?? null,
+    exoneration_share: f.exonerationShare ?? null,
   }));
   const CHUNK = 500;
   let saved = 0; const errors = [];

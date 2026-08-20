@@ -30,25 +30,31 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #46 — make the Security panel legible, then analytical](dispatch-46.md)** —
-  **NEWEST, briefed, not yet implemented.** Owner-requested after first real use of the shipped
-  panel: a legend, per-rule plain-language explainers, plain language on every finding *in addition
-  to* the numbers, for Cash and Inventory both — then *"deep dive further to find root cause or
-  develop patterns with people and metrics. Let's go all out."* **A** — legend defining
-  Flagged/Clear/**Undetermined** (that last distinction is the build's core integrity property and is
-  currently invisible), the signal-count badge, the four baseline types, **threshold-vs-sigma** (two
-  rules on screen use the same word for different units), the ⏸ inactive marker, and **units on
-  every number** (per $1,000 sales / per 1,000 transactions / percent — three units, none labelled).
-  Reuse `security_rules.method`/`description`/`investigation_action`, already loaded and barely used.
-  **B** — a decision sentence beside (never instead of) each metric line: *"Discounts here run about
-  2.6× the peer average"* + the stored `investigation_action` as the next step. **C** — the deep
-  dive, all from tables already pulled: per-subject **trend across windows** (chronic vs. new — the
-  single highest-value item), **change-point** ("since when" is an investigator's first question),
-  shift/daypart attribution via `lifelenz_schedules`, **cross-rule fingerprints** (voids+refunds is a
-  different shape from promo+discount), **store-vs-person separation** (if a whole store flags, it's
-  process not suspects), and **automatic exoneration** — `exoneration_rules`/`corroboration_rules`
-  exist on every rule and **nothing reads them**. **Hard dependency: #45 Part A lands first**, or
-  Part B writes confident prose over INV-002 flags that are artifacts.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #46 — make the Security panel legible, then analytical, implemented](dispatch46-security-panel-legibility-analysis.md)** —
+  **NEWEST.** Owner-requested after first real use of the shipped panel. Measured first: every rule
+  in `security_findings` currently holds exactly **one window** — the daily batch job hasn't run
+  long enough to accumulate a rolling history yet — which directly bounded what Part C's own named
+  "highest value item" (trend, chronic vs. new) can honestly show today: nothing, on real data.
+  **A** — dismissible legend (Flagged/Clear/**Undetermined**, the signal badge, the 4 baseline types,
+  threshold-vs-σ, the ⏸ marker); `security_rules.description` rewritten to plain restaurant language
+  for the 3 engineer-voice rules (`schema-security-rules-plain-language.sql`, handed back); units on
+  every number via a small `RULE_UNITS` map. **B** — `buildDecisionSentence()`: derives the real
+  multiple against baseline ("about 2.6× the peer average") rather than restating the number,
+  surfaces `investigation_action` as "Next:", does not soften magnitude (a 49× measured variance
+  renders as a real, stated 18×, matching the dispatch's explicit instruction), names item+store for
+  inventory subjects and the person (or "This employee" pre-reveal) for cash ones. **C** — built the
+  two pieces real data can support: item 1 (trend) — `groupFindingsBySubject()` restructured to
+  dedupe each rule to its LATEST window (a real latent bug fix: a second window would've rendered as
+  a duplicate chip) while keeping full `historyByRule` for `classifySubjectTrend()`, which honestly
+  returns `insufficient-history` below 2 windows rather than guessing — starts working the moment
+  tomorrow's run adds a second window. Item 6 (automatic exoneration) — `exoneration_rules`/
+  `corroboration_rules` are unpopulated on every rule (reading them is a no-op), so built the real
+  check instead: `computeWasteExoneration()` sums a flagged inventory subject's logged waste against
+  its variance, new `exoneration_share` column (handed back), panel shows a note at ≥50% coverage.
+  **Items 2 (change-point), 3 (shift/daypart attribution — explicitly the dispatch's own
+  highest-risk item), 4 (cross-rule fingerprints), 5 (store-vs-person) deliberately deferred**, each
+  with stated reasoning in the writeup, per the dispatch's own "not all of it needs to land at once."
+  23 new tests, 1763/1763 suite passes, build clean.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
   **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
   **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide
@@ -65,35 +71,8 @@ seconds, and the theory that survives one costs a PR.
   ordinary, active, unmarked items at ~101% median variance, explained by neither mis-mapping nor
   lifecycle nor plausibly theft — scoped as dispatch #45 Part C. Also: **INV-002 flags 224
   financially trivial subjects** (max a few hundred dollars) for want of a numerator-level dollar
-  gate the engine cannot express.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #45 — min_numerator, lifecycle routing, and the unexplained 162](dispatch-45.md)** —
-  **NEWEST, briefed, not yet implemented.** Three parts from the dry run above. **A — `min_numerator`**:
-  let a rule gate on absolute magnitude, not just a rate. INV-002's `min_value` was correctly removed
-  (unreachable at 10) but nothing replaced it, so it flags 224 subjects worth tens-to-hundreds of
-  dollars. Build it exactly like `min_denominator` (per-rule data, one shared choke point) and honour
-  the asymmetry: unmet `min_denominator` → honest null; unmet `min_numerator` → `pass:false`, a real
-  clear. **B — lifecycle routing**: `qsr_variance_stat.descr` carries machine-readable
-  `(Deactivated)`/`(New)`/`(Obsolete NN days left` markers, unused. Worth **13.8%** of the queue —
-  scope it honestly, and **route, don't suppress**: a deactivated WRIN at 193% variance is a real
-  hygiene work item, not a security one. **C — the actual open question**: characterise the 162
-  unmarked flags at ~101% median. Investigation, deliverable is a memory file not code, and an honest
-  "still unexplained" beats a theory. Out of scope: `INV-003`, #43 Phase 2, the 30-WRIN config work.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #44 — close the unreachable-threshold class](dispatch-44.md)** —
-  **NEWEST, briefed, not yet implemented.** Two independent parts; B is smaller and unblocks
-  nothing, so do it first if A stalls. **Part A — CASH-003 re-expressed as a count rule**, under the
-  owner's binding condition for its deactivation (*"only on the premise of looking for the unmapped
-  header to add"*). A1 **measures** whether `manOverringQty` exists in the Register Audit response
-  before any code is written — a strong hypothesis (it is the only override category without a
-  `Qty` sibling, and `audit_rows` has no `manual_ref_cnt`) but still a hypothesis, and key names
-  only, never values: every row is employee PII. A2 maps/migrates/backfills (four round-trip sites,
-  grep don't assume). A3 re-expresses as count + dollar materiality floor with **N derived from the
-  measured distribution** — the dispatch deliberately names no number, since naming one is what
-  created this defect three times. Explicitly records what is NOT wrong (the field mapping —
-  already disproven, don't re-test) so the next session doesn't chase it. **Part B — extend the
-  threshold guard** from `phase1c`'s z-score pair to every rule in `phase1.sql`/`-phase1b.sql`,
-  asserting `threshold.default` sits inside each rule's measured range, mutation-tested. Out of
-  scope, deliberately: INV-001/002 reactivation (needs a z-score dry run first — they have never
-  run in that mode), #43 Phase 2, `INV-003`, the 30-WRIN config work.
+  gate the engine cannot express. (Dispatches #44/#45's own brief entries are dropped from this
+  file — superseded by their fuller "implemented" entries further below; not repeated twice.)
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The unreachable-threshold defect class — three rules that could not fire](finding-unreachable-threshold-class-2026-08-20.md)** —
   **NEWEST.** A rule whose threshold sits above its own metric's achievable range is
   indistinguishable from a working rule finding nothing — it returns `pass:false`, a definite

@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mapAuditRow, supportsAuditRows, fieldsFromExpr, computeFindingsForRule, buildExplanation,
   dataRequiredList, supportsVarianceStat, mapVarianceStatRow, joinStoreMonthSales, periodEndDate,
-  computeItemFindingsForRule, classifyLifecycle,
+  computeItemFindingsForRule, classifyLifecycle, computeWasteExoneration,
 } from '../../scripts/security-rules-run.mjs';
 import { evaluateRule } from '../engine/security-rules.js';
 
@@ -468,5 +468,49 @@ describe('computeItemFindingsForRule() — lifecycle routing wired at the real c
   it('an unmarked item classifies to null -- the majority path, not a missing-data error', () => {
     const b = computeItemFindingsForRule(RULE, LIFECYCLE_ROWS, WIN).find(f => f.loc === '0000002');
     expect(b.lifecycleCategory).toBeNull();
+  });
+});
+
+// ── Dispatch #46 §C item 6 -- automatic exoneration: computeWasteExoneration() + wiring ──────────
+describe('computeWasteExoneration() — pure, from a subject\'s own qsr_variance_stat rows', () => {
+  it('share = totalWaste / totalVariance, summed across all rows for the subject', () => {
+    const rows = [
+      { variance: 40, rawWaste: 10, compWaste: 5 },
+      { variance: -10, rawWaste: 0, compWaste: 3 }, // variance sign doesn't matter -- abs-summed
+    ];
+    // totalVariance = |40| + |-10| = 50. totalWaste = 10+5+0+3 = 18. share = 18/50 = 0.36.
+    const r = computeWasteExoneration(rows);
+    expect(r.totalVariance).toBeCloseTo(50, 6);
+    expect(r.totalWaste).toBeCloseTo(18, 6);
+    expect(r.share).toBeCloseTo(0.36, 6);
+  });
+  it('returns null when there is no variance to explain -- share against a zero denominator is meaningless, not zero', () => {
+    expect(computeWasteExoneration([{ variance: 0, rawWaste: 5, compWaste: 0 }])).toBeNull();
+    expect(computeWasteExoneration([])).toBeNull();
+  });
+  it('treats missing/null waste fields as zero, never throws', () => {
+    const r = computeWasteExoneration([{ variance: 10, rawWaste: null, compWaste: undefined }]);
+    expect(r.totalWaste).toBe(0);
+    expect(r.share).toBe(0);
+  });
+});
+
+describe('computeItemFindingsForRule() — exoneration wiring (dispatch #46 §C item 6)', () => {
+  // Store A: same outlier fixture as the z-score wiring tests above (variance 50, real flag). Add
+  // waste fields covering more than half of it.
+  const rows = Z_INV_ROWS.map(r => r.loc === '0000001'
+    ? { ...r, rawWaste: 20, compWaste: 10 } // 30 of 50 variance covered -> share 0.6
+    : { ...r, rawWaste: 0, compWaste: 0 });
+
+  it('a flagged subject with logged waste covering the variance carries a real exonerationShare', () => {
+    const a = computeItemFindingsForRule(Z_INV_RULE, rows, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.pass).toBe(true);
+    expect(a.exonerationShare).toBeCloseTo(0.6, 6);
+  });
+
+  it('a subject that does NOT flag (pass:false) carries exonerationShare:null -- nothing to exonerate against a non-flag', () => {
+    const b = computeItemFindingsForRule(Z_INV_RULE, rows, Z_INV_WIN).find(f => f.loc === '0000002');
+    expect(b.pass).toBe(false);
+    expect(b.exonerationShare).toBeNull();
   });
 });
