@@ -30,6 +30,25 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #46 — make the Security panel legible, then analytical](dispatch-46.md)** —
+  **NEWEST, briefed, not yet implemented.** Owner-requested after first real use of the shipped
+  panel: a legend, per-rule plain-language explainers, plain language on every finding *in addition
+  to* the numbers, for Cash and Inventory both — then *"deep dive further to find root cause or
+  develop patterns with people and metrics. Let's go all out."* **A** — legend defining
+  Flagged/Clear/**Undetermined** (that last distinction is the build's core integrity property and is
+  currently invisible), the signal-count badge, the four baseline types, **threshold-vs-sigma** (two
+  rules on screen use the same word for different units), the ⏸ inactive marker, and **units on
+  every number** (per $1,000 sales / per 1,000 transactions / percent — three units, none labelled).
+  Reuse `security_rules.method`/`description`/`investigation_action`, already loaded and barely used.
+  **B** — a decision sentence beside (never instead of) each metric line: *"Discounts here run about
+  2.6× the peer average"* + the stored `investigation_action` as the next step. **C** — the deep
+  dive, all from tables already pulled: per-subject **trend across windows** (chronic vs. new — the
+  single highest-value item), **change-point** ("since when" is an investigator's first question),
+  shift/daypart attribution via `lifelenz_schedules`, **cross-rule fingerprints** (voids+refunds is a
+  different shape from promo+discount), **store-vs-person separation** (if a whole store flags, it's
+  process not suspects), and **automatic exoneration** — `exoneration_rules`/`corroboration_rules`
+  exist on every rule and **nothing reads them**. **Hard dependency: #45 Part A lands first**, or
+  Part B writes confident prose over INV-002 flags that are artifacts.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
   **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
   **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide

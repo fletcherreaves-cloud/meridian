@@ -33,7 +33,29 @@ floor for INV-002 is an absolute-dollar threshold on the **numerator** (`sum(|do
 current key can express. This is dispatch #42 §3's own stated case — *"a store 3σ above peers on $4
 of variance is statistically interesting and operationally worthless"* — with no mechanism behind it.
 
-**Build it exactly like `min_denominator`:** per-rule data inside `logic_expression`, never an engine
+**⚠️ A SECOND, INDEPENDENT CAUSE — found 2026-08-20 in the live panel, fix both or neither.** The
+panel rendered INV-002 on item `10195-005` / store `35064` as:
+
+```
+Dollar-variance rate vs. store sales
+0.04 vs threshold 2.50 -- store: mean 0.00, stdev 0.00, n 26        Flagged
+```
+
+`evaluateZScoreRule()` guards `if (!baseline.stdev)` -- which catches **exactly** zero, not 0.0001.
+Had stdev been truly zero the verdict would be an honest null rendering as "Undetermined." It
+rendered **Flagged**, so stdev is non-zero and merely *rounds* to 0.00, and `z = (0.04 - ~0) / ~0`
+explodes. **A peer population clustered at near-zero turns any non-zero value into a massive
+outlier.** This is a degenerate-baseline defect, not a materiality one, and `min_numerator` alone
+will NOT fix it -- a subject can clear a dollar floor and still be scored against a meaningless
+sigma.
+
+Add a **relative** guard beside the existing absolute one: reject a baseline whose stdev is
+negligible against its own mean (a coefficient-of-variation floor), or whose stdev is below a
+per-rule `min_stdev`. Honest null, same as the `n < MIN_BASELINE_N` case -- the population genuinely
+cannot support a z-score. **Measure the stdev distribution across live baselines before choosing the
+form or the number**; do not pick a constant from intuition.
+
+**Build `min_numerator` exactly like `min_denominator`:** per-rule data inside `logic_expression`, never an engine
 constant, applied at the **one shared choke point** `evalRatio`/`evalThreshold` already use. Note the
 asymmetry and honour it:
 
