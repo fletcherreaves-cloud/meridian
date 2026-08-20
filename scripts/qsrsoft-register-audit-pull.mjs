@@ -295,9 +295,12 @@ const HDRS = (_t) => ({
 // 51KB JSON body, and this returned zero rows -- a wrong envelope key looks exactly like "no
 // data" and was being swallowed silently. Logs the SHAPE only (top-level keys, array lengths),
 // never values: this payload is employee-attributed and every row is PII.
-function extractRows(body, unit) {
+export function extractRows(body, unit) {
   if (Array.isArray(body)) return body;
-  const rows = body?.result || body?.data;
+  // 'resp' is the real key, MEASURED from run 32399056951's shape log ({resp[3793]}), not guessed
+  // -- three prior guesses at this envelope ([] / result / data) all cost a full round-trip. The
+  // other two are kept because they cost nothing and the API is not documented.
+  const rows = body?.resp || body?.result || body?.data;
   if (Array.isArray(rows)) return rows;
   if (body && typeof body === 'object') {
     const shape = Object.entries(body).map(([k, v]) =>
@@ -382,7 +385,18 @@ async function runAll(token, chunks, evalPage, tracker, coveredStores) {
       }
       if (!rows.length) { console.log(`[audit-pull] ${unit}: 0 rows returned`); continue; }
       const mapped = rows.map(mapRow).filter(r => r.emp && r.loc && r.loc !== '0000000' && r.date);
-      if (mapped.length < rows.length && DEBUG) console.log(`[audit-pull] ${unit}: ${rows.length - mapped.length} row(s) dropped (missing emp/loc/date)`);
+      const dropped = rows.length - mapped.length;
+      // UNCONDITIONAL, not DEBUG-gated. A wrong field name in mapRow() drops every row and prints
+      // "N rows -> 0 saved", which reads exactly like "the report is empty" -- the same silent-zero
+      // class as the envelope bug above, one layer further in. If most rows drop, print the first
+      // row's KEY NAMES so the mismatch is diagnosable without another run. Key names only: this
+      // payload is employee-attributed and every value is PII.
+      if (dropped) {
+        console.log(`[audit-pull] ${unit}: ${dropped}/${rows.length} row(s) dropped (missing emp/loc/date)`);
+        if (mapped.length === 0 && rows[0] && typeof rows[0] === 'object') {
+          console.error(`[audit-pull] ${unit}: ALL rows dropped -- first row's field names: ${Object.keys(rows[0]).join(',')}`);
+        }
+      }
       const { saved, errors } = await saveAuditRows(mapped);
       if (errors.length) throw new Error(errors[0]);
       total += saved;

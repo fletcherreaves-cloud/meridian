@@ -87,8 +87,20 @@ seconds, and the theory that survives one costs a PR.
   analysis file's two concentration queries first (cheap, read-only) to establish uniform (bent
   ruler) vs concentrated (real signal); **§3, the main deliverable** — implement `z-score`;
   **§4** — threshold work, scoped by Step 0's answer (if uniform, demote both to permissive
-  materiality floors rather than invest in false precision); **§5** — INV-001's minimum-exposure
+  materiality floors rather than invest in false precision); **§5** — a minimum-exposure
   floor, unconditional, since it's a *prerequisite for measurement* not just noise-suppression.
+  **§5 widened 2026-08-20 from INV-001 to every rule with a denominator**, for two reasons: the
+  engine already guards the denominator at a single shared choke point
+  (`security-rules.js:65,74`), so the general version is the *simpler* build than special-casing
+  one rule around it; and the cash rules stopped being starved that day — #487 fixed the Register
+  Audit pull and landed **9,947 rows across 27/27 stores**, so CASH-001..004 fire on their next
+  scheduled run having never run against real data, and the owner's value check found the same
+  tiny-denominator signature there (172 T-Reds per transaction, a $318 avg check). An inventory
+  false positive wastes an afternoon on a WRIN; a cash false positive puts a **person's name** in
+  an investigation queue — and unlike INV-001/002, the cash rules are `active = true` with no
+  protection. §5a records that the cash *mapping* is verified sound (zero rows dropped; `ratio()`
+  and the manual parser's `parsePct()` agree on scale; nothing reads the stored `_pct` columns),
+  so a future session doesn't re-litigate it.
   The measured facts behind it: INV-001's threshold (20) sits **below its own median (21.25)** so
   it flags 50.4% of everything, while INV-002's (10) is **~77× its own maximum (0.13)** so it can
   never fire — and INV-002 is **not** a broken join, `null_value: 0` proves the `qsr_fob` join

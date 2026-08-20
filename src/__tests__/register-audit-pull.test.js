@@ -7,8 +7,8 @@
 // so it's deliberately thorough: every field mapping and derivation dispatch #34's capture
 // left ambiguous is covered here against realistic fixture rows shaped like the documented
 // real response, not against actual production data.
-import { describe, it, expect } from 'vitest';
-import { mapRow } from '../../scripts/qsrsoft-register-audit-pull.mjs';
+import { describe, it, expect, vi } from 'vitest';
+import { mapRow, extractRows } from '../../scripts/qsrsoft-register-audit-pull.mjs';
 
 // Shaped like dispatch #34's captured field list (memory/dispatch-34-phase0a-findings.md Part 1).
 const SAMPLE_ROW = {
@@ -114,5 +114,41 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
   it('pads a 4-digit nsn the same way as a 5-digit one', () => {
     expect(mapRow({ ...SAMPLE_ROW, nsn: 6178 }).loc).toBe('0006178');
     expect(mapRow({ ...SAMPLE_ROW, nsn: 43701 }).loc).toBe('0043701');
+  });
+});
+
+// extractRows() -- the envelope unwrapper. Three separate CI runs were burned guessing this key
+// ([], {result}, {data}) before run 32399056951's shape log measured the real one: {resp[3793]}.
+// A wrong key here returns [] and prints "0 rows returned", which is indistinguishable from an
+// empty report -- so it is worth a test that fails loudly if the key is ever changed back.
+describe('extractRows — response envelope', () => {
+  const R = [{ nsn: 6178 }, { nsn: 3708 }];
+
+  it("unwraps the REAL envelope QSRSoft sends: { resp: [...] }", () => {
+    expect(extractRows({ resp: R }, 'unit')).toEqual(R);
+  });
+
+  it('still accepts a bare array, and the two undocumented alternates', () => {
+    expect(extractRows(R, 'unit')).toEqual(R);
+    expect(extractRows({ result: R }, 'unit')).toEqual(R);
+    expect(extractRows({ data: R }, 'unit')).toEqual(R);
+  });
+
+  it('returns [] and logs the SHAPE — key names and array lengths only, never values — on an unknown envelope', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(extractRows({ payload: R, status: 'ok', err: null }, 'chunk-1')).toEqual([]);
+    const msg = err.mock.calls[0][0];
+    expect(msg).toContain('payload[2]');
+    expect(msg).toContain('status:string');
+    expect(msg).toContain('err:null');
+    expect(msg).not.toContain('6178');   // no row VALUES in the log — every row is employee PII
+    err.mockRestore();
+  });
+
+  it('does not throw on a non-object body (an HTML error page parsed as text)', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(extractRows('<html>nope</html>', 'unit')).toEqual([]);
+    expect(extractRows(null, 'unit')).toEqual([]);
+    err.mockRestore();
   });
 });
