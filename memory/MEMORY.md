@@ -30,6 +30,27 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The unreachable-threshold defect class — three rules that could not fire](finding-unreachable-threshold-class-2026-08-20.md)** —
+  **NEWEST.** A rule whose threshold sits above its own metric's achievable range is
+  indistinguishable from a working rule finding nothing — it returns `pass:false`, a definite
+  **"clear," for every subject forever.** Worse than a false positive, and why it survived: a false
+  alarm gets investigated, a false all-clear gets trusted. Three instances in one day, all from the
+  same "carry the old threshold forward" policy: **INV-002** (10 vs measured max 0.0868, 115×;
+  caught in PR #481 review pre-merge), **CASH-003** (8 vs 0.7702, 10× — **was `active=true` and
+  emitting 636 unearned clears a night**), **INV-001** (20 vs a 21.25 median — a near-miss, correct
+  only by luck, which is why it's counted). Became urgent when dispatch #43's panel started
+  rendering passed rules beside failed ones as *exoneration evidence*. **The guard closes the case,
+  not the class:** `security-rules-thresholds.test.js` parses the real seed SQL and is
+  mutation-tested, but reads only `phase1c.sql`'s z-score pair — CASH-003's defect is `threshold`
+  on a `ratio` rule in `phase1.sql`, outside its scope. **Open work item: extend it to every rule
+  in `phase1.sql`.** CASH-003 is deactivated in production under the owner's explicit condition
+  (*"only on the premise of looking for the unmapped header to add"*) — deactivated, NOT retired:
+  manual over-rings are genuinely infrequent (owner-confirmed), so `p50`/`p95` of 0.0000 is
+  **correct data** and the per-$1,000 rate is the wrong *instrument*. `manOverringAmt` is the only
+  override category pulled without its `Qty` sibling and `audit_rows` has no `manual_ref_cnt`;
+  re-express as a count rule once it's mapped. Standing lesson: **compare a threshold to the range
+  of what it gates before shipping it**, and **treat a rule's zero findings as a question, not a
+  result**.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [30 WRINs with broken expected-usage mapping — a data-hygiene work list](project-inventory-data-hygiene-2026-08-20.md)** —
   **NEWEST.** The answer to the analysis file's open (a)-vs-(b) question, and a genuinely valuable
   by-product. **It is (a) — the ruler is bent, decisively.** The top-30 items by median TvA
