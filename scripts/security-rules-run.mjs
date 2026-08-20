@@ -175,9 +175,14 @@ async function upsertFindings(findings) {
   const CHUNK = 500;
   let saved = 0; const errors = [];
   for (let i = 0; i < upsert.length; i += CHUNK) {
+    // subject_key (generated column, schema-security-findings.sql) collapses emp_token/wrin's
+    // nullability into a NOT NULL value -- a plain emp_token/wrin column list wouldn't actually
+    // enforce idempotency here, since Postgres unique indexes treat NULL as never equal to
+    // another NULL. This job only ever writes emp_token findings today (wrin is dispatch #40's),
+    // but the conflict target already matches the wider table shape.
     const { error } = await supabase.from('security_findings').upsert(
       upsert.slice(i, i + CHUNK),
-      { onConflict: 'tenant_id,rule_id,emp_token,loc,window_start,window_end' },
+      { onConflict: 'tenant_id,rule_id,loc,window_start,window_end,subject_key' },
     );
     if (error) { console.error('[security-rules-run] upsert error:', error); errors.push(error.message); }
     else saved += Math.min(CHUNK, upsert.length - i);

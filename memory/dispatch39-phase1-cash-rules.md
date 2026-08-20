@@ -20,6 +20,31 @@ real, separate follow-up; this dispatch stays cash-domain only, which the plan i
 "the single most-corroborated method" across all three research sources — a complete, valuable
 slice, not a partial delivery.
 
+## Post-open revision: `security_findings`' subject shape widened for dispatch #40, before merge
+
+While this PR was open (still unmerged, table not yet live anywhere), the owner flagged a
+same-day heads-up: dispatch #40 is expected to add item-level (store-level TvA-spike) findings —
+exactly the follow-up this dispatch's own TvA-correction section names — and `security_findings`
+as originally built here only had room for an employee subject (`emp_token uuid not null`). Since
+the table doesn't exist live yet, there was nothing to migrate — building the wider shape now
+avoided a second migration next week instead of shipping the narrower one tonight. Applied before
+merge, not after:
+
+- `emp_token` is now nullable; `wrin text` (matching every other `wrin` column in this repo —
+  `schema.sql`'s inventory tables all use the same type) added as a co-equal subject column.
+- `constraint security_findings_one_subject check ((emp_token is not null and wrin is null) or
+  (emp_token is null and wrin is not null))` — a finding is always about exactly one subject,
+  never both, never neither.
+- **A real correctness issue this surfaced and fixed in the same pass**: Postgres unique indexes
+  treat `NULL` as never equal to another `NULL`, so a plain `(tenant_id, rule_id, emp_token, loc,
+  window_start, window_end)` unique index would silently stop enforcing idempotency the moment
+  `emp_token` could be null — a second run of an item-level finding would insert a duplicate row
+  instead of updating the first. Added a generated `subject_key` column
+  (`coalesce(emp_token::text,'') || '::' || coalesce(wrin,'')`) and moved the unique index (and
+  the batch job's `onConflict` target) onto that NOT-NULL-by-construction column instead.
+- Dispatch #39 itself still only ever writes `emp_token` findings — `wrin` stays null for every
+  row this dispatch produces. Dispatch #40 is the one that populates it.
+
 ## What was built
 
 **`supabase/schema-security-rules-phase1.sql`** — idempotent, additive to Phase 0b's schema:
