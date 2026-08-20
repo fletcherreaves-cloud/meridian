@@ -30,6 +30,22 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #44 — close the unreachable-threshold class](dispatch-44.md)** —
+  **NEWEST, briefed, not yet implemented.** Two independent parts; B is smaller and unblocks
+  nothing, so do it first if A stalls. **Part A — CASH-003 re-expressed as a count rule**, under the
+  owner's binding condition for its deactivation (*"only on the premise of looking for the unmapped
+  header to add"*). A1 **measures** whether `manOverringQty` exists in the Register Audit response
+  before any code is written — a strong hypothesis (it is the only override category without a
+  `Qty` sibling, and `audit_rows` has no `manual_ref_cnt`) but still a hypothesis, and key names
+  only, never values: every row is employee PII. A2 maps/migrates/backfills (four round-trip sites,
+  grep don't assume). A3 re-expresses as count + dollar materiality floor with **N derived from the
+  measured distribution** — the dispatch deliberately names no number, since naming one is what
+  created this defect three times. Explicitly records what is NOT wrong (the field mapping —
+  already disproven, don't re-test) so the next session doesn't chase it. **Part B — extend the
+  threshold guard** from `phase1c`'s z-score pair to every rule in `phase1.sql`/`-phase1b.sql`,
+  asserting `threshold.default` sits inside each rule's measured range, mutation-tested. Out of
+  scope, deliberately: INV-001/002 reactivation (needs a z-score dry run first — they have never
+  run in that mode), #43 Phase 2, `INV-003`, the 30-WRIN config work.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The unreachable-threshold defect class — three rules that could not fire](finding-unreachable-threshold-class-2026-08-20.md)** —
   **NEWEST.** A rule whose threshold sits above its own metric's achievable range is
   indistinguishable from a working rule finding nothing — it returns `pass:false`, a definite
