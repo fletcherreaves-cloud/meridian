@@ -37,6 +37,7 @@ import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
   mapWasteEvents, mapTransferLines, mapRawItemHistory,
 } from '../src/engine/eom-parsers.js';
+import { tokenizeRows } from '../src/engine/identity-vault.js';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -291,12 +292,21 @@ async function runPeriod(period, token) {
         yield_lo: v.yieldBand?.lo ?? null, yield_hi: v.yieldBand?.hi ?? null,
       })).filter(r => r.wrin), 'loc,period,wrin');
 
-      // Waste
-      const rawWaste = await ebosGet(token, nsn, `raw_waste_promo?${range}`).catch(() => []);
-      const wasteRows = mapWasteEvents(rawWaste).map((w, i) => ({
+      // Waste. manager is tokenized before it ever reaches qsr_waste -- dispatch #48's own
+      // requirement ("security_findings' subject is emp_token or wrin, never a plaintext
+      // identifier") applies at the SOURCE table too, same treatment audit_rows.emp already gets
+      // (schema-identity-vault.sql). NOTE: w.manager is an eID string (mapWasteEvents() maps it
+      // from r.eID, eom-parsers.js), not a name -- tokenizing it lands in a SEPARATE identity
+      // space from audit_rows.emp's name-keyed tokens for the same real person. See
+      // schema-identity-vault-qsr-waste.sql's own header for why that gap is not closed this
+      // pass (no eID->name mapping exists anywhere in this codebase to close it with).
+      const wasteEvents = mapWasteEvents(rawWaste);
+      const wasteTokenMap = await tokenizeRows(supabase, wasteEvents, 'manager');
+      const wasteRows = wasteEvents.map((w, i) => ({
         loc, period, event_id: rawWaste[i]?.id ?? null,
         busn_dt: toISO(w.dt), busn_tm: w.tm, wtype: w.type, amount: w.amount,
-        manager: w.manager, wsource: w.source, edited: w.edited, reason: w.reason,
+        manager: w.manager, emp_token: wasteTokenMap.get((w.manager || '').trim()) ?? null,
+        wsource: w.source, edited: w.edited, reason: w.reason,
       })).filter(r => r.event_id != null);
       wSaved += await upsert('qsr_waste', wasteRows, 'loc,event_id');
 

@@ -1,0 +1,46 @@
+-- ── qsr_waste.emp_token — identity vault extension (dispatch #48 prerequisite) ─────────────────
+-- memory/dispatch-48.md: "That makes it the build's first person-attributed inventory rule, and
+-- qsr_waste has no emp_token column. Extend the identity vault to qsr_waste.manager first --
+-- same treatment audit_rows.emp got -- and that extension is part of this dispatch, not a
+-- follow-up. security_findings' subject is emp_token or wrin, never a plaintext identifier. A
+-- rule that names managers in plaintext is worse than no rule."
+--
+-- Mechanically identical to audit_rows.emp_token (schema-identity-vault.sql): additive column,
+-- does NOT touch qsr_waste's existing (loc, event_id) PK or the manager column itself. Written
+-- via the SAME get_or_create_employee_token() RPC, called through tokenizeRows() (already generic
+-- on empField -- src/engine/identity-vault.js), now passed 'manager' instead of 'emp' from
+-- scripts/qsrsoft-variance-pull.mjs's waste-pull section. No new RPC, no new table.
+alter table public.qsr_waste add column if not exists emp_token uuid references public.employee_identity_vault(id);
+create index if not exists qsr_waste_emp_token_idx on public.qsr_waste (emp_token);
+
+-- ── Known, deliberate limitation -- stated plainly, not silently shipped ───────────────────────
+-- qsr_waste.manager is an eID string (mapWasteEvents() in src/engine/eom-parsers.js maps it from
+-- the raw_waste_promo API's r.eID field) -- NOT a name. audit_rows.emp is a NAME string. Both get
+-- tokenized through the identical mechanism (get_or_create_employee_token(), keyed by
+-- (tenant_id, employee_name) uniqueness on whatever raw string it's handed) -- but an eID and a
+-- name for the SAME real person are two different raw strings, so they land as TWO SEPARATE,
+-- UNRELATED tokens in employee_identity_vault. A manager's qsr_waste-based findings (future
+-- INV-004) will NOT cross-reference with that same person's audit_rows-based CASH findings under
+-- one emp_token in the Security panel's subject grouping.
+--
+-- This is NOT closed by this migration, and here is why, checked rather than assumed (CLAUDE.md's
+-- "measure it, don't reason about it"): closing it needs an eID<->name mapping, and none exists
+-- anywhere in this codebase to build it from without a NEW PII pull. The only place employee
+-- names and geids (QSRSoft's own eID field name) are ever fetched together is the Employee
+-- Roster catalog (scripts/qsrsoft-employee-roster-pull.mjs) -- and that script's own header
+-- states the opposite of what would be needed here: "PRIVACY: the Employee Roster catalog
+-- carries heavy PII... This pull... persists ONLY aggregate integer counts per store/month
+-- (roster_role_counts). No individual-employee data is stored anywhere." parseEmployeeRosterApi()
+-- discards fullEmployeeName by design before anything is written. Building the reconciliation
+-- this gap needs would mean storing a name<->eID pair somewhere for the first time in this
+-- codebase -- a real change to what PII this system persists, not a bug fix, and not something to
+-- add quietly inside an unrelated inventory-rule dispatch. That is an explicit, separate decision
+-- for the owner, not implied by "extend the identity vault."
+--
+-- What this migration DOES satisfy, fully: dispatch #48's stated privacy requirement --
+-- "security_findings' subject is emp_token or wrin, never a plaintext identifier." Once
+-- qsrsoft-variance-pull.mjs tokenizes manager before every qsr_waste upsert, the raw eID never
+-- has a path into a security_findings row for a future manager-attributed rule (INV-004) --
+-- regardless of whether that token happens to line up with audit_rows' token space for the same
+-- person. The privacy bar is met; the cross-reference convenience is the open item, and it is
+-- named here rather than left to be discovered later as a silent gap.
