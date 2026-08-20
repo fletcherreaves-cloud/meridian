@@ -195,6 +195,55 @@ failure signature exactly:
   difference between two report pages on the same site, not a permissions or credentials issue at
   all.
 
+### Hypotheses TESTED AND KILLED — do not re-propose these (2026-08-20)
+
+Three failed runs, and **two theories tested live and disproven**. Recording both so the next
+session spends its effort somewhere new:
+
+1. **~~"This host requires a browser session; a direct Node fetch can't work."~~ DISPROVEN.**
+   `scripts/qsrsoft-ops-pull.mjs` authenticates against the **same host**
+   (`api.reports.myqsrsoft.com`) with the same freshly-minted Cognito token and succeeds. The
+   host does not universally require a browser — so the 403 is specific to this endpoint or this
+   request, not the host. (This theory was in an earlier version of this very file and was
+   steering work toward expensive Playwright UI automation. It was wrong.)
+2. **~~"The `Referer` is wrong — it sends the bare site root, while working ops-pull sends the
+   specific report page."~~ DISPROVEN, tested live in PR #479 / run 32395794326.** A real,
+   concrete difference from a known-working sibling, and it fit the 403-not-401 symptom — but
+   changing it to `https://v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit` produced the
+   **identical** `AUTH_FAILED:403`. The Referer is not the cause. (The change was kept: it's
+   strictly more correct than the bare root, and it eliminates one variable from any future test.)
+
+**Also ruled out by inspection, so nobody re-checks:** the endpoint is NOT a guessed UI route
+(dispatch #34 captured it live from DevTools); the query params match that capture exactly; `nsn`
+is correctly unpadded per the capture.
+
+### What was done instead of a third guess — instrumentation (PR pending, 2026-08-20)
+
+Per CLAUDE.md's standing rule (*"No second guesses: once a hypothesis is disproven, the next step
+is a MEASUREMENT, not another hypothesis"*), the next run will produce real evidence rather than
+another coin flip. Two diagnostic gaps were found and closed:
+
+- **The 403 response body was being discarded.** `fetchChunk()` read and reported the body for
+  every non-ok status *except* 401/403 — precisely the ones needing explanation — so all three
+  failed runs logged nothing but a bare status code. An API-gateway 403 nearly always states its
+  reason in the body, and AWS gateways also set `x-amzn-errortype`. Both are now logged before
+  the throw (the `AUTH_FAILED:` contract is unchanged, so the re-mint/fallback logic still works).
+- **The Playwright path never reported whether the page called anything.** It logged only
+  `token captured: false`, which cannot distinguish *"the page fired API calls but none carried
+  `x-auth-token`"* from *"the page fired no API calls at all."* Those imply completely different
+  causes. Every `api.reports.*` path the page requests is now recorded and logged on failure,
+  mirroring `qsrsoft-ops-pull.mjs`'s existing `seenApiUrls` pattern.
+
+**How to read the next run:**
+- A **403 body naming a permission/entitlement** → an account-scope problem after all, despite
+  the owner confirming UI access (the API may check a different grant than the UI does).
+- A **403 body naming an unknown route/method or a bad parameter** → the request shape is wrong
+  despite matching the capture; compare field-by-field against a fresh DevTools capture.
+- **`api.reports requests seen: (none)`** → the report genuinely fires nothing on load, which is
+  the surviving UI-interaction hypothesis below and would then be worth building for.
+- **A non-empty list containing a path this script doesn't request** → that path is the real
+  endpoint, and the capture in dispatch #34 was of a different call than assumed.
+
 **Not fixed here — cannot be, without a live look at the actual page.** Blindly guessing CSS
 selectors for a report UI never seen from this sandbox and hardcoding a click sequence risks
 shipping something that looks like a fix without confirming it does anything (CLAUDE.md's own
