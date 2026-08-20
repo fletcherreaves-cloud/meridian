@@ -100,7 +100,8 @@ describe('evaluateRule() — CASH-002, per-1,000-transactions POS overring rate 
 });
 
 describe('evaluateRule() — unimplemented LOGIC_TYPEs are stubbed, never thrown', () => {
-  it.each(['z-score', 'sequence', 'window-function'])('%s returns implemented:false, pass:null', (logic_type) => {
+  // z-score is implemented as of dispatch #42 -- see its own describe block below.
+  it.each(['sequence', 'window-function'])('%s returns implemented:false, pass:null', (logic_type) => {
     const r = evaluateRule({ logic_type, data_required: ['audit_rows'], logic_expression: {}, threshold: { default: 1 } }, { audit_rows: ALICE_ROWS });
     expect(r.implemented).toBe(false);
     expect(r.pass).toBeNull();
@@ -115,5 +116,119 @@ describe('evaluateRule() — threshold logic_type (no denominator: a raw normali
     const r = evaluateRule(rule, { audit_rows: rows });
     expect(r.value).toBe(4);
     expect(r.pass).toBe(true);
+  });
+});
+
+// dispatch #42 §5 -- the exposure floor (min_denominator) is a SHARED engine mechanism, not a
+// z-score-only feature: a plain ratio rule (CASH-001's own shape) honors it identically, since
+// evalRatio() applies it at the same choke point z-score reuses. drawerSales=200 < floor 250.
+describe('evaluateRule() — min_denominator exposure floor (dispatch #42 §5), on a plain ratio rule', () => {
+  const ruleWithFloor = { ...CASH_001, logic_expression: { ...CASH_001.logic_expression, min_denominator: 250 } };
+  it('a real, nonzero denominator below the floor produces the SAME honest null a zero denominator does, with a distinct reason', () => {
+    const tinyDrawer = [{ loc: '0000001', emp: 'Alice', date: '2026-08-01', drawerSales: 200, cashOSDollar: -50 }];
+    const r = evaluateRule(ruleWithFloor, { audit_rows: tinyDrawer });
+    expect(r.value).toBeNull();
+    expect(r.pass).toBeNull();
+    expect(r.reason).toMatch(/exposure floor/);
+    expect(r.reason).not.toMatch(/zero denominator/);
+  });
+  it('a literal zero denominator still reads as "no exposure," not "below floor" — the two reasons stay distinguishable', () => {
+    const r = evaluateRule(ruleWithFloor, { audit_rows: [{ loc: '0000001', emp: 'Alice', date: '2026-08-01', drawerSales: 0, cashOSDollar: 0 }] });
+    expect(r.reason).toMatch(/zero denominator/);
+  });
+  it('a denominator that clears the floor evaluates normally, unaffected by the new field', () => {
+    const r = evaluateRule(ruleWithFloor, { audit_rows: ALICE_ROWS }); // drawerSales sums to 4000
+    expect(r.value).toBeCloseTo(4, 6);
+    expect(r.pass).toBe(false);
+  });
+  it('a rule with no min_denominator set behaves exactly as before (backward-compatible)', () => {
+    const tinyDrawer = [{ loc: '0000001', emp: 'Alice', date: '2026-08-01', drawerSales: 200, cashOSDollar: -50 }];
+    const r = evaluateRule(CASH_001, { audit_rows: tinyDrawer }); // no min_denominator on CASH_001 itself
+    expect(r.value).toBeCloseTo(250, 6); // 50/200*1000 -- a real (if noisy) verdict, not nulled
+  });
+});
+
+// dispatch #42 -- mirrors INV-001's real shape (numerator/denominator ratio, z-scored against a
+// caller-supplied baseline instead of compared to a fixed constant). One subject row:
+// v=30, d=100 -> raw value = 30/100*100 = 30. Baseline mean=10, stdev=5 -> z = (30-10)/5 = 4.
+describe('evaluateRule() — z-score logic_type (dispatch #42), against the real INV-001 shape', () => {
+  const Z_RULE = {
+    rule_id: 'INV-001', logic_type: 'z-score', data_required: ['qsr_variance_stat'],
+    logic_expression: {
+      numerator: { field: 'v', agg: 'sum', abs: true },
+      denominator: { field: 'd', agg: 'sum' },
+      scale: 100, comparator: 'gte', min_value: 20, min_denominator: 10,
+    },
+    threshold: { default: 2.5 },
+  };
+  const SUBJECT_ROWS = [{ loc: '0000001', wrin: '00001-000', v: 30, d: 100 }];
+  const GOOD_BASELINE = { mean: 10, stdev: 5, n: 6 };
+
+  it('flags when BOTH gates clear: z (4) >= threshold (2.5) AND value (30) >= min_value (20)', () => {
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: GOOD_BASELINE });
+    expect(r.implemented).toBe(true);
+    expect(r.value).toBeCloseTo(30, 6);
+    expect(r.zscore).toBeCloseTo(4, 6);
+    expect(r.pass).toBe(true);
+  });
+
+  it('does NOT flag when z clears but the materiality floor does not — a real "clear", not an honest-null', () => {
+    const rule = { ...Z_RULE, logic_expression: { ...Z_RULE.logic_expression, min_value: 40 } };
+    const r = evaluateRule(rule, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: GOOD_BASELINE });
+    expect(r.zscore).toBeCloseTo(4, 6); // still statistically unusual...
+    expect(r.value).toBeCloseTo(30, 6); // ...but 30 < 40
+    expect(r.pass).toBe(false); // a definite no, not undetermined -- the rule DID evaluate
+  });
+
+  it('does NOT flag when the value clears materiality but z does not clear sigma', () => {
+    const rule = { ...Z_RULE, threshold: { default: 10 } }; // z=4 < 10
+    const r = evaluateRule(rule, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: GOOD_BASELINE });
+    expect(r.zscore).toBeCloseTo(4, 6);
+    expect(r.pass).toBe(false);
+  });
+
+  it('returns pass:null when no baseline is supplied — never silently treated as a fail', () => {
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001' });
+    expect(r.value).toBeCloseTo(30, 6); // the raw rate is still honestly reported
+    expect(r.zscore).toBeNull();
+    expect(r.pass).toBeNull();
+    expect(r.reason).toMatch(/no baseline/);
+  });
+
+  it('returns pass:null when the baseline population is too small (n < 5) to mean anything', () => {
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: { mean: 10, stdev: 5, n: 2 } });
+    expect(r.pass).toBeNull();
+    expect(r.reason).toMatch(/insufficient/);
+  });
+
+  it('returns pass:null when baseline stdev is zero — division carries no information', () => {
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: { mean: 10, stdev: 0, n: 6 } });
+    expect(r.pass).toBeNull();
+    expect(r.zscore).toBeNull();
+    expect(r.reason).toMatch(/stdev/);
+  });
+
+  it('returns an honest null (not a garbage ratio) when the denominator is below the exposure floor -- the SAME shared mechanism the plain-ratio test above exercises', () => {
+    const tinyDenom = [{ loc: '0000001', wrin: '00001-000', v: 30, d: 5 }]; // d=5 < min_denominator=10
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: tinyDenom }, { loc: '0000001', baseline: GOOD_BASELINE });
+    expect(r.value).toBeNull();
+    expect(r.pass).toBeNull();
+    expect(r.reason).toMatch(/exposure floor/);
+  });
+
+  it('returns the ordinary zero-denominator honest-null, distinct from the exposure-floor one', () => {
+    const zeroDenom = [{ loc: '0000001', wrin: '00001-000', v: 30, d: 0 }];
+    const r = evaluateRule(Z_RULE, { qsr_variance_stat: zeroDenom }, { loc: '0000001', baseline: GOOD_BASELINE });
+    expect(r.value).toBeNull();
+    expect(r.pass).toBeNull();
+    expect(r.reason).toMatch(/no exposure/);
+  });
+
+  it('returns pass:null (with zscore still computed) when no threshold is configured', () => {
+    const rule = { ...Z_RULE, threshold: null };
+    const r = evaluateRule(rule, { qsr_variance_stat: SUBJECT_ROWS }, { loc: '0000001', baseline: GOOD_BASELINE });
+    expect(r.zscore).toBeCloseTo(4, 6);
+    expect(r.pass).toBeNull();
+    expect(r.reason).toMatch(/threshold/);
   });
 });

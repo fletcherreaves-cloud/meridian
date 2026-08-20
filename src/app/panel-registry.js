@@ -110,6 +110,12 @@ export const PANELS = [
   { id:'sched-hub', label:'Scheduling', icon:'🗓', perm:'analytics.store', kind:'nav', section:'scheduling' },
   { id:'sched-summary', label:'Sched Summary', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'scheduling', label:'Scheduling', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
+  // Static nav gate only (admin/supervisor always match, manager sees the entry per
+  // permissions.js's comment) -- the REAL RLS-tier check, including the manager
+  // org_config.gm_identity_reveal_enabled condition this key can't express, happens live inside
+  // src/views/security-panel.js's securityPanelAccess(). Never treat `perm:'security.view'`
+  // alone as sufficient for a manager.
+  { id:'security', label:'Security', icon:'🔒', perm:'security.view', kind:'nav', section:'people' },
   { id:'settings', label:'Settings', icon:'⚙', perm:'settings.view', kind:'nav', section:'admin' },
   { id:'signals', label:'Signals', icon:'📡', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'skills-matrix', label:'Skills Matrix', icon:'', perm:'analytics.store', kind:'hub-tab', section:'people' },

@@ -165,6 +165,7 @@ const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default:
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
+const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
@@ -744,6 +745,7 @@ function App() {
   // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy' (see routePanel above).
   const [showDtSoS,       setShowDtSoS]       = useState(false);
   const [showGradedVisits, setShowGradedVisits] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
   const [uploadReport, setUploadReport]= useState(null); // per-batch content summary
@@ -2511,7 +2513,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2529,7 +2531,7 @@ function App() {
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);
       setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
-      setShowFOB(false);setShowDtSoS(false);setShowGradedVisits(false);setShowGMBrief(false);setShowHelp(false);
+      setShowFOB(false);setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowEOMDash(false);setShowOnePager(false);
@@ -2628,6 +2630,7 @@ function App() {
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&goRoute('fcst-accuracy');
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
+        if(modal==='security')       perm('security.view')&&setShowSecurity(true);
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
@@ -2847,6 +2850,12 @@ function App() {
       onClose:()=>setShowSignals(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0}
     },
       h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar})
+    ),
+    showSecurity&&h(ModalShell,{
+      title:'🔒 Security',
+      onClose:()=>setShowSecurity(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
+    },
+      h(SecurityPanel,{userRole,onClose:()=>setShowSecurity(false)})
     ),
     // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
     // running in the background and you can look at other Meridian data at the

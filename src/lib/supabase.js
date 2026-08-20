@@ -3921,6 +3921,58 @@ export async function savePmixRows(rows) {
   return { saved, errors };
 }
 
+// ── Security findings — dispatch #43, the Security panel's data loader ─────────────────────────
+// security_findings (dispatch #39/#40) carries RLS STRICTER than most tables here: admin/
+// supervisor always, manager only when org_config.gm_identity_reveal_enabled is true (schema-
+// security-findings.sql). RLS returns [] to an unauthorized role -- indistinguishable from "no
+// findings" on the wire -- so the panel gates its OWN nav entry to the same tier (isSecurityRole()
+// below, matching loadGmIdentityRevealEnabled()) rather than trusting an empty read to mean "no
+// access." Paginated via fetchAll -- dispatch #40's own INV-001 rule alone produced 5,165+ rows on
+// its first live run, well past the 1000-row cap.
+export async function loadSecurityFindings({ ruleIds = null } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('security_findings').select('*').order('computed_at', { ascending: false }).range(from, to);
+    if (ruleIds && ruleIds.length) q = q.in('rule_id', ruleIds);
+    return q;
+  }, 1000, 'security findings');
+  return data.map(r => ({
+    id: r.id, empToken: r.emp_token, wrin: r.wrin, loc: r.loc ? String(parseInt(r.loc, 10)) : null,
+    ruleId: r.rule_id, windowStart: r.window_start, windowEnd: r.window_end,
+    value: r.value, thresholdUsed: r.threshold_used, pass: r.pass,
+    baselineContext: r.baseline_context || {}, explanation: r.explanation || [],
+    computedAt: r.computed_at,
+  }));
+}
+
+// security_rules metadata (method/description/active/baseline_type/severity/window_days) --
+// dispatch #43's "calibration honesty" requirement: the panel must show a rule's active state and
+// never present an inactive rule's stale findings as current truth. security_rules has a looser
+// "authenticated read-all" policy (schema-security-rules.sql), so this is safe to load whenever
+// the findings loader is permitted to run.
+export async function loadSecurityRules() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('security_rules').select('*');
+  if (error) { console.warn('[Meridian] loadSecurityRules failed:', error.message); return []; }
+  return (data || []).map(r => ({
+    ruleId: r.rule_id, domain: r.domain, subdomain: r.subdomain, method: r.method,
+    description: r.description, logicType: r.logic_type, baselineType: r.baseline_type,
+    severity: r.severity, weight: r.weight, active: r.active, windowDays: r.window_days,
+    investigationAction: r.investigation_action, updatedAt: r.updated_at,
+  }));
+}
+
+// org_config.gm_identity_reveal_enabled -- "authenticated read" (schema.sql), so a manager-role
+// client can check this directly. The Security panel's nav entry uses this (alongside userRole)
+// to gate to the EXACT tier security_findings' RLS enforces, rather than showing an entry whose
+// reads will silently come back empty for a manager without the flag on.
+export async function loadGmIdentityRevealEnabled() {
+  if (!supabase) return false;
+  const { data, error } = await supabase.from('org_config').select('data').eq('key', 'gm_identity_reveal_enabled').maybeSingle();
+  if (error) { console.warn('[Meridian] loadGmIdentityRevealEnabled failed:', error.message); return false; }
+  return !!(data?.data?.enabled);
+}
+
 export async function loadPmixRows(daysBack = 400) {
   if (!supabase) return [];
   const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);

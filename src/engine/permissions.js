@@ -41,6 +41,19 @@ export const PERMISSION_GROUPS = [
       { key: 'users.manage.lower', label: 'Manage lower-level users' },
     ],
   },
+  {
+    group: 'Security',
+    items: [
+      // Static baseline only -- admin/supervisor always match security_findings' RLS tier, but
+      // that policy ALSO allows manager when org_config.gm_identity_reveal_enabled is true, which
+      // this static per-role template can't express (it's an org-wide runtime flag, not a role
+      // property). src/views/security-panel.js's securityPanelAccess() does the real, live check
+      // for manager -- this key only decides whether the nav entry is worth attempting at all
+      // (manager: true, so they see it and the panel resolves the real answer; the panel itself
+      // never trusts this key alone).
+      { key: 'security.view', label: 'View Security panel (loss-prevention findings)' },
+    ],
+  },
 ];
 
 // Flat list of all permission keys (derived — do not hardcode elsewhere)
@@ -69,6 +82,7 @@ const SUPERVISOR_PERMS = {
   'settings.edit':          false,
   'users.manage.all':       false,
   'users.manage.lower':     true,
+  'security.view':          true,
 };
 
 const MANAGER_PERMS = {
@@ -91,6 +105,13 @@ const MANAGER_PERMS = {
   'settings.edit':          false,
   'users.manage.all':       false,
   'users.manage.lower':     false,
+  // true, not false: a manager's REAL access is org_config.gm_identity_reveal_enabled, a runtime
+  // flag this static template can't see. Set true so the nav entry appears and
+  // securityPanelAccess() resolves the live answer -- false here would hide the entry from every
+  // manager even when their org has the flag on, which is looser-by-omission in the wrong
+  // direction (a manager who SHOULD have access getting none) rather than the direction this
+  // build is careful about (nobody sees more than RLS allows).
+  'security.view':          true,
 };
 
 export const ROLE_PERMISSION_TEMPLATES = {

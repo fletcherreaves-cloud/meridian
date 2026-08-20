@@ -9,6 +9,7 @@ import {
   dataRequiredList, supportsVarianceStat, mapVarianceStatRow, joinStoreMonthSales, periodEndDate,
   computeItemFindingsForRule,
 } from '../../scripts/security-rules-run.mjs';
+import { evaluateRule } from '../engine/security-rules.js';
 
 describe('mapAuditRow() — snake_case DB row -> camelCase, matching dispatch #39\'s own field table', () => {
   it('maps every column named in the dispatch, including emp_token -> empToken', () => {
@@ -270,5 +271,87 @@ describe('computeItemFindingsForRule() — store x item subject, storeBaseline o
     const s1 = computeItemFindingsForRule(INV_RULE, INV_ROWS, INV_WIN).find(f => f.loc === '0000001');
     expect(s1.empToken).toBeUndefined();
     expect(s1.wrin).toBe('W100');
+  });
+});
+
+// ── Dispatch #42 -- z-score wiring test at the REAL call site, not just the engine ──────────────
+// Standing rule (CLAUDE.md, #366): a test that only imports evaluateRule() can't tell "fixed" from
+// "fixed but never wired in." This exercises computeItemFindingsForRule() end to end -- the
+// baseline-before-evaluate reorder has to actually run for store A below to flag.
+//
+// 6 stores report the same item (W100, food, expUsage=100 each) in one period -- store A's
+// variance (50, rate 50%) is a real outlier against 5 peers clustered at 8-12 (rates 8/9/11/12/10).
+// Hand-computed: peer mean=10, stdev=sqrt(((8-10)^2+(9-10)^2+(11-10)^2+(12-10)^2+0^2)/5)=sqrt(2)
+// ~= 1.4142 -> z for A = (50-10)/1.4142 ~= 28.28.
+const Z_INV_ROWS = [
+  { loc: '0000001', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', variance: 50, expUsage: 100 }, // A
+  { loc: '0000002', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', variance: 8,  expUsage: 100 }, // B
+  { loc: '0000003', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', variance: 9,  expUsage: 100 }, // C
+  { loc: '0000004', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', variance: 11, expUsage: 100 }, // D
+  { loc: '0000005', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', variance: 12, expUsage: 100 }, // E
+  { loc: '0000006', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', variance: 10, expUsage: 100 }, // F
+];
+const Z_INV_RULE = {
+  rule_id: 'INV-001', logic_type: 'z-score', baseline_type: 'store',
+  data_required: ['qsr_variance_stat'],
+  logic_expression: { numerator: { field: 'variance', agg: 'sum', abs: true }, denominator: { field: 'expUsage', agg: 'sum' }, scale: 100, comparator: 'gte', min_value: 20, min_denominator: 10 },
+  threshold: { default: 2.5 }, method: 'Item TvA variance rate', severity: 3, weight: 1,
+};
+const Z_INV_WIN = { windowStart: '2026-08', windowEnd: '2026-08' };
+
+describe('computeItemFindingsForRule() — z-score wiring (dispatch #42): the baseline reaches the verdict through the real call site', () => {
+  it('store A (rate 50, a real outlier vs. 5 peers at 8-12) flags: z ~28.3 >= 2.5 AND value 50 >= min_value 20', () => {
+    const a = computeItemFindingsForRule(Z_INV_RULE, Z_INV_ROWS, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBeCloseTo(50, 6);
+    expect(a.baselineContext.n).toBe(5); // 5 OTHER stores reporting the same wrin
+    expect(a.baselineContext.mean).toBeCloseTo(10, 6);
+    expect(a.pass).toBe(true);
+    expect(a.explanation[0].zscore).toBeGreaterThan(2.5);
+  });
+
+  it("store B (rate 8) does NOT flag -- its own peer population is pulled noisy by A's outlier, but 8 is still on the LOW side of it (z negative)", () => {
+    const b = computeItemFindingsForRule(Z_INV_RULE, Z_INV_ROWS, Z_INV_WIN).find(f => f.loc === '0000002');
+    expect(b.value).toBeCloseTo(8, 6);
+    expect(b.explanation[0].zscore).toBeLessThan(0);
+    expect(b.pass).toBe(false);
+  });
+
+  it('proves the reorder matters: the SAME rule/row through the bare engine with no baseline degrades to an honest null, never a silent pass/fail', () => {
+    const bare = evaluateRule(Z_INV_RULE, { qsr_variance_stat: [Z_INV_ROWS[0]] }, { loc: '0000001' });
+    expect(bare.value).toBeCloseTo(50, 6); // the raw rate is still honestly reported
+    expect(bare.pass).toBeNull();
+    expect(bare.reason).toMatch(/no baseline/);
+  });
+
+  it('the min_denominator exposure floor reaches this call site too -- store A with expUsage crashed to 5 (< floor 10) nulls out instead of flagging', () => {
+    const tinyExposure = Z_INV_ROWS.map(r => r.loc === '0000001' ? { ...r, expUsage: 5 } : r);
+    const a = computeItemFindingsForRule(Z_INV_RULE, tinyExposure, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBeNull();
+    expect(a.pass).toBeNull();
+  });
+});
+
+// ── Dispatch #42 §5 -- CASH-domain exposure floor, wiring test through computeFindingsForRule ───
+// A rule with min_denominator set (matching schema-security-rules-phase1d.sql's real shape)
+// nulls out a subject whose summed drawerSales falls below it, through the REAL call site.
+const CASH_FLOOR_RULE = {
+  rule_id: 'CASH-001', method: 'Cash drawer over/short rate', baseline_type: 'personal', severity: 3, weight: 1,
+  data_required: ['audit_rows'],
+  logic_type: 'ratio',
+  logic_expression: { numerator: { field: 'cashOSDollar', agg: 'sum', abs: true }, denominator: { field: 'drawerSales', agg: 'sum' }, scale: 1000, comparator: 'gte', min_denominator: 250 },
+  threshold: { default: 5 },
+};
+describe('computeFindingsForRule() — CASH-domain min_denominator exposure floor (dispatch #42 §5), through the real call site', () => {
+  it('a subject whose summed drawerSales (200) is below the floor (250) gets an honest null, not a garbage rate', () => {
+    const tinyDrawerRow = { loc: '0000001', emp: 'Dana', empToken: 'tok-dana', date: '2026-08-01', drawerSales: 200, cashOSDollar: -50 };
+    const findings = computeFindingsForRule(CASH_FLOOR_RULE, [...ROWS, tinyDrawerRow], WIN);
+    const dana = findings.find(f => f.empToken === 'tok-dana');
+    expect(dana.value).toBeNull();
+    expect(dana.pass).toBeNull();
+  });
+  it('Alice (drawerSales 2000, above the floor) still evaluates normally -- the floor does not touch subjects that clear it', () => {
+    const findings = computeFindingsForRule(CASH_FLOOR_RULE, ROWS, WIN);
+    const alice = findings.find(f => f.empToken === 'tok-alice');
+    expect(alice.value).toBeCloseTo(4, 6);
   });
 });

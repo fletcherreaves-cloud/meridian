@@ -11,14 +11,21 @@
 // audit_rows, subject-keyed on wrin instead of emp_token. Not a second script: one active-rules
 // loop, one output table, branching on which DATA_REQUIRED a rule names.
 //
+// Dispatch #42 (memory/dispatch-42.md) makes both branches baseline-relative: each call site now
+// computes the baseline BEFORE calling evaluateRule() and passes it in, so a z-score rule (new
+// LOGIC_TYPE, src/engine/security-rules.js) can compare a subject's rate against its peer/store
+// population instead of a fixed constant. Also widens the exposure floor (a rule's own
+// logic_expression.min_denominator) from an INV-001 special case to every denominator-bearing
+// rule -- see schema-security-rules-phase1c.sql / -phase1d.sql.
+//
 // This is a COMPUTE job, not a pull -- audit_rows/qsr_variance_stat/qsr_fob are already in
 // Supabase (their own pull jobs), this reads them back and scores them. Scaffolding (service-role
 // client, GitHub Actions workflow, sync-failure-watch.yml entry) matches the *-pull.mjs family per
 // CLAUDE.md's standing "new automated pull" checklist, but the compute loop itself is new --
 // not modeled on any existing pull script's per-row mapping shape.
 //
-// Does NOT modify src/engine/security-rules.js or security-baselines.js -- both already correct
-// (dispatch #36), reused here exactly as they are, for BOTH rule-type branches.
+// Does NOT modify src/engine/security-baselines.js -- correct since dispatch #36, reused here
+// exactly as-is for both rule-type branches.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Run AFTER supabase/schema-security-rules-phase1.sql, schema-security-rules-phase1b.sql, and
@@ -82,7 +89,10 @@ export function supportsVarianceStat(rule) {
 // pass/fail math); this only tells the baseline functions which columns to look at.
 export function fieldsFromExpr(rule) {
   const expr = typeof rule.logic_expression === 'string' ? JSON.parse(rule.logic_expression) : rule.logic_expression;
-  if (rule.logic_type === 'ratio') {
+  // z-score (dispatch #42) uses the SAME numerator/denominator shape as ratio -- evaluateZScoreRule
+  // reuses evalRatio() for the raw rate, so the baseline needs to read the same field names. Only
+  // threshold's flat {field, denominator:{field}} shape is different.
+  if (rule.logic_type === 'ratio' || rule.logic_type === 'z-score') {
     return { numField: expr.numerator.field, denField: expr.denominator.field, scale: expr.scale || 1, abs: !!expr.numerator.abs };
   }
   return { numField: expr.field, denField: expr.denominator?.field, scale: expr.scale || 1, abs: false };
@@ -94,11 +104,16 @@ export function fieldsFromExpr(rule) {
 // rules' explanation arrays into one breakdown without reshaping each entry.
 export function buildExplanation(rule, evalResult, baseline) {
   if (evalResult.value == null) {
-    return [{ rule_id: rule.rule_id, label: `${rule.method}: no exposure in window`, value: null, contribution: 0 }];
+    return [{ rule_id: rule.rule_id, label: `${rule.method}: ${evalResult.reason || 'no exposure in window'}`, value: null, contribution: 0 }];
   }
-  const zscore = (baseline && baseline.stdev) ? (evalResult.value - baseline.mean) / baseline.stdev : null;
+  // z-score rules (dispatch #42) already computed and honest-null-gated a zscore inside
+  // evaluateRule() -- prefer THAT over recomputing here, since a fresh (value-mean)/stdev would
+  // ignore evaluateZScoreRule's own MIN_BASELINE_N / zero-stdev / no-baseline checks and could
+  // show a number the actual verdict discarded as undetermined. threshold/ratio rules never carry
+  // `.zscore`, so this falls back to the original ad-hoc computation for them unchanged.
+  const zscore = 'zscore' in evalResult ? evalResult.zscore : ((baseline && baseline.stdev) ? (evalResult.value - baseline.mean) / baseline.stdev : null);
   const zLabel = zscore != null && Number.isFinite(zscore) ? ` (${zscore >= 0 ? '+' : ''}${zscore.toFixed(1)}σ vs ${rule.baseline_type} baseline)` : '';
-  const verdict = evalResult.pass === true ? 'flagged' : evalResult.pass === false ? 'clear' : 'undetermined (no threshold configured)';
+  const verdict = evalResult.pass === true ? 'flagged' : evalResult.pass === false ? 'clear' : `undetermined (${evalResult.reason || 'no threshold configured'})`;
   return [{
     rule_id: rule.rule_id,
     label: `${rule.method}: ${evalResult.value.toFixed(2)} vs threshold ${evalResult.threshold}${zLabel} — ${verdict}`,
@@ -136,14 +151,19 @@ export function computeFindingsForRule(rule, rows, { windowStart, windowEnd }) {
   const findings = [];
   for (const { loc, empToken, emp } of pairs.values()) {
     const subjectRows = rows.filter(r => r.loc === loc && r.empToken === empToken);
-    const evalResult = evaluateRule(rule, { audit_rows: subjectRows }, { loc });
 
+    // Baseline computed BEFORE evaluateRule() -- dispatch #42's reordering. Before z-score, the
+    // baseline was only context attached to an already-final verdict; for a z-score rule it's an
+    // INPUT the verdict itself depends on, so it has to exist first. threshold/ratio rules ignore
+    // the extra argument entirely (evaluateRule() only reads `baseline` on the z-score branch).
     const baselineOpts = { emp, loc, numField, denField, scale, abs, start: windowStart, end: windowEnd };
     let baseline = null;
     if (rule.baseline_type === 'personal') baseline = personalBaseline(rows, baselineOpts);
     else if (rule.baseline_type === 'peer') baseline = peerBaseline(rows, baselineOpts);
     else if (rule.baseline_type === 'store') baseline = storeBaseline(rows, baselineOpts);
     else if (rule.baseline_type === 'network') baseline = networkBaseline(rows, baselineOpts);
+
+    const evalResult = evaluateRule(rule, { audit_rows: subjectRows }, { loc, baseline });
 
     findings.push({
       empToken, loc, ruleId: rule.rule_id, windowStart, windowEnd,
@@ -230,17 +250,21 @@ export function computeItemFindingsForRule(rule, rows, { windowStart, windowEnd 
   const findings = [];
   for (const { loc, wrin } of pairs.values()) {
     const subjectRows = eligible.filter(r => r.loc === loc && r.wrin === wrin);
-    const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc });
 
-    // storeBaseline's population is pre-filtered to the SAME wrin -- "this store's rate for item
-    // X vs. other stores' rate for that SAME item X," never pooled across unrelated items (a
-    // chicken-nugget variance rate isn't comparable to a napkin one). This is a caller-side
-    // filter, not a storeBaseline() change -- it already groups by r.loc alone, so handing it a
-    // same-item-only row set is all that's needed.
+    // Baseline computed BEFORE evaluateRule() -- same dispatch #42 reordering as
+    // computeFindingsForRule(), required now that INV-001/INV-002 are z-score rules (the baseline
+    // is an input to the verdict, not context attached after it). storeBaseline's population is
+    // pre-filtered to the SAME wrin -- "this store's rate for item X vs. other stores' rate for
+    // that SAME item X," never pooled across unrelated items (a chicken-nugget variance rate
+    // isn't comparable to a napkin one). This is a caller-side filter, not a storeBaseline()
+    // change -- it already groups by r.loc alone, so handing it a same-item-only row set is all
+    // that's needed.
     const sameItemRows = eligible.filter(r => r.wrin === wrin);
     const baseline = rule.baseline_type === 'store'
       ? storeBaseline(sameItemRows, { loc, numField, denField, scale, abs, start: windowStart, end: windowEnd })
       : null;
+
+    const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
 
     findings.push({
       wrin, loc, ruleId: rule.rule_id,

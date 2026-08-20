@@ -15,17 +15,36 @@
 // src/engine/security-baselines.js's job, not this interpreter's.
 //
 // LOGIC_EXPRESSION shapes handled today:
-//   threshold: { field, agg: 'sum'|'count'|'avg', denominator?: {field, agg}, scale?, comparator }
-//   ratio:     { numerator: {field, agg, abs?}, denominator: {field, agg}, scale, comparator }
-// Both normalize against exposure when a denominator is present (plan §1 principle 1) using
-// `scale`, which IS memory/data-acquisition-shopping-list.md's per-$1,000-sales /
+//   threshold: { field, agg: 'sum'|'count'|'avg', denominator?: {field, agg}, scale?, comparator,
+//                min_denominator? }
+//   ratio:     { numerator: {field, agg, abs?}, denominator: {field, agg}, scale, comparator,
+//                min_denominator? }
+//   z-score:   SAME numerator/denominator/scale/min_denominator shape as ratio -- the raw rate is
+//              z-scored against a `baseline` the CALLER computed and passed via evaluateRule()'s
+//              options (dispatch #36's security-baselines.js, e.g. storeBaseline()) instead of
+//              compared to a fixed constant. `threshold` on a z-score rule means SIGMA, not a
+//              rate -- the same {"default": 2.5} shape a ratio rule's threshold uses means
+//              something entirely different here. `min_value` (optional) is a materiality floor
+//              the raw rate must ALSO clear, independent of how unusual it is vs. peers -- both
+//              gates required to flag.
+// Threshold/ratio normalize against exposure when a denominator is present (plan §1 principle 1)
+// using `scale`, which IS memory/data-acquisition-shopping-list.md's per-$1,000-sales /
 // per-1,000-transactions convention (scale: 1000) -- not a free parameter each rule invents.
 //
-// z-score / sequence / window-function are STUBBED: evaluateRule() returns
-// {implemented:false, pass:null} for these rather than throwing, so a rule row of ANY
-// LOGIC_TYPE the schema accommodates can exist today without every consumer needing its own
-// type-check first. Building these out is Phase 2 (change-point detection) / Phase 3 (sequence
-// engine) -- explicitly out of scope for this dispatch.
+// `min_denominator` (dispatch #42 §5, widened to every denominator-bearing rule, not just
+// INV-001): a minimum-exposure floor, carried as PER-RULE data inside logic_expression, never an
+// engine constant -- the sensible floor for exp_usage units and for drawerSales dollars are
+// different numbers, and a rule with no floor set (the common case) behaves exactly as before.
+// Applied at the ONE shared choke point both evalRatio()/evalThreshold() already had for a
+// literally-zero denominator -- the floor is that same condition widened from `!denominatorSum`
+// to `denominatorSum < min_denominator`, so z-score (which reuses evalRatio() for its raw rate)
+// gets the floor for free with no code of its own.
+//
+// z-score is now IMPLEMENTED (dispatch #42) -- see evaluateZScoreRule() below. sequence /
+// window-function remain STUBBED: evaluateRule() returns {implemented:false, pass:null} for
+// these rather than throwing, so a rule row of ANY LOGIC_TYPE the schema accommodates can exist
+// today without every consumer needing its own type-check first. Building these out is Phase 3
+// (sequence engine) -- explicitly out of scope for this dispatch.
 
 const COMPARATORS = {
   gte: (v, t) => v >= t,
@@ -59,10 +78,16 @@ export function resolveThreshold(rule, loc) {
   return t.default != null ? num(t.default) : null;
 }
 
+// Shared choke point (dispatch #42 §5): a denominator that's literally zero already produced an
+// honest null; `min_denominator` widens the SAME guard to "too small to mean anything," per rule.
+function belowExposureFloor(expr, denominatorSum) {
+  return expr.min_denominator != null && denominatorSum < num(expr.min_denominator);
+}
+
 function evalRatio(expr, rows) {
   const numeratorSum = aggField(rows, expr.numerator.field, expr.numerator.agg || 'sum', { abs: !!expr.numerator.abs });
   const denominatorSum = aggField(rows, expr.denominator.field, expr.denominator.agg || 'sum');
-  if (!denominatorSum) return { value: null, numeratorSum, denominatorSum: 0 };
+  if (!denominatorSum || belowExposureFloor(expr, denominatorSum)) return { value: null, numeratorSum, denominatorSum };
   const scale = expr.scale || 1;
   return { value: (numeratorSum / denominatorSum) * scale, numeratorSum, denominatorSum };
 }
@@ -71,20 +96,83 @@ function evalThreshold(expr, rows) {
   const numeratorSum = aggField(rows, expr.field, expr.agg || 'sum');
   if (!expr.denominator) return { value: numeratorSum, numeratorSum, denominatorSum: null };
   const denominatorSum = aggField(rows, expr.denominator.field, expr.denominator.agg || 'sum');
-  if (!denominatorSum) return { value: null, numeratorSum, denominatorSum: 0 };
+  if (!denominatorSum || belowExposureFloor(expr, denominatorSum)) return { value: null, numeratorSum, denominatorSum };
   const scale = expr.scale || 1;
   return { value: (numeratorSum / denominatorSum) * scale, numeratorSum, denominatorSum };
 }
 
+// A null value can now mean either "literally zero exposure" or "below the measured floor" --
+// distinguished here (not by threading a second flag through every evalFn) since both callers
+// (evaluateRule's main path and evaluateZScoreRule) need the exact same distinction.
+function noExposureReason(expr, denominatorSum) {
+  return denominatorSum === 0
+    ? 'no exposure (zero denominator) in window'
+    : `denominator below minimum exposure floor (${expr.min_denominator})`;
+}
+
 const IMPLEMENTED_TYPES = { threshold: evalThreshold, ratio: evalRatio };
 
-// evaluateRule(rule, dataContext, {loc}) -> {implemented, pass, value, numeratorSum,
-// denominatorSum, threshold, reason?}. `pass` is null (not false) whenever a verdict can't
-// honestly be computed -- no exposure (zero denominator), no threshold configured, or an
-// unimplemented LOGIC_TYPE -- so a caller summing "how many rules fired" never silently counts
-// an unevaluated rule as a pass OR a fail.
-export function evaluateRule(rule, dataContext, { loc } = {}) {
+// Below this many OTHER stores/peers reporting the same subject, a mean/stdev is dominated by
+// individual noise, not a real population -- "a z-score against two other stores is not a
+// signal" (dispatch #42 §3). A stated, conservative floor in the same "first guess, tune later"
+// tier as every threshold in this build, not measured from live data (that's storeBaseline's own
+// *n* at call time, which varies per item/window -- a property of the call, not something this
+// file could query).
+const MIN_BASELINE_N = 5;
+
+// dispatch #42 §3 -- z-score compares THIS subject's rate against a peer/store baseline's
+// mean/stdev instead of a fixed constant, so a systematic bias shared by every peer (e.g. a
+// mismapped exp_usage figure) cancels out where an absolute threshold would inherit it whole.
+// Reuses evalRatio() for the raw rate (and gets the min_denominator exposure floor for free,
+// since evalRatio already applies it) -- a z-score rule's logic_expression is the SAME
+// numerator/denominator/scale shape a ratio rule uses, just compared differently once computed.
+function evaluateZScoreRule(rule, dataContext, { loc, baseline } = {}) {
+  const dataRequired = asArr(rule.data_required);
+  const primary = dataRequired[0];
+  const rows = (dataContext && dataContext[primary]) || [];
+  const expr = asObj(rule.logic_expression);
+  const { value, numeratorSum, denominatorSum } = evalRatio(expr, rows);
+  const threshold = resolveThreshold(rule, loc);
+
+  if (value == null) {
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore: null, reason: noExposureReason(expr, denominatorSum) };
+  }
+  if (!baseline) {
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore: null, reason: 'no baseline supplied' };
+  }
+  if (!baseline.n || baseline.n < MIN_BASELINE_N) {
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore: null, reason: `insufficient baseline population (n=${baseline.n || 0}, need >= ${MIN_BASELINE_N})` };
+  }
+  if (!baseline.stdev) {
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore: null, reason: 'baseline stdev is zero -- no variation to compare against' };
+  }
+  const zscore = (value - baseline.mean) / baseline.stdev;
+  if (threshold == null) {
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, zscore, reason: 'no threshold configured' };
+  }
+  const cmp = COMPARATORS[expr.comparator || 'gte'];
+  if (!cmp) throw new Error(`security-rules: unknown comparator '${expr.comparator}'`);
+  // Two independent gates, both required to flag: statistically unusual (z vs. sigma threshold)
+  // AND materially significant (raw value vs. min_value) -- "a store 3σ above peers on $4 of
+  // variance is statistically interesting and operationally worthless" (dispatch #42 §3). Neither
+  // gate alone is sufficient; failing the materiality gate is a real, definite "clear" verdict
+  // (pass: false), not an honest-null -- the rule DID evaluate, it just didn't clear the floor.
+  const statisticallyUnusual = cmp(zscore, threshold);
+  const materialityOk = expr.min_value == null || value >= num(expr.min_value);
+  return { implemented: true, pass: statisticallyUnusual && materialityOk, value, numeratorSum, denominatorSum, threshold, zscore };
+}
+
+// evaluateRule(rule, dataContext, {loc, baseline}) -> {implemented, pass, value, numeratorSum,
+// denominatorSum, threshold, zscore?, reason?}. `pass` is null (not false) whenever a verdict
+// can't honestly be computed -- no exposure (zero denominator OR below a per-rule
+// min_denominator floor), no threshold configured, an unimplemented LOGIC_TYPE, or (z-score only)
+// no/insufficient/zero-variance baseline -- so a caller summing "how many rules fired" never
+// silently counts an unevaluated rule as a pass OR a fail. `baseline` is additive and
+// backward-compatible: threshold/ratio rules ignore it entirely, existing callers that omit it
+// keep working exactly as before.
+export function evaluateRule(rule, dataContext, { loc, baseline } = {}) {
   const type = rule.logic_type;
+  if (type === 'z-score') return evaluateZScoreRule(rule, dataContext, { loc, baseline });
   const evalFn = IMPLEMENTED_TYPES[type];
   if (!evalFn) {
     return { implemented: false, pass: null, value: null, reason: `logic_type '${type}' not yet implemented` };
@@ -96,7 +184,7 @@ export function evaluateRule(rule, dataContext, { loc } = {}) {
   const { value, numeratorSum, denominatorSum } = evalFn(expr, rows);
   const threshold = resolveThreshold(rule, loc);
   if (value == null) {
-    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, reason: 'no exposure (zero denominator) in window' };
+    return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, reason: noExposureReason(expr, denominatorSum) };
   }
   if (threshold == null) {
     return { implemented: true, pass: null, value, numeratorSum, denominatorSum, threshold, reason: 'no threshold configured' };
