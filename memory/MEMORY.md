@@ -72,53 +72,45 @@ seconds, and the theory that survives one costs a PR.
   used by neither rule. Buildable today with no new data source, and would be the build's first
   implementation of plan §1 principle 4 (exoneration — a rule that searches for its own
   counter-evidence). Scope as `INV-003` after #42.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — make security detection baseline-relative + calibrate from measured data](dispatch-42.md)** —
-  **Phase 1/1b is LIVE** — all three schema files run against production 2026-08-20 and
-  the batch job completed a real `workflow_dispatch` run: `10330 finding(s) upserted across 6
-  rule(s), 0 error(s)`. This dispatch acts on what that run actually produced; every number in it
-  is measured from live `security_findings`, not guessed. **Reordered 2026-08-20 before being
-  dispatched to anyone** — an earlier draft led with threshold recalibration; that was wrong.
-  Writing `analysis-inventory-variance-baseline-2026-08-20.md` surfaced why: **a z-score against
-  peer stores for the same item is robust to the "bent ruler" problem, and absolute thresholds are
-  not.** If `exp_usage` is systematically wrong for item X it's wrong for all 27 stores equally, so
-  a store-relative comparison cancels that bias out while an absolute threshold inherits it whole.
-  So the z-score work is valuable *regardless* of how the measurement-validity question resolves,
-  and threshold tuning is entirely *contingent* on it. Corrected order: **Step 0** — run the
-  analysis file's two concentration queries first (cheap, read-only) to establish uniform (bent
-  ruler) vs concentrated (real signal); **§3, the main deliverable** — implement `z-score`;
-  **§4** — threshold work, scoped by Step 0's answer (if uniform, demote both to permissive
-  materiality floors rather than invest in false precision); **§5** — a minimum-exposure
-  floor, unconditional, since it's a *prerequisite for measurement* not just noise-suppression.
-  **§5 widened 2026-08-20 from INV-001 to every rule with a denominator**, for two reasons: the
-  engine already guards the denominator at a single shared choke point
-  (`security-rules.js:65,74`), so the general version is the *simpler* build than special-casing
-  one rule around it; and the cash rules stopped being starved that day — #487 fixed the Register
-  Audit pull and landed **9,947 rows across 27/27 stores**, so CASH-001..004 fire on their next
-  scheduled run having never run against real data, and the owner's value check found the same
-  tiny-denominator signature there (172 T-Reds per transaction, a $318 avg check). An inventory
-  false positive wastes an afternoon on a WRIN; a cash false positive puts a **person's name** in
-  an investigation queue — and unlike INV-001/002, the cash rules are `active = true` with no
-  protection. §5a records that the cash *mapping* is verified sound (zero rows dropped; `ratio()`
-  and the manual parser's `parsePct()` agree on scale; nothing reads the stored `_pct` columns),
-  so a future session doesn't re-litigate it.
-  The measured facts behind it: INV-001's threshold (20) sits **below its own median (21.25)** so
-  it flags 50.4% of everything, while INV-002's (10) is **~77× its own maximum (0.13)** so it can
-  never fire — and INV-002 is **not** a broken join, `null_value: 0` proves the `qsr_fob` join
-  works, only the constant is wrong. **The core gap — `baseline_type` does not currently drive
-  detection at all.** Both rules declare
-  `baseline_type:'store'` and the batch job computes and persists a real baseline into
-  `baseline_context`, but `evaluateRule()` never reads it (`security-rules.js:104-106` is a flat
-  `cmp(value, threshold)`). So the rules answer "is this rate absolutely high?" — meaning an
-  inherently high-variance item flags at **all 27 stores forever** — instead of the plan's actual
-  §1-principle-2 design, "is *this store* unusual *for this item* vs peers." This dispatch
-  implements the `z-score` LOGIC_TYPE stubbed since dispatch #36 (baseline passed via an additive
-  `{loc, baseline}` opt; **both call sites need reordering** — they currently call `evaluateRule()`
-  before computing the baseline), with honest nulls for zero-stdev/insufficient-n/absent-baseline
-  and an absolute materiality floor retained alongside the z-score (unusual-vs-peers is not enough
-  on its own: 3σ on $4 of variance is worthless). Not yet implemented — this is the dispatch brief.
-  **Outranked in priority by a data blocker outside its scope:** `CASH-001`–`CASH-004` produced 0
-  findings because `audit_rows` stops at 2026-06-30 against a 28-day window — the Register Audit
-  pull has been failing since the same-day 403, leaving half of Phase 1 inert.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — baseline-relative detection, implemented](dispatch42-baseline-relative-detection.md)** —
+  **NEWEST, implemented, not yet merged.** Two parts. **Part 1 — the z-score `LOGIC_TYPE`**: both
+  INV rules declared `baseline_type:'store'` and the batch job computed/persisted a real baseline
+  into `baseline_context`, but `evaluateRule()` never read it — a flat `cmp(value, threshold)`, so
+  an inherently high-variance item flagged at all 27 stores forever. `src/engine/security-
+  rules.js` now implements `z-score` (stubbed since dispatch #36): `evaluateRule()` gains an
+  additive `{loc, baseline}` option, `z = (value-mean)/stdev` compared against `threshold` (now
+  SIGMA), two independent gates required to flag (statistically unusual via z, AND materially
+  significant via an optional `min_value`), honest nulls for no-baseline/insufficient-n
+  (`MIN_BASELINE_N=5`)/zero-stdev. Both call sites in `scripts/security-rules-run.mjs` reordered
+  to compute the baseline BEFORE evaluating — **a real bug this surfaced and fixed before
+  shipping**: `fieldsFromExpr()` branched only on `logic_type==='ratio'`, which a z-score rule
+  also uses but would have silently fallen into the wrong branch. `INV-001`/`INV-002` converted in
+  place (`schema-security-rules-phase1c.sql`): `threshold`→2.5σ, `min_value` carries FORWARD
+  dispatch #40's original ratio thresholds (20/10) as a materiality floor (Step 0's own "uniform /
+  bent ruler" verdict made precise absolute calibration false precision).
+  **Part 2 — the exposure floor, widened mid-dispatch from an INV-001 special case to EVERY
+  denominator-bearing rule**, for two reasons: (1) the engine already had ONE shared choke point
+  for a zero denominator (`evalRatio`/`evalThreshold` both had the identical `!denominatorSum`
+  guard), so the general version (`logic_expression.min_denominator`, per-rule data) is the
+  *simpler* build, not extra scope; (2) `#487` landed **9,947 real `audit_rows` rows** the same
+  day, so `CASH-001..004` — `active=true`, unlike the deactivated INV rules — were about to score
+  real data for the first time with the identical tiny-denominator pathology already measured on
+  the inventory side (owner's own check: a single `drawer_gc=1` day producing a stored
+  `t_red_b_pct` of 172). A cash false positive puts a **person's name** in an investigation queue.
+  All four floors **measured against live data 2026-08-20, none guessed**: INV-001 (`exp_usage`,
+  floor 10) converts 423/5,302 subjects (8.0%) to an honest null. INV-002 gets **NO floor** —
+  measured minimum `storeMonthSales` is $2.1M, four orders of magnitude from zero, so a floor
+  would be dead configuration (stated explicitly, not added reflexively). CASH-001/003/004
+  (`drawerSales`, floor 250) converts 24/670 (3.6%). CASH-002 (`drawerGC`, floor 25) converts
+  23/670 (3.4%), including 2 real subjects whose raw rates (200, 1692.3) were direct garbage-ratio
+  cases. None comes close to nulling the estate. New `schema-security-rules-phase1d.sql` adds the
+  cash floors via an idempotent `jsonb` merge — CASH rules stay `logic_type:'ratio'`, NOT converted
+  to z-score, only floor-protected. §5a's cash-mapping-is-sound finding re-confirmed, not
+  re-litigated. 19 new tests (13 engine, 6 call-site **wiring** tests per the #366 standing rule,
+  spanning both call sites). 1685/1685 suite passes, build clean, no bundle impact. **SQL not yet
+  run against live Supabase** — handed back per instruction rather than assumed applied.
+  `INV-001`/`INV-002` stay `active=false` until a deliberate reactivation decision. Original brief:
+  [dispatch-42.md](dispatch-42.md), superseded by the implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #41 — reconcile the two Model Health Score implementations, dispatched](dispatch-41.md)** —
   Not a security-build item — a separate, independently-discovered live correctness
   bug (`backlog-master-2026-08-19.md` §4). `modelHealthScore` and `computeModelHealth`
@@ -149,7 +141,7 @@ seconds, and the theory that survives one costs a PR.
   recomputed live on every render with zero history) is flagged as a separate future dispatch, not
   bundled in. Not yet implemented — this is the dispatch brief.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, implemented](dispatch40-inventory-tva-rule.md)** —
-  **NEWEST, implemented, awaiting PR merge (same PR/branch as #39).** The follow-through on the
+  **Merged (PR #473, same PR/branch as #39).** The follow-through on the
   correction below: `INV-001` (item-level TvA variance rate, store baseline, plan §2.2's own
   formula, single-table) and `INV-002` (dollar-variance rate normalized against sales, store
   baseline — denominator is a real `qsr_fob` join, NOT `qsr_variance_stat.pct_sales`, whose
@@ -166,7 +158,7 @@ seconds, and the theory that survives one costs a PR.
   theoretical figure). Original brief: [dispatch-40.md](dispatch-40.md), superseded by the
   implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, implemented](dispatch39-phase1-cash-rules.md)** —
-  **NEWEST, implemented, awaiting PR merge.** First dispatch in this build with real,
+  **Merged (PR #473).** First dispatch in this build with real,
   `ACTIVE=true` output — everything before it was substrate. **Phase 1 as shipped is cash-domain
   only** (the TvA-exclusion theory was corrected same-day, see the entry above — TvA data exists
   and is already pulled, what's missing is employee attribution, a real Phase 2/3 follow-up, not
