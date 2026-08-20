@@ -20,7 +20,7 @@ const SAMPLE_ROW = {
   tRedAfterQty: 1, tRedAfterAmt: 5.99,
   drawerOpens: 6,
   overringQty: 2, overringAmt: 3.50,
-  manOverringAmt: 12.75,
+  manOverringAmt: 12.75, manOverringQty: 1,
   refundCashQty: 2, refundCashAmt: 8.00,
   refundCashlessQty: 1, refundCashlessAmt: 4.50,
   empMealDiscQty: 1, empMealDiscAmt: 6.25,
@@ -51,6 +51,18 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
     expect(r.manualRefAmt).toBe(12.75);
     expect(r.posOverAmt).toBe(3.50);
     expect(r.posOverCnt).toBe(2);
+  });
+
+  it('maps manualRefCnt from manOverringQty (dispatch #44) -- the Amt/Qty sibling pair every other override category already has', () => {
+    const r = mapRow(SAMPLE_ROW);
+    expect(r.manualRefCnt).toBe(1);
+    expect(r.manualRefCnt).not.toBe(r.manualRefAmt);
+  });
+
+  it('manualRefCnt is null (not 0) when the response omits manOverringQty -- num()\'s honest-missing contract, same as every other optional field', () => {
+    const { manOverringQty, ...withoutQty } = SAMPLE_ROW;
+    const r = mapRow(withoutQty);
+    expect(r.manualRefCnt).toBeNull();
   });
 
   it('cashOSDollar is the raw overShortAmt; cashOSPct is derived as a fraction of sales', () => {

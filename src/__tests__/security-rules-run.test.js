@@ -16,14 +16,14 @@ describe('mapAuditRow() — snake_case DB row -> camelCase, matching dispatch #3
     const r = mapAuditRow({
       loc: '0043380', date: '2026-08-01', emp: 'Aaden W', emp_token: 'tok-aaden',
       drawer_sales: 1000, drawer_gc: 100, cash_os_dollar: -6,
-      pos_over_cnt: 2, pos_over_amt: 3.5, manual_ref_amt: 12.75,
+      pos_over_cnt: 2, pos_over_amt: 3.5, manual_ref_amt: 12.75, manual_ref_cnt: 1,
       refund_cash: 8, refund_cashless: 4.5, refund_cnt: 3,
       promo_amt: 42.1, t_red_a_cnt: 1, t_red_a_dollar: 5.99, t_red_b_cnt: 4, t_red_b_dollar: 18.4,
     });
     expect(r).toMatchObject({
       loc: '0043380', emp: 'Aaden W', empToken: 'tok-aaden',
       drawerSales: 1000, drawerGC: 100, cashOSDollar: -6,
-      posOverCnt: 2, posOverAmt: 3.5, manualRefAmt: 12.75,
+      posOverCnt: 2, posOverAmt: 3.5, manualRefAmt: 12.75, manualRefCnt: 1,
       refundCash: 8, refundCashless: 4.5, refundCnt: 3,
       promoAmt: 42.1, tRedACnt: 1, tRedADollar: 5.99, tRedBCnt: 4, tRedBDollar: 18.4,
     });
@@ -353,5 +353,53 @@ describe('computeFindingsForRule() — CASH-domain min_denominator exposure floo
     const findings = computeFindingsForRule(CASH_FLOOR_RULE, ROWS, WIN);
     const alice = findings.find(f => f.empToken === 'tok-alice');
     expect(alice.value).toBeCloseTo(4, 6);
+  });
+});
+
+// ── Dispatch #44 -- CASH-003 re-expressed as a count rule, wiring test at the real call site ────
+// Mirrors schema-security-rules-phase1e.sql's real logic_expression exactly (manualRefCnt/drawerGC,
+// scale 1000, min_denominator 25) -- the same shape CASH-002 already uses (posOverCnt/drawerGC),
+// swapped to the manual-refund count field. threshold is intentionally omitted here too, matching
+// the migration's own choice (no measured range exists yet) -- so this test proves the SHAPE is
+// wired correctly (a real count produces a real rate, honored by the min_denominator floor) without
+// pretending a threshold exists to cross.
+const CASH003_COUNT_RULE = {
+  rule_id: 'CASH-003', method: 'Manual refund / self-authorized refund rate', baseline_type: 'personal', severity: 3, weight: 1,
+  data_required: ['audit_rows'],
+  logic_type: 'ratio',
+  logic_expression: { numerator: { field: 'manualRefCnt', agg: 'sum' }, denominator: { field: 'drawerGC', agg: 'sum' }, scale: 1000, comparator: 'gte', min_denominator: 25 },
+  threshold: {},
+};
+describe('computeFindingsForRule() — CASH-003 re-expressed as a count rule (dispatch #44), through the real call site', () => {
+  it('a subject with 2 manual refunds across 200 transactions rates 10 per 1,000 -- the count numerator reaches the real call site, not just the engine', () => {
+    const rows = [
+      { loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-01', drawerGC: 100, manualRefCnt: 1 },
+      { loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-02', drawerGC: 100, manualRefCnt: 1 },
+    ];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const eve = findings.find(f => f.empToken === 'tok-eve');
+    expect(eve.value).toBeCloseTo(10, 6); // (1+1)/200*1000
+  });
+
+  it('with no threshold configured (the real migration\'s own choice -- no measured range exists yet), the verdict is an honest undetermined null, never a fabricated pass/fail', () => {
+    const rows = [{ loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-01', drawerGC: 100, manualRefCnt: 1 }];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const eve = findings.find(f => f.empToken === 'tok-eve');
+    expect(eve.value).toBeCloseTo(10, 6);
+    expect(eve.pass).toBeNull();
+  });
+
+  it('the min_denominator floor (25 transactions, matching CASH-002\'s own value now that the denominator is the same field) still applies -- a subject below it nulls out, not a garbage rate', () => {
+    const rows = [{ loc: '0000001', emp: 'Frank', empToken: 'tok-frank', date: '2026-08-01', drawerGC: 10, manualRefCnt: 1 }];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const frank = findings.find(f => f.empToken === 'tok-frank');
+    expect(frank.value).toBeNull();
+  });
+
+  it('a subject with zero manual refunds (the overwhelming majority, per the real measured distribution) rates exactly 0, not null -- distinct from "no exposure"', () => {
+    const rows = [{ loc: '0000001', emp: 'Grace', empToken: 'tok-grace', date: '2026-08-01', drawerGC: 100, manualRefCnt: 0 }];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const grace = findings.find(f => f.empToken === 'tok-grace');
+    expect(grace.value).toBe(0);
   });
 });

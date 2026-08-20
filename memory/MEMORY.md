@@ -72,9 +72,56 @@ seconds, and the theory that survives one costs a PR.
   used by neither rule. Buildable today with no new data source, and would be the build's first
   implementation of plan §1 principle 4 (exoneration — a rule that searches for its own
   counter-evidence). Scope as `INV-003` after #42.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #44 — CASH-003 re-expressed as a count rule, threshold guard widened to the whole file family](dispatch44-cash003-count-rule.md)** —
+  **NEWEST.** Scope came from PR #481's own merge commit ("KNOWN OPEN, not addressed here"), not a
+  written `dispatch-44.md`. CASH-003 (manual refund rate) has been `active=false` since dispatch #42
+  measured it: threshold 8 unreachable against a real max of 0.7702 — re-measured live 2026-08-20,
+  **659 of 660 non-null subjects sit at exactly 0.0000**. Not a bent ruler — manual overrings are a
+  genuinely rare event (owner-confirmed), so a DOLLAR RATE collapses to zero for nearly the whole
+  population no matter the constant. Fix is the instrument, not the number: `manOverringAmt`'s API
+  response has always carried an unpulled `manOverringQty` sibling, the same Amt/Qty pairing every
+  other override category already has — CASH-002 already proved the count shape works
+  (`posOverCnt`/`drawerGC`, 10.7% believable). `schema-security-rules-phase1e.sql` converts CASH-003
+  to `manualRefCnt`/`drawerGC` (CASH-002's own shape), adds `audit_rows.manual_ref_cnt`, moves
+  `min_denominator` from 250 (dollars, now meaningless) to CASH-002's 25 (same field now), and
+  **clears `threshold` entirely** rather than guessing — no measured range exists yet since the
+  field has never been pulled. Pulled through `qsrsoft-register-audit-pull.mjs`/`src/lib/
+  supabase.js`/`security-rules-run.mjs`'s mapping trio; `src/engine/security-rules.js` needed **no
+  change** (rules are data). Stays `active=false`, unaffected by this migration, until a real batch
+  run produces counts to measure a threshold from. **Second item — the threshold guard, widened
+  from one file to the family**: `security-rules-thresholds.test.js` previously only checked
+  `phase1c.sql`'s z-score `min_value` pair; added `extractInsertRules()` (a second SQL parser for
+  the seed files' `INSERT...VALUES` shape, alongside the existing `UPDATE...SET` one) so the guard
+  now also checks `threshold.default` on every `ratio` rule across `schema-security-rules.sql`
+  (CASH-001/002's original seed) and `phase1.sql` (CASH-004, and CASH-003's own now-superseded 8) —
+  closes the defect class, not just the one instance. CASH-001 (max 38.887 vs threshold 5), CASH-002
+  (80 vs 15), CASH-004 (162.15 vs 100) all measured live and confirmed reachable — included for
+  coverage, not because they were broken. 13 new tests (2 pull-mapping, 4 CASH-003 wiring through
+  `computeFindingsForRule()` — the real call site — 5 net-new threshold-guard, plus 2 assertions
+  folded into `mapAuditRow()`'s existing test). 1718/1718 suite passes, build clean, no entry-chunk
+  impact. **Not verified**: a live pull run — this sandbox has no QSRSoft credentials, so
+  `manual_ref_cnt` can't be backfilled from here; the next scheduled Action run picks it up once
+  merged. `phase1e.sql`'s SQL is handed back below, not assumed applied. #43 Phase 2 (triage state)
+  was named in the same follow-up message and explicitly deferred — substantial enough for its own
+  dispatch. Full writeup: [dispatch44-cash003-count-rule.md](dispatch44-cash003-count-rule.md).
+
+## SQL to run against live Supabase (dispatch #44) — handed back, not assumed applied
+
+```sql
+-- supabase/schema-security-rules-phase1e.sql — see the file for full comments/reasoning
+alter table public.audit_rows add column if not exists manual_ref_cnt numeric;
+
+update public.security_rules
+set logic_expression = '{"numerator": {"field": "manualRefCnt", "agg": "sum"}, "denominator": {"field": "drawerGC", "agg": "sum"}, "scale": 1000, "comparator": "gte", "min_denominator": 25}'::jsonb,
+    threshold = '{}'::jsonb,
+    description = 'Manual refund/override COUNT (manualRefCnt, dispatch #44), normalized per 1,000 transactions -- same shape as CASH-002''s posOverCnt/drawerGC ratio. Replaces the original manualRefAmt/drawerSales dollar rate (dispatch #39), which was unreachable: measured 2026-08-20, 659 of 660 non-null subjects sat at exactly 0.0000 (manual overrings are a genuinely rare event, owner-confirmed), so no dollar threshold in this rule''s own range could flag the one real subject without being trivially gameable. No threshold is set yet -- manual_ref_cnt has never been pulled (see this migration''s header); stays active=false until re-measured against real counts.',
+    updated_at = now()
+where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CASH-003';
+```
+
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #43 — the Security panel, Phase 1, implemented](dispatch43-security-panel.md)** —
-  **NEWEST, implemented, not yet merged (same PR/branch as #42, single-branch constraint this
-  session).** Owner-requested UI for the security build: `security_findings` (dispatches
+  **Merged** (PR #481, same PR/branch as #42, single-branch constraint that session — confirmed on
+  `main` at `9410f04`). Owner-requested UI for the security build: `security_findings` (dispatches
   #39/#40/#42) had zero references anywhere in `src/` before this — a working backend, no UI.
   Central design call: **grouped by SUBJECT, not by rule** — `groupFindingsBySubject()` collapses
   the batch job's rule-major output (4 cash rules × 670 subjects) to one row per subject carrying
@@ -104,7 +151,7 @@ seconds, and the theory that survives one costs a PR.
   dispatch's own scope. Original brief: [dispatch-43.md](dispatch-43.md), superseded by the
   implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — baseline-relative detection, implemented](dispatch42-baseline-relative-detection.md)** —
-  Implemented, not yet merged, same PR (#481) as #43 above. **Fixed post-review, 2026-08-20**: a
+  **Merged** (PR #481, same PR as #43 above). **Fixed post-review, 2026-08-20**: a
   PM review caught that `INV-002`'s `min_value:10` (carried forward from dispatch #40's old ratio
   threshold) was unreachable against its own measured range (max 0.087) — the z-score conversion
   changed `logic_type` and nothing observable. Fixed by removing `min_value` entirely for INV-002

@@ -787,6 +787,7 @@ create table if not exists public.audit_rows (
   emp_meal_disc   numeric,
   emp_meal_ch     numeric,
   manual_ref_amt  numeric,
+  manual_ref_cnt  numeric,
   refund_cnt      numeric,
   refund_cash     numeric,
   refund_cashless numeric,

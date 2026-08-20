@@ -59,7 +59,7 @@ export function mapAuditRow(r) {
     drawerSales: r.drawer_sales, drawerGC: r.drawer_gc,
     cashOSDollar: r.cash_os_dollar,
     posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
-    manualRefAmt: r.manual_ref_amt,
+    manualRefAmt: r.manual_ref_amt, manualRefCnt: r.manual_ref_cnt,
     refundCash: r.refund_cash, refundCashless: r.refund_cashless, refundCnt: r.refund_cnt,
     promoAmt: r.promo_amt,
     tRedACnt: r.t_red_a_cnt, tRedADollar: r.t_red_a_dollar,

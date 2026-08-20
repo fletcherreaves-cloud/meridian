@@ -37,6 +37,13 @@
 //     Overrings $"/"POS Overrings Cnt" (-> posOverAmt/posOverCnt, from overringAmt/overringQty).
 //     The manual Excel export already treats these as two separate columns; manOverringAmt's own
 //     name matches the "Manual Refund/Overring" concept far better than a fold-in.
+//   - manualRefCnt = manOverringQty (dispatch #44). Same Amt/Qty pairing the API already gives
+//     posOverAmt/posOverCnt and refundCashAmt/refundCashQty -- manOverringAmt was the only override
+//     category pulled without its Qty sibling until now (PR #481's merge commit named this gap).
+//     No manual-upload equivalent exists: parseRegisterAudit's Excel header search
+//     (src/parsers/index.js) has no "Manual Refund/Overring Qty" column to find, only the $ one --
+//     this field is auto-pull-only, null on manually-uploaded rows, same as every API-only field
+//     already in this table.
 //   - avgCheck, cashOSPct, promoPct, tRedBPct/tRedBAvg, tRedAPct/tRedAAvg are NOT present as
 //     pre-computed fields in the API response (parseRegisterAudit's manual path just READS these
 //     from Excel columns QSRSoft pre-computes there -- it doesn't derive them, so "mirror its
@@ -124,6 +131,7 @@ async function saveAuditRows(rows) {
     emp_meal_disc:   r.empMealDisc    ?? null,
     emp_meal_ch:     r.empMealCh      ?? null,
     manual_ref_amt:  r.manualRefAmt   ?? null,
+    manual_ref_cnt:  r.manualRefCnt   ?? null,
     refund_cnt:      r.refundCnt      ?? null,
     refund_cash:     r.refundCash     ?? null,
     refund_cashless: r.refundCashless ?? null,
@@ -203,6 +211,7 @@ export function mapRow(r) {
     empMealDisc:    num(r.empMealDiscAmt),
     empMealCh:      num(r.empMealDiscQty),
     manualRefAmt:   num(r.manOverringAmt),
+    manualRefCnt:   num(r.manOverringQty),
     refundCnt:      (num(r.refundCashQty) || 0) + (num(r.refundCashlessQty) || 0),
     refundCash:     num(r.refundCashAmt),
     refundCashless: num(r.refundCashlessAmt),
