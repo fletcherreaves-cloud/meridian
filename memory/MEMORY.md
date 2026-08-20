@@ -30,17 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #36 — Security build Phase 0b: the substrate](dispatch-36.md)** —
-  2026-08-19. **NEWEST, ready to dispatch now.** Phase 1's actual fraud-detection rules are gated
-  on this landing first (`plan-security-loss-prevention.md` §1: "do not start by coding individual
-  fraud rules... a rule written before this substrate exists will need to be rewritten once it
-  does"). Two parts, Part 1 self-contained: (1) the Rules Registry — a `security_rules` table
-  matching §6's already-specced schema + a small interpreter for `threshold`/`ratio` logic types,
-  seeded with 2-3 test-fixture rules to prove it round-trips; (2) personal/peer/store/network
-  baseline computation + exposure normalization utilities (reuse `metric-source.js`/`vs-ly.js`,
-  don't build a fourth parallel rate-computation path) + confirming `audit_rows`' existing shape
-  covers a normalized event record. **Needs no QSRSoft access at all** — pure schema/utility work,
-  verified against fixture data the same way dispatch #35's `mapRow()` was.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #36 — Security build Phase 0b: the substrate, implemented](dispatch36-security-phase0b-substrate.md)** —
+  2026-08-19. **NEWEST, implemented, awaiting PR merge.** Phase 1's actual fraud-detection rules
+  are gated on this landing first (`plan-security-loss-prevention.md` §1: "do not start by coding
+  individual fraud rules... a rule written before this substrate exists will need to be rewritten
+  once it does"). Part 1: `supabase/schema-security-rules.sql` (`security_rules` table, §6's
+  schema field-for-field, `org_config`'s RLS shape + `tenant_id`) + `src/engine/security-rules.js`
+  (interpreter — `threshold`/`ratio` implemented, `z-score`/`sequence`/`window-function` stubbed
+  not thrown) + 2 `ACTIVE=false` seed rules from §2.1 as test fixtures. Part 2:
+  `src/engine/security-baselines.js` — `exposureRate()` (the per-$1,000/per-1,000 normalization
+  primitive) + `personalBaseline`/`peerBaseline`/`storeBaseline`/`networkBaseline`, each a
+  distribution not a blended number, built fresh (confirmed `metric-source.js`/`vs-ly.js` have no
+  existing rate-normalization primitive to extend) but following their dollar-weighted/honest-null
+  conventions. `peerBaseline`'s same-store cohort is a documented data-limitation proxy for the
+  plan's ideal role/daypart/tenure/volume-band grouping — `audit_rows` doesn't carry those columns
+  yet. 22 new fixture tests, 2 of which round-trip the seed SQL's exact `logic_expression` JSON.
+  No UI — data-layer + interpreter only, per the dispatch's own scope. Original brief:
+  [dispatch-36.md](dispatch-36.md), superseded by the implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #35 — Register Audit implemented, PM-verified](dispatch35-register-audit-implementation.md)** —
   2026-08-19. **NEWEST, merged (PR #448).** Phase 0a is now code-complete — `mapRow()` implemented
   against dispatch #34's confirmed endpoint, resolved field-by-field against the actual consumer
