@@ -30,8 +30,8 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ [Backfill script logged "0 rows updated" for all 449 employees — fixed, live-data check still pending, 2026-08-20](incident-backfill-count-undercount-2026-08-20.md)** —
-  **NEWEST.** First live run of `scripts/backfill-identity-vault.mjs` printed `449 distinct
+- **✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅ [Backfill script logged "0 rows updated" for all 449 employees — CLOSED, live data confirmed clean, 2026-08-20](incident-backfill-count-undercount-2026-08-20.md)** —
+  First live run of `scripts/backfill-identity-vault.mjs` printed `449 distinct
   untokenized employee name(s) found` / `449 token(s) resolved` / **`0 row(s) updated`** — an
   internally inconsistent result (zero successes, zero failures, 449 attempts) that was treated as
   a signal to verify, not a clean exit code to trust. Root cause confirmed by reading the actual
@@ -45,9 +45,9 @@ seconds, and the theory that survives one costs a PR.
   **Most likely real outcome: the 449 writes actually happened and only the log was wrong** — but
   this is inferred from library source, not yet confirmed against live data. Fixed in the repo
   (`count:'exact'` moved to `update()`'s own options, the broken trailing `.select()` removed).
-  **Owner still needs to run one read-only SQL check** (in the incident file, phone-safe, no
-  Mac/terminal needed) to confirm `audit_rows.emp_token` is actually populated before treating
-  this as fully closed — if it isn't, that's a different, more serious bug still to find.
+  **Confirmed live the same day**: owner ran the read-only SQL check —
+  `tokenized: 21929, still_untokenized: 0`. All 449 employees' rows were actually updated on the
+  first run; the "0 rows updated" line was purely the broken log, never a failed write. Closed.
 - **🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨 [SECURITY INCIDENT — reveal RPC anonymous role-gate bypass, found + fixed same day, 2026-08-20](incident-reveal-rpc-null-role-bypass-2026-08-20.md)** —
   `reveal_employee_identity()` (dispatch #37's vault, PR #459) shipped with a
   PL/pgSQL `NULL`-role trap: an anonymous caller's `get_my_role()` is `NULL`, and
