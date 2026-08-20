@@ -112,9 +112,17 @@ const MEASURED_MAX = {
   'CASH-001': 38.887,  // cashOSDollar/drawerSales*1000, threshold 5 (well below median 0.59 -- reachable)
   'CASH-002': 80,      // posOverCnt/drawerGC*1000, threshold 15 (below median 2.39 -- reachable)
   'CASH-004': 162.1527, // promoAmt/drawerSales*1000, threshold 100 (below median 25.9 -- reachable)
-  // CASH-003 is deliberately ABSENT: manual_ref_cnt has never been pulled (dispatch #44), so no
-  // measured range exists for the count-based rate that replaces the old, unreachable dollar rate.
-  // The "no threshold set" test below guards this directly, the same way INV-002's own test does.
+  // CASH-003, schema-security-rules-phase1g.sql -- rebuilt from a rate/count to an ABSOLUTE dollar
+  // sum (dispatch #48 lineage, "CASH-003 RESOLVED AND LIVE"). Measured live 2026-08-20, 80-day
+  // backfill, 19,985 employee-days, 27 stores: 6 occurrences, 4 employees, $7/$10-median/$26 largest.
+  // This is a SUM ceiling, not a rate -- units match threshold.default (dollars) directly.
+  'CASH-003': 26, // manualRefAmt sum, threshold 5 (below the smallest real occurrence, $7 -- reachable)
+  // Dispatch #48, schema-security-rules-inv003-inv005.sql -- both min_value floors (15 each) are
+  // z-score materiality floors, not raw ceilings, so this entry only needs to sit above 15; both
+  // re-measured live 2026-08-20 second pass (see that file's own header for the correction on the
+  // "only one period" claim), non-condiment/exp_usage>0, period 2026-08:
+  'INV-003': 36134.38, // unexplainedVariance/expUsage*100, n=4,221, median=14.98
+  'INV-005': 36234.38, // positiveVariance/expUsage*100 among variance>0 subjects, n=1,243, median=15.22
 };
 
 // Separate map, deliberately: `min_numerator` (dispatch #45 §A) gates the RAW numerator sum, a
@@ -134,6 +142,15 @@ const MEASURED_NUMERATOR_MAX = {
 const MEASURED_STDEV_P10 = {
   'INV-001': 3.309,
   'INV-002': 0.000861,
+  // Dispatch #48, schema-security-rules-inv003-inv005.sql. Both re-measured live 2026-08-20,
+  // second pass (the table grew between the two measurements that session -- see that file's own
+  // header for the correction). Peer-baseline stdev, per-(loc,wrin) leave-one-out, n>=5 peers,
+  // n=4,200 baselines each: INV-003 (unexplainedVariance/expUsage) p10=3.736; INV-005
+  // (positiveVariance/expUsage) p10=0.679 -- a measurably degenerate tail (5.0% exact-zero
+  // baselines vs INV-003's 0.05%), the reason INV-005 needed the same min_stdev guard built in
+  // from the start rather than discovered live, per dispatch #45b's own lesson.
+  'INV-003': 3.736,
+  'INV-005': 0.679,
 };
 
 describe('security_rules seed/migration SQL — an absolute comparator value must sit inside its own measured range', () => {
@@ -143,20 +160,28 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
   const phase1cRules = extractUpdateRules(readSql('schema-security-rules-phase1c.sql'));
   const phase1eRules = extractUpdateRules(readSql('schema-security-rules-phase1e.sql'));
   const phase1fRules = extractUpdateRules(readSql('schema-security-rules-phase1f.sql'));
+  const phase1gRules = extractUpdateRules(readSql('schema-security-rules-phase1g.sql'));
   const minStdevRules = extractUpdateRules(readSql('schema-security-rules-min-stdev.sql'));
+  const inv003inv005Rules = extractInsertRules(readSql('schema-security-rules-inv003-inv005.sql'));
 
   // rule_id -> {entry, logicType}. logicType is read from THIS test file's own knowledge of each
   // rule's real logic_type (phase1.sql's rule inserts don't repeat it in a name=value pair this
   // parser captures separately from logic_expression/threshold) -- CASH-001/002/004 stay 'ratio'
   // (schema-security-rules.sql / phase1.sql never convert them), INV-001/INV-002 are 'z-score' as
-  // of phase1c.sql, CASH-003 is 'ratio' both before AND after phase1e.sql (only its fields changed).
+  // of phase1c.sql. CASH-003 was 'ratio' from phase1.sql through phase1e.sql (only its fields
+  // changed there); phase1g.sql (dispatch #48 lineage) converts it again, this time to
+  // 'threshold' -- an absolute sum, no denominator. comparatorValue() branches only on
+  // logicType === 'z-score', so labeling this 'threshold' rather than 'ratio' changes nothing about
+  // which field it reads (still threshold.default) -- it's here for the reader, not the parser.
   const CASES = [
     { ruleId: 'INV-001', logicType: 'z-score', entry: phase1cRules['INV-001'] },
     { ruleId: 'INV-002', logicType: 'z-score', entry: phase1cRules['INV-002'] },
     { ruleId: 'CASH-001', logicType: 'ratio', entry: seedRules['CASH-001'] },
     { ruleId: 'CASH-002', logicType: 'ratio', entry: seedRules['CASH-002'] },
-    { ruleId: 'CASH-003', logicType: 'ratio', entry: phase1eRules['CASH-003'] },
+    { ruleId: 'CASH-003', logicType: 'threshold', entry: phase1gRules['CASH-003'] },
     { ruleId: 'CASH-004', logicType: 'ratio', entry: phase1Rules['CASH-004'] },
+    { ruleId: 'INV-003', logicType: 'z-score', entry: inv003inv005Rules['INV-003'] },
+    { ruleId: 'INV-005', logicType: 'z-score', entry: inv003inv005Rules['INV-005'] },
   ];
 
   it('parses every rule this suite guards from its real source file', () => {
@@ -165,7 +190,10 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
     expect(seedRules['CASH-001']).toBeTruthy();
     expect(seedRules['CASH-002']).toBeTruthy();
     expect(phase1eRules['CASH-003']).toBeTruthy();
+    expect(phase1gRules['CASH-003']).toBeTruthy();
     expect(phase1Rules['CASH-004']).toBeTruthy();
+    expect(inv003inv005Rules['INV-003']).toBeTruthy();
+    expect(inv003inv005Rules['INV-005']).toBeTruthy();
   });
 
   it.each(CASES)('$ruleId: comparator value (if present) does not exceed the measured ceiling', ({ ruleId, logicType, entry }) => {
@@ -212,8 +240,17 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
     expect(phase1cRules['INV-001'].logic_expression.min_value).toBe(20);
   });
 
-  it('CASH-003 specifically carries NO threshold post-fix (dispatch #44) -- manual_ref_cnt has never been pulled, so no measured range exists yet; setting a number now would repeat the exact defect this file exists to catch', () => {
+  it('CASH-003 carried NO threshold immediately after phase1e.sql (dispatch #44) -- manual_ref_cnt had never been pulled at that point, so no measured range existed yet. HISTORICAL: phase1g.sql (dispatch #48 lineage) supersedes this state -- manual_ref_cnt turned out not to exist at all, and CASH-003 is rebuilt as an absolute dollar threshold below, not a count rate', () => {
     expect(phase1eRules['CASH-003'].threshold).toEqual({});
+  });
+
+  it('CASH-003\'s current, LIVE threshold (phase1g.sql, dispatch #48 lineage) sits inside its own measured range and is active -- rebuilt as an absolute manualRefAmt dollar sum after the count field it would have needed (manual_ref_cnt) was confirmed to not exist in the API response at all', () => {
+    expect(phase1gRules['CASH-003'].logic_expression.field).toBe('manualRefAmt');
+    expect(phase1gRules['CASH-003'].logic_expression.denominator).toBeUndefined();
+    expect(phase1gRules['CASH-003'].threshold.default).toBe(5);
+    expect(phase1gRules['CASH-003'].threshold.default).toBeLessThanOrEqual(MEASURED_MAX['CASH-003']);
+    const sql = readSql('schema-security-rules-phase1g.sql');
+    expect(sql).toMatch(/active\s*=\s*true/);
   });
 
   it('CASH-003\'s OLD phase1.sql threshold (8) really was unreachable -- the regression this migration fixes, confirmed against phase1.sql\'s own real seed text', () => {
@@ -242,5 +279,49 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
   it('phase1b.sql\'s original seed values are read correctly (historical record, not a live gate)', () => {
     expect(phase1bRules['INV-001'].threshold.default).toBe(20);
     expect(phase1bRules['INV-002'].threshold.default).toBe(10);
+  });
+
+  // Dispatch #48 -- INV-003 (variance unmatched by logged waste) and INV-005 (phantom gains).
+  // Both built min_stdev in FROM THE START (not discovered live, per dispatch #45b's own lesson
+  // -- INV-005's peer-baseline stdev distribution is measurably degenerate, same defect class as
+  // INV-001/INV-002 originally shipped without a guard for). Both carry the SAME min_value (15)
+  // since it's each rule's own population median, not a copied number -- see that file's header.
+  it('INV-003/INV-005 both carry a real, measured min_stdev, at or below this rule\'s own p10', () => {
+    expect(inv003inv005Rules['INV-003'].logic_expression.min_stdev).toBe(1);
+    expect(inv003inv005Rules['INV-003'].logic_expression.min_stdev).toBeLessThanOrEqual(MEASURED_STDEV_P10['INV-003']);
+    expect(inv003inv005Rules['INV-005'].logic_expression.min_stdev).toBe(1);
+    // INV-005's min_stdev (1) sits ABOVE its own p10 (0.679) -- unlike every other rule in this
+    // suite -- by design: dispatch #48's own header explains this is deliberately sized to clear
+    // the degenerate exact-zero/near-zero cluster (14.0% of baselines sit below 1), not to sit
+    // beneath the p10 the way a normal materiality floor would. Asserted directly against the
+    // measured value, not the <=p10 pattern the other rules use.
+    expect(inv003inv005Rules['INV-005'].logic_expression.min_stdev).toBeGreaterThan(MEASURED_STDEV_P10['INV-005']);
+  });
+
+  it('INV-003/INV-005 both carry the same measured min_value (15) and min_denominator (10) -- not copied blindly, each is that rule\'s own population median / INV-001\'s established exp_usage floor', () => {
+    expect(inv003inv005Rules['INV-003'].logic_expression.min_value).toBe(15);
+    expect(inv003inv005Rules['INV-003'].logic_expression.min_denominator).toBe(10);
+    expect(inv003inv005Rules['INV-005'].logic_expression.min_value).toBe(15);
+    expect(inv003inv005Rules['INV-005'].logic_expression.min_denominator).toBe(10);
+  });
+
+  it('INV-003/INV-005 read the sign-verified derived fields, not raw variance -- a reversed rule would silently detect the opposite of what it claims (dispatch #48\'s own warning)', () => {
+    expect(inv003inv005Rules['INV-003'].logic_expression.numerator.field).toBe('unexplainedVariance');
+    expect(inv003inv005Rules['INV-005'].logic_expression.numerator.field).toBe('positiveVariance');
+    expect(inv003inv005Rules['INV-003'].logic_expression.denominator.field).toBe('expUsage');
+    expect(inv003inv005Rules['INV-005'].logic_expression.denominator.field).toBe('expUsage');
+  });
+
+  // Dispatch #48's own explicit instruction: "all three [rules] land inactive with measured
+  // thresholds." Directly guards a mistake made and caught mid-build this same session (an earlier
+  // draft of this migration shipped both rules `active: true`) -- a plain string check against the
+  // real SQL text, since `active` is a bare boolean literal in the VALUES tuple, not a `{...}` JSON
+  // object extractInsertRules() parses out.
+  it('INV-003/INV-005 both land active=false -- a first live run, not a live-panel debut, per dispatch #48', () => {
+    const sql = readSql('schema-security-rules-inv003-inv005.sql');
+    const inv003Tuple = sql.slice(sql.indexOf("'INV-003'"), sql.indexOf("on conflict", sql.indexOf("'INV-003'")));
+    const inv005Tuple = sql.slice(sql.indexOf("'INV-005'"), sql.indexOf("on conflict", sql.indexOf("'INV-005'")));
+    expect(inv003Tuple).toMatch(/,\s*false\s*\)\s*$/);
+    expect(inv005Tuple).toMatch(/,\s*false\s*\)\s*$/);
   });
 });
