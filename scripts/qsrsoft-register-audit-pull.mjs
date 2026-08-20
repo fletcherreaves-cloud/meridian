@@ -260,23 +260,28 @@ const HDRS = t => ({ 'X-Auth-Token': t, Accept: 'application/json', Origin: 'htt
 // uncertainty across its own six endpoints.
 async function fetchChunk(url, token, evalPage) {
   if (evalPage) {
-    // No Referer/Origin set here, deliberately: both are forbidden header names in browser
-    // fetch() -- the browser sets them itself and ignores attempts to override, so passing them
-    // was always a no-op on this path. The browser supplies the right Referer anyway, since
-    // viaPlaywright() navigates to the regAudit report page before calling this. (Also note
-    // REFERER is a Node-side const and would be a ReferenceError inside this callback, which
-    // Playwright serializes and runs in the page context -- only the explicitly-passed
-    // {url, token} argument crosses that boundary.)
-    const res = await evalPage.evaluate(async ({ url, token }) => {
-      try {
-        const r = await fetch(url, { headers: { 'X-Auth-Token': token, Accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
-        if (!r.ok) return { error: `HTTP ${r.status}` };
-        const body = await r.json();
-        return { rows: Array.isArray(body) ? body : (body?.result || body?.data || []) };
-      } catch (e) { return { error: e.message }; }
-    }, { url, token });
-    if (res.error) throw new Error(res.error);
-    return res.rows || [];
+    // page.request (Playwright's APIRequestContext), NOT page.evaluate(fetch). Two reasons, both
+    // measured rather than assumed (run 32396347757 -- see viaPlaywright's comment):
+    //   1. It sends the browser context's COOKIES. The page's own regAudit call carries no
+    //      x-auth-token, so the app authenticates this endpoint by session -- this reproduces
+    //      how the app itself does it instead of replaying a token the endpoint rejects.
+    //   2. It is not bound by the page's CORS policy. The previous page.evaluate(fetch) failed
+    //      with "Failed to fetch" precisely because v3.myqsrsoft.com -> api.reports.* is
+    //      cross-origin; running the request in Playwright rather than in the page avoids that
+    //      entirely.
+    // The token is still sent when one was captured -- harmless if ignored, and it keeps the
+    // path working unchanged if this endpoint ever does accept one.
+    const hdrs = { Accept: 'application/json', Referer: REFERER };
+    if (token) hdrs['X-Auth-Token'] = token;
+    const r = await evalPage.request.get(url, { headers: hdrs, timeout: 30000 });
+    if (r.status() === 401 || r.status() === 403) {
+      const detail = await r.text().catch(() => '(body unreadable)');
+      console.error(`[audit-pull] browser-context ${r.status()} body: ${detail.slice(0, 500) || '(empty)'}`);
+      throw new Error(`AUTH_FAILED:${r.status()}`);
+    }
+    if (!r.ok()) throw new Error(`HTTP ${r.status()}: ${(await r.text()).slice(0, 200)}`);
+    const body = await r.json();
+    return Array.isArray(body) ? body : (body?.result || body?.data || []);
   }
   const resp = await fetch(url, { headers: HDRS(token) });
   if (resp.status === 401 || resp.status === 403) {
@@ -370,10 +375,17 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
   // dispatch35's writeup) -- and the current logging can't tell them apart. Query string is
   // stripped: it carries no secret, but it is long and noisy, and the PATH is the diagnostic.
   const seenApiUrls = [];
+  let seenApiHeaderNames = [];
   page.on('request', req => {
     if (!req.url().includes('api.reports.myqsrsoft.com')) return;
     const bare = req.url().replace(/\?.*/, '');
     if (!seenApiUrls.includes(bare)) seenApiUrls.push(bare);
+    // NAMES only -- a Cookie or Authorization VALUE is a live credential and must never be
+    // logged. The names alone answer the open question (how does the app authenticate this
+    // call, given it sends no x-auth-token) without leaking anything.
+    if (bare.endsWith('/regAudit') && !seenApiHeaderNames.length) {
+      seenApiHeaderNames = Object.keys(req.headers()).sort();
+    }
     const t = req.headers()['x-auth-token'];
     if (t && t.length > 20 && !token) token = t;
   });
@@ -394,28 +406,39 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
     console.log('[auth] report page url:', page.url(), '| token captured:', !!token);
     await snap('audit-02-report-page.png');
 
+    // MEASURED 2026-08-20 (run 32396347757), and it changed the whole approach:
+    //   api.reports requests seen during navigation:
+    //     ["https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit"]
+    //   token captured: false
+    // The page DOES call this exact endpoint on load -- so the endpoint is right and the
+    // "report needs a UI interaction first" hypothesis is dead -- but it calls it with NO
+    // x-auth-token header. The app authenticates this endpoint some other way (cookies, almost
+    // certainly, set by the v3 login). That single fact explains every failure to date: the
+    // direct Node path sends a token this endpoint does not accept (403), and the old
+    // page.evaluate(fetch) trigger died with "Failed to fetch" because v3.myqsrsoft.com ->
+    // api.reports.myqsrsoft.com is CROSS-ORIGIN and CORS-blocked in page context.
+    //
+    // So: stop trying to capture and replay a token, and instead issue the request through the
+    // browser CONTEXT (page.request, Playwright's APIRequestContext). It shares the context's
+    // cookie jar -- authenticating the same way the app itself does -- and is NOT subject to the
+    // page's CORS policy, since it runs in Playwright rather than in the page.
     if (!token) {
-      console.log('[auth] no token from navigation — attempting in-browser fetch to trigger auth…');
-      const triggerUrl = buildUrl(chunks[0].start, chunks[0].end);
-      const testResult = await page.evaluate(async ({ url }) => {
-        try { const r = await fetch(url, { credentials: 'include' }); return { status: r.status, ok: r.ok }; }
-        catch (e) { return { error: e.message, name: e.name }; }
-      }, { url: triggerUrl });
-      console.log('[auth] in-browser test fetch result:', JSON.stringify(testResult));
-      await new Promise(r => setTimeout(r, 2000));
-      await snap('audit-03-post-trigger.png');
-    }
-    if (!token) {
-      console.error('[auth] ✗ could not capture token from report page or an in-browser fetch trigger');
-      // The decisive diagnostic (see the seenApiUrls comment above): an EMPTY list means the
-      // report page fires no API calls on load at all, which supports the UI-interaction
-      // hypothesis; a NON-empty list means it does call something, and whatever paths appear
-      // here are the real endpoints to compare against the one this script requests.
-      console.error('[auth] api.reports requests seen during navigation:',
+      console.log('[auth] no x-auth-token seen on the page\'s own API calls — the app authenticates');
+      console.log('[auth] this endpoint by session instead; proceeding via the browser cookie jar.');
+      console.log('[auth] api.reports requests seen during navigation:',
         seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
-      return 0;
+      // Header NAMES only, never values -- a Cookie/Authorization value is a live credential.
+      // This confirms (or refutes) the cookie theory on the next run rather than assuming it.
+      if (seenApiHeaderNames.length) {
+        console.log('[auth] header names on the page\'s own regAudit call:', JSON.stringify(seenApiHeaderNames));
+      }
+      await snap('audit-03-pre-context-request.png');
+    } else {
+      console.log(`[auth] ✓ token captured (${token.length} chars)`);
     }
-    console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${chunks.length} chunk(s)…`);
+    // Proceed either way. `token` may be null here -- fetchChunk's browser-context branch sends
+    // it only if present, and relies on cookies otherwise.
+    console.log(`[auth] pulling ${chunks.length} chunk(s) via the browser context…`);
     return await runAll(token, chunks, page, tracker, coveredStores);
   } finally { await browser.close(); }
 }
