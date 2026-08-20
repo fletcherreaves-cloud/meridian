@@ -30,24 +30,26 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #37 — identity-vault architecture (Direction B)](dispatch-37.md)** —
-  2026-08-20. **NEWEST, ready to dispatch now.** Owner chose to build this before Phase 1, per the
-  plan's own sequencing note. **Real finding that reshapes the whole dispatch**: CLAUDE.md's
-  documented 8-tier RBAC (Developer/Admin/Owner/VP/DO/Supervisor/GM/Office) **isn't actually
-  implemented** — `profiles.role` only has 3 real values (`admin`/`supervisor`/`manager`, verified
-  against `supabase/schema.sql`'s check constraint), and `qsrsoft-rbac-and-permissions.md`
-  independently confirms the fuller ladder is a future-reference model, not live. The owner's
-  "Supervisor can identify, GM optionally can" decision (§5) maps onto the real `supervisor`/
-  `manager` role values, not nonexistent DO/VP/GM strings — flagged explicitly so the RLS doesn't
-  get written against roles that will never match. Scope: two new tables
-  (`employee_identity_vault` token↔name mapping with **no direct select policy at all**;
-  `identity_reveal_log`, append-only/evidence-grade, indefinite retention) + a `SECURITY DEFINER`
-  reveal RPC (admin/supervisor always, manager gated on an explicitly-flagged placeholder
-  org-wide toggle) + retrofitting the write path (`audit_rows` gets an additive `emp_token`
-  column, existing PK/`emp` untouched — migrating storage to be token-keyed is a deliberately
-  deferred, separate decision) + retrofitting `analyzeRegisterAudit`'s exposure layer to return
-  tokens, not names. No UI. Full scoping and the reasoning behind every deferral in the dispatch
-  itself.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #37 — identity-vault architecture (Direction B), implemented](dispatch37-identity-vault.md)** —
+  2026-08-20. **NEWEST, implemented, awaiting PR merge.** Owner chose to build this before Phase 1,
+  per the plan's own sequencing note. `supabase/schema-identity-vault.sql`: `employee_identity_vault`
+  (token↔name, zero RLS policies for any role) + `identity_reveal_log` (append-only, admin-read-
+  only, indefinite retention, no update/delete policy at all) + `audit_rows.emp_token` (additive,
+  PK/`emp` untouched) + two `SECURITY DEFINER` RPCs — `get_or_create_employee_token()` (the shared
+  write path, safe to expose broadly, never returns a name) and `reveal_employee_identity()` (the
+  ONE path to a real name: admin/supervisor always, manager gated on an explicitly-flagged
+  org-wide placeholder toggle, reason required, logged before returning). All role checks use the
+  real `admin`/`supervisor`/`manager` values only, per the dispatch's own RBAC finding.
+  `src/engine/identity-vault.js` (`getOrCreateToken`/`tokenizeRows`, one RPC call per distinct
+  name) wired into both `saveAuditRows()` twins + `loadAuditRows()`; `scripts/backfill-identity-
+  vault.mjs` for existing rows (owner-run, not run from this session). `analyzeRegisterAudit`
+  retrofit: `e.id` is now the token, no plaintext name survives in the return value anywhere.
+  **A real conflict found and flagged, not silently resolved**: `store-analytics.js`'s
+  RegisterAuditNarrative panel reads `.emp` directly at 9 sites to display names — this dispatch's
+  own "no UI" scope leaves those showing `'Unknown'`/tokens until a follow-up reveal-button
+  dispatch, an anticipated cost of Direction B's "blind mode" property, not accidental breakage.
+  28 new fixture tests. Original brief: [dispatch-37.md](dispatch-37.md), superseded by the
+  implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security build — six owner decisions in one morning, 2026-08-20](plan-security-loss-prevention.md)** —
   2026-08-20. Every open owner-gated question on this build got answered in one sitting —
   read `plan-security-loss-prevention.md` §4/§5 and `plan-security-pii-architecture-2026-08-19.md`

@@ -59,6 +59,7 @@ import { createClient } from '@supabase/supabase-js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
+import { tokenizeRows } from '../src/engine/identity-vault.js';
 
 const BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -109,8 +110,13 @@ function chunkDateRange(startDate, endDate, maxDays = 21) {
 // that reason). Column mapping and onConflict copied verbatim from src/lib/supabase.js:859.
 async function saveAuditRows(rows) {
   if (!rows?.length) return { saved: 0, errors: [] };
+  // dispatch #37 (Direction B) -- one token lookup/create per DISTINCT employee name in this
+  // batch, not per row. emp_token is additive alongside emp (the name column) -- see
+  // supabase/schema-identity-vault.sql's header for why the PK/emp column itself is untouched.
+  const tokenMap = await tokenizeRows(supabase, rows, 'emp');
   const upsert = rows.map(r => ({
     loc: r.loc, date: r.date, emp: r.emp,
+    emp_token: tokenMap.get((r.emp || '').trim()) ?? null,
     drawer_sales:    r.drawerSales    ?? null,
     avg_check:       r.avgCheck       ?? null,
     drawer_opens:    r.drawerOpens    ?? null,

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from '@supabase/supabase-js';
 import { oepeSeconds, oepeWithParkSeconds } from '../utils/oepe.js';
+import { tokenizeRows } from '../engine/identity-vault.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
 const KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -859,10 +860,16 @@ export async function loadPeaksRows(daysBack = 400) {
 export async function saveAuditRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };
   const toDate = r => r.date instanceof Date ? r.date.toISOString().slice(0,10) : String(r.date).slice(0,10);
+  // dispatch #37 (Direction B) -- routed through get_or_create_employee_token() (this table's
+  // own zero-policy RLS blocks a direct anon-key insert onto employee_identity_vault; the RPC
+  // is the sanctioned write path, shared verbatim with the server-side auto-pull's saveAuditRows()
+  // twin in scripts/qsrsoft-register-audit-pull.mjs). emp_token is additive alongside emp.
+  const tokenMap = await tokenizeRows(supabase, rows, 'emp');
   const upsert = rows.map(r => ({
     loc:             String(r.loc),
     date:            toDate(r),
     emp:             r.emp || '',
+    emp_token:       tokenMap.get((r.emp || '').trim()) ?? null,
     drawer_sales:    r.drawerSales    ?? null,
     avg_check:       r.avgCheck       ?? null,
     drawer_opens:    r.drawerOpens    ?? null,
@@ -927,6 +934,7 @@ export async function loadAuditRows(daysBack = 400) {
     loc:            r.loc,
     date:           new Date(r.date + 'T00:00:00'),
     emp:            r.emp,
+    empToken:       r.emp_token,
     drawerSales:    r.drawer_sales,
     avgCheck:       r.avg_check,
     drawerOpens:    r.drawer_opens,
