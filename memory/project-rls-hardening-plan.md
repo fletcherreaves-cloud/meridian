@@ -45,15 +45,27 @@ is already known and intentional (CLAUDE.md documents it as a deliberate public-
 table). **This plan's Phase 1 (closing the anonymous hole) already appears substantively done**,
 just via a different mechanism (the multitenant migration) than this plan originally specified.
 
-**Still genuinely open, not yet checked**: whether every `public` table actually has row-level
-security *enabled* at all — a table with RLS never turned on bypasses every policy question above
-entirely, and wouldn't appear in either diagnostic. `diagnose-schema-state.sql` reports "87 tables
-with RLS enabled" but not the total table count to compare against — that comparison is the next
-real check, before either declaring this plan's Phase 1 fully closed or scoping further work.
-**Phase 2 (`can_see_loc()`, per-loc isolation) genuinely has not shipped** — confirmed not applied
-— that part of this plan's original scope may still be real, separate from the anonymous-access
-question. Re-scope this plan's remaining phases only after the RLS-enabled-on-every-table check
-lands, not from the original "~30" or the erroneous "92-107" figures.
+**CLOSED, same day — `supabase/diagnose-rls-disabled-tables.sql` (owner-run, 2026-08-20).** The
+one remaining question — whether every `public` table has RLS *enabled* at all, not just
+correctly policied — is answered: **all 87 ordinary tables in `public` have `relrowsecurity =
+true`, zero exceptions.** That's every table in the schema, not a sample — the query selects
+`relkind='r'` across all of `public` with no filter narrowing it down, and it returned exactly 87
+rows (matching `diagnose-schema-state.sql`'s "87 tables with RLS enabled" count precisely,
+confirming that number already WAS the total, not a subset). Combined with the policy-level
+finding above, **this closes the anonymous-access question completely**: every table has RLS on,
+and every policy except the one known-intentional `qsrsoft_kb` read correctly rejects anonymous
+callers. `rls_forced_on_owner` (`relforcerowsecurity`) is `false` on every table — expected, not
+a gap, since it lets the service-role key bypass RLS for automation exactly as this plan's own
+"why this is low-risk" section always assumed.
+
+**Phase 1 of this plan (closing the anonymous hole) is DONE — confirm this reading, then retire
+that phase from the plan rather than re-scoping it.** It shipped via the multitenant migration,
+not this plan's own design, but the outcome (no anonymous access) is real and measured, not
+assumed. **Phase 2 (`can_see_loc()`, per-loc isolation) genuinely has not shipped** — confirmed
+not applied — that part of this plan's original scope may still be real, separate from the
+anonymous-access question, and is the one piece of this plan's original scope still open. Re-scope
+only Phase 2 forward from here — do not re-litigate Phase 1, which is now measured closed, not
+re-derived from the original "~30" or the erroneous "92-107" figures.
 
 Addresses audit A1 (wide-open `using(true)` on ~30 tables), C2 (public buckets),
 B2 (client-only RBAC), M1 (review writes unscoped). **Nothing is changed until the

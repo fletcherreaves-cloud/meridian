@@ -593,16 +593,18 @@ first below.
 
 ### Security / RLS — highest priority, three independent sources converge on the same gap
 
-- [x] **Wide-open RLS — SUPERSEDED, 2026-08-20, by a live measurement.** The 92-107 source-text
-  count below was real and correctly grep'd, but measured committed SQL text across superseded
-  schema files, not live database state. A live `pg_policies` query (two read-only diagnostics,
-  `supabase/diagnose-schema-state.sql` + `diagnose-open-policies.sql`, owner-run 2026-08-20)
-  shows the anonymous-access problem is **already substantively closed** — a separate, already-
-  applied multitenant migration replaced the wide-open policies on the overwhelming majority of
-  tables with `tenant_id = current_tenant_id()` checks that correctly reject anonymous callers.
-  Full correction, including the one still-genuinely-open question (whether every table has RLS
-  *enabled* at all, not yet checked) and the one known/intentional exception (`qsrsoft_kb`):
-  `project-rls-hardening-plan.md`'s own correction note at the top of that file. **Do not
+- [x] **Wide-open RLS — FULLY CLOSED, 2026-08-20, by three live measurements.** The 92-107
+  source-text count below was real and correctly grep'd, but measured committed SQL text across
+  superseded schema files, not live database state. Three live, read-only diagnostics against
+  production (`supabase/diagnose-schema-state.sql` + `diagnose-open-policies.sql` +
+  `diagnose-rls-disabled-tables.sql`, all owner-run 2026-08-20) settle it completely: the
+  anonymous-access problem is **closed** — a separate, already-applied multitenant migration
+  replaced the wide-open policies on the overwhelming majority of tables with
+  `tenant_id = current_tenant_id()` checks that correctly reject anonymous callers, the one real
+  literal `using(true)` (`qsrsoft_kb`) is already known/intentional, and **all 87 tables in
+  `public` have RLS enabled — zero exceptions.** `project-rls-hardening-plan.md`'s Phase 1 is
+  done; only Phase 2 (`can_see_loc()`, per-loc isolation) remains real, unshipped scope. Full
+  correction: `project-rls-hardening-plan.md`'s own correction note at the top of that file. **Do not
   re-cite 92-107 as a live exposure count anywhere — it never was one.** Original entry, kept
   below for the record of what was measured and how:
   ~~`grep -rEic "using\s*\(\s*true\s*\)" supabase/schema.sql` → **92** (a plain

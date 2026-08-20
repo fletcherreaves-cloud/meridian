@@ -30,21 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS "wide open" claim corrected — live measurement, 2026-08-20](project-rls-hardening-plan.md)** —
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS anonymous-access question fully CLOSED — three live measurements, 2026-08-20](project-rls-hardening-plan.md)** —
   **NEWEST.** The "92-107 tables wide open to anonymous access" figure repeated across this
   backlog and `plan-security-pii-architecture-2026-08-19.md` was real (a correct grep of
   committed SQL text) but measured the wrong thing — source text across superseded schema files,
-  not live database state. Two live, read-only diagnostics against production (owner-run) show
-  the anonymous-access gap is **already substantively closed** via a separate, already-applied
-  multitenant migration (`tenant_id = current_tenant_id()`, which correctly rejects anonymous
-  callers). A first pass at the second diagnostic misread its own headline number as "70 open
-  policies" before actually inspecting the `WITH CHECK` clauses — corrected same session, before
-  it went further than a chat message. The one real, literal `using(true)` found (`qsrsoft_kb`)
-  is already known/intentional. **One thing genuinely still unchecked**: whether every table has
-  RLS *enabled* at all (not just correctly policied) — the next real question before either
-  phase of `project-rls-hardening-plan.md` gets touched. Full correction, including exactly why
-  the old number was wrong and what's still open: `project-rls-hardening-plan.md`'s own
-  correction note at the top of that file.
+  not live database state. Three live, read-only diagnostics against production (all owner-run
+  same day) settle it completely: (1) the anonymous-access gap is already closed at the policy
+  level via a separate, already-applied multitenant migration (`tenant_id = current_tenant_id()`,
+  which correctly rejects anonymous callers — a first pass misread this diagnostic's own headline
+  number as "70 open policies" before actually inspecting the `WITH CHECK` clauses, corrected
+  same session, before it went further than a chat message); (2) the one real, literal
+  `using(true)` found (`qsrsoft_kb`) is already known/intentional; (3) **all 87 tables in
+  `public` have RLS enabled — zero exceptions, confirmed against the full table list, not a
+  sample.** `project-rls-hardening-plan.md`'s own Phase 1 (closing the anonymous hole) is
+  **DONE**, shipped via the multitenant migration rather than that plan's own design. **Phase 2
+  (`can_see_loc()`, per-loc isolation) genuinely has not shipped** — the one real piece of that
+  plan's original scope still open, separate from the anonymous-access question. Full correction
+  chain: `project-rls-hardening-plan.md`'s own correction note at the top of that file.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #37 — identity-vault architecture (Direction B), merged](dispatch37-identity-vault.md)** —
   2026-08-20. **NEWEST, merged (PR #459), independently PM-verified before merge** — the schema/
   RPCs, the shared JS helper, both write-path wirings, the `analyzeRegisterAudit` retrofit, and
