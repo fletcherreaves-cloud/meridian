@@ -59,6 +59,53 @@ Three possible outcomes, all actionable:
 **Do not guess a second field name.** That is what produced this finding. The response keys are one
 run away and cost nothing.
 
+## ✅ RESOLVED, same day — CASH-003 is LIVE, as an absolute dollar rule
+
+**The count does not exist anywhere.** Three independent confirmations: the API response carries no
+`manOverringQty` (0 of 19,985 rows), `parseRegisterAudit`'s Excel header search finds only the `$`
+column, and the owner checked the Register Audit report in the QSRSoft UI directly — **no manual
+over-ring count column exists.** Outcome 2 above, settled. The diagnostic run was never needed.
+
+**But retirement was the wrong conclusion, and nearly the one taken.** The dollar field works —
+`manualRefAmt` carries real data. The event is simply rare. Measured over the 80-day backfill:
+
+```
+rows_80d  any_dollars  subjects  smallest  median_nonzero  largest  total
+   19985            6         4     $7.00          $10.00   $26.00    $70
+```
+
+**Six occurrences, four employees, 80 days, 27 stores.** No sub-dollar amounts at all — so the
+"trivially gameable by rounding" objection that killed the rate version has no basis in the actual
+data. That objection was about a *rate*; it dissolves once the denominator is dropped.
+
+**For an event this rare, both a rate and a count are the wrong instrument — an absolute dollar
+threshold is right.** If essentially nobody does this, any occurrence above trivial IS the outlier,
+and no distribution is needed to rank against. The engine already supported this directly:
+`logic_type: 'threshold'`, field `manualRefAmt`, **no denominator** (so no exposure floor applies).
+No new field, no new pull, no `manual_ref_cnt`.
+
+Shipped config: `threshold: 5` — below the smallest observed occurrence ($7), so it captures every
+real event while excluding rounding noise. **`active = true`, legitimately, for the first time.**
+
+**Why the rule is worth having despite $70.** The dollar total is not the signal and should never be
+quoted as one. A manual over-ring is a *privileged override*: the question is whether it was
+authorized, never whether $10 matters. A flag means **"verify this override was approved."** Expect
+one or two subjects per 28-day window — **the first rule in this build whose output is small enough
+to review exhaustively**, against INV-001's 188.
+
+**⚠️ Outstanding for the engineer:** `security-rules-thresholds.test.js` deliberately excluded
+CASH-003 from `MEASURED_MAX` because it had no measured range. It has one now (window-summed, so
+above the $26 single-event maximum). **Add the entry or the guard silently skips the very rule it
+was built in response to.**
+
+## The standing lesson, sharpened
+
+The first instinct on a rule that cannot fire is to find the missing data. The second is to retire
+it. **Both were wrong here — the right move was to change the instrument.** A rate needs a
+distribution; a count needs a count field; an absolute threshold needs neither, and for a rare event
+it is the *more* honest measure, because the interesting fact is that the event happened at all.
+Ask what shape the event actually has before assuming the rule needs different data.
+
 ## Related: the lifecycle-enrichment reconciliation (same session)
 
 Two measurements of "how enriched are lifecycle-marked items among INV-001's flags" disagreed. Run

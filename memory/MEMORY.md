@@ -49,7 +49,20 @@ seconds, and the theory that survives one costs a PR.
   **no `wrin`**, so the plan's "group by item" cannot come from it — item-level waste is INV-003's
   territory; scope INV-004 as manager × day-part × store. All three land inactive with measured
   thresholds, and `MEASURED_MAX` must be extended per rule or the guard silently skips them.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [CASH-003's field does not exist — a measured negative](finding-cash003-manoverringqty-absent-2026-08-20.md)** —
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [CASH-003 — the field didn't exist, and the fix was a different instrument](finding-cash003-manoverringqty-absent-2026-08-20.md)** —
+  **✅ RESOLVED same day — CASH-003 is LIVE.** Three independent confirmations that no count field
+  exists (API response, Excel parser headers, owner's eyes on the report). **Retirement was nearly
+  the conclusion and would have been wrong:** `manualRefAmt` works, the event is just rare — 80 days,
+  19,985 rows, 27 stores → **6 occurrences, 4 employees, $70 total** ($7 smallest, $26 largest, zero
+  sub-dollar noise). For an event that rare a rate AND a count are both wrong; an **absolute dollar
+  threshold** is right, needs no distribution, and the engine already supported it
+  (`logic_type:'threshold'`, no denominator). Shipped at `threshold: 5`, `active = true` — earned.
+  **The $70 is not the signal:** a manual over-ring is a privileged override, so a flag means
+  *"verify this was approved,"* never *"this person took $10."* One or two subjects per window —
+  **the first rule here whose output can be reviewed exhaustively.** ⚠️ Engineer: add CASH-003 to
+  `MEASURED_MAX` — it was excluded for having no measured range, and now has one. **Standing lesson:**
+  when a rule can't fire, the instincts are (1) find the missing data, (2) retire it. Both were wrong.
+  Ask what shape the event actually has first.
   **NEWEST.** After an 80-day Register Audit backfill (14,528 rows, 27/27 stores),
   `audit_rows.manual_ref_cnt` is **null in all 19,985 rows**: **`manOverringQty` is not a field in
   the API response.** Dispatch #44 rebuilt CASH-003 around it on a textbook inference — every other
