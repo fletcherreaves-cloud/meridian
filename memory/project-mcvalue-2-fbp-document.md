@@ -12,6 +12,26 @@ the owner 2026-08-14 — an earlier "Morhininweg" was voice-input garble).
 
 ---
 
+# ⭐⭐⭐⭐ 2026-08-20 UPDATE — read this first; it supersedes the 2026-08-18 update below
+
+**Current draft: `memory/mcvalue-fbp-draft4.html`.** Draft 3's one remaining gate — whether the
+March 2026 free-item promo inflates the pre-launch window — is closed. Query F (already run
+2026-08-18, recorded in `memory/analysis-mcvalue-price-waves-2026-08-18.md` §5) tested it
+directly: March came back with **lower** traffic and **higher** check than the rest of the
+pre-window, the opposite of what the confound would predict. Draft 4 folds this into the document
+body as its own section ("The pre-window, tested for a hidden promo"), updates the stale
+Limitations bullet that was still framing this as an open bound, and closes item 1 of "Open before
+the 25th." Draft 3's analysis itself is unchanged — this is presentation and gate-closure, not a
+new finding.
+
+**What is genuinely still open, and it is the only thing left:** item 8 below, the ask — what is
+actually being requested of the FBP. Draft 4 adds three candidate framings (relief-not-blame, a
+specific ask tied to −3.14 pp, a joint-diagnostic framing) for the owner to pick from or reject,
+but does not pick one. That choice is the owner's, not something this document can resolve on its
+own. Once it's picked, the document is done.
+
+---
+
 # ⭐⭐⭐ 2026-08-18 UPDATE — read this before the FINAL EDIT SET below; it supersedes it
 
 The price-and-traffic work below was done blind to menu pricing — it inferred price rounds from

@@ -30,6 +30,21 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐ [McValue 2.0 FBP document — Draft 4, both publish gates closed](mcvalue-fbp-draft4.html)** —
+  **NEWEST on this thread.** Draft 3's one remaining gate — whether March 2026's month-long
+  free-item promo inflates the pre-launch DiD window — is closed. Query F (run 2026-08-18, in
+  [analysis-mcvalue-price-waves-2026-08-18.md](analysis-mcvalue-price-waves-2026-08-18.md) §5) tested
+  it directly rather than pulling the 2025 calendar: March came back with **lower** traffic and
+  **higher** check than the rest of the pre-window — the opposite of what the confound would
+  predict. Draft 4 folds this into the document body as its own section, updates a Limitations
+  bullet that was still framing it as an open bound, and closes item 1 of "Open before the 25th."
+  **The only thing left before the 25 August meeting is the ask** — what is actually being
+  requested of the FBP. Draft 4 adds three candidate framings (relief-not-blame / a specific ask
+  tied to −3.14 pp / a joint-diagnostic framing) for the owner to pick from; it is a business
+  decision, not something a query resolves. See
+  [project-mcvalue-2-fbp-document.md](project-mcvalue-2-fbp-document.md)'s 2026-08-20 update note
+  for full detail. Branch `claude/mcvalue-2-finish-r9k4t` — no overlap with the security build
+  below (different tables, different files).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #48 — the inventory schemes that need no new data](dispatch-48.md)** —
   **NEWEST, briefed, not implemented.** Three rules, all on tables the batch job already loads.
   **INV-003 (variance unmatched by logged waste)** is the plan's own *"strongest single signal"* and
