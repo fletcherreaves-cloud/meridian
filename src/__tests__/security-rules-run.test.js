@@ -182,6 +182,32 @@ describe('mapVarianceStatRow() — snake_case DB row -> camelCase, period mapped
       variance: 8, dolDiff: 6.4,
     });
   });
+
+  // dispatch #46 (engineer queue) -- unexplainedVariance/positiveVariance, the two derived fields
+  // INV-003/INV-005 read. variance=8 (positive: actual usage came in BELOW theoretical, a "gain"),
+  // waste sums to 3 -> unexplained = |8| - 3 = 5. positiveVariance = max(0, 8) = 8.
+  it('unexplainedVariance = |variance| - waste, floored at 0 -- not negative when waste exceeds variance', () => {
+    const covered = mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: 8, raw_waste: 1, comp_waste: 2 });
+    expect(covered.unexplainedVariance).toBeCloseTo(5, 6); // 8 - (1+2)
+
+    const overCovered = mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: 3, raw_waste: 10, comp_waste: 0 });
+    expect(overCovered.unexplainedVariance).toBe(0); // waste (10) exceeds |variance| (3) -- floored, not -7
+
+    const noWaste = mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: -8, raw_waste: null, comp_waste: null });
+    expect(noWaste.unexplainedVariance).toBeCloseTo(8, 6); // |−8| − 0, null waste treated as 0, never NaN
+  });
+
+  it('positiveVariance keeps only the gain direction -- zero for every shrink-side (negative/zero) row, never negative itself', () => {
+    expect(mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: 8 }).positiveVariance).toBeCloseTo(8, 6);
+    expect(mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: -8 }).positiveVariance).toBe(0);
+    expect(mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: 0 }).positiveVariance).toBe(0);
+  });
+
+  it('both derived fields are null (not 0 or NaN) when variance itself is null -- an honest "no data," not a fabricated zero', () => {
+    const r = mapVarianceStatRow({ loc: '1', period: '2026-07', wrin: 'W1', variance: null });
+    expect(r.unexplainedVariance).toBeNull();
+    expect(r.positiveVariance).toBeNull();
+  });
 });
 
 describe('periodEndDate()', () => {
@@ -541,5 +567,89 @@ describe('computeItemFindingsForRule() — exoneration wiring (dispatch #46 §C 
     const b = computeItemFindingsForRule(Z_INV_RULE, rows, Z_INV_WIN).find(f => f.loc === '0000002');
     expect(b.pass).toBe(false);
     expect(b.exonerationShare).toBeNull();
+  });
+});
+
+// ── Engineer queue -- INV-003 (waste-unexplained) + INV-005 (phantom gains) wiring ───────────────
+// Both reuse computeItemFindingsForRule() end to end -- no new call site, only new numerator
+// fields (unexplainedVariance / positiveVariance) a rule's logic_expression can now name.
+
+describe('computeItemFindingsForRule() — INV-003 wiring: numerator reads unexplainedVariance, not raw variance', () => {
+  const INV003_RULE = {
+    rule_id: 'INV-003', logic_type: 'z-score', baseline_type: 'store',
+    data_required: ['qsr_variance_stat'],
+    logic_expression: { numerator: { field: 'unexplainedVariance', agg: 'sum' }, denominator: { field: 'expUsage', agg: 'sum' }, scale: 100, comparator: 'gte', min_value: 15, min_denominator: 10, min_stdev: 1 },
+    threshold: { default: 2.5 }, method: 'Variance unmatched by logged waste', severity: 3, weight: 1,
+  };
+  // Store A: variance 50, waste 30 -> unexplainedVariance 20. Peers B-F: variance 8/9/11/12/10, no
+  // waste -> unexplainedVariance equals their own variance (waste doesn't touch them). Peer mean=10,
+  // stdev=sqrt(2)~=1.4142 (same hand-computed peer stats as the INV-001 z-score wiring test above).
+  const ROWS = [
+    { loc: '0000001', period: '2026-08', date: '2026-08', wrin: 'W300', cls: 'food', variance: 50, expUsage: 100, rawWaste: 20, compWaste: 10 },
+    { loc: '0000002', period: '2026-08', date: '2026-08', wrin: 'W300', cls: 'food', variance: 8,  expUsage: 100 },
+    { loc: '0000003', period: '2026-08', date: '2026-08', wrin: 'W300', cls: 'food', variance: 9,  expUsage: 100 },
+    { loc: '0000004', period: '2026-08', date: '2026-08', wrin: 'W300', cls: 'food', variance: 11, expUsage: 100 },
+    { loc: '0000005', period: '2026-08', date: '2026-08', wrin: 'W300', cls: 'food', variance: 12, expUsage: 100 },
+    { loc: '0000006', period: '2026-08', date: '2026-08', wrin: 'W300', cls: 'food', variance: 10, expUsage: 100 },
+  ].map(r => ({ ...r, unexplainedVariance: Math.max(0, Math.abs(r.variance) - ((r.rawWaste || 0) + (r.compWaste || 0))), positiveVariance: Math.max(0, r.variance) }));
+  const WIN = { windowStart: '2026-08', windowEnd: '2026-08' };
+
+  it('store A reads value=20 (unexplainedVariance, NOT the raw variance of 50), and still flags -- a real outlier even after waste is subtracted', () => {
+    const a = computeItemFindingsForRule(INV003_RULE, ROWS, WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBeCloseTo(20, 6);
+    expect(a.pass).toBe(true);
+  });
+
+  // Dispatch #48's own instruction: reuse exoneration_share rather than add a column. This proves
+  // it through computeItemFindingsForRule() itself (not just cited as a fact) -- the field the
+  // batch job later persists as security_findings.exoneration_share is already populated for a
+  // flagged INV-003 subject, with zero rule-specific code: computeItemFindingsForRule() gates it
+  // only on evalResult.pass === true, same as every other flagged INV rule.
+  it('a flagged INV-003 subject gets exonerationShare populated automatically -- no INV-003-specific code path, the same generic gate every INV rule already runs through', () => {
+    const a = computeItemFindingsForRule(INV003_RULE, ROWS, WIN).find(f => f.loc === '0000001');
+    // variance 50, waste 30 -> exoneration share = waste/|variance| = 30/50 = 0.6.
+    expect(a.exonerationShare).toBeCloseTo(0.6, 6);
+  });
+
+  it('the SAME variance (50) does NOT flag once waste fully covers it -- proving the rule reads unexplainedVariance through the real call site, not raw variance', () => {
+    const fullyCovered = ROWS.map(r => r.loc === '0000001' ? { ...r, rawWaste: 50, compWaste: 0, unexplainedVariance: 0 } : r);
+    const a = computeItemFindingsForRule(INV003_RULE, fullyCovered, WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBe(0);
+    expect(a.pass).toBe(false); // z is negative (0 is below peer mean 10) -- a real clear, not a flag
+  });
+});
+
+describe('computeItemFindingsForRule() — INV-005 wiring: numerator reads positiveVariance, zeroing out every shrink-side subject', () => {
+  const INV005_RULE = {
+    rule_id: 'INV-005', logic_type: 'z-score', baseline_type: 'store',
+    data_required: ['qsr_variance_stat'],
+    logic_expression: { numerator: { field: 'positiveVariance', agg: 'sum' }, denominator: { field: 'expUsage', agg: 'sum' }, scale: 100, comparator: 'gte', min_value: 15, min_denominator: 10, min_stdev: 1 },
+    threshold: { default: 2.5 }, method: 'Unexplained positive inventory adjustment', severity: 3, weight: 1,
+  };
+  // Store A: a real gain (variance +50). Peers mixed: two shrink-side (negative, -> positiveVariance
+  // 0), three small gains (11, 12, 10) -- exactly the "mostly zero, a few real gains" shape
+  // dispatch #46's own migration header measured as the degenerate-stdev risk this rule is built to
+  // survive (min_stdev:1 is set on the rule; these peer stats aren't degenerate, so it should NOT gate).
+  const ROWS = [
+    { loc: '0000001', period: '2026-08', date: '2026-08', wrin: 'W400', cls: 'food', variance: 50,  expUsage: 100 },
+    { loc: '0000002', period: '2026-08', date: '2026-08', wrin: 'W400', cls: 'food', variance: -8,  expUsage: 100 },
+    { loc: '0000003', period: '2026-08', date: '2026-08', wrin: 'W400', cls: 'food', variance: -9,  expUsage: 100 },
+    { loc: '0000004', period: '2026-08', date: '2026-08', wrin: 'W400', cls: 'food', variance: 11,  expUsage: 100 },
+    { loc: '0000005', period: '2026-08', date: '2026-08', wrin: 'W400', cls: 'food', variance: 12,  expUsage: 100 },
+    { loc: '0000006', period: '2026-08', date: '2026-08', wrin: 'W400', cls: 'food', variance: 10,  expUsage: 100 },
+  ].map(r => ({ ...r, unexplainedVariance: Math.abs(r.variance), positiveVariance: Math.max(0, r.variance) }));
+  const WIN = { windowStart: '2026-08', windowEnd: '2026-08' };
+
+  it('store A (a real +50 gain) reads value=50 (positiveVariance), and its shrink-side peers (-8,-9) contribute 0 to the peer population, not their raw negative variance', () => {
+    const a = computeItemFindingsForRule(INV005_RULE, ROWS, WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBeCloseTo(50, 6);
+    // Peer mean over [0,0,11,12,10] = 6.6, clearly below store A's 50 -- a real, large z.
+    expect(a.explanation[0].baseline_mean).toBeCloseTo(6.6, 6);
+  });
+
+  it('a shrink-side peer (variance -8) itself reads value=0 (positiveVariance floors negative variance), and does not flag', () => {
+    const b = computeItemFindingsForRule(INV005_RULE, ROWS, WIN).find(f => f.loc === '0000002');
+    expect(b.value).toBe(0);
+    expect(b.pass).toBe(false);
   });
 });
