@@ -19,7 +19,7 @@ import * as XLSX from 'xlsx';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { parseSalesLedger, parseDailyGlimpse, parseCashSheet } from '../src/parsers/index.js';
+import { parseSalesLedger, parseDailyGlimpse, parseCashSheet, ensureParsersXLSXReady } from '../src/parsers/index.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT  = join(__dir, '..');
@@ -152,7 +152,19 @@ async function main() {
   if (!pending || !pending.length) { console.log(`No sales-ledger/daily-glimpse/cash-sheet reports in the last ${DAYS} day(s).`); return; }
 
   console.log(`Found ${pending.length} report(s) to parse (last ${DAYS} day(s)).`);
+
+  // src/parsers/index.js holds its OWN module-level `let XLSX = null`, populated only when a
+  // caller awaits this. The script's own `import * as XLSX` (above) does NOT satisfy it -- that
+  // binding is local to this file. Without this line every parser throws "Cannot read properties
+  // of null (reading 'utils')" on its first XLSX.utils.sheet_to_json call, which is exactly what
+  // took all three emailed streams down 2026-08-13 -> 08-20 (the lazy-load landed 2026-08-12 in
+  // v5.006/#248, "lazy-load xlsx out of the eager entry graph"; this Node consumer of the same
+  // parsers was never updated). Dates measured from the workflow's own run logs -- last good run
+  // 08-12 18:48 upserted 108/135/297 rows, the 08-13 18:48 run failed all 15 files.
+  await ensureParsersXLSXReady();
+
   const summary = {};
+  let failed = 0;
   for (const p of pending) {
     const h = HANDLERS[p.report_type];
     if (!h) continue;
@@ -175,10 +187,22 @@ async function main() {
       summary[h.table] = (summary[h.table] || 0) + n;
       if (DEBUG) console.log(`  ✓ ${p.filename} → ${h.table}: ${n} row(s)`);
     } catch (e) {
+      failed++;
       console.error(`  ✗ ${p.filename} (${p.report_type}): ${e.message}`);
     }
   }
+  const upserted = Object.values(summary).reduce((a, b) => a + b, 0);
   console.log('Done. Upserted:', JSON.stringify(summary));
+
+  // A run that parsed NOTHING is a quiet no-op, not a success. This job exited 0 on 15/15 failures
+  // for eight days while every emailed stream went stale behind it -- sync-failure-watch.yml only
+  // sees a red run, so a green no-op is invisible to it. Same failure shape the register-audit
+  // pull's own "zero rows saved across N requested unit(s)" guard exists to catch.
+  if (pending.length && !upserted) {
+    console.error(`✗ ${failed} of ${pending.length} report(s) failed and NOTHING was upserted -- a quiet no-op, not a success.`);
+    process.exit(1);
+  }
+  if (failed) console.warn(`⚠ ${failed} of ${pending.length} report(s) failed (partial run).`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

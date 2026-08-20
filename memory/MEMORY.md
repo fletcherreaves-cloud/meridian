@@ -30,6 +30,91 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #46 — make the Security panel legible, then analytical](dispatch-46.md)** —
+  **NEWEST, briefed, not yet implemented.** Owner-requested after first real use of the shipped
+  panel: a legend, per-rule plain-language explainers, plain language on every finding *in addition
+  to* the numbers, for Cash and Inventory both — then *"deep dive further to find root cause or
+  develop patterns with people and metrics. Let's go all out."* **A** — legend defining
+  Flagged/Clear/**Undetermined** (that last distinction is the build's core integrity property and is
+  currently invisible), the signal-count badge, the four baseline types, **threshold-vs-sigma** (two
+  rules on screen use the same word for different units), the ⏸ inactive marker, and **units on
+  every number** (per $1,000 sales / per 1,000 transactions / percent — three units, none labelled).
+  Reuse `security_rules.method`/`description`/`investigation_action`, already loaded and barely used.
+  **B** — a decision sentence beside (never instead of) each metric line: *"Discounts here run about
+  2.6× the peer average"* + the stored `investigation_action` as the next step. **C** — the deep
+  dive, all from tables already pulled: per-subject **trend across windows** (chronic vs. new — the
+  single highest-value item), **change-point** ("since when" is an investigator's first question),
+  shift/daypart attribution via `lifelenz_schedules`, **cross-rule fingerprints** (voids+refunds is a
+  different shape from promo+discount), **store-vs-person separation** (if a whole store flags, it's
+  process not suspects), and **automatic exoneration** — `exoneration_rules`/`corroboration_rules`
+  exist on every rule and **nothing reads them**. **Hard dependency: #45 Part A lands first**, or
+  Part B writes confident prose over INV-002 flags that are artifacts.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The z-score dry run — bias cancellation worked, the remainder is unexplained](analysis-zscore-dry-run-2026-08-20.md)** —
+  **NEWEST.** INV-001/INV-002 executed as z-score rules for the first time (run `32408929106`).
+  **The conversion is validated:** max stores flagged per WRIN went **27 → 3** (estate-wide
+  uniformity was the whole signature of the measurement problem), INV-001's flag rate **50.4% →
+  4.1%** (2,603 → 188), max value 36,234 → 7,569, and `undetermined` rose 167 → 703 against a ~643
+  prediction derived from a *separate* measurement. **But the survivors are still not shrink** —
+  top items run 827–1,429% median variance (usage 8–14× expected). Two cautions recorded for future
+  sessions: a PM hypothesis that **item lifecycle** explained the remainder was **refuted by its own
+  follow-up query** (marked items are 26/188 = 13.8%, not the explanation — the error was
+  generalising from a top-20 *sorted by magnitude*, where marked items cluster; a sorted head is not
+  a sample), and **the `(loc, wrin)` period fan-out bug recurred for the third time**, hours after
+  being written down — counts inflated ~3.5× (658 vs a true 188). `count(distinct)` and medians are
+  immune, which is why the bias-cancellation conclusion survived it. **Open question:** 162 flags on
+  ordinary, active, unmarked items at ~101% median variance, explained by neither mis-mapping nor
+  lifecycle nor plausibly theft — scoped as dispatch #45 Part C. Also: **INV-002 flags 224
+  financially trivial subjects** (max a few hundred dollars) for want of a numerator-level dollar
+  gate the engine cannot express.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #45 — min_numerator, lifecycle routing, and the unexplained 162](dispatch-45.md)** —
+  **NEWEST, briefed, not yet implemented.** Three parts from the dry run above. **A — `min_numerator`**:
+  let a rule gate on absolute magnitude, not just a rate. INV-002's `min_value` was correctly removed
+  (unreachable at 10) but nothing replaced it, so it flags 224 subjects worth tens-to-hundreds of
+  dollars. Build it exactly like `min_denominator` (per-rule data, one shared choke point) and honour
+  the asymmetry: unmet `min_denominator` → honest null; unmet `min_numerator` → `pass:false`, a real
+  clear. **B — lifecycle routing**: `qsr_variance_stat.descr` carries machine-readable
+  `(Deactivated)`/`(New)`/`(Obsolete NN days left` markers, unused. Worth **13.8%** of the queue —
+  scope it honestly, and **route, don't suppress**: a deactivated WRIN at 193% variance is a real
+  hygiene work item, not a security one. **C — the actual open question**: characterise the 162
+  unmarked flags at ~101% median. Investigation, deliverable is a memory file not code, and an honest
+  "still unexplained" beats a theory. Out of scope: `INV-003`, #43 Phase 2, the 30-WRIN config work.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #44 — close the unreachable-threshold class](dispatch-44.md)** —
+  **NEWEST, briefed, not yet implemented.** Two independent parts; B is smaller and unblocks
+  nothing, so do it first if A stalls. **Part A — CASH-003 re-expressed as a count rule**, under the
+  owner's binding condition for its deactivation (*"only on the premise of looking for the unmapped
+  header to add"*). A1 **measures** whether `manOverringQty` exists in the Register Audit response
+  before any code is written — a strong hypothesis (it is the only override category without a
+  `Qty` sibling, and `audit_rows` has no `manual_ref_cnt`) but still a hypothesis, and key names
+  only, never values: every row is employee PII. A2 maps/migrates/backfills (four round-trip sites,
+  grep don't assume). A3 re-expresses as count + dollar materiality floor with **N derived from the
+  measured distribution** — the dispatch deliberately names no number, since naming one is what
+  created this defect three times. Explicitly records what is NOT wrong (the field mapping —
+  already disproven, don't re-test) so the next session doesn't chase it. **Part B — extend the
+  threshold guard** from `phase1c`'s z-score pair to every rule in `phase1.sql`/`-phase1b.sql`,
+  asserting `threshold.default` sits inside each rule's measured range, mutation-tested. Out of
+  scope, deliberately: INV-001/002 reactivation (needs a z-score dry run first — they have never
+  run in that mode), #43 Phase 2, `INV-003`, the 30-WRIN config work.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The unreachable-threshold defect class — three rules that could not fire](finding-unreachable-threshold-class-2026-08-20.md)** —
+  **NEWEST.** A rule whose threshold sits above its own metric's achievable range is
+  indistinguishable from a working rule finding nothing — it returns `pass:false`, a definite
+  **"clear," for every subject forever.** Worse than a false positive, and why it survived: a false
+  alarm gets investigated, a false all-clear gets trusted. Three instances in one day, all from the
+  same "carry the old threshold forward" policy: **INV-002** (10 vs measured max 0.0868, 115×;
+  caught in PR #481 review pre-merge), **CASH-003** (8 vs 0.7702, 10× — **was `active=true` and
+  emitting 636 unearned clears a night**), **INV-001** (20 vs a 21.25 median — a near-miss, correct
+  only by luck, which is why it's counted). Became urgent when dispatch #43's panel started
+  rendering passed rules beside failed ones as *exoneration evidence*. **The guard closes the case,
+  not the class:** `security-rules-thresholds.test.js` parses the real seed SQL and is
+  mutation-tested, but reads only `phase1c.sql`'s z-score pair — CASH-003's defect is `threshold`
+  on a `ratio` rule in `phase1.sql`, outside its scope. **Open work item: extend it to every rule
+  in `phase1.sql`.** CASH-003 is deactivated in production under the owner's explicit condition
+  (*"only on the premise of looking for the unmapped header to add"*) — deactivated, NOT retired:
+  manual over-rings are genuinely infrequent (owner-confirmed), so `p50`/`p95` of 0.0000 is
+  **correct data** and the per-$1,000 rate is the wrong *instrument*. `manOverringAmt` is the only
+  override category pulled without its `Qty` sibling and `audit_rows` has no `manual_ref_cnt`;
+  re-express as a count rule once it's mapped. Standing lesson: **compare a threshold to the range
+  of what it gates before shipping it**, and **treat a rule's zero findings as a question, not a
+  result**.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [30 WRINs with broken expected-usage mapping — a data-hygiene work list](project-inventory-data-hygiene-2026-08-20.md)** —
   **NEWEST.** The answer to the analysis file's open (a)-vs-(b) question, and a genuinely valuable
   by-product. **It is (a) — the ruler is bent, decisively.** The top-30 items by median TvA
