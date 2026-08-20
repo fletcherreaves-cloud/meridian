@@ -30,6 +30,24 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #49 — one human, one token (re-key the vault on eID)](dispatch-49.md)** —
+  **NEWEST, owner-approved, gated.** `employee_identity_vault` is `unique (tenant_id,
+  employee_name)` — **a name IS the identity**, across 21,929 tokenized rows. So a typo creates a
+  second person, a name change splits a history, and two people sharing a name merge into one token
+  (the pull script's own comment concedes the last). It also produced #48's wall:
+  `qsr_waste.manager` is an **eID** and `audit_rows.emp` is a **name**, so the same human gets two
+  unrelated tokens and INV-004's findings will never group with that person's cash findings —
+  breaking the panel's whole subject-major premise. **The eID already exists on the cash side**:
+  `qsrsoft-register-audit-pull.mjs:25` records that `emp = empName (NOT empID)` was deliberate,
+  because the manual-upload path has only names and switching would split-brain five months of
+  `(loc,date,emp)` history. That reason is still live and is the entire cost. **Phase 0 is a GATE:**
+  measure five things (clean 1:1 names, names→multiple eIDs = merged people, eIDs→multiple names =
+  split people, and **names with no eID at all** = manual-only history, the hard one), report, and
+  **stop**. Decision shape named in advance to prevent post-hoc rationalisation; **taking the
+  option-B fallback is a success, not a failure.** Phases 1–3 put both identifiers in the vault
+  (additive, name path unchanged), reconcile only unambiguous matches — a wrong merge attributes one
+  person's findings to another — and switch keys last. Requires one clean dispatch-#47 key-name run
+  first: **do not infer the eID field name**, that is what cost a day on `manOverringQty`.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #48 — the inventory schemes that need no new data](dispatch-48.md)** —
   **NEWEST, briefed, not implemented.** Three rules, all on tables the batch job already loads.
   **INV-003 (variance unmatched by logged waste)** is the plan's own *"strongest single signal"* and
