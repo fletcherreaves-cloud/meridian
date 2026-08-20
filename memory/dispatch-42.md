@@ -138,6 +138,32 @@ never fire. Note INV-002 is **not** a broken join — `null_value: 0` proves the
 produces real denominators for every row, and the metric shape (item variance per $1,000 of store
 sales) is this org's own documented per-thousand convention. Only the constant is wrong.
 
+### CASH-003 has the same defect — measured 2026-08-20, after the cash rules first ran
+
+The cash rules ran for the first time that evening (`workflow_dispatch`, run 32403363787, once
+#487 unblocked `audit_rows`): **2,680 findings across 4 rules, 0 errors.**
+
+| rule | subjects | flagged | rate |
+|---|---:|---:|---:|
+| CASH-001 cash over/short | 670 | 37 | 5.5% |
+| CASH-002 POS over-ring | 670 | 72 | 10.7% |
+| **CASH-003 manual refund** | 670 | **0** | **0%** |
+| CASH-004 promo/discount | 670 | 15 | 2.2% |
+
+**The good news first:** three of four land in a believable 2–11% band. The cash domain is *not*
+INV-001 — nothing here suggests the 50.4% "bent ruler" problem, and §5a already established the
+mapping is sound. Do not carry the inventory pessimism across.
+
+**CASH-003 flagged zero, which is INV-002's exact signature** — a threshold the data cannot reach.
+Treat it the same way and with the same discipline: **confirm it's the constant, not the metric,
+before touching it.** For INV-002 that meant proving the join produced real denominators
+(`null_value: 0`) so only the constant could be wrong. Do the equivalent here: check that
+CASH-003's `manualRefAmt` numerator is actually populated in `audit_rows` before concluding the
+threshold is merely too high. A numerator that is uniformly zero because the field is unmapped
+looks identical to a threshold nobody can reach, and the two need opposite fixes.
+
+Set the replacement from CASH-003's own measured distribution, not by analogy to CASH-001.
+
 **Step 0 resolved this to the first branch: do NOT invest in precise absolute calibration.** Set
 both thresholds as permissive materiality floors feeding §3's `min_value` gate, and move on —
 precision against a known-biased measurement is false precision, and the time is better spent on
