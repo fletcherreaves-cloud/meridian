@@ -30,8 +30,33 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, dispatched](dispatch-39.md)** —
+  **NEWEST.** Owner chose Phase 1 next. **Real finding that narrowed scope before writing this:**
+  TvA (theoretical-vs-actual) inventory variance (plan §2.2) is **not buildable** — confirmed
+  directly against `src/engine/variance-trace.js`'s own header, which states Meridian has no
+  per-item theoretical-usage/BOM coefficient table, the same class of finding as the already-
+  settled deposit-lapping exclusion (don't build a rule against data that structurally can't see
+  it). **Phase 1 as dispatched is cash-domain only**, which `audit_rows` genuinely supports:
+  activate the two existing `security_rules` seed fixtures (`CASH-001` cash-drawer over/short,
+  `CASH-002` POS overring) to `ACTIVE=true`, add two new rules (`CASH-003` manual-refund rate,
+  `CASH-004` promo/discount rate) using the same interpreter/baseline substrate from dispatch #36
+  — no changes to that substrate. New `security_findings` output table, **token-keyed
+  (`emp_token`), never plaintext `emp`** — the load-bearing constraint carried forward from
+  dispatch #37/#38 so this doesn't reopen a second unlogged path to a name — storing the §4
+  explanation-breakdown JSON, RLS defaulted to the same tier as `reveal_employee_identity()`
+  (admin/supervisor always, manager gated on the existing `org_config` toggle) as the conservative
+  starting choice, reasoning stated explicitly rather than assumed. New scheduled batch job
+  (`scripts/security-rules-run.mjs`, a new *compute* pattern for this repo — every existing
+  scheduled workflow only pulls external data, none evaluate stored rules) — flagged that it must
+  NOT import `loadAuditRows()` (browser-oriented) and must re-derive the snake_case→camelCase
+  field mapping directly, matching `scripts/backfill-identity-vault.mjs`'s own client-setup shape.
+  No UI in this dispatch — deliberately mirrors the #37→#38 split; **a findings-viewer panel is
+  the recommended next dispatch** once real output exists to look at. Not yet implemented by an
+  engineer — this is the dispatch brief, scoped directly against real code (`security-rules.js`,
+  `security-baselines.js`, `schema-security-rules.sql`, `register-audit.js`'s real field list),
+  not from memory.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, implemented, PR #465 superseded, 2026-08-20](dispatch38-reveal-ui.md)** —
-  **NEWEST.** The `RevealName` component: click → required reason (`window.prompt`, matching
+  The `RevealName` component: click → required reason (`window.prompt`, matching
   `eom-dashboard.js`'s established pattern) → `reveal_employee_identity()` (dispatch #37's RPC,
   completely unmodified — no role-gating/logging duplicated client-side) → cached, shared-state
   reveal lifted to `RegisterAuditTab` so one reveal resolves everywhere in the same panel view.
