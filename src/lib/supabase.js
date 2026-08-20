@@ -877,6 +877,7 @@ export async function saveAuditRows(rows) {
     emp_meal_disc:   r.empMealDisc    ?? null,
     emp_meal_ch:     r.empMealCh      ?? null,
     manual_ref_amt:  r.manualRefAmt   ?? null,
+    manual_ref_cnt:  r.manualRefCnt   ?? null,
     refund_cnt:      r.refundCnt      ?? null,
     refund_cash:     r.refundCash     ?? null,
     refund_cashless: r.refundCashless ?? null,
@@ -942,6 +943,7 @@ export async function loadAuditRows(daysBack = 400) {
     empMealDisc:    r.emp_meal_disc,
     empMealCh:      r.emp_meal_ch,
     manualRefAmt:   r.manual_ref_amt,
+    manualRefCnt:   r.manual_ref_cnt,
     refundCnt:      r.refund_cnt,
     refundCash:     r.refund_cash,
     refundCashless: r.refund_cashless,
@@ -3941,7 +3943,7 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
     ruleId: r.rule_id, windowStart: r.window_start, windowEnd: r.window_end,
     value: r.value, thresholdUsed: r.threshold_used, pass: r.pass,
     baselineContext: r.baseline_context || {}, explanation: r.explanation || [],
-    computedAt: r.computed_at,
+    computedAt: r.computed_at, lifecycleCategory: r.lifecycle_category || null,
   }));
 }
 

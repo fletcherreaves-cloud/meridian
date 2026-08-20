@@ -50,6 +50,14 @@ describe('verdictState() — the honest three-state mapping, null is never rende
     expect(verdictState(null)).toBe('undetermined');
     expect(verdictState(undefined)).toBe('undetermined');
   });
+
+  // dispatch #45 §B: a lifecycle category takes priority over pass/fail -- it must read as neither
+  // a security flag nor an exoneration, whichever way pass happened to land.
+  it('a lifecycle category always wins, regardless of pass -- never a flag, never a clear', () => {
+    expect(verdictState(true, 'deactivated')).toBe('hygiene');
+    expect(verdictState(false, 'deactivated')).toBe('hygiene');
+    expect(verdictState(null, 'obsolete')).toBe('hygiene');
+  });
 });
 
 // Alice: flagged on CASH-001 (pass=true) and CASH-002 (pass=true), clear on CASH-004 -- 2 signals.
@@ -90,6 +98,34 @@ describe('groupFindingsBySubject() — the central design call: subject-major, s
     expect(groups).toHaveLength(1);
     expect(groups[0].subjectType).toBe('wrin');
     expect(groups[0].empToken).toBeNull();
+  });
+});
+
+// dispatch #45 §B -- a lifecycle-classified finding must NOT contribute to the security tally
+// (flaggedCount/clearCount/worstValue/sort order), even though it's pass:true, because it's a
+// data-hygiene signal, not a security verdict. W200 has a real security flag (INV-002, pass:true)
+// AND a deactivated-item hygiene flag (INV-001, pass:true) -- only the security one should count.
+const LIFECYCLE_FINDINGS = [
+  { empToken: null, wrin: '00001-000', loc: '0000001', ruleId: 'INV-001', pass: true, value: 193, thresholdUsed: 20, lifecycleCategory: 'deactivated', windowStart: '2026-08-01', windowEnd: '2026-08-31', computedAt: '2026-08-20T10:00:00Z', baselineContext: {}, explanation: [] },
+  { empToken: null, wrin: '00001-000', loc: '0000001', ruleId: 'INV-002', pass: true, value: 15, thresholdUsed: 2.5, lifecycleCategory: null, windowStart: '2026-08-01', windowEnd: '2026-08-31', computedAt: '2026-08-20T10:00:00Z', baselineContext: {}, explanation: [] },
+];
+describe('groupFindingsBySubject() — lifecycle routing (dispatch #45 §B): a hygiene finding never contributes to the security tally', () => {
+  it('flaggedCount counts only the REAL security flag (INV-002), not the hygiene-classified one (INV-001)', () => {
+    const g = groupFindingsBySubject(LIFECYCLE_FINDINGS)[0];
+    expect(g.flaggedCount).toBe(1); // INV-002 only
+    expect(g.hygieneCount).toBe(1); // INV-001, separately
+  });
+
+  it('both verdicts are still present in the group -- routed, not suppressed', () => {
+    const g = groupFindingsBySubject(LIFECYCLE_FINDINGS)[0];
+    expect(g.verdicts).toHaveLength(2);
+    expect(g.verdicts.find(v => v.ruleId === 'INV-001').lifecycleCategory).toBe('deactivated');
+    expect(g.verdicts.find(v => v.ruleId === 'INV-002').lifecycleCategory).toBeNull();
+  });
+
+  it('worstValue reflects only the security-flagged value (2.5-scale INV-002), not the hygiene item\'s larger raw value (193)', () => {
+    const g = groupFindingsBySubject(LIFECYCLE_FINDINGS)[0];
+    expect(g.worstValue).toBe(15); // INV-002's value, not INV-001's 193
   });
 });
 

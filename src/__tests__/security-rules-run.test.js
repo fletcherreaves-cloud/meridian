@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mapAuditRow, supportsAuditRows, fieldsFromExpr, computeFindingsForRule, buildExplanation,
   dataRequiredList, supportsVarianceStat, mapVarianceStatRow, joinStoreMonthSales, periodEndDate,
-  computeItemFindingsForRule,
+  computeItemFindingsForRule, classifyLifecycle,
 } from '../../scripts/security-rules-run.mjs';
 import { evaluateRule } from '../engine/security-rules.js';
 
@@ -16,14 +16,14 @@ describe('mapAuditRow() — snake_case DB row -> camelCase, matching dispatch #3
     const r = mapAuditRow({
       loc: '0043380', date: '2026-08-01', emp: 'Aaden W', emp_token: 'tok-aaden',
       drawer_sales: 1000, drawer_gc: 100, cash_os_dollar: -6,
-      pos_over_cnt: 2, pos_over_amt: 3.5, manual_ref_amt: 12.75,
+      pos_over_cnt: 2, pos_over_amt: 3.5, manual_ref_amt: 12.75, manual_ref_cnt: 1,
       refund_cash: 8, refund_cashless: 4.5, refund_cnt: 3,
       promo_amt: 42.1, t_red_a_cnt: 1, t_red_a_dollar: 5.99, t_red_b_cnt: 4, t_red_b_dollar: 18.4,
     });
     expect(r).toMatchObject({
       loc: '0043380', emp: 'Aaden W', empToken: 'tok-aaden',
       drawerSales: 1000, drawerGC: 100, cashOSDollar: -6,
-      posOverCnt: 2, posOverAmt: 3.5, manualRefAmt: 12.75,
+      posOverCnt: 2, posOverAmt: 3.5, manualRefAmt: 12.75, manualRefCnt: 1,
       refundCash: 8, refundCashless: 4.5, refundCnt: 3,
       promoAmt: 42.1, tRedACnt: 1, tRedADollar: 5.99, tRedBCnt: 4, tRedBDollar: 18.4,
     });
@@ -329,6 +329,24 @@ describe('computeItemFindingsForRule() — z-score wiring (dispatch #42): the ba
     expect(a.value).toBeNull();
     expect(a.pass).toBeNull();
   });
+
+  // dispatch #45 §A -- min_numerator wiring at the real call site, mirroring INV-002's own shape
+  // (no min_value set, mirrors the real rule post-PR-481-review). Store A's numerator (variance,
+  // abs-summed) is 50 -- statistically a real outlier (z ~28.3) but if the floor sits above 50,
+  // that outlier must NOT flag.
+  it('min_numerator reaches this call site too -- store A is a real z-score outlier but its numerator (50) is below a 60 floor, so it reads pass:false, not a null and not a silent flag', () => {
+    const rule = { ...Z_INV_RULE, logic_expression: { ...Z_INV_RULE.logic_expression, min_value: null, min_numerator: 60 } };
+    const a = computeItemFindingsForRule(rule, Z_INV_ROWS, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.value).toBeCloseTo(50, 6);
+    expect(a.explanation[0].zscore).toBeGreaterThan(2.5); // still statistically unusual...
+    expect(a.pass).toBe(false); // ...but 50 < min_numerator 60, so a decided clear
+  });
+
+  it('the same store flags once min_numerator sits at or below its real numerator (50)', () => {
+    const rule = { ...Z_INV_RULE, logic_expression: { ...Z_INV_RULE.logic_expression, min_value: null, min_numerator: 50 } };
+    const a = computeItemFindingsForRule(rule, Z_INV_ROWS, Z_INV_WIN).find(f => f.loc === '0000001');
+    expect(a.pass).toBe(true);
+  });
 });
 
 // ── Dispatch #42 §5 -- CASH-domain exposure floor, wiring test through computeFindingsForRule ───
@@ -353,5 +371,102 @@ describe('computeFindingsForRule() — CASH-domain min_denominator exposure floo
     const findings = computeFindingsForRule(CASH_FLOOR_RULE, ROWS, WIN);
     const alice = findings.find(f => f.empToken === 'tok-alice');
     expect(alice.value).toBeCloseTo(4, 6);
+  });
+});
+
+// ── Dispatch #44 -- CASH-003 re-expressed as a count rule, wiring test at the real call site ────
+// Mirrors schema-security-rules-phase1e.sql's real logic_expression exactly (manualRefCnt/drawerGC,
+// scale 1000, min_denominator 25) -- the same shape CASH-002 already uses (posOverCnt/drawerGC),
+// swapped to the manual-refund count field. threshold is intentionally omitted here too, matching
+// the migration's own choice (no measured range exists yet) -- so this test proves the SHAPE is
+// wired correctly (a real count produces a real rate, honored by the min_denominator floor) without
+// pretending a threshold exists to cross.
+const CASH003_COUNT_RULE = {
+  rule_id: 'CASH-003', method: 'Manual refund / self-authorized refund rate', baseline_type: 'personal', severity: 3, weight: 1,
+  data_required: ['audit_rows'],
+  logic_type: 'ratio',
+  logic_expression: { numerator: { field: 'manualRefCnt', agg: 'sum' }, denominator: { field: 'drawerGC', agg: 'sum' }, scale: 1000, comparator: 'gte', min_denominator: 25 },
+  threshold: {},
+};
+describe('computeFindingsForRule() — CASH-003 re-expressed as a count rule (dispatch #44), through the real call site', () => {
+  it('a subject with 2 manual refunds across 200 transactions rates 10 per 1,000 -- the count numerator reaches the real call site, not just the engine', () => {
+    const rows = [
+      { loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-01', drawerGC: 100, manualRefCnt: 1 },
+      { loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-02', drawerGC: 100, manualRefCnt: 1 },
+    ];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const eve = findings.find(f => f.empToken === 'tok-eve');
+    expect(eve.value).toBeCloseTo(10, 6); // (1+1)/200*1000
+  });
+
+  it('with no threshold configured (the real migration\'s own choice -- no measured range exists yet), the verdict is an honest undetermined null, never a fabricated pass/fail', () => {
+    const rows = [{ loc: '0000001', emp: 'Eve', empToken: 'tok-eve', date: '2026-08-01', drawerGC: 100, manualRefCnt: 1 }];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const eve = findings.find(f => f.empToken === 'tok-eve');
+    expect(eve.value).toBeCloseTo(10, 6);
+    expect(eve.pass).toBeNull();
+  });
+
+  it('the min_denominator floor (25 transactions, matching CASH-002\'s own value now that the denominator is the same field) still applies -- a subject below it nulls out, not a garbage rate', () => {
+    const rows = [{ loc: '0000001', emp: 'Frank', empToken: 'tok-frank', date: '2026-08-01', drawerGC: 10, manualRefCnt: 1 }];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const frank = findings.find(f => f.empToken === 'tok-frank');
+    expect(frank.value).toBeNull();
+  });
+
+  it('a subject with zero manual refunds (the overwhelming majority, per the real measured distribution) rates exactly 0, not null -- distinct from "no exposure"', () => {
+    const rows = [{ loc: '0000001', emp: 'Grace', empToken: 'tok-grace', date: '2026-08-01', drawerGC: 100, manualRefCnt: 0 }];
+    const findings = computeFindingsForRule(CASH003_COUNT_RULE, rows, WIN);
+    const grace = findings.find(f => f.empToken === 'tok-grace');
+    expect(grace.value).toBe(0);
+  });
+});
+
+// ── Dispatch #45 §B -- lifecycle routing: classifyLifecycle() + wiring through
+// computeItemFindingsForRule(). Real markers from qsr_variance_stat.descr, per
+// memory/analysis-zscore-dry-run-2026-08-20.md's own measured share (22 deactivated, 2 obsolete,
+// 2 new of INV-001's 188 real flags).
+describe('classifyLifecycle() — pure, from a real qsr_variance_stat.descr string', () => {
+  it('recognizes the three real markers', () => {
+    expect(classifyLifecycle('Beef Patty (Deactivated)')).toBe('deactivated');
+    expect(classifyLifecycle('New Sauce Cup (New)')).toBe('new');
+    expect(classifyLifecycle('Old Wrapper (Obsolete 14 days left)')).toBe('obsolete');
+  });
+  it('returns null for an ordinary, unmarked descr -- the 86.2% majority, not an error case', () => {
+    expect(classifyLifecycle('Big Mac Bun')).toBeNull();
+  });
+  it('returns null, never throws, for missing/empty descr', () => {
+    expect(classifyLifecycle(null)).toBeNull();
+    expect(classifyLifecycle(undefined)).toBeNull();
+    expect(classifyLifecycle('')).toBeNull();
+  });
+  it('is case-insensitive and does not require the marker to be the whole string', () => {
+    expect(classifyLifecycle('SOME ITEM (deactivated) - discontinued')).toBe('deactivated');
+  });
+});
+
+describe('computeItemFindingsForRule() — lifecycle routing wired at the real call site (dispatch #45 §B)', () => {
+  const LIFECYCLE_ROWS = [
+    { loc: '0000001', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', descr: 'Beef Patty (Deactivated)', variance: 50, expUsage: 100 },
+    { loc: '0000002', period: '2026-08', date: '2026-08', wrin: 'W100', cls: 'food', descr: 'Beef Patty', variance: 8, expUsage: 100 },
+  ];
+  const RULE = {
+    rule_id: 'INV-001', logic_type: 'ratio', baseline_type: 'store',
+    data_required: ['qsr_variance_stat'],
+    logic_expression: { numerator: { field: 'variance', agg: 'sum', abs: true }, denominator: { field: 'expUsage', agg: 'sum' }, scale: 100, comparator: 'gte' },
+    threshold: { default: 10 }, method: 'Item TvA variance rate', severity: 3, weight: 1,
+  };
+  const WIN = { windowStart: '2026-08', windowEnd: '2026-08' };
+
+  it('a deactivated item is classified on its finding, without altering its real verdict/value', () => {
+    const a = computeItemFindingsForRule(RULE, LIFECYCLE_ROWS, WIN).find(f => f.loc === '0000001');
+    expect(a.lifecycleCategory).toBe('deactivated');
+    expect(a.value).toBeCloseTo(50, 6); // routed, not suppressed -- the real finding survives intact
+    expect(a.pass).toBe(true); // still a real, decided verdict against its own threshold
+  });
+
+  it('an unmarked item classifies to null -- the majority path, not a missing-data error', () => {
+    const b = computeItemFindingsForRule(RULE, LIFECYCLE_ROWS, WIN).find(f => f.loc === '0000002');
+    expect(b.lifecycleCategory).toBeNull();
   });
 });

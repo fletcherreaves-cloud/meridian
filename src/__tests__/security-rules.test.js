@@ -148,6 +148,41 @@ describe('evaluateRule() — min_denominator exposure floor (dispatch #42 §5), 
   });
 });
 
+// dispatch #45 §A -- min_numerator gates the RAW absolute numerator sum, independent of the
+// computed rate: a real, decided "clear" (pass:false), never a null -- distinct from
+// min_denominator's honest-null (the rule DID form a verdict here, it just decided the magnitude
+// doesn't matter). Alice: |cashOS| sums to 16 on drawerSales 4000 -> value=4, crosses threshold 5?
+// No (4<5) -- pick a rule shape where the RATE crosses but the raw dollars are still small, the
+// exact INV-002 scenario: numerator 16, scaled against a much larger denominator so the rate alone
+// looks material.
+describe('evaluateRule() — min_numerator materiality floor (dispatch #45 §A), on a plain ratio rule', () => {
+  // numerator (|cashOS|) sums to 16, denominator (drawerSales) sums to 400 -> value = 16/400*1000 = 40 (crosses threshold 5 easily).
+  const TINY_DOLLAR_BIG_RATE_ROWS = [{ loc: '0000001', emp: 'Alice', date: '2026-08-01', drawerSales: 400, cashOSDollar: -16 }];
+  it('a real, nonzero numerator below the floor produces pass:false, NOT a null -- the rule evaluated, it just decided the amount is trivial', () => {
+    const ruleWithFloor = { ...CASH_001, logic_expression: { ...CASH_001.logic_expression, min_numerator: 25 } };
+    const r = evaluateRule(ruleWithFloor, { audit_rows: TINY_DOLLAR_BIG_RATE_ROWS });
+    expect(r.value).toBeCloseTo(40, 6); // the rate is still honestly reported...
+    expect(r.numeratorSum).toBeCloseTo(16, 6); // ...16 < floor 25...
+    expect(r.pass).toBe(false); // ...so a decided clear, not an honest-null
+  });
+  it('a numerator that clears the floor evaluates normally, unaffected by the new field', () => {
+    const ruleWithFloor = { ...CASH_001, logic_expression: { ...CASH_001.logic_expression, min_numerator: 10 } };
+    const r = evaluateRule(ruleWithFloor, { audit_rows: TINY_DOLLAR_BIG_RATE_ROWS }); // numeratorSum 16 >= 10
+    expect(r.value).toBeCloseTo(40, 6);
+    expect(r.pass).toBe(true);
+  });
+  it('a rule with no min_numerator set behaves exactly as before (backward-compatible)', () => {
+    const r = evaluateRule(CASH_001, { audit_rows: TINY_DOLLAR_BIG_RATE_ROWS }); // no min_numerator on CASH_001 itself
+    expect(r.pass).toBe(true); // value 40 >= threshold 5, nothing else gates it
+  });
+  it('min_numerator and min_denominator compose -- exposure floor (null) is checked independently and wins when the denominator itself is too small to mean anything', () => {
+    const ruleWithBoth = { ...CASH_001, logic_expression: { ...CASH_001.logic_expression, min_numerator: 10, min_denominator: 1000 } };
+    const r = evaluateRule(ruleWithBoth, { audit_rows: TINY_DOLLAR_BIG_RATE_ROWS }); // denominatorSum 400 < 1000
+    expect(r.value).toBeNull();
+    expect(r.pass).toBeNull(); // exposure floor's null, not min_numerator's false -- they never collide
+  });
+});
+
 // dispatch #42 -- mirrors INV-001's real shape (numerator/denominator ratio, z-scored against a
 // caller-supplied baseline instead of compared to a fixed constant). One subject row:
 // v=30, d=100 -> raw value = 30/100*100 = 30. Baseline mean=10, stdev=5 -> z = (30-10)/5 = 4.
@@ -230,5 +265,41 @@ describe('evaluateRule() — z-score logic_type (dispatch #42), against the real
     expect(r.zscore).toBeCloseTo(4, 6);
     expect(r.pass).toBeNull();
     expect(r.reason).toMatch(/threshold/);
+  });
+
+  // dispatch #45 §A -- the exact INV-002 scenario: a rate that's statistically unusual (high z)
+  // AND clears its own min_value on the RATE, but the raw dollar amount behind it is trivial. One
+  // subject: v=5 (numerator), d=1000 (denominator), scale=100 -> value = 5/1000*100 = 0.5. Baseline
+  // mean=0.1, stdev=0.1 -> z = (0.5-0.1)/0.1 = 4 (clears threshold 2.5 easily). value 0.5 also
+  // clears a min_value of, say, 0.3 -- both existing gates say "flag." min_numerator asks a
+  // DIFFERENT question: is 5 (the raw numerator) big enough to matter at all.
+  describe('min_numerator materiality floor (dispatch #45 §A) -- gates the RAW numerator, independent of the rate/z-score', () => {
+    const TINY_DOLLAR_RULE = {
+      ...Z_RULE,
+      logic_expression: { ...Z_RULE.logic_expression, min_value: 0.3, min_numerator: 10 },
+    };
+    const TINY_DOLLAR_ROWS = [{ loc: '0000001', wrin: '00001-000', v: 5, d: 1000 }];
+    const TINY_BASELINE = { mean: 0.1, stdev: 0.1, n: 6 };
+
+    it('a statistically unusual rate that ALSO clears min_value still gets pass:false when the raw numerator (5) is below min_numerator (10) -- a real clear, not a null', () => {
+      const r = evaluateRule(TINY_DOLLAR_RULE, { qsr_variance_stat: TINY_DOLLAR_ROWS }, { loc: '0000001', baseline: TINY_BASELINE });
+      expect(r.value).toBeCloseTo(0.5, 6); // the rate is still honestly reported...
+      expect(r.numeratorSum).toBeCloseTo(5, 6); // ...5 < floor 10...
+      expect(r.zscore).toBeCloseTo(4, 6); // ...z clears sigma...
+      expect(r.pass).toBe(false); // ...but the absolute amount doesn't clear materiality
+    });
+
+    it('the SAME subject flags once the numerator floor is lowered below its real amount -- proving min_numerator, not min_value or z, was what gated it above', () => {
+      const rule = { ...TINY_DOLLAR_RULE, logic_expression: { ...TINY_DOLLAR_RULE.logic_expression, min_numerator: 3 } };
+      const r = evaluateRule(rule, { qsr_variance_stat: TINY_DOLLAR_ROWS }, { loc: '0000001', baseline: TINY_BASELINE });
+      expect(r.numeratorSum).toBeCloseTo(5, 6);
+      expect(r.pass).toBe(true);
+    });
+
+    it('a rule with no min_numerator set behaves exactly as before (backward-compatible) -- min_value alone still governs', () => {
+      const rule = { ...Z_RULE, logic_expression: { ...Z_RULE.logic_expression, min_value: 0.3 } }; // no min_numerator
+      const r = evaluateRule(rule, { qsr_variance_stat: TINY_DOLLAR_ROWS }, { loc: '0000001', baseline: TINY_BASELINE });
+      expect(r.pass).toBe(true);
+    });
   });
 });

@@ -45,7 +45,13 @@ export function securityPanelAccess(userRole, gmRevealEnabled) {
 // evaluate), pass=null -> 'undetermined' (an honest non-verdict: no exposure, no baseline,
 // insufficient population, below the exposure floor, ...). Rendering null as clear is a
 // correctness bug (dispatch #43 §3) -- this is the one place that mapping happens.
-export function verdictState(pass) {
+//
+// dispatch #45 §B: a lifecycle-classified finding (deactivated/obsolete/new item) takes priority
+// over pass/fail here -- it must read as neither a security flag nor an exoneration, since it is a
+// data-hygiene signal (fix the item's setup), not a security verdict about a person or item. This
+// function is the ONE place that routing decision gets made, same discipline as the pass mapping.
+export function verdictState(pass, lifecycleCategory) {
+  if (lifecycleCategory) return 'hygiene';
   if (pass === true) return 'flagged';
   if (pass === false) return 'clear';
   return 'undetermined';
@@ -55,7 +61,10 @@ const VERDICT_META = {
   flagged:      { label: 'Flagged',      color: 'var(--crit,#ef4444)' },
   clear:        { label: 'Clear',        color: 'var(--ok,#10b981)' },
   undetermined: { label: 'No verdict',   color: 'var(--text3)' },
+  hygiene:      { label: 'Hygiene',      color: 'var(--accent,#f5bc00)' },
 };
+
+const LIFECYCLE_LABEL = { deactivated: 'Deactivated item', obsolete: 'Obsolete item', new: 'New item' };
 
 // Groups mapped security_findings rows (src/lib/supabase.js's loadSecurityFindings() shape) by
 // (loc, subject) -- an employee-token or a WRIN, never both (the DB's own check constraint). One
@@ -76,15 +85,23 @@ export function groupFindingsBySubject(findings) {
       ruleId: f.ruleId, pass: f.pass, value: f.value, thresholdUsed: f.thresholdUsed,
       baselineContext: f.baselineContext || {}, explanation: f.explanation || [],
       windowStart: f.windowStart, windowEnd: f.windowEnd, computedAt: f.computedAt,
+      lifecycleCategory: f.lifecycleCategory || null,
     });
   }
   const out = [...groups.values()].map(g => {
-    const flaggedCount = g.verdicts.filter(v => v.pass === true).length;
-    const clearCount = g.verdicts.filter(v => v.pass === false).length;
-    const undeterminedCount = g.verdicts.filter(v => v.pass == null).length;
-    const worstValue = g.verdicts.filter(v => v.pass === true).reduce((m, v) => Math.max(m, v.value || 0), 0);
+    // dispatch #45 §B: a lifecycle-classified verdict is EXCLUDED from the security tally
+    // (flaggedCount/clearCount/worstValue/sort) -- it routes to a distinct hygiene lane, never
+    // counted toward "how many independent signals agree" (the whole point of subject-major
+    // grouping) and never contributing to the sort order a real convergence would drive. It still
+    // renders (routed, not suppressed) via hygieneCount and the verdicts array itself.
+    const securityVerdicts = g.verdicts.filter(v => !v.lifecycleCategory);
+    const flaggedCount = securityVerdicts.filter(v => v.pass === true).length;
+    const clearCount = securityVerdicts.filter(v => v.pass === false).length;
+    const undeterminedCount = securityVerdicts.filter(v => v.pass == null).length;
+    const hygieneCount = g.verdicts.filter(v => v.lifecycleCategory).length;
+    const worstValue = securityVerdicts.filter(v => v.pass === true).reduce((m, v) => Math.max(m, v.value || 0), 0);
     const newestComputedAt = g.verdicts.reduce((m, v) => (!m || (v.computedAt && v.computedAt > m)) ? v.computedAt : m, null);
-    return { ...g, flaggedCount, clearCount, undeterminedCount, worstValue, newestComputedAt };
+    return { ...g, flaggedCount, clearCount, undeterminedCount, hygieneCount, worstValue, newestComputedAt };
   });
   out.sort((a, b) => b.flaggedCount - a.flaggedCount || b.worstValue - a.worstValue);
   return out;
@@ -103,10 +120,11 @@ export function scopeMatches(loc, scope) {
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────
 
 function VerdictChip({ ruleId, active, verdict, onClick }) {
-  const state = verdictState(verdict.pass);
+  const state = verdictState(verdict.pass, verdict.lifecycleCategory);
   const meta = VERDICT_META[state];
+  const hygieneTitle = verdict.lifecycleCategory ? ` — ${LIFECYCLE_LABEL[verdict.lifecycleCategory] || verdict.lifecycleCategory}, routed to hygiene, not a security verdict` : '';
   return span({
-    onClick, title: `${ruleId}${active === false ? ' (rule inactive -- historical, not current)' : ''}`,
+    onClick, title: `${ruleId}${active === false ? ' (rule inactive -- historical, not current)' : ''}${hygieneTitle}`,
     style: {
       display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 'var(--r)',
       border: `1px solid ${meta.color}`, color: meta.color, fontSize: 11, fontWeight: 600, cursor: onClick ? 'pointer' : 'default',
@@ -119,7 +137,7 @@ function SubjectDetail({ group, rulesById }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
     group.verdicts.map((v, i) => {
       const rule = rulesById[v.ruleId] || {};
-      const state = verdictState(v.pass);
+      const state = verdictState(v.pass, v.lifecycleCategory);
       const meta = VERDICT_META[state];
       const bc = v.baselineContext || {};
       return div({ key: v.ruleId + i, style: { padding: '8px 0', borderBottom: i < group.verdicts.length - 1 ? '1px solid var(--bdr)' : 'none' } },
@@ -127,7 +145,13 @@ function SubjectDetail({ group, rulesById }) {
           span({ style: { fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } }, rule.method || v.ruleId),
           span({ style: { fontSize: 11, fontWeight: 700, color: meta.color } }, meta.label),
         ),
-        v.pass == null
+        // dispatch #45 §B: a hygiene-classified verdict shows its OWN item-lifecycle explanation,
+        // not the pass/fail one -- it must not read as either a security flag or an exoneration,
+        // even though the real value/threshold below it is still shown (routed, not suppressed).
+        v.lifecycleCategory
+          ? div({ style: { fontSize: 11.5, color: 'var(--accent,#f5bc00)', marginTop: 2 } },
+              `${LIFECYCLE_LABEL[v.lifecycleCategory] || v.lifecycleCategory} — a data-hygiene item, not a security verdict. Real value: ${fNum(v.value)} vs threshold ${fNum(v.thresholdUsed)}.`)
+          : v.pass == null
           ? div({ style: { fontSize: 11.5, color: 'var(--text3)', marginTop: 2 } },
               'No verdict — ', (v.reason || explanationReason(v.explanation) || 'no exposure in window'))
           : div({ style: { fontSize: 11.5, color: 'var(--text2)', marginTop: 2 } },

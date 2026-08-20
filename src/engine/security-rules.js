@@ -16,17 +16,21 @@
 //
 // LOGIC_EXPRESSION shapes handled today:
 //   threshold: { field, agg: 'sum'|'count'|'avg', denominator?: {field, agg}, scale?, comparator,
-//                min_denominator? }
+//                min_denominator?, min_numerator? }
 //   ratio:     { numerator: {field, agg, abs?}, denominator: {field, agg}, scale, comparator,
-//                min_denominator? }
-//   z-score:   SAME numerator/denominator/scale/min_denominator shape as ratio -- the raw rate is
-//              z-scored against a `baseline` the CALLER computed and passed via evaluateRule()'s
-//              options (dispatch #36's security-baselines.js, e.g. storeBaseline()) instead of
-//              compared to a fixed constant. `threshold` on a z-score rule means SIGMA, not a
-//              rate -- the same {"default": 2.5} shape a ratio rule's threshold uses means
-//              something entirely different here. `min_value` (optional) is a materiality floor
-//              the raw rate must ALSO clear, independent of how unusual it is vs. peers -- both
-//              gates required to flag.
+//                min_denominator?, min_numerator? }
+//   z-score:   SAME numerator/denominator/scale/min_denominator/min_numerator shape as ratio -- the
+//              raw rate is z-scored against a `baseline` the CALLER computed and passed via
+//              evaluateRule()'s options (dispatch #36's security-baselines.js, e.g.
+//              storeBaseline()) instead of compared to a fixed constant. `threshold` on a z-score
+//              rule means SIGMA, not a rate -- the same {"default": 2.5} shape a ratio rule's
+//              threshold uses means something entirely different here. `min_value` (optional) is a
+//              materiality floor the computed RATE must ALSO clear; `min_numerator` (dispatch #45
+//              §A, optional) is a materiality floor the RAW numerator sum must ALSO clear,
+//              independent of the rate -- a rate can be statistically unusual on a denominator so
+//              large the underlying absolute amount is trivial regardless of the rate (INV-002:
+//              0.09 per $1,000 sales against a $2.1M denominator is still only a few hundred real
+//              dollars). All gates that are SET are required to flag; an unset gate is a no-op.
 // Threshold/ratio normalize against exposure when a denominator is present (plan §1 principle 1)
 // using `scale`, which IS memory/data-acquisition-shopping-list.md's per-$1,000-sales /
 // per-1,000-transactions convention (scale: 1000) -- not a free parameter each rule invents.
@@ -82,6 +86,25 @@ export function resolveThreshold(rule, loc) {
 // honest null; `min_denominator` widens the SAME guard to "too small to mean anything," per rule.
 function belowExposureFloor(expr, denominatorSum) {
   return expr.min_denominator != null && denominatorSum < num(expr.min_denominator);
+}
+
+// `min_numerator` (dispatch #45 Part A): an absolute-magnitude materiality floor on the RAW
+// numerator sum, independent of the computed rate/z-score -- built exactly like `min_denominator`
+// (per-rule data inside logic_expression, never an engine constant, applied at the ONE shared
+// choke point every rule type already funnels through), but with the OPPOSITE null/false asymmetry
+// on purpose. `min_denominator` unmet means there wasn't enough exposure to compute a rate at all
+// -- an honest `pass:null`. `min_numerator` unmet means a rate WAS computed and even a genuinely
+// unusual one (high z-score, or a rate crossing a plain threshold) doesn't matter because the
+// absolute dollar/count amount behind it is trivial -- "3σ above peers on $4 of variance is
+// statistically interesting and operationally worthless" (dispatch #42 §3, the case this closes
+// the gap on: INV-002's own `min_value` gates the RATE, and 0.09 per $1,000 sales against a $2.1M
+// denominator is still only a few hundred real dollars). That is a real, decided "clear" (`pass:
+// false`), not an unevaluated null -- the rule DID form a verdict, it just decided the magnitude
+// doesn't clear the bar. Checked by the CALLERS (evaluateRule / evaluateZScoreRule), not inside
+// evalRatio/evalThreshold themselves, precisely because it must NOT collapse `value` to null the
+// way the exposure floor does -- the rate stays real and visible, only `pass` changes.
+function belowNumeratorFloor(expr, numeratorSum) {
+  return expr.min_numerator != null && numeratorSum < num(expr.min_numerator);
 }
 
 function evalRatio(expr, rows) {
@@ -153,12 +176,16 @@ function evaluateZScoreRule(rule, dataContext, { loc, baseline } = {}) {
   const cmp = COMPARATORS[expr.comparator || 'gte'];
   if (!cmp) throw new Error(`security-rules: unknown comparator '${expr.comparator}'`);
   // Two independent gates, both required to flag: statistically unusual (z vs. sigma threshold)
-  // AND materially significant (raw value vs. min_value) -- "a store 3σ above peers on $4 of
-  // variance is statistically interesting and operationally worthless" (dispatch #42 §3). Neither
-  // gate alone is sufficient; failing the materiality gate is a real, definite "clear" verdict
+  // AND materially significant. Materiality itself has two possible floors, either or both
+  // optional, folded into ONE conjunction: `min_value` gates the computed RATE (dispatch #42 §3 --
+  // e.g. INV-001's 20% variance-rate floor), `min_numerator` gates the RAW absolute numerator sum
+  // (dispatch #45 §A -- e.g. INV-002's real dollar amount, since a rate can be statistically
+  // unusual on a denominator so large the underlying dollars are trivial regardless of the rate).
+  // Neither gate alone is sufficient when set; failing either is a real, definite "clear" verdict
   // (pass: false), not an honest-null -- the rule DID evaluate, it just didn't clear the floor.
   const statisticallyUnusual = cmp(zscore, threshold);
-  const materialityOk = expr.min_value == null || value >= num(expr.min_value);
+  const materialityOk = (expr.min_value == null || value >= num(expr.min_value))
+    && !belowNumeratorFloor(expr, numeratorSum);
   return { implemented: true, pass: statisticallyUnusual && materialityOk, value, numeratorSum, denominatorSum, threshold, zscore };
 }
 
@@ -191,5 +218,10 @@ export function evaluateRule(rule, dataContext, { loc, baseline } = {}) {
   }
   const cmp = COMPARATORS[expr.comparator || 'gte'];
   if (!cmp) throw new Error(`security-rules: unknown comparator '${expr.comparator}'`);
-  return { implemented: true, pass: cmp(value, threshold), value, numeratorSum, denominatorSum, threshold };
+  // min_numerator (dispatch #45 §A) applies here too -- the SAME shared gate z-score rules use,
+  // since it's a property of the numerator field, not the logic_type. A plain ratio/threshold
+  // rule crossing its own threshold on a trivial absolute amount is exactly the same false-material
+  // signal z-score's min_value/min_numerator combination exists to catch.
+  const materialityOk = !belowNumeratorFloor(expr, numeratorSum);
+  return { implemented: true, pass: cmp(value, threshold) && materialityOk, value, numeratorSum, denominatorSum, threshold };
 }
