@@ -99,6 +99,29 @@ dispatch and is not negotiable. Extend the vault to `qsr_waste.manager` first (s
 part of this dispatch, not a follow-up** — a rule that names managers in plaintext is worse than no
 rule.
 
+**✅ UNBLOCKED 2026-08-20 — the "no day-part sales denominator" blocker was not real.**
+`qsr_daily_activity` carries `net_sales`, `product_sales` and `transactions` per
+`(loc, dt, hour_slot)` — an **hourly** denominator, pulled daily, finer than day-part. Sum hour slots
+into day-parts and the plan's "waste per sales dollar" is directly computable. Nothing is missing.
+Same failure shape as `manOverringQty`: a reasonable-sounding "we don't have X" that one look at
+the schema refutes. **Check the schema before deferring on a missing-data premise.**
+
+**⏰ BOUNDARY — owner directive, 2026-08-20: *"build it the same way as we have in place. it is
+universal."*** The 4:00am → 4:00am business day is a first-class fact about this data, not a
+per-rule decision. Do **not** invent a convention for this rule, and do **not** re-derive the
+cutover inline — `businessDate()` / `lastClosedBusinessDay()` in **`src/utils/date.js:101,117`**
+already implement it, and re-deriving it inline has recurred five separate times in this repo
+(`plan-data-integrity-sweep.md`, signature #4).
+
+**The concrete risk here is double-shifting, not mis-shifting.** Both legs look *already* aligned:
+DAR's `hour_slot` runs `05:00 → 28:00` (measured, `dar-vs-ops-reconciliation.md` — 24 slots covering
+04:00→04:00), and `qsr_waste`'s date column is named **`busn_dt`** — a *business* date, which
+suggests QSRSoft has already done the shift. Applying `businessDate()` on top of an
+already-shifted date moves a whole day's waste onto the wrong day. **One query settles it: check
+whether any `qsr_waste` row has a `busn_tm` in the 00:00–03:59 range, and if so which `busn_dt` it
+carries.** If those rows carry the *previous* calendar date, the shift is already applied — join
+directly, add nothing.
+
 **Note the join limit:** `qsr_waste` has **no `wrin`** — it is event-level (`loc`, `event_id`,
 `$ amount`, `reason`), not per-item. So *"group by item"* from the plan's method **cannot** be done
 from this table. Item-level waste lives in `qsr_variance_stat.raw_waste`/`comp_waste` instead, which
