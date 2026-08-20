@@ -30,6 +30,24 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The degenerate-stdev guard — dispatch #45 §A, second cause, closed](dispatch45b-degenerate-stdev-guard.md)** —
+  **NEWEST.** A real gap left over from this session's own earlier #45 work — the dispatch's own
+  "SECOND, INDEPENDENT CAUSE" section was present when #45 was first implemented but only the
+  materiality gap (`min_numerator`) got built, not this one. `evaluateZScoreRule()`'s exact-zero
+  stdev guard didn't catch a stdev that's non-zero but negligible — a live subject rendered "0.04 vs
+  threshold 2.50 — mean 0.00, stdev 0.00 — Flagged" (both non-zero, rounded away on screen), and
+  z = (0.04 − ~0) / ~0 exploded. **Measured before choosing the mechanism**: a coefficient-of-
+  variation floor was tried and rejected — the real `|z|>10` INV-002 cases have CVs (0.25–3.5)
+  squarely inside the population's own normal range (median 0.66); raw stdev separates it instead.
+  New `min_stdev` gate (`src/engine/security-rules.js`), same honest-null class as
+  `n < MIN_BASELINE_N` — INV-001: `1` (near p10=3.3, essentially a no-op safety net); INV-002:
+  `0.001` (near p10=0.00086, nulls 6 of the 10 worst measured offenders). SQL handed back
+  (`schema-security-rules-min-stdev.sql`). **Folded into the still-open PR #492** (dispatch #46)
+  rather than a new PR, so the guard lands before that PR's Part B merges — the user's own stated
+  ordering ("degenerate-stdev guard → #46 A/B"). 5 new tests, mutation-tested, 1770/1770 suite
+  passes. **Remaining engineer queue, not started**: the two buildable inventory schemes
+  (waste-log padding, phantom gains — `finding-security-scheme-coverage-2026-08-20.md`), then #46
+  Parts C (items 2–5) and D.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #46 — make the Security panel legible, then analytical, implemented](dispatch46-security-panel-legibility-analysis.md)** —
   **NEWEST.** Owner-requested after first real use of the shipped panel. Measured first: every rule
   in `security_findings` currently holds exactly **one window** — the daily batch job hasn't run
