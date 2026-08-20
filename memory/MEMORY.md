@@ -30,8 +30,28 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Evaluating the first real detection run — the 21% median question](analysis-inventory-variance-baseline-2026-08-20.md)** —
+  **NEWEST.** The first *business* read of the security build's output, as opposed to dispatch
+  #42's calibration read of the same run. **INV-001's measured median is 21.25% variance across
+  5,165 live store-item observations — 4–7× the plan's own §2.2 flag guidance of ">3–5%"**, which
+  is itself the synthesis of three independent industry research passes. Median, not tail. Two
+  explanations with *opposite* correct responses: (a) `exp_usage` isn't a trustworthy baseline in
+  this org's data and/or counting practice is noisy — in which case **threshold tuning is the
+  wrong response entirely**, you'd be calibrating an instrument against its own noise; or (b) real
+  widespread inventory loss, in which case it's the most important operational finding this build
+  has produced. **Explicitly NOT established as fact** — the median is uncontrolled for a known
+  confound (low-volume items structurally inflate percentages; ~190–200 items/store means a long
+  tail likely dominates), which makes dispatch #42's exposure floor a *prerequisite for
+  measurement*, not just noise-suppression. Two concentration queries in the file separate (a)
+  from (b): a measurement problem is uniform across stores, an operational one concentrates.
+  **Also identifies a real gap in both shipped rules:** plan §2.2's own strongest-named signal is
+  variance *"not matched by a corresponding waste-log entry"* — and `qsr_variance_stat` already
+  carries `raw_waste`/`comp_waste` (`schema.sql:1367-1368`), loaded by the batch job on every run,
+  used by neither rule. Buildable today with no new data source, and would be the build's first
+  implementation of plan §1 principle 4 (exoneration — a rule that searches for its own
+  counter-evidence). Scope as `INV-003` after #42.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — make security detection baseline-relative + calibrate from measured data](dispatch-42.md)** —
-  **NEWEST. Phase 1/1b is LIVE** — all three schema files run against production 2026-08-20 and
+  **Phase 1/1b is LIVE** — all three schema files run against production 2026-08-20 and
   the batch job completed a real `workflow_dispatch` run: `10330 finding(s) upserted across 6
   rule(s), 0 error(s)`. This dispatch acts on what that run actually produced; every number in it
   is measured from live `security_findings`, not guessed. **Three findings, in increasing
