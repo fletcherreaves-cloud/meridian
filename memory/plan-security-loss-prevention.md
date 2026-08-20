@@ -576,45 +576,47 @@ individual in isolation.
   law enforcement), not just an internal debugging aid. That has real design implications:
   immutable/append-only logging of what was flagged and when, not an editable risk-score field.
 
-**This is the single most sensitive piece of this whole build, and it needs explicit owner
-sign-off before it becomes an engineer dispatch — not because the mechanism is wrong, but
-because of what it produces:**
+**DECIDED, 2026-08-20 (owner interview) — all four questions on this gate now answered.**
+Recorded verbatim, not paraphrased into something tidier, since the reasoning matters as much as
+the answer:
 
-1. **Data retention** — how long does a named-employee accusation trail persist? Does it expire if
-   never escalated? What happens to it if the employee is later fully cleared (§3's exoneration
-   analytics can *lower* a score, but does the historical record get deleted, or does it stay as
-   "flagged, then cleared"?).
-2. **Access control** — who can see a named suspicion trail on a specific employee? This is
-   materially more sensitive than any other data in Meridian today — CLAUDE.md's RBAC table
-   (Developer → Admin → Owner/OO → VP → DO → Supervisor → GM → Office Staff) wasn't designed with
-   an "accusation" data class in mind, and GM-level access to a trail naming their own crew raises
-   different questions than DO/VP access to it.
-3. **Evidence-grade standard** — if this is ever meant to support real action (termination,
-   report to law enforcement), does it need a different rigor bar than the rest of the app's
-   analytics (chain-of-custody-style logging, tamper-evidence, an audit log of who viewed a given
-   employee's trail)? This repo's existing security posture (per `CLAUDE.md`'s pending RLS
-   hardening — currently ~92-107 tables on wide-open `using(true)` policies) is **not currently at
-   a bar that should hold named-employee accusation data** until that hardening lands. This is a
-   hard sequencing dependency, not just a nice-to-have: **the RLS hardening plan
-   (`project-rls-hardening-plan.md`, referenced in `backlog-master-2026-08-19.md` §13) should land
-   before this mechanism stores anything naming a real employee**, or the accusation data itself
-   would sit behind the same wide-open access the hardening plan exists to close.
+1. **Data retention — indefinite, not auto-expiring.** *"I kind of think we need to retain for
+   future recollection. I may not bring a current case to closure, but one that keeps reappearing
+   becomes more focused."* This is a real design input, not just "keep everything": the value is
+   explicitly in **cross-case recurrence** — a trail that resurfaces across separate, unrelated-
+   looking incidents over time is what turns a series of individually-inconclusive flags into a
+   focused case. This directly matches this section's own process-of-elimination mechanism (§5
+   above) and §3's recurrence scoring — retention isn't a compliance afterthought here, it's load-
+   bearing for the mechanism to work at all. **Do not build an auto-expiry/deletion path** — an
+   exonerated finding stays in the record as "flagged, then cleared," not removed, so it's
+   available if the same person resurfaces in a later, separate incident.
+2. **Access control — Supervisor tier can identify employees; GM access is optional/configurable,
+   not blanket.** *"Supervisors should be able to identify employees. GM's should optionally be
+   able to."* **This is a real, intentional divergence from the existing disclosure-gating policy**
+   (`project-sage-knowledge-grounding.md`, 2026-08-13, DO-and-above only — Supervisor and GM are
+   explicitly excluded there) — flag this precisely rather than silently reconciling the two. This
+   decision applies **specifically to this investigation/identity-reveal mechanism**, not a
+   blanket change to the general policy elsewhere in Meridian (SAGE's findings, other personnel-
+   sensitive panels) — those stay DO-and-above unless a separate decision changes them. "GM's
+   should optionally be able to" needs one more concrete design call before this is dispatch-ready:
+   optional **per what** — a per-case toggle a Supervisor sets, a store-level setting, or a
+   role-permission a DO grants per GM? Not specified; ask when this gets scoped, don't assume.
+   **Reconciles cleanly with Direction B (§4 above, the token/identity-vault architecture, also
+   decided 2026-08-20):** this access-tier decision governs *who is allowed to trigger a logged
+   identity-reveal*, not who has raw plaintext visibility on the underlying analytics tables —
+   Supervisor/optionally-GM access should still route through the vault's logged reveal action,
+   consistent with Direction B's design, not become a second, unlogged access path.
+3. **Evidence-grade standard — yes, build it evidence-grade from day one.** Chain-of-custody-style
+   logging, tamper-evidence, and an audit log of who viewed a given employee's trail are all in
+   scope from the start, not a later hardening pass.
 
-**Do not scope this into an engineer dispatch until the owner has answered 1–3 above.** Everything
-else in this file (§2's detection rules, §3's scoring primitives) is safe to build incrementally
-without an accusation-trail component — a rule can raise a risk score without yet wiring it into a
-persistent, named, evidence-grade employee record. The process-of-elimination/evidence-chain piece
-specifically is what should wait.
-
-**A fourth question was added to this same gate, 2026-08-19 — identity architecture.** Full
-research + a verified, concrete finding: `plan-security-pii-architecture-2026-08-19.md`. Short
-version — `audit_rows` and `analyzeRegisterAudit` store and key on the employee's **plaintext
-name today, with no pseudonymization, masking, or logged "reveal" step anywhere in the pipeline**
-(verified directly against `src/parsers/index.js:974` and `src/utils/register-audit.js:7-8,56`,
-not assumed). Two directions are laid out there (extend the existing role+subject gate with a
-logged reveal vs. a real pseudonymization/identity-vault architecture) — not decided, logged for
-the owner alongside points 1–3 above. Worth resolving before this section's mechanism is scoped,
-since it's exactly where an unpseudonymized, unaudited identity trail would do the most damage.
+**Sequencing, updated:** this mechanism's design questions are now fully answered, but it is
+**still blocked on two prerequisites, unchanged from before**: (a) the RLS hardening plan
+(`project-rls-hardening-plan.md`) landing — point 3's hard dependency stands regardless of the
+evidence-grade decision, if anything the "yes, evidence-grade" answer makes this more load-bearing,
+not less; (b) the Direction B identity-vault architecture (§4 above) landing first, since building
+this mechanism against the current plaintext `audit_rows` shape would mean redoing it once the
+vault exists. **Ready to scope into a dispatch once both land — not before.**
 
 ---
 
@@ -729,6 +731,13 @@ real table — same manual-migration pattern as every other `schema-*.sql` file 
 ### Phase 1 — MVP detection (highest value, lowest complexity)
 
 **Unblocked** once the owner runs `schema-security-rules.sql` (above). Not yet dispatched.
+**Compute pattern DECIDED, 2026-08-20**: owner chose a **scheduled batch job** (matching the
+`*-pull.mjs`/GitHub Actions family) over an on-demand Supabase Edge Function (the `sage-chat`
+pattern) — risk scores get pre-computed on a schedule against `security_rules` +
+`audit_rows`/baselines, not evaluated live on panel load. This is a new *compute* pattern for
+this repo (every existing scheduled workflow only pulls external data; none evaluate rules) —
+scope it as such when Phase 1 is dispatched, not as a copy of an existing pull script. Cadence
+not yet decided.
 - Cash-drawer variance rules with employee attribution (§2.1).
 - Post-tender void/refund detection + peer ranking (§2.1 — the single most-corroborated method).
 - TvA inventory variance by item/category (§2.2 — second-most-corroborated).
@@ -752,8 +761,11 @@ real table — same manual-migration pattern as every other `schema-*.sql` file 
 - Pattern portability across stores (§3).
 
 ### Phase 4 — the sensitive piece, gated on owner decisions
-- Employee rule-out / evidence-chain mechanism (§5) — **only after** the owner has answered §5's
-  three questions and the RLS hardening plan has landed.
+- Employee rule-out / evidence-chain mechanism (§5) — **design questions DECIDED 2026-08-20**
+  (indefinite retention for cross-case recurrence, Supervisor+optional-GM access, evidence-grade
+  from day one). **Still blocked** on `project-rls-hardening-plan.md` landing and the Direction B
+  identity-vault architecture (§4) landing first — ready to scope into a dispatch once both do,
+  not before.
 
 ### Explicitly out of scope for now (not rejected, just not requested)
 - Video/CCTV integration — **correction, 2026-08-19: this is further along than assumed twice
