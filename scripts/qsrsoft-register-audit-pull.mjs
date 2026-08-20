@@ -279,7 +279,23 @@ async function fetchChunk(url, token, evalPage) {
     return res.rows || [];
   }
   const resp = await fetch(url, { headers: HDRS(token) });
-  if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
+  if (resp.status === 401 || resp.status === 403) {
+    // Log the response body/headers BEFORE throwing. This was a real diagnostic gap: the line
+    // below already reads the body for every OTHER non-ok status, but 401/403 -- the two that
+    // most need explaining -- discarded it, so three consecutive failed runs (2026-08-20)
+    // produced nothing but the bare status code, and two successive theories (browser-session-
+    // required, then a wrong Referer) were both formed and tested without ever reading what the
+    // server actually said. An API gateway 403 nearly always carries a reason; AWS ones also put
+    // it in x-amzn-errortype. Per CLAUDE.md's standing rule -- once a hypothesis is disproven the
+    // next step is a MEASUREMENT, not another hypothesis -- this is that measurement.
+    const detail = await resp.text().catch(() => '(body unreadable)');
+    const diagHdrs = ['x-amzn-errortype', 'x-amzn-requestid', 'x-amzn-remapped-authorization',
+      'www-authenticate', 'x-amzn-apigateway-id', 'apigw-requestid']
+      .map(h => (resp.headers.get(h) ? `${h}=${resp.headers.get(h)}` : null)).filter(Boolean).join(' · ');
+    console.error(`[audit-pull] ${resp.status} body: ${detail.slice(0, 500) || '(empty)'}`);
+    if (diagHdrs) console.error(`[audit-pull] ${resp.status} headers: ${diagHdrs}`);
+    throw new Error(`AUTH_FAILED:${resp.status}`);
+  }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   const body = await resp.json();
   return Array.isArray(body) ? body : (body?.result || body?.data || []);
@@ -346,8 +362,18 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
   const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
+  // Record EVERY api.reports.* request the page makes, not just token-bearing ones -- mirroring
+  // qsrsoft-ops-pull.mjs's own seenApiUrls log. "token captured: false" alone is ambiguous: it
+  // cannot distinguish "the page fired API calls but none carried x-auth-token" from "the page
+  // fired no API calls at all." Those point at completely different root causes -- a wrong
+  // endpoint vs. a report that doesn't run until a UI interaction (the remaining hypothesis in
+  // dispatch35's writeup) -- and the current logging can't tell them apart. Query string is
+  // stripped: it carries no secret, but it is long and noisy, and the PATH is the diagnostic.
+  const seenApiUrls = [];
   page.on('request', req => {
     if (!req.url().includes('api.reports.myqsrsoft.com')) return;
+    const bare = req.url().replace(/\?.*/, '');
+    if (!seenApiUrls.includes(bare)) seenApiUrls.push(bare);
     const t = req.headers()['x-auth-token'];
     if (t && t.length > 20 && !token) token = t;
   });
@@ -381,6 +407,12 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
     }
     if (!token) {
       console.error('[auth] ✗ could not capture token from report page or an in-browser fetch trigger');
+      // The decisive diagnostic (see the seenApiUrls comment above): an EMPTY list means the
+      // report page fires no API calls on load at all, which supports the UI-interaction
+      // hypothesis; a NON-empty list means it does call something, and whatever paths appear
+      // here are the real endpoints to compare against the one this script requests.
+      console.error('[auth] api.reports requests seen during navigation:',
+        seenApiUrls.length ? JSON.stringify(seenApiUrls) : '(none)');
       return 0;
     }
     console.log(`[auth] ✓ token captured (${token.length} chars) — pulling ${chunks.length} chunk(s)…`);
