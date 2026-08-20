@@ -30,8 +30,33 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #42 — make security detection baseline-relative + calibrate from measured data](dispatch-42.md)** —
+  **NEWEST. Phase 1/1b is LIVE** — all three schema files run against production 2026-08-20 and
+  the batch job completed a real `workflow_dispatch` run: `10330 finding(s) upserted across 6
+  rule(s), 0 error(s)`. This dispatch acts on what that run actually produced; every number in it
+  is measured from live `security_findings`, not guessed. **Three findings, in increasing
+  importance:** (1) both INV thresholds are miscalibrated in *opposite* directions — INV-001's
+  threshold (20) sits **below its own median (21.25)** so it flags 50.4% of everything, while
+  INV-002's (10) is **~77× its own maximum (0.13)** so it can never fire. INV-002 is **not** a
+  broken join — `null_value: 0` proves the `qsr_fob` join works; only the constant is wrong.
+  (2) INV-001 needs a minimum-exposure floor: `max_val 36234` vs p95 176 is a near-zero
+  `exp_usage` denominator producing garbage, not a real 36,234% variance. (3) **The important
+  one — `baseline_type` does not currently drive detection at all.** Both rules declare
+  `baseline_type:'store'` and the batch job computes and persists a real baseline into
+  `baseline_context`, but `evaluateRule()` never reads it (`security-rules.js:104-106` is a flat
+  `cmp(value, threshold)`). So the rules answer "is this rate absolutely high?" — meaning an
+  inherently high-variance item flags at **all 27 stores forever** — instead of the plan's actual
+  §1-principle-2 design, "is *this store* unusual *for this item* vs peers." This dispatch
+  implements the `z-score` LOGIC_TYPE stubbed since dispatch #36 (baseline passed via an additive
+  `{loc, baseline}` opt; **both call sites need reordering** — they currently call `evaluateRule()`
+  before computing the baseline), with honest nulls for zero-stdev/insufficient-n/absent-baseline
+  and an absolute materiality floor retained alongside the z-score (unusual-vs-peers is not enough
+  on its own: 3σ on $4 of variance is worthless). Not yet implemented — this is the dispatch brief.
+  **Outranked in priority by a data blocker outside its scope:** `CASH-001`–`CASH-004` produced 0
+  findings because `audit_rows` stops at 2026-06-30 against a 28-day window — the Register Audit
+  pull has been failing since the same-day 403, leaving half of Phase 1 inert.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #41 — reconcile the two Model Health Score implementations, dispatched](dispatch-41.md)** —
-  **NEWEST.** Not a security-build item — a separate, independently-discovered live correctness
+  Not a security-build item — a separate, independently-discovered live correctness
   bug (`backlog-master-2026-08-19.md` §4). `modelHealthScore` and `computeModelHealth`
   (`forecast.js:847`/`:1868`) share the same 30/25/25/20 rubric shape but diverge for real —
   different day-thresholds, different MAPE-window priority, **and one function can never hit a
