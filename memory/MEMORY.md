@@ -30,6 +30,25 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, dispatched](dispatch-40.md)** —
+  **NEWEST.** The follow-through on the TvA correction directly below: a real, buildable
+  store-level rule against data Meridian is **already pulling today** — no recipe/BOM pull or new
+  QSRSoft probe needed. `qsr_variance_stat.exp_usage` **is** the theoretical-usage figure,
+  computed server-side by QSRSoft's own recipe engine; `dol_diff` is already a real dollarized
+  variance number for food/paper items. Verified directly against the real schema
+  (`supabase/schema.sql:1361-1379`), the parser (`eom-parsers.js`'s `mapVarianceRows`), and the
+  pull script before writing this — not taken from the research agent's report at face value.
+  Two rules: `INV-001` (variance-vs-expected-usage ratio, `storeBaseline()` — confirmed usable
+  as-is, no `emp` dependency, unlike `personalBaseline`/`peerBaseline`/`networkBaseline` which all
+  require it) and `INV-002` (dollar-variance rate, gated on confirming `pct_sales`'s real
+  semantics live — the one thing this dispatch can't settle from a sandbox). **Real schema
+  decision made deliberately, not discovered mid-build**: dispatch #39's `security_findings`
+  speced `emp_token` as required — since that table doesn't exist yet, this dispatch makes it
+  nullable with `wrin` as a co-equal subject column (exactly one of the two populated per row,
+  enforced by a `check` constraint) rather than over-building a generic polymorphic subject
+  design neither Phase 1 nor 1b actually needs. Recipe/BOM data confirmed genuinely unnecessary
+  for this — only needed for a later drill-down capability. Not yet implemented — this is the
+  dispatch brief.
 - **⚠️ CORRECTION, same day: dispatch #39's "TvA not buildable" claim below was WRONG — see the
   correction note at the top of `dispatch-39.md`.** QSRSoft already computes TvA-equivalent
   variance natively, and Meridian already pulls it (`qsr_variance_stat`, `qsr_raw_item_detail`,
