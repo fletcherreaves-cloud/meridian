@@ -40,9 +40,23 @@ wrong (`threshold`-shaped) branch.
 
 **`supabase/schema-security-rules-phase1c.sql`** converts `INV-001`/`INV-002` in place:
 `threshold` → `{"default": 2.5}` (sigma). `min_value` carries FORWARD dispatch #40's original
-ratio thresholds (20 / 10) as a materiality floor rather than inventing new numbers — Step 0's
+ratio threshold (20) as INV-001's materiality floor rather than inventing a new number — Step 0's
 own "uniform / bent ruler" verdict made precise absolute calibration false precision (§4's
 minimal path).
+
+**Fixed after PR #481 review (2026-08-20), before merge — INV-002 does NOT get a `min_value`.**
+The first version of this file carried INV-002's old ratio threshold (10) forward the same way as
+INV-001's, without re-checking it against INV-002's own measured range. The reviewer caught that
+this makes `materialityOk` false for the ENTIRE estate: INV-002's own first live run measured
+`max=0.13` against that same 10, and a fresh re-measurement (same window/join, post-fix) confirms
+it — `n=5,302, max=0.087, p95=0.0225`. A floor of 10 isn't permissive for this rule the way it is
+for INV-001, it's unreachable — the z-score conversion would change the stored `logic_type` and
+nothing observable. No `min_value` was substituted in its place, deliberately: reusing a fresh
+percentile of the SAME distribution the z-score already ranks a subject against isn't an
+independent materiality signal (INV-001's 20% traces to the plan's own flag guidance; CASH-004's
+traces to an existing amber band) — it's just re-deriving "top ~5%" a second way. The z-score gate
+alone (≥2.5σ vs. peers) is INV-002's detection until a real, independent dollar-materiality number
+exists.
 
 ## Part 2 — the exposure floor, widened to every denominator-bearing rule (§5, amended same-day)
 
@@ -157,9 +171,11 @@ update public.security_rules set
   updated_at = now()
 where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'INV-001';
 
+-- INV-002: NO min_value (PR #481 review — the old ratio threshold, 10, is unreachable against
+-- this rule's own measured range, max 0.087). The z-score gate alone is this rule's detection.
 update public.security_rules set
   logic_type = 'z-score',
-  logic_expression = '{"numerator": {"field": "dolDiff", "agg": "sum", "abs": true}, "denominator": {"field": "storeMonthSales", "agg": "sum"}, "scale": 1000, "comparator": "gte", "min_value": 10}',
+  logic_expression = '{"numerator": {"field": "dolDiff", "agg": "sum", "abs": true}, "denominator": {"field": "storeMonthSales", "agg": "sum"}, "scale": 1000, "comparator": "gte"}',
   threshold = '{"default": 2.5}',
   updated_at = now()
 where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'INV-002';

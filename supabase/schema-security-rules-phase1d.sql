@@ -35,17 +35,23 @@
 -- requires it; each rule still carries its own logic_expression and could diverge later if a
 -- reason to differ shows up.
 --
--- Idempotent: safe to re-run (jsonb merge, not a full retype -- avoids drift against whatever the
--- rest of each row's logic_expression currently is).
+-- Idempotent: safe to re-run. The logic_expression jsonb merge already was; the description
+-- update below is now ALSO idempotent (PR #481 review) -- a plain `description || '...'` append
+-- would grow the sentence on every re-run, which the original header claimed wasn't a problem
+-- but was. Fixed by stripping any prior occurrence of the SAME marker-tagged sentence
+-- (regexp_replace, anchored on the literal marker text through end-of-string) before appending a
+-- fresh one, so re-running twice leaves the description identical to running it once.
 
 update public.security_rules
 set logic_expression = logic_expression || '{"min_denominator": 250}'::jsonb,
-    description = description || ' Exposure floor added (dispatch #42 section 5): min_denominator 250 (summed drawerSales, $) -- measured 2026-08-20 against the newly-landed audit_rows (#487): converts 24 of 670 tokenized subjects (3.6%) from a real-but-garbage rate to an honest null; 94.9% keep a real verdict.',
+    description = regexp_replace(description, ' Exposure floor added \(dispatch #42 section 5\):.*$', '')
+                  || ' Exposure floor added (dispatch #42 section 5): min_denominator 250 (summed drawerSales, $) -- measured 2026-08-20 against the newly-landed audit_rows (#487): converts 24 of 670 tokenized subjects (3.6%) from a real-but-garbage rate to an honest null; 94.9% keep a real verdict.',
     updated_at = now()
 where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id in ('CASH-001', 'CASH-003', 'CASH-004');
 
 update public.security_rules
 set logic_expression = logic_expression || '{"min_denominator": 25}'::jsonb,
-    description = description || ' Exposure floor added (dispatch #42 section 5): min_denominator 25 (summed drawerGC, transaction count) -- measured 2026-08-20: converts 23 of 670 tokenized subjects (3.4%) from a real-but-garbage rate to an honest null (including 2 subjects at drawerGC=5/13 whose raw rates were 200 and 1692.3 -- the exact tiny-denominator pathology this floor exists to stop); 95.5% keep a real verdict.',
+    description = regexp_replace(description, ' Exposure floor added \(dispatch #42 section 5\):.*$', '')
+                  || ' Exposure floor added (dispatch #42 section 5): min_denominator 25 (summed drawerGC, transaction count) -- measured 2026-08-20: converts 23 of 670 tokenized subjects (3.4%) from a real-but-garbage rate to an honest null (including 2 subjects at drawerGC=5/13 whose raw rates were 200 and 1692.3 -- the exact tiny-denominator pathology this floor exists to stop); 95.5% keep a real verdict.',
     updated_at = now()
 where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CASH-002';

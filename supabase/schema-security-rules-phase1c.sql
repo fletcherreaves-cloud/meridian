@@ -39,10 +39,27 @@ update public.security_rules set
   updated_at = now()
 where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'INV-001';
 
+-- PR #481 review (2026-08-20, verified before fixing, not applied blind): carrying INV-002's OLD
+-- ratio threshold forward as min_value=10 is not "permissive" here the way it is for INV-001 --
+-- it's UNREACHABLE. INV-002's own first live run measured max=0.13 against that same threshold
+-- (analysis-inventory-variance-baseline-2026-08-20.md, why the rule flagged 0 of 5,165), and a
+-- fresh re-measurement just now (same window, same join) confirms it: n=5,302, min=0, p50=0.0026,
+-- p90=0.0132, p95=0.0225, p99=0.0392, max=0.0868. min_value=10 would have made materialityOk
+-- FALSE for literally every subject in the estate -- the z-score conversion would change the
+-- stored logic_type and nothing observable, since evaluateZScoreRule() requires BOTH gates.
+-- No min_value at all, deliberately, rather than reusing a fresh percentile of this same
+-- distribution as the new floor: a materiality floor is supposed to be an INDEPENDENT
+-- "is this big enough to matter" number (INV-001's 20% traces to the plan's own flag guidance,
+-- CASH-004's traces to register-audit.js's existing amber band) -- p95 of the very population the
+-- z-score already ranks a subject against would just be re-deriving "top ~5%" a second way, not
+-- adding a real second gate. The z-score alone (>= 2.5 sigma vs. peers, MIN_BASELINE_N=5) is the
+-- only detection this rule performs until a real dollar-materiality number exists. Revisit if
+-- INV-002 is ever reactivated and a principled floor becomes available -- do not silently reuse a
+-- distribution percentile as if it were one.
 update public.security_rules set
   logic_type = 'z-score',
-  logic_expression = '{"numerator": {"field": "dolDiff", "agg": "sum", "abs": true}, "denominator": {"field": "storeMonthSales", "agg": "sum"}, "scale": 1000, "comparator": "gte", "min_value": 10}',
+  logic_expression = '{"numerator": {"field": "dolDiff", "agg": "sum", "abs": true}, "denominator": {"field": "storeMonthSales", "agg": "sum"}, "scale": 1000, "comparator": "gte"}',
   threshold = '{"default": 2.5}',
-  description = 'Dollarized TvA variance rate (dol_diff per $1,000 store-month sales, qsr_fob join), z-scored against a store baseline: OTHER stores'' rate for the SAME item over the same window. Flags when this store is >= 2.5 standard deviations above peers AND the raw rate clears a $10-per-$1,000 materiality floor (roughly 1% of sales) -- both retained from dispatch #40''s original ratio threshold, now doing a second job as a permissive materiality floor rather than the primary gate (dispatch #42 section 4, MINIMAL PATH after Step 0 came back "uniform / bent ruler"). No min_denominator: measured 2026-08-20, storeMonthSales has a MINIMUM of $2.1M across the live estate -- four orders of magnitude from zero, so an exposure floor here would be dead configuration, not protection.',
+  description = 'Dollarized TvA variance rate (dol_diff per $1,000 store-month sales, qsr_fob join), z-scored against a store baseline: OTHER stores'' rate for the SAME item over the same window. Flags when this store is >= 2.5 standard deviations above peers. No min_value materiality floor -- deliberately: the estate''s measured rate distribution (2026-08-20 re-check: max 0.0868, p95 0.0225) makes dispatch #40''s original ratio threshold (10) unreachable, and no independent dollar-materiality number exists yet to replace it with (see PR #481 review). The z-score gate alone is this rule''s detection until one does. No min_denominator either: measured 2026-08-20, storeMonthSales has a MINIMUM of $2.1M across the live estate -- four orders of magnitude from zero, so an exposure floor here would be dead configuration, not protection.',
   updated_at = now()
 where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'INV-002';
