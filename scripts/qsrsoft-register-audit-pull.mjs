@@ -246,13 +246,43 @@ export function mapRow(r) {
 // dead and the next candidate is the UI-interaction hypothesis in dispatch35's own writeup
 // (the report may not fire its API until a date range + run/export click). Record whichever way
 // it goes rather than leaving the next session to re-derive it.
-const REFERER = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit';
+// SETTLED 2026-08-20 by a complete DevTools capture of the WORKING request (200 OK, 51KB JSON,
+// owner-supplied). Its full request-header set is:
+//   :authority/:method/:path/:scheme, Accept: */*, Accept-Encoding, Accept-Language,
+//   Origin: https://v3.myqsrsoft.com, Priority, Referer (below), Sec-Ch-Ua*, Sec-Fetch-*,
+//   User-Agent
+// There is NO x-auth-token, NO cookie, and NO authorization header. This endpoint is not
+// authenticated by a credential we were failing to supply -- it is scoped by the orgId/nsn
+// params and validated against Origin/Referer. Every theory before this one (browser session,
+// wrong Referer value, needs-a-UI-click, cookie jar, header-we-failed-to-capture) was inferring
+// from an ABSENCE; this capture is a presence, and it supersedes all of them.
+//
+// THE UI ROUTE AND THE API PATH DIFFER BY NAME, which is what made this so slippery:
+//   UI page : https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit   <- "registerAudit"
+//   API call: https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit  <- "regAudit"
+// This script previously used the API spelling for BOTH, so viaPlaywright() was navigating to a
+// page that does not exist -- the direct cause of the flaky token capture (run 32396347757 saw
+// the call, run 32397005570 saw "(none)") and of the useless Referer.
+const REPORT_PAGE = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit';
+const REFERER = REPORT_PAGE;
 const buildUrl = (startDate, endDate) => `${BASE}/reports/mcd/controlsCash/regAudit?` + new URLSearchParams({
   nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
   startDate, endDate, dsd: 'd', weekStart: '3', nsd: 'd',
   resultType: 'byDateEmployee', registerType: 'cashier',
 });
-const HDRS = t => ({ 'X-Auth-Token': t, Accept: 'application/json', Origin: 'https://v3.myqsrsoft.com', Referer: REFERER, 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36' });
+// Mirrors the captured working request. Deliberately sends NO X-Auth-Token: the browser's own
+// successful call sends none, and sending an unexpected credential is the most likely cause of
+// the 403 we got on every direct attempt (a gateway rejecting a token it cannot validate for
+// this route, which is exactly a 403-not-401 signature). `t` is accepted and ignored so the
+// existing call sites and the re-mint/retry plumbing keep working unchanged; if this endpoint
+// ever does start requiring a token, re-adding it here is a one-line change.
+const HDRS = (_t) => ({
+  Accept: '*/*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  Origin: 'https://v3.myqsrsoft.com',
+  Referer: REFERER,
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+});
 
 // Response envelope shape wasn't captured explicitly in dispatch #34's findings (only the
 // per-row field names were) -- accept bare array, {result:[...]}, or {data:[...]}, matching the
@@ -417,7 +447,7 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
     console.log('[auth] post-login url:', page.url());
     await snap('audit-01-post-login.png');
 
-    await page.goto('https://v3.myqsrsoft.com/reports/mcd/controlsCash/regAudit', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+    await page.goto(REPORT_PAGE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
     await new Promise(r => setTimeout(r, 5000));
     console.log('[auth] report page url:', page.url(), '| token captured:', !!token);
     await snap('audit-02-report-page.png');
