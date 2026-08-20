@@ -5,8 +5,9 @@
 // first sheet_to_json -- and, because each file is parsed inside a try/catch, that surfaces as a
 // per-file warning rather than a crash.
 //
-// That is not hypothetical: scripts/qsrsoft-email-parse.mjs did exactly this from 2026-08-15
-// (v5.022/#329 moved XLSX behind a lazy loader for the entry-chunk budget) to 2026-08-20. All three
+// That is not hypothetical: scripts/qsrsoft-email-parse.mjs did exactly this from 2026-08-13
+// (v5.006/#248, 2026-08-12, moved XLSX behind a lazy loader for the entry-chunk budget) to
+// 2026-08-20 -- eight days. All three
 // emailed streams -- sales_ledger_daily, daily_glimpse_daily, cash_sheet_daily -- went stale while
 // the workflow reported SUCCESS on 15-of-15 failures. Found only because a per-stream freshness
 // banner surfaced it in the UI.
