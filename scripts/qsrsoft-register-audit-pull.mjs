@@ -439,7 +439,20 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
     // Proceed either way. `token` may be null here -- fetchChunk's browser-context branch sends
     // it only if present, and relies on cookies otherwise.
     console.log(`[auth] pulling ${chunks.length} chunk(s) via the browser context…`);
-    return await runAll(token, chunks, page, tracker, coveredStores);
+    // Catch AUTH_FAILED here rather than letting it escape. viaPlaywright() is called from
+    // INSIDE main()'s catch block (the direct path's own failure handler), so anything thrown
+    // here has nothing left to catch it and kills the process with a FATAL stack trace --
+    // skipping makeOutcomeTracker's finalize() and its "zero rows saved -- a quiet no-op, not a
+    // success" reporting. That regressed in the same change that started calling runAll() on the
+    // no-token path (run 32397005570). This is the fallback of last resort: it should report a
+    // clean failure, never crash. Returning 0 preserves the original contract.
+    try {
+      return await runAll(token, chunks, page, tracker, coveredStores);
+    } catch (e) {
+      console.error(`[auth] ✗ browser-context pull failed: ${e.message}`);
+      tracker.fail('playwright-fallback', e.message);
+      return 0;
+    }
   } finally { await browser.close(); }
 }
 
