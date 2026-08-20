@@ -119,7 +119,33 @@ trail mechanism (§5) is ready — worth the owner's explicit call, not assumed 
 
 ---
 
-## 4. Two directions, not a recommendation — this needs the owner's call
+## 4. DECIDED 2026-08-20 — Direction B (pseudonymization/identity-vault architecture)
+
+**Owner delegated the call, 2026-08-20**: *"I am good with whatever would be considered compliant
+and ethical and be the most functional."* Deciding on that basis:
+
+**Direction B wins on all three of the owner's stated criteria.** Compliant: pseudonymization is
+the industry-standard pattern for exactly this situation (ICO/NIST guidance, §1 above) and
+meaningfully shrinks what a leaked or over-broad query exposes — a real consideration given §3's
+RLS-hardening gap is still open. Ethical: it gets the "blind mode" bias-reduction property as a
+structural side effect — an investigator sees a behavior pattern before knowing whose it is,
+which directly serves §1's exoneration-analytics goal of not treating a finding as an accusation.
+Functional: it doesn't cost Phase 1 anything (baselines/rules operate on a token exactly as well
+as a name) and it's actually the *cheaper* time to build it — Phase 1 hasn't shipped yet, so no
+risk-score data exists under the old plaintext scheme that would need migrating later. Waiting
+until after Phase 1 ships would mean redoing this against live data instead of doing it once.
+
+**Sequencing implication, not previously flagged:** the identity-vault build should land
+**before or alongside Phase 1**, not after — Phase 1 is the first thing that will write new
+employee-attributed data (risk scores, rule evaluations), and it should write tokens from day
+one rather than plaintext names that get migrated later. This is a real scoping input for
+whichever dispatch defines Phase 1's actual schema, not a separate, deferred project.
+
+**Not yet dispatched — this needs its own scoping pass** (the token/vault table design, the
+resolve-through-a-logged-reveal mechanism, and reworking `analyzeRegisterAudit`'s `.emp`/`.id`
+usage) before it's ready for an engineer. Next step, not this file's job to do inline.
+
+### The two directions that were compared (kept for the record)
 
 **Direction A — extend the existing role+subject gate with a logged reveal, keep plaintext storage.**
 Smaller lift: add an audit-log table (`identity_view_log` or similar) that records every time a
@@ -139,17 +165,9 @@ the RLS-hardening gap (§3 above), and gets the "blind mode" bias-reduction bene
 of the same architecture. Touches every table this build produces or will produce — not a small
 addition, and not something to start speculatively before the owner decides it's worth the lift.
 
-**Not decided here.** Flagging for the owner alongside §5's existing three open questions (data
-retention, access control tier, evidence-grade standard) — this is a fourth axis of the same gate,
-not a separate decision track. Whichever direction is chosen, do it **before** Phase 4's employee
-rule-out/evidence-chain mechanism (§5) is scoped into a dispatch, since that mechanism is exactly
-where an unpseudonymized, unaudited identity trail would do the most damage if built on the current
-schema.
-
-**Reviewers on this decision (2026-08-19):** **Fletcher Reaves** (owner/developer) — added
-explicitly here rather than left as "the owner" implicitly, since this file also names HR/counsel
-as needing to weigh in on §1's jurisdiction question. Nobody else has been named yet; add further
-reviewers here as they're brought in, rather than leaving this list to be inferred from CLAUDE.md.
+**Reviewers on this decision:** **Fletcher Reaves** (owner/developer) — decided 2026-08-20.
+HR/counsel still need to weigh in on §1's separate jurisdiction question (GDPR/CCPA likely don't
+apply; state law/HR practice does) — that's not resolved by this architecture decision.
 
 ## References
 

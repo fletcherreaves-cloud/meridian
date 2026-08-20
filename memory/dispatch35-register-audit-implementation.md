@@ -143,6 +143,49 @@ displayed metric, worth resolving during the live-verification pass above: eithe
 manual path's cash-only convention for consistency, or keep the richer auto-pull definition and
 document the historical undercounting explicitly. Not decided here.
 
+**DECIDED 2026-08-20 (owner):** *"Need to account for all refunds. Cash refunds will likely be
+highest source of security concerns for context though. But cashless refunds can be a concern as
+well."* **Keep the richer auto-pull definition (cash+cashless) — do not match the manual path's
+cash-only convention.** Manually-uploaded historical rows undercounting cashless refunds is a
+data-quality artifact of the old Excel export lacking that column, not something to replicate
+going forward. **Flag for Phase 1 rule design**, not resolved here: the owner's framing implies
+cash refunds should weigh more heavily than cashless in whatever fraud-detection rule eventually
+scores refund behavior — `refundCnt` alone doesn't support that split (it's a combined count),
+but `refundCash`/`refundCashless` (separate DOLLAR columns) already do, and could stand in for a
+cash-weighted rule until/unless a separate cash-refund-count column is added. Not scoped here —
+Phase 1's rule design should read this note when it gets there, not re-derive the priority.
+
+## Register Audit pull — first live run attempts failed, 2026-08-20 (both direct-token and
+## Playwright fallback) — real diagnostic, not yet resolved
+
+Two runs (scheduled 10:36 UTC, manual retrigger 11:43 UTC) both failed identically — not a
+fluke. Full logs pulled via the GitHub Actions API, not summarized secondhand:
+
+- **Direct-token path: `AUTH_FAILED:403` after a forced re-mint**, not a 401. A 403 on a freshly
+  re-minted token means authenticated-but-not-authorized, not expired-credential — this points at
+  a **permissions problem with the `QSRSOFT_USERNAME`/`PASSWORD` service account**, not a token
+  hygiene problem. Worth checking directly: dispatch #34's captured SSO `getOrgInfo` permission
+  dump (Part 3, `dispatch-34-phase0a-findings.md`) shows several QSRSoft roles — Default Role,
+  Crew, Maintenance, Payroll Partner — **missing `registerAudit` from their permission list**
+  while most other roles have it. If the GitHub Actions service account is provisioned under one
+  of those restricted roles, that alone would explain a clean 403 specifically on this endpoint.
+  **Owner action: confirm the service account's QSRSoft role actually includes Register Audit
+  access.**
+- **Playwright fallback also failed** — logged in successfully, navigated to the report page URL,
+  but captured no `x-auth-token` from network traffic during that navigation, and the in-browser
+  fetch trigger of last resort failed with a generic `Failed to fetch`. This is consistent with
+  the report needing an actual UI interaction (date range + register/store pick + a run/export
+  click) before it calls the API, the same way Any Transaction's report worked
+  (`dispatch-34-phase0a-findings.md` Part 2) — not something that fires on page load alone. The
+  script's own header comment already flagged this navigation URL as "plausible-but-unconfirmed"
+  before this test; it's now confirmed insufficient on its own, not confirmed wrong outright.
+
+**Not fixed here** — needs either the service-account permission confirmed/corrected, or a real
+DevTools capture of the actual click-path this report requires (like the ones that unblocked
+dispatch #34), before the Playwright fallback can be taught the right interaction sequence.
+Script correctly failed loud (exit code 1, zero rows saved, no silent partial write) rather than
+masking the failure — the crash-loud design from dispatch #33/#35 did its job here.
+
 ## Verified
 
 - `node --check`: clean. Confirmed the module imports cleanly WITHOUT Supabase env vars set

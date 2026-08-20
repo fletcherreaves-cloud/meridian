@@ -30,6 +30,20 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security build — two owner decisions + a live-run diagnostic, 2026-08-20](plan-security-pii-architecture-2026-08-19.md)** —
+  **NEWEST.** (1) **Identity architecture DECIDED**: Direction B, the token/identity-vault
+  pattern (§4 of that file) — owner delegated on "compliant, ethical, most functional" and B wins
+  all three; should land before/alongside Phase 1 so Phase 1 writes tokens from day one, not
+  plaintext to be migrated later. Not yet scoped into a dispatch. (2) **`refundCnt` DECIDED**:
+  keep the richer cash+cashless auto-pull definition
+  (`dispatch35-register-audit-implementation.md`) — owner wants all refunds counted, with cash
+  flagged as the likely higher-priority security signal for future Phase 1 rule design. (3) **Live
+  pull run diagnostic**: both the scheduled and manual `workflow_dispatch` runs of the Register
+  Audit pull failed — direct-token auth got a 403 (permissions, not expiry — likely the service
+  account's QSRSoft role lacks `registerAudit`, cross-referenced against dispatch #34's SSO
+  capture), and the Playwright fallback logged in but never captured a token (report page likely
+  needs a UI interaction, not just navigation). Owner needs to confirm the service account's role;
+  full logs and reasoning in `dispatch35-register-audit-implementation.md`.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #36 — Security build Phase 0b: the substrate, implemented](dispatch36-security-phase0b-substrate.md)** —
   2026-08-19. **NEWEST, merged (PR #451), independently PM-verified before merge** — interpreter
   logic, baseline math, and the `org_config` RLS pattern-match were all checked line-by-line
