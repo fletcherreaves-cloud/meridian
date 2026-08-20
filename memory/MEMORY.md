@@ -30,8 +30,26 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #37 — identity-vault architecture (Direction B)](dispatch-37.md)** —
+  2026-08-20. **NEWEST, ready to dispatch now.** Owner chose to build this before Phase 1, per the
+  plan's own sequencing note. **Real finding that reshapes the whole dispatch**: CLAUDE.md's
+  documented 8-tier RBAC (Developer/Admin/Owner/VP/DO/Supervisor/GM/Office) **isn't actually
+  implemented** — `profiles.role` only has 3 real values (`admin`/`supervisor`/`manager`, verified
+  against `supabase/schema.sql`'s check constraint), and `qsrsoft-rbac-and-permissions.md`
+  independently confirms the fuller ladder is a future-reference model, not live. The owner's
+  "Supervisor can identify, GM optionally can" decision (§5) maps onto the real `supervisor`/
+  `manager` role values, not nonexistent DO/VP/GM strings — flagged explicitly so the RLS doesn't
+  get written against roles that will never match. Scope: two new tables
+  (`employee_identity_vault` token↔name mapping with **no direct select policy at all**;
+  `identity_reveal_log`, append-only/evidence-grade, indefinite retention) + a `SECURITY DEFINER`
+  reveal RPC (admin/supervisor always, manager gated on an explicitly-flagged placeholder
+  org-wide toggle) + retrofitting the write path (`audit_rows` gets an additive `emp_token`
+  column, existing PK/`emp` untouched — migrating storage to be token-keyed is a deliberately
+  deferred, separate decision) + retrofitting `analyzeRegisterAudit`'s exposure layer to return
+  tokens, not names. No UI. Full scoping and the reasoning behind every deferral in the dispatch
+  itself.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security build — six owner decisions in one morning, 2026-08-20](plan-security-loss-prevention.md)** —
-  **NEWEST.** Every open owner-gated question on this build got answered in one sitting —
+  2026-08-20. Every open owner-gated question on this build got answered in one sitting —
   read `plan-security-loss-prevention.md` §4/§5 and `plan-security-pii-architecture-2026-08-19.md`
   §4 for full reasoning, not just the list below:
   1. **Identity architecture: Direction B** (token/identity-vault) — owner delegated on
