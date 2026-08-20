@@ -6,18 +6,24 @@
 // and upserts one security_findings row per (rule, employee, window) — dispatch #39's own new
 // output table, subject-keyed on emp_token, never a plaintext name (Direction B, dispatch #37).
 //
-// This is a COMPUTE job, not a pull -- audit_rows is already in Supabase (qsrsoft-register-
-// audit-pull.mjs's job), this reads it back and scores it. Scaffolding (service-role client,
-// GitHub Actions workflow, sync-failure-watch.yml entry) matches the *-pull.mjs family per
+// Dispatch #40 (memory/dispatch-40.md) extends this SAME loop with a second rule-type branch --
+// INV-001/INV-002, sourced from qsr_variance_stat (store x month x item grain) instead of
+// audit_rows, subject-keyed on wrin instead of emp_token. Not a second script: one active-rules
+// loop, one output table, branching on which DATA_REQUIRED a rule names.
+//
+// This is a COMPUTE job, not a pull -- audit_rows/qsr_variance_stat/qsr_fob are already in
+// Supabase (their own pull jobs), this reads them back and scores them. Scaffolding (service-role
+// client, GitHub Actions workflow, sync-failure-watch.yml entry) matches the *-pull.mjs family per
 // CLAUDE.md's standing "new automated pull" checklist, but the compute loop itself is new --
 // not modeled on any existing pull script's per-row mapping shape.
 //
 // Does NOT modify src/engine/security-rules.js or security-baselines.js -- both already correct
-// (dispatch #36), reused here exactly as they are.
+// (dispatch #36), reused here exactly as they are, for BOTH rule-type branches.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Run AFTER supabase/schema-security-rules-phase1.sql and schema-security-findings.sql have
-// been applied, and after that day's qsrsoft-register-audit-pull.yml run (this job's input).
+// Run AFTER supabase/schema-security-rules-phase1.sql, schema-security-rules-phase1b.sql, and
+// schema-security-findings.sql have been applied, and after that day's qsrsoft-register-audit-
+// pull.yml / qsrsoft-variance-pull.yml / qsrsoft-pull.yml (qsr_fob) runs (this job's inputs).
 
 import { createClient } from '@supabase/supabase-js';
 import { evaluateRule } from '../src/engine/security-rules.js';
@@ -54,13 +60,21 @@ export function mapAuditRow(r) {
   };
 }
 
-// This job only knows how to source audit_rows today -- a rule naming any other DATA_REQUIRED
-// (e.g. a future qsr_variance_stat-based rule) is skipped with a warning, not crashed on, so a
-// rule can be registered ahead of this job supporting its source without breaking the run.
-export function supportsAuditRows(rule) {
-  const req = Array.isArray(rule.data_required) ? rule.data_required
+export function dataRequiredList(rule) {
+  return Array.isArray(rule.data_required) ? rule.data_required
     : (typeof rule.data_required === 'string' ? JSON.parse(rule.data_required) : []);
-  return req.includes('audit_rows');
+}
+
+// A rule naming a DATA_REQUIRED this job doesn't know how to source is skipped with a warning,
+// not crashed on, so a rule can be registered ahead of this job supporting its source without
+// breaking the run.
+export function supportsAuditRows(rule) {
+  return dataRequiredList(rule).includes('audit_rows');
+}
+
+// Dispatch #40 -- INV-001/INV-002, store x item subject (no emp/empToken on this table at all).
+export function supportsVarianceStat(rule) {
+  return dataRequiredList(rule).includes('qsr_variance_stat');
 }
 
 // Extracts {numField, denField, scale, abs} from a rule's logic_expression -- a thin read, not a
@@ -140,6 +154,104 @@ export function computeFindingsForRule(rule, rows, { windowStart, windowEnd }) {
   return findings;
 }
 
+// dispatch #40's own field-mapping table for qsr_variance_stat -- store x month x item grain,
+// PK (loc, period, wrin). `date: r.period` is the dispatch's own explicit suggestion (header
+// "One small, real row-shaping step"): security-baselines.js's inWindow() does a plain string
+// comparison against r.date, so mapping period ('YYYY-MM') straight onto date -- and passing
+// windowStart/windowEnd as 'YYYY-MM' bounds too, not full dates -- keeps that comparison correct
+// at month granularity with zero security-baselines.js changes. Appending '-01' here instead
+// would silently break it: a same-length-prefix string ('2026-08') compares LESS than a longer
+// one that starts with it ('2026-08-01'), so an end bound of '2026-08' would wrongly exclude the
+// current month's own row.
+export function mapVarianceStatRow(r) {
+  return {
+    loc: r.loc, period: r.period, date: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr,
+    rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage, actUsage: r.act_usage,
+    variance: r.variance, dolDiff: r.dol_diff,
+  };
+}
+
+// INV-002's denominator path (dispatch #40 §"Denominator needs a decision, not a guess") --
+// pct_sales' real semantics are unconfirmed from this sandbox (no comment/test/prior probe
+// settles what QSRSoft's `percentage` field measures), so this uses the real cross-table join
+// instead: qsr_fob's daily prod_sales_amt, summed per (loc, month), attached to every
+// qsr_variance_stat row for that same (loc, period) as `storeMonthSales`. security-rules.js
+// itself needs zero changes -- INV-002's logic_expression just names "storeMonthSales" as its
+// denominator field, same as any other column. fobRows are raw (loc, date, prod_sales_amt) rows;
+// varianceRows are already mapVarianceStatRow-mapped (carry `.period`, 'YYYY-MM').
+export function joinStoreMonthSales(varianceRows, fobRows) {
+  const salesByLocPeriod = new Map();
+  for (const r of fobRows) {
+    const period = String(r.date).slice(0, 7);
+    const key = r.loc + '::' + period;
+    salesByLocPeriod.set(key, (salesByLocPeriod.get(key) || 0) + (Number(r.prod_sales_amt) || 0));
+  }
+  return varianceRows.map(r => ({
+    ...r,
+    storeMonthSales: salesByLocPeriod.get(r.loc + '::' + r.period) ?? null,
+  }));
+}
+
+// Last calendar day of a 'YYYY-MM' period, as 'YYYY-MM-DD' -- security_findings.window_start/
+// window_end are real `date` columns, not text, so a period-string bound has to become an actual
+// date before it's stored (internally, computeItemFindingsForRule keeps windowStart/windowEnd as
+// 'YYYY-MM' strings throughout, matching mapVarianceStatRow's date field -- this conversion only
+// happens at the point a finding object is built).
+export function periodEndDate(period) {
+  const [y, m] = period.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
+// The item-domain parallel to computeFindingsForRule() -- pure, no Supabase dependency. Subject
+// is (loc, wrin), never an employee: qsr_variance_stat carries no emp/empToken field at all, so
+// personalBaseline/peerBaseline/networkBaseline (all hard-require r.emp, dispatch #40's header)
+// are not usable here -- only storeBaseline(), which groups purely by r.loc.
+export function computeItemFindingsForRule(rule, rows, { windowStart, windowEnd }) {
+  const { numField, denField, scale, abs } = fieldsFromExpr(rule);
+  const dataRequired = dataRequiredList(rule);
+  const primary = dataRequired[0];
+
+  // Condiment-class rows carry a dol_diff forced to 0 at map time (eom-parsers.js's
+  // mapVarianceRows) -- but this exclusion is applied uniformly to BOTH INV-001 and INV-002, not
+  // just the dol_diff-based one: condiments' inherently low/noisy unit-usage figures make a
+  // %-rate rule prone to false positives even on INV-001's variance/exp_usage ratio, where the
+  // numerator isn't literally zeroed. One policy, stated once, not a per-rule special case.
+  const eligible = rows.filter(r => r.cls !== 'condiment');
+
+  // Distinct (loc, wrin) pairs actually present in the window -- the subject is a store x item,
+  // never a person.
+  const pairs = new Map();
+  for (const r of eligible) {
+    if (!r.loc || !r.wrin) continue;
+    const key = r.loc + '::' + r.wrin;
+    if (!pairs.has(key)) pairs.set(key, { loc: r.loc, wrin: r.wrin });
+  }
+
+  const findings = [];
+  for (const { loc, wrin } of pairs.values()) {
+    const subjectRows = eligible.filter(r => r.loc === loc && r.wrin === wrin);
+    const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc });
+
+    // storeBaseline's population is pre-filtered to the SAME wrin -- "this store's rate for item
+    // X vs. other stores' rate for that SAME item X," never pooled across unrelated items (a
+    // chicken-nugget variance rate isn't comparable to a napkin one). This is a caller-side
+    // filter, not a storeBaseline() change -- it already groups by r.loc alone, so handing it a
+    // same-item-only row set is all that's needed.
+    const sameItemRows = eligible.filter(r => r.wrin === wrin);
+    const baseline = rule.baseline_type === 'store'
+      ? storeBaseline(sameItemRows, { loc, numField, denField, scale, abs, start: windowStart, end: windowEnd })
+      : null;
+
+    findings.push({
+      wrin, loc, ruleId: rule.rule_id,
+      windowStart: `${windowStart}-01`, windowEnd: periodEndDate(windowEnd),
+      value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
+      baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+    });
+  }
+  return findings;
+}
+
 // ── I/O layer ──────────────────────────────────────────────────────────────────────────────────
 async function loadActiveRules() {
   const { data, error } = await supabase.from('security_rules').select('*').eq('active', true).eq('tenant_id', TENANT);
@@ -163,11 +275,46 @@ async function loadAuditRowsWindow(startDate, endDate) {
   return rows;
 }
 
+const PERIOD_PAGE = 1000;
+async function loadVarianceStatWindow(startPeriod, endPeriod) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_variance_stat').select('*')
+      .gte('period', startPeriod).lte('period', endPeriod).range(from, from + PERIOD_PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadVarianceStatWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data.map(mapVarianceStatRow));
+    if (data.length < PERIOD_PAGE) break;
+    from += PERIOD_PAGE;
+  }
+  return rows;
+}
+
+// qsr_fob is daily grain -- the window here is real calendar dates spanning startPeriod's first
+// day through endPeriod's last day, not the 'YYYY-MM' bounds loadVarianceStatWindow uses.
+async function loadFobWindow(startPeriod, endPeriod) {
+  const startDate = `${startPeriod}-01`;
+  const endDate = periodEndDate(endPeriod);
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_fob').select('loc,date,prod_sales_amt')
+      .gte('date', startDate).lte('date', endDate).range(from, from + PERIOD_PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadFobWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < PERIOD_PAGE) break;
+    from += PERIOD_PAGE;
+  }
+  return rows;
+}
+
 async function upsertFindings(findings) {
   if (!findings.length) return { saved: 0, errors: [] };
   const now = new Date().toISOString();
   const upsert = findings.map(f => ({
-    tenant_id: TENANT, emp_token: f.empToken, loc: f.loc, rule_id: f.ruleId,
+    tenant_id: TENANT, emp_token: f.empToken ?? null, wrin: f.wrin ?? null, loc: f.loc, rule_id: f.ruleId,
     window_start: f.windowStart, window_end: f.windowEnd,
     value: f.value, threshold_used: f.thresholdUsed, pass: f.pass,
     baseline_context: f.baselineContext, explanation: f.explanation, computed_at: now,
@@ -178,8 +325,9 @@ async function upsertFindings(findings) {
     // subject_key (generated column, schema-security-findings.sql) collapses emp_token/wrin's
     // nullability into a NOT NULL value -- a plain emp_token/wrin column list wouldn't actually
     // enforce idempotency here, since Postgres unique indexes treat NULL as never equal to
-    // another NULL. This job only ever writes emp_token findings today (wrin is dispatch #40's),
-    // but the conflict target already matches the wider table shape.
+    // another NULL. CASH-*/audit_rows findings write emp_token with wrin null; INV-*/
+    // qsr_variance_stat findings (dispatch #40) write wrin with emp_token null -- either way
+    // subject_key resolves to one NOT NULL value per row, so the same conflict target works.
     const { error } = await supabase.from('security_findings').upsert(
       upsert.slice(i, i + CHUNK),
       { onConflict: 'tenant_id,rule_id,loc,window_start,window_end,subject_key' },
@@ -198,22 +346,46 @@ async function main() {
   if (!rules.length) { console.log('[security-rules-run] nothing to do'); process.exit(0); }
 
   const today = new Date();
-  const rowCache = new Map(); // windowStart..windowEnd -> rows, so same-window rules don't re-fetch
+  const auditRowCache = new Map();    // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped audit_rows
+  const varianceRowCache = new Map(); // 'YYYY-MM..YYYY-MM' -> mapped qsr_variance_stat rows (unjoined)
+  const fobRowCache = new Map();      // 'YYYY-MM..YYYY-MM' -> raw qsr_fob rows
   let totalFindings = 0, totalErrors = 0, skipped = 0;
 
   for (const rule of rules) {
-    if (!supportsAuditRows(rule)) {
+    let findings, rows, cacheKey;
+
+    if (supportsAuditRows(rule)) {
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!auditRowCache.has(cacheKey)) auditRowCache.set(cacheKey, await loadAuditRowsWindow(windowStart, windowEnd));
+      rows = auditRowCache.get(cacheKey);
+      findings = computeFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsVarianceStat(rule)) {
+      // qsr_variance_stat is monthly grain -- window_days (personal to CASH-*'s daily convention)
+      // is converted to a whole-month count, INV-001/002's default (90 days, see
+      // schema-security-rules-phase1b.sql) landing on a 3-month rolling window.
+      const windowMonths = Math.max(1, Math.round((rule.window_days || DEFAULT_WINDOW_DAYS) / 30));
+      const periods = [];
+      for (let i = windowMonths - 1; i >= 0; i--) {
+        const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - i, 1));
+        periods.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+      }
+      const windowStart = periods[0], windowEnd = periods[periods.length - 1];
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!varianceRowCache.has(cacheKey)) varianceRowCache.set(cacheKey, await loadVarianceStatWindow(windowStart, windowEnd));
+      rows = varianceRowCache.get(cacheKey);
+      if (dataRequiredList(rule).includes('qsr_fob')) {
+        if (!fobRowCache.has(cacheKey)) fobRowCache.set(cacheKey, await loadFobWindow(windowStart, windowEnd));
+        rows = joinStoreMonthSales(rows, fobRowCache.get(cacheKey));
+      }
+      findings = computeItemFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else {
       console.warn(`[security-rules-run] ${rule.rule_id}: DATA_REQUIRED not yet supported by this job — skipping`);
       skipped++; continue;
     }
-    const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
-    const windowEnd = fmtDate(today);
-    const windowStart = fmtDate(addDay(today, -windowDays));
-    const cacheKey = `${windowStart}..${windowEnd}`;
-    if (!rowCache.has(cacheKey)) rowCache.set(cacheKey, await loadAuditRowsWindow(windowStart, windowEnd));
-    const rows = rowCache.get(cacheKey);
 
-    const findings = computeFindingsForRule(rule, rows, { windowStart, windowEnd });
     console.log(`[security-rules-run] ${rule.rule_id}: ${rows.length} row(s) in ${cacheKey} -> ${findings.length} finding(s), ${findings.filter(f => f.pass).length} flagged`);
     const { saved, errors } = await upsertFindings(findings);
     totalFindings += saved;

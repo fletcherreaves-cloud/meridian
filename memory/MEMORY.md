@@ -30,13 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⚠️ CORRECTION, same day: dispatch #39's "TvA not buildable" claim below was WRONG — see the
-  correction note at the top of `dispatch-39.md`.** QSRSoft already computes TvA-equivalent
-  variance natively, and Meridian already pulls it (`qsr_variance_stat`, `qsr_raw_item_detail`,
-  `src/engine/eom-variance-raw.js`) — the error was "haven't looked" mistaken for "doesn't
-  exist," exactly the mistake CLAUDE.md's own standing rule warns against. Owner caught it
-  same-day. What's actually still missing is narrower: that data is store×item-grain, not
-  employee-attributed — background investigation in progress to scope a real follow-up dispatch.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, implemented](dispatch40-inventory-tva-rule.md)** —
+  **NEWEST, implemented, awaiting PR merge (same PR/branch as #39).** The follow-through on the
+  correction below: `INV-001` (item-level TvA variance rate, store baseline, plan §2.2's own
+  formula, single-table) and `INV-002` (dollar-variance rate normalized against sales, store
+  baseline — denominator is a real `qsr_fob` join, NOT `qsr_variance_stat.pct_sales`, whose
+  semantics are unconfirmed from this sandbox). Subject is `(loc, wrin)`, never an employee —
+  `storeBaseline()` is the only baseline function usable here (`personalBaseline`/`peerBaseline`/
+  `networkBaseline` all hard-require `emp`). `security_findings` needed **zero migration** —
+  dispatch #39 built its nullable-`emp_token`/co-equal-`wrin` shape in anticipation of this exact
+  dispatch, before the table ever went live, off a same-day PM heads-up. `scripts/security-rules-
+  run.mjs` extended with a second rule-type branch (still one job, one loop): `mapVarianceStatRow`
+  (`date: r.period`, NOT `period + '-01'` — a real string-comparison correctness point, see the
+  writeup), `joinStoreMonthSales`, `computeItemFindingsForRule` (same-item-only baseline
+  population). Condiment-class rows excluded from BOTH rules uniformly. 11 new tests, 1663/1663
+  suite passes. No UI, no recipe/BOM pull (confirmed not needed — `exp_usage` already IS the
+  theoretical figure). Original brief: [dispatch-40.md](dispatch-40.md), superseded by the
+  implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, implemented](dispatch39-phase1-cash-rules.md)** —
   **NEWEST, implemented, awaiting PR merge.** First dispatch in this build with real,
   `ACTIVE=true` output — everything before it was substrate. **Phase 1 as shipped is cash-domain

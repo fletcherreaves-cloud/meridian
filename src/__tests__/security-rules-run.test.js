@@ -1,10 +1,14 @@
 // @ts-nocheck
-// scripts/security-rules-run.mjs (dispatch #39) -- the Phase 1 batch job's pure compute core.
-// No Supabase dependency in these functions themselves, same testing precedent as dispatch #35's
-// mapRow() and dispatch #36's evaluateRule()/baseline fixtures -- hand-computed expected values
-// in each test's own comment, not assumed.
+// scripts/security-rules-run.mjs (dispatch #39, extended #40) -- the Phase 1/1b batch job's pure
+// compute core. No Supabase dependency in these functions themselves, same testing precedent as
+// dispatch #35's mapRow() and dispatch #36's evaluateRule()/baseline fixtures -- hand-computed
+// expected values in each test's own comment, not assumed.
 import { describe, it, expect } from 'vitest';
-import { mapAuditRow, supportsAuditRows, fieldsFromExpr, computeFindingsForRule, buildExplanation } from '../../scripts/security-rules-run.mjs';
+import {
+  mapAuditRow, supportsAuditRows, fieldsFromExpr, computeFindingsForRule, buildExplanation,
+  dataRequiredList, supportsVarianceStat, mapVarianceStatRow, joinStoreMonthSales, periodEndDate,
+  computeItemFindingsForRule,
+} from '../../scripts/security-rules-run.mjs';
 
 describe('mapAuditRow() — snake_case DB row -> camelCase, matching dispatch #39\'s own field table', () => {
   it('maps every column named in the dispatch, including emp_token -> empToken', () => {
@@ -145,5 +149,126 @@ describe('buildExplanation()', () => {
     const exp = buildExplanation(RULE_A, { value: 4, threshold: null, pass: null }, null);
     expect(exp[0].label).toMatch(/undetermined/);
     expect(exp[0].contribution).toBe(0);
+  });
+});
+
+// ── Dispatch #40 -- inventory-domain (qsr_variance_stat) branch ─────────────────────────────────
+
+describe('dataRequiredList() / supportsVarianceStat()', () => {
+  it('supportsAuditRows and supportsVarianceStat are mutually exclusive on their own fixtures', () => {
+    expect(supportsVarianceStat({ data_required: ['qsr_variance_stat'] })).toBe(true);
+    expect(supportsVarianceStat({ data_required: ['qsr_variance_stat', 'qsr_fob'] })).toBe(true);
+    expect(supportsVarianceStat({ data_required: '["qsr_variance_stat"]' })).toBe(true);
+    expect(supportsVarianceStat({ data_required: ['audit_rows'] })).toBe(false);
+    expect(supportsAuditRows({ data_required: ['qsr_variance_stat'] })).toBe(false);
+  });
+  it('dataRequiredList handles array, JSON-string, and missing forms without throwing', () => {
+    expect(dataRequiredList({ data_required: ['a', 'b'] })).toEqual(['a', 'b']);
+    expect(dataRequiredList({ data_required: '["a"]' })).toEqual(['a']);
+    expect(dataRequiredList({})).toEqual([]);
+  });
+});
+
+describe('mapVarianceStatRow() — snake_case DB row -> camelCase, period mapped straight onto date', () => {
+  it('maps every real qsr_variance_stat column, date === period (not period + \'-01\')', () => {
+    const r = mapVarianceStatRow({
+      loc: '0000001', period: '2026-07', wrin: 'W100', cls: 'food', descr: 'Beef Patty',
+      raw_waste: 1, comp_waste: 2, exp_usage: 100, act_usage: 108, variance: 8, dol_diff: 6.4,
+    });
+    expect(r).toMatchObject({
+      loc: '0000001', period: '2026-07', date: '2026-07', wrin: 'W100', cls: 'food',
+      descr: 'Beef Patty', rawWaste: 1, compWaste: 2, expUsage: 100, actUsage: 108,
+      variance: 8, dolDiff: 6.4,
+    });
+  });
+});
+
+describe('periodEndDate()', () => {
+  it('returns the real last calendar day of a YYYY-MM period, including leap Feb', () => {
+    expect(periodEndDate('2026-08')).toBe('2026-08-31');
+    expect(periodEndDate('2026-04')).toBe('2026-04-30');
+    expect(periodEndDate('2024-02')).toBe('2024-02-29'); // leap year
+    expect(periodEndDate('2026-02')).toBe('2026-02-28'); // non-leap
+  });
+});
+
+describe('joinStoreMonthSales() — qsr_fob daily rows summed per (loc, month), attached to matching variance rows', () => {
+  it('sums prod_sales_amt across all days in the period for the matching (loc, period)', () => {
+    const varianceRows = [
+      { loc: '0000001', period: '2026-07', wrin: 'W100', dolDiff: 6 },
+      { loc: '0000002', period: '2026-07', wrin: 'W100', dolDiff: 3 },
+    ];
+    const fobRows = [
+      { loc: '0000001', date: '2026-07-01', prod_sales_amt: 1000 },
+      { loc: '0000001', date: '2026-07-02', prod_sales_amt: 1500 },
+      { loc: '0000002', date: '2026-07-01', prod_sales_amt: 2000 },
+      // A different month's row for store 1 must NOT contribute to July's sum.
+      { loc: '0000001', date: '2026-08-01', prod_sales_amt: 9999 },
+    ];
+    const joined = joinStoreMonthSales(varianceRows, fobRows);
+    expect(joined.find(r => r.loc === '0000001').storeMonthSales).toBe(2500);
+    expect(joined.find(r => r.loc === '0000002').storeMonthSales).toBe(2000);
+  });
+  it('a (loc, period) with no matching qsr_fob rows gets null, not 0 or undefined', () => {
+    const joined = joinStoreMonthSales([{ loc: '0000003', period: '2026-07', wrin: 'W1' }], []);
+    expect(joined[0].storeMonthSales).toBeNull();
+  });
+});
+
+// Store 1 / Store 2, item W100 (food), 2 periods each -- hand-computed:
+//   Store 1 W100: variance |8|+|12|=20, expUsage 100+100=200 -> rate (variance/expUsage*100) = 10
+//   Store 2 W100: variance |4|+|6|=10,  expUsage 100+100=200 -> rate = 5
+// Item W200 (condiment) on Store 1 has a huge variance/expUsage ratio (999/1) that would dominate
+// everything if not excluded -- proves the exclusion actually runs, not just documented.
+const INV_ROWS = [
+  { loc: '0000001', period: '2026-06', date: '2026-06', wrin: 'W100', cls: 'food', variance: 8,  expUsage: 100 },
+  { loc: '0000001', period: '2026-07', date: '2026-07', wrin: 'W100', cls: 'food', variance: 12, expUsage: 100 },
+  { loc: '0000002', period: '2026-06', date: '2026-06', wrin: 'W100', cls: 'food', variance: 4,  expUsage: 100 },
+  { loc: '0000002', period: '2026-07', date: '2026-07', wrin: 'W100', cls: 'food', variance: 6,  expUsage: 100 },
+  { loc: '0000001', period: '2026-06', date: '2026-06', wrin: 'W200', cls: 'condiment', variance: 999, expUsage: 1 },
+];
+const INV_RULE = {
+  rule_id: 'INV-001', logic_type: 'ratio', baseline_type: 'store',
+  data_required: ['qsr_variance_stat'],
+  logic_expression: { numerator: { field: 'variance', agg: 'sum', abs: true }, denominator: { field: 'expUsage', agg: 'sum' }, scale: 100, comparator: 'gte' },
+  threshold: { default: 10 }, method: 'Item TvA variance rate', severity: 3, weight: 1,
+};
+const INV_WIN = { windowStart: '2026-06', windowEnd: '2026-07' };
+
+describe('computeItemFindingsForRule() — store x item subject, storeBaseline only, condiments excluded', () => {
+  it('produces exactly one finding per (loc, wrin) present -- condiment row never becomes a subject', () => {
+    const findings = computeItemFindingsForRule(INV_RULE, INV_ROWS, INV_WIN);
+    expect(findings).toHaveLength(2); // W100 at store 1 and store 2 only -- W200 excluded
+    expect(findings.every(f => f.wrin === 'W100')).toBe(true);
+  });
+
+  it('hand-computed rate + threshold crossing for store 1 (rate 10 >= threshold 10 -> pass)', () => {
+    const s1 = computeItemFindingsForRule(INV_RULE, INV_ROWS, INV_WIN).find(f => f.loc === '0000001');
+    expect(s1.value).toBeCloseTo(10, 6);
+    expect(s1.thresholdUsed).toBe(10);
+    expect(s1.pass).toBe(true);
+  });
+
+  it('hand-computed rate for store 2 (rate 5 < threshold 10 -> fail), baseline is store 1\'s rate ONLY (same item, self excluded)', () => {
+    const s2 = computeItemFindingsForRule(INV_RULE, INV_ROWS, INV_WIN).find(f => f.loc === '0000002');
+    expect(s2.value).toBeCloseTo(5, 6);
+    expect(s2.pass).toBe(false);
+    // storeBaseline's population for store 2's subject is "every OTHER store's rate for the SAME
+    // wrin" -- only store 1 qualifies (W200's condiment row is pre-excluded, so it can never
+    // pollute this population even though it's a different item entirely).
+    expect(s2.baselineContext.values).toEqual([10]);
+    expect(s2.baselineContext.memberCount).toBe(1);
+  });
+
+  it('converts YYYY-MM window bounds to real calendar-date finding bounds (window_start/window_end are `date` columns)', () => {
+    const s1 = computeItemFindingsForRule(INV_RULE, INV_ROWS, INV_WIN).find(f => f.loc === '0000001');
+    expect(s1.windowStart).toBe('2026-06-01');
+    expect(s1.windowEnd).toBe('2026-07-31');
+  });
+
+  it('subject has no empToken at all -- emp_token stays null when this finding is upserted', () => {
+    const s1 = computeItemFindingsForRule(INV_RULE, INV_ROWS, INV_WIN).find(f => f.loc === '0000001');
+    expect(s1.empToken).toBeUndefined();
+    expect(s1.wrin).toBe('W100');
   });
 });
