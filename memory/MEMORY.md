@@ -30,7 +30,39 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [CASH-003's field does not exist — a measured negative](finding-cash003-manoverringqty-absent-2026-08-20.md)** —
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #48 — the inventory schemes that need no new data](dispatch-48.md)** —
+  **NEWEST, briefed, not implemented.** Three rules, all on tables the batch job already loads.
+  **INV-003 (variance unmatched by logged waste)** is the plan's own *"strongest single signal"* and
+  already has its evidence: dispatch #45 Part C measured that only **44.1%** of unexplained INV-001
+  flags have any logged waste and only **4.2%** have waste covering half the variance. Uses
+  `qsr_variance_stat.raw_waste`/`comp_waste` and the `exoneration_share` column added in #492;
+  delivers plan §1 principle 4 (a rule that searches for its own counter-evidence), which nothing in
+  the build does yet. **INV-005 (phantom gains)** needs only the sign INV-001 discards via
+  `abs:true` — but **determine the sign convention by measurement**, since a reversed rule passes
+  review invisibly, and note it is data-blocked on a period backfill (`qsr_variance_stat` holds only
+  `2026-08`) for the plan's "recent negative-variance history" qualifier. **INV-004 (waste-log
+  padding)** is the most valuable and the only one with a hard prerequisite: `qsr_waste` is far
+  richer than assumed (`manager` eID, `busn_tm`, `reason`, `wsource`, `edited` — all unused), which
+  makes this the build's **first person-attributed inventory rule** — and `qsr_waste` has **no
+  `emp_token`**, so **the identity vault must be extended to `qsr_waste.manager` first**, as part of
+  this dispatch, not after. Never a plaintext eID in `security_findings`. Also note `qsr_waste` has
+  **no `wrin`**, so the plan's "group by item" cannot come from it — item-level waste is INV-003's
+  territory; scope INV-004 as manager × day-part × store. All three land inactive with measured
+  thresholds, and `MEASURED_MAX` must be extended per rule or the guard silently skips them.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [CASH-003 — the field didn't exist, and the fix was a different instrument](finding-cash003-manoverringqty-absent-2026-08-20.md)** —
+  **✅ RESOLVED same day — CASH-003 is LIVE.** Three independent confirmations that no count field
+  exists (API response, Excel parser headers, owner's eyes on the report). **Retirement was nearly
+  the conclusion and would have been wrong:** `manualRefAmt` works, the event is just rare — 80 days,
+  19,985 rows, 27 stores → **6 occurrences, 4 employees, $70 total** ($7 smallest, $26 largest, zero
+  sub-dollar noise). For an event that rare a rate AND a count are both wrong; an **absolute dollar
+  threshold** is right, needs no distribution, and the engine already supported it
+  (`logic_type:'threshold'`, no denominator). Shipped at `threshold: 5`, `active = true` — earned.
+  **The $70 is not the signal:** a manual over-ring is a privileged override, so a flag means
+  *"verify this was approved,"* never *"this person took $10."* One or two subjects per window —
+  **the first rule here whose output can be reviewed exhaustively.** ⚠️ Engineer: add CASH-003 to
+  `MEASURED_MAX` — it was excluded for having no measured range, and now has one. **Standing lesson:**
+  when a rule can't fire, the instincts are (1) find the missing data, (2) retire it. Both were wrong.
+  Ask what shape the event actually has first.
   **NEWEST.** After an 80-day Register Audit backfill (14,528 rows, 27/27 stores),
   `audit_rows.manual_ref_cnt` is **null in all 19,985 rows**: **`manOverringQty` is not a field in
   the API response.** Dispatch #44 rebuilt CASH-003 around it on a textbook inference — every other
