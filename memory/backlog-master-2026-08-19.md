@@ -927,10 +927,10 @@ previously documented — is the raw per-event log to build against, and settled
   implemented, `z-score`/`sequence`/`window-function` stubbed for Phase 2/3), personal/peer/store/
   network baseline computation, exposure normalization utilities (confirmed genuinely new — no
   existing `metric-source.js`/`vs-ly.js` primitive duplicated — built following their conventions).
-  **One real follow-up: owner needs to run `supabase/schema-security-rules.sql` against live
-  Supabase** (same manual-migration pattern as every other `schema-*.sql` file here) before
-  `security_rules` exists as a real table.
-- [ ] Phase 1 MVP (once the owner runs the SQL above): cash-drawer variance + peer ranking, TvA
+  **SQL run against live Supabase 2026-08-20, confirmed independently** (`security_rules`
+  returns `200 []` from the anon key — RLS filtering, not a missing table; verified against a
+  genuinely nonexistent table returning `404` for contrast). **Phase 0b fully done.**
+- [ ] **Phase 1 MVP — unblocked for real, not yet dispatched.** cash-drawer variance + peer ranking, TvA
   inventory variance (this slice already runs on data this org has — extends existing FOB math),
   explanation surfacing built in from day one rather than retrofitted. Not yet dispatched.
 - [x] **Rule-evaluation compute DECIDED 2026-08-20: scheduled batch job, not an Edge Function.**
