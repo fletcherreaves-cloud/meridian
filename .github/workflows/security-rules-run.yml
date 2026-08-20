@@ -1,0 +1,34 @@
+name: Security Rules Run
+
+# Dispatch #39 -- the Phase 1 scheduled batch job. A COMPUTE job, not a pull: it reads
+# already-stored audit_rows and scores it against every ACTIVE security_rules row, writing to
+# security_findings. Scheduled at 11:00 UTC, one hour after QSRSoft Register Audit Pull's own
+# 10:00 UTC run (this job's input) -- running before that day's pull completes would score
+# stale data.
+
+on:
+  schedule:
+    - cron: '0 11 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Evaluate active security rules
+        run: node scripts/security-rules-run.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

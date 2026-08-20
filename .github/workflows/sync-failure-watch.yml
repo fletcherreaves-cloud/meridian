@@ -60,6 +60,7 @@ on:
       - QSRSoft Variance Pull (EOM diagnosis data)
       - QSRSoft eBOS Purchases Pull
       - SAGE Scheduled Prompts
+      - Security Rules Run
       - YouTube Mentions Pull
     types: [completed]
 

@@ -59,58 +59,46 @@ seconds, and the theory that survives one costs a PR.
   Persisting the score as a versioned time-series (also research-grounded, real gap: today it's
   recomputed live on every render with zero history) is flagged as a separate future dispatch, not
   bundled in. Not yet implemented — this is the dispatch brief.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, dispatched](dispatch-40.md)** —
-  The follow-through on the TvA correction directly below: a real, buildable
-  store-level rule against data Meridian is **already pulling today** — no recipe/BOM pull or new
-  QSRSoft probe needed. `qsr_variance_stat.exp_usage` **is** the theoretical-usage figure,
-  computed server-side by QSRSoft's own recipe engine; `dol_diff` is already a real dollarized
-  variance number for food/paper items. Verified directly against the real schema
-  (`supabase/schema.sql:1361-1379`), the parser (`eom-parsers.js`'s `mapVarianceRows`), and the
-  pull script before writing this — not taken from the research agent's report at face value.
-  Two rules: `INV-001` (variance-vs-expected-usage ratio, `storeBaseline()` — confirmed usable
-  as-is, no `emp` dependency, unlike `personalBaseline`/`peerBaseline`/`networkBaseline` which all
-  require it) and `INV-002` (dollar-variance rate, gated on confirming `pct_sales`'s real
-  semantics live — the one thing this dispatch can't settle from a sandbox). **Real schema
-  decision made deliberately, not discovered mid-build**: dispatch #39's `security_findings`
-  speced `emp_token` as required — since that table doesn't exist yet, this dispatch makes it
-  nullable with `wrin` as a co-equal subject column (exactly one of the two populated per row,
-  enforced by a `check` constraint) rather than over-building a generic polymorphic subject
-  design neither Phase 1 nor 1b actually needs. Recipe/BOM data confirmed genuinely unnecessary
-  for this — only needed for a later drill-down capability. Not yet implemented — this is the
-  dispatch brief.
-- **⚠️ CORRECTION, same day: dispatch #39's "TvA not buildable" claim below was WRONG — see the
-  correction note at the top of `dispatch-39.md`.** QSRSoft already computes TvA-equivalent
-  variance natively, and Meridian already pulls it (`qsr_variance_stat`, `qsr_raw_item_detail`,
-  `src/engine/eom-variance-raw.js`) — the error was "haven't looked" mistaken for "doesn't
-  exist," exactly the mistake CLAUDE.md's own standing rule warns against. Owner caught it
-  same-day. What's actually still missing is narrower: that data is store×item-grain, not
-  employee-attributed — background investigation in progress to scope a real follow-up dispatch.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, dispatched](dispatch-39.md)** —
-  Owner chose Phase 1 next. **Real finding that narrowed scope before writing this — later
-  corrected same day, see the entry above:**
-  TvA (theoretical-vs-actual) inventory variance (plan §2.2) is **not buildable** — confirmed
-  directly against `src/engine/variance-trace.js`'s own header, which states Meridian has no
-  per-item theoretical-usage/BOM coefficient table, the same class of finding as the already-
-  settled deposit-lapping exclusion (don't build a rule against data that structurally can't see
-  it). **Phase 1 as dispatched is cash-domain only**, which `audit_rows` genuinely supports:
-  activate the two existing `security_rules` seed fixtures (`CASH-001` cash-drawer over/short,
-  `CASH-002` POS overring) to `ACTIVE=true`, add two new rules (`CASH-003` manual-refund rate,
-  `CASH-004` promo/discount rate) using the same interpreter/baseline substrate from dispatch #36
-  — no changes to that substrate. New `security_findings` output table, **token-keyed
-  (`emp_token`), never plaintext `emp`** — the load-bearing constraint carried forward from
-  dispatch #37/#38 so this doesn't reopen a second unlogged path to a name — storing the §4
-  explanation-breakdown JSON, RLS defaulted to the same tier as `reveal_employee_identity()`
-  (admin/supervisor always, manager gated on the existing `org_config` toggle) as the conservative
-  starting choice, reasoning stated explicitly rather than assumed. New scheduled batch job
-  (`scripts/security-rules-run.mjs`, a new *compute* pattern for this repo — every existing
-  scheduled workflow only pulls external data, none evaluate stored rules) — flagged that it must
-  NOT import `loadAuditRows()` (browser-oriented) and must re-derive the snake_case→camelCase
-  field mapping directly, matching `scripts/backfill-identity-vault.mjs`'s own client-setup shape.
-  No UI in this dispatch — deliberately mirrors the #37→#38 split; **a findings-viewer panel is
-  the recommended next dispatch** once real output exists to look at. Not yet implemented by an
-  engineer — this is the dispatch brief, scoped directly against real code (`security-rules.js`,
-  `security-baselines.js`, `schema-security-rules.sql`, `register-audit.js`'s real field list),
-  not from memory.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, implemented](dispatch40-inventory-tva-rule.md)** —
+  **NEWEST, implemented, awaiting PR merge (same PR/branch as #39).** The follow-through on the
+  correction below: `INV-001` (item-level TvA variance rate, store baseline, plan §2.2's own
+  formula, single-table) and `INV-002` (dollar-variance rate normalized against sales, store
+  baseline — denominator is a real `qsr_fob` join, NOT `qsr_variance_stat.pct_sales`, whose
+  semantics are unconfirmed from this sandbox). Subject is `(loc, wrin)`, never an employee —
+  `storeBaseline()` is the only baseline function usable here (`personalBaseline`/`peerBaseline`/
+  `networkBaseline` all hard-require `emp`). `security_findings` needed **zero migration** —
+  dispatch #39 built its nullable-`emp_token`/co-equal-`wrin` shape in anticipation of this exact
+  dispatch, before the table ever went live, off a same-day PM heads-up. `scripts/security-rules-
+  run.mjs` extended with a second rule-type branch (still one job, one loop): `mapVarianceStatRow`
+  (`date: r.period`, NOT `period + '-01'` — a real string-comparison correctness point, see the
+  writeup), `joinStoreMonthSales`, `computeItemFindingsForRule` (same-item-only baseline
+  population). Condiment-class rows excluded from BOTH rules uniformly. 11 new tests, 1663/1663
+  suite passes. No UI, no recipe/BOM pull (confirmed not needed — `exp_usage` already IS the
+  theoretical figure). Original brief: [dispatch-40.md](dispatch-40.md), superseded by the
+  implementation writeup above.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #39 — security build Phase 1, real cash-domain rules, implemented](dispatch39-phase1-cash-rules.md)** —
+  **NEWEST, implemented, awaiting PR merge.** First dispatch in this build with real,
+  `ACTIVE=true` output — everything before it was substrate. **Phase 1 as shipped is cash-domain
+  only** (the TvA-exclusion theory was corrected same-day, see the entry above — TvA data exists
+  and is already pulled, what's missing is employee attribution, a real Phase 2/3 follow-up, not
+  a permanent cut): `supabase/schema-security-rules-phase1.sql` activates `CASH-001`/`CASH-002`
+  and adds `CASH-003` (manual-refund rate, personal baseline, opportunity_factor=true) and
+  `CASH-004` (promo/discount rate, peer baseline, opportunity_factor=false — examined, not
+  assumed; threshold 100=10% is measured from `register-audit.js`'s own existing `discPct` amber
+  band, not invented). `supabase/schema-security-findings.sql` — the first output table,
+  token-keyed (`emp_token`, never plaintext `emp`), full explanation breakdown stored as jsonb,
+  RLS gated to the same tier as `reveal_employee_identity()`, no write policy at all (service-role
+  only). `scripts/security-rules-run.mjs` — the new scheduled batch job (this repo's first
+  *compute* workflow, not a pull), own field mapping (does not import the browser-oriented
+  `loadAuditRows()`), scheduled 11:00 UTC (one hour after the audit pull it depends on). **A real,
+  non-obvious behavior found and verified by test**: an untokenized employee can never be a
+  finding's *subject* but their row still anonymously contributes a rate to peers' baseline
+  populations (`personalBaseline`/`peerBaseline` group by raw name, unmodified) — correct, not a
+  bug, documented explicitly. A real test-fixture bug (missing `data_required`, silently zeroing
+  every assertion) was caught by running the suite and fixed before it shipped. 13 new tests,
+  1652/1652 suite passes. No UI — mirrors the #37→#38 split; a findings-viewer is the recommended
+  next dispatch. Original brief: [dispatch-39.md](dispatch-39.md), superseded by the
+  implementation writeup above.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, implemented, PR #465 superseded, 2026-08-20](dispatch38-reveal-ui.md)** —
   The `RevealName` component: click → required reason (`window.prompt`, matching
   `eom-dashboard.js`'s established pattern) → `reveal_employee_identity()` (dispatch #37's RPC,
