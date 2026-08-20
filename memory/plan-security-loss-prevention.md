@@ -705,19 +705,30 @@ output is treated as reliable.
 
 ### Phase 0b — substrate (build once, everything else depends on it)
 
-**Dispatched 2026-08-19 — `memory/dispatch-36.md`, ready for an engineer now.** Needs no QSRSoft
-access (pure schema/utility work), so it isn't blocked on Phase 0a's still-open live-verification.
+**IMPLEMENTED and merged, 2026-08-19 (dispatch #36, PR #451)** —
+`dispatch36-security-phase0b-substrate.md`. Independently PM-verified before merge: interpreter
+logic, baseline math, and the `org_config` RLS pattern-match all checked against real code, not
+the summary. **One real follow-up, not a code gap: the owner needs to run
+`supabase/schema-security-rules.sql` against live Supabase** before `security_rules` exists as a
+real table — same manual-migration pattern as every other `schema-*.sql` file in this repo.
 
-- Event normalization / Event DNA schema — for rung 2 (Register Audit), this is close to already
-  shaped by the existing `audit_rows` columns; extend rather than redesign.
-- Personal + peer + store baseline computation (§1 principle 2).
-- Exposure normalization utilities (§1 principle 1) — this should probably live next to or reuse
-  this repo's existing `metric-source.js`/`vs-ly.js` auto-first sourcing helpers
-  (`CLAUDE.md`'s "source data through the shared helpers" standing rule applies here too — don't
-  build a fourth way of reading `ds.laborRows` etc. for this).
-- Rules Registry table + interpreter (§6).
+- ✅ Event normalization / Event DNA schema — confirmed `audit_rows`' existing shape is sufficient
+  for `security-baselines.js`'s row shape; no redesign needed.
+- ✅ Personal + peer + store + network baseline computation (§1 principle 2) —
+  `src/engine/security-baselines.js`. `peerBaseline`'s cohort is same-store colleagues, a
+  documented proxy for the plan's ideal role/daypart/tenure/volume-band grouping — `audit_rows`
+  doesn't carry those dimensions yet; refining the cohort is future work, not a redesign.
+- ✅ Exposure normalization utilities (§1 principle 1) — `exposureRate()`, confirmed genuinely new
+  (grepped `metric-source.js`/`vs-ly.js` directly, neither had a per-thousand/cohort-distribution
+  primitive to extend), built following their dollar-weighted/honest-null conventions rather than
+  inventing new ones.
+- ✅ Rules Registry table + interpreter (§6) — `supabase/schema-security-rules.sql` +
+  `src/engine/security-rules.js`. `threshold`/`ratio` `LOGIC_TYPE`s implemented; `z-score`/
+  `sequence`/`window-function` stubbed (`implemented:false`, never thrown) for Phase 2/3.
 
 ### Phase 1 — MVP detection (highest value, lowest complexity)
+
+**Unblocked** once the owner runs `schema-security-rules.sql` (above). Not yet dispatched.
 - Cash-drawer variance rules with employee attribution (§2.1).
 - Post-tender void/refund detection + peer ranking (§2.1 — the single most-corroborated method).
 - TvA inventory variance by item/category (§2.2 — second-most-corroborated).

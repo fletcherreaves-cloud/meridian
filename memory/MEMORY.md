@@ -31,7 +31,13 @@ seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #36 — Security build Phase 0b: the substrate, implemented](dispatch36-security-phase0b-substrate.md)** —
-  2026-08-19. **NEWEST, implemented, awaiting PR merge.** Phase 1's actual fraud-detection rules
+  2026-08-19. **NEWEST, merged (PR #451), independently PM-verified before merge** — interpreter
+  logic, baseline math, and the `org_config` RLS pattern-match were all checked line-by-line
+  against real code, not taken from the summary; the "no existing normalization helper" claim was
+  independently re-grepped and confirmed. **One real follow-up, not a code problem: the owner
+  needs to run `supabase/schema-security-rules.sql` against live Supabase** — same manual-migration
+  pattern as every other `schema-*.sql` file in this repo, `security_rules` doesn't exist as a real
+  table until then. Phase 1's actual fraud-detection rules
   are gated on this landing first (`plan-security-loss-prevention.md` §1: "do not start by coding
   individual fraud rules... a rule written before this substrate exists will need to be rewritten
   once it does"). Part 1: `supabase/schema-security-rules.sql` (`security_rules` table, §6's
