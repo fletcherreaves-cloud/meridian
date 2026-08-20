@@ -30,6 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Security scheme coverage — one of ten named schemes is built](finding-security-scheme-coverage-2026-08-20.md)** —
+  **NEWEST.** Owner asked whether deposit lapping / skimming / inventory padding made it into the
+  build. Answered by reading `plan-security-loss-prevention.md` §2.1–2.3 against the shipped rules:
+  **one of ten is built** (TvA), one is partial and inactive (refund abuse / CASH-003), one is
+  structurally blocked (deposit lapping — invisible in QSRSoft because a deposit counts as
+  accounted-for the moment it is *entered*; needs a bank feed, owner exploring since 08-19), and
+  seven are unbuilt. Three things worth knowing: **the plan's own most-cited scheme is unbuilt** —
+  post-tender void skimming needs `transaction_detail` (**zero refs in schema.sql, never pulled**)
+  plus the still-stubbed `sequence` LOGIC_TYPE; **CASH-001/002/004 are rate-outlier proxies, not
+  scheme detectors**, so "six rules live" overstates coverage; and **two inventory schemes are
+  buildable today with data already pulled** — waste-log padding (dispatch #45 Part C measured only
+  **4.2%** of unexplained flags have waste covering half the variance, which IS that scheme's
+  premise; `qsr_waste` + `raw_waste`/`comp_waste` already load) and phantom gains (INV-001 discards
+  the sign with `abs:true`, so signed variance is already there). Those two are the cheapest real
+  coverage available and are the natural home for the unbuilt `INV-003`. Does NOT say the build is
+  behind — Phase 1's job was the machine, and it works; scheme coverage is the next phase, now
+  written down instead of buried in a plan nobody re-reads.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #46 — make the Security panel legible, then analytical](dispatch-46.md)** —
   **NEWEST, briefed, not yet implemented.** Owner-requested after first real use of the shipped
   panel: a legend, per-rule plain-language explainers, plain language on every finding *in addition

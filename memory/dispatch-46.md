@@ -121,6 +121,50 @@ source. **Scope it, then build in value order; not all of it needs to land at on
 named people. The standing rules against reasoning from a sorted head, and against a plausible cause
 that no query confirmed, matter here more than anywhere else in the codebase.
 
+## Part D — make it visual (owner-requested, explicitly not urgent)
+
+> *"At some point I would love to see graphical analysis layered into the security panel as well —
+> for example, if a store is trending with food over base issues, we should be able to see a
+> specific date range trend of what that looks like in a chart of some kind. I would just like to
+> make this dashboard really pop out and be super easy to understand and navigate while delivering
+> on the results that we're putting in place."*
+
+**Charts here are Part C's findings made visible, not decoration.** Each one below exists because a
+specific question is hard to answer from a table. Build them as Part C's analyses land — a chart of
+an unvalidated number is worse than no chart, because it looks authoritative.
+
+Load the **`dataviz` skill** before writing any chart code, and honour the project's own
+conventions: tokens from `meridian.css`, never hardcoded `rgba(255,255,255,X)` (guarded by
+`light-mode-white-alpha.test.js`), lazy-loaded per the entry-chunk budget, dense/data-first, and
+readable in all 8 theme×mode combinations.
+
+Highest value first:
+
+1. **Subject trend line — the owner's own example.** A metric over a date range for one subject
+   (store, employee, or item), with the peer band behind it and flag events marked. This is Part C
+   item 1 rendered, and it answers "is this new or chronic" at a glance, which no table does.
+2. **Peer-distribution strip.** Where this subject sits in the population for this rule — a
+   histogram or beeswarm with the subject and the threshold marked. Turns "120.04 vs threshold
+   100.00, peer mean 46.16" into an instantly legible position. Also makes a *degenerate* baseline
+   visually obvious: a distribution collapsed on zero explains a nonsense z-score better than any
+   sentence (see dispatch #45 §A).
+3. **Store heatmap.** Stores × rules, coloured by flag rate. Part C item 5's store-vs-person
+   separation, and the fastest way to see the finding #45 Part C already produced — one store at
+   23.7% of unexplained inventory flags. `patch-heatmap.js` already exists; reuse its idiom.
+4. **Signal-convergence view.** Which rules co-occur on the same subjects. Part C item 4's
+   fingerprints; a small matrix or chord beats prose for "voids + refunds travel together."
+5. **Change-point marker on (1).** Once Part C item 2 computes a start date, draw it. A vertical
+   rule on the trend line is the single most investigative element on the page.
+
+**Navigation, since the owner asked for "easy to navigate":** the panel currently opens on a flat
+ranked list. Consider a summary band above it — counts by domain, by severity, by store — that
+filters the list on click. Do not add a chart that cannot be acted on; the standing rule holds
+(*a number nobody acts on is not a shipped feature*), and it applies to pictures too.
+
+**Scope honestly.** Part D is larger than A–C combined and is explicitly not urgent. Land A and B
+first (they are the stated ask), then C, then take D in the order above — item 1 alone delivers most
+of what the owner described.
+
 ---
 
 ## Dependencies and coordination
