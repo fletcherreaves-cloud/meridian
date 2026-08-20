@@ -72,8 +72,52 @@ seconds, and the theory that survives one costs a PR.
   used by neither rule. Buildable today with no new data source, and would be the build's first
   implementation of plan §1 principle 4 (exoneration — a rule that searches for its own
   counter-evidence). Scope as `INV-003` after #42.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #45 — min_numerator, lifecycle routing, and the unexplained flags](dispatch45-min-numerator-lifecycle-investigation.md)** —
+  **NEWEST.** Three parts from the z-score dry run (`memory/dispatch-45.md`, PR #489, not on `main`
+  when this started — read from that PR's diff). **Part A — `min_numerator`**: INV-002 was flagging
+  224 subjects on pure 2.5σ with no materiality gate (`min_value` correctly removed post-PR-481, but
+  nothing replaced it — a rate can be statistically unusual on a huge denominator while the raw
+  dollars are trivial). New engine gate (`src/engine/security-rules.js`), built exactly like
+  `min_denominator` (per-rule data, one shared choke point) but with the OPPOSITE asymmetry: unmet
+  exposure floor → honest null; unmet numerator floor → real, decided `pass:false` — the rate WAS
+  computed, it just isn't material. Set to **$15**, the measured population median of
+  `sum(|dol_diff|)` (n=4,474, non-condiment, live 2026-08-20) — the exact "clears roughly half"
+  methodology INV-001's own `min_value` used, not an invented number. `schema-security-rules-
+  phase1f.sql`, handed back. **Part B — lifecycle routing**: `qsr_variance_stat.descr` carries
+  `(Deactivated)`/`(Obsolete)`/`(New)` markers the batch job already loads but never read.
+  `classifyLifecycle()` tags each finding without touching its real verdict; the Security panel's
+  `verdictState()` now takes the category as a priority argument — a hygiene-classified finding
+  reads as neither flagged nor cleared, and `groupFindingsBySubject()` excludes it from the security
+  tally entirely (separate `hygieneCount`) so subject-major convergence still means independent
+  SECURITY signals agreeing, not any verdict landing there. New `security_findings.lifecycle_category`
+  column, handed back. **Part C — investigated, not built** (the dispatch's own instruction: the
+  deliverable is a memory file). Re-measured live rather than trusting the dry-run doc's own
+  numbers, and found a real, stated-not-hidden discrepancy: this run's lifecycle-marker share among
+  flagged items (2.5%) shows NO enrichment over the population rate (2.6%), vs the dry run's cited
+  ~5x enrichment (13.8%) — flagged as open, not reconciled. Of the still-unexplained flags: **one
+  store accounts for 23.7% of them** (top 4: 48.3%) — the strongest actionable lead this pass
+  produced — and **logged waste covers ≥50% of the usage variance for only 4.2%** of them, directly
+  supporting the still-unbuilt `INV-003` as the right next rule. Recurrence-over-time is
+  unanswerable — `qsr_variance_stat` holds only one period so far. 18 new tests (7 engine + 2 wiring
+  for A, 5 unit + 2 wiring for B's `classifyLifecycle`, 4 Security-panel routing), mutation-tested.
+  1740/1740 suite passes, build clean, no entry-chunk impact.
+
+## SQL to run against live Supabase (dispatch #45) — handed back, not assumed applied
+
+```sql
+-- supabase/schema-security-rules-phase1f.sql — see the file for full comments/reasoning
+update public.security_rules
+set logic_expression = '{"numerator": {"field": "dolDiff", "agg": "sum", "abs": true}, "denominator": {"field": "storeMonthSales", "agg": "sum"}, "scale": 1000, "comparator": "gte", "min_numerator": 15}'::jsonb,
+    description = 'Dollarized TvA variance (dol_diff), normalized per $1,000 of store-month product sales (qsr_fob.prod_sales_amt, joined), store baseline z-score (dispatch #42). min_numerator:15 (dispatch #45 -- measured 2026-08-20 population median of sum(|dol_diff|), non-condiment, n=4,474) is a materiality floor on the RAW dollar amount, independent of the rate: without it the rule flagged 224 subjects on pure statistical unusualness regardless of dollar size (max flagged amount ~a few hundred dollars, median ~a few tens) -- min_value was correctly removed post-PR-481-review since the inherited value (10) was unreachable on this rule''s tiny rate, but nothing replaced the materiality check it used to (incompletely) provide.',
+    updated_at = now()
+where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'INV-002';
+
+-- supabase/schema-security-findings-lifecycle.sql — see the file for full comments/reasoning
+alter table public.security_findings add column if not exists lifecycle_category text;
+```
+
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #44 — CASH-003 re-expressed as a count rule, threshold guard widened to the whole file family](dispatch44-cash003-count-rule.md)** —
-  **NEWEST.** Scope came from PR #481's own merge commit ("KNOWN OPEN, not addressed here"), not a
+  Scope came from PR #481's own merge commit ("KNOWN OPEN, not addressed here"), not a
   written `dispatch-44.md`. CASH-003 (manual refund rate) has been `active=false` since dispatch #42
   measured it: threshold 8 unreachable against a real max of 0.7702 — re-measured live 2026-08-20,
   **659 of 660 non-null subjects sit at exactly 0.0000**. Not a bent ruler — manual overrings are a

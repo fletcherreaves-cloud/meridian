@@ -31,6 +31,10 @@ create table if not exists public.security_findings (
                                                        -- own honest-null contract (no exposure in window)
   threshold_used   double precision,
   pass             boolean,                           -- nullable -- never fabricate a verdict evaluateRule() itself declined to give
+  lifecycle_category text,                            -- dispatch #45 §B: 'deactivated'|'obsolete'|'new'|null,
+                                                       -- from qsr_variance_stat.descr -- routes a hygiene item
+                                                       -- (item setup/lifecycle) away from a security verdict
+                                                       -- without discarding the finding itself
   baseline_context jsonb            not null default '{}',  -- {mean, stdev, n, values, ...} at evaluation time
   explanation      jsonb            not null default '[]',  -- array of {label, value, contribution, ...} -- plan §4's additive-breakdown shape, single-rule slice
   computed_at      timestamptz      not null default now(),

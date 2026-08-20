@@ -117,12 +117,24 @@ const MEASURED_MAX = {
   // The "no threshold set" test below guards this directly, the same way INV-002's own test does.
 };
 
+// Separate map, deliberately: `min_numerator` (dispatch #45 §A) gates the RAW numerator sum, a
+// different quantity on a different scale than the RATE `min_value`/`threshold.default` gate above
+// -- INV-002's rate ceiling is 0.087 (per $1,000 sales) while its raw-dollar ceiling is $604.49.
+// Conflating the two maps would silently compare a dollar amount against a rate ceiling.
+const MEASURED_NUMERATOR_MAX = {
+  // INV-002: sum(|dol_diff|), non-condiment, live qsr_variance_stat, period 2026-08 (the only
+  // period this table currently holds), n=4,474. min=0.00 median=13.66 max=604.49. See
+  // schema-security-rules-phase1f.sql's own header for the full decile table.
+  'INV-002': 604.49,
+};
+
 describe('security_rules seed/migration SQL — an absolute comparator value must sit inside its own measured range', () => {
   const seedRules = extractInsertRules(readSql('schema-security-rules.sql'));
   const phase1Rules = extractInsertRules(readSql('schema-security-rules-phase1.sql'));
   const phase1bRules = extractInsertRules(readSql('schema-security-rules-phase1b.sql'));
   const phase1cRules = extractUpdateRules(readSql('schema-security-rules-phase1c.sql'));
   const phase1eRules = extractUpdateRules(readSql('schema-security-rules-phase1e.sql'));
+  const phase1fRules = extractUpdateRules(readSql('schema-security-rules-phase1f.sql'));
 
   // rule_id -> {entry, logicType}. logicType is read from THIS test file's own knowledge of each
   // rule's real logic_type (phase1.sql's rule inserts don't repeat it in a name=value pair this
@@ -155,6 +167,16 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
 
   it('INV-002 specifically carries NO min_value -- PR #481 review: the old ratio threshold (10) was unreachable here, and no independent materiality number has replaced it', () => {
     expect(phase1cRules['INV-002'].logic_expression.min_value).toBeUndefined();
+  });
+
+  it('INV-002\'s min_numerator (dispatch #45 §A, phase1f.sql) sits inside its own measured RAW-dollar range -- a materiality floor min_value structurally could not provide, since the rate is tiny precisely because the denominator is large', () => {
+    const minNumerator = phase1fRules['INV-002'].logic_expression.min_numerator;
+    expect(minNumerator).toBeDefined();
+    expect(minNumerator).toBeLessThanOrEqual(MEASURED_NUMERATOR_MAX['INV-002']);
+  });
+
+  it('INV-002\'s min_numerator (15) is a real, non-trivial gate -- sits at this rule\'s own measured median (13.66, rounded), the same "clears roughly half" methodology INV-001\'s min_value used, not an invented number', () => {
+    expect(phase1fRules['INV-002'].logic_expression.min_numerator).toBe(15);
   });
 
   it('INV-001\'s min_value (20) is a real, non-trivial gate -- clears roughly half the floor-passing population, not ~0% or ~100%', () => {

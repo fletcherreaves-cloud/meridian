@@ -222,6 +222,25 @@ export function periodEndDate(period) {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }
 
+// dispatch #45 §B -- qsr_variance_stat.descr carries machine-readable lifecycle markers the batch
+// job already loads (mapVarianceStatRow) but never reads: '(Deactivated)', '(New)', '(Obsolete NN
+// days left'. Measured share of INV-001's real flagged population (memory/analysis-zscore-dry-
+// run-2026-08-20.md): 13.8% of flags carry a marker -- real, but a minority, NOT the dominant
+// explanation an earlier same-day reading wrongly concluded from a top-20 sorted by magnitude
+// (marked items cluster at the extreme end, which made them look dominant in a sorted head that
+// was never a representative sample). Route, don't suppress: a deactivated WRIN at 193% median
+// variance is a genuine work item, just a data-hygiene one, not a security one -- deleting it
+// would discard real signal. Pure, order-checked (Deactivated before Obsolete before New matters
+// only if a descr could ever carry more than one marker; QSRSoft's real strings never do, but the
+// order here is deliberate and stable regardless).
+export function classifyLifecycle(descr) {
+  if (!descr) return null;
+  if (/\(Deactivated\)/i.test(descr)) return 'deactivated';
+  if (/\(Obsolete\b/i.test(descr)) return 'obsolete';
+  if (/\(New\)/i.test(descr)) return 'new';
+  return null;
+}
+
 // The item-domain parallel to computeFindingsForRule() -- pure, no Supabase dependency. Subject
 // is (loc, wrin), never an employee: qsr_variance_stat carries no emp/empToken field at all, so
 // personalBaseline/peerBaseline/networkBaseline (all hard-require r.emp, dispatch #40's header)
@@ -266,11 +285,19 @@ export function computeItemFindingsForRule(rule, rows, { windowStart, windowEnd 
 
     const evalResult = evaluateRule(rule, { [primary]: subjectRows }, { loc, baseline });
 
+    // dispatch #45 §B -- classified from THIS subject's own descr (any row for the (loc,wrin)
+    // pair carries the same item-level descr; subjectRows[0] is as good as any). A lifecycle
+    // category is item metadata, not a property of the evaluation -- computed once per subject,
+    // independent of pass/fail, so a routed finding still carries its real value/threshold/verdict
+    // and is never silently dropped.
+    const lifecycleCategory = classifyLifecycle(subjectRows[0]?.descr);
+
     findings.push({
       wrin, loc, ruleId: rule.rule_id,
       windowStart: `${windowStart}-01`, windowEnd: periodEndDate(windowEnd),
       value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
       baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+      lifecycleCategory,
     });
   }
   return findings;
@@ -342,6 +369,7 @@ async function upsertFindings(findings) {
     window_start: f.windowStart, window_end: f.windowEnd,
     value: f.value, threshold_used: f.thresholdUsed, pass: f.pass,
     baseline_context: f.baselineContext, explanation: f.explanation, computed_at: now,
+    lifecycle_category: f.lifecycleCategory ?? null,
   }));
   const CHUNK = 500;
   let saved = 0; const errors = [];

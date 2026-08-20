@@ -1,0 +1,20 @@
+-- ── security_findings.lifecycle_category — route, don't suppress (dispatch #45 §B) ───────────────
+-- memory/dispatch-45.md Part B, memory/analysis-zscore-dry-run-2026-08-20.md. qsr_variance_stat.
+-- descr carries machine-readable lifecycle markers -- '(Deactivated)', '(New)', '(Obsolete NN days
+-- left' -- the batch job already loads via mapVarianceStatRow but never read. Measured share of
+-- INV-001's real 188 flagged findings: 22 deactivated (11.7%), 2 new (1.1%), 2 obsolete (1.1%) --
+-- 13.8% total, a real minority, NOT the dominant explanation an earlier same-day PM reading
+-- concluded from a top-20 sorted by magnitude (lifecycle-marked items cluster at the extreme end,
+-- which made them look dominant in a sorted head that was never a representative sample -- see the
+-- analysis file's own "raised and refuted the same hour" section).
+--
+-- A deactivated WRIN flagging at 193% median variance is a genuine work item -- it is just a
+-- data-hygiene one (fix the item's setup/lifecycle state), not a security one (investigate a
+-- person or a pattern). Deleting the finding, or leaving it unclassified next to genuine security
+-- flags, discards real signal either way. This column ROUTES, computed once per subject at
+-- evaluation time (scripts/security-rules-run.mjs's computeItemFindingsForRule, classifyLifecycle())
+-- from that subject's own item descr -- independent of pass/fail, so a routed finding still
+-- carries its real value/threshold/verdict and is never silently dropped or altered.
+--
+-- Idempotent: safe to re-run.
+alter table public.security_findings add column if not exists lifecycle_category text;

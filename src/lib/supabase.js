@@ -3943,7 +3943,7 @@ export async function loadSecurityFindings({ ruleIds = null } = {}) {
     ruleId: r.rule_id, windowStart: r.window_start, windowEnd: r.window_end,
     value: r.value, thresholdUsed: r.threshold_used, pass: r.pass,
     baselineContext: r.baseline_context || {}, explanation: r.explanation || [],
-    computedAt: r.computed_at,
+    computedAt: r.computed_at, lifecycleCategory: r.lifecycle_category || null,
   }));
 }
 
