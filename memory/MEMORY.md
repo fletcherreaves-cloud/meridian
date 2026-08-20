@@ -30,21 +30,26 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, dispatched](dispatch-38.md)** —
-  2026-08-20. **NEWEST.** Follow-up to dispatch #37: the vault retrofit deliberately stripped
-  plaintext names from `analyzeRegisterAudit`'s output ("blind mode," working as designed), which
-  left `store-analytics.js`'s Register Audit panel showing `'Unknown'`/`'?'` at every one of its
-  10 display sites with no way for an authorized viewer to see who's being flagged. This dispatch
-  closes that the way Direction B intends: a shared `RevealName` component (click → reason prompt
-  → `reveal_employee_identity()` RPC → cached, shared-state reveal), wired into 4 easy table-cell
-  sites and 5 harder narrative-paragraph sites (string → mixed string/element array restructuring)
-  in `RegisterAuditTab`/`RegisterAuditNarrative`. The 10th site (`AITabInsight`'s AI-prompt
-  builder) is explicitly excluded — no click target, out of scope. Not yet implemented by an
-  engineer — this is the dispatch brief, scoped directly against the real code (not from memory).
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #38 — reveal-UI for the Register Audit panel, implemented](dispatch38-reveal-ui.md)** —
+  2026-08-20. **NEWEST, implemented, awaiting PR merge.** Follow-up to dispatch #37: the vault
+  retrofit deliberately stripped plaintext names from `analyzeRegisterAudit`'s output ("blind
+  mode," working as designed), which left `store-analytics.js`'s Register Audit panel showing
+  `'Unknown'`/`'?'` at every display site with no way for an authorized viewer to see who's being
+  flagged. Closed the way Direction B intends: a shared `RevealName` component (click → required
+  reason prompt, matching `eom-dashboard.js`'s existing pattern → `reveal_employee_identity()` RPC
+  → cached, shared-state reveal — no role-gating/logging logic duplicated client-side), wired into
+  4 table-cell sites (mechanical swap) and 5 narrative-paragraph sites (real restructuring: `text`
+  changed from a flat string to a mixed string/`RevealName`-element array; no render-loop change
+  needed, arrays-as-children already work). The excluded 10th site (`AITabInsight`'s AI-prompt
+  builder) turned out to have a real, separate bug: it still read `.emp`, a field dispatch #37
+  already removed, silently stale to always `'?'` since PR #459 merged — fixed to read `e.id`,
+  still deliberately not wired to reveal. 9 new tests, including an integration test mounting the
+  actual `RegisterAuditTab` (not just `RevealName` standalone) confirming one click resolves the
+  name in both the table AND the narrative from the one shared cache. Original brief:
+  [dispatch-38.md](dispatch-38.md), superseded by the implementation writeup above.
   **Prerequisite, owner-side, not blocking this dispatch's code:** run
-  `supabase/schema-identity-vault.sql` (sent via SendUserFile) and then
-  `node scripts/backfill-identity-vault.mjs` against live Supabase — until then the vault has no
-  real token↔name data for the reveal RPC to return.
+  `supabase/schema-identity-vault.sql` and then `node scripts/backfill-identity-vault.mjs` against
+  live Supabase — until then the vault has no real token↔name data for the reveal RPC to return.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [RLS anonymous-access question fully CLOSED — three live measurements, 2026-08-20](project-rls-hardening-plan.md)** —
   **NEWEST.** The "92-107 tables wide open to anonymous access" figure repeated across this
   backlog and `plan-security-pii-architecture-2026-08-19.md` was real (a correct grep of
