@@ -57,12 +57,16 @@ async function main() {
   for (const name of names) {
     const token = tokenMap.get(name);
     if (!token) { console.warn(`[backfill-identity-vault] no token resolved for ${JSON.stringify(name)} — skipping`); failed++; continue; }
+    // `count` must be passed to update() itself -- chaining .select('*', {count,head}) after
+    // .eq()/.is() silently drops that second argument (PostgrestTransformBuilder.select() only
+    // accepts `columns`), so `count` came back null and every write logged as 0 rows updated
+    // even when the PATCH itself succeeded. Found live 2026-08-20, see
+    // memory/incident-backfill-count-undercount-2026-08-20.md.
     const { error, count } = await supabase
       .from('audit_rows')
-      .update({ emp_token: token })
+      .update({ emp_token: token }, { count: 'exact' })
       .eq('emp', name)
-      .is('emp_token', null)
-      .select('*', { count: 'exact', head: true });
+      .is('emp_token', null);
     if (error) { console.error(`[backfill-identity-vault] update failed for ${JSON.stringify(name)}: ${error.message}`); failed++; continue; }
     updated += count || 0;
   }
