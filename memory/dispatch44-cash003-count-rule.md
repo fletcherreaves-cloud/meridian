@@ -8,10 +8,29 @@ metadata:
 
 # Dispatch #44 — CASH-003 re-expressed as a count rule; threshold guard widened to the whole file family
 
-2026-08-20. No formal `dispatch-44.md` was written to `memory/` — this dispatch's scope came from
-PR #481's own merge commit body ("KNOWN OPEN, not addressed here") plus a follow-up chat message
-naming the same two items plus #43 Phase 2 (deferred, not started this pass). Both items below are
-real, live-measured fixes, not speculative cleanup.
+2026-08-20. No formal `dispatch-44.md` existed on `main` when this work started — this dispatch's
+scope came from PR #481's own merge commit body ("KNOWN OPEN, not addressed here") plus a follow-up
+chat message naming the same two items plus #43 Phase 2 (deferred, not started this pass). Both
+items below are real, live-measured fixes, not speculative cleanup.
+
+## Correction — the real `dispatch-44.md` landed afterward and found a gap here
+
+A formal `memory/dispatch-44.md` was written by a separate PM session (PR #489, not yet merged as
+of this note) and discovered only after this work was already pushed. It requires something this
+implementation did NOT do: **Step A1 — measure whether `manOverringQty` actually exists in the live
+QSRSoft Register Audit response before writing any mapping code**, by running the pull once and
+logging `Object.keys(rows[0])` (key names only, never values — every row is employee-attributed
+PII). This session has no `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`, so that live check could not be
+performed. `manOverringQty` is a strong hypothesis — it follows the exact Amt/Qty pairing every
+other override category in this API response already has, and `manOverringAmt` is the only one
+pulled without a `Qty` sibling — but it is **unconfirmed**, not measured fact, and this doc's
+original text stated it more confidently than that. See `scripts/qsrsoft-register-audit-pull.mjs`'s
+`mapRow()` comment for the corrected, hedged version. The real dispatch-44 also asks for a **dollar
+materiality floor alongside the count** (not a bare count with no threshold — this doc's `{}` empty
+threshold is close in spirit but not identical) and for the guard to also cover `phase1b.sql`,
+which this pass missed. **Before CASH-003 is ever reactivated**, a future session must run the live
+pull, confirm or correct the field name, and only then set both the count threshold and the dollar
+floor from the real measured distribution — not from this session's inference.
 
 ## CASH-003 — why the fix is the instrument, not the number
 

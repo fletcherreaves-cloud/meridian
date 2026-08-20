@@ -37,13 +37,20 @@
 //     Overrings $"/"POS Overrings Cnt" (-> posOverAmt/posOverCnt, from overringAmt/overringQty).
 //     The manual Excel export already treats these as two separate columns; manOverringAmt's own
 //     name matches the "Manual Refund/Overring" concept far better than a fold-in.
-//   - manualRefCnt = manOverringQty (dispatch #44). Same Amt/Qty pairing the API already gives
-//     posOverAmt/posOverCnt and refundCashAmt/refundCashQty -- manOverringAmt was the only override
-//     category pulled without its Qty sibling until now (PR #481's merge commit named this gap).
-//     No manual-upload equivalent exists: parseRegisterAudit's Excel header search
-//     (src/parsers/index.js) has no "Manual Refund/Overring Qty" column to find, only the $ one --
-//     this field is auto-pull-only, null on manually-uploaded rows, same as every API-only field
-//     already in this table.
+//   - manualRefCnt = manOverringQty (dispatch #44). UNVERIFIED FIELD NAME -- the real dispatch-44
+//     brief (memory/dispatch-44.md, landed on main after this code was first written) requires
+//     confirming this by running the pull once and logging Object.keys(rows[0]) BEFORE mapping
+//     anything -- key names only, never values, every row here is employee-attributed PII. That
+//     live check could not be done from this sandbox (no QSRSOFT_USERNAME/QSRSOFT_PASSWORD), so
+//     "manOverringQty" is a strong but UNCONFIRMED hypothesis: it follows the exact Amt/Qty pairing
+//     every other override category in this response already has (overringAmt/overringQty,
+//     refundCashAmt/refundCashQty), and manOverringAmt is the only one pulled without a Qty
+//     sibling -- but nobody has actually seen this key in a live response. If the real field is
+//     named something else (or does not exist), this line silently maps to `null` via num()'s
+//     undefined-safe handling -- no crash, just an always-empty column, which is exactly why this
+//     needs a live-run confirmation before CASH-003 is ever reactivated on it. No manual-upload
+//     equivalent exists either way: parseRegisterAudit's Excel header search (src/parsers/index.js)
+//     has no "Manual Refund/Overring Qty" column to find, only the $ one.
 //   - avgCheck, cashOSPct, promoPct, tRedBPct/tRedBAvg, tRedAPct/tRedAAvg are NOT present as
 //     pre-computed fields in the API response (parseRegisterAudit's manual path just READS these
 //     from Excel columns QSRSoft pre-computes there -- it doesn't derive them, so "mirror its

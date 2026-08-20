@@ -120,6 +120,7 @@ const MEASURED_MAX = {
 describe('security_rules seed/migration SQL — an absolute comparator value must sit inside its own measured range', () => {
   const seedRules = extractInsertRules(readSql('schema-security-rules.sql'));
   const phase1Rules = extractInsertRules(readSql('schema-security-rules-phase1.sql'));
+  const phase1bRules = extractInsertRules(readSql('schema-security-rules-phase1b.sql'));
   const phase1cRules = extractUpdateRules(readSql('schema-security-rules-phase1c.sql'));
   const phase1eRules = extractUpdateRules(readSql('schema-security-rules-phase1e.sql'));
 
@@ -178,5 +179,20 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
   it('CASH-004\'s threshold (100) sits well inside its own measured range, and CASH-001/002 (unchanged by this dispatch) do too -- the guard now covers phase1.sql\'s ratio rules, not just phase1c.sql\'s z-score pair', () => {
     expect(phase1Rules['CASH-004'].threshold.default).toBe(100);
     expect(phase1Rules['CASH-004'].threshold.default).toBeLessThanOrEqual(MEASURED_MAX['CASH-004']);
+  });
+
+  // phase1b.sql's own INV-001/INV-002 seed thresholds (dispatch #40) are HISTORICAL, superseded by
+  // phase1c.sql's z-score conversion (already guarded above via phase1cRules) -- the rules these
+  // values would gate no longer exist as 'ratio' type in production. Documented, not asserted
+  // against MEASURED_MAX: INV-002's original 10 genuinely WAS unreachable at the time (this is the
+  // exact "INV-002: 10 vs 0.0868, 115x" instance memory/finding-unreachable-threshold-class-2026-
+  // 08-20.md records), and re-litigating it against a live ceiling here would fail the suite over a
+  // migration file nobody re-runs standalone -- the same reasoning CASH-003's own historical
+  // phase1.sql value gets above. If a future migration ever reintroduces phase1b.sql's shape as the
+  // CURRENT effective rule, the CASES loop (which reads phase1cRules, the actual production state)
+  // is what would catch it going forward.
+  it('phase1b.sql\'s original seed values are read correctly (historical record, not a live gate)', () => {
+    expect(phase1bRules['INV-001'].threshold.default).toBe(20);
+    expect(phase1bRules['INV-002'].threshold.default).toBe(10);
   });
 });
