@@ -30,8 +30,26 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ [Backfill script logged "0 rows updated" for all 449 employees — fixed, live-data check still pending, 2026-08-20](incident-backfill-count-undercount-2026-08-20.md)** —
+  **NEWEST.** First live run of `scripts/backfill-identity-vault.mjs` printed `449 distinct
+  untokenized employee name(s) found` / `449 token(s) resolved` / **`0 row(s) updated`** — an
+  internally inconsistent result (zero successes, zero failures, 449 attempts) that was treated as
+  a signal to verify, not a clean exit code to trust. Root cause confirmed by reading the actual
+  installed `@supabase/postgrest-js@2.108.2` source, not assumed from memory of the API: `count`
+  belongs in `update(values, {count})`'s own second argument; the script instead tried
+  `.select('*', {count:'exact', head:true})` chained *after* `.eq()/.is()`, which resolves to
+  `PostgrestTransformBuilder.select(columns?)` — a different method whose real signature only
+  takes `columns`. The `{count,head}` object was silently dropped (plain `.mjs`, no TS
+  enforcement), so no count header was ever requested and `updated += count||0` added 0 every
+  time — while the underlying `PATCH` requests (zero reported errors) most likely still succeeded.
+  **Most likely real outcome: the 449 writes actually happened and only the log was wrong** — but
+  this is inferred from library source, not yet confirmed against live data. Fixed in the repo
+  (`count:'exact'` moved to `update()`'s own options, the broken trailing `.select()` removed).
+  **Owner still needs to run one read-only SQL check** (in the incident file, phone-safe, no
+  Mac/terminal needed) to confirm `audit_rows.emp_token` is actually populated before treating
+  this as fully closed — if it isn't, that's a different, more serious bug still to find.
 - **🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨 [SECURITY INCIDENT — reveal RPC anonymous role-gate bypass, found + fixed same day, 2026-08-20](incident-reveal-rpc-null-role-bypass-2026-08-20.md)** —
-  **NEWEST.** `reveal_employee_identity()` (dispatch #37's vault, PR #459) shipped with a
+  `reveal_employee_identity()` (dispatch #37's vault, PR #459) shipped with a
   PL/pgSQL `NULL`-role trap: an anonymous caller's `get_my_role()` is `NULL`, and
   `NULL not in ('admin','supervisor')` evaluates to `NULL` — which an `ELSIF` with no trailing
   `ELSE` treats as "skip," not "reject." Result: a fully anonymous caller (public anon key, no
