@@ -30,6 +30,25 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [CASH-003's field does not exist — a measured negative](finding-cash003-manoverringqty-absent-2026-08-20.md)** —
+  **NEWEST.** After an 80-day Register Audit backfill (14,528 rows, 27/27 stores),
+  `audit_rows.manual_ref_cnt` is **null in all 19,985 rows**: **`manOverringQty` is not a field in
+  the API response.** Dispatch #44 rebuilt CASH-003 around it on a textbook inference — every other
+  override category has an Amt/Qty pair, `manOverringAmt` was the only one without — and the
+  inference was wrong. **The dispatch required measuring the field name before using it; that step
+  was first satisfied by pattern-matching, the engineer caught it mid-session and hedged the claim
+  rather than stating it as fact, and that hedge is why this is a two-hour correction instead of a
+  rule silently scoring an empty column forever.** State is safe and inert: CASH-003 `active=false`,
+  no threshold, column uniformly null, nothing reads it. **Next step is ONE diagnostic run logging
+  the response's top-level key NAMES only** (never values — every row is employee PII), same
+  shape-logging pattern `extractRows()` uses. **Do not guess a second field name** — that is what
+  produced this. Also records the **lifecycle-enrichment reconciliation, resolved against the PM**:
+  13.8% for INV-001 reproduces, but the PM's scoping theory is wrong (both-rules is 10.7%, not the
+  engineer's 2.5%) and the PM's *"roughly 5x enrichment"* was never measured — population rate is
+  **7.8%**, so true enrichment is **~1.8x**. Real but modest; dispatch #46 Part B's scoping is
+  unchanged. A 3x gap between the two population measurements (7.8% vs 2.6%) remains open —
+  likeliest an `ILIKE`/join difference; this query's `max(descr)` per `(loc,wrin)` collapses an item
+  marked in one period and unmarked in another.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The degenerate-stdev guard — dispatch #45 §A, second cause, closed](dispatch45b-degenerate-stdev-guard.md)** —
   **NEWEST.** A real gap left over from this session's own earlier #45 work — the dispatch's own
   "SECOND, INDEPENDENT CAUSE" section was present when #45 was first implemented but only the
