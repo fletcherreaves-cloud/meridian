@@ -30,8 +30,30 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [30 WRINs with broken expected-usage mapping — a data-hygiene work list](project-inventory-data-hygiene-2026-08-20.md)** —
+  **NEWEST.** The answer to the analysis file's open (a)-vs-(b) question, and a genuinely valuable
+  by-product. **It is (a) — the ruler is bent, decisively.** The top-30 items by median TvA
+  variance are a catalogue of hard-to-count/unit-ambiguous stock (bag-in-box syrups, FCB mixes,
+  bulk condiments, sprinkle-quantity freeze-dried toppings) plus **packaging in mid-promo
+  transition** (`BIG MAC CRTN/2026 SUMMER BRAND`, `10PC NGT/2026 SUMMER BRAND REL`, McCrispy
+  carton/pouch). Three independent tells: the magnitudes are **impossible as shrink**
+  (`BREADED CHICKEN BREAST STRIP` at a **798% median** = actual usage ~8× expected, i.e. a
+  unit-of-measure or recipe-coefficient error); many items show at **all 27 stores every period**
+  (loss concentrates, this is uniform); and QSRSoft's own Inventory Analysis Report has dedicated
+  topics for exactly this failure class (3/5/6/7 — items not in a recipe, duplicate WRIN
+  suffixes, inactive-but-in-active-recipe, incomplete recipes). **Not a suspect list — a
+  data-quality work list**, and its value isn't confined to the security build: `exp_usage`
+  feeds FOB reporting, the EOM workflow, count-cycle completion, and the Inventory Analysis panel,
+  so everything downstream inherits the error. Fix is mostly **QSRSoft config, not Meridian code**.
+  Includes a triage order (chicken strips first — a rollout whose recipe was likely never set up),
+  a **corrected query** (the original over-counted via a period fan-out: `store_count` read up to
+  108 = 27 stores × 4 periods, *not* 108 stores; medians unaffected), and a recommended stopgap to
+  **deactivate `INV-001`/`INV-002`** until dispatch #42 lands, so nobody works a queue of 2,603
+  measurement artifacts and loses trust in the system on first contact. **Standing caveat:
+  "predominantly measurement error" is not "entirely" — real loss can hide in a noisy signal.
+  Do not cite this as evidence that inventory loss is absent.**
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Evaluating the first real detection run — the 21% median question](analysis-inventory-variance-baseline-2026-08-20.md)** —
-  **NEWEST.** The first *business* read of the security build's output, as opposed to dispatch
+  The first *business* read of the security build's output, as opposed to dispatch
   #42's calibration read of the same run. **INV-001's measured median is 21.25% variance across
   5,165 live store-item observations — 4–7× the plan's own §2.2 flag guidance of ">3–5%"**, which
   is itself the synthesis of three independent industry research passes. Median, not tail. Two

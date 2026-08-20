@@ -29,21 +29,48 @@ INV-002     5165          0         0   0.00     0.00      0.02       0.13
 CASH-001..004: 0 rows in window -> 0 findings (see §7)
 ```
 
-## 2. Step 0 — a cheap gate that decides how much of §4 is even meaningful
+## 2. Step 0 — ✅ ALREADY ANSWERED (owner-run, 2026-08-20). Do not re-run; start at §3.
 
-**Run the two concentration queries in
-`analysis-inventory-variance-baseline-2026-08-20.md` before writing any code.** They are two
-read-only SQL statements and they answer a question that changes the value of half this dispatch:
-is the 21.25% median variance a **measurement** artifact (uniform across all 27 stores — bent
-ruler) or an **operational** signal (concentrated in specific stores/items)?
+The item-concentration query was run against live `security_findings`. **The answer is
+decisively "uniform / bent ruler" — the 21.25% median is dominated by systematic measurement
+error, not operational loss.** Full evidence and the item list:
+`memory/project-inventory-data-hygiene-2026-08-20.md`. The headline:
 
-- **Uniform** → absolute thresholds are near-meaningless for detection and should be demoted to a
-  materiality floor only (§4). The z-score work in §3 becomes the *entire* detection mechanism.
-- **Concentrated** → absolute thresholds carry real signal and §4's calibration is worth doing
-  properly.
+```
+BREADED CHICKEN BREAST STRIP     median  798.67%   (39 store-periods)
+PIE CTN/BKD/APL/McCAFE                   385.34%   (46)
+MINUTE MAID FRUIT PUNCH BIB              278.93%   (28)
+COFFEE/DECAF/PREM BLEND/2.25Z            214.39%   (108 = all 27 stores x 4 periods)
+MUSTARD/BULK                             151.10%   (108)
+FD DRAGONFRUIT PIECES                    145.60%   (108)
+...
+```
 
-Either way §3 proceeds unchanged. **Report the answer in the PR body** — it's a finding in its own
-right, not just an input to this dispatch.
+Three things make this conclusive: the list is a catalogue of **hard-to-count or
+unit-ambiguous** items (bag-in-box syrups, FCB mixes, bulk condiments, sprinkle-quantity
+freeze-dried toppings) plus **packaging in mid-promo transition** (`BIG MAC CRTN/2026 SUMMER
+BRAND`, `10PC NGT/2026 SUMMER BRAND REL`); the **magnitudes are impossible as shrink** (798% =
+actual usage ~8× expected, which is a unit-of-measure or recipe-coefficient error, not theft);
+and these are **medians across essentially the whole estate** — many at all 27 stores, every
+period. An operational problem concentrates; this does the opposite.
+
+### What that changes in this dispatch
+
+- **§3 (z-score) proceeds exactly as written, and is now the *entire* detection mechanism.** It
+  is also *validated* by this result: if an item reads ~800% at every store, a store reading 800%
+  is unremarkable and one reading 1,600% genuinely stands out. Subtracting a common systematic
+  offset is precisely what a peer-relative comparison does.
+- **§4 (threshold work) is now explicitly the minimal path** — set both as permissive materiality
+  floors, do **not** invest in precise calibration. See §4.
+- **§5 (exposure floor) matters more, not less** — part of this effect is genuinely low-volume
+  items (decaf coffee, dragonfruit pieces) where a small absolute count delta is a huge
+  percentage. The floor is what separates "recipe mapping is broken" from "this item is just
+  tiny."
+
+**A caveat to carry, not to resolve here:** "predominantly measurement error" is not "entirely
+measurement error." Real loss can hide inside a noisy signal. That is an argument for fixing the
+measurement (see the data-hygiene file) and for the z-score, **not** for concluding there is
+nothing to find.
 
 ## 3. The main deliverable — implement the `z-score` LOGIC_TYPE
 
@@ -103,7 +130,7 @@ compares this store's rate for item X against other stores' rate for that same i
 pooled across unrelated items. Their current ratio computation becomes the **value** the z-score
 is taken over; the `fieldsFromExpr()` numerator/denominator work is unchanged and still needed.
 
-## 4. Threshold work — now contingent, and scoped by Step 0's answer
+## 4. Threshold work — MINIMAL PATH, per Step 0's answer (uniform / bent ruler)
 
 The measured problem is real either way: INV-001's threshold (20) sits **below its own median**
 (21.25), flagging 50.4% of everything; INV-002's (10) is **~77× its own maximum** (0.13) and can
@@ -111,12 +138,17 @@ never fire. Note INV-002 is **not** a broken join — `null_value: 0` proves the
 produces real denominators for every row, and the metric shape (item variance per $1,000 of store
 sales) is this org's own documented per-thousand convention. Only the constant is wrong.
 
-- **If Step 0 says uniform (bent ruler):** do not invest in precise absolute calibration. Set both
-  as permissive materiality floors for §3's `min_value` gate and move on. Precision here would be
-  false precision.
-- **If Step 0 says concentrated:** calibrate properly, from *target investigation volume* rather
+**Step 0 resolved this to the first branch: do NOT invest in precise absolute calibration.** Set
+both thresholds as permissive materiality floors feeding §3's `min_value` gate, and move on —
+precision against a known-biased measurement is false precision, and the time is better spent on
+§3 and §5. The second branch below is retained only to explain what was ruled out and why.
+
+- ~~**If Step 0 says concentrated:** calibrate properly, from *target investigation volume* rather
   than a percentile chosen for looking reasonable — 5% of 5,165 is ~258 findings per run, far more
-  than anyone will review. A few dozen is a defensible starting point:
+  than anyone will review. A few dozen is a defensible starting point:~~ **(ruled out — Step 0
+  came back uniform.)** The volume-calibration query is kept here because it becomes the right
+  tool again *after* §5's exposure floor lands and the distribution is re-measured on material
+  items only:
 
 ```sql
 select rule_id,
