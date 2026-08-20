@@ -7,6 +7,13 @@
 -- result. NOTHING in this file is still open.
 -- Full narrative: memory/analysis-mcvalue-price-waves-2026-08-18.md
 -- Run in the Supabase SQL Editor. loc is ZERO-PADDED to 7 in these tables.
+--
+-- ⚠ 2026-08-20: Query G added at the end — a freshness check, not a new finding.
+-- All figures above are through 2026-08-11 (9 days old as of the 25 Aug meeting).
+-- The headline (−3.14pp, the six clean weeks) is a closed historical window and
+-- CANNOT move with new data. Query G exists only to check whether the days since
+-- 11 Aug look like more of the same B6–B8 trend or something that would change the
+-- secondary full-window/post-June figures enough to matter. NOT YET RUN.
 -- ============================================================================
 
 
@@ -524,3 +531,45 @@ order by bucket desc;
 --     If a footprint IS found, still get the March 2025 calendar issue per the
 --     document's step 1 -- confirming cancellation needs to know what ran last year,
 --     not just what this query shows about this year.
+
+
+-- ── G · FRESHNESS CHECK — is the post-11-Aug tail more of the same, or different? ──
+-- Added 2026-08-20, NOT YET RUN. This is a triage query, not a re-derivation: it
+-- exists to decide WHETHER refreshing the full-window/post-2-June figures is worth
+-- the effort before the 25 Aug meeting, not to replace anything already measured.
+--
+-- The headline (-3.14pp, the six clean weeks, B1-B3) is a closed historical window
+-- and CANNOT change no matter what this returns -- do not re-run E over this.
+--
+-- Same OK-19 cohort as Query C/E (43380 Tishomingo and 43701 Ponce excluded),
+-- ratio of summed counts, matched-day vs LY.
+select
+  (select max(dt) from qsr_daily_activity_rollup) as data_through,
+  round((100.0*sum(r.transactions) filter (where r.dt between '2026-08-12' and (select max(dt) from qsr_daily_activity_rollup))
+       / nullif(sum(r.ly_transactions) filter (where r.dt between '2026-08-12' and (select max(dt) from qsr_daily_activity_rollup)),0)
+       - 100)::numeric, 2)                        as tail_vs_ly_pct,
+  round((100.0*sum(r.transactions) filter (where r.dt between '2026-07-01' and '2026-08-11')
+       / nullif(sum(r.ly_transactions) filter (where r.dt between '2026-07-01' and '2026-08-11'),0)
+       - 100)::numeric, 2)                        as b6_b8_vs_ly_pct
+from qsr_daily_activity_rollup r
+where r.loc in (
+  '0003708','0005183','0005985','0006972','0010422','0010915','0011657',
+  '0013113','0018213','0020475','0024471','0029760','0031357','0032525',
+  '0033109','0033222','0033704','0034222','0035064'
+);
+
+-- READ:
+--   tail_vs_ly_pct within ~1pp of b6_b8_vs_ly_pct (both should sit near -3%) ->
+--     no material change, skip the refresh. The full-window/post-2-June figures
+--     would move by tenths of a point at most; not worth re-verifying 5 days out.
+--   tail_vs_ly_pct notably WORSE (more negative) -> the decline is deepening.
+--     Worth a fuller refresh AND worth flagging in the room -- a document that
+--     understates a still-worsening trend is worse than one that's a week stale.
+--   tail_vs_ly_pct notably BETTER (less negative, or positive) -> traffic may be
+--     recovering. Worth a fuller refresh before the meeting -- do not walk in with
+--     a number that's turned around without knowing it.
+--   Either "notably" case: re-run the full-window and post-2-June figures (the
+--   two callouts in "Finding: traffic") over the extended window, and re-check
+--   whether the June-price-effect band (Query D family) still holds at the new
+--   sample size. Do NOT touch the six-clean-weeks figure -- it is a fixed window
+--   and this query cannot affect it.
