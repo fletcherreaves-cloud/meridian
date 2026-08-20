@@ -30,8 +30,37 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, dispatched](dispatch-40.md)** —
-  **NEWEST.** The follow-through on the TvA correction directly below: a real, buildable
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #41 — reconcile the two Model Health Score implementations, dispatched](dispatch-41.md)** —
+  **NEWEST.** Not a security-build item — a separate, independently-discovered live correctness
+  bug (`backlog-master-2026-08-19.md` §4). `modelHealthScore` and `computeModelHealth`
+  (`forecast.js:847`/`:1868`) share the same 30/25/25/20 rubric shape but diverge for real —
+  different day-thresholds, different MAPE-window priority, **and one function can never hit a
+  true zero on 3 of 4 components** (verified line-by-line: `computeModelHealth`'s floors are
+  6/3/5/3, `modelHealthScore`'s are all 0) — meaning a store dead for 900 days still banks 17/100
+  points in one of the two. Both render **on the same store page, at the same time**
+  (`store-analytics.js:1758` and `:1804`), so a user can see two disagreeing scores stacked
+  vertically for one store. Also found a shared, independently-verified dead-field bug: both
+  check a `settings._fp`/`settings._settingsFp` fingerprint that's **never assigned anywhere in
+  the app** (grepped confirmed) — one function's version of this always fires its penalty, the
+  other's never does. **Owner explicitly asked for external industry due diligence before
+  finalizing this** (the same discipline the loss-prevention build used — ACFE/CISA/NIST, not
+  reasoning from scratch) — research (43 cited sources: M4/M5 forecasting-competition methodology,
+  AWS SageMaker/Vertex AI/Evidently/Arize/WhyLabs model-monitoring conventions, FICO/SLA/NPS
+  composite-scoring precedent, SRE burn-rate alerting) confirmed the floor-masking bug is a known,
+  named failure mode every recognized model-monitoring platform avoids, and surfaced a real,
+  **deliberately deferred** finding: MAPE's asymmetry is real and industry practice has moved to
+  WAPE, but `mape6w`/`mape4w`/`mape2w` are shared infrastructure computed once in
+  `backtest.js`'s `_computePeriodMape` and consumed by `at-a-glance.js`/`analytics.js` too, with
+  "MAPE" in rendered UI labels — swapping the underlying metric is a real, separate,
+  higher-blast-radius dispatch, not a rename bundled into this one. This dispatch fixes the true
+  bug (reconcile to one implementation, true-zero floors, a weakest-link override gate, the
+  dead-field check, and wiring a red grade to actually default the store to the Simple/trailing
+  model per this project's own v4.483 finding) without touching the shared MAPE computation.
+  Persisting the score as a versioned time-series (also research-grounded, real gap: today it's
+  recomputed live on every render with zero history) is flagged as a separate future dispatch, not
+  bundled in. Not yet implemented — this is the dispatch brief.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #40 — security build Phase 1b, inventory-domain TvA rule, dispatched](dispatch-40.md)** —
+  The follow-through on the TvA correction directly below: a real, buildable
   store-level rule against data Meridian is **already pulling today** — no recipe/BOM pull or new
   QSRSoft probe needed. `qsr_variance_stat.exp_usage` **is** the theoretical-usage figure,
   computed server-side by QSRSoft's own recipe engine; `dol_diff` is already a real dollarized
