@@ -32,6 +32,17 @@ the document is the thirteen-day price test. Owner asked what "DiD" meant while 
 and separately noted future documents should spell it out — this was the same-day fix rather than
 carrying the gap into a later draft.
 
+**Freshness check RAN 2026-08-20 — verdict: no refresh needed.** Data through 08-11 was 9 days old
+against the 25 Aug meeting; owner asked whether to pull current data and update. Query G
+(`mcvalue-verification.sql`) compared the tail (08-12→08-20, −4.98% vs LY) against the already-
+documented B6–B8 blend (−4.32% vs LY): gap −0.66pp, inside the no-material-change band. The trend
+continued (B7/B8 were already −4.92%/−4.90%, the tail landed a touch deeper at −4.98%, not a
+reversal and not a sharp new decline) — read as "still declining at the documented rate," not
+"stable." The full-window and post-2-June DiD figures would move by tenths of a point at most if
+extended; not worth re-deriving 5 days out. **The headline (−3.14 pp, six clean weeks) is a closed
+historical window and was never at risk from this question either way.** Document stands as Draft
+5. Only remaining open item is still the ask (item 8, above).
+
 **What is genuinely still open, and it is the only thing left:** item 8 below, the ask — what is
 actually being requested of the FBP. Draft 4 adds three candidate framings (relief-not-blame, a
 specific ask tied to −3.14 pp, a joint-diagnostic framing) for the owner to pick from or reject,

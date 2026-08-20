@@ -8,12 +8,9 @@
 -- Full narrative: memory/analysis-mcvalue-price-waves-2026-08-18.md
 -- Run in the Supabase SQL Editor. loc is ZERO-PADDED to 7 in these tables.
 --
--- ⚠ 2026-08-20: Query G added at the end — a freshness check, not a new finding.
--- All figures above are through 2026-08-11 (9 days old as of the 25 Aug meeting).
--- The headline (−3.14pp, the six clean weeks) is a closed historical window and
--- CANNOT move with new data. Query G exists only to check whether the days since
--- 11 Aug look like more of the same B6–B8 trend or something that would change the
--- secondary full-window/post-June figures enough to matter. NOT YET RUN.
+-- ⚠ 2026-08-20: Query G added, then RUN the same day — a freshness check, not a
+-- new finding. VERDICT: no material change, refresh not needed. See Query G's own
+-- block at the end of this file for the result and full read.
 -- ============================================================================
 
 
@@ -534,9 +531,30 @@ order by bucket desc;
 
 
 -- ── G · FRESHNESS CHECK — is the post-11-Aug tail more of the same, or different? ──
--- Added 2026-08-20, NOT YET RUN. This is a triage query, not a re-derivation: it
--- exists to decide WHETHER refreshing the full-window/post-2-June figures is worth
--- the effort before the 25 Aug meeting, not to replace anything already measured.
+-- ✅ RAN 2026-08-20. VERDICT: NO MATERIAL CHANGE. Refresh is not needed before the
+-- 25 Aug meeting.
+--    data_through = 2026-08-20, tail_vs_ly_pct = -4.98%%, b6_b8_vs_ly_pct = -4.32%%
+--    Gap = -0.66pp, inside the ~1pp no-material-change band this query was written
+--    against. Sanity-checked the b6_b8 baseline itself against the document's own
+--    per-block figures before trusting the comparison (see project-mcvalue-2-fbp-
+--    document.md's per-block table): B6 -3.10%%, B7 -4.92%%, B8 -4.90%% -- a
+--    volume-weighted blend of those three landing at -4.32%% is exactly what should
+--    happen, not a surprise. ⚠ CORRECTION to this query's own comment below: it
+--    said the two figures "should sit near -3%%" -- that was B6 alone, written
+--    before checking B7/B8. The real B6-B8 blend is -4.32%%, not -3%%. The ~1pp
+--    THRESHOLD is still the right criterion and still holds; only the expected
+--    MAGNITUDE in the comment was wrong. Left uncorrected below, struck here
+--    instead, per this file's own convention of not editing a stale claim in place.
+--
+-- READ ON THE RESULT: the tail did not reverse and did not accelerate sharply --
+-- it continued the same trajectory B7/B8 already showed (upper -4%%s), landing
+-- 0.66pp deeper. This is NOT "flat" or "improving"; it is "still declining at
+-- about the rate already documented." The full-window (-3.96pp) and post-2-June
+-- (-4.45pp) DiD figures would each nudge a few hundredths to a couple tenths more
+-- negative if extended through 08-20 -- 9 days folded into windows of ~80 and
+-- ~224 days respectively barely moves a ratio-of-sums figure. Not worth
+-- re-deriving 5 days out. The headline (-3.14pp, six clean weeks, B1-B3) is
+-- completely untouched either way -- it is a closed historical window.
 --
 -- The headline (-3.14pp, the six clean weeks, B1-B3) is a closed historical window
 -- and CANNOT change no matter what this returns -- do not re-run E over this.
