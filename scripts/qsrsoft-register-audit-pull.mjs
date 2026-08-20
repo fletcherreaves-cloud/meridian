@@ -376,17 +376,33 @@ async function viaPlaywright(chunks, tracker, coveredStores) {
   // stripped: it carries no secret, but it is long and noisy, and the PATH is the diagnostic.
   const seenApiUrls = [];
   let seenApiHeaderNames = [];
-  page.on('request', req => {
+  // async listener: allHeaders() below is async. Playwright allows this -- the handler's promise
+  // is not awaited by the event loop, but the token/header capture only has to complete before
+  // the navigation waits finish, which they comfortably do.
+  page.on('request', async req => {
     if (!req.url().includes('api.reports.myqsrsoft.com')) return;
     const bare = req.url().replace(/\?.*/, '');
     if (!seenApiUrls.includes(bare)) seenApiUrls.push(bare);
     // NAMES only -- a Cookie or Authorization VALUE is a live credential and must never be
     // logged. The names alone answer the open question (how does the app authenticate this
     // call, given it sends no x-auth-token) without leaking anything.
+    // allHeaders() (async, COMPLETE) rather than headers() (sync, PROVISIONAL). Playwright's
+    // headers() can omit headers the browser attaches after interception, so a negative result
+    // from it is not evidence a header is absent -- which matters, because run 32396347757's
+    // "token captured: false" was read as "the app sends no x-auth-token" and used to conclude
+    // it must authenticate by cookie. A live DevTools capture of the working request
+    // (owner-supplied, 2026-08-20) makes that conclusion doubtful: the response carries
+    // Access-Control-Allow-Origin: *, and a browser will NOT send cookies on a cross-origin
+    // request under a wildcard ACAO. Since this call IS cross-origin (v3.myqsrsoft.com ->
+    // api.reports.*) and the URL carries no token, the credential almost certainly IS a header
+    // that headers() simply did not surface. Same wildcard also explains the old trigger's
+    // "Failed to fetch": credentials:'include' against ACAO '*' is rejected by the browser
+    // outright, which was never an auth failure at all.
+    const all = await req.allHeaders();
     if (bare.endsWith('/regAudit') && !seenApiHeaderNames.length) {
-      seenApiHeaderNames = Object.keys(req.headers()).sort();
+      seenApiHeaderNames = Object.keys(all).sort();
     }
-    const t = req.headers()['x-auth-token'];
+    const t = all['x-auth-token'];
     if (t && t.length > 20 && !token) token = t;
   });
   const snap = name => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
