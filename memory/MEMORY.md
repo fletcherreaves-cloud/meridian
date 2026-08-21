@@ -65,12 +65,30 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`employee-roster` — Part B ANSWERED, and the most sensitive endpoint yet](finding-qsrsoft-employee-roster-endpoint-2026-08-21.md)** —
+  **NEWEST.** 🔴 **Returns SSN, home address, DOB, race (`nationalOrigin`), gender, marital status
+  and pay rate.** Worse than `time-punches`. The **`selectCols` allowlist is the security control** —
+  request only `geid`/dates/job-title/status fields; the pull script must assert none of the denied
+  fields are present, so a future edit fails loudly. Protected-class attributes must not be ingested
+  at all: having them next to performance data lets a metric split by race or age *by accident*.
+  🎯 **Dispatch #56 Part B is answered** — and "start date" is **two** fields: `orgStartDate` (joined
+  the org) vs `storeStartDate` (joined this store), which diverge often and hugely (one record: eight
+  years org, two months store). Tenure → `orgStartDate`; time-in-restaurant → `storeStartDate`;
+  showing one labelled "start date" is wrong for every transfer. `jobTitleCodeStartDate` (time in
+  role) may be the most coaching-relevant of the three. 🎯 Also **resolves the `time-punches`
+  `jobTitleCode` unknown** (45=GM, 647=Cert Swing Mgr, 648=Crew Trainer, 650=Crew, 671=Maintenance,
+  846=Dept Mgr II — partial, build from data) which is the missing piece for the **forms dashboard's
+  manager attribution**: roster says who is a manager, punches say who was on shift. Traps:
+  **`"0000-00-00"` is the date null sentinel** (third sentinel family after `emp_id='0'` and
+  `completedBy='--'`); `hasPunched` is a `"Yes"`/`"No"` string meaning "in the window", not ever;
+  **`nextReviewDate` is widely stale** and unusable as a schedule (though overdue-from-`lastReviewDate`
+  is a real candidate metric); `payrollID` is null — `geid` is the key.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
   **Owner-requested dashboard**, and it is **no longer blocked** — the full 4,714-row
   `completionDetail` response is measured. A **third host family**, `forms.home.myqsrsoft.com`;
-  **neither** the DAR's Playwright requirement **nor** the security host's token-only finding
-  transfers, and `sec-fetch-site: same-site` means curl cannot rule out an invisible cookie — get the
-  DevTools header panel. ⭐ **Build on `completionDetail`** (no `formIds`, one row per *scheduled
+  ✅ **auth RESOLVED 2026-08-21: token-only, no cookie** (DevTools header panel — `Cookie` absent
+  where it would sort, between `Content-Type` and `Origin`), so it behaves like `api.security`, **not**
+  the DAR host: a plain Node `fetch`, no Playwright. ⭐ **Build on `completionDetail`** (no `formIds`, one row per *scheduled
   occurrence*, so a miss is a returned row); keep `completionByForm` as the denominator source, since
   `completionDetail` gives a completion *ratio* with no question counts and ratios cannot be averaged.
   🔴 **`status` is POLYMORPHIC — a string enum OR a float**, and there are **three** states, not two:
