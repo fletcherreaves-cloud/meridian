@@ -1,6 +1,6 @@
 ---
 name: dispatch-55
-description: Two parts, two PRs. Part A closes dispatch #54 Job B's one remaining open decision - the Forecasting and Labor Projections section - whose owner list was committed in memory the whole time. All ten of its panels are kind='test-kitchen', so promoting them empties the Test Kitchen entirely; that consequence is accepted, not a surprise to discover mid-build. Part B is Job C Batch 1, the first six overlay-to-page conversions.
+description: Two parts, two PRs. Part A establishes the owner's standing rule - kind is lifecycle, section is placement, and section must be truthful even when nothing renders it - then fixes the three forecasting panels whose section is currently wrong, so a future promotion lands them correctly. Test Kitchen STAYS; the earlier draft that emptied it is superseded. Part B is Job C Batch 1, the first six overlay-to-page conversions.
 metadata:
   node_type: memory
   type: dispatch
@@ -36,89 +36,105 @@ against `memory/`, exactly like any other hypothesis in this repo.
 
 ## Part A — the Forecasting and Labor Projections section
 
-### The owner's list, verbatim (`notes-67-queue.md:34-36`)
+> **REVISED 2026-08-21 after the owner's decision. The earlier draft of this Part promoted all ten
+> panels out of the Test Kitchen. Do NOT do that.** The owner's call: *"assign them a category, but
+> leave them in the test kitchen. That way if I decide to promote them, they'll naturally fall into
+> the right section."* That is a better design than the one it replaced, and it removes this Part's
+> only risky change — Test Kitchen stays, betaMode behaviour is untouched, and nothing about today's
+> nav moves.
 
-Projections · Proj vs Actuals · Forecast Models · DI Calibration · Forecast Accuracy · LifeLenz Gap ·
-DI Compare · Fcst Reference · Forecast Audit · LifeLenz Bridge.
+### The standing rule this establishes (owner-stated, applies to every panel from now on)
 
-Listed alongside "Inventory and Food Cost (new section)" and "Analysis (new section)", both of which
-Job B built as real nav sections — so this is a real nav section too, not a grouping inside something
-else.
+**`kind:` is lifecycle. `section:` is placement. They are independent, and `section:` must be
+truthful even when nothing renders it.** A panel's section says where it belongs; its kind says
+whether it is showing yet. Promotion is then a one-field edit — flip `kind` and the panel lands in
+the right place with no second decision to make and no chance to forget one.
 
-### The thing that makes this bigger than a `section:` edit — measured, not assumed
+This is how the data model already wants to behave: `section:` is simply inert while
+`kind:'test-kitchen'`, so making it truthful costs nothing today and buys the whole promotion path.
 
-**All ten are `kind:'test-kitchen'`.** And there are **exactly ten `kind:'test-kitchen'` panels in
-the registry** — the owner's list *is* the entire Test Kitchen.
+**Where the registry already stands** (measured, so nobody re-derives it):
 
-```
-grep -c "kind:'test-kitchen'" src/app/panel-registry.js   ->  10
-```
+| | |
+|---|---|
+| panels | 82 |
+| by kind | `nav` 44 · `optional` 13 · `hub-tab` 11 · `test-kitchen` 10 · `internal` 4 |
+| panels with **no** `section:` | **0** |
+| `section:` values not in `SECTIONS` | **0** |
+| panels whose `section:` is **inert** (`test-kitchen`/`hub-tab`/`internal`) | **25** |
+| `SECTIONS` entries with no members | `help` (ties to the deferred help-vs-admin split) |
 
-So promoting them to a real section **empties ⚗ TEST KITCHEN completely and the header disappears**
-(Job B's own `renderSection` returns null for an empty section — that behaviour is already tested).
-Two consequences, both intended, neither to be discovered halfway through:
+So the rule is already satisfied *structurally*. What is missing is that some values are **wrong**,
+and nothing catches that — which is the whole problem with the 25.
 
-1. **The ⚗ TEST KITCHEN header stops existing in the UI.** That is the point — these graduated.
-2. **Their betaMode behaviour inverts.** Today `kind:'test-kitchen'` means *hidden when betaMode is
-   on*. As ordinary `kind:'nav'` they render always. Call this out explicitly in the changelog body
-   so the owner meets it in the release notes rather than in the sidebar.
+### ⚠️ Inert metadata rots. This rule needs a guard or it is worse than nothing.
 
-**Owner has approved the section. Ship it with those consequences.** Do not invent a compromise
-(a "graduated but still beta-gated" third kind) to avoid them — that is scope the owner didn't ask
-for, and it would leave the Test Kitchen half-alive.
+A `section:` nothing renders is a field nothing checks, and this repo has now paid for that class
+three times in a week: the stale `'Proj Workflow'` label Job A found, the 15 schema-drift columns
+dispatch #52 found, and — right now, in this very registry — **`proj` claims
+`section:'planning'`**, which is simply false and went unnoticed precisely because it is inert.
 
-### The trap in three of the ten
+The owner's rule makes 25 panels depend on metadata being right at some future promotion. Ship the
+guard in the same PR:
 
-Three carry a `section:` that is **currently inert** because `kind:'test-kitchen'` short-circuits
-section rendering. Flip `kind` without fixing `section` and they land somewhere wrong:
+1. **Structural ratchet** — every panel has a `section:` that exists in `SECTIONS`. True today (0
+   and 0 above); lock it so it stays true for panels added later.
+2. **The promotion test — the one that actually serves the owner's purpose.** For each
+   `kind:'test-kitchen'` panel, simulate the promotion (flip `kind` to `'nav'` in a copy of the
+   registry) and assert it **renders under the header the owner named**. That proves "they'll
+   naturally fall into the right section" instead of assuming it. A test asserting `section:` string
+   equality would pass with the rendering path broken — this one renders, same standard as Job A's
+   snapshot and Job B's section tests.
 
-| panel | today's `section:` | must become |
+### The actual edits
+
+**Three panels carry a wrong `section:`. Fix them — this is the substance of Part A:**
+
+| panel | today | must become |
 |---|---|---|
 | `proj` (Projections) | **`planning`** | `forecasting` |
 | `lfz-gap` (LifeLenz Gap) | `scheduling` | `forecasting` |
 | `lifelenz-bridge` | `scheduling` | `forecasting` |
 
-`proj` is the dangerous one: left alone it drops **Projections into the Planning section the owner
-just approved as exactly four links** (#516 — Planning hub, Calendar, Events & Tags, Event Impact).
-Job B's `'the Planning section is exactly the owner's four links, hub first'` test catches this. If
-that test goes red, the fix is `proj`'s `section:`, **not** the test's expectation.
+That takes the `forecasting` section from **7 members to the owner's full 10**
+(`notes-67-queue.md:34-36`). `proj` is the one that matters most: left wrong, the day someone
+promotes it, Projections silently lands in the Planning section the owner approved as exactly four
+links (#516).
 
-### The rest of Part A
+**Also:**
+- **Section label:** `{ id:'forecasting', label:'Forecasting' }` →
+  **`Forecasting and Labor Projections`** (`panel-registry.js:205`). Invisible today — all 10
+  members are `test-kitchen`, so the section renders empty and its header is absent from the nav
+  (confirmed against the current snapshot). Pure preparation, which is the point.
+- **Rename** `lifelenz-bridge`'s label to **`Recommended WFM Forecast Adjustments`**
+  (`notes-67-queue.md:82`, `dispatch-54.md:149`). Cosmetic, no logic. **This is the only
+  user-visible change in Part A.** Check it at the collapsed and mobile breakpoints — roughly triple
+  the current length, and this nav truncates rather than wraps.
+- **Two owner-flagged bugs**, both "investigate and report; fix here only if the fix is small and
+  obvious":
+  - **Forecast Audit appears greyed out** (`notes-67-queue.md:77`, `:113`). It shares
+    `perm:'analytics.forecasting'` with nine panels that are presumably not greyed out — start by
+    diffing it against them rather than assuming a permissions cause. If the root cause isn't small,
+    report it with a proposed patch; do not widen this PR.
+  - **Fcst Reference "make sure it is current and updated"** (`notes-67-queue.md:75`, `:87`). A
+    staleness concern, not a bug report. Say what it shows and whether that's current; propose,
+    don't unilaterally rewrite reference content.
 
-- **Section label:** `SECTIONS`' `{ id:'forecasting', label:'Forecasting' }` becomes
-  **`Forecasting and Labor Projections`** (`panel-registry.js:205`).
-- **Rename** `lifelenz-bridge`'s label to **`Recommended WFM Forecast Adjustments`** — cosmetic,
-  no logic change (`notes-67-queue.md:82`, `dispatch-54.md:149`). Check the label's length against
-  the sidebar's actual width at the collapsed and mobile breakpoints; it is roughly triple the
-  current one and this nav truncates rather than wraps.
-- **Two owner-flagged bugs, bundled here because they are about these exact panels.** Both are
-  "investigate and report; fix in this PR only if the fix is small and obvious":
-  - **Forecast Audit appears greyed out** (`notes-67-queue.md:77`, `:113`). Owner asks why. Reads as
-    a gating bug. Note it shares `perm:'analytics.forecasting'` with nine others that presumably
-    are *not* greyed out — so start by diffing it against them rather than assuming a permissions
-    cause. If the root cause is not small, report it with a proposed patch; do not widen this PR.
-  - **Fcst Reference "make sure it is current and updated"** (`notes-67-queue.md:75`, `:87`). This
-    is a staleness concern, not a bug report. Say what it currently shows and whether that is
-    current; propose, don't unilaterally rewrite reference content.
+### Part A's verification bar — much tighter than the earlier draft
 
-### Part A's verification bar
+Because nothing is promoted, **the nav must be identical except for one renamed label.** Run the
+membership diff that verified Job B (render `AppSidebar` from `main` and from the branch, diff the
+**set** of reachable nav text across full-access / betaMode-on / betaMode-off / optional-panels-
+visible):
 
-The nav changes visibly, so the snapshot re-baselines again — and a re-baselined snapshot proves
-nothing on its own. **The membership diff is the check that matters**, the same one that verified
-Job B: render `AppSidebar` from `main` and from the branch, and diff the **set** of reachable nav
-text across full-access / betaMode-on / betaMode-off / optional-panels-visible.
+- **expected lost:** `LifeLenz Bridge`
+- **expected gained:** `Recommended WFM Forecast Adjustments`
+- **nothing else, in either direction.**
 
-Expected, and nothing else:
-- **lost:** `⚗ TEST KITCHEN`, `Forecasting`
-- **gained:** `Forecasting and Labor Projections`, `Recommended WFM Forecast Adjustments`
-- **lost:** `LifeLenz Bridge` (renamed — must reappear under its new label, not vanish)
-- **no panel label lost.** Any other disappearance is a regression, not a regroup.
-
-Also: the ten panels currently vanish under `betaMode: true` and must **stop** doing so. Assert that
-directly — it is the behaviour change, so it needs its own assertion, not just a snapshot that
-happens to cover it.
-
----
+That is a strong bar precisely because Part A is metadata work: any other movement means a
+`section:` edit leaked into the rendered nav, which is the one thing this design promises it cannot
+do. `⚗ TEST KITCHEN` must still be present, and the ten panels must still vanish under
+`betaMode: true` exactly as they do today.
 
 ## Part B — Job C Batch 1 (overlay → page)
 

@@ -65,21 +65,23 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 — the forecasting section, then Job C Batch 1](dispatch-55.md)** —
-  **NEWEST.** Two parts, two PRs, A first. **Part A** closes Job B's one remaining open decision:
-  the **Forecasting and Labor Projections** section. The owner list Job B reported as unavailable
-  **was committed the whole time** (`notes-67-queue.md:34-36`), and so were its three parentheticals
-  — the LifeLenz Bridge rename was in **dispatch #54's own brief** (`:149`). Measured consequence
-  that makes this bigger than a `section:` edit: **all ten panels are `kind:'test-kitchen'` and
-  there are exactly ten test-kitchen panels**, so promoting them **empties ⚗ TEST KITCHEN entirely**
-  and inverts their betaMode behaviour — accepted, but it goes in the changelog. Trap: `proj`'s
-  inert `section:'planning'` would drop Projections into the four-link Planning section (#516) the
-  moment `kind` flips. **Part B** is Job C Batch 1 — six overlay→page conversions, owner-approved,
-  where the failure mode is a working render with a broken `modal===` deep link (the #366 shape).
-  Standing lesson recorded at the top of the brief: **`grep -rn` in `memory/` before reporting
-  anything blocked.**
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 — the section-metadata standard, then Job C Batch 1](dispatch-55.md)** —
+  **NEWEST.** Two parts, two PRs, A first. **Part A carries a STANDING RULE the owner set
+  2026-08-21: `kind:` is lifecycle, `section:` is placement, and `section:` must be truthful even
+  when nothing renders it** — so promoting any panel is a one-field `kind` flip that lands it in the
+  right place. Test Kitchen **stays** (this supersedes an earlier draft that emptied it). Measured:
+  all 82 panels already have a valid `section:`, but **25 of them are inert** (`test-kitchen`/
+  `hub-tab`/`internal`) and inert metadata rots — `proj` claims `section:'planning'` right now,
+  which is false. So the rule ships with a **promotion test** that simulates the `kind` flip and
+  asserts the panel *renders* under the right header. Part A's real edits: three wrong sections
+  (`proj`/`lfz-gap`/`lifelenz-bridge` → `forecasting`, taking it to the owner's full 10), the
+  section label, the LifeLenz Bridge → *Recommended WFM Forecast Adjustments* rename (the only
+  user-visible change), and two owner-flagged bugs. **Part B** is Job C Batch 1 — six overlay→page
+  conversions where the failure mode is a working render with a broken `modal===` deep link.
+  Also recorded: **`grep -rn` in `memory/` before reporting anything blocked** — Job B called this
+  list unavailable while it sat committed at `notes-67-queue.md:34-36`.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job B — the actual regroup, v2 sidebar finally adopted](dispatch54-job-b.md)** —
-  **NEWEST.** `AppSidebar` now genuinely renders from `SECTIONS` + `panelsForSection()` (Job A kept
+  `AppSidebar` now genuinely renders from `SECTIONS` + `panelsForSection()` (Job A kept
   the v1 hand-built list on purpose, since its own registry corrections were only truthful for
   today's ad hoc grouping, not the target IA). The owner's three answered decisions applied: Visit
   Readiness + Graded Visits → Operations; Calendar/Events & Tags/Event Impact folded into Planning
