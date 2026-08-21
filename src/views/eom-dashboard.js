@@ -8,7 +8,7 @@
 // persist to eom_count_status so the owner can track who was told what.
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, supervisorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
-import { ModalShell, Z } from '../components/ModalShell.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
 import {
@@ -2252,11 +2252,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
     + (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : '');
 
-  return h(ModalShell, {
-    title: '📦 Inventory Control', subtitle: subtitleText, onClose,
-    maxWidth: 1240, zIndex: Z.nested, bodyStyle: { padding: '20px' },
-    subHeader: h(PanelChrome, { location: locationSlot, dateControl: dateControlSlot, exportSlot: exportSlotContent, actions: actionsSlot, tabs: tabsSlot }),
+  return h(RoutePanelShell, {
+    title: '📦 Inventory Control', subtitle: subtitleText, onBack: onClose,
+    bodyStyle: { padding: '20px' },
   },
+
+    h(PanelChrome, { location: locationSlot, dateControl: dateControlSlot, exportSlot: exportSlotContent, actions: actionsSlot, tabs: tabsSlot }),
 
     // summary tiles
     div({ style: { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' } },

@@ -13,7 +13,7 @@ import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { hasPermission, getOrgRoles } from '../engine/permissions.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
-import { ModalShell, Z } from '../components/ModalShell.js';
+import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -2393,13 +2393,13 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
     ...(canCustomize ? [{key:'customize', label:'Customize'}] : []),
   ];
 
-  return h(ModalShell,{
-    title:'Performance Reviews', icon:'📋', onClose, maxWidth:1200, zIndex:Z.modal,
+  return h(RoutePanelShell,{
+    title:'Performance Reviews', icon:'📋', onBack:onClose,
     subtitle:'Salaried Management · GM · AM · AS · OM',
     headerExtra: GhostBtn({onClick:()=>setShowHelp(true),style:{fontSize:11}},'? Help'),
-    subHeader: TabBar({tabs, active:tab, onSelect:(k)=>{setTab(k);if(k!=='reviews')setEditing(null);}}),
-    bodyStyle:{padding:0,display:'flex',flexDirection:'column',overflow:'hidden'},
+    bodyStyle:{display:'flex',flexDirection:'column',overflow:'hidden'},
   },
+    TabBar({tabs, active:tab, onSelect:(k)=>{setTab(k);if(k!=='reviews')setEditing(null);}}),
     showHelp && h(HelpGuideModal, {onClose:()=>setShowHelp(false), zIndex:Z.nested}),
     tab==='reviews' && (
       editing

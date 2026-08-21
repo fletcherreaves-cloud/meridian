@@ -65,8 +65,37 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 Part B — Job C Batch 1: six overlay-to-page conversions, done](dispatch55-part-b.md)** —
+  **NEWEST.** Separate PR from Part A (built off `origin/main` before Part A merged, deliberately —
+  see `dispatch-55.md`'s "ship as two PRs, do not combine them"). Converted Scheduling
+  (`sched-hub`), Performance Reviews (`perf-reviews`), Food Cost (`fob-analysis`), End of Month
+  (`fob-eom`), Inventory Control (`eom-dashboard`) and Count Cycle (`count-cycle`) from
+  `ModalShell` popups to URL-addressable full-page views, using the EXISTING `route:true`
+  infrastructure (`src/app/routing.js`, untouched) built for `dicompare`/`fcst-accuracy`/`proj`/
+  `report` — this batch takes it from 4 route panels to 10. `fob-analysis`/`fob-eom` had no
+  internal chrome (wrapped directly in `RoutePanelShell` at the App.js call site);
+  `perf-reviews`/`eom-dashboard` swapped their own `h(ModalShell,...)` for `h(RoutePanelShell,...)`
+  in place; `count-cycle-panel.js` hand-rolled its own backdrop/card/header from scratch (never
+  used `ModalShell`) — refactored to `RoutePanelShell`, dropping the R7 hand-rolled-backdrop
+  ratchet 78→77; `sched-hub` (`SchedulingHubPanel`, defined locally in App.js) also hand-rolled its
+  own bottom-sheet chrome around six internal tabs — refactored with the tab-pill-bar relocated
+  into `RoutePanelShell`'s `headerExtra`, all seven modal ids that funnel into it
+  (`sched-hub`/`labor-analytics`/`scheduling`/`sched-summary`/`labor-analysis`/`labor-allocation`/
+  `skills-matrix`) still set the right internal tab, only the modal-open half became
+  `goRoute('sched-hub')`. The six `showX` booleans are removed entirely (declaration +
+  `anyModalOpen` + Escape sweep), not just unused. **Verification bar actually reached:** the
+  registry ratchet test now enumerates all ten route ids; the two existing generic regex tests
+  (`goRoute(...)` call site exists, `routePanel===id` render gate exists) cover all ten
+  automatically; a NEW dedicated test asserts no `setShowX(true)` call site and no `useState`
+  declaration survives for any of the six removed booleans anywhere in App.js — the #366 shape
+  (working render, stale call site) the dispatch specifically warned about. App.js has **no
+  existing render-level test harness** (unlike `shell.js`'s `AppSidebar`), so that regex coverage
+  is the verification ceiling actually available in this codebase, not a shortcut chosen over a
+  render test that exists — stated explicitly rather than silently settled for. 1860/1860 tests
+  (1 net new + one ratchet lowered). Build clean, entry chunk essentially flat (1717.36 KB /
+  510.63 KB gz vs. 1717.88 KB / 510.61 KB gz pre-PR) since all six components were already lazy.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 — Security panel: five owner asks, scoped against the code](dispatch-56.md)** —
-  **NEWEST.** Scoping changed what four of the five actually are. **A** rule directory in the legend
+  Scoping changed what four of the five actually are. **A** rule directory in the legend
   — small, the text already exists as `security_rules.description` and the loader already fetches
   it. **B** employee start date — **not a UI change: no hire date exists anywhere** in `src/`,
   `scripts/` or `supabase/`, and the LifeLenz runbook documents no employee-master endpoint;

@@ -14,6 +14,7 @@ import * as React from 'react';
 import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES } from '../engine/count-cycle.js';
 import { loadQsrOnHand } from '../lib/supabase.js';
 import { sName } from '../constants.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -141,24 +142,14 @@ export function CountCyclePanel({ onClose }) {
               showClean ? div({ style: { marginTop: 6 } },
                 clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))) : null) : null);
 
-  return div({
-    style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 320, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto' },
-    onClick: onClose,
+  return h(RoutePanelShell, {
+    title: 'Count Cycle Compliance',
+    icon: '📋',
+    subtitle: rows === null ? period : `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle`,
+    onBack: onClose,
   },
-    div({ onClick: e => e.stopPropagation(), style: {
-      width: '100%', maxWidth: 780, background: 'var(--surf,#0f1117)', borderRadius: 12,
-      border: '.5px solid var(--bdr,#2a2f3a)', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.6)',
-    } },
-      div({ style: { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '.5px solid var(--bdr,#2a2f3a)', background: 'var(--surf2,#151821)' } },
-        span({ style: { fontSize: 16 } }, '📋'),
-        div({ style: { flex: 1 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Count Cycle Compliance'),
-          div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', marginTop: 2 } },
-            rows === null ? period : `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle`)),
-        h('button', { onClick: onClose, style: { background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text3,#6b7280)', padding: '5px 10px', cursor: 'pointer', fontSize: 12 } }, '✕ Close')),
+    div({ style: { padding: 12 } }, body),
 
-      div({ style: { padding: 12 } }, body),
-
-      div({ style: { padding: '9px 18px', borderTop: '.5px solid var(--bdr,#2a2f3a)', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.5 } },
-        `Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day.`)));
+    div({ style: { padding: '9px 18px', borderTop: '.5px solid var(--bdr,#2a2f3a)', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.5 } },
+      `Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day.`));
 }

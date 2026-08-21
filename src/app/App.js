@@ -363,24 +363,19 @@ function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose })
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
     tab === 'allocation' ? h(LaborAllocationPanel, common) :
                           h(SkillsMatrixPanel, common);
-  // paddingBottom mirrors paddingTop (#192 P1) — without it the sheet's flex:1 fills all the way
-  // to the viewport's physical bottom edge, so a horizontally-scrolling table inside gets a
-  // native scrollbar glued to the screen edge with zero room to grab it (reported against
-  // Planning → Monthly; this hub shell is shared verbatim with the Scheduling hub below).
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16, paddingBottom: 16 } },
-    div({ style: { flex: '0 0 16px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1600, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
-      div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--amber)', letterSpacing: '-.2px', flexShrink: 0 } }, 'Labor & Scheduling'),
-        div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1, minWidth: 0 } },
-          ...allowed.map(t => btn({ key: t.id, onClick: () => setTab(t.id), title: t.label,
-            style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
-              border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
-              background: tab === t.id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
-              color: tab === t.id ? 'var(--amber)' : 'var(--text2)' } },
-            span({ style: { fontSize: 12 } }, t.icon), t.label))),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)', flexShrink: 0 }, onClick: onClose }, '✕')),
-      div({ style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, active)));
+  // Dispatch #55 Part B: same tab-pill-bar markup that used to sit inline in this hub's own
+  // hand-rolled header, now relocated (unchanged) into RoutePanelShell's headerExtra slot.
+  const tabBar = div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap' } },
+    ...allowed.map(t => btn({ key: t.id, onClick: () => setTab(t.id), title: t.label,
+      style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+        border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
+        background: tab === t.id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
+        color: tab === t.id ? 'var(--amber)' : 'var(--text2)' } },
+      span({ style: { fontSize: 12 } }, t.icon), t.label)));
+  return h(RoutePanelShell, {
+    title: 'Labor & Scheduling', icon: '🗓', onBack: onClose, headerExtra: tabBar,
+    bodyStyle: { minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  }, active);
 }
 
 // ── Panel Manager ────────────────────────────────────────────────────────────
@@ -640,7 +635,7 @@ function App() {
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   const [showPlanningHub, setShowPlanningHub] = useState(false);   // Notes 24 Planning hub
   const [planningTab, setPlanningTab] = useState('targets');
-  const [showSchedHub, setShowSchedHub] = useState(false);         // Notes 24 Scheduling hub
+  // showSchedHub — Dispatch #55 Part B: replaced by routePanel==='sched-hub' (see routePanel above).
   const [schedTab, setSchedTab] = useState('scheduling');
   const [showPanelManager, setShowPanelManager] = useState(false); // Notes 24 Panel Manager
   const [panelVis, setPanelVis] = useState(loadPanelVis);          // {id:bool} optional-panel visibility
@@ -670,7 +665,7 @@ function App() {
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
-  const [showCountCycle, setShowCountCycle] = useState(false);
+  // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle' (see routePanel above).
   const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
   const [showDialedIn, setShowDialedIn]= useState(false);
@@ -681,7 +676,7 @@ function App() {
   const [showBrief,    setShowBrief]   = useState(false);
   const [showMorningBrief, setShowMorningBrief] = useState(false); // Morning Brief panel
   const [showEOMSummary,   setShowEOMSummary]   = useState(false); // EOM Supervisor Summary
-  const [showEOMDash,      setShowEOMDash]      = useState(false); // EOM Dashboard (count progress + FOB)
+  // showEOMDash — Dispatch #55 Part B: replaced by routePanel==='eom-dashboard' (see routePanel above).
   const [showAbout, setShowAbout] = useState(false); // About/Changelog modal
   const [showPVSA,     setShowPVSA]    = useState(false);
   const [showPace,     setShowPace]    = useState(false); // Pace to Target
@@ -711,11 +706,11 @@ function App() {
   const [showSmartTargets, setShowSmartTargets] = useState(false);
   const [showLocIntel,     setShowLocIntel]     = useState(false);
   const [showInventory,    setShowInventory]    = useState(false);
-  const [showFOB,             setShowFOB]             = useState(false);
-  const [showFOBEOM,          setShowFOBEOM]          = useState(false);
+  // showFOB — Dispatch #55 Part B: replaced by routePanel==='fob-analysis' (see routePanel above).
+  // showFOBEOM — Dispatch #55 Part B: replaced by routePanel==='fob-eom' (see routePanel above).
   const [showSMGVoice,        setShowSMGVoice]        = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
-  const [showPerfReviews,     setShowPerfReviews]     = useState(false);
+  // showPerfReviews — Dispatch #55 Part B: replaced by routePanel==='perf-reviews' (see routePanel above).
   const [showRecordDay,       setShowRecordDay]       = useState(false);
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
   const [showDeliveryMix,     setShowDeliveryMix]     = useState(false);
@@ -2502,18 +2497,20 @@ function App() {
   // overlaying them, so there's nothing left running behind it that anyModalOpen would need to
   // pause — this is the "converting a panel to a route naturally resolves the concern for that
   // panel" case the dispatch names, not a regression of the v4.212 fix for what remains a modal.
-  const anyModalOpen = showNews||showCountCycle||showAIScan||showAbout||showAttention||showAudit||showBrief||
-    showAboveStore||showDistrictLens||showEOMDash||showEventImpact||showFOBEOM||
+  // Dispatch #55 Part B adds sched-hub/perf-reviews/fob-analysis/fob-eom/eom-dashboard/count-cycle
+  // to that same list — same reasoning, same removal.
+  const anyModalOpen = showNews||showAIScan||showAbout||showAttention||showAudit||showBrief||
+    showAboveStore||showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
-    showDataManager||showDialedIn||showDtSoS||showEvents||showFOB||
+    showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showPerfReviews||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showSchedHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2531,22 +2528,25 @@ function App() {
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);
       setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
-      setShowFOB(false);setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowGMBrief(false);setShowHelp(false);
+      setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
-      setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowEOMDash(false);setShowOnePager(false);
+      setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowPerfReviews(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowSchedHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
-      setShowFOBEOM(false);setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFeatureRequests(false);setShowFormsLibrary(false);
       setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
       setShowPromoRoi(false);setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
-      setShowVisitReady(false);setShowCountCycle(false);setShowNews(false);
+      setShowVisitReady(false);setShowNews(false);
+      // sched-hub/perf-reviews/fob-analysis/fob-eom/eom-dashboard/count-cycle — Dispatch #55 Part
+      // B: removed from this sweep, same reasoning as the routePanel check above (they're
+      // routePanel now, caught by the early return, no showX left to reset).
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -2594,13 +2594,13 @@ function App() {
         if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
         if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
         // Scheduling hub (Notes 24): one modal, tabs. Legacy per-panel ids deep-link to the right tab.
-        if(modal==='sched-hub')       perm('analytics.store')&&(setSchedTab('scheduling'),setShowSchedHub(true));
-        if(modal==='labor-analytics') perm('analytics.labor')&&(setSchedTab('analytics'),setShowSchedHub(true));
+        if(modal==='sched-hub')       perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
+        if(modal==='labor-analytics') perm('analytics.labor')&&(setSchedTab('analytics'),goRoute('sched-hub'));
         if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
-        if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),setShowSchedHub(true));
+        if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='morning-brief')  perm('analytics.brief')&&setShowMorningBrief(true);
         if(modal==='eom-summary')    perm('analytics.district')&&setShowEOMSummary(true);
-        if(modal==='eom-dashboard')  perm('analytics.district')&&setShowEOMDash(true);
+        if(modal==='eom-dashboard')  perm('analytics.district')&&goRoute('eom-dashboard');
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
           else setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null});
@@ -2615,7 +2615,7 @@ function App() {
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
         if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
-        if(modal==='perf-reviews')   perm('reviews.view')&&setShowPerfReviews(true);
+        if(modal==='perf-reviews')   perm('reviews.view')&&goRoute('perf-reviews');
         if(modal==='proj')           perm('analytics.forecasting')&&goRoute('proj');
         if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
         if(modal==='dialedin')       perm('analytics.forecasting')&&setShowDialedIn(true);
@@ -2624,7 +2624,7 @@ function App() {
         if(modal==='yearly-proj')    perm('analytics.store')&&(setPlanningTab('yearly'),setShowPlanningHub(true));
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
-        if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),setShowSchedHub(true));
+        if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
         if(modal==='dicompare')      perm('analytics.forecasting')&&goRoute('dicompare');
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&goRoute('fcst-accuracy');
@@ -2646,10 +2646,10 @@ function App() {
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
         if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
-        if(modal==='count-cycle')    perm('analytics.store')&&setShowCountCycle(true);
+        if(modal==='count-cycle')    perm('analytics.store')&&goRoute('count-cycle');
         if(modal==='news')           perm('analytics.store')&&setShowNews(true);
-        if(modal==='fob-analysis')   perm('analytics.store')&&setShowFOB(true);
-        if(modal==='fob-eom')        perm('analytics.store')&&setShowFOBEOM(true);
+        if(modal==='fob-analysis')   perm('analytics.store')&&goRoute('fob-analysis');
+        if(modal==='fob-eom')        perm('analytics.store')&&goRoute('fob-eom');
         if(modal==='smg-voice')      perm('analytics.store')&&setShowSMGVoice(true);
         if(modal==='store-kb')       perm('analytics.store')&&setShowStoreKB(true);
         if(modal==='one-pager')      perm('analytics.store')&&setShowOnePager(true);
@@ -2667,9 +2667,9 @@ function App() {
         if(modal==='unified-targets') perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='signals')        perm('analytics.store')&&setShowSignals(true);
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
-        if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),setShowSchedHub(true));
-        if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),setShowSchedHub(true));
-        if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),setShowSchedHub(true));
+        if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),goRoute('sched-hub'));
+        if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
+        if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),goRoute('sched-hub'));
         if(modal==='sage')              {setShowSage(true);setSageMin(false);}
         if(modal==='feature-requests')  setShowFeatureRequests(true);
         if(modal==='task-queue')        setShowTaskQueue(true);
@@ -2754,9 +2754,9 @@ function App() {
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
           }
           else if(modal==='settings')setShowSettings&&setShowSettings(true);
-          else if(modal==='eom-dashboard')perm('analytics.district')&&setShowEOMDash(true);
-          else if(modal==='fob-analysis')setShowFOB&&setShowFOB(true);
-          else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');setShowSchedHub&&setShowSchedHub(true);}
+          else if(modal==='eom-dashboard')perm('analytics.district')&&goRoute('eom-dashboard');
+          else if(modal==='fob-analysis')goRoute('fob-analysis');
+          else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');goRoute('sched-hub');}
           else if(modal==='fcst-accuracy')goRoute('fcst-accuracy');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
@@ -2787,7 +2787,25 @@ function App() {
         title:'📊 Date-Range Comprehensive Report',
         subtitle:'Compares all metrics for any date range across selected locations.',
         onBack:()=>goRoute(null),
-      }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)}))
+      }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      // Dispatch #55 Part B (Job C Batch 1) — six overlay-to-page conversions. sched-hub,
+      // perf-reviews, eom-dashboard and count-cycle carry RoutePanelShell inside their own
+      // component (they already rendered their own header chrome); fob-analysis and fob-eom had
+      // no internal chrome, so they're wrapped in RoutePanelShell directly here.
+      routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
+      routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,onClose:()=>goRoute(null)}),
+      routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
+      routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
+      routePanel==='fob-analysis'&&h(RoutePanelShell,{
+        title:'Food Cost',
+        icon:'🥗',
+        onBack:()=>goRoute(null),
+      }, h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>goRoute(null)})),
+      routePanel==='fob-eom'&&h(RoutePanelShell,{
+        title:'End of Month',
+        icon:'📋',
+        onBack:()=>goRoute(null),
+      }, h(FOBEOMPanel,{stores,ds,settings,onClose:()=>goRoute(null)}))
     )  // close main content scroll area
     )  // close right panel flex-col
 
@@ -2797,8 +2815,8 @@ function App() {
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
     // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
     showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
-    // Scheduling hub (Notes 24): Labor Analytics / Scheduling / Schedule Summary / Labor Analysis / Skills as lazy tabs
-    showSchedHub&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>setShowSchedHub(false)}),
+    // sched-hub — Dispatch #55 Part B: moved to the routePanel gate in the main content area
+    // (RoutePanelShell now lives inside SchedulingHubPanel itself; see routePanel==='sched-hub').
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
     showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
     showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
@@ -2830,7 +2848,8 @@ function App() {
       }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
-    showPerfReviews&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,onClose:()=>setShowPerfReviews(false)}),
+    // perf-reviews — Dispatch #55 Part B: moved to the routePanel gate in the main content area
+    // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
@@ -2841,8 +2860,9 @@ function App() {
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
     showLocIntel&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>setShowLocIntel(false)}),
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
-    showFOB&&h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>setShowFOB(false)}),
-    showFOBEOM&&h(FOBEOMPanel,{stores,ds,settings,onClose:()=>setShowFOBEOM(false)}),
+    // fob-analysis / fob-eom — Dispatch #55 Part B: moved to the routePanel gates in the main
+    // content area (wrapped directly in RoutePanelShell there; see routePanel==='fob-analysis'
+    // / routePanel==='fob-eom' — neither component had internal chrome to strip).
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showSignals&&h(ModalShell,{
@@ -2910,7 +2930,8 @@ function App() {
     showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
-    showCountCycle&&h(CountCyclePanel,{onClose:()=>setShowCountCycle(false)}),
+    // count-cycle — Dispatch #55 Part B: moved to the routePanel gate in the main content area
+    // (RoutePanelShell now lives inside CountCyclePanel itself; see routePanel==='count-cycle').
     showNews&&h(NewsPanel,{onClose:()=>setShowNews(false)}),
     showAIScan&&h(ModalShell,{
       title:'🔍 Historical Sales Anomaly Scan',
@@ -3081,7 +3102,8 @@ function App() {
     },
           h(EOMSupervisorPanel,{ds,settings,supabase})
     ),
-        showEOMDash&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>setShowEOMDash(false)}),
+        // eom-dashboard — Dispatch #55 Part B: moved to the routePanel gate in the main content
+        // area (RoutePanelShell now lives inside EOMDashboardPanel itself; see routePanel==='eom-dashboard').
         showAudit&&selStore&&h(ModalShell,{
       title:'🔬 Forecast Audit — '+(STORE_NAMES[(selStore&&selStore.loc?selStore.loc:selStore)]||(selStore&&selStore.loc?selStore.loc:selStore)),
       subtitle:'Full transparency: every input, weight, and multiplier used to compute each day forecast.',
