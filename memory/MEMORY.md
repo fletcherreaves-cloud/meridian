@@ -65,21 +65,22 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`regAudit` — and a possible correction to the DAR-host Playwright rule](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
-  Owner capture of the **Register Audit report itself** (parent of `event_details`, source behind
-  `audit_rows`): `GET api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit`. Carries **two
-  more enumerable knobs** alongside `event_token` — `resultType=byDateEmployee` and
-  `registerType=cashier`; **a `byRegister` variant, if it exists, could answer Part E's "which
-  drawer" without the drill-down at all**, and enumerating them is just editing the URL.
-  🔴 **The bigger item: the request-header panel shows NO `Cookie` — on the DAR host.** That sits
-  uneasily with the standing rule that `api.reports.myqsrsoft.com` needs browser session cookies and
-  forces Playwright. **Not refuted — untested**; there are three path families on that host
-  (`/data_layer/v1/`, `/reporting/v2/`, `/reports/mcd/`) and the requirement may be path-specific.
-  **Leading hypothesis: the original 401 was a missing `Origin`/`Referer`, not a missing cookie** —
-  both are present here and both are trivial in a Node `fetch`. If so **the DAR pulls could drop
-  Playwright entirely**, retiring the "Playwright fallback is itself unreliable, so token expiry is a
-  full outage" problem. Settled by one command: a server-side fetch with token + `Origin` + `Referer`.
-  Needs the owner or an Action — no token here and the host is egress-blocked.
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`regAudit` — we pull ONE THIRD of the Register Audit](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
+  UI capture settles both knobs: **`registerType` = Cashier · Manager · Preparer**, and
+  **`resultType` = BY LOCATION · BY EMPLOYEE only — there is NO `byRegister`** (retracting a
+  shortcut I suggested for Part E; it still needs `event_token`). 🔴 **`qsrsoft-register-audit-pull.mjs:295`
+  hardcodes `registerType:'cashier'`, so `audit_rows` is missing Manager and Preparer entirely** —
+  and **manager** over/short, promo and discount activity is exactly what a controls rule most wants
+  to see. Real gap, but **not a one-line loop**: it changes `audit_rows`' grain, so PK, subject
+  grouping and existing aggregates all need checking. Scope it as its own work.
+  ⚠️ **Also a method miss worth remembering:** I wrote up "no Cookie on the DAR host" as a possible
+  correction to the Playwright rule — it was **already settled 2026-08-20 and documented in that
+  same script** (lines 335-342), and more precisely: the working request carries **no cookie AND no
+  token**, being scoped by `orgId`/`nsn` and validated on `Origin`/`Referer`. One `grep scripts/`
+  would have found it. What IS still open and narrower: `/data_layer/v1/service/…` is the only path
+  family where "needs Playwright" may still hold — `ops-pull` uses a direct token and `regAudit`
+  needs no credential, so **`CLAUDE.md`'s blanket claim about that host is too broad** and should be
+  narrowed to the path family it actually describes.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The COMPLETE QSRSoft report catalog — 108 screens](finding-qsrsoft-report-menu-map-2026-08-21.md)** —
   From an **unauthenticated static `menu.json`** on a **fourth host** (`api.sso.myqsrsoft.com`;
   blocked by our egress proxy, so owner capture only). Every capture carries

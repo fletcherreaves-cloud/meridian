@@ -115,40 +115,59 @@ at least a manager variant. **`byRegister` — if it exists — could answer Par
 without the `event_details` drill-down at all.** Cheap to enumerate: change the value in the URL and
 re-run the report.
 
-### 🔴 No `Cookie` header — on the DAR host
+### ✅ `registerType` and `resultType` vocabularies — enumerated from the UI
 
-The request-header panel lists `Accept-Language` → `Origin` adjacent, and `Cookie` sorts between
-them. **It is absent.** Only `x-auth-token` (below the fold), plus `Origin` and `Referer`.
+The Register Audit page's own controls settle both knobs:
 
-**This sits uneasily with an established rule.** `CLAUDE.md` and
-`project-qsrsoft-daily-activity.md` state that `api.reports.myqsrsoft.com` *"requires browser
-session cookies — server-side Node.js fetch with token alone returns 401"*, which is why both pull
-scripts carry the slow, fragile Playwright path.
+- **`registerType`: `Cashier` · `Manager` · `Preparer`** — three values.
+- **`resultType`: BY LOCATION · BY EMPLOYEE** — two. **There is NO `byRegister` option.**
 
-⚠️ **Do NOT record the DAR rule as refuted — this is a hypothesis and it has not been tested.**
-Note there are at least **three different path families on this one host**:
+❌ **Retracting a suggestion I made in chat.** I proposed trying `resultType=byRegister` as a cheap
+route to Part E's "which drawer worked", ahead of the `event_token` capture. **The UI offers no such
+value**, so it was speculation dressed as a shortcut. It might exist as an undocumented API value,
+but nothing supports that and it should not displace the `event_token` work. **Part E still needs
+`event_details`.**
 
-| path family | example | our auth belief |
-|---|---|---|
-| `/data_layer/v1/service/…` | `dt-timer`, `mobile`, `statistics` | Playwright (assumed, inherited) |
-| `/reporting/v2/people/…` | `employee-roster`, `time-punches-matched` | untested |
-| `/reports/mcd/…` | **`regAudit` (this capture)** | **browser sent no cookie** |
+### 🔴 We pull `registerType=cashier` ONLY — Manager and Preparer are not collected at all
 
-So the Playwright requirement may be **path-specific**, or the original 401 may have had a different
-cause. **The most interesting candidate: the DAR fetch may have been missing `Origin`/`Referer`,
-not a cookie.** Both are present here, both are trivial to set in a Node `fetch`, and a server that
-rejects a request lacking them would produce exactly the observed 401 — which would have looked like
-"needs a session".
+`scripts/qsrsoft-register-audit-pull.mjs:295` hardcodes `registerType: 'cashier'`. So `audit_rows`
+contains **one third of this report**, and the missing two thirds are the loss-prevention-relevant
+ones: **manager** over/short, promo and discount activity is precisely what a controls rule most
+wants to see, and it is invisible to every security rule we have shipped.
 
-**If that is right, the DAR pulls could drop Playwright entirely** — faster, less fragile, and it
-would retire the "LifeLenz Playwright fallback is itself unreliable, so a token expiry is a full
-outage" problem noted in the standing rules.
+**This is a real gap, not a nicety.** Adding it is a small change — loop the three values and carry
+`registerType` as a column — but it is not free: it changes `audit_rows`' grain, so the PK, the
+security rules' subject grouping, and any existing per-employee aggregate all need checking first.
+**Do not just add a loop.** Scope it as its own piece of work.
 
-**The measurement that settles it, in one command:** a server-side `fetch` to any DAR endpoint with
-`x-auth-token` **plus** `Origin: https://v3.myqsrsoft.com` and the matching `Referer`. If it returns
-data, the cookie rule was wrong and the Playwright path is removable. If it 401s, the rule stands and
-this note should say so. **Not runnable from the Claude Code sandbox** (no `QSRSOFT_TOKEN`, and the
-host is egress-blocked), so it needs the owner or a GitHub Action.
+### ⚠️ The DAR-host auth question — mostly already answered, in the script, and I missed it
+
+I first wrote this section up as a possible correction to the "DAR host needs Playwright" rule.
+**It was already settled a day earlier and is documented in the pull script**, more precisely than I
+had it — `scripts/qsrsoft-register-audit-pull.mjs:335-342`, from a complete capture of a **working**
+(200 OK) request:
+
+> *"There is NO x-auth-token, NO cookie, and NO authorization header. This endpoint is not
+> authenticated by a credential we were failing to supply — it is scoped by the orgId/nsn params and
+> validated against Origin/Referer."*
+
+So for `regAudit`: not just cookie-less, **credential-less**. My "no Cookie, so maybe the 401 was a
+missing Origin/Referer" read was a weaker version of a conclusion already reached and shipped.
+**Standing rule, violated: check whether the answer already exists before deriving it.** A `grep` of
+`scripts/` for `regAudit` would have found it in seconds.
+
+**What genuinely remains open** is narrower than I claimed, and still worth knowing:
+
+- The same script notes **`qsrsoft-ops-pull.mjs` works with a direct minted token against this same
+  host.** So "the DAR host requires browser cookies/Playwright" is *already* known to be too broad —
+  at least two paths on it don't need one, by two different mechanisms (ops: token; regAudit: no
+  credential at all, Origin/Referer scoping).
+- **Unverified: `/data_layer/v1/service/…`** — the `dt-timer`/`mobile`/`statistics` family, and the
+  DAR endpoint the Playwright requirement was originally written about. That one path family is the
+  only place the blanket rule may still hold, and it is the one a service-times pull would need.
+- Worth a look either way: `CLAUDE.md`'s blanket statement that the host "requires browser session
+  cookies" is now contradicted by two shipped scripts and should be narrowed to the path family it
+  actually describes.
 
 ## ⚠️ Do not read a pattern into this sample
 
