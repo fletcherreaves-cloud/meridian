@@ -24,6 +24,68 @@ egress proxy (`CONNECT tunnel failed, 403`). Owner capture only, unless the doma
 `Referer: https://v3.myqsrsoft.com/reports/mcd/<path>`. So this table is the **complete index of
 which screen to open** to capture any endpoint we want. No more guessing whether a report exists.
 
+## ❌ CORRECTION (same day) — most of what I called "unclaimed" is ALREADY PULLED
+
+I wrote the section below recommending reports as new opportunities **without checking
+`.github/workflows/` or `scripts/`**. That was wrong, repeatedly. `ls .github/workflows/ | grep qsr`
+returns **21 QSRSoft pulls**. What actually exists:
+
+| report I called an opportunity | reality |
+|---|---|
+| `people/employeeRoster` | ✅ **`qsrsoft-employee-roster-pull.mjs`** → `roster_role_counts` |
+| `people/turnoverReport` | ✅ **`qsrsoft-turnover-pull.mjs`** → `turnover_monthly` |
+| `people/rosterStatistics` | ✅ **`qsrsoft-roster-stats-pull.mjs`** → `roster_statistics` |
+| `shift/shiftManagerSummary` | ✅ **`qsrsoft-shift-manager-pull.mjs`** |
+| `product/productMixDrillDown` | ✅ **`qsrsoft-pmix-pull.mjs`** → `qsr_product_mix` |
+| Forms | ✅ **`qsrsoft-forms-pull.mjs`** — but templates only, see below |
+
+Also already pulled and not in my list at all: Digital App, McDelivery, On-Hand, Inventory History,
+Live Pulse, Cash Anomaly, KB pull/analyze, Variance.
+
+**So "Product Mix → Pricing Engine" is not blocked on a pull — the pull ships and writes
+`qsr_product_mix`. What is missing is the ENGINE.** Same shape for Turnover: the data is in
+`turnover_monthly`; nothing surfaces it.
+
+### What is genuinely still open
+
+- **Forms COMPLETION data.** `qsrsoft-forms-pull.mjs` captures **blank form templates** (questions,
+  for printable checklists in `public/forms/*.json`). It does **not** touch
+  `completionByForm`/`completionDetail`. The dashboard work stands.
+- ⚠️ But **`forms.home` was already known**, contrary to my "third host family, auth unknown"
+  framing: that script documents the host, uses `x-auth-token`, supports a pre-captured
+  `QSRSOFT_FORMS_TOKEN` that skips login, and already calls **`GET /api/forms?orgId=…`** — the
+  "forms list" endpoint I logged as an unexplored lead. It was in the repo the whole time.
+
+### 🔴 Part B is NOT blocked on a capture — it is blocked on a PRIVACY DECISION already made
+
+`qsrsoft-employee-roster-pull.mjs` **already fetches** `storeStartDate`, `storeEndDate`,
+`jobTitleCodeStartDate`, `employmentStatus` and `geid`, and **already uses a restricted
+`selectCols`** — its own comment: *"only job-code + status fields — so SSN/…"*. The allowlist
+discipline I wrote up as a new requirement was already implemented.
+
+But it **deliberately aggregates to `roster_role_counts` per store/month**, and states:
+*"No individual-employee data is stored anywhere."*
+
+**So the hire dates are already being read and deliberately discarded.** Part B does not need a new
+endpoint, a new pull, or a capture — **it needs a decision to persist per-person tenure**, reversing
+a privacy choice that was made on purpose. That is an owner call, and a materially different
+conversation from "we can't find a hire-date field". Scope it that way.
+
+## ⚠️ Method note — this is the fourth instance in one session
+
+Same root cause each time: **claiming something is new without grepping the repo first.**
+
+1. `jobTitleCode` "unknown" — the roster carried the mapping.
+2. `regAudit` no-cookie "discovery" — already settled and documented in the pull script.
+3. The DAR `/data_layer/v1/service/` auth question — **`qsrsoft-ops-pull.mjs:101` already hits that
+   exact path with a direct token, twice daily, on a schedule.** I asked the owner to run five
+   rounds of curl to test something the repo already proves in production.
+4. This catalog.
+
+`CLAUDE.md` already carries the rule ("Check whether a helper exists before writing one"). It is
+evidently not enough on its own. **Before writing that anything is new, missing, or unclaimed, run
+`ls .github/workflows/`, `ls scripts/`, and grep for the concept.** Cheaper than any of the above.
+
 ## 🎯 The reports that serve open roadmap items
 
 | report | path | why it matters now |
