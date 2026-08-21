@@ -65,6 +65,21 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`regAudit` — and a possible correction to the DAR-host Playwright rule](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
+  Owner capture of the **Register Audit report itself** (parent of `event_details`, source behind
+  `audit_rows`): `GET api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit`. Carries **two
+  more enumerable knobs** alongside `event_token` — `resultType=byDateEmployee` and
+  `registerType=cashier`; **a `byRegister` variant, if it exists, could answer Part E's "which
+  drawer" without the drill-down at all**, and enumerating them is just editing the URL.
+  🔴 **The bigger item: the request-header panel shows NO `Cookie` — on the DAR host.** That sits
+  uneasily with the standing rule that `api.reports.myqsrsoft.com` needs browser session cookies and
+  forces Playwright. **Not refuted — untested**; there are three path families on that host
+  (`/data_layer/v1/`, `/reporting/v2/`, `/reports/mcd/`) and the requirement may be path-specific.
+  **Leading hypothesis: the original 401 was a missing `Origin`/`Referer`, not a missing cookie** —
+  both are present here and both are trivial in a Node `fetch`. If so **the DAR pulls could drop
+  Playwright entirely**, retiring the "Playwright fallback is itself unreliable, so token expiry is a
+  full outage" problem. Settled by one command: a server-side fetch with token + `Origin` + `Referer`.
+  Needs the owner or an Action — no token here and the host is egress-blocked.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The COMPLETE QSRSoft report catalog — 108 screens](finding-qsrsoft-report-menu-map-2026-08-21.md)** —
   From an **unauthenticated static `menu.json`** on a **fourth host** (`api.sso.myqsrsoft.com`;
   blocked by our egress proxy, so owner capture only). Every capture carries

@@ -95,6 +95,61 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
    is a hypothesis, not a finding.** It matters because joining `event_details` to
    `transaction_detail` on the wrong register would silently mis-attribute. Settle it.
 
+## 🆕 Its parent report: `regAudit` — and a possible correction to the DAR-host auth rule
+
+Owner capture, 2026-08-21, of the **Register Audit report itself** — the screen `event_details`
+drills down from, and the source behind Meridian's `audit_rows`.
+
+```
+GET https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit
+    ?nsn=3708&orgId=a546d4ef-…&enterpriseName=McDonalds
+    &startDate=2026-08-12&endDate=2026-08-18&dsd=d&nsd=d&weekStart=3
+    &resultType=byDateEmployee        <- enumerable
+    &registerType=cashier             <- enumerable
+Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
+```
+
+**Two more enumerable knobs, in the same spirit as `event_token`.** `resultType=byDateEmployee`
+plainly implies siblings (`byDate`, `byEmployee`, `byRegister`?) and `registerType=cashier` implies
+at least a manager variant. **`byRegister` — if it exists — could answer Part E's "which drawer"
+without the `event_details` drill-down at all.** Cheap to enumerate: change the value in the URL and
+re-run the report.
+
+### 🔴 No `Cookie` header — on the DAR host
+
+The request-header panel lists `Accept-Language` → `Origin` adjacent, and `Cookie` sorts between
+them. **It is absent.** Only `x-auth-token` (below the fold), plus `Origin` and `Referer`.
+
+**This sits uneasily with an established rule.** `CLAUDE.md` and
+`project-qsrsoft-daily-activity.md` state that `api.reports.myqsrsoft.com` *"requires browser
+session cookies — server-side Node.js fetch with token alone returns 401"*, which is why both pull
+scripts carry the slow, fragile Playwright path.
+
+⚠️ **Do NOT record the DAR rule as refuted — this is a hypothesis and it has not been tested.**
+Note there are at least **three different path families on this one host**:
+
+| path family | example | our auth belief |
+|---|---|---|
+| `/data_layer/v1/service/…` | `dt-timer`, `mobile`, `statistics` | Playwright (assumed, inherited) |
+| `/reporting/v2/people/…` | `employee-roster`, `time-punches-matched` | untested |
+| `/reports/mcd/…` | **`regAudit` (this capture)** | **browser sent no cookie** |
+
+So the Playwright requirement may be **path-specific**, or the original 401 may have had a different
+cause. **The most interesting candidate: the DAR fetch may have been missing `Origin`/`Referer`,
+not a cookie.** Both are present here, both are trivial to set in a Node `fetch`, and a server that
+rejects a request lacking them would produce exactly the observed 401 — which would have looked like
+"needs a session".
+
+**If that is right, the DAR pulls could drop Playwright entirely** — faster, less fragile, and it
+would retire the "LifeLenz Playwright fallback is itself unreliable, so a token expiry is a full
+outage" problem noted in the standing rules.
+
+**The measurement that settles it, in one command:** a server-side `fetch` to any DAR endpoint with
+`x-auth-token` **plus** `Origin: https://v3.myqsrsoft.com` and the matching `Referer`. If it returns
+data, the cookie rule was wrong and the Playwright path is removable. If it 401s, the rule stands and
+this note should say so. **Not runnable from the Claude Code sandbox** (no `QSRSOFT_TOKEN`, and the
+host is egress-blocked), so it needs the owner or a GitHub Action.
+
 ## ⚠️ Do not read a pattern into this sample
 
 The request filters `cashiers:[91,0]` and `registers:[13]`. **Every row being one cashier on one
