@@ -382,6 +382,92 @@ describe('SecurityPanel — dispatch #46: legend, units, and the decision senten
   });
 });
 
+// dispatch #56 Part A -- owner: "let's add directory of what each policy covers." Render-based,
+// and specifically the anti-hardcode check the dispatch itself calls out as the important one: a
+// directory built from a literal list would pass every other assertion here and fail only the one
+// that adds a rule to the fixture that exists in no real source file and asserts it still renders.
+describe('SecurityPanel — dispatch #56 Part A: the rule directory renders entirely from the live rules array', () => {
+  let container, root;
+  // 9 rules, both domains, one inactive (CASH-003, matching real production data), one carrying
+  // corroboration/exoneration (the Part D "free win" this directory also surfaces), and one that
+  // exists in NO real schema file anywhere in this repo -- the anti-hardcode fixture.
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'How much cash is over or short at the drawer.', baselineType: 'personal', logicType: 'ratio', windowDays: 28, severity: 3, active: true, investigationAction: 'Pull the flagged employee\'s drawer-count photos.', falsePositives: ['register malfunction'] },
+    { ruleId: 'CASH-002', domain: 'cash', method: 'POS over-ring rate', description: 'How often an employee corrects a POS entry.', baselineType: 'peer', logicType: 'ratio', windowDays: 28, severity: 3, active: true, investigationAction: 'Compare against same-store peers.' },
+    { ruleId: 'CASH-003', domain: 'cash', method: 'Manual refund rate', description: 'Manual refund dollars, normalized.', baselineType: 'personal', logicType: 'ratio', windowDays: 28, severity: 3, active: false, investigationAction: 'Pull manual-refund transaction detail.', falsePositives: ['documented price-match override', 'manager-approved service recovery'], corroborationRules: ['CASH-001'] },
+    { ruleId: 'CASH-004', domain: 'cash', method: 'Promo/discount rate', description: 'Promo dollars, normalized.', baselineType: 'peer', logicType: 'ratio', windowDays: 28, severity: 2, active: true, investigationAction: 'Review discount authorization logs.' },
+    { ruleId: 'INV-001', domain: 'inventory', method: 'Item TvA variance rate', description: 'Theoretical-vs-actual usage variance.', baselineType: 'store', logicType: 'z-score', windowDays: 30, severity: 4, active: true, investigationAction: 'Check the item setup.', exonerationRules: ['INV-005'] },
+    { ruleId: 'INV-002', domain: 'inventory', method: 'Waste dollar rate', description: 'Waste dollars per $1,000 sales.', baselineType: 'store', logicType: 'ratio', windowDays: 30, severity: 3, active: true, investigationAction: 'Review waste logs.' },
+    { ruleId: 'INV-003', domain: 'inventory', method: 'Yield deviation', description: 'Yield vs. expected band.', baselineType: 'network', logicType: 'z-score', windowDays: 30, severity: 2, active: true, investigationAction: 'Check prep procedure.' },
+    { ruleId: 'INV-004', domain: 'inventory', method: 'Transfer anomaly', description: 'Unusual inter-store transfer volume.', baselineType: 'network', logicType: 'ratio', windowDays: 30, severity: 3, active: true, investigationAction: 'Review transfer logs.' },
+    { ruleId: 'INV-005', domain: 'inventory', method: 'Count-cycle gap', description: 'Missed or late count cycles.', baselineType: 'store', logicType: 'threshold', windowDays: 30, severity: 2, active: true, investigationAction: 'Check count-cycle completion.' },
+    // Exists in this test fixture only -- no schema file, no other test, nothing in src/ names it.
+    // A hardcoded directory component cannot show this row; only one reading the live array can.
+    { ruleId: 'ZZZ-999', domain: 'cash', method: 'Synthetic Anti-Hardcode Rule', description: 'This rule exists only in this test fixture -- nowhere in the real schema.', baselineType: 'peer', logicType: 'ratio', windowDays: 28, severity: 1, active: true, investigationAction: 'This is a fixture-only action string.' },
+  ];
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  async function openDirectory() {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const toggle = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Rule directory'));
+    expect(toggle).toBeTruthy();
+    return toggle;
+  }
+
+  it('is collapsed by default -- rule descriptions are not in the DOM until opened', async () => {
+    const toggle = await openDirectory();
+    expect(toggle.textContent).toMatch(/^▸/);
+    expect(container.textContent).not.toMatch(/Theoretical-vs-actual usage variance/);
+  });
+
+  it('opening it renders every one of the 10 fixture rules -- counted, not spot-checked -- including a rule hardcoded nowhere in the real codebase', async () => {
+    const toggle = await openDirectory();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // Count by ruleId text, since method names could theoretically collide; ruleId cannot.
+    for (const r of RULES) {
+      expect(container.textContent, `missing ${r.ruleId}`).toMatch(new RegExp(r.ruleId));
+    }
+    // The anti-hardcode check itself: a rule with NO real-schema counterpart still renders.
+    expect(container.textContent).toMatch(/Synthetic Anti-Hardcode Rule/);
+    expect(container.textContent).toMatch(/This rule exists only in this test fixture/);
+  });
+
+  it('an inactive rule is LISTED, not hidden, and marked with the legend\'s own ⏸ convention', async () => {
+    const toggle = await openDirectory();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Manual refund rate ⏸/);
+    expect(container.textContent).toMatch(/inactive — historical output, not current truth/);
+  });
+
+  it('investigationAction and false_positives render -- the half that makes this a directory, not a list', async () => {
+    const toggle = await openDirectory();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/When it fires: Pull the flagged employee's drawer-count photos\./);
+    expect(container.textContent).toMatch(/Known false positives: register malfunction/);
+    expect(container.textContent).toMatch(/documented price-match override; manager-approved service recovery/);
+  });
+
+  it('corroboration_rules / exoneration_rules (dropped by the loader until this dispatch) surface too', async () => {
+    const toggle = await openDirectory();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Corroborates with: CASH-001/);
+    expect(container.textContent).toMatch(/Weakened by: INV-005/);
+  });
+});
+
 // dispatch #50 Part A -- owner-reported "scroll not working in the modal," diagnosed to
 // security-panel.js:431/468 (renumbered by this same dispatch's comment insertions -- both are the
 // root flex column and the body flex:1/overflowY:auto div). Per the standing rule ("a test that
@@ -606,7 +692,7 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     container.remove();
   });
 
-  it('inventory: clicking "Investigate further" fetches on demand (not before) and renders all five measurements with a baseline beside each number', async () => {
+  it('inventory: clicking "Investigate further" fetches the drill-down on demand (not before), separate from dispatch #56 Part C\'s own lighter per-tab item-name preload, and renders all five measurements with a baseline beside each number', async () => {
     loadSecurityFindingsMock.mockReset().mockResolvedValue(INV_FINDINGS);
     loadSecurityRulesMock.mockReset().mockResolvedValue(INV_RULES);
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
@@ -614,6 +700,11 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
     await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush(container);
+    // dispatch #56 Part C: selecting the Inventory tab already fired its own item-name preload
+    // once for this period -- real callers get a product name on the row heading with no click;
+    // this fixture's popRows carry no `descr`, so the heading still falls back to the bare WRIN.
+    expect(loadQsrVarianceStatMock).toHaveBeenCalledTimes(1);
+    expect(loadQsrVarianceStatMock).toHaveBeenCalledWith({ period: '2026-08' });
     const itemLabel = [...container.querySelectorAll('div')].find(d => d.textContent === 'Item CUP');
     const subjectRow = itemLabel?.parentElement;
     expect(subjectRow).toBeTruthy();
@@ -621,16 +712,43 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     await flush(container);
     const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
     expect(investigateBtn).toBeTruthy();
-    // Nothing fetched yet -- on-demand, per dispatch #43's eager-load discipline.
-    expect(loadQsrVarianceStatMock).not.toHaveBeenCalled();
+    // The DRILL-DOWN's own population/history fetch is still gated behind the explicit click --
+    // expanding the row alone must not add a second call beyond Part C's preload.
+    expect(loadQsrVarianceStatMock).toHaveBeenCalledTimes(1);
     await act(async () => { investigateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     await flush(container);
-    expect(loadQsrVarianceStatMock).toHaveBeenCalledWith({ period: '2026-08' });
+    expect(loadQsrVarianceStatMock).toHaveBeenCalledTimes(2);
+    expect(loadQsrVarianceStatMock).toHaveBeenLastCalledWith({ period: '2026-08' });
     expect(container.textContent).toMatch(/Drill-down — measurements, not conclusions/);
     // Metric 1: flag rate by store -- 2 of 3 subjects flagged at this store, above the other store.
     expect(container.textContent).toMatch(/66\.7%/);
     // Metric 3: composition -- subject is 100% paper (CUP+LID), estate (BUN) is 100% food.
     expect(container.textContent).toMatch(/paper: 100\.0% of this subject's flags vs 0\.0% estate-wide/);
+  });
+
+  // dispatch #56 Part C -- the product name itself, when qsr_variance_stat actually has a descr
+  // for the (loc, wrin, period). Separate test from the drill-down one above so a descr-bearing
+  // fixture doesn't complicate that test's "Item CUP" lookup.
+  it('a wrin subject with a descr in qsr_variance_stat shows the product name as the heading, WRIN as the secondary identifier -- no click required', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(INV_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(INV_RULES);
+    loadQsrVarianceStatMock.mockReset().mockResolvedValue([
+      { loc: '0000001', period: '2026-08', wrin: 'CUP', cls: 'paper', descr: '32oz Cold Cup' },
+      { loc: '0000001', period: '2026-08', wrin: 'LID', cls: 'paper', descr: 'Cold Cup Lid' },
+      { loc: '0000002', period: '2026-08', wrin: 'BUN', cls: 'food', descr: 'Regular Bun' },
+    ]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/32oz Cold Cup/);
+    expect(container.textContent).toMatch(/Cold Cup Lid/);
+    // WRIN still visible as the secondary identifier -- it still matters for lookups -- and the
+    // old bare-WRIN heading is gone now that a real name is available.
+    const heading = [...container.querySelectorAll('div')].find(d => d.textContent.includes('32oz Cold Cup') && d.textContent.includes('CUP'));
+    expect(heading).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Item CUP/);
   });
 
   it('cash: renders the flag rate and rule-mix through the real panel for an employee subject', async () => {

@@ -104,8 +104,25 @@ index has drifted, from one filename missing.**
   probably journey **segments not lanes** (hypothesis, settle before use); `greet == orderTime`
   exactly at **2 of 24** stores (instrumentation, exclude them); and **27 requested, 24 returned** —
   absent stores are **omitted, not zero**.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Parts A and C — rule directory, and a name instead of a WRIN](dispatch56-parts-a-c.md)** —
+  **NEWEST.** Two owner asks on the Security panel, both "cheap and independent" per the dispatch's
+  own scoping. **Part A:** a rule directory in the Legend, collapsed by default, rendered ENTIRELY
+  from the live `security_rules` array (never hardcoded — the anti-hardcode test adds a rule to
+  the fixture that exists in no real schema file and asserts it renders). `loadSecurityRules()`
+  gained `false_positives` plus the Part D "free win" — `corroboration_rules`/`exoneration_rules`,
+  populated in the table, dropped by the loader until now. **Part C:** inventory findings showed a
+  bare WRIN; now shows `qsr_variance_stat.descr` as the heading, joined on `(loc, wrin, period)`
+  **never** `(loc, wrin)` alone (dropping period inflated a real join ~3.5x during the 0013113
+  investigation). New `inventoryItemKey()` helper shared with dispatch #52's own drill-down so the
+  two period derivations can't drift apart. **One real behavior change:** viewing the Inventory tab
+  now fetches `loadQsrVarianceStat({period})` once per period present, before any click — a
+  deliberate, small departure from dispatch #43's "nothing fetches before a click" rule (which
+  governs the much heavier drill-down pull, still genuinely click-gated). The dispatch #52 pinned
+  test was updated, not weakened, to prove both halves explicitly. 1880/1880 tests (6 net new),
+  build flat. Parts B/D/E remain out of scope — B needs a hire-date-source investigation first, D
+  is a real subject-history build, E needs an auth/endpoint investigation before any pull design.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 Part B — Job C Batch 1: six overlay-to-page conversions, done](dispatch55-part-b.md)** —
-  **NEWEST.** Separate PR from Part A (built off `origin/main` before Part A merged, deliberately —
+  Separate PR from Part A (built off `origin/main` before Part A merged, deliberately —
   see `dispatch-55.md`'s "ship as two PRs, do not combine them"). Converted Scheduling
   (`sched-hub`), Performance Reviews (`perf-reviews`), Food Cost (`fob-analysis`), End of Month
   (`fob-eom`), Inventory Control (`eom-dashboard`) and Count Cycle (`count-cycle`) from
@@ -201,7 +218,7 @@ index has drifted, from one filename missing.**
   is Job B's real starting catalog, not a finished regroup; two items flagged for Job B's
   attention (Inventory has no sidebar entry at all; Forms Library/Printable Forms' corrected
   section is `analytics`, not their eventual `forms` target). 1817/1817 tests, build clean.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=0 — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=2 (corrected from 0) — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
   Dispatch #53 Phases A–D, same day as the Phase 0 measurement below. **Phase A**: the
   403 that stopped the prior backfill was **session-token expiry**, not a rate limit (six uniform
   ~48s chunks then a deterministic cliff at ~5 minutes — an IAM explicit-deny doesn't tighten with
