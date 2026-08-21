@@ -142,6 +142,20 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
   - **A number nobody acts on is not a shipped feature.** Before adding a metric, name the decision
     it changes and who makes it. If neither has an answer, it belongs in a drill-down, not on a tile.
   - Full rationale + the workstream that lands it: `memory/plan-normalization-2026-08-17.md` (F).
+- **`kind:` is lifecycle, `section:` is placement — and `section:` must be truthful even when
+  nothing renders it (standing rule, owner-stated 2026-08-21).** In `src/app/panel-registry.js`,
+  a panel's `section:` says where it *belongs*; its `kind:` says whether it is showing yet
+  (`nav`/`optional` render from their section; `test-kitchen`/`hub-tab`/`internal` do not).
+  Owner: *"assign them a category, but leave them in the test kitchen. That way if I decide to
+  promote them, they'll naturally fall into the right section."* So **every new panel gets its real
+  section from day one**, including Test Kitchen experiments — promotion is then a one-field `kind`
+  flip with no second decision to make and nothing to forget.
+  **The catch: 25 of 82 panels have an inert `section:`, and a field nothing renders is a field
+  nothing checks.** `proj` claimed `section:'planning'` for months — false, and invisible because
+  it never rendered. Same rot as Job A's stale `'Proj Workflow'` label and #52's 15 schema-drift
+  columns. So the rule is guarded by a **promotion test** that simulates the `kind` flip and asserts
+  the panel *renders* under the right header — string equality on `section:` would pass with the
+  rendering path broken. Never hand-verify a section assignment; the test is the contract.
 - **Location selectors:** pill-style, All → State → Org/Patch → Store hierarchy on all filters
 - **Print/PDF:** export formatting should match existing workbook aesthetic
 - No emoji in UI unless already used for nav icons
