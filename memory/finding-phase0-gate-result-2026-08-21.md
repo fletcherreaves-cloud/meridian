@@ -65,9 +65,19 @@ partial-coverage estimate of 54, now that the full 5.7-month window is counted.
 > **The generalizable miss: a sentinel is not a null, and only a value-distribution check tells
 > them apart.** Row 5 counted `null`s. Nothing counted *values that mean null*. The distribution
 > query that found it (`group by length(emp_id)`) took one minute and would have caught this on the
-> first pass — and the same query also showed `emp_id` is **not one numbering scheme**: lengths 6
-> (18 ids), 7 (57), 8 (532) and 9 (565), with non-overlapping ranges. **Phase 2 must not assume a
-> uniform ID format.**
+> first pass.
+>
+> ⚠️ **Correcting a second thing I said in this same note.** I wrote that the length bands — 6 (18
+> ids), 7 (57), 8 (532), 9 (565), non-overlapping — meant `emp_id` is "not one numbering scheme,
+> more like several systems or eras." **That now looks wrong.** The
+> `people/time-punches-matched` capture
+> (`finding-qsrsoft-time-punches-endpoint-2026-08-21.md`) returns a `geid` per employee, and **every
+> geid in that sample falls inside the matching band above** (5 seven-digit, 6 eight-digit, 21
+> nine-digit, all in range). So it reads as **one global `geid` space grown over time**, older
+> employees holding shorter numbers — and `audit_rows.emp_id` is almost certainly that `geid`.
+> That is good news for Phase 2: a real system-of-record person key, with an authoritative
+> name↔geid mapping available. It also sharpens `'0'` — not a short geid, a placeholder where none
+> was captured. *(One store, one day; confirm across stores before treating it as settled.)*
 >
 > **Phase 2 requirements this creates**, none of them optional:
 > - **Treat `'0'` as NULL on read.** Keying on it would collapse 8 real people into one token —

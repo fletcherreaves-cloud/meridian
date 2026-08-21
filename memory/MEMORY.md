@@ -65,6 +65,24 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`time-punches-matched` — punch edits, and the geid answer (RETURNS SSNs)](finding-qsrsoft-time-punches-endpoint-2026-08-21.md)** —
+  **🔴 THIS ENDPOINT RETURNS SOCIAL SECURITY NUMBERS + full legal names. NEVER put `ssn` in
+  `selectCols`** — it is caller-chosen, so the field never has to leave QSRSoft. Never persist, never
+  log, never fixture. Beyond that it is valuable: real clock punches with `shift`/`meal` split,
+  `isPaidBreak`, and **`inModified`/`outModified` — a punch was EDITED**, a loss-prevention signal
+  Meridian has no visibility into today. 🎯 **Its `geid` answers the identity-vault question**: every
+  geid falls inside the matching `audit_rows.emp_id` length band, so those bands are **one global ID
+  space grown over time, not several systems** (correcting my own speculation in the G=2 note), and
+  `emp_id` is almost certainly the `geid` — a real person key for Phase 2, with an authoritative
+  name↔geid mapping. Badge (`event_details`) remains a **separate** namespace.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`service/statistics` — the one that supersedes `dt-timer`](finding-qsrsoft-service-statistics-endpoint-2026-08-21.md)** —
+  Richest of the four service captures. **Build service-times work on this, not `dt-timer`** — it has
+  the same DT segments *plus* a `*Trans` denominator per metric, a `*Masked` data-quality count,
+  `ly.` twins, kitchen/beverage/front-counter/kiosk/RTP, and all 27 stores. `dt-timer` keeps only one
+  edge: the OEPE distribution buckets. Caveats: **milliseconds** (so `dt-timer`'s seconds is the odd
+  one out); **every metric has its own denominator** (33109: `dtTrans` 620 vs `dtServeTrans` 582 vs
+  `ctpTrans` 605 — one global count is wrong); `*Masked` should be surfaced, not ignored; and a
+  **negative cumulative time exists in real data** (10915 `bevRunTimeTotal` = −7.4M).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`mobile` — MOP service times by channel and ROA](finding-qsrsoft-mobile-endpoint-2026-08-21.md)** —
   **Logged for later, owner capture.** Mobile-order service time split by **channel** (drive-thru /
   front counter / curbside / table service) × **ROA vs not-ROA**, all 27 stores in one request, with
