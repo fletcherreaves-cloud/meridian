@@ -65,6 +65,20 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft report-menu map — People & Labor](finding-qsrsoft-report-menu-map-2026-08-21.md)** —
+  The inventory of what QSRSoft reports **exist**, so a future session picks a target instead of
+  guessing one. **⚠️ Menu labels only** — no schema captured for any of them except Employee Roster
+  and Time Punch Export; everything else is inference from the label. 🔴 **`VLH Over/Under` is the
+  one to handle carefully: Meridian already computes the VLH gap itself** from `lifelenz_schedules`,
+  so this is the "two panels disagree → diff the computations first" case — pull it once and compare
+  the formulas rather than assuming either is right. Same, less sharply, for `Schedule Variance` and
+  `Turnover` (both derivable from data we hold). Most interesting **unclaimed**: **`Labor
+  Exceptions`** (label suggests missed breaks / overtime — a ready-made rules source, companion to
+  the punch-edit rule), **`Turnover`** (a KPI Meridian has no equivalent of), and **`Roster
+  Statistics`**, which might give roster insight **without touching PII at all** and sidestep the
+  roster's `selectCols` allowlist problem entirely. Next capture round should target one report with
+  a purpose — a `people/*` sweep risks another SSN-bearing payload, and each lands permanently in a
+  transcript.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`employee-roster` — Part B ANSWERED, and the most sensitive endpoint yet](finding-qsrsoft-employee-roster-endpoint-2026-08-21.md)** —
   **NEWEST.** 🔴 **Returns SSN, home address, DOB, race (`nationalOrigin`), gender, marital status
   and pay rate.** Worse than `time-punches`. The **`selectCols` allowlist is the security control** —
