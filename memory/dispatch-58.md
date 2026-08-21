@@ -108,8 +108,38 @@ detail is wanted, check the catalog — it is a different report, not a missing 
 
 ## Delivery
 
-**New table `qsr_security_events`** — `tenant_id` + RLS via `accessible_locs`, like every other
-stream. Grain is one row per event. Key on something stable across re-pulls; `order_key` +
+**New table `qsr_security_events`** — grain is one row per event.
+
+🔴 **RLS must mirror `security_findings`, NOT the ordinary `accessible_locs` pattern.** An earlier
+draft of this dispatch said `accessible_locs` "like every other stream". **That is wrong for this
+table**, and getting it wrong would make per-event controls activity readable by roles that cannot
+see the findings those events belong to — a strictly worse leak than the findings themselves, since
+these rows carry time, register and (pre-tokenisation) crew attribution.
+
+Copy `schema-security-findings.sql:79-91`:
+
+```sql
+create policy "qsr_security_events: gated read" on public.qsr_security_events
+  for select using (
+    tenant_id = '…'::uuid
+    and (
+      get_my_role() in ('admin', 'supervisor')
+      or (get_my_role() = 'manager'
+          and coalesce((select (data->>'enabled')::boolean
+                        from public.org_config
+                        where key = 'gm_identity_reveal_enabled'), false))
+    )
+  );
+```
+
+**And no insert/update/delete policy at all** — writes come from the pull script's service-role key,
+which bypasses RLS regardless. Same "writes are backend-only" pattern as `security_findings` and
+`identity_reveal_log`.
+
+⚠️ Note the ordinary QSRSoft data tables (`qsr_product_mix`, `qsr_forms_completion`) use a plain
+tenant-only policy. **Both patterns exist in this repo and the choice is deliberate** — data volume
+tables get tenant scoping, anything person-attributable gets the role gate. This table is the
+second kind. Key on something stable across re-pulls; `order_key` +
 `event_dt`/`event_tm` + `event_token` is the candidate, but **verify uniqueness against real data**
 rather than assuming.
 
@@ -117,7 +147,7 @@ rather than assuming.
 
 1. **Watch it** — add the workflow's exact `name:` to `sync-failure-watch.yml`.
 2. **Per-stream freshness**, not pooled — reuse `stream-freshness.js` as the forms panel does.
-3. **`tenant_id` + RLS.**
+3. **`tenant_id` + the role-gated RLS above** — not the tenant-only policy.
 4. **Manual fallback** — there is no sensible manual upload for per-event controls data. Document
    the decision explicitly rather than silently omitting it, as Slice 3 did.
 5. **Two-path auth** — direct token primary (`getFreshToken()` from `scripts/lib/qsrsoft-auth.mjs`,
