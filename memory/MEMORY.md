@@ -65,6 +65,17 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`dt-timer` — whole-estate DT segments + an OEPE distribution](finding-qsrsoft-dt-timer-endpoint-2026-08-21.md)** —
+  **Logged for later, owner capture, not yet scoped.** Returns what today's DT averages cannot: an
+  **OEPE distribution** (cars under 90/120/150/180/210s) plus per-**segment** times (greet, order,
+  line, windows), **all 27 stores in ONE request**, already on the 4am business day
+  (`compType=trading`). ⚠️ It is on the **DAR host**, so the Playwright constraint applies — the
+  token-only finding for `api.security` does **not** transfer. Four measured caveats, each of which
+  yields a wrong number if read naively: the time fields are **cumulative seconds, not averages**
+  (÷ cars gives a plausible 123–190s); `lane2Cars=0` still posts `line2Time`, so line1/line2 are
+  probably journey **segments not lanes** (hypothesis, settle before use); `greet == orderTime`
+  exactly at **2 of 24** stores (instrumentation, exclude them); and **27 requested, 24 returned** —
+  absent stores are **omitted, not zero**.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 Part B — Job C Batch 1: six overlay-to-page conversions, done](dispatch55-part-b.md)** —
   **NEWEST.** Separate PR from Part A (built off `origin/main` before Part A merged, deliberately —
   see `dispatch-55.md`'s "ship as two PRs, do not combine them"). Converted Scheduling
