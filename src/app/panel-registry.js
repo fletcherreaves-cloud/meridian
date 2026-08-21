@@ -93,8 +93,11 @@ export const PANELS = [
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
   { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics' },
-  { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'scheduling' },
-  { id:'lifelenz-bridge', label:'LifeLenz Bridge', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'scheduling' },
+  { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  // Renamed 2026-08-21 (dispatch #55 Part A, notes-67-queue.md:82 / dispatch-54.md:149) --
+  // the only user-visible change in that dispatch. Still kind:'test-kitchen'; section corrected
+  // from the stale 'scheduling' so a future promotion lands it under Forecasting directly.
+  { id:'lifelenz-bridge', label:'Recommended WFM Forecast Adjustments', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
@@ -113,7 +116,11 @@ export const PANELS = [
   // label from the PRUNED duplicate nav line in shell.js (the live line has said
   // 'Projections'/▦ since v4.517 -- the registry was built from the pruned line, not the live
   // one). Today's UI wins.
-  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'planning', route:true },
+  // section corrected 2026-08-21 (dispatch #55 Part A) -- was 'planning', which is false and
+  // went unnoticed only because kind:'test-kitchen' makes section: inert. Left wrong, a future
+  // promotion would have dropped Projections into the Planning section's owner-approved four
+  // links (#516) instead of Forecasting and Labor Projections where it belongs.
+  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
@@ -202,7 +209,7 @@ export const SECTIONS = [
   { id:'people',             label:'People' },
   { id:'analytics',          label:'Analytics' },
   { id:'analysis',           label:'Analysis' },
-  { id:'forecasting',        label:'Forecasting' },
+  { id:'forecasting',        label:'Forecasting and Labor Projections' },
   { id:'forms',              label:'Forms' },
   { id:'intelligence',       label:'Intelligence' },
   { id:'help',               label:'Help' },

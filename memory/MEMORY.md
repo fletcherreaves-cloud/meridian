@@ -85,21 +85,23 @@ index has drifted, from one filename missing.**
   `transaction_detail` the drill-in. **Highest-value unknown: enumerate `event_token`** (the capture
   used `all_promo`) — that is what turns every daily count in `audit_rows` into timed, named,
   register-attributed events.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 — the section-metadata standard, then Job C Batch 1](dispatch-55.md)** —
-  **NEWEST.** Two parts, two PRs, A first. **Part A carries a STANDING RULE the owner set
-  2026-08-21: `kind:` is lifecycle, `section:` is placement, and `section:` must be truthful even
-  when nothing renders it** — so promoting any panel is a one-field `kind` flip that lands it in the
-  right place. Test Kitchen **stays** (this supersedes an earlier draft that emptied it). Measured:
-  all 82 panels already have a valid `section:`, but **25 of them are inert** (`test-kitchen`/
-  `hub-tab`/`internal`) and inert metadata rots — `proj` claims `section:'planning'` right now,
-  which is false. So the rule ships with a **promotion test** that simulates the `kind` flip and
-  asserts the panel *renders* under the right header. Part A's real edits: three wrong sections
-  (`proj`/`lfz-gap`/`lifelenz-bridge` → `forecasting`, taking it to the owner's full 10), the
-  section label, the LifeLenz Bridge → *Recommended WFM Forecast Adjustments* rename (the only
-  user-visible change), and two owner-flagged bugs. **Part B** is Job C Batch 1 — six overlay→page
-  conversions where the failure mode is a working render with a broken `modal===` deep link.
-  Also recorded: **`grep -rn` in `memory/` before reporting anything blocked** — Job B called this
-  list unavailable while it sat committed at `notes-67-queue.md:34-36`.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 Part A — the section-metadata standard, done](dispatch55-part-a.md)** —
+  Part A of `dispatch-55.md` — Part B (Job C Batch 1) is a separate PR, not started as of this
+  entry. Corrected the three wrong `section:` values (`proj`/`lfz-gap`/`lifelenz-bridge` →
+  `forecasting`, taking that section to the owner's full 10), renamed the section label and
+  LifeLenz Bridge → *Recommended WFM Forecast Adjustments* (the only user-visible change — also
+  fixed a real label-clipping bug the rename would have hit, `navItem` had no overflow/ellipsis
+  handling). Shipped the owner's standing rule's guard: the structural half was already covered by
+  an existing test; added the **promotion test** (flips `kind` to `'nav'` on the live registry
+  object, renders the real `AppSidebar`, asserts the panel lands under its actual section header —
+  not a string-equality check). **Found and reported, not fixed:** the promotion test surfaced that
+  ⚗ TEST KITCHEN is a hand-maintained literal list in `shell.js`, not `kind`-driven — a real
+  promotion is still two edits, not the one the standing rule promises. Both owner-flagged bugs
+  investigated: **Forecast Audit greyed-out is by design** (the only forecasting panel gated on
+  `selStore`, disabled whenever browsing at district level). **Fcst Reference is confirmed stale**
+  (static HTML, last touched 2026-06-26, footer still says v4.210+) — proposal only, not rewritten.
+  1872/1872 tests, entry chunk +0.04 KB gz over the true pre-PR baseline (the `dispatch-55.md`
+  1680 KB figure was already stale, predating PR #522/#524).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job B — the actual regroup, v2 sidebar finally adopted](dispatch54-job-b.md)** —
   `AppSidebar` now genuinely renders from `SECTIONS` + `panelsForSection()` (Job A kept
   the v1 hand-built list on purpose, since its own registry corrections were only truthful for
