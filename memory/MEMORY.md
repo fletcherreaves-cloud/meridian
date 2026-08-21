@@ -30,6 +30,22 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #53 — close the tail, then re-key](dispatch-53.md)** —
+  **NEWEST, briefed.** Executes #49's remainder. Owner approved the direction on rows 3–4 (**54 live
+  identity defects** — 40 names resolving to multiple employee IDs means the vault merges distinct
+  humans into one token *today*). **Phase A: close the 48-day tail with PACING AS A HARD
+  CONSTRAINT** — the endpoint began returning a **403 explicit-deny IAM** after ~6 of 9 chunks, a
+  third distinct failure mode and **the only volume-triggered one, so retrying harder makes it
+  worse.** Three separate ~2-week runs, one retry *per run*, not before 2026-08-22; repeated
+  Playwright logins hit the owner's own account and a lockout takes DAR and eBOS with it.
+  **Phase B: re-measure row 5 ONLY** (rows 1–4 are settled) and report it three ways — total,
+  **genuinely ID-less**, still-uncovered — since only the middle figure decides anything.
+  **Phase C: the gate, with the rule written BEFORE the number exists** (a policy choice, stated in
+  advance precisely so it can't be rationalised after): G ≤ 25 → proceed; 26–57 → stop, owner
+  decides; > 57 → option B, a mapping table. **Landing high is a legitimate result, not a failure —
+  do not tune to get under it.** **Phase D: #49's Phase 1 only** — vault gains `employee_id`,
+  additive, name-keyed path unchanged, **no Phase 2/3**, and adversarially probe every
+  `SECURITY DEFINER` change with the anon key.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0 — the identity match rate, measured](finding-phase0-identity-match-rate-2026-08-21.md)** —
   **NEWEST. Dispatch #49's gate, measured.** 1,140 names → **977 clean 1:1 (85.7%)**, 40 merged,
   14 split, 123 with no `emp_id`. **Row 5 resolved as a coverage artefact, categorically:** zero of
