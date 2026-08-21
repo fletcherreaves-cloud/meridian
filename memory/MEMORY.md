@@ -65,8 +65,28 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Parts E and B — status after PR #534, nothing built this pass](finding-dispatch56-part-e-b-status-2026-08-21.md)** —
+  **NEWEST.** PR #534 (not yet merged, read directly off its branch) resolved two of `event_details`'s
+  open questions: **`storeRef` is the plain unpadded NSN** (`29760` = Duncan-Hwy 81 — no `loc →
+  storeRef` mapping to hunt, the original finding was simply wrong, unchecked against `STORE_NAMES`)
+  and **auth is token-only** (no Playwright). Three more remain, and **none are answerable from
+  inside this coding session** — no `QSRSOFT_TOKEN` exists in this sandbox, checked directly, and
+  every `finding-qsrsoft-*.md` in this repo was an owner DevTools capture, never an agent's: the
+  `event_token` vocabulary (only `all_promo` captured; refunds/voids/over-rings/T-Reds/cash-O-S are
+  each presumably a different token and this is the finding file's own "single highest-value
+  unknown"), `remaining_amt`'s meaning, the `order_key`-vs-`reg_num` mismatch (a hypothesis, not a
+  finding), and camera/video linkage. Also unchecked: whether `event_details`' badge number is the
+  same identifier as `emp_id`/`geid` (provisionally a separate namespace — badges are two digits,
+  nowhere near the length bands — but unconfirmed). **Part B:** still no hire-date field anywhere;
+  `/reporting/v2/people/` (the path `time-punches-matched` lives under) is a real neighbourhood but
+  not yet a proven address — its own confirmed fields carry nothing hire-date-shaped. **No code
+  shipped this pass** — extends Part B's own "report before building" discipline to Part E's
+  remaining unknowns, since a pull built on a guessed `event_token` or an unconfirmed join key is
+  exactly the class of confident-sounding wrong answer this repo's standing rules exist to prevent.
+  Next step named concretely: one more owner capture round (refund/void/over-ring/T-Red/cash-O-S)
+  closes most of Part E at once; opening QSRSoft's People report menu answers Part B.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Part D — is this an instance, a pattern, or a trend?](dispatch56-part-d.md)** —
-  **NEWEST.** *"A first-time flag and a fifth consecutive flag are completely different situations
+  *"A first-time flag and a fifth consecutive flag are completely different situations
   and the panel currently presents them identically."* Two engine functions, both extending
   `security-drilldown.js` (no new data source — everything from `security_findings` already
   loaded): `buildSubjectTimeline()` flattens a subject's per-rule window history into one
@@ -79,8 +99,12 @@ index has drifted, from one filename missing.**
   BESIDE the existing chronic/new line, not instead of it. Plus the corroboration_rules
   finding-level cross-link — Part A already mapped the field and surfaced the static directory
   half; `corroboratingFlags()` is the other half, showing when a corroborating rule ALSO fired for
-  the same subject. 1900/1900 tests (20 net new), build flat. Parts B/E next per the owner's own
-  sequencing; Job C Batches 2+ deferred.
+  the same subject. 1900/1900 tests (20 net new), build flat. **Same-day follow-up fix:**
+  `corroboratingFlags()` originally checked only whether a corroborating rule's LATEST verdict was
+  flagged at all, ignoring `windowStart`/`windowEnd` — two rules on different evaluation cadences
+  can have "latest" verdicts months apart, so a stale flag could look like it was corroborating an
+  unrelated later one forever. Added a window-overlap check; 1904/1904 tests (4 more, including the
+  stale-window regression case). Job C Batches 2+ deferred.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`time-punches-matched` — punch edits, and the geid answer (RETURNS SSNs)](finding-qsrsoft-time-punches-endpoint-2026-08-21.md)** —
   **🔴 THIS ENDPOINT RETURNS SOCIAL SECURITY NUMBERS + full legal names. NEVER put `ssn` in
   `selectCols`** — it is caller-chosen, so the field never has to leave QSRSoft. Never persist, never
