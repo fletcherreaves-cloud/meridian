@@ -97,10 +97,14 @@ comment on function public.get_or_create_employee_token(text, text) is
 -- "Could not choose the best candidate function" error -- and since this RPC is the single write
 -- path for every tokenization (server-side auto-pull AND browser manual-upload), that would
 -- break tokenization everywhere at once, at runtime, with nothing in the JS suite to catch it.
--- POST-APPLY CHECK (the one thing psql probing cannot prove -- psql resolves by count, PostgREST
--- by key set, so a green local probe says nothing about this): after applying this file to live
--- Supabase, call the RPC once through PostgREST exactly as the app does and confirm it still
--- returns a token rather than a candidate-function error.
+-- POST-APPLY CHECK -- ✅ DONE 2026-08-21, do not re-run or re-raise. Applied to live Supabase and
+-- probed through PostgREST with the anon key, side-effect-free (empty name, so the function's own
+-- guard fires before any insert -- no rows written). A one-key body {p_employee_name}, the app's
+-- exact call shape, returns P0001 "employee_name is required", identical to the pre-apply
+-- baseline. A two-key body {p_employee_name, p_employee_id} returns the SAME P0001 -- a RAISE from
+-- inside the PL/pgSQL body, which proves the new overload exists and executed, since that key set
+-- had no match at all before this file was applied. No PGRST203 "could not choose the best
+-- candidate function" in either direction: resolution is unambiguous, as designed.
 --
 -- Same broad-expose posture as the 1-arg version (schema-identity-vault.sql's own comment):
 -- this never returns employee_name, only an opaque token, and only accepts identifiers the
