@@ -30,6 +30,32 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Store 0013113 — a packaging counting problem, not loss](finding-store-13113-packaging-variance-2026-08-21.md)** —
+  **NEWEST. The first operational finding this build has produced** — every prior inventory result
+  described the build's own measurement error. Store `0013113` flags INV-001 at **14.4% (28/195) vs
+  a 3.4–4.1% pack, 3.5×** — and it is NOT a size effect, since every store carries 193–208 subjects.
+  The items are **store-specific** (16 of the top 25 flag at only this store, so not the 30
+  broken-`exp_usage` WRINs that flag everywhere), and the flags are **82.1% paper against a 47.0%
+  estate baseline** — ~23 paper items where ~13 were expected, about **3.7σ**. Chronic across all
+  four periods (48.3 → 21.3%, no step change, and **improving**). **Ruled out and how:** store size
+  (tight subject band), the estate-wide broken-WRIN set (`stores_flagging_item`), a datable event
+  (flat period trend), skipped counts (not in the estate's top 10 for `act_usage = 0`), and theft
+  (McFlurry cups at **2,245%** = usage 22× expected; no resale value, no way to move them).
+  **Most likely: packaging counting practice** — cases and sleeves, partial sleeves, and a lot of
+  `SMPLY DEL`/`MCCAFE REFRESH` transition SKUs where old and new packaging coexist. **It surfaced
+  from a panel called "Security" and it is NOT a security finding** — a process conversation, not an
+  investigation, and saying so plainly matters because the cost of the other framing is paid by a
+  real person. **ANSWERED same day: it is BOTH** — median 21.3% vs an estate median of 15.5% (1.4×), so
+  moderately elevated across the board AND paper-concentrated. `uncounted = 0` firmly kills the
+  skipped-count theory. And a fourth measurement reframes the mechanism: **this store logs 42% less
+  waste than the median store** ($3,173 vs $5,497) — elevated variance + complete counts + low waste
+  logging is the signature of *product wasted but never logged*, which lands in variance by
+  definition. **Not concluded:** `waste_logged` is a DOLLAR sum and this store's problem is in cheap
+  PAPER, so the comparison is confounded by the very variable under study, and it isn't
+  sales-normalised. Two queries fix both (waste per $1k sales; paper-vs-food split of the gap) —
+  **do not cite the 42% until they run.** This is exactly what `INV-003` is built to detect, so it
+  may answer itself once that rule activates. Visible only because of the
+  #42 z-score conversion; under the old flat ratio this store was buried in 2,603 estate-wide flags.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 implemented — scroll fix, frictionless reveal, and INV-004](dispatch-50-implementation.md)** —
   **NEWEST.** Both parts of the brief below shipped: Part A's `minHeight:0` fix (both the root flex
   column and the body scroll div — structural CSS reasoning found the root, not just the body, was
