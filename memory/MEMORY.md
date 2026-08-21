@@ -65,6 +65,45 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`time-punches-matched` — punch edits, and the geid answer (RETURNS SSNs)](finding-qsrsoft-time-punches-endpoint-2026-08-21.md)** —
+  **🔴 THIS ENDPOINT RETURNS SOCIAL SECURITY NUMBERS + full legal names. NEVER put `ssn` in
+  `selectCols`** — it is caller-chosen, so the field never has to leave QSRSoft. Never persist, never
+  log, never fixture. Beyond that it is valuable: real clock punches with `shift`/`meal` split,
+  `isPaidBreak`, and **`inModified`/`outModified` — a punch was EDITED**, a loss-prevention signal
+  Meridian has no visibility into today. 🎯 **Its `geid` answers the identity-vault question**: every
+  geid falls inside the matching `audit_rows.emp_id` length band, so those bands are **one global ID
+  space grown over time, not several systems** (correcting my own speculation in the G=2 note), and
+  `emp_id` is almost certainly the `geid` — a real person key for Phase 2, with an authoritative
+  name↔geid mapping. Badge (`event_details`) remains a **separate** namespace.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`service/statistics` — the one that supersedes `dt-timer`](finding-qsrsoft-service-statistics-endpoint-2026-08-21.md)** —
+  Richest of the four service captures. **Build service-times work on this, not `dt-timer`** — it has
+  the same DT segments *plus* a `*Trans` denominator per metric, a `*Masked` data-quality count,
+  `ly.` twins, kitchen/beverage/front-counter/kiosk/RTP, and all 27 stores. `dt-timer` keeps only one
+  edge: the OEPE distribution buckets. Caveats: **milliseconds** (so `dt-timer`'s seconds is the odd
+  one out); **every metric has its own denominator** (33109: `dtTrans` 620 vs `dtServeTrans` 582 vs
+  `ctpTrans` 605 — one global count is wrong); `*Masked` should be surfaced, not ignored; and a
+  **negative cumulative time exists in real data** (10915 `bevRunTimeTotal` = −7.4M).
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`mobile` — MOP service times by channel and ROA](finding-qsrsoft-mobile-endpoint-2026-08-21.md)** —
+  **Logged for later, owner capture.** Mobile-order service time split by **channel** (drive-thru /
+  front counter / curbside / table service) × **ROA vs not-ROA**, all 27 stores in one request, with
+  **`ly.` last-year twins built in**. 🔴 **THE UNIT TRAP: `mobile` is MILLISECONDS while its sibling
+  `dt-timer` is SECONDS** — same host, same day, same request shape, 1000× apart; never share a
+  parser. Also: `driveThruROA*`/`frontCounterROA*` are **structurally zero** (ROA is a curbside
+  concept), and a store with no LY history returns `ly.*=0`, which is **absence, not a 100%
+  decline**. ✅ It also **resolves `dt-timer`'s open question** — the 3 stores `dt-timer` omitted
+  show mobile DT orders, so those are dead timers, not closed stores, making `mobile` a coverage
+  cross-check.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`dt-timer` — whole-estate DT segments + an OEPE distribution](finding-qsrsoft-dt-timer-endpoint-2026-08-21.md)** —
+  **Logged for later, owner capture, not yet scoped.** Returns what today's DT averages cannot: an
+  **OEPE distribution** (cars under 90/120/150/180/210s) plus per-**segment** times (greet, order,
+  line, windows), **all 27 stores in ONE request**, already on the 4am business day
+  (`compType=trading`). ⚠️ It is on the **DAR host**, so the Playwright constraint applies — the
+  token-only finding for `api.security` does **not** transfer. Four measured caveats, each of which
+  yields a wrong number if read naively: the time fields are **cumulative seconds, not averages**
+  (÷ cars gives a plausible 123–190s); `lane2Cars=0` still posts `line2Time`, so line1/line2 are
+  probably journey **segments not lanes** (hypothesis, settle before use); `greet == orderTime`
+  exactly at **2 of 24** stores (instrumentation, exclude them); and **27 requested, 24 returned** —
+  absent stores are **omitted, not zero**.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Parts A and C — rule directory, and a name instead of a WRIN](dispatch56-parts-a-c.md)** —
   **NEWEST.** Two owner asks on the Security panel, both "cheap and independent" per the dispatch's
   own scoping. **Part A:** a rule directory in the Legend, collapsed by default, rendered ENTIRELY
@@ -179,7 +218,7 @@ index has drifted, from one filename missing.**
   is Job B's real starting catalog, not a finished regroup; two items flagged for Job B's
   attention (Inventory has no sidebar entry at all; Forms Library/Printable Forms' corrected
   section is `analytics`, not their eventual `forms` target). 1817/1817 tests, build clean.
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=0 — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=2 (corrected from 0) — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
   Dispatch #53 Phases A–D, same day as the Phase 0 measurement below. **Phase A**: the
   403 that stopped the prior backfill was **session-token expiry**, not a rate limit (six uniform
   ~48s chunks then a deterministic cliff at ~5 minutes — an IAM explicit-deny doesn't tighten with
