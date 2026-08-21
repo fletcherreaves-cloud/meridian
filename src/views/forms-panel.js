@@ -23,6 +23,13 @@
 import * as React from 'react';
 import { loadQsrFormsCompletion } from '../lib/supabase.js';
 import { computeFormStoreDayRollup, computeFormSummary } from '../engine/forms-completion.js';
+// WARN_GRACE_DAYS/CRIT_GRACE_DAYS reused from stream-freshness.js rather than re-deriving new
+// grace numbers -- same "a daily stream silent 2 days is an incident" calibration every other
+// auto-pulled stream uses. This panel does its OWN per-stream check (below), not a pooled
+// Math.max with anything else -- the #171 lesson this stream's pull script's own header
+// comment cites ("standing checklist" item 2): pooling one dead feed behind fresh siblings is
+// exactly what let LifeLenz go dark 6 days unnoticed.
+import { WARN_GRACE_DAYS, CRIT_GRACE_DAYS } from '../engine/stream-freshness.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -42,6 +49,27 @@ function saveThresholds(t) {
 
 const fPct = v => v == null ? '—' : (v * 100).toFixed(1) + '%';
 const barColor = pass => pass === true ? 'var(--ok,#10b981)' : pass === false ? 'var(--crit,#ef4444)' : 'var(--text3)';
+
+// Per-stream freshness for THIS panel alone -- Slice 3's pull runs daily, same cadence as
+// every other QSRSoft auto-pull, so it reuses the same grace window rather than a bespoke one.
+const CADENCE_DAYS = 1;
+function latestOccurrenceMs(rows) {
+  let best = null;
+  for (const r of rows) {
+    const t = r.occurrenceKey ? new Date(r.occurrenceKey).getTime() : NaN;
+    if (!Number.isNaN(t) && (best === null || t > best)) best = t;
+  }
+  return best;
+}
+function freshnessOf(rows, now) {
+  const latestMs = latestOccurrenceMs(rows);
+  if (latestMs == null) return null; // no usable occurrence date in this window -- nothing to report
+  const staleDays = Math.floor((now.getTime() - latestMs) / 864e5);
+  const warnAt = CADENCE_DAYS + WARN_GRACE_DAYS, critAt = CADENCE_DAYS + CRIT_GRACE_DAYS;
+  const severity = staleDays > critAt ? 'crit' : staleDays > warnAt ? 'warn' : 'ok';
+  return { latestMs, staleDays, severity };
+}
+const FRESH_COLOR = { ok: 'var(--ok,#10b981)', warn: 'var(--warn,#f59e0b)', crit: 'var(--crit,#ef4444)' };
 
 // One form's summary row: threshold input (per-form, owner-stated -- never a single global bar),
 // the aggregate pass rate (beside the bar, never hidden behind it), and the store-days reading.
@@ -108,17 +136,22 @@ export function FormsCompletionPanel({ onClose }) {
 
   const rollup = React.useMemo(() => computeFormStoreDayRollup(rows, { thresholds, defaultThreshold: DEFAULT_THRESHOLD }), [rows, thresholds]);
   const summary = React.useMemo(() => computeFormSummary(rollup), [rollup]);
+  const freshness = React.useMemo(() => dataState === 'loaded' ? freshnessOf(rows, new Date()) : null, [rows, dataState]);
 
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
-    div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', alignItems: 'center' } },
-      span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Window:'),
-      WINDOW_OPTIONS.map(d => btn({
-        key: d, onClick: () => setWindowDays(d),
-        style: {
-          padding: '4px 10px', borderRadius: 999, border: '1px solid ' + (windowDays === d ? 'var(--accent)' : 'var(--bdr)'),
-          background: windowDays === d ? 'rgba(245,188,0,.14)' : 'transparent', color: 'var(--text)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-        },
-      }, `${d}d`)),
+    div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', alignItems: 'center', justifyContent: 'space-between' } },
+      div({ style: { display: 'flex', gap: 8, alignItems: 'center' } },
+        span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Window:'),
+        WINDOW_OPTIONS.map(d => btn({
+          key: d, onClick: () => setWindowDays(d),
+          style: {
+            padding: '4px 10px', borderRadius: 999, border: '1px solid ' + (windowDays === d ? 'var(--accent)' : 'var(--bdr)'),
+            background: windowDays === d ? 'rgba(245,188,0,.14)' : 'transparent', color: 'var(--text)', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+          },
+        }, `${d}d`)),
+      ),
+      freshness && span({ style: { fontSize: 10.5, color: FRESH_COLOR[freshness.severity] } },
+        freshness.staleDays <= 0 ? 'Synced today' : `Last synced ${freshness.staleDays}d ago`),
     ),
     div({ style: { flex: 1, overflowY: 'auto', minHeight: 0 } },
       dataState === 'loading' && div({ style: { padding: '40px 20px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 } }, 'Loading form completions…'),

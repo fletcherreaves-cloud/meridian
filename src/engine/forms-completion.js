@@ -13,6 +13,18 @@ function isUsableRow(raw) {
   return !!(raw && raw.location != null && raw.formId && raw.formTitle);
 }
 
+// "noLocation" is a REAL, documented member of every completionDetail request's `locations`
+// array (28 entries for 27 stores) -- it catches submissions with no store attached, and the
+// finding file is explicit these are worth surfacing, not dropping. parseInt('noLocation', 10)
+// is NaN, so a naive `String(parseInt(...)).padStart(7,'0')` silently produced the garbage loc
+// "0000NaN" -- a row that looked keyed but wasn't a real store. 'NOLOC' is an explicit sentinel,
+// distinguishable from every zero-padded 7-digit NSN, so a consumer can special-case it rather
+// than silently mis-group it with a real location.
+function normalizeLoc(raw) {
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? String(n).padStart(7, '0') : 'NOLOC';
+}
+
 // dispatch-adjacent finding: status IS POLYMORPHIC -- a string enum ("MISSED"/"--") OR a float
 // (the within-form completion ratio on a completed row). missed === (status === 'MISSED') held on
 // all 4,714 captured rows with zero disagreements, so branch on missed/hasResponse FIRST and only
@@ -51,7 +63,7 @@ export function normalizeFormsCompletionRow(raw) {
   if (!occurrenceKey) return null;
 
   return {
-    loc: String(parseInt(raw.location, 10)).padStart(7, '0'),
+    loc: normalizeLoc(raw.location),
     formId: raw.formId,
     formTitle: String(raw.formTitle).trim(), // dirty titles (trailing spaces, one typo) -- display only
     occurrenceKey,
@@ -84,17 +96,64 @@ export function normalizeFormsCompletionRows(rawRows) {
 // nothing here calls Date.now()). Operates on ALREADY-NORMALIZED rows (normalizeFormsCompletionRow's
 // output), never on the raw API payload.
 
-// The finding file's own measurement: the completionDetail window boundary is LOCAL MIDNIGHT at a
-// HARDCODED UTC-5 (CDT) offset -- 05:00:00.000Z is midnight-to-midnight, matching every captured
-// request's own start/end. This is deliberately NOT the 4am business day (compType=trading) used
-// elsewhere in this codebase (src/utils/date.js's businessDate()) -- a different boundary, on a
-// different host, and conflating the two would misattribute a form completion to the wrong day.
-// Bucketing store-days by this same boundary is measured, not guessed -- it is the boundary the
-// API's own request already uses.
-const LOCAL_MIDNIGHT_OFFSET_MS = 5 * 60 * 60 * 1000;
+// The finding file's own measurement: the completionDetail window boundary is LOCAL MIDNIGHT in
+// the estate's own timezone -- the captured sample requests all used 05:00:00.000Z, which reads
+// as midnight-to-midnight ONLY during Central Daylight Time (UTC-5). A fixed 5h offset is wrong
+// for the CST half of the year (UTC-6): a row at 2026-12-21T04:30:00Z is 22:30 CST on Dec 20, but
+// the naive offset bucketed it into Dec 21 -- a silent day-of misattribution (a real completion
+// reads as a miss on one day and a phantom completion on the next) that would surface ~10 weeks
+// after this shipped, exactly when nobody would think to look here. Fixed by asking the real IANA
+// timezone via Intl instead of hardcoding either offset. This is deliberately NOT the 4am business
+// day (compType=trading) used elsewhere in this codebase (src/utils/date.js's businessDate()) --
+// a different boundary, on a different host, and conflating the two would misattribute a form
+// completion to the wrong day regardless of DST.
+//
+// America/Chicago is correct for the WHOLE estate, not just the Oklahoma stores -- worth a
+// comment because "Florida" reads as Eastern: all seven FL stores are Panhandle, west of the
+// Apalachicola river, and therefore Central time (see CLAUDE.md's Organization Context).
+const ESTATE_TZ = 'America/Chicago';
+const DAY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ESTATE_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const TIME_FMT = new Intl.DateTimeFormat('en-US', {
+  timeZone: ESTATE_TZ, hour12: false, hour: '2-digit', minute: '2-digit',
+});
+
 function localDayKey(isoString) {
-  const shifted = new Date(new Date(isoString).getTime() - LOCAL_MIDNIGHT_OFFSET_MS);
-  return shifted.toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  return DAY_FMT.format(new Date(isoString)); // 'YYYY-MM-DD' in the estate's real local time, DST-aware
+}
+
+// The reverse direction: given a calendar day (as the estate reckons it), the UTC instant of
+// that day's real local midnight. No IANA-aware "construct an instant from a zoned wall-clock
+// time" primitive exists in plain JS, so this tries both US Central offsets (-05:00 CDT / -06:00
+// CST) and keeps whichever one actually round-trips back to `dayStr` at 00:00 through the SAME
+// Intl formatter localDayKey() uses -- one owner for "what counts as this day," in both
+// directions. Midnight is never the ambiguous/skipped hour on a US DST transition (that's 2am),
+// so exactly one of the two candidates always matches, transition days included.
+function chicagoMidnightUTC(dayStr) {
+  for (const offsetHours of [5, 6]) {
+    const candidate = new Date(`${dayStr}T${String(offsetHours).padStart(2, '0')}:00:00.000Z`);
+    if (DAY_FMT.format(candidate) === dayStr && TIME_FMT.format(candidate) === '00:00') return candidate;
+  }
+  throw new Error(`chicagoMidnightUTC: could not resolve local midnight for ${dayStr}`);
+}
+
+/**
+ * The `{startDate, endDate}` window the completionDetail API itself expects for a run of
+ * calendar days from `startDay` through `endDay` inclusive (both `'YYYY-MM-DD'`), on the SAME
+ * real-timezone local-midnight boundary `localDayKey()` buckets rollups on -- one owner for the
+ * boundary, not a second inline offset in the pull script. `startDate` is `startDay`'s local
+ * midnight; `endDate` is one millisecond before the local midnight AFTER `endDay`.
+ */
+export function apiWindowForDays(startDay, endDay) {
+  // The END boundary is the local midnight AFTER endDay, resolved through the SAME
+  // chicagoMidnightUTC() as the start -- NOT startMs + 24h, which is wrong by an hour on
+  // either DST transition day (a "day" is 23h or 25h of real elapsed time, never a clean 24).
+  const [y, m, d] = endDay.split('-').map(Number);
+  const dayAfterEndDay = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  const startMs = chicagoMidnightUTC(startDay).getTime();
+  const endMs = chicagoMidnightUTC(dayAfterEndDay).getTime() - 1;
+  return { startDate: new Date(startMs).toISOString(), endDate: new Date(endMs).toISOString() };
 }
 
 const DEFAULT_THRESHOLD = 0.8;

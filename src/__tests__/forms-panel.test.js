@@ -105,6 +105,23 @@ describe('FormsCompletionPanel — renders the real panel, not just the engine i
     expect(thresholdInputs.every(i => i.value === '80')).toBe(true); // default 80% threshold
   });
 
+  it('renders its OWN per-stream freshness reading -- never pooled with anything else (#171)', async () => {
+    const now = new Date();
+    const freshIso = new Date(now.getTime() - 60 * 60 * 1000).toISOString(); // 1h ago -- today
+    loadQsrFormsCompletionMock.mockResolvedValue([row(FORM_A, 'Breakfast Pre-Shift', freshIso, 'completed')]);
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Synced today/);
+  });
+
+  it('a stale window (last occurrence 10 days ago) reads as stale, not silently "ok"', async () => {
+    const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    loadQsrFormsCompletionMock.mockResolvedValue([row(FORM_A, 'Breakfast Pre-Shift', tenDaysAgo, 'completed')]);
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Last synced 10d ago/);
+  });
+
   it('changing the window pill re-fetches with a new date range', async () => {
     loadQsrFormsCompletionMock.mockResolvedValue([]);
     await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn() })); });

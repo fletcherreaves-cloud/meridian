@@ -138,6 +138,12 @@ describe('normalizeFormsCompletionRow — everything else', () => {
     expect(normalizeFormsCompletionRow(MISSED_ROW).loc).toBe('0006178');
   });
 
+  it('location "noLocation" (a real request member, 28/27 in the capture) normalizes to the NOLOC sentinel, never the garbage "0000NaN"', () => {
+    const r = normalizeFormsCompletionRow({ ...MISSED_ROW, location: 'noLocation' });
+    expect(r.loc).toBe('NOLOC');
+    expect(r.loc).not.toMatch(/NaN/);
+  });
+
   it('form_title is trimmed for display (dirty titles carry trailing spaces) but form_id is the real key', () => {
     const r = normalizeFormsCompletionRow(COMPLETED_ROW);
     expect(r.formTitle).toBe('Breakfast Pre-Shift');

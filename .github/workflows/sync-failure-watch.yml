@@ -46,6 +46,7 @@ on:
       - QSRSoft Email Report Parse
       - QSRSoft Employee Roster Pull
       - QSRSoft FOB Pull
+      - QSRSoft Forms Completion Pull
       - QSRSoft KB Analyze
       - QSRSoft KB Pull
       - QSRSoft Live Pulse Capture

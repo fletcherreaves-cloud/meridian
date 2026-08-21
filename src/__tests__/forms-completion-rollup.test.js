@@ -4,7 +4,7 @@
 // not raw API payloads -- no PII surface at all, since completedBy/plaintext names never survive
 // normalization in the first place (see forms-completion.test.js for that guarantee).
 import { describe, it, expect } from 'vitest';
-import { computeFormStoreDayRollup, computeFormSummary } from '../engine/forms-completion.js';
+import { computeFormStoreDayRollup, computeFormSummary, apiWindowForDays } from '../engine/forms-completion.js';
 
 const FORM_A = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FORM_B = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -60,13 +60,35 @@ describe('computeFormStoreDayRollup', () => {
     expect(out[0].pass).toBe(true); // 75% clears a 70% bar, would fail the 80% default
   });
 
-  it('buckets by the LOCAL MIDNIGHT (UTC-5) boundary the API itself uses, not raw UTC calendar days', () => {
+  it('buckets by LOCAL MIDNIGHT in the estate\'s real timezone (CDT, UTC-5) during summer, not raw UTC calendar days', () => {
     const rows = [
       row(FORM_A, '2026-08-19T04:59:59Z', 'completed'), // one second before local midnight -> still the 18th
       row(FORM_A, '2026-08-19T05:00:01Z', 'completed'), // one second after -> the 19th
     ];
     const out = computeFormStoreDayRollup(rows);
     expect(out.map(g => g.day).sort()).toEqual(['2026-08-18', '2026-08-19']);
+  });
+
+  it('buckets correctly in CST (UTC-6, winter) too -- a fixed 5h offset misattributes this by a whole day', () => {
+    // 2026-12-21T05:30:00Z is 2026-12-20T23:30 CST (UTC-6) -- still Dec 20 local. A naive
+    // fixed-5h-offset implementation reads this as 2026-12-21T00:30, one hour into Dec 21 --
+    // silently bucketing a completion into the wrong day for the entire CST half of the year.
+    const rows = [row(FORM_A, '2026-12-21T05:30:00Z', 'completed')];
+    const out = computeFormStoreDayRollup(rows);
+    expect(out[0].day).toBe('2026-12-20');
+  });
+
+  it('buckets correctly straddling both 2026 US DST transitions', () => {
+    // Spring forward: 2026-03-08 02:00 CST -> 03:00 CDT. Fall back: 2026-11-01 02:00 CDT -> 01:00 CST.
+    // Midnight itself is never the transition hour, so both days resolve unambiguously.
+    const rows = [
+      row(FORM_A, '2026-03-08T05:59:00Z', 'completed'), // 23:59 CST Mar 7 -- still the 7th
+      row(FORM_A, '2026-03-08T06:01:00Z', 'completed'), // 00:01 CST Mar 8 (pre-springforward) -- already the 8th
+      row(FORM_A, '2026-11-01T04:59:00Z', 'completed'), // 23:59 CDT Oct 31 -- still the 31st
+      row(FORM_A, '2026-11-01T05:01:00Z', 'completed'), // 00:01 CDT Nov 1 -- already the 1st (pre-fallback)
+    ];
+    const out = computeFormStoreDayRollup(rows);
+    expect(out.map(g => g.day).sort()).toEqual(['2026-03-07', '2026-03-08', '2026-10-31', '2026-11-01']);
   });
 
   it('rolls up independently per (loc, formId, day) -- different forms and stores never mix', () => {
@@ -131,5 +153,31 @@ describe('computeFormSummary', () => {
     expect(computeFormSummary([])).toEqual([]);
     expect(computeFormSummary(null)).toEqual([]);
     expect(computeFormSummary(undefined)).toEqual([]);
+  });
+});
+
+describe('apiWindowForDays — the request window the pull script sends, on the SAME boundary the rollup buckets on', () => {
+  it('matches the finding file\'s own captured 3-day request verbatim', () => {
+    // memory/finding-qsrsoft-forms-completion-endpoint-2026-08-21.md's completionDetail capture:
+    // {"startDate":"2026-08-19T05:00:00.000Z","endDate":"2026-08-22T04:59:59.999Z"} for Aug 19-21.
+    const { startDate, endDate } = apiWindowForDays('2026-08-19', '2026-08-21');
+    expect(startDate).toBe('2026-08-19T05:00:00.000Z');
+    expect(endDate).toBe('2026-08-22T04:59:59.999Z');
+  });
+
+  it('a single-day window starts and ends within the same UTC-shifted local day', () => {
+    const { startDate, endDate } = apiWindowForDays('2026-08-19', '2026-08-19');
+    expect(startDate).toBe('2026-08-19T05:00:00.000Z');
+    expect(endDate).toBe('2026-08-20T04:59:59.999Z');
+  });
+
+  it('round-trips through localDayKey bucketing — every row in the window buckets into a day in [startDay, endDay]', () => {
+    const { startDate, endDate } = apiWindowForDays('2026-08-19', '2026-08-21');
+    const rows = [
+      { loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: startDate, statusState: 'completed' },
+      { loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: endDate, statusState: 'completed' },
+    ];
+    const out = computeFormStoreDayRollup(rows);
+    expect(out.map(g => g.day).sort()).toEqual(['2026-08-19', '2026-08-21']);
   });
 });

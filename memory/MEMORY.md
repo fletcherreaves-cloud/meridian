@@ -65,8 +65,35 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 3: the pull script, ALL THREE SLICES DONE](project-forms-dashboard-slice3.md)** —
+  **NEWEST.** Auth for `forms.home.myqsrsoft.com` resolved via the owner's DevTools
+  request-header panel: **token-only, no session cookie** — same shape as `api.security`, not
+  the DAR host. New `scripts/qsrsoft-forms-completion-pull.mjs` pulls `completionDetail` and
+  writes `qsr_forms_completion`; auth is `getFreshToken()` (direct Cognito mint, no Playwright
+  for the primary path — the SAME already-proven mechanism `qsrsoft-ops-pull.mjs` uses, not
+  `qsrsoft-forms-pull.mjs`'s older pre-#312 browser-scrape pattern) with a Playwright fallback
+  kept defensively. 🔴 **Two real bugs fixed first, owner-reproduced against the already-shipped
+  Slice 1/2 code:** (1) the literal `"noLocation"` (a real request member — submissions with no
+  store attached) normalized to the garbage loc `"0000NaN"` via `parseInt`; now an explicit
+  `'NOLOC'` sentinel, never dropped. (2) The store-day rollup's local-midnight boundary used a
+  **fixed UTC-5 offset**, correct only during CDT — every row misbucketed by a full day for the
+  entire CST half of the year, ~10 weeks from shipping. Fixed with a real `Intl.DateTimeFormat`
+  `America/Chicago` lookup, DST-aware by construction (all seven FL stores are Panhandle =
+  Central, not Eastern — worth stating since "Florida" misleads). The new pull script's own
+  request-window builder had the identical flaw and got the same fix before it ever shipped.
+  Regression tests: a CST case, a `noLocation` case, and a four-point sweep across both 2026 DST
+  transitions, verified against real `Intl` output before being hardcoded. `FormsCompletionPanel`
+  now shows its **own** per-stream freshness line ("Synced today" / "Last synced Nd ago") — never
+  pooled with anything else, the #171 lesson. New `qsrsoft-forms-completion-pull.yml` (twice-daily
+  cron) + `sync-failure-watch.yml` entry. **Manual-upload fallback deliberately NOT built** — this
+  data was never tracked on paper, so there's no existing workflow to protect, unlike FOB/Ops
+  Report/Controls. **Range cap on `completionDetail` still unmeasured** — the pull chunks to
+  3-day windows by default rather than risk a silent truncation on a larger backfill; do not
+  widen without measuring first. 1952/1952 tests. Build clean, entry chunk unchanged
+  (511.12 KB gzip). `forms-completion` stays `kind:'test-kitchen'` — promotion is the owner's
+  call once real data has synced.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 2: the panel, done](project-forms-dashboard-slice2.md)** —
-  **NEWEST.** Second of three slices. New `computeFormStoreDayRollup()`/`computeFormSummary()` in
+  Second of three slices. New `computeFormStoreDayRollup()`/`computeFormSummary()` in
   `src/engine/forms-completion.js` — store-day rollup judged on resolved occurrences only (`open`
   rows excluded from both numerator and denominator, or the current day always reads red), bucketed
   on the finding file's own measured local-midnight-UTC-5 boundary (deliberately NOT this codebase's
