@@ -210,6 +210,28 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     }
   });
 
+  it('every route panel\'s DEEP LINK reaches its route -- modal===id and goRoute(id) in the same branch', () => {
+    // The gap the two tests above cannot see, and the exact failure mode dispatch #55 Part B
+    // named as primary: "a conversion that renders the panel but breaks its deep link."
+    // Those tests only prove goRoute('id') and routePanel==='id' exist SOMEWHERE in App.js.
+    // Delete the `modal==='id'` branch entirely and both still pass -- the panel opens fine
+    // from the nav while every saved link, bookmark and in-app deep link to it silently does
+    // nothing. This asserts the two halves are actually connected: the modal-dispatch branch
+    // for an id calls goRoute for THAT SAME id.
+    //
+    // Verified 2026-08-21 against all ten route panels, the original four (Dispatch27) as well
+    // as Part B's six -- every one already pairs correctly, so this is a ratchet on working
+    // behaviour rather than a fix. App.js has no render-level test harness (nothing in
+    // src/__tests__ mounts it, checked), so this source-level pairing is the strongest
+    // available check short of building one; it is strictly more than the existence tests
+    // above, not a substitute for a real render.
+    const unpaired = ROUTE_IDS.filter(id => {
+      const re = new RegExp(`modal===['"]${id}['"][^\\n]*goRoute\\('${id}'\\)`);
+      return !re.test(APP);
+    });
+    expect(unpaired, `deep link broken -- modal===<id> branch does not call goRoute(<id>): ${unpaired.join(', ')}`).toEqual([]);
+  });
+
   it('Dispatch #55 Part B: no setShowX(true) call site survives for the six converted booleans', () => {
     // The exact regression class the dispatch calls out: a panel that renders fine via its new
     // routePanel gate while a stale setShowX(true) call site sits unnoticed elsewhere (the #366
