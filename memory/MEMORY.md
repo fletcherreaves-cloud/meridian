@@ -30,8 +30,27 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #53 — pace the backfill, re-measure row 5, apply the gate](dispatch-53.md)** —
+  **NEWEST.** Executes #49's remainder, reading off
+  [finding-phase0-identity-match-rate-2026-08-21.md](finding-phase0-identity-match-rate-2026-08-21.md)
+  — Phase 0 measured: **rows 1–4 settled** (1,140 names; 977 clean/85.7%; **40 same-name collisions
+  merged into one token/3.5%**; **14 tokens split across names/1.3%**; 123 raw row-5). Row 5's
+  ambiguity was resolved, not passed up with a caveat: every one of the 123 no-`emp_id` names has
+  its ONLY `audit_rows` history in the unbackfilled tail (`2026-07-05→2026-08-21`, from a 403 that
+  stopped the backfill's one-retry attempt) — **genuinely ID-less so far is 0, not 123.**
+  **Phase A** (this dispatch): the 403 is **volume-triggered**, not the earlier auth flakiness —
+  paces the remaining backfill into **three ~2-week runs, one retry each, nothing before
+  2026-08-22**; a repeat 403 after that pacing means STOP and report, not another workaround.
+  **Phase B**: re-measure row 5 only (rows 1–4 don't need re-running), reported three ways — total,
+  genuinely ID-less, still-uncovered. **Phase C**: pre-written gate on the genuinely-ID-less count
+  — `G≤25` proceed, `26–57` owner decides, `>57` option B (a legitimate result, not tuned around).
+  **Phase D**: dispatch #49's Phase 1 ONLY if the gate passes — vault gains `employee_id`,
+  additive, name-keyed path unchanged, NOT Phase 2/3 (reconciliation risks attributing one
+  person's findings to another), adversarially probed with anon + a no-entitlement role per the
+  standing `incident-reveal-rpc-null-role-bypass-2026-08-20.md` precedent. #52 independent,
+  optional, not started (no `dispatch-52.md` exists yet).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #51 — capture empID, then measure Phase 0 in SQL](dispatch-51.md)** —
-  **NEWEST, owner-approved.** Phase 0 failed **twice** — both attempts used a **bespoke one-off API
+  Phase 0 failed **twice** — both attempts used a **bespoke one-off API
   pull** written for the measurement, both hit the same auth flakiness, and the engineer correctly
   **flagged the resulting "row 5 = 1,140 (100%)" as an artefact of fetching zero rows, not a
   finding** — exactly the false row-5 population #49 warned about. **The problem is the approach:**
