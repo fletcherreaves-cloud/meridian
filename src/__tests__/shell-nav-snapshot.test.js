@@ -25,11 +25,11 @@ const h = React.createElement;
 // Every visible text node in DOM order, full permissions + betaMode off (so both the regular
 // sections AND ⚗ Test Kitchen render), no optional panels shown (panelVis:{}) and no stores
 // (so the Needs Attention badge is 0 -- deterministic, no badge span rendered).
-function renderNavTexts() {
+function renderNavTexts(permFn) {
   const props = {
     view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
     settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
-    onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+    onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: permFn || (() => true),
     betaMode: false, panelVis: {},
   };
   const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, props));
@@ -45,5 +45,53 @@ const EXPECTED = ['M','Meridian','Test','DAILY','⌂','Home','🔴','Needs Atten
 describe('AppSidebar renders identically after the registry refactor (dispatch #54 Job A)', () => {
   it('produces the exact pre-refactor text content, in order', () => {
     expect(renderNavTexts()).toEqual(EXPECTED);
+  });
+});
+
+// ── Permission dimension ─────────────────────────────────────────────────────
+// The snapshot above renders with perm:()=>true, so it CANNOT see a permission gate being
+// dropped -- a nav item that should vanish for a GM would still render identically under full
+// access and the test would stay green. That is the failure this refactor could most plausibly
+// have introduced (navP reads `perm` from the registry instead of the literal that used to sit
+// at the call site), and it is the one Jobs B and C are most likely to introduce next, since
+// both keep rewriting this same nav.
+//
+// So: for each permission the registry uses, deny exactly that one and assert the exact SET of
+// text nodes that disappear. This table was captured from the PRE-refactor shell.js -- the same
+// external oracle the snapshot above uses -- so it is not derived from the code it checks.
+// Verified 2026-08-21 by rendering both versions across all 17 configurations (full access,
+// betaMode on/off, all-denied, one per permission, each crossed with optional panels visible):
+// zero differences.
+//
+// Two permissions legitimately hide nothing in the sidebar (analytics.ai, analytics.labor) --
+// they gate panels reached elsewhere. Empty arrays record that on purpose; if one of them
+// suddenly starts hiding a nav item, that is a real change worth failing on.
+//
+// Note the sets are text nodes, not panels: an icon shared with a still-visible item does not
+// disappear, which is why some entries list a label without its icon.
+const HIDDEN_WHEN_DENIED = {
+  'analytics.ai': [],
+  'analytics.brief': ['Daily Brief', 'Forecast Brief', '☀️', '🔭'],
+  'analytics.dashboard': ['Calendar', 'Event Impact', 'My Reports', '📈'],
+  'analytics.district': ['Above-Store One-Pager', 'District View', 'EOM Supervisor', 'Inventory Control', 'Org Summary', '⊞', '📦'],
+  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Bridge', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', '▦', '◎', '◑', '🌉', '📐', '🔬'],
+  'analytics.labor': [],
+  'analytics.store': ['3PO Delivery', 'ANALYTICS', 'Count Cycle', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Graded Visits', 'Guest Voice', 'LABOR & SCHEDULING', 'Local News', 'Market Intelligence', 'OPERATIONS', 'PERFORMANCE', 'Planning', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Signals', 'Store One-Pager', 'Visit Readiness', '🎟️', '🏆', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  'data.upload': ['Data Manager', '🗄'],
+  'reviews.view': ['Performance Reviews'],
+  'security.view': ['Security', '🔒'],
+  'settings.view': ['Panel Manager', 'Settings', '⚙', '🧩'],};
+
+describe('AppSidebar permission gates survive the registry refactor (dispatch #54 Job A)', () => {
+  it('denying each permission hides exactly the pre-refactor set of nav text', () => {
+    const all = new Set(renderNavTexts());
+    const actual = {};
+    for (const perm of Object.keys(HIDDEN_WHEN_DENIED)) {
+      const shown = new Set(renderNavTexts(x => x !== perm));
+      actual[perm] = [...all].filter(t => !shown.has(t)).sort();
+    }
+    const expected = Object.fromEntries(
+      Object.entries(HIDDEN_WHEN_DENIED).map(([k, v]) => [k, [...v].sort()]));
+    expect(actual).toEqual(expected);
   });
 });
