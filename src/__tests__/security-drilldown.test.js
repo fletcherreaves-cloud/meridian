@@ -332,25 +332,52 @@ describe('buildSubjectTimeline', () => {
 
 // dispatch #56 Part D's "free win": corroboration_rules is populated in security_rules and mapped
 // by loadSecurityRules() as of Part A, but nothing checked whether a corroborating rule ACTUALLY
-// fired for this subject until this function.
+// fired for this subject until this function. Window overlap matters: `subjectVerdicts` carries
+// each rule's own LATEST window independently, and different rules run on different cadences, so
+// two rules' "latest" verdicts can land months apart -- that is not corroboration.
 describe('corroboratingFlags', () => {
   const rule = { ruleId: 'CASH-003', corroborationRules: ['CASH-001', 'CASH-002'] };
+  const verdict = { ruleId: 'CASH-003', pass: true, windowStart: '2026-08-01', windowEnd: '2026-08-28' };
 
-  it('returns the corroborating rule ids that are ALSO currently flagged for this subject', () => {
+  it('returns the corroborating rule ids that are ALSO flagged for this subject in an OVERLAPPING window', () => {
     const verdicts = [
-      { ruleId: 'CASH-001', pass: true },
-      { ruleId: 'CASH-002', pass: false },
-      { ruleId: 'CASH-003', pass: true },
+      verdict,
+      { ruleId: 'CASH-001', pass: true, windowStart: '2026-08-01', windowEnd: '2026-08-28' },
+      { ruleId: 'CASH-002', pass: false, windowStart: '2026-08-01', windowEnd: '2026-08-28' },
     ];
-    expect(corroboratingFlags(rule, verdicts)).toEqual(['CASH-001']);
+    expect(corroboratingFlags(verdict, rule, verdicts)).toEqual(['CASH-001']);
   });
 
-  it('a hygiene-routed verdict (lifecycleCategory set) does not count as a corroborating flag', () => {
-    const verdicts = [{ ruleId: 'CASH-001', pass: true, lifecycleCategory: 'deactivated' }];
-    expect(corroboratingFlags(rule, verdicts)).toEqual([]);
+  it('a corroborating rule flagged in a NON-overlapping window does not count -- two unrelated flags months apart are not corroboration', () => {
+    const verdicts = [
+      verdict,
+      // CASH-001 flagged, but back in June -- long before CASH-003's August window.
+      { ruleId: 'CASH-001', pass: true, windowStart: '2026-06-01', windowEnd: '2026-06-28' },
+    ];
+    expect(corroboratingFlags(verdict, rule, verdicts)).toEqual([]);
+  });
+
+  it('a partially overlapping window still counts -- any shared days is corroboration, not just an exact match', () => {
+    const verdicts = [
+      verdict,
+      // Ends one day into CASH-003's window -- overlaps by a single day, still real overlap.
+      { ruleId: 'CASH-001', pass: true, windowStart: '2026-07-05', windowEnd: '2026-08-01' },
+    ];
+    expect(corroboratingFlags(verdict, rule, verdicts)).toEqual(['CASH-001']);
+  });
+
+  it('a hygiene-routed verdict (lifecycleCategory set) does not count as a corroborating flag, even with an overlapping window', () => {
+    const verdicts = [verdict, { ruleId: 'CASH-001', pass: true, lifecycleCategory: 'deactivated', windowStart: '2026-08-01', windowEnd: '2026-08-28' }];
+    expect(corroboratingFlags(verdict, rule, verdicts)).toEqual([]);
   });
 
   it('no corroboration_rules on the rule -> empty, no crash', () => {
-    expect(corroboratingFlags({ ruleId: 'CASH-004' }, [{ ruleId: 'CASH-001', pass: true }])).toEqual([]);
+    expect(corroboratingFlags(verdict, { ruleId: 'CASH-004' }, [{ ruleId: 'CASH-001', pass: true, windowStart: '2026-08-01', windowEnd: '2026-08-28' }])).toEqual([]);
+  });
+
+  it('a missing window on either side -> no overlap asserted, not a crash', () => {
+    const noWindowVerdict = { ruleId: 'CASH-003', pass: true };
+    const verdicts = [{ ruleId: 'CASH-001', pass: true, windowStart: '2026-08-01', windowEnd: '2026-08-28' }];
+    expect(corroboratingFlags(noWindowVerdict, rule, verdicts)).toEqual([]);
   });
 });

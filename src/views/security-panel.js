@@ -403,7 +403,7 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
       const exonerated = v.exonerationShare != null && v.exonerationShare >= 0.5;
       // dispatch #56 Part D's "free win": which of this rule's corroboration_rules are ALSO
       // currently flagged for this same subject -- only meaningful on an actual flag.
-      const corrob = v.pass === true ? corroboratingFlags(rule, group.verdicts) : [];
+      const corrob = v.pass === true ? corroboratingFlags(v, rule, group.verdicts) : [];
       return div({ key: v.ruleId + i, style: { padding: '8px 0', borderBottom: i < group.verdicts.length - 1 ? '1px solid var(--bdr)' : 'none' } },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
           span({ style: { fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } }, rule.method || v.ruleId),

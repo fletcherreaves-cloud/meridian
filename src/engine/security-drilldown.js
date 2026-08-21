@@ -217,20 +217,35 @@ export function buildSubjectTimeline(historyByRule) {
   return { rows, totalWindows: rows.length, flaggedCount, firstWindowStart };
 }
 
+function windowsOverlap(a, b) {
+  if (!a?.windowStart || !a?.windowEnd || !b?.windowStart || !b?.windowEnd) return false;
+  return a.windowStart <= b.windowEnd && b.windowStart <= a.windowEnd;
+}
+
 // corroboratingFlags: for a flagged verdict on one rule, which of that rule's corroboration_rules
 // (schema-security-findings-exoneration.sql; mapped by loadSecurityRules() as of dispatch #56 Part
-// A) are ALSO currently flagged for the SAME subject. Part A already mapped + surfaced
-// corroboration_rules in the static rule directory; this is Part D's own "free win" half --
-// "on a finding where a corroborating rule actually fired on the same subject."
-// rule: the security_rules row for the verdict's own ruleId (carries `corroborationRules`).
+// A) are ALSO flagged for the SAME subject IN AN OVERLAPPING WINDOW. Part A already mapped +
+// surfaced corroboration_rules in the static rule directory; this is Part D's own "free win" half
+// -- "on a finding where a corroborating rule actually fired on the same subject."
+//
+// Window overlap matters because `subjectVerdicts` carries each rule's own LATEST window
+// independently (groupFindingsBySubject dedupes per rule, not per subject) -- different rules run
+// on different cadences (CASH rules 28-day windows, INV rules 30-day), so two rules' "latest"
+// verdicts can land months apart. Two flags from unrelated time periods are not corroboration;
+// without the overlap check, a rule that happened to flag once, long ago, would look like it was
+// corroborating every subsequent unrelated flag on the corroborated rule forever.
+//
+// verdict: the flagged finding being rendered (carries its own windowStart/windowEnd).
+// rule: the security_rules row for verdict's own ruleId (carries `corroborationRules`).
 // subjectVerdicts: the subject's own group.verdicts (one per rule, latest window).
-export function corroboratingFlags(rule, subjectVerdicts) {
+export function corroboratingFlags(verdict, rule, subjectVerdicts) {
   const ids = Array.isArray(rule?.corroborationRules) ? rule.corroborationRules : [];
   if (!ids.length) return [];
-  const flaggedIds = new Set((subjectVerdicts || [])
-    .filter(v => v.pass === true && !v.lifecycleCategory)
-    .map(v => v.ruleId));
-  return ids.filter(id => flaggedIds.has(id));
+  const byRuleId = new Map((subjectVerdicts || []).map(v => [v.ruleId, v]));
+  return ids.filter(id => {
+    const cv = byRuleId.get(id);
+    return cv && cv.pass === true && !cv.lifecycleCategory && windowsOverlap(verdict, cv);
+  });
 }
 
 // ── Assembly — wires the five primitives above into one result per domain ───────────────────────

@@ -861,4 +861,15 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
     await expandAliceRow();
     expect(container.textContent).not.toMatch(/Corroborated by/);
   });
+
+  it('no corroboration cross-link when the corroborating rule flagged in a DIFFERENT, non-overlapping window -- two unrelated flags months apart are not corroboration', async () => {
+    // Same findings as the "corroborated" case above, except CASH-004's flag is back in June --
+    // long before CASH-001's August window it would otherwise appear to corroborate.
+    const staleCorrobFindings = FINDINGS.map(f => f.ruleId === 'CASH-004'
+      ? { ...f, windowStart: '2026-06-01', windowEnd: '2026-06-28', computedAt: '2026-06-29T10:05:00Z' }
+      : f);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(staleCorrobFindings);
+    await expandAliceRow();
+    expect(container.textContent).not.toMatch(/Corroborated by/);
+  });
 });
