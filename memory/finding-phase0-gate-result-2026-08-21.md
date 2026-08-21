@@ -1,12 +1,12 @@
 ---
 name: finding-phase0-gate-result-2026-08-21
-description: Dispatch #53 Phases A-C, closed. The 403 was session-token expiry, not a rate limit -- the 48-day tail closed in one 3-chunk job (8,507 rows, 27/27 stores) inside the ~5-6 minute working window. Row 5 re-measured to 0 (genuinely ID-less). Gate rule applied to G=0: PROCEED to Phase D.
+description: Dispatch #53 Phases A-C, closed. The 403 was session-token expiry, not a rate limit -- the 48-day tail closed in one 3-chunk job (8,507 rows, 27/27 stores) inside the ~5-6 minute working window. Row 5 re-measured to 0, then CORRECTED to 2 the same day -- emp_id='0' is a sentinel, not a null, shared by 8 names of whom 2 have nothing else. G=2 still clears the <=25 gate, so nothing that shipped changes; Phase 2 must treat '0' as null.
 metadata:
   node_type: memory
   type: finding
 ---
 
-# Phase 0's gate, closed — G = 0, proceed to Phase D
+# Phase 0's gate, closed — G = 2 (corrected from 0), proceed to Phase D
 
 **2026-08-21**, same day as `finding-phase0-identity-match-rate-2026-08-21.md`. Executes dispatch
 #53 Phases A–C after the owner's own correction to Phase A's diagnosis.
@@ -49,7 +49,36 @@ partial-coverage estimate of 54, now that the full 5.7-month window is counted.
 
 ## Phase C — the gate, applied
 
-`G` (genuinely ID-less) = **0**.
+> ### ⚠️ CORRECTED 2026-08-21 (same day): **G = 2, not 0.** The gate still clears.
+>
+> `G = 0` below was measured with a query that asked *"which names have no `emp_id`?"* — and
+> **`emp_id = '0'` is not a missing value to that query, it is a value.** Measured afterwards
+> against the same table: `'0'` sits on **4,646 rows (15% of all rows with an `emp_id`)** and is
+> shared by **8 distinct names**. Of those 8, **6 also carry a genuine `emp_id`** elsewhere (so
+> `'0'` is incidental noise on some of their rows) and **2 have nothing but `'0'`** — those two are
+> the real ID-less population.
+>
+> **`G = 2` still clears `G ≤ 25` comfortably, so Phase D was authorized either way and nothing
+> that shipped needs revisiting.** The correction matters for the record and for Phase 2, not for
+> the decision.
+>
+> **The generalizable miss: a sentinel is not a null, and only a value-distribution check tells
+> them apart.** Row 5 counted `null`s. Nothing counted *values that mean null*. The distribution
+> query that found it (`group by length(emp_id)`) took one minute and would have caught this on the
+> first pass — and the same query also showed `emp_id` is **not one numbering scheme**: lengths 6
+> (18 ids), 7 (57), 8 (532) and 9 (565), with non-overlapping ranges. **Phase 2 must not assume a
+> uniform ID format.**
+>
+> **Phase 2 requirements this creates**, none of them optional:
+> - **Treat `'0'` as NULL on read.** Keying on it would collapse 8 real people into one token —
+>   the exact merge-two-people failure dispatch #49 warns against, and the largest instance of it
+>   in the data. (Phase 1's split-identity fallback already fails safe here by accident of design:
+>   the partial unique index lets only one vault row hold `'0'`, and every later one degrades to a
+>   name-keyed token with `employee_id` null rather than merging.)
+> - For the **6 names with both**, `'0'` rows must not outvote their real id.
+> - For the **2 with only `'0'`**, there is no id to reconcile to. They stay name-keyed.
+
+`G` (genuinely ID-less) = **2** (was reported as 0 — see the correction above).
 
 | G | action |
 |---|---|
@@ -57,8 +86,7 @@ partial-coverage estimate of 54, now that the full 5.7-month window is counted.
 | 26–57 | stop, owner decides |
 | > 57 | option B |
 
-**G = 0 clears the gate with room to spare.** This is not a borderline call — zero names are
-unaccounted for once the full window is counted. Proceeding to Phase D (dispatch #49's Phase 1
+**G = 2 clears the gate with room to spare.** Proceeding to Phase D (dispatch #49's Phase 1
 only — vault gains `employee_id`, additive, name-keyed path unchanged; NOT Phase 2/3).
 
 ## Phase D — dispatch #49's Phase 1, additive only
