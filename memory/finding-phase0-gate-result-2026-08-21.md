@@ -137,8 +137,13 @@ would break tokenization everywhere at once, at runtime, with nothing in the JS 
 Recorded as a `⚠️` at the function in the migration itself, where a future editor will actually
 see it.
 
-**Post-apply check (owner):** after applying the file, call the RPC once through PostgREST exactly
-as the app does and confirm a token comes back rather than a candidate-function error.
+**Post-apply check — ✅ DONE 2026-08-21. Applied and verified; do not re-raise.** Probed live
+through PostgREST with the anon key, side-effect-free (empty name, so the guard fires before any
+insert — no rows written). `{p_employee_name}` — the app's exact call shape — returns P0001
+`employee_name is required`, identical to the pre-apply baseline. `{p_employee_name,
+p_employee_id}` returns the same P0001, a RAISE from inside the function body, which proves the
+overload exists and executed: that key set matched nothing before the migration. No PGRST203 in
+either direction. Resolution is unambiguous and the 1-arg caller path is unaffected.
 
 **The generalizable miss:** a constraint firing is not self-evidently a pass. The probe list
 scored every check against *did the mechanism behave as written*, and the mechanism did; what it
