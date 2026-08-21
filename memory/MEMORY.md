@@ -30,6 +30,23 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #52 — the drill-down, specced from a real investigation](dispatch-52.md)** —
+  **NEWEST, briefed.** Scopes dispatch #46 Part C from **evidence rather than a wish list**: the
+  2026-08-21 store `0013113` dig took ~8 hand-written queries over an hour, five did the real work,
+  and **three of those five are discriminators Part C never named** — `stores_flagging_item`
+  (store-specific vs the estate-wide broken WRINs — *the* difference between a lead and noise),
+  **item-class composition vs baseline** (82.1% paper vs 47.0% is what actually identified the
+  problem, and a class skew is a mechanism hint), and **secondary-metric comparison** (count
+  completeness, waste logged — which both ruled out skipped counts AND produced the replacement
+  hypothesis). Plus normalised flag rate **run first, deliberately, because it can end an
+  investigation early** — a drill-down that can't dissolve its own premise isn't an investigation
+  tool. **The lesson built in, not just written:** two hypotheses died in that hour, and the second
+  ("under-logs packaging waste") explained all four measurements and was still wrong — killed by
+  splitting one number by class. So **every comparison shows the estate baseline beside the
+  subject's value**, and **the panel displays the measurement, never the inferred cause** — the
+  mechanism at `0013113` is *still unknown* after eight queries. **Rider:** close the schema-drift
+  class (a test asserting migration `ADD COLUMN`s appear in `schema.sql`'s `CREATE TABLE`) — third
+  "nothing checks that two files agree" instance in three days.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #51 — capture empID, then measure Phase 0 in SQL](dispatch-51.md)** —
   **NEWEST, owner-approved.** Phase 0 failed **twice** — both attempts used a **bespoke one-off API
   pull** written for the measurement, both hit the same auth flakiness, and the engineer correctly
