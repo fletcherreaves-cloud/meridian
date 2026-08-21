@@ -3110,6 +3110,31 @@ export async function loadQsrVarianceHistory({ loc, periods = [] } = {}) {
   }));
 }
 
+// ── QSRSoft Forms completion — Forms dashboard Slice 2 ───────────────────────────────────────────
+// Reads qsr_forms_completion (schema-qsr-forms-completion.sql, Slice 1). Empty until Slice 3's
+// pull script ships -- the panel renders an honest "no data yet" state against a real empty read,
+// not a mock. `start`/`end` are ISO timestamps compared against occurrence_key (NOT scheduled_at
+// alone, since occurrence_key already carries the null-scheduled_at fallback to completed_on --
+// see forms-completion.js's own header for why). `locs`, if given, are unpadded NSNs (this
+// function pads them, matching every other loc-scoped QSRSoft loader).
+export async function loadQsrFormsCompletion({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_forms_completion').select('*').range(from, to);
+    if (start) q = q.gte('occurrence_key', start);
+    if (end) q = q.lte('occurrence_key', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'qsr_forms_completion');
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), formId: r.form_id, formTitle: r.form_title,
+    occurrenceKey: r.occurrence_key, statusState: r.status_state, completionRatio: r.completion_ratio,
+    missed: r.missed, hasResponse: r.has_response, scheduledAt: r.scheduled_at,
+    startedAt: r.started_at, completedOn: r.completed_on, timeToCompleteMs: r.time_to_complete_ms,
+    userId: r.user_id, score: r.score, reviewedWith: r.reviewed_with, assignedTo: r.assigned_to || [],
+  }));
+}
+
 // DISTRICT-WIDE variance history across a set of periods — powers the Chronic Offenders scan
 // (which items are chronically High-Variance / Loss-Forming across ALL stores over a past window).
 // On-demand only (explicit "Run scan" button) — this reads many rows, so it must never auto-run.

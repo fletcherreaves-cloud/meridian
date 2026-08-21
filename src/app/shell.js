@@ -285,6 +285,7 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       navPBeta('lfz-gap'),
       navPBeta('dicompare'),
       navPBeta('fcst-ref'),
+      navPBeta('forms-completion'),
       navPBeta('forecast-audit', { disabled: !selStore }),
       navPBeta('lifelenz-bridge'),
       // Optional / experimental panels (registry-driven) — hidden by default, toggled back

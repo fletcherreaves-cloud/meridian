@@ -65,8 +65,24 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 2: the panel, done](project-forms-dashboard-slice2.md)** —
+  **NEWEST.** Second of three slices. New `computeFormStoreDayRollup()`/`computeFormSummary()` in
+  `src/engine/forms-completion.js` — store-day rollup judged on resolved occurrences only (`open`
+  rows excluded from both numerator and denominator, or the current day always reads red), bucketed
+  on the finding file's own measured local-midnight-UTC-5 boundary (deliberately NOT this codebase's
+  4am business-day boundary — different host, different cutover). `passRate` is Σcompleted/Σresolved,
+  never a mean of store-day rates (never-average-averages; 4.9% vs a wrong 51.25% on a worked
+  fixture). New `src/views/forms-panel.js` (`FormsCompletionPanel`, `kind:'test-kitchen'` pending
+  Slice 3): per-form 80%-default threshold (editable, per-device), pass-rate always beside the bar,
+  total-day attribution only. **Caught by its own render-based test, not the engine's unit tests**:
+  the panel was re-running the raw-payload normalizer on `loadQsrFormsCompletion()`'s
+  already-normalized output — a field-name mismatch (`raw.location` vs the loader's `loc`) that
+  silently dropped every row and would have shipped an always-empty panel with every engine test
+  green. Fixed by feeding the loader's output straight into the rollup. 1944/1944 tests (12 net
+  new). Build clean, entry chunk unchanged (lazy panel). **Slice 3** (pull script, gated on an owner
+  auth capture) is next, separate PR.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 1: schema + normalizer, done](project-forms-dashboard-slice1.md)** —
-  **NEWEST.** First of three slices, structured so the one unverifiable piece (the Slice 3 pull
+  First of three slices, structured so the one unverifiable piece (the Slice 3 pull
   script's auth against `forms.home.myqsrsoft.com`) ships last, isolated. New
   `supabase/schema-qsr-forms-completion.sql` — one row per scheduled occurrence from
   `completionDetail` (not `completionByForm`, which has no denominator and can't answer "missed"),

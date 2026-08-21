@@ -50,7 +50,7 @@ function renderNavTexts(permFn) {
 // inert here -- all ten forecasting-section members stay kind:'test-kitchen', so the section
 // still renders no header, and Test Kitchen (kind-driven, not section-driven) is unaffected by
 // a section: edit. That is Part A's whole point: metadata becomes truthful with zero nav motion.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','🔬','Forecast Audit','🌉','Recommended WFM Forecast Adjustments','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🌉','Recommended WFM Forecast Adjustments','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -107,7 +107,7 @@ const HIDDEN_WHEN_DENIED = {
   'analytics.district': ['Above-Store One-Pager', 'District View', 'EOM Supervisor', 'Inventory Control', 'Org Summary', '⊞'],
   'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', 'Recommended WFM Forecast Adjustments', '▦', '◎', '◑', '🌉', '📐', '🔬'],
   'analytics.labor': [],
-  'analytics.store': ['3PO Delivery', 'Count Cycle', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '🎟️', '🏆', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  'analytics.store': ['3PO Delivery', 'Count Cycle', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🎟️', '🏆', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   'reviews.view': ['Performance Reviews'],
   'security.view': ['Security', '🔒'],
@@ -179,11 +179,11 @@ describe('Part A membership diff -- the nav moves by exactly one renamed label',
     }
   });
 
-  it('⚗ TEST KITCHEN still exists and its ten panels still vanish under betaMode:true, exactly as before Part A', () => {
+  it('⚗ TEST KITCHEN still exists and its panels still vanish under betaMode:true, exactly as before Part A', () => {
     const off = renderNavTexts();
     expect(off).toContain('⚗ TEST KITCHEN');
     const testKitchenIds = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
-    expect(testKitchenIds.length, 'ratchet: Part A must not change the Test Kitchen census').toBe(10);
+    expect(testKitchenIds.length, 'ratchet: Part A must not change the Test Kitchen census').toBe(11);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -218,8 +218,8 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // assumed away.
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all ten current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
-    expect(testKitchenPanels.length).toBe(10);
+  it('covers all eleven current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+    expect(testKitchenPanels.length).toBe(11);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header', (id, panel) => {
