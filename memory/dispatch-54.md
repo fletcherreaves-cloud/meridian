@@ -73,7 +73,18 @@ Once the registry drives the nav, each of the owner's changes is a `section:` ed
 
 1. **Visit Readiness + Graded Visits → Operations.** ("They would be more Operations.")
 2. **Calendar / Events & Tags / Event Impact → fold into Planning**, but Planning then needs clear
-   internal sub-navigation. Owner: *"may need to have clear sections when planning is opened. Use
+   internal sub-navigation.
+   **⚠️ CLARIFIED 2026-08-21 — the Planning SECTION gets FOUR links, and the hub is NOT exploded.**
+   An earlier draft said "three links," counting only the folded-in panels. `panel-catalog.md:42`
+   records Planning as a **merged hub (v4.513)** — five panels *deliberately consolidated* into one
+   nav entry with five lazy tabs (Targets / Monthly / Pace / Yearly / Smart), where legacy modal ids
+   already deep-link to the matching tab. **Turning those five tabs into five sidebar links would
+   reverse that consolidation.** Do not.
+   So the section is: **Planning (the hub, keeping its five tabs) · Calendar · Events & Tags ·
+   Event Impact.**
+   This is the accordion-vs-tabs distinction doing real work: the hub's five tabs are **peer views
+   on one page** (tabs/pills), the sidebar section is **hierarchy** (accordion). Conflating them is
+   what would have exploded the hub. Owner: *"may need to have clear sections when planning is opened. Use
    menus or something. Be consistent with our preferences though."*
    **⚠️ There is no single house idiom today — pick one and make it the standard.** Two exist:
    `store-analytics.js:1415` uses **underline tabs** (amber `borderBottom`), and `security-panel.js:481`
