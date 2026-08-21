@@ -97,6 +97,35 @@ all as designed:
 - Empty name still rejected; whitespace-only eID normalizes to `NULL`, not `''`.
 - **The unique index genuinely rejects a real eID collision** across two different names — not
   just declared, exercised.
+
+### Review finding — the collision probe was right, its verdict was wrong (PM pass, same day)
+
+That last probe was run and passed, but it was scored as *protection working* when the same PR's
+own row 4 says it is a **guaranteed hard failure on 1.4% of the real population**: 16 of 1,173
+eIDs already carry more than one name. Reproduced against the same local Postgres 16 instance
+rather than argued — calling the overload with an eID already held by a different name raised
+`unique_violation` out of the function body uncaught, so the caller got **no token at all** for a
+person the 1-arg path tokenizes fine. The overload was strictly more fragile than the path it
+exists to supersede, and only escaped notice because nothing calls it yet — Phase 2 is precisely
+what would have walked into it.
+
+Fixed in review: the insert is wrapped in a `begin … exception when unique_violation` that falls
+back to the exact name-keyed insert the 1-arg signature performs, leaving `employee_id` null on
+the new row and the incumbent mapping untouched. **Enrichment is optional; a token is not.**
+Re-probed, nine checks, all revert-sensitive against the failure captured above: split identity
+now returns a token with `employee_id` null; the incumbent `employee_id` is unchanged; a repeat
+call returns the *same* token; a direct table insert of a duplicate eID is **still rejected**, so
+nothing was loosened; normal enrichment, the 1-arg path, empty-name rejection, whitespace-eID
+normalization, and `uuid`-only return types on both overloads all unaffected.
+
+Deciding *which* name owns a split eID stays Phase 2's job, deliberately not attempted here —
+guessing is exactly how one person's findings get attributed to another.
+
+**The generalizable miss:** a constraint firing is not self-evidently a pass. The probe list
+scored every check against *did the mechanism behave as written*, and the mechanism did; what it
+never asked was *what happens to the caller when it fires* — a question this PR's own Phase 0
+table already had the number for, two screens up. When a probe exercises a rejection path, score
+the rejection's blast radius, not just that it rejected.
 - `reveal_employee_identity()` re-verified unaffected by this migration: admin reveals
   successfully and the reveal is logged; anon is rejected at the grant level (never reaches the
   function body); a no-entitlement role (`office_staff`) is rejected by the role gate; **the exact

@@ -34,7 +34,10 @@ create unique index if not exists employee_identity_vault_employee_id_idx
 -- Postgres resolves by argument list, so get_or_create_employee_token(text) (every live caller
 -- today) and this 2-arg version coexist without any call site changing. Nothing calls this new
 -- overload yet -- it is Phase 1's API surface, not a wired-up feature; Phase 2/3 (not this
--- dispatch) would be what actually starts passing a real eID through it.
+-- dispatch) would be what actually starts passing a real eID through it. It is written to
+-- DEGRADE, never to fail: on a split identity (one eID, two names) it silently skips the
+-- enrichment and returns the same name-keyed token the 1-arg version would -- see the
+-- exception handler's own comment for why that case is measured-real, not theoretical.
 create or replace function public.get_or_create_employee_token(p_employee_name text, p_employee_id text)
 returns uuid
 language plpgsql security definer set search_path = public
@@ -51,12 +54,29 @@ begin
   -- Opportunistic enrichment only: a row that already has an employee_id keeps it, even if this
   -- call carries a different (or no) one -- never silently overwrite an existing mapping. A row
   -- with no employee_id yet gains the one this call supplies (may still be null, which is a no-op).
-  insert into public.employee_identity_vault (tenant_id, employee_name, employee_id)
-  values (v_tenant, v_name, v_eid)
-  on conflict (tenant_id, employee_name) do update
-    set employee_name = excluded.employee_name,
-        employee_id   = coalesce(public.employee_identity_vault.employee_id, excluded.employee_id)
-  returning id into v_id;
+  begin
+    insert into public.employee_identity_vault (tenant_id, employee_name, employee_id)
+    values (v_tenant, v_name, v_eid)
+    on conflict (tenant_id, employee_name) do update
+      set employee_name = excluded.employee_name,
+          employee_id   = coalesce(public.employee_identity_vault.employee_id, excluded.employee_id)
+    returning id into v_id;
+  exception when unique_violation then
+    -- The eID is already held by a DIFFERENT name -- a split identity. This is not a corner
+    -- case: Phase 0 measured 16 of 1,173 real eIDs (1.4%) carrying more than one name
+    -- (memory/finding-phase0-gate-result-2026-08-21.md, row 4). Without this handler the
+    -- partial unique index aborts the whole call and the caller gets NO TOKEN AT ALL for a
+    -- person the 1-arg path would have tokenized fine -- strictly worse than the path this
+    -- overload is meant to supersede. Enrichment is optional; a token is not. So fall back to
+    -- the exact name-keyed insert the 1-arg signature performs, leaving employee_id null on
+    -- this row and the existing mapping untouched. The index still does its job (one eID never
+    -- lands on two rows); resolving which name is the real one is Phase 2's job, deliberately
+    -- not attempted here -- guessing is how one person's findings get attributed to another.
+    insert into public.employee_identity_vault (tenant_id, employee_name)
+    values (v_tenant, v_name)
+    on conflict (tenant_id, employee_name) do update set employee_name = excluded.employee_name
+    returning id into v_id;
+  end;
   return v_id;
 end;
 $$;
