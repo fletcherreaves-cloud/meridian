@@ -121,6 +121,25 @@ normalization, and `uuid`-only return types on both overloads all unaffected.
 Deciding *which* name owns a split eID stays Phase 2's job, deliberately not attempted here —
 guessing is exactly how one person's findings get attributed to another.
 
+### One risk the local probing structurally cannot cover — verify it after applying
+
+All 15 probes ran through `psql`, which resolves overloads **by argument count**. The only live
+caller does not: `src/engine/identity-vault.js:24` goes through **PostgREST**
+(`supabase.rpc('get_or_create_employee_token', { p_employee_name: name })`), which resolves by the
+**set of JSON keys** in the body. A green psql probe says nothing about that path, so the overload
+is unproven exactly where it matters most — this RPC is the single write path for *every*
+tokenization, server-side auto-pull and browser manual-upload alike.
+
+The design is right: with no `DEFAULT` on `p_employee_id`, a `{p_employee_name}` body matches the
+1-arg signature and nothing else. **Never add one** — a default makes both signatures candidates
+for that same body, which is PostgREST's *"Could not choose the best candidate function"*, and it
+would break tokenization everywhere at once, at runtime, with nothing in the JS suite to catch it.
+Recorded as a `⚠️` at the function in the migration itself, where a future editor will actually
+see it.
+
+**Post-apply check (owner):** after applying the file, call the RPC once through PostgREST exactly
+as the app does and confirm a token comes back rather than a candidate-function error.
+
 **The generalizable miss:** a constraint firing is not self-evidently a pass. The probe list
 scored every check against *did the mechanism behave as written*, and the mechanism did; what it
 never asked was *what happens to the caller when it fires* — a question this PR's own Phase 0

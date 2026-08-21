@@ -87,6 +87,21 @@ comment on function public.get_or_create_employee_token(text, text) is
   'an employee_id a vault row already has -- first write wins, opportunistic only. Not yet called '
   'by any pull script; Phase 2/3 (not this dispatch) would wire a real caller to it.';
 
+-- ⚠️ NEVER give p_employee_id a DEFAULT. The two overloads are safe to coexist only because a
+-- one-key call cannot match this one. Postgres resolves by argument count, but the ONLY live
+-- caller is PostgREST -- src/engine/identity-vault.js:24 does
+-- `supabase.rpc('get_or_create_employee_token', { p_employee_name: name })` -- and PostgREST
+-- resolves by the SET OF KEYS the JSON body supplies, not by count. With no default, a body of
+-- {p_employee_name} matches the 1-arg signature and nothing else. Add `default null` here and
+-- BOTH signatures become candidates for that same body, which is PostgREST's
+-- "Could not choose the best candidate function" error -- and since this RPC is the single write
+-- path for every tokenization (server-side auto-pull AND browser manual-upload), that would
+-- break tokenization everywhere at once, at runtime, with nothing in the JS suite to catch it.
+-- POST-APPLY CHECK (the one thing psql probing cannot prove -- psql resolves by count, PostgREST
+-- by key set, so a green local probe says nothing about this): after applying this file to live
+-- Supabase, call the RPC once through PostgREST exactly as the app does and confirm it still
+-- returns a token rather than a candidate-function error.
+--
 -- Same broad-expose posture as the 1-arg version (schema-identity-vault.sql's own comment):
 -- this never returns employee_name, only an opaque token, and only accepts identifiers the
 -- caller already has -- it discloses nothing a caller didn't already know. No separate
