@@ -65,6 +65,67 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 3: the pull script, ALL THREE SLICES DONE](project-forms-dashboard-slice3.md)** —
+  **NEWEST.** Auth for `forms.home.myqsrsoft.com` resolved via the owner's DevTools
+  request-header panel: **token-only, no session cookie** — same shape as `api.security`, not
+  the DAR host. New `scripts/qsrsoft-forms-completion-pull.mjs` pulls `completionDetail` and
+  writes `qsr_forms_completion`; auth is `getFreshToken()` (direct Cognito mint, no Playwright
+  for the primary path — the SAME already-proven mechanism `qsrsoft-ops-pull.mjs` uses, not
+  `qsrsoft-forms-pull.mjs`'s older pre-#312 browser-scrape pattern) with a Playwright fallback
+  kept defensively. 🔴 **Two real bugs fixed first, owner-reproduced against the already-shipped
+  Slice 1/2 code:** (1) the literal `"noLocation"` (a real request member — submissions with no
+  store attached) normalized to the garbage loc `"0000NaN"` via `parseInt`; now an explicit
+  `'NOLOC'` sentinel, never dropped. (2) The store-day rollup's local-midnight boundary used a
+  **fixed UTC-5 offset**, correct only during CDT — every row misbucketed by a full day for the
+  entire CST half of the year, ~10 weeks from shipping. Fixed with a real `Intl.DateTimeFormat`
+  `America/Chicago` lookup, DST-aware by construction (all seven FL stores are Panhandle =
+  Central, not Eastern — worth stating since "Florida" misleads). The new pull script's own
+  request-window builder had the identical flaw and got the same fix before it ever shipped.
+  Regression tests: a CST case, a `noLocation` case, and a four-point sweep across both 2026 DST
+  transitions, verified against real `Intl` output before being hardcoded. `FormsCompletionPanel`
+  now shows its **own** per-stream freshness line ("Synced today" / "Last synced Nd ago") — never
+  pooled with anything else, the #171 lesson. New `qsrsoft-forms-completion-pull.yml` (twice-daily
+  cron) + `sync-failure-watch.yml` entry. **Manual-upload fallback deliberately NOT built** — this
+  data was never tracked on paper, so there's no existing workflow to protect, unlike FOB/Ops
+  Report/Controls. **Range cap on `completionDetail` still unmeasured** — the pull chunks to
+  3-day windows by default rather than risk a silent truncation on a larger backfill; do not
+  widen without measuring first. 1952/1952 tests. Build clean, entry chunk unchanged
+  (511.12 KB gzip). `forms-completion` stays `kind:'test-kitchen'` — promotion is the owner's
+  call once real data has synced.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 2: the panel, done](project-forms-dashboard-slice2.md)** —
+  Second of three slices. New `computeFormStoreDayRollup()`/`computeFormSummary()` in
+  `src/engine/forms-completion.js` — store-day rollup judged on resolved occurrences only (`open`
+  rows excluded from both numerator and denominator, or the current day always reads red), bucketed
+  on the finding file's own measured local-midnight-UTC-5 boundary (deliberately NOT this codebase's
+  4am business-day boundary — different host, different cutover). `passRate` is Σcompleted/Σresolved,
+  never a mean of store-day rates (never-average-averages; 4.9% vs a wrong 51.25% on a worked
+  fixture). New `src/views/forms-panel.js` (`FormsCompletionPanel`, `kind:'test-kitchen'` pending
+  Slice 3): per-form 80%-default threshold (editable, per-device), pass-rate always beside the bar,
+  total-day attribution only. **Caught by its own render-based test, not the engine's unit tests**:
+  the panel was re-running the raw-payload normalizer on `loadQsrFormsCompletion()`'s
+  already-normalized output — a field-name mismatch (`raw.location` vs the loader's `loc`) that
+  silently dropped every row and would have shipped an always-empty panel with every engine test
+  green. Fixed by feeding the loader's output straight into the rollup. 1944/1944 tests (12 net
+  new). Build clean, entry chunk unchanged (lazy panel). **Slice 3** (pull script, gated on an owner
+  auth capture) is next, separate PR.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 1: schema + normalizer, done](project-forms-dashboard-slice1.md)** —
+  First of three slices, structured so the one unverifiable piece (the Slice 3 pull
+  script's auth against `forms.home.myqsrsoft.com`) ships last, isolated. New
+  `supabase/schema-qsr-forms-completion.sql` — one row per scheduled occurrence from
+  `completionDetail` (not `completionByForm`, which has no denominator and can't answer "missed"),
+  `tenant_id` + RLS from day one matching `schema-product-mix.sql`'s current pattern.
+  `occurrence_key` (not `scheduled_at`, which can be null on 32 ad-hoc completed rows) is the key
+  column, falling back to `completed_on`. `status_state` is a real three-value column
+  (missed/open/completed, `check`-constrained) — the raw `status` field is polymorphic (string enum
+  OR float) and reading `"--"` as missed over-reports by 13%. `completed_by` (a plaintext name) is
+  deliberately not a column at all — `user_id` is the person key, so there's nothing to leak. New
+  `src/engine/forms-completion.js` — pure `normalizeFormsCompletionRow()`/`Rows()`, the one place
+  the polymorphic status gets read, everything downstream works off `statusState`/`completionRatio`.
+  1926/1926 tests (22 net new, **every fixture synthetic** — a dedicated test asserts the output has
+  no `completedBy` key and the fixture name never appears in the serialized result). Build flat
+  (module not wired into any panel yet). **Slice 2** (panel: per-form 80% threshold, resolved-
+  occurrences-only, total-day attribution — 0 of 3,886 missed rows carry a person) and **Slice 3**
+  (pull script, gated on an owner auth capture) are next, separate PRs.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [PR #537 review — two reproduced defects in the forms normalizer](review-537-forms-slices-1-2.md)** —
   **(1) `"noLocation"` → the garbage loc `"0000NaN"`** — it is a genuine member of every request's
   `locations` array, `parseInt` gives `NaN`, and the usable-row guard only checks non-null. Fix with

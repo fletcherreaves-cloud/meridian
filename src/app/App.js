@@ -218,6 +218,7 @@ import { TaskQueuePanel } from '../views/task-queue.js';
 // dead top-of-file Chart import above.
 const DTSpeedOfServicePanel = lazyPanel(() => import('../views/dt-speedofservice.js').then(m => ({ default: m.DTSpeedOfServicePanel })));
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
+const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
@@ -741,6 +742,7 @@ function App() {
   const [showDtSoS,       setShowDtSoS]       = useState(false);
   const [showGradedVisits, setShowGradedVisits] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showFormsCompletion, setShowFormsCompletion] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
   const [loadMsg, setLoadMsg]          = useState(null);
   const [uploadReport, setUploadReport]= useState(null); // per-batch content summary
@@ -2510,7 +2512,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2528,7 +2530,7 @@ function App() {
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);
       setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
-      setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowGMBrief(false);setShowHelp(false);
+      setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
       setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
@@ -2633,6 +2635,7 @@ function App() {
         if(modal==='security')       perm('security.view')&&setShowSecurity(true);
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
+        if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
@@ -2876,6 +2879,12 @@ function App() {
       onClose:()=>setShowSecurity(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
     },
       h(SecurityPanel,{userRole,onClose:()=>setShowSecurity(false)})
+    ),
+    showFormsCompletion&&h(ModalShell,{
+      title:'✅ Form Completions',
+      onClose:()=>setShowFormsCompletion(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
+    },
+      h(FormsCompletionPanel,{onClose:()=>setShowFormsCompletion(false)})
     ),
     // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
     // running in the background and you can look at other Meridian data at the
