@@ -65,20 +65,23 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft report-menu map — People & Labor](finding-qsrsoft-report-menu-map-2026-08-21.md)** —
-  The inventory of what QSRSoft reports **exist**, so a future session picks a target instead of
-  guessing one. **⚠️ Menu labels only** — no schema captured for any of them except Employee Roster
-  and Time Punch Export; everything else is inference from the label. 🔴 **`VLH Over/Under` is the
-  one to handle carefully: Meridian already computes the VLH gap itself** from `lifelenz_schedules`,
-  so this is the "two panels disagree → diff the computations first" case — pull it once and compare
-  the formulas rather than assuming either is right. Same, less sharply, for `Schedule Variance` and
-  `Turnover` (both derivable from data we hold). Most interesting **unclaimed**: **`Labor
-  Exceptions`** (label suggests missed breaks / overtime — a ready-made rules source, companion to
-  the punch-edit rule), **`Turnover`** (a KPI Meridian has no equivalent of), and **`Roster
-  Statistics`**, which might give roster insight **without touching PII at all** and sidestep the
-  roster's `selectCols` allowlist problem entirely. Next capture round should target one report with
-  a purpose — a `people/*` sweep risks another SSN-bearing payload, and each lands permanently in a
-  transcript.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The COMPLETE QSRSoft report catalog — 108 screens](finding-qsrsoft-report-menu-map-2026-08-21.md)** —
+  From an **unauthenticated static `menu.json`** on a **fourth host** (`api.sso.myqsrsoft.com`;
+  blocked by our egress proxy, so owner capture only). Every capture carries
+  `Referer: /reports/mcd/<path>`, so this is **the complete index of which screen to open** to
+  capture any endpoint — no more guessing whether a report exists. 🎯 **It lands directly on open
+  roadmap items:** `product/productMixDrillDown` + `productMixTrend` + **`menuPriceComparison`** are
+  the "Product Mix pull → Pricing Engine" candidate; **`service/voice`** could retire the MANUAL SMG
+  VOICE upload (standing rule: manual sourcing is always temporary); **`shift/shiftManagerSummary`**
+  is the missing leg of forms manager attribution and maybe cheaper than roster+punches;
+  **`people/newHires`** is Part B purpose-built; **`people/rosterStatistics`** may give roster
+  insight **without PII**, sidestepping the `employee-roster` allowlist problem — check it first.
+  Also unclaimed: `laborExceptions`, `overtimeAudit`, `turnoverReport`, **`studentPermitStatusCheck`**
+  (minor-labor compliance, a real legal-risk gap), `reportFinder`. ⚠️ **Overlaps to diff, not adopt:**
+  **`controlsLabor/vlhOverUnder`** (we compute VLH ourselves — diff the formulas first),
+  `scheduleVariance`, `laborSchedules`. And all three **emailed** streams (Glimpse / Sales Ledger /
+  Cash Sheet) have **API screens here**, which is the API-over-email rule's case for migrating them
+  since an API pull can backfill and email cannot.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`employee-roster` — Part B ANSWERED, and the most sensitive endpoint yet](finding-qsrsoft-employee-roster-endpoint-2026-08-21.md)** —
   **NEWEST.** 🔴 **Returns SSN, home address, DOB, race (`nationalOrigin`), gender, marital status
   and pay rate.** Worse than `time-punches`. The **`selectCols` allowlist is the security control** —
