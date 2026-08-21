@@ -18,7 +18,47 @@ The re-key is a correction, not an optimisation.
 
 ---
 
-## Phase A — close the tail (pacing is a hard constraint, not advice)
+## ⚠️ PHASE A SUPERSEDED 2026-08-21 — the 403 is not a rate limit
+
+**The pacing plan below was built on a wrong diagnosis and must not be followed.** Reading the
+actual failing run (`32483239002`) instead of the summary:
+
+```
+12:45:23  2026-03-01..03-21   3717 rows ✓      12:47:50  2026-05-03..05-23   3767 ✓
+12:46:10  2026-03-22..04-11   3789 rows ✓      12:48:39  2026-05-24..06-13   3790 ✓
+12:46:58  2026-04-12..05-02   3789 rows ✓      12:49:26  2026-06-14..07-04   3815 ✓
+12:49:27  403: "User is not authorized to access this resource
+                with an explicit deny in an identity-based policy"
+```
+
+**That is AWS IAM authorization language, not throttling.** A WAF rate rule returns a WAF body; API
+Gateway throttling returns 429. **An IAM explicit-deny is deterministic — policies do not tighten
+with request volume.**
+
+**The timing is the tell.** Started 12:43:22, died 12:49:27 — **six minutes, six chunks**.
+Yesterday's 80-day backfill succeeded in **three** chunks (~3 min). This morning's 1,781-row pull
+succeeded because it was short. **Short runs succeed; long runs die around six minutes.** That is a
+**session-token expiry** signature.
+
+Both look like "fails after N chunks," but the fixes are opposite: a rate limit needs **waiting**;
+an expiry needs **re-minting mid-run**. The pacing plan treats the wrong one.
+
+### Revised Phase A
+
+1. **Run the tail NOW as a single job.** 48 days ≈ **3 chunks ≈ 2.5 minutes** — comfortably inside
+   the window that has been working all along. No multi-day pacing. **Cancel any scheduled run.**
+2. **Fix the real bug, separately:** on a 403 mid-run, **re-mint the session token and continue**
+   rather than aborting. That is what makes long backfills possible at all. Consider a proactive
+   re-mint every ~4 chunks.
+3. If the tail still 403s inside 3 chunks, the expiry theory is wrong — **stop and report**, do not
+   fall back to grinding.
+
+**PM note, recorded because it is the reusable part:** the original Phase A accepted "403 = anti-abuse
+trip" from a summary and built a multi-day plan on it. One look at the log said otherwise. That is
+the second time in two days a characterisation was taken instead of the output — same class as the
+shallow-clone `git log -S` error in the email-parse attribution.
+
+## ~~Phase A — close the tail (pacing is a hard constraint, not advice)~~ (superseded, see above)
 
 Backfill **2026-07-05 → 2026-08-21**, ~48 days.
 
