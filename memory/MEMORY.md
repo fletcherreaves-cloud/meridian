@@ -30,8 +30,29 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 implemented — scroll fix, frictionless reveal, and INV-004](dispatch-50-implementation.md)** —
+  **NEWEST.** Both parts of the brief below shipped: Part A's `minHeight:0` fix (both the root flex
+  column and the body scroll div — structural CSS reasoning found the root, not just the body, was
+  the one refusing to shrink), verified through the real `SecurityPanel` render across both tabs and
+  an expanded finding. Part B's `reveal_employee_identities_bulk()` RPC, admin-only frictionless
+  reveal, session-view log granularity (a real `identity_reveal_log.person_token` nullability
+  change) — **adversarially probed against a real local Postgres 16 instance**, not just read as
+  SQL: 11 probes including the exact NULL-role-bypass incident shape, all correct, no name ever
+  leaks. **Also lands INV-004** (waste-log padding, manager × day-part × store) after the owner
+  caught dispatch #48's "no day-part denominator" premise as wrong mid-session (`qsr_daily_activity`
+  already carries hourly sales) — same failure shape as `manOverringQty`. Boundary (does `busn_dt`
+  need a business-date shift before joining `qsr_daily_activity`?) settled by live measurement: 0 of
+  26,443 `qsr_waste` rows fall in the one window that would show it, so the join is direct, no
+  shift. New third subject grain needed a `security_findings` schema change (nullable `daypart`
+  column, extended `subject_key`) — **also verified against a real local Postgres instance**
+  (day-part collision-freedom, upsert correctness, backward compatibility, the untouched
+  one-subject check constraint). Lands inactive, thresholds measured live (median 12.99,
+  `min_denominator:250` clearing a real DAR data-quality tail of 23 non-positive-sales buckets,
+  `min_stdev` built in from the start after a clean pre-check — unlike INV-005, this metric isn't
+  degenerate). Stated limitation, not discovered later: INV-004's findings won't group with the same
+  person's CASH findings until dispatch #49's re-key lands (not yet run, checked live).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 — Security panel scroll fix + frictionless reveal](dispatch-50.md)** —
-  **NEWEST, briefed.** Two owner-reported items from real use of the shipped panel. **A: the modal
+  **Original brief (now implemented — see the entry above).** Two owner-reported items from real use of the shipped panel. **A: the modal
   doesn't scroll** — diagnosed to the line, not guessed. `security-panel.js:468` is
   `flex:1 + overflowY:'auto'` with **no `minHeight:0`**; a flex item defaults to `min-height:auto`
   so it won't shrink below its content, the column grows past `ModalShell`'s 88vh cap, and

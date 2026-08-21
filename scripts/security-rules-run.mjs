@@ -35,6 +35,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { evaluateRule } from '../src/engine/security-rules.js';
 import { personalBaseline, peerBaseline, storeBaseline, networkBaseline } from '../src/engine/security-baselines.js';
+import { daypartOf } from '../src/engine/labor-standard.js';
 
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const DEFAULT_WINDOW_DAYS = 28;
@@ -82,6 +83,14 @@ export function supportsAuditRows(rule) {
 // Dispatch #40 -- INV-001/INV-002, store x item subject (no emp/empToken on this table at all).
 export function supportsVarianceStat(rule) {
   return dataRequiredList(rule).includes('qsr_variance_stat');
+}
+
+// Dispatch #48/#50 lineage -- INV-004, the third subject grain (manager x day-part x store).
+// Requires BOTH qsr_waste (the numerator) and qsr_daily_activity (the day-part sales denominator)
+// -- neither alone is enough, so this checks for the pair, not either name individually.
+export function supportsWasteDaypart(rule) {
+  const req = dataRequiredList(rule);
+  return req.includes('qsr_waste') && req.includes('qsr_daily_activity');
 }
 
 // Extracts {numField, denField, scale, abs} from a rule's logic_expression -- a thin read, not a
@@ -349,6 +358,135 @@ export function computeItemFindingsForRule(rule, rows, { windowStart, windowEnd 
   return findings;
 }
 
+// ── INV-004 -- manager x day-part x store (dispatch #48/#50 lineage) ────────────────────────────
+// dispatch #48's original "no day-part sales denominator" premise was WRONG (dispatch #50's own
+// correction, same failure shape as manOverringQty): qsr_daily_activity already carries
+// net_sales/product_sales/transactions per (loc, dt, hour_slot), an HOURLY grain, finer than
+// day-part. Summing hour slots into day-parts is directly computable -- nothing new to pull.
+//
+// Boundary, measured not assumed (dispatch #50's own explicit instruction -- "do not invent a
+// convention, do not re-derive inline"): qsr_waste.busn_dt is treated as ALREADY business-date-
+// aligned, the same convention qsr_daily_activity.dt already uses (hour_slot 05:00->28:00 = the
+// 4am->4am business day, confirmed in dar-vs-ops-reconciliation.md). Checked live 2026-08-20: 0 of
+// 26,443 qsr_waste rows have a busn_tm in the 00:00-03:59 window that would distinguish "already
+// shifted" from "raw calendar date" -- the DAR itself confirms real overnight activity exists at
+// 26 stores (238,781 transactions measured in that same wall-clock window), so the absence isn't
+// "the business is closed then," it's that waste specifically isn't logged in that narrow window.
+// With no live counter-example, this follows the two remaining signals -- the column's own name
+// (busn_dt = business date) and the DAR's own established alignment -- and joins busn_dt directly
+// against qsr_daily_activity.dt with NO calendar-to-business-date shift applied. If a future
+// backfill or a 24-hour store ever produces a busn_tm in that window, re-run this same check
+// before trusting the join further.
+//
+// Day-part bucketing reuses daypartOf() (src/engine/labor-standard.js, the VLH guide's own
+// boundaries) rather than inventing a second boundary set -- this wraps a raw wall-clock hour from
+// busn_tm into daypartOf()'s own hour_slot string shape (0-4 -> the wrapped 24-28 "Late Night"
+// tail, matching the DAR's own hour_slot convention exactly) instead of re-deriving Breakfast/
+// Lunch/Afternoon/Dinner/Late Night boundaries a second time.
+export function daypartFromBusnTm(busnTm) {
+  const h = parseInt(String(busnTm).slice(0, 2), 10);
+  if (!Number.isFinite(h)) return null;
+  const wrapped = h < 5 ? h + 24 : h;
+  return daypartOf(String(wrapped).padStart(2, '0') + ':00');
+}
+
+// qsr_waste field mapping -- loc/period/event_id/wtype/reason/wsource/edited are loaded but not
+// read by this rule (busn_dt/busn_tm/amount/empToken are the only fields the compute function
+// below uses); manager (the raw eID) is intentionally NOT exposed here -- empToken is the only
+// identity this rule ever reads, matching dispatch #48's own explicit instruction ("never a
+// plaintext eID in security_findings").
+export function mapWasteRow(r) {
+  return {
+    loc: r.loc, date: r.busn_dt, busnTm: r.busn_tm, empToken: r.emp_token,
+    amount: Number(r.amount) || 0, wtype: r.wtype,
+    daypart: daypartFromBusnTm(r.busn_tm),
+  };
+}
+
+// qsr_daily_activity field mapping -- only the columns this rule's denominator needs.
+export function mapDailyActivityRow(r) {
+  return { loc: r.loc, date: r.dt, hourSlot: r.hour_slot, productSales: Number(r.product_sales) || 0 };
+}
+
+// loc|date|daypart -> summed product_sales across that day-part's hour slots. Built ONCE per
+// window and reused for every subject -- the same sales figure is looked up, never recomputed,
+// for every waste row that lands in that (loc,date,daypart) bucket, so multiple waste line-items
+// on the same shift don't inflate the denominator.
+export function buildDaypartSalesIndex(dailyActivityRows) {
+  const idx = new Map();
+  for (const r of dailyActivityRows) {
+    if (!r.loc || !r.date || !r.hourSlot) continue;
+    const dp = daypartOf(r.hourSlot);
+    const k = `${r.loc}::${r.date}::${dp}`;
+    idx.set(k, (idx.get(k) || 0) + r.productSales);
+  }
+  return idx;
+}
+
+// Pre-aggregates raw qsr_waste rows into ONE row per (loc, date, daypart, empToken), summing
+// amount, THEN attaches that (loc,date,daypart)'s own sales figure once per bucket -- this is the
+// step that prevents double-counting the denominator (see buildDaypartSalesIndex's own comment).
+// The resulting rows are what computeManagerDaypartFindingsForRule()/evaluateZScoreRule sum again,
+// per subject, across the window -- exactly the same two-stage shape computeItemFindingsForRule()
+// uses for qsr_variance_stat (one row per (loc,period,wrin), summed per subject across periods).
+// Rows with no matching sales bucket (a waste event with no corresponding DAR data at all for
+// that store/date/daypart) are dropped -- there is no denominator to divide by, and carrying a
+// null-denominator row forward would either explode or silently zero the rate depending on how it
+// got handled downstream; dropping it here is the same honest-exclusion the item/wrin path applies
+// to condiment rows.
+export function joinWasteDaypartSales(wasteRows, salesIndex) {
+  const buckets = new Map(); // loc|date|daypart|empToken -> aggregated row
+  for (const r of wasteRows) {
+    if (!r.loc || !r.date || !r.daypart || !r.empToken) continue;
+    const salesKey = `${r.loc}::${r.date}::${r.daypart}`;
+    const sales = salesIndex.get(salesKey);
+    if (sales == null) continue;
+    const key = `${salesKey}::${r.empToken}`;
+    const cur = buckets.get(key) || { loc: r.loc, date: r.date, daypart: r.daypart, empToken: r.empToken, wasteAmt: 0, daypartSales: sales };
+    cur.wasteAmt += r.amount;
+    buckets.set(key, cur);
+  }
+  return [...buckets.values()];
+}
+
+// The manager x day-part x store domain (INV-004). Subject is (loc, empToken, daypart) -- a
+// THIRD grain beyond computeFindingsForRule's (loc,empToken) and computeItemFindingsForRule's
+// (loc,wrin), because qsr_waste carries no wrin (event-level, not item-level -- item-level waste
+// is INV-003's own territory against qsr_variance_stat, not this table). baseline_type 'store'
+// reuses storeBaseline() exactly as computeItemFindingsForRule() does, pre-filtered to the SAME
+// daypart (peer STORES' own rate for the SAME day-part, pooling across whichever managers logged
+// waste there) -- never pooled across unrelated day-parts, the same "same key, never pooled
+// across unrelated things" discipline INV-003/005 apply to wrin.
+export function computeManagerDaypartFindingsForRule(rule, rows, { windowStart, windowEnd }) {
+  const { numField, denField, scale, abs } = fieldsFromExpr(rule);
+
+  const pairs = new Map();
+  for (const r of rows) {
+    if (!r.loc || !r.empToken || !r.daypart) continue;
+    const key = `${r.loc}::${r.empToken}::${r.daypart}`;
+    if (!pairs.has(key)) pairs.set(key, { loc: r.loc, empToken: r.empToken, daypart: r.daypart });
+  }
+
+  const findings = [];
+  for (const { loc, empToken, daypart } of pairs.values()) {
+    const subjectRows = rows.filter(r => r.loc === loc && r.empToken === empToken && r.daypart === daypart);
+
+    const sameDaypartRows = rows.filter(r => r.daypart === daypart);
+    const baseline = rule.baseline_type === 'store'
+      ? storeBaseline(sameDaypartRows, { loc, numField, denField, scale, abs, start: windowStart, end: windowEnd })
+      : null;
+
+    const evalResult = evaluateRule(rule, { [dataRequiredList(rule)[0]]: subjectRows }, { loc, baseline });
+
+    findings.push({
+      empToken, loc, daypart, ruleId: rule.rule_id, windowStart, windowEnd,
+      value: evalResult.value, thresholdUsed: evalResult.threshold, pass: evalResult.pass,
+      baselineContext: baseline || {}, explanation: buildExplanation(rule, evalResult, baseline),
+    });
+  }
+  return findings;
+}
+
 // ── I/O layer ──────────────────────────────────────────────────────────────────────────────────
 async function loadActiveRules() {
   const { data, error } = await supabase.from('security_rules').select('*').eq('active', true).eq('tenant_id', TENANT);
@@ -407,6 +545,38 @@ async function loadFobWindow(startPeriod, endPeriod) {
   return rows;
 }
 
+// INV-004's two sources -- daily grain, same date-range shape loadAuditRowsWindow already uses
+// (CASH-*'s own convention), not the monthly qsr_variance_stat shape.
+async function loadWasteWindow(startDate, endDate) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_waste').select('*')
+      .gte('busn_dt', startDate).lte('busn_dt', endDate).range(from, from + PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadWasteWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data.map(mapWasteRow));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
+async function loadDailyActivityWindow(startDate, endDate) {
+  const rows = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await supabase.from('qsr_daily_activity').select('loc,dt,hour_slot,product_sales')
+      .gte('dt', startDate).lte('dt', endDate).range(from, from + PAGE - 1);
+    if (error) throw new Error(`[security-rules-run] loadDailyActivityWindow failed: ${error.message}`);
+    if (!data?.length) break;
+    rows.push(...data.map(mapDailyActivityRow));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return rows;
+}
+
 async function upsertFindings(findings) {
   if (!findings.length) return { saved: 0, errors: [] };
   const now = new Date().toISOString();
@@ -417,6 +587,7 @@ async function upsertFindings(findings) {
     baseline_context: f.baselineContext, explanation: f.explanation, computed_at: now,
     lifecycle_category: f.lifecycleCategory ?? null,
     exoneration_share: f.exonerationShare ?? null,
+    daypart: f.daypart ?? null,
   }));
   const CHUNK = 500;
   let saved = 0; const errors = [];
@@ -448,6 +619,8 @@ async function main() {
   const auditRowCache = new Map();    // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped audit_rows
   const varianceRowCache = new Map(); // 'YYYY-MM..YYYY-MM' -> mapped qsr_variance_stat rows (unjoined)
   const fobRowCache = new Map();      // 'YYYY-MM..YYYY-MM' -> raw qsr_fob rows
+  const wasteRowCache = new Map();        // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped qsr_waste rows
+  const dailyActivityCache = new Map();   // 'YYYY-MM-DD..YYYY-MM-DD' -> mapped qsr_daily_activity rows
   let totalFindings = 0, totalErrors = 0, skipped = 0;
 
   for (const rule of rules) {
@@ -480,6 +653,17 @@ async function main() {
         rows = joinStoreMonthSales(rows, fobRowCache.get(cacheKey));
       }
       findings = computeItemFindingsForRule(rule, rows, { windowStart, windowEnd });
+    } else if (supportsWasteDaypart(rule)) {
+      // Daily grain, CASH-*'s own date-range convention (not qsr_variance_stat's monthly shape).
+      const windowDays = rule.window_days || DEFAULT_WINDOW_DAYS;
+      const windowEnd = fmtDate(today);
+      const windowStart = fmtDate(addDay(today, -windowDays));
+      cacheKey = `${windowStart}..${windowEnd}`;
+      if (!wasteRowCache.has(cacheKey)) wasteRowCache.set(cacheKey, await loadWasteWindow(windowStart, windowEnd));
+      if (!dailyActivityCache.has(cacheKey)) dailyActivityCache.set(cacheKey, await loadDailyActivityWindow(windowStart, windowEnd));
+      const salesIndex = buildDaypartSalesIndex(dailyActivityCache.get(cacheKey));
+      rows = joinWasteDaypartSales(wasteRowCache.get(cacheKey), salesIndex);
+      findings = computeManagerDaypartFindingsForRule(rule, rows, { windowStart, windowEnd });
     } else {
       console.warn(`[security-rules-run] ${rule.rule_id}: DATA_REQUIRED not yet supported by this job — skipping`);
       skipped++; continue;

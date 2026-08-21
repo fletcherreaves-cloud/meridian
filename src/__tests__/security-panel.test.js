@@ -373,3 +373,177 @@ describe('SecurityPanel — dispatch #46: legend, units, and the decision senten
     expect(container.textContent).toMatch(/How much cash is over or short/);
   });
 });
+
+// dispatch #50 Part A -- owner-reported "scroll not working in the modal," diagnosed to
+// security-panel.js:431/468 (renumbered by this same dispatch's comment insertions -- both are the
+// root flex column and the body flex:1/overflowY:auto div). Per the standing rule ("a test that
+// only asserts a style object would pass with the panel's wiring deleted"), these render through
+// the REAL SecurityPanel component, not a hand-copied style constant -- reverting the JSX edit
+// (deleting minHeight:0 from either div) makes these fail. happy-dom does not compute real CSS
+// layout (no scrollHeight/clientHeight), so this cannot observe an actual scrollbar pixel-for-
+// pixel -- it proves the fix is wired into the real render output across both domain tabs and
+// through an expanded finding, which is the level this codebase's own render-test family
+// (immediately above) already treats as "rendered, not unit-tested." Final visual scroll behavior
+// still wants a owner click-through in the live app, per feedback-verification-in-sandbox.md's own
+// honest split (Supabase-authenticated panel content can't be opened in this sandbox at all).
+describe('SecurityPanel — dispatch #50 Part A: the scroll-fix minHeight:0 is wired into the real render, not just a style constant', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'Pull drawer-count photos.' },
+    { ruleId: 'INV-001', domain: 'inventory', method: 'Item TvA variance rate', description: 'desc', baselineType: 'store', logicType: 'z-score', active: true, investigationAction: 'Check item setup.' },
+  ];
+  // Many subjects -- the shape a real overflow would need, even though happy-dom can't measure it.
+  const MANY_CASH_FINDINGS = Array.from({ length: 40 }, (_, i) => ({
+    empToken: `tok-${i}`, wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true,
+    value: 6 + i, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28',
+    computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [],
+  }));
+  const MANY_INV_FINDINGS = Array.from({ length: 40 }, (_, i) => ({
+    empToken: null, wrin: `0000${i}-000`, loc: '0000001', ruleId: 'INV-001', pass: true,
+    value: 40 + i, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-31',
+    computedAt: '2026-08-31T10:00:00Z', baselineContext: {}, explanation: [],
+  }));
+
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([...MANY_CASH_FINDINGS, ...MANY_INV_FINDINGS]);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  // The root flex column (display:flex, flexDirection:column, height:100%) -- identified by
+  // height:'100%' combined with flexDirection:'column', since it carries no other unique marker.
+  function findRootColumn() {
+    return [...container.querySelectorAll('div')].find(d => d.style.height === '100%' && d.style.flexDirection === 'column');
+  }
+  // The scrollable body (flex:1, overflowY:'auto') -- identified by overflowY:'auto', the one
+  // property nothing else in this panel's render tree sets.
+  function findScrollBody() {
+    return [...container.querySelectorAll('div')].find(d => d.style.overflowY === 'auto');
+  }
+
+  it('on the Cash tab (default, 40 findings), both the root column and the scroll body carry minHeight:0', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const rootCol = findRootColumn();
+    const scrollBody = findScrollBody();
+    expect(rootCol).toBeTruthy();
+    expect(scrollBody).toBeTruthy();
+    expect(rootCol.style.minHeight).toBe('0');
+    expect(scrollBody.style.minHeight).toBe('0');
+    // Sanity: the fixture really did produce 40 rows in the scrollable body, not a short list --
+    // the whole point of the fix is a list long enough to need scrolling. Subjects are token-keyed
+    // (never a plaintext name pre-reveal), so count "Store 0000001" labels rather than a token
+    // string.
+    expect([...scrollBody.querySelectorAll('span')].filter(s => s.textContent === 'Store 0000001').length).toBe(40);
+  });
+
+  it('switching to the Inventory tab keeps both fixes in place -- the wiring is not tab-specific', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTabBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Inventory'));
+    expect(invTabBtn).toBeTruthy();
+    await act(async () => { invTabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const rootCol = findRootColumn();
+    const scrollBody = findScrollBody();
+    expect(rootCol.style.minHeight).toBe('0');
+    expect(scrollBody.style.minHeight).toBe('0');
+    // Sanity: really switched domains (Cash rule chip gone, Inventory rule chip present), not just
+    // clicked a no-op button.
+    expect(scrollBody.textContent).not.toMatch(/CASH-001/);
+    expect(container.textContent).toMatch(/INV-001/);
+  });
+
+  it('expanding a finding (accordion changes content height) does not remove either minHeight:0 -- the fix survives the exact interaction the dispatch calls out', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const someRow = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const clickable = someRow?.parentElement;
+    expect(clickable).toBeTruthy();
+    await act(async () => { clickable.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const rootCol = findRootColumn();
+    const scrollBody = findScrollBody();
+    expect(rootCol.style.minHeight).toBe('0');
+    expect(scrollBody.style.minHeight).toBe('0');
+  });
+});
+
+// dispatch #50 Part B -- frictionless reveal for the privileged tier ("Developer/Admin/Owner"
+// collapses to the single real DB role 'admin'). Renders through the REAL panel (standing rule
+// from #366) so a reverted wiring change (the new effect deleted, or the RPC name/args changed)
+// makes these fail -- not just a unit test on the RPC's own SQL shape (covered separately by the
+// live adversarial probe recorded in the dispatch-50 memory writeup, since happy-dom cannot invoke
+// a real Postgres role-gated function).
+describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicking, other roles unchanged', () => {
+  let container, root;
+  const RULES = [{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash O/S', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' }];
+
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    rpcMock.mockReset().mockResolvedValue({
+      data: [
+        { token: 'tok-alice', employee_name: 'Alice Andrews' },
+        { token: 'tok-bob', employee_name: 'Bob Baker' },
+        { token: 'tok-carol', employee_name: 'Carol Chen' },
+      ],
+      error: null,
+    });
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('admin: calls reveal_employee_identities_bulk once on mount with every distinct empToken and a synthetic reason, and names render without any click', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    const [name, args] = rpcMock.mock.calls[0];
+    expect(name).toBe('reveal_employee_identities_bulk');
+    expect(new Set(args.p_tokens)).toEqual(new Set(['tok-alice', 'tok-bob', 'tok-carol']));
+    expect(typeof args.p_reason).toBe('string');
+    expect(args.p_reason.length).toBeGreaterThan(0);
+    // The names render directly -- no "🔒 reveal" click target left for a token the bulk call
+    // already resolved.
+    await flush(container);
+    expect(container.textContent).toMatch(/Alice Andrews/);
+    expect(container.textContent).not.toMatch(/🔒 reveal/);
+  });
+
+  it('supervisor: never calls the bulk RPC -- keeps the existing click-through path unchanged, dispatch #50\'s own explicit scope', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'supervisor', onClose: vi.fn() })); });
+    await flush(container);
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(container.textContent).toMatch(/🔒 reveal/);
+    expect(container.textContent).not.toMatch(/Alice Andrews/);
+  });
+
+  it('manager (GM), even with the org reveal flag on: never calls the bulk RPC -- only the admin tier gets the frictionless path', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'manager', onClose: vi.fn() })); });
+    await flush(container);
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(container.textContent).toMatch(/🔒 reveal/);
+  });
+
+  it('a failed bulk call leaves the click-through path intact for admin -- no crash, names stay behind "🔒 reveal"', async () => {
+    rpcMock.mockReset().mockResolvedValue({ data: null, error: { message: 'network error' } });
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toMatch(/🔒 reveal/);
+    expect(container.textContent).not.toMatch(/Alice Andrews/);
+  });
+});

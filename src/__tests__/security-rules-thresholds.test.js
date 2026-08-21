@@ -123,6 +123,13 @@ const MEASURED_MAX = {
   // "only one period" claim), non-condiment/exp_usage>0, period 2026-08:
   'INV-003': 36134.38, // unexplainedVariance/expUsage*100, n=4,221, median=14.98
   'INV-005': 36234.38, // positiveVariance/expUsage*100 among variance>0 subjects, n=1,243, median=15.22
+  // Dispatch #48/#50 lineage, schema-security-rules-inv004.sql. wasteAmt/daypartSales*1000, live
+  // qsr_waste x qsr_daily_activity join, 2026-05-01 through 2026-08-20, post min_denominator=250
+  // floor: n=636, median=12.99. This is the third subject grain (loc,empToken,daypart) -- measured
+  // using the raw eID as a grouping key since qsr_waste.emp_token did not exist on the live table
+  // at measurement time (PR #498's vault-extension migration had not yet been applied) -- the
+  // dollar distributions themselves don't depend on which identity column labels each bucket.
+  'INV-004': 1274.79,
 };
 
 // Separate map, deliberately: `min_numerator` (dispatch #45 §A) gates the RAW numerator sum, a
@@ -151,6 +158,10 @@ const MEASURED_STDEV_P10 = {
   // from the start rather than discovered live, per dispatch #45b's own lesson.
   'INV-003': 3.736,
   'INV-005': 0.679,
+  // Dispatch #48/#50 lineage, schema-security-rules-inv004.sql. Peer-baseline stdev, per-daypart
+  // leave-one-out across stores, n>=5 peers, n=128 baselines: p5=5.83, p10=5.96, median=7.40 -- a
+  // well-behaved distribution (zero exact-zero, zero below 1), unlike INV-005's own metric.
+  'INV-004': 5.96,
 };
 
 describe('security_rules seed/migration SQL — an absolute comparator value must sit inside its own measured range', () => {
@@ -163,6 +174,7 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
   const phase1gRules = extractUpdateRules(readSql('schema-security-rules-phase1g.sql'));
   const minStdevRules = extractUpdateRules(readSql('schema-security-rules-min-stdev.sql'));
   const inv003inv005Rules = extractInsertRules(readSql('schema-security-rules-inv003-inv005.sql'));
+  const inv004Rules = extractInsertRules(readSql('schema-security-rules-inv004.sql'));
 
   // rule_id -> {entry, logicType}. logicType is read from THIS test file's own knowledge of each
   // rule's real logic_type (phase1.sql's rule inserts don't repeat it in a name=value pair this
@@ -182,6 +194,7 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
     { ruleId: 'CASH-004', logicType: 'ratio', entry: phase1Rules['CASH-004'] },
     { ruleId: 'INV-003', logicType: 'z-score', entry: inv003inv005Rules['INV-003'] },
     { ruleId: 'INV-005', logicType: 'z-score', entry: inv003inv005Rules['INV-005'] },
+    { ruleId: 'INV-004', logicType: 'z-score', entry: inv004Rules['INV-004'] },
   ];
 
   it('parses every rule this suite guards from its real source file', () => {
@@ -194,6 +207,7 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
     expect(phase1Rules['CASH-004']).toBeTruthy();
     expect(inv003inv005Rules['INV-003']).toBeTruthy();
     expect(inv003inv005Rules['INV-005']).toBeTruthy();
+    expect(inv004Rules['INV-004']).toBeTruthy();
   });
 
   it.each(CASES)('$ruleId: comparator value (if present) does not exceed the measured ceiling', ({ ruleId, logicType, entry }) => {
@@ -323,5 +337,34 @@ describe('security_rules seed/migration SQL — an absolute comparator value mus
     const inv005Tuple = sql.slice(sql.indexOf("'INV-005'"), sql.indexOf("on conflict", sql.indexOf("'INV-005'")));
     expect(inv003Tuple).toMatch(/,\s*false\s*\)\s*$/);
     expect(inv005Tuple).toMatch(/,\s*false\s*\)\s*$/);
+  });
+
+  // Dispatch #48/#50 lineage -- INV-004 (waste-log padding, manager x day-part x store), the third
+  // subject grain. "No day-part sales denominator" was the original brief's wrong premise
+  // (dispatch #50's own correction); qsr_daily_activity already carries the hourly figure.
+  it('INV-004 carries a real, measured min_stdev at or below this rule\'s own p10 (built in from the start, per dispatch #45b\'s standing lesson)', () => {
+    expect(inv004Rules['INV-004'].logic_expression.min_stdev).toBe(1);
+    expect(inv004Rules['INV-004'].logic_expression.min_stdev).toBeLessThanOrEqual(MEASURED_STDEV_P10['INV-004']);
+  });
+
+  it('INV-004\'s min_value (13, this rule\'s own population median) and min_denominator (250, a sales-exposure floor clearing the 23 of 687 subjects with a non-positive daypartSales) are real, measured floors', () => {
+    expect(inv004Rules['INV-004'].logic_expression.min_value).toBe(13);
+    expect(inv004Rules['INV-004'].logic_expression.min_denominator).toBe(250);
+  });
+
+  it('INV-004 reads wasteAmt/daypartSales -- the derived join fields, never the raw qsr_waste.manager eID or a plaintext identifier', () => {
+    expect(inv004Rules['INV-004'].logic_expression.numerator.field).toBe('wasteAmt');
+    expect(inv004Rules['INV-004'].logic_expression.denominator.field).toBe('daypartSales');
+  });
+
+  it('INV-004 requires BOTH qsr_waste and qsr_daily_activity -- the pair supportsWasteDaypart() checks for, not either name alone', () => {
+    const sql = readSql('schema-security-rules-inv004.sql');
+    expect(sql).toMatch(/'\["qsr_waste",\s*"qsr_daily_activity"\]'/);
+  });
+
+  it('INV-004 lands active=false -- a first live run, not a live-panel debut', () => {
+    const sql = readSql('schema-security-rules-inv004.sql');
+    const tuple = sql.slice(sql.indexOf("'INV-004'"), sql.indexOf('on conflict', sql.indexOf("'INV-004'")));
+    expect(tuple).toMatch(/,\s*false\s*\)\s*$/);
   });
 });

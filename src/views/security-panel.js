@@ -407,6 +407,42 @@ export function SecurityPanel({ userRole, onClose }) {
     return () => { cancelled = true; };
   }, [permState]);
 
+  // dispatch #50 Part B -- frictionless reveal for the privileged tier only. "Developer/Admin/
+  // Owner" in the owner's own words collapses to the single real DB role value 'admin'
+  // (profiles.role's check constraint allows exactly admin/supervisor/manager -- CLAUDE.md's own
+  // documented finding). Supervisor/manager/GM keep the existing click-through RevealName path
+  // unchanged -- this is additive, not a widening of who MAY reveal, only who is asked to click.
+  // A ref, not a state flag, guards this to run exactly once per mount: it must not re-fire if
+  // `findings` happens to get a new array reference for an unrelated reason, and it must not be a
+  // dependency itself (same self-retrigger risk the data-load effect's own comment above warns
+  // about -- this effect sets `revealed` via onReveal, which is not read by anything this effect
+  // depends on, but the ref keeps that invariant explicit rather than relying on it never changing).
+  const bulkRevealTried = React.useRef(false);
+  React.useEffect(() => {
+    if (userRole !== 'admin' || dataState !== 'loaded' || bulkRevealTried.current) return;
+    const tokens = [...new Set(findings.map(f => f.empToken).filter(Boolean))];
+    if (!tokens.length) return; // nothing to resolve (an inventory-only run, or empty) -- no call
+    bulkRevealTried.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await supabase.rpc('reveal_employee_identities_bulk', {
+          p_tokens: tokens,
+          p_reason: 'Automatic reveal -- privileged tier (dispatch #50 Part B)',
+        });
+        const data = res?.data;
+        if (res?.error || cancelled || !Array.isArray(data)) return;
+        // Never log or console.error a name here -- an error/rejection above already returned
+        // before this line; nothing past it ever prints `data` itself.
+        data.forEach(row => onReveal(row.token, row.employee_name));
+      } catch {
+        // A network exception falls back to the existing click-through path silently -- same
+        // failure posture RevealName's own reveal() already has for the single-token path.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userRole, dataState, findings, onReveal]);
+
   const rulesById = React.useMemo(() => Object.fromEntries(rules.map(r => [r.ruleId, r])), [rules]);
   const domainRuleIds = React.useMemo(() =>
     new Set(rules.filter(r => r.domain === domain).map(r => r.ruleId)), [rules, domain]);
@@ -428,7 +464,18 @@ export function SecurityPanel({ userRole, onClose }) {
   const domainRules = rules.filter(r => r.domain === domain);
   const states = React.useMemo(() => [...new Set(Object.values(INV_ORG_COORDS).map(o => o.state).filter(Boolean))], []);
 
-  return div({ style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+  // Dispatch #50 Part A -- owner: "scroll not working in the modal." Root cause: a flex item's
+  // default min-height is 'auto' (content-based), not 0, so a flex column refuses to shrink below
+  // its own content. This root div has NO overflow set (visible), so it never gets the CSS spec's
+  // "automatic minimum size is zero" exception -- unlike ModalShell's own body div (App.js:2856's
+  // bodyStyle sets overflow:'hidden' on itself, which DOES qualify). Without minHeight:0 here, this
+  // column grows past ModalShell's 88vh cap and ModalShell's overflow:'hidden' clips it instead of
+  // the body div below (:line ~474) ever getting squeezed enough to need its own scrollbar. Needed
+  // at BOTH levels: this root (the one actually refusing to shrink) AND the body div below (belt-
+  // and-suspenders -- its own overflowY:'auto' should self-qualify per spec, but cross-browser
+  // automatic-minimum-size support for that exception has a real inconsistency history, so an
+  // explicit minHeight:0 there too costs nothing and removes the reliance on it).
+  return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
     // ── Domain tabs + scope pills ──
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
       ['cash', 'inventory'].map(d => btn({
@@ -464,8 +511,8 @@ export function SecurityPanel({ userRole, onClose }) {
       (rulesById[ruleFilter] || domainRules[0]) && div({ style: { fontSize: 11, color: 'var(--text3)', marginTop: 6, fontStyle: 'italic' } },
         (rulesById[ruleFilter] || domainRules[0]).description),
     ),
-    // ── Body ──
-    div({ style: { flex: 1, overflowY: 'auto' } },
+    // ── Body ── dispatch #50 Part A: minHeight:0, see the root div's own comment above.
+    div({ style: { flex: 1, overflowY: 'auto', minHeight: 0 } },
       permState === 'checking' && emptyState('Checking access…'),
       permState === 'denied' && emptyState('Not permitted — this view requires admin, supervisor, or a manager role with identity-reveal enabled for this org. This is a permission gate, not an empty result — do not read it as "nothing to see here."', true),
       permState === 'allowed' && dataState === 'loading' && emptyState('Loading findings…'),
