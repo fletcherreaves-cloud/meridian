@@ -30,6 +30,21 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0 — the identity match rate, measured](finding-phase0-identity-match-rate-2026-08-21.md)** —
+  **NEWEST. Dispatch #49's gate, measured.** 1,140 names → **977 clean 1:1 (85.7%)**, 40 merged,
+  14 split, 123 with no `emp_id`. **Row 5 resolved as a coverage artefact, categorically:** zero of
+  the 123 have any row on or before the backfill boundary (2026-07-04) — and those tail rows were
+  pulled *before `emp_id` existed*, so the null is **structural**. Within the covered window the
+  clean rate is **96.1%**. **Rows 3–4 are a finding in their own right and nobody had measured them:
+  40 names currently resolve to MULTIPLE employee IDs — the vault is merging distinct humans into
+  one token today, co-mingling their findings in a system that names people — plus 14 IDs split
+  across name variants. 54 live identity defects.** They are not a reason for caution about the
+  re-key; they are the strongest argument for it. **PM recommendation: proceed to Phase 1, after
+  closing the 48-day tail** (2026-07-05 → 08-21, 2–3 chunks) — the gate was designed around row 5
+  and a strong inference is not a measurement. **Not immediately:** the backfill tripped a **403
+  explicit-deny IAM policy** after 6 of 9 chunks — a THIRD distinct failure mode on this endpoint
+  (alongside 401-cached-token and `token captured: false`), and the only volume-triggered one, so
+  retrying harder makes it worse. Chunk future backfills across separate runs.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #52 — the drill-down, specced from a real investigation](dispatch-52.md)** —
   **NEWEST, briefed.** Scopes dispatch #46 Part C from **evidence rather than a wish list**: the
   2026-08-21 store `0013113` dig took ~8 hand-written queries over an hour, five did the real work,
