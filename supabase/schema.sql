@@ -780,6 +780,10 @@ create table if not exists public.audit_rows (
   loc             text not null,
   date            date not null,
   emp             text not null,
+  emp_id          text,                          -- Register Audit API's own employee ID (empID), dispatch #51.
+                                                 -- Additive alongside the name-keyed emp column; nullable, since
+                                                 -- manual uploads never carry it. NOT part of the PK and NOT used
+                                                 -- for token keying -- only dispatch #49's Phase 0 gate reads it.
   drawer_sales    numeric,
   avg_check       numeric,
   drawer_opens    numeric,
