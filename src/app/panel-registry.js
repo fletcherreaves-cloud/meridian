@@ -42,12 +42,12 @@
 //            four panels the plan specifically flagged as misclassified destinations carry this
 //            today; adding it to a panel is a real routing change (see routing.js), not a label.
 export const PANELS = [
-  { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'help' },
-  { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'reports' },
+  { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'admin' },
+  { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'analytics' },
   { id:'aiscan', label:'Anomaly Scan', icon:'🔍', perm:'analytics.ai', kind:'optional', section:'intelligence' },
-  { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'notifications' },
+  { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily' },
   { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics' },
-  { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'nav', section:'planning' },
+  { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'nav', section:'daily' },
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analytics' },
@@ -62,51 +62,58 @@ export const PANELS = [
   { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'operations' },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
-  { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'planning' },
-  { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
+  { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'daily' },
+  { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'daily' },
   { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
   { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'forecast-audit', label:'Forecast Audit', icon:'🔬', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
-  { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'help' },
+  { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
-  { id:'forms-library', label:'Forms Library', icon:'🗂', perm:null, kind:'nav', section:'forms' },
-  { id:'forms-print', label:'Printable Forms', icon:'🖨', perm:null, kind:'nav', section:'forms' },
+  { id:'forms-library', label:'Forms Library', icon:'🗂', perm:null, kind:'nav', section:'analytics' },
+  { id:'forms-print', label:'Printable Forms', icon:'🖨', perm:null, kind:'nav', section:'analytics' },
   { id:'gm-brief', label:'GM Letters', icon:'👨‍💼', perm:'analytics.store', kind:'optional', section:'reports' },
   { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'people' },
-  { id:'help', label:'Help', icon:'?', perm:null, kind:'nav', section:'help' },
+  { id:'help', label:'Help', icon:'?', perm:null, kind:'nav', section:'admin' },
+  // Not reachable from the sidebar at all today (only via ?modal=inventory deep link / from
+  // inside another panel) -- section left as a placeholder, not a "today" value. See
+  // memory/dispatch-54-job-a.md.
   { id:'inventory', label:'Inventory', icon:'📦', perm:'analytics.store', kind:'nav', section:'operations' },
-  { id:'kb', label:'Knowledge Base', icon:'📖', perm:null, kind:'nav', section:'help' },
+  { id:'kb', label:'Knowledge Base', icon:'📖', perm:null, kind:'nav', section:'admin' },
   { id:'labor-allocation', label:'Labor Allocation', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
-  { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'reports' },
+  { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics' },
   { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'scheduling' },
   { id:'lifelenz-bridge', label:'LifeLenz Bridge', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'scheduling' },
   { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics' },
-  { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'help' },
+  { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily' },
-  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'reports' },
-  { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'reports' },
-  { id:'operator-summary', label:'Org Summary', icon:'📊', perm:'analytics.district', kind:'nav', section:'reports' },
+  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics' },
+  { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics' },
+  { id:'operator-summary', label:'Org Summary', icon:'📊', perm:'analytics.district', kind:'nav', section:'performance' },
   { id:'pace-target', label:'Pace Target', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'panel-manager', label:'Panel Manager', icon:'🧩', perm:'settings.view', kind:'nav', section:'admin' },
   { id:'perf-calc', label:'Performance Calc', icon:'🧮', perm:'analytics.store', kind:'optional', section:'people' },
   { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'people' },
-  { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning' },
+  { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'performance' },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'operations' },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
-  { id:'proj', label:'Proj Workflow', icon:'🔒', perm:'analytics.forecasting', kind:'test-kitchen', section:'planning', route:true },
+  // label/icon corrected 2026-08-21 (dispatch #54 Job A): was 'Proj Workflow'/lock, a stale
+  // label from the PRUNED duplicate nav line in shell.js (the live line has said
+  // 'Projections'/▦ since v4.517 -- the registry was built from the pruned line, not the live
+  // one). Today's UI wins.
+  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'planning', route:true },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
-  { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports' },
+  { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'performance' },
   { id:'record-day', label:'Record Days', icon:'🏆', perm:'analytics.store', kind:'optional', section:'analytics' },
-  { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'reports', route:true },
+  { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'daily', route:true },
   { id:'revintel', label:'Revenue', icon:'◈', perm:'analytics.store', kind:'optional', section:'analytics' },
-  { id:'sage', label:'SAGE', icon:'🧠', perm:null, kind:'nav', section:'intelligence' },
+  { id:'sage', label:'SAGE', icon:'🧠', perm:null, kind:'nav', section:'analytics' },
   { id:'sched-hub', label:'Scheduling', icon:'🗓', perm:'analytics.store', kind:'nav', section:'scheduling' },
   { id:'sched-summary', label:'Sched Summary', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'scheduling', label:'Scheduling', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
@@ -124,7 +131,7 @@ export const PANELS = [
   { id:'smg-voice', label:'Guest Voice', icon:'💬', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
-  { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'help' },
+  { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
   { id:'unified-targets', label:'Unified Targets', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'people' },
   { id:'why-engine', label:'Why Engine', icon:'🔬', perm:'analytics.ai', kind:'optional', section:'intelligence' },
@@ -175,6 +182,7 @@ export const VESTIGIAL_STATE = [
 // Section order + display labels for the v2 sidebar (owner's specified IA, Notes 54).
 export const SECTIONS = [
   { id:'daily',         label:'Daily' },
+  { id:'performance',   label:'Performance' },
   { id:'notifications', label:'Notifications' },
   { id:'reports',       label:'Reports' },
   { id:'planning',      label:'Planning' },
@@ -188,6 +196,10 @@ export const SECTIONS = [
   { id:'help',          label:'Help' },
   { id:'admin',         label:'Admin' },
 ];
+// 'performance' (NEW, dispatch #54 Job A) has no owner-specified target home yet -- it exists
+// only to record today's REAL placement of Org Summary / Rankings / Planning under the ad hoc
+// "PERFORMANCE" sidebar header, a bucket the pre-existing 12 sections above don't describe.
+// Job B disperses its members into their real target sections (see memory/dispatch-54-job-a.md).
 
 export const PANEL_BY_ID = Object.fromEntries(PANELS.map(p => [p.id, p]));
 

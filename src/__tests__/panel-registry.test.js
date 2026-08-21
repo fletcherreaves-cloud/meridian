@@ -18,8 +18,11 @@ const dispatchIds = () => {
   const seg = APP.slice(i, i + 14000);
   return new Set([...seg.matchAll(/modal\s*===\s*'([a-z0-9:_-]+)'/g)].map(m => m[1]));
 };
+// Dispatch #54 Job A moved most nav items from literal onOpenModal('id') call sites to
+// navP('id')/navPBeta('id') lookups against PANEL_BY_ID -- both forms are real nav entries,
+// so both are counted here or this check silently loses its teeth for every migrated item.
 const navIds = () =>
-  new Set([...SHELL.matchAll(/onOpenModal\('([a-z0-9:_-]+)'\)/g)].map(m => m[1]));
+  new Set([...SHELL.matchAll(/(?:onOpenModal|navPBeta|navP)\('([a-z0-9:_-]+)'/g)].map(m => m[1]));
 
 describe('registry shape', () => {
   it('has no duplicate ids', () => {
@@ -75,15 +78,31 @@ describe('registry matches the live code', () => {
     expect(bad).toEqual([]);
   });
 
-  it('permissions agree with what shell.js gates on', () => {
-    // Guards against the registry granting access the current nav withholds.
-    const gated = [...SHELL.matchAll(/pis?\('([a-z.]+)',\s*'[^']+',\s*'[^']*',\s*\(\)\s*=>\s*onOpenModal\('([a-z0-9:_-]+)'\)/g)];
-    const bad = [];
-    for (const [, perm, id] of gated) {
+  it('nav items read label/icon/perm from the registry, not a duplicated literal', () => {
+    // Dispatch #54 Job A replaced per-item pis('perm','Label','icon', ()=>onOpenModal('id'))
+    // literals with navP('id')/navPBeta('id') lookups against PANEL_BY_ID specifically so
+    // label/icon/perm can't drift between shell.js and the registry again -- there's only one
+    // copy now. This is a ratchet against backsliding: a new hardcoded pis/pi literal for an id
+    // already in the registry means the drift this refactor eliminated is creeping back.
+    const migrated = new Set([...SHELL.matchAll(/navPBeta?\('([a-z0-9:_-]+)'/g)].map(m => m[1]));
+    const relapsed = [...SHELL.matchAll(/pis?\('[a-z.]*',\s*'[^']+',\s*'[^']*',\s*\(\)\s*=>\s*onOpenModal\('([a-z0-9:_-]+)'\)/g)]
+      .map(m => m[1]).filter(id => migrated.has(id) || PANEL_BY_ID[id]);
+    expect(relapsed, `id(s) re-hardcoded instead of using navP/navPBeta: ${relapsed.join(', ')}`).toEqual([]);
+  });
+
+  it('navPBeta is used only for test-kitchen panels or the named beta-gated exceptions', () => {
+    // Everything under the ⚗ TEST KITCHEN header, plus three panels outside it (Forecast Brief,
+    // Market Intelligence, Store One-Pager) that are also hidden when betaMode is on even
+    // though they're ordinary kind:'nav' panels -- a real behavioural split the registry's
+    // kind field doesn't model. Named explicitly so a new navPBeta(id) call is a deliberate
+    // choice, not a copy-paste that silently starts hiding an ordinary nav panel.
+    const BETA_NAV_EXCEPTIONS = new Set(['brief', 'loc-intel', 'one-pager']);
+    const betaIds = [...SHELL.matchAll(/navPBeta\('([a-z0-9:_-]+)'/g)].map(m => m[1]);
+    const bad = betaIds.filter(id => {
       const p = PANEL_BY_ID[id];
-      if (p && p.perm !== perm) bad.push(`${id}: registry=${p.perm} shell=${perm}`);
-    }
-    expect(bad).toEqual([]);
+      return !p || (p.kind !== 'test-kitchen' && !BETA_NAV_EXCEPTIONS.has(id));
+    });
+    expect(bad, `unexpected navPBeta usage: ${bad.join(', ')}`).toEqual([]);
   });
 });
 
