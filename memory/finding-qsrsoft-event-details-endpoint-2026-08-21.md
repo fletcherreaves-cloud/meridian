@@ -57,11 +57,8 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
 
 ## ⚠️ Open questions a pull MUST settle before it is designed
 
-1. **`event_token` is the whole game.** The capture uses `"all_promo"`. **Enumerate the other
-   values** — refunds, voids, over-rings, T-Reds before/after, cash over/short. Every metric
-   `audit_rows` carries as a daily count almost certainly has an event token behind it, and that is
-   the difference between "12 refunds that day" and twelve rows with times, registers and names.
-   This is the single highest-value unknown here.
+1. **~~`event_token` is the whole game.~~ ✅ ENUMERATED 2026-08-21 — see the section below.**
+   Eight tokens captured across three stores; two metrics confirmed to have no drill-down at all.
 2. **~~What is `29760` in the path?~~ ✅ RESOLVED 2026-08-21 — it IS the unpadded NSN. Store
    `29760` = Duncan-Hwy 81 (`src/constants.js:294`), and it appears in the QSRSoft Forms
    `locations` list alongside the other 26 NSNs (`finding-qsrsoft-forms-completion-endpoint-2026-08-21.md`).**
@@ -168,6 +165,59 @@ missing Origin/Referer" read was a weaker version of a conclusion already reache
 - Worth a look either way: `CLAUDE.md`'s blanket statement that the host "requires browser session
   cookies" is now contradicted by two shipped scripts and should be narrowed to the path family it
   actually describes.
+
+## ✅ `event_token` ENUMERATED — 8 tokens, 5 families (owner sweep, 2026-08-21)
+
+Captured from the Register Audit drill-downs via the DevTools **Payload** tab (no token, no
+credential in the body — the cheapest possible capture, and the method to reuse).
+
+| family | tokens |
+|---|---|
+| promo | `all_promo` |
+| T-Reds | `t_red_before` · `t_red_after` |
+| refunds | `cash_refund` · `cashless_refund` |
+| meals | `employee_meal` · `manager_meal` |
+| POS | `pos_overring` |
+
+**The vocabulary is global, not per-store** — `cash_refund` appeared from both 10915 and 33109.
+Naming is snake_case and descriptive, and **four of the five families are paired**
+(before/after, cash/cashless, employee/manager). Two of the eight — the meal pair — were **not
+predicted from `audit_rows`' metric list**, so the sweep found categories that guessing would have
+missed. Do not extrapolate the remainder from the pattern; capture it.
+
+**Request body shape** (constant across all eight):
+
+```json
+{"event_token":"<token>", "start_date":"YYYY-MM-DD", "end_date":"YYYY-MM-DD",
+ "registers":[13], "time_slices":[], "cashiers":[21,0], "mgr_code":null}
+```
+
+`registers` / `cashiers` are the clicked row's context, not part of the token vocabulary.
+
+### 🔴 Two NEGATIVE results — these are constraints on Part E, not gaps in the capture
+
+- **Cash over/short is a listed column but has NO clickable drill-down.** Measured, not assumed.
+  The likely reason is structural: over/short is a **computed variance**, not a discrete event, so
+  there is nothing for an event list to enumerate. **So Part E cannot deliver "which drawer, what
+  time" for cash over/short** — the single biggest controls metric. It stays a daily aggregate in
+  `audit_rows`. **Say this plainly in the panel** rather than letting a user infer that the absence
+  of detail means the absence of a problem.
+- **Discount is not a column on this report at all** — distinct from promo, and not reachable here.
+  If discount detail is wanted it lives in another report; check the catalog
+  (`finding-qsrsoft-report-menu-map-2026-08-21.md`) rather than assuming it does not exist.
+- **Voids: unconfirmed.** No void drill-down was found, but the sweep did not establish whether a
+  void column exists and is unclickable, or is simply not displayed. `pos_void` is a plausible
+  sibling to `pos_overring` — **plausible, not found.**
+
+### 🎯 `employee_meal` / `manager_meal` may be a signal we are entirely blind to
+
+Neither appears in `audit_rows`' metric set. Meal-comp abuse is a classic loss-prevention category,
+and **the role split is the interesting half**: a manager comping their own food carries no second
+signature, which is exactly the pattern a controls rule exists to catch. Splitting employee from
+manager also lets a rule hold them to different bars instead of one blended rate.
+
+**Same shape as the `registerType=cashier` gap** recorded above — a whole class of controls activity
+that no shipped rule can currently see. Worth scoping alongside it rather than separately.
 
 ## ⚠️ Do not read a pattern into this sample
 

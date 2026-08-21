@@ -65,6 +65,21 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`event_token` ENUMERATED — dispatch #56 Part E is unblocked](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
+  **NEWEST.** Owner sweep of the Register Audit drill-downs. **8 tokens, 5 families:** `all_promo` ·
+  `t_red_before`/`t_red_after` · `cash_refund`/`cashless_refund` · **`employee_meal`/`manager_meal`** ·
+  `pos_overring`. Vocabulary is **global, not per-store**; four of five families are paired. **Two
+  of the eight were NOT predictable from `audit_rows`' metric list** — capture the rest, do not
+  extrapolate. Method worth reusing: the DevTools **Payload** tab shows the body with **no
+  credential in it**, so it needs no Terminal, no clipboard juggling and carries nothing sensitive.
+  🔴 **Two NEGATIVE results that constrain Part E:** **cash over/short is listed but has NO
+  drill-down** (it is a computed variance, not a discrete event) — so Part E **cannot** give
+  "which drawer, what time" for the biggest controls metric, and the panel must say so rather than
+  let absence of detail read as absence of a problem; and **discount is not a column on this report
+  at all**. Voids unconfirmed — `pos_void` is plausible, not found. 🎯 **`employee_meal`/`manager_meal`
+  appear in no `audit_rows` metric** — meal-comp abuse is a classic LP category and the role split is
+  the interesting half (a manager comping their own food has no second signature). Same shape as the
+  `registerType=cashier` gap: a class of controls activity no shipped rule can see.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [PR #537 review — two reproduced defects in the forms normalizer](review-537-forms-slices-1-2.md)** —
   **(1) `"noLocation"` → the garbage loc `"0000NaN"`** — it is a genuine member of every request's
   `locations` array, `parseInt` gives `NaN`, and the usable-row guard only checks non-null. Fix with
