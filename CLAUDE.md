@@ -148,8 +148,17 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
   (`nav`/`optional` render from their section; `test-kitchen`/`hub-tab`/`internal` do not).
   Owner: *"assign them a category, but leave them in the test kitchen. That way if I decide to
   promote them, they'll naturally fall into the right section."* So **every new panel gets its real
-  section from day one**, including Test Kitchen experiments — promotion is then a one-field `kind`
-  flip with no second decision to make and nothing to forget.
+  section from day one**, including Test Kitchen experiments, so the section half of promotion is
+  already decided when the moment comes.
+  **⚠️ Promotion is NOT yet a one-field flip — it is two edits, and getting it wrong duplicates the
+  panel.** `⚗ TEST KITCHEN` in `shell.js` is a hand-maintained list of literal `navPBeta('id')`
+  calls, **not** derived from `panel.kind`. Measured 2026-08-21: flipping `fcst-accuracy` to
+  `kind:'nav'` renders it **twice** — once under its own section, once still under Test Kitchen,
+  header and all. So promoting a panel means flip `kind:` in the registry **and** delete its
+  `navPBeta('id')` line in `shell.js`. Making that block derive from `panel.kind` would collapse it
+  to the one-field flip the rule wants; it was deliberately deferred from dispatch #55 Part A, whose
+  bar was that nothing about today's nav may move, and because deriving it could reorder Test
+  Kitchen's items.
   **The catch: 25 of 82 panels have an inert `section:`, and a field nothing renders is a field
   nothing checks.** `proj` claimed `section:'planning'` for months — false, and invisible because
   it never rendered. Same rot as Job A's stale `'Proj Workflow'` label and #52's 15 schema-drift
