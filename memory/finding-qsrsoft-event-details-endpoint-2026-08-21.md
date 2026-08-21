@@ -95,6 +95,80 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
    is a hypothesis, not a finding.** It matters because joining `event_details` to
    `transaction_detail` on the wrong register would silently mis-attribute. Settle it.
 
+## 🆕 Its parent report: `regAudit` — and a possible correction to the DAR-host auth rule
+
+Owner capture, 2026-08-21, of the **Register Audit report itself** — the screen `event_details`
+drills down from, and the source behind Meridian's `audit_rows`.
+
+```
+GET https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit
+    ?nsn=3708&orgId=a546d4ef-…&enterpriseName=McDonalds
+    &startDate=2026-08-12&endDate=2026-08-18&dsd=d&nsd=d&weekStart=3
+    &resultType=byDateEmployee        <- enumerable
+    &registerType=cashier             <- enumerable
+Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
+```
+
+**Two more enumerable knobs, in the same spirit as `event_token`.** `resultType=byDateEmployee`
+plainly implies siblings (`byDate`, `byEmployee`, `byRegister`?) and `registerType=cashier` implies
+at least a manager variant. **`byRegister` — if it exists — could answer Part E's "which drawer"
+without the `event_details` drill-down at all.** Cheap to enumerate: change the value in the URL and
+re-run the report.
+
+### ✅ `registerType` and `resultType` vocabularies — enumerated from the UI
+
+The Register Audit page's own controls settle both knobs:
+
+- **`registerType`: `Cashier` · `Manager` · `Preparer`** — three values.
+- **`resultType`: BY LOCATION · BY EMPLOYEE** — two. **There is NO `byRegister` option.**
+
+❌ **Retracting a suggestion I made in chat.** I proposed trying `resultType=byRegister` as a cheap
+route to Part E's "which drawer worked", ahead of the `event_token` capture. **The UI offers no such
+value**, so it was speculation dressed as a shortcut. It might exist as an undocumented API value,
+but nothing supports that and it should not displace the `event_token` work. **Part E still needs
+`event_details`.**
+
+### 🔴 We pull `registerType=cashier` ONLY — Manager and Preparer are not collected at all
+
+`scripts/qsrsoft-register-audit-pull.mjs:295` hardcodes `registerType: 'cashier'`. So `audit_rows`
+contains **one third of this report**, and the missing two thirds are the loss-prevention-relevant
+ones: **manager** over/short, promo and discount activity is precisely what a controls rule most
+wants to see, and it is invisible to every security rule we have shipped.
+
+**This is a real gap, not a nicety.** Adding it is a small change — loop the three values and carry
+`registerType` as a column — but it is not free: it changes `audit_rows`' grain, so the PK, the
+security rules' subject grouping, and any existing per-employee aggregate all need checking first.
+**Do not just add a loop.** Scope it as its own piece of work.
+
+### ⚠️ The DAR-host auth question — mostly already answered, in the script, and I missed it
+
+I first wrote this section up as a possible correction to the "DAR host needs Playwright" rule.
+**It was already settled a day earlier and is documented in the pull script**, more precisely than I
+had it — `scripts/qsrsoft-register-audit-pull.mjs:335-342`, from a complete capture of a **working**
+(200 OK) request:
+
+> *"There is NO x-auth-token, NO cookie, and NO authorization header. This endpoint is not
+> authenticated by a credential we were failing to supply — it is scoped by the orgId/nsn params and
+> validated against Origin/Referer."*
+
+So for `regAudit`: not just cookie-less, **credential-less**. My "no Cookie, so maybe the 401 was a
+missing Origin/Referer" read was a weaker version of a conclusion already reached and shipped.
+**Standing rule, violated: check whether the answer already exists before deriving it.** A `grep` of
+`scripts/` for `regAudit` would have found it in seconds.
+
+**What genuinely remains open** is narrower than I claimed, and still worth knowing:
+
+- The same script notes **`qsrsoft-ops-pull.mjs` works with a direct minted token against this same
+  host.** So "the DAR host requires browser cookies/Playwright" is *already* known to be too broad —
+  at least two paths on it don't need one, by two different mechanisms (ops: token; regAudit: no
+  credential at all, Origin/Referer scoping).
+- **Unverified: `/data_layer/v1/service/…`** — the `dt-timer`/`mobile`/`statistics` family, and the
+  DAR endpoint the Playwright requirement was originally written about. That one path family is the
+  only place the blanket rule may still hold, and it is the one a service-times pull would need.
+- Worth a look either way: `CLAUDE.md`'s blanket statement that the host "requires browser session
+  cookies" is now contradicted by two shipped scripts and should be narrowed to the path family it
+  actually describes.
+
 ## ⚠️ Do not read a pattern into this sample
 
 The request filters `cashiers:[91,0]` and `registers:[13]`. **Every row being one cashier on one

@@ -99,12 +99,64 @@ index has drifted, from one filename missing.**
   (module not wired into any panel yet). **Slice 2** (panel: per-form 80% threshold, resolved-
   occurrences-only, total-day attribution — 0 of 3,886 missed rows carry a person) and **Slice 3**
   (pull script, gated on an owner auth capture) are next, separate PRs.
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`regAudit` — we pull ONE THIRD of the Register Audit](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
+  UI capture settles both knobs: **`registerType` = Cashier · Manager · Preparer**, and
+  **`resultType` = BY LOCATION · BY EMPLOYEE only — there is NO `byRegister`** (retracting a
+  shortcut I suggested for Part E; it still needs `event_token`). 🔴 **`qsrsoft-register-audit-pull.mjs:295`
+  hardcodes `registerType:'cashier'`, so `audit_rows` is missing Manager and Preparer entirely** —
+  and **manager** over/short, promo and discount activity is exactly what a controls rule most wants
+  to see. Real gap, but **not a one-line loop**: it changes `audit_rows`' grain, so PK, subject
+  grouping and existing aggregates all need checking. Scope it as its own work.
+  ⚠️ **Also a method miss worth remembering:** I wrote up "no Cookie on the DAR host" as a possible
+  correction to the Playwright rule — it was **already settled 2026-08-20 and documented in that
+  same script** (lines 335-342), and more precisely: the working request carries **no cookie AND no
+  token**, being scoped by `orgId`/`nsn` and validated on `Origin`/`Referer`. One `grep scripts/`
+  would have found it. What IS still open and narrower: `/data_layer/v1/service/…` is the only path
+  family where "needs Playwright" may still hold — `ops-pull` uses a direct token and `regAudit`
+  needs no credential, so **`CLAUDE.md`'s blanket claim about that host is too broad** and should be
+  narrowed to the path family it actually describes.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [The COMPLETE QSRSoft report catalog — 108 screens](finding-qsrsoft-report-menu-map-2026-08-21.md)** —
+  From an **unauthenticated static `menu.json`** on a **fourth host** (`api.sso.myqsrsoft.com`;
+  blocked by our egress proxy, so owner capture only). Every capture carries
+  `Referer: /reports/mcd/<path>`, so this is **the complete index of which screen to open** to
+  capture any endpoint — no more guessing whether a report exists. 🎯 **It lands directly on open
+  roadmap items:** `product/productMixDrillDown` + `productMixTrend` + **`menuPriceComparison`** are
+  the "Product Mix pull → Pricing Engine" candidate; **`service/voice`** could retire the MANUAL SMG
+  VOICE upload (standing rule: manual sourcing is always temporary); **`shift/shiftManagerSummary`**
+  is the missing leg of forms manager attribution and maybe cheaper than roster+punches;
+  **`people/newHires`** is Part B purpose-built; **`people/rosterStatistics`** may give roster
+  insight **without PII**, sidestepping the `employee-roster` allowlist problem — check it first.
+  Also unclaimed: `laborExceptions`, `overtimeAudit`, `turnoverReport`, **`studentPermitStatusCheck`**
+  (minor-labor compliance, a real legal-risk gap), `reportFinder`. ⚠️ **Overlaps to diff, not adopt:**
+  **`controlsLabor/vlhOverUnder`** (we compute VLH ourselves — diff the formulas first),
+  `scheduleVariance`, `laborSchedules`. And all three **emailed** streams (Glimpse / Sales Ledger /
+  Cash Sheet) have **API screens here**, which is the API-over-email rule's case for migrating them
+  since an API pull can backfill and email cannot.
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`employee-roster` — Part B ANSWERED, and the most sensitive endpoint yet](finding-qsrsoft-employee-roster-endpoint-2026-08-21.md)** —
+  **NEWEST.** 🔴 **Returns SSN, home address, DOB, race (`nationalOrigin`), gender, marital status
+  and pay rate.** Worse than `time-punches`. The **`selectCols` allowlist is the security control** —
+  request only `geid`/dates/job-title/status fields; the pull script must assert none of the denied
+  fields are present, so a future edit fails loudly. Protected-class attributes must not be ingested
+  at all: having them next to performance data lets a metric split by race or age *by accident*.
+  🎯 **Dispatch #56 Part B is answered** — and "start date" is **two** fields: `orgStartDate` (joined
+  the org) vs `storeStartDate` (joined this store), which diverge often and hugely (one record: eight
+  years org, two months store). ✅ **Owner decision: "both are relevant" — ingest and surface BOTH,
+  distinctly labelled; never render a bare "start date".** The divergence itself is worth showing
+  ("8 years with the org, 2 months at this store" names a real coaching situation). `jobTitleCodeStartDate` (time in
+  role) may be the most coaching-relevant of the three. 🎯 Also **resolves the `time-punches`
+  `jobTitleCode` unknown** (45=GM, 647=Cert Swing Mgr, 648=Crew Trainer, 650=Crew, 671=Maintenance,
+  846=Dept Mgr II — partial, build from data) which is the missing piece for the **forms dashboard's
+  manager attribution**: roster says who is a manager, punches say who was on shift. Traps:
+  **`"0000-00-00"` is the date null sentinel** (third sentinel family after `emp_id='0'` and
+  `completedBy='--'`); `hasPunched` is a `"Yes"`/`"No"` string meaning "in the window", not ever;
+  **`nextReviewDate` is widely stale** and unusable as a schedule (though overdue-from-`lastReviewDate`
+  is a real candidate metric); `payrollID` is null — `geid` is the key.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
   **Owner-requested dashboard**, and it is **no longer blocked** — the full 4,714-row
   `completionDetail` response is measured. A **third host family**, `forms.home.myqsrsoft.com`;
-  **neither** the DAR's Playwright requirement **nor** the security host's token-only finding
-  transfers, and `sec-fetch-site: same-site` means curl cannot rule out an invisible cookie — get the
-  DevTools header panel. ⭐ **Build on `completionDetail`** (no `formIds`, one row per *scheduled
+  ✅ **auth RESOLVED 2026-08-21: token-only, no cookie** (DevTools header panel — `Cookie` absent
+  where it would sort, between `Content-Type` and `Origin`), so it behaves like `api.security`, **not**
+  the DAR host: a plain Node `fetch`, no Playwright. ⭐ **Build on `completionDetail`** (no `formIds`, one row per *scheduled
   occurrence*, so a miss is a returned row); keep `completionByForm` as the denominator source, since
   `completionDetail` gives a completion *ratio* with no question counts and ratios cannot be averaged.
   🔴 **`status` is POLYMORPHIC — a string enum OR a float**, and there are **three** states, not two:

@@ -45,12 +45,22 @@ Same `orgId` as the DAR and security hosts, so the org id is stable estate-wide.
 | `api.security.myqsrsoft.com` | **token-only confirmed** (DevTools header panel, no `Cookie`) | controls / register audit |
 | `forms.home.myqsrsoft.com` | **UNKNOWN — assume nothing** | this endpoint |
 
-⚠️ **Do not read the curl as proof of token-only.** A curl transcript never shows cookies the
-browser attached invisibly — the distinction I had to make for `event_details`, where only the
-DevTools *request-header panel* settled it. And here the odds actually favour a cookie: the capture
-carries **`sec-fetch-site: same-site`**, meaning the browser itself classified `forms.home` and `v3`
-as same-site, which is exactly the condition under which a `.myqsrsoft.com`-scoped `SameSite=Lax`
-cookie *is* attached. Get the header panel for this host before designing the pull.
+✅ **RESOLVED 2026-08-21 — token-only, NO session cookies. A plain Node `fetch` works; no
+Playwright.** The owner supplied the DevTools **request-header panel** for a live
+`completionByForm` POST, which reports what was actually transmitted rather than what a curl
+reconstructs. The alphabetical header list runs `Content-Length → Content-Type → Origin` with
+**`Cookie` absent** — it would sort between `Content-Type` and `Origin`. `x-auth-token` sorts after
+`User-Agent`, below the fold, consistent with the curl.
+
+This mattered because `sec-fetch-site: same-site` made a cookie genuinely plausible: the browser
+classified `forms.home` and `v3` as same-site, exactly the condition under which a
+`.myqsrsoft.com`-scoped `SameSite=Lax` cookie *is* attached silently. It wasn't. **So this host
+behaves like `api.security` (token-only), not like the DAR host (Playwright required)** — and the
+forms pull is substantially simpler than it was scoped as.
+
+**Method note worth keeping:** a curl transcript and a DevTools request-header panel are two
+different artifacts with two different evidentiary weights. The curl could not have settled this;
+the panel did. Same lesson as `event_details`.
 
 ## 🎯 It corrects an open question on dispatch #56 Part E
 
@@ -367,6 +377,22 @@ disambiguation problem.
 ⚠️ **Both joins need the boundary decided first.** `scheduledAt` is UTC on a local-midnight window;
 LifeLenz and the punches are on their own boundaries, and the DAR is on the 4am business day. Per
 `CLAUDE.md`, both legs of any such join must sit on the same boundary.
+
+## 📌 Sibling endpoints seen in the same Network capture — leads, not findings
+
+The header-panel screenshot showed other in-flight requests on the same page. **None were captured,
+so these are addresses to probe, not confirmed behaviour:**
+
+| request | why it might matter |
+|---|---|
+| `forms?orgId=…` | plausibly the **forms list** — would let a pull enumerate `formIds` for `completionByForm` instead of hardcoding 61 UUIDs (caveat 9) |
+| `scheduled?orgId=…` | possibly the schedule/assignment source in its own right |
+| `getHierarchyByUser?userId=…` · `getPeersByUser?userId=…` | an **org hierarchy** by user — potentially relevant to RBAC scoping and to the manager-attribution question |
+| `locations?selectedFields=locationId…` | location metadata |
+
+Also visible: a **`get_user_role` request that FAILED** (red in the Network list). Unrelated to the
+forms work and possibly benign, but worth a glance if role-based behaviour ever looks wrong in
+QSRSoft itself.
 
 ## Open questions a pull must settle
 

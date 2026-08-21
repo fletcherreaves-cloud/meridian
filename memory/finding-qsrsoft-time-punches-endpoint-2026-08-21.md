@@ -111,7 +111,12 @@ Two-digit badges sit nowhere near these bands, so badge and geid remain separate
 ## Open questions
 
 - **Business-day boundary** — no `compType`; confirm before joining to `trading`-aligned data.
-- **`jobTitleCode`** — 647 / 650 / 671 seen; the code→title mapping is unknown, and guessing which
-  is "manager" would be exactly the kind of assumption that produces a confident wrong answer.
+- **~~`jobTitleCode`~~ ✅ RESOLVED 2026-08-21 — `people/employee-roster` carries the mapping**
+  (`finding-qsrsoft-employee-roster-endpoint-2026-08-21.md`): **647 = CERT. SWING MGR., 650 = CREW
+  PERSON, 671 = PRIMARY MAIN. PERSON**, plus 45 = GM, 648 = Crew Trainer, 846 = Dept Manager II.
+  So of the three seen here, **647 is the manager code.** The list is one store's roster and
+  therefore partial — pull `jobTitleCode` + `jobTitleCodeDescription` together and build the mapping
+  from data rather than hardcoding it. 🔴 That endpoint returns SSN **and** home address, DOB and
+  race — read its `selectCols` allowlist before calling it.
 - **`badgeType`** — only `Primary` in this sample. Other values presumably exist.
 - **Whether `geid` is stable across stores** for an employee who works at more than one.
