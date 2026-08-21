@@ -40,11 +40,28 @@ It is the whole cost of this dispatch, and Phase 0 exists to size it.
 
 ## Phase 0 — measure, then stop (GATING)
 
-**Prerequisite: confirm the eID field's real name in the Register Audit response.** Dispatch #47's
-DEBUG-gated key-name log (commit `6c0e57f`) has never produced output — the one triggered run failed
-before reaching it. Get one clean run. **Key names ONLY, never values — every row is
-employee-attributed PII.** Do not infer the field name from `empID` in a comment; that is exactly
-the inference that cost a day on `manOverringQty`.
+**Prerequisite: confirm the eID field's real name in the Register Audit response.** ✅ **DONE,
+2026-08-21.** Dispatch #47's DEBUG-gated key-name log had never produced output before this —
+the one prior triggered run (`32418915409`, on this branch, pre-merge) failed before reaching it,
+and a first retry today (`32431187442`, single-day window `2026-08-20`) returned 0 rows for that
+day and so never hit the `rows[0]` guard either. A wider window (`32431369072`,
+`2026-08-10`→`2026-08-20`, all 27 stores, 1,781 rows) finally produced it. Full key list, names
+only, no values, straight from the run log:
+
+```
+busnDt, nsn, empID, empName, allNetSales, transactions, overShortAmt, promoAmt, promoQty,
+tRedBeforeQty, tRedBeforeAmt, tRedAfterQty, tRedAfterAmt, drawerOpens, overringQty, overringAmt,
+manOverringAmt, refundCashQty, refundCashlessQty, refundCashAmt, refundCashlessAmt,
+empMealDiscQty, empMealDiscAmt, mgrMealDiscQty, mgrMealDiscAmt
+```
+
+**The eID field is `empID`** — measured, not inferred from the `empID` name already used
+elsewhere in this codebase's comments, which is exactly the inference that cost a day on
+`manOverringQty`. It sits immediately next to `empName` in the response, confirming this endpoint
+does carry both identifiers per row, which Phase 0's own measurement plan below assumes.
+
+Phase 0 itself (the match-rate measurement across `audit_rows` history) has **not** been run —
+that's the next step, not done here.
 
 Then pull one window carrying **both** `empName` and the eID, and measure:
 
