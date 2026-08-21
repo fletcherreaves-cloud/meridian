@@ -65,11 +65,25 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
 2. **What is `29760` in the path?** It is not the NSN and not our zero-padded `loc`. A QSRSoft
    internal store id, presumably. A pull needs a `loc → storeRef` mapping, and where that mapping
    comes from is unresolved.
-3. **Auth shape.** The DAR host (`api.reports.myqsrsoft.com`) rejects a server-side fetch carrying
-   only a token and needs browser session cookies via Playwright `page.evaluate()`
-   (`project-qsrsoft-daily-activity.md`). **Do not assume this host behaves the same either way** —
-   test it. The captured call sends `x-auth-token` with no cookie header shown, which is *suggestive*
-   of token-only auth but is not proof, since a browser would attach cookies invisibly.
+3. **~~Auth shape.~~ ✅ RESOLVED 2026-08-21 — token-only, NO session cookies. This host is not
+   the DAR host.** The owner supplied the DevTools **request-header panel** for the live call, which
+   shows what the browser actually sent: an alphabetical list running `Accept` → `User-Agent` with
+   **no `Cookie` header** (it would sort between `Content-Type` and `Host`; `Host` follows
+   `Content-Type` directly). `x-auth-token` sorts after `User-Agent` and is below the fold.
+
+   This matters more than it looks. `api.reports.myqsrsoft.com` (the DAR host) **rejects a
+   server-side fetch carrying only a token** and forces the Playwright `page.evaluate()` workaround
+   — the reason those pull scripts are slow and fragile (`project-qsrsoft-daily-activity.md`).
+   `api.security.myqsrsoft.com` apparently does not: a plain Node `fetch` with `x-auth-token`
+   should work, so **the Part E pull is substantially simpler than it was scoped as.** Confirm on
+   the first real call rather than treating this as settled beyond doubt — but design for token-only
+   and treat a Playwright fallback as the contingency, not the default.
+
+   **Method note worth keeping:** my earlier reading of the same call said the missing cookie was
+   *"suggestive but not proof, since a browser attaches cookies invisibly."* That was right about
+   the **curl** transcript and wrong about the **DevTools request-header panel** — the panel reports
+   what was actually transmitted, invisible attachments included. Two different artifacts, two
+   different evidentiary weights.
 4. **`remaining_amt`** — unknown. Do not build anything on it until someone confirms what it means.
 5. **`order_key`'s register prefix does not match `reg_num`.** Rows show `order_key`
    `POS0012:…`/`POS0014:…`/`POS0015:…` while `reg_num` is `POS0013` throughout. For a *Mobile* promo
