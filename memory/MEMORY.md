@@ -90,8 +90,9 @@ index has drifted, from one filename missing.**
   at all: having them next to performance data lets a metric split by race or age *by accident*.
   🎯 **Dispatch #56 Part B is answered** — and "start date" is **two** fields: `orgStartDate` (joined
   the org) vs `storeStartDate` (joined this store), which diverge often and hugely (one record: eight
-  years org, two months store). Tenure → `orgStartDate`; time-in-restaurant → `storeStartDate`;
-  showing one labelled "start date" is wrong for every transfer. `jobTitleCodeStartDate` (time in
+  years org, two months store). ✅ **Owner decision: "both are relevant" — ingest and surface BOTH,
+  distinctly labelled; never render a bare "start date".** The divergence itself is worth showing
+  ("8 years with the org, 2 months at this store" names a real coaching situation). `jobTitleCodeStartDate` (time in
   role) may be the most coaching-relevant of the three. 🎯 Also **resolves the `time-punches`
   `jobTitleCode` unknown** (45=GM, 647=Cert Swing Mgr, 648=Crew Trainer, 650=Crew, 671=Maintenance,
   846=Dept Mgr II — partial, build from data) which is the missing piece for the **forms dashboard's

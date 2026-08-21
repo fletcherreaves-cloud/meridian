@@ -71,12 +71,22 @@ answer is more useful than a single date:
 `storeStartDate` 2026-06-17 against `orgStartDate` 2018-11-30 — **eight years with the org, two
 months at the store.** Several others show gaps of three to nine months.
 
-⚠️ **So "employee start date" is ambiguous and the owner has to pick per use case:**
+✅ **OWNER DECISION 2026-08-21: "I think both are relevant." Store and surface BOTH.**
+Not a compromise — it is the correct engineering answer regardless, since the two measure different
+things and neither reconstructs the other. So: **ingest both columns, label them distinctly in the
+UI** (org tenure vs time at this store), and let each panel pick. What is now settled is that the
+schema carries both and no panel may render a bare field called "start date".
+
+**Which one a given surface should lead with:**
 
 - **Tenure / experience / "should they know better"** → `orgStartDate`. A transfer is not a new hire.
 - **Time in this restaurant / attributing a store's results to its crew** → `storeStartDate`.
-- Showing one and labelling it "start date" will be wrong for every transferred employee, and the
-  transfers are exactly the people whose tenure is most often misjudged.
+- **Never render either as an unqualified "start date"** — that reading is wrong for every
+  transferred employee, and transfers are exactly the people whose tenure gets misjudged. Label
+  which one is on screen, always.
+- Worth surfacing the **gap itself** where the two diverge: "8 years with the org, 2 months at this
+  store" is a more useful sentence to a supervisor than either date alone, and it names a real
+  coaching situation — an experienced person who is new *here*.
 
 **Supporting fields that come free:** `jobTitleCodeStartDate` (time in current role — arguably the
 most relevant tenure for a coaching conversation), `lastReviewDate`/`nextReviewDate`,
