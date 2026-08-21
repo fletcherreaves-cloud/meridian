@@ -65,6 +65,21 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 — Security panel: five owner asks, scoped against the code](dispatch-56.md)** —
+  **NEWEST.** Scoping changed what four of the five actually are. **A** rule directory in the legend
+  — small, the text already exists as `security_rules.description` and the loader already fetches
+  it. **B** employee start date — **not a UI change: no hire date exists anywhere** in `src/`,
+  `scripts/` or `supabase/`, and the LifeLenz runbook documents no employee-master endpoint;
+  investigation-first, and a derived "first seen" proxy is **never** labelled as an HR start date.
+  **C** product name on inventory findings — **a real defect found while scoping**:
+  `security-panel.js:400` renders a bare WRIN, while `qsr_variance_stat.descr` is already mapped by
+  three loaders. **D** instance vs pattern vs trend + links to prior findings — buildable from
+  `security_findings` alone; also notes `corroboration_rules`/`exoneration_rules` are populated and
+  silently **dropped by `loadSecurityRules()`**. **E** register + time of event — `audit_rows` is a
+  daily aggregate with neither, but `transaction_detail` was **already captured**
+  (`dispatch-34-phase0a-findings.md:145-180`: register #, session times, POD, itemized lines, tender
+  split, manager badge) and parked *"until an actual investigation needs it"* — **this is that
+  moment.**
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 — the section-metadata standard, then Job C Batch 1](dispatch-55.md)** —
   **NEWEST.** Two parts, two PRs, A first. **Part A carries a STANDING RULE the owner set
   2026-08-21: `kind:` is lifecycle, `section:` is placement, and `section:` must be truthful even
