@@ -65,6 +65,20 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #58 — Part E: register worked + time of event](dispatch-58.md)** —
+  **NEWEST.** Turns `audit_rows`' daily counts into **timed, register-attributed events**. Every
+  prior blocker is settled: 8 `event_token`s, **token-only auth** (no Playwright), `storeRef` = the
+  unpadded NSN. 🔴 **Settle ONE thing before writing any pull logic:** every captured body has
+  populated `registers`/`cashiers` because each came from a drill-down click — **nobody has tested
+  what an empty array does.** Empty=all → 27×8 = 216 calls/day, routine. Required filters → you must
+  enumerate every register and cashier per store per day, and a daily estate pull is probably
+  infeasible. Five-minute check, decides the design. 🔴 **Part E CANNOT cover cash over/short** — no
+  drill-down, because it is a computed variance not a discrete event — so the biggest controls
+  metric stays a daily aggregate, and **the panel must say so**: on an LP screen, absence of detail
+  must not read as absence of a problem. `crew`/`mgr` are plaintext names → vault rules; **the badge
+  ("Name - 91") is a separate namespace from `geid`, do not merge them**. `remaining_amt` unknown;
+  `order_key`'s register prefix ≠ `reg_num` (settle before any join). **Explicitly NOT here:** the
+  `registerType=cashier` gap and the meal signals — both change `audit_rows`' grain, both are #59.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`event_token` ENUMERATED — dispatch #56 Part E is unblocked](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
   **NEWEST.** Owner sweep of the Register Audit drill-downs. **8 tokens, 5 families:** `all_promo` ·
   `t_red_before`/`t_red_after` · `cash_refund`/`cashless_refund` · **`employee_meal`/`manager_meal`** ·
