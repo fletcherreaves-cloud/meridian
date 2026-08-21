@@ -65,6 +65,21 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #57 — persist per-person employee tenure (Part B)](dispatch-57.md)** —
+  **NEWEST.** 🔴 **Owner-approved reversal of a deliberate privacy decision**: the roster pull's own
+  header says *"No individual-employee data is stored anywhere"* — it already FETCHES the hire dates
+  and throws them away. Owner: *"reverse it… let's just do it all."* New `qsr_employee_tenure`
+  (per-person, per-store, PK `(tenant_id, loc, geid)`, RLS via `accessible_locs`), added to the
+  **existing** `qsrsoft-employee-roster-pull.mjs` — already watched, no new workflow.
+  🔴 **`orgStartDate` is NOT currently in `SELECT_COLS` and is half of Part B** — add it, plus
+  `hourlyPayRate`. **BOTH start dates, distinctly labelled** (owner: *"both are relevant"*); never
+  render a bare "start date"; surface the gap where they diverge. **The fetch-side allowlist STAYS**:
+  `ssn`, `dateOfBirth`, `nationalOrigin`, `gender`, `federalMaritalStatus`, address, contacts remain
+  excluded — protected-class attributes beside performance data let a metric split by race or age by
+  accident, which is not hypothetical in a system with an auto-correlating Scanner. Add a guard test
+  asserting they stay out. Pay ships in the table but is **surfaced in no panel** (role-gating
+  deferred by the owner — an unrendered column is easy to gate later, a rendered one is not).
+  Watch `"0000-00-00"`, the date null sentinel.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`regAudit` — we pull ONE THIRD of the Register Audit](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
   UI capture settles both knobs: **`registerType` = Cashier · Manager · Preparer**, and
   **`resultType` = BY LOCATION · BY EMPLOYEE only — there is NO `byRegister`** (retracting a
