@@ -30,8 +30,25 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=0 — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
+  **NEWEST.** Dispatch #53 Phases A–D, same day as the Phase 0 measurement below. **Phase A**: the
+  403 that stopped the prior backfill was **session-token expiry**, not a rate limit (six uniform
+  ~48s chunks then a deterministic cliff at ~5 minutes — an IAM explicit-deny doesn't tighten with
+  volume) — closed the remaining 48-day tail in **one 3-chunk job**, 8,507 rows, 27/27 stores, no
+  multi-day pacing needed. **Phase B/C**: row 5 re-measured to **0** across the full 5.7-month
+  window — every one of 1,140 names now resolves to an `emp_id`. Full picture: 1,089 clean
+  (95.5%), 51 merged (4.5%), 16 split (1.4%) — **67 live identity defects**. Gate (`G≤25` proceed)
+  applied to `G=0` — clears with room to spare. **Phase D**: dispatch #49's Phase 1 landed —
+  `employee_identity_vault` gains a nullable `employee_id` (partial unique index), and
+  `get_or_create_employee_token()` gains a 2-arg overload (opportunistic-enrichment only, never
+  overwrites an existing `employee_id`) — the 1-arg signature every live caller uses is
+  byte-for-byte unchanged. **Not Phase 2/3** — nothing calls the new overload yet, no
+  reconciliation. Adversarially probed against a real local Postgres 16 instance, 15 probes —
+  critically, the exact NULL-role-bypass incident shape is still correctly rejected after this
+  change. **Owner action item:** apply `supabase/schema-identity-vault-employee-id.sql` to live
+  Supabase.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 — the IA / URL-view conversion, scoped against real code](dispatch-54.md)** —
-  **NEWEST.** The PM pass `notes-67-queue.md` §1 explicitly asked for. **Two findings reshape the
+  The PM pass `notes-67-queue.md` §1 explicitly asked for. **Two findings reshape the
   work.** (1) **The routing infrastructure already exists** — `src/app/routing.js` does
   `pushState`+`searchParams`, dependency-free — but is deliberately scoped to `route:true` panels,
   **4 of 57**. Separately `App.js` has an **82-key `modal===` chain**, so most panels are
