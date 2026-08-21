@@ -30,8 +30,24 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #51 — make Phase 0 measurable, don't re-implement the pull](dispatch-51.md)** —
+  **NEWEST.** Dispatch #49's Phase 0 gate (identity-vault re-key match-rate) needed a bespoke API
+  re-pull that inherited none of `qsrsoft-register-audit-pull.mjs`'s proven two-path auth /
+  Playwright fallback / retry handling, and it failed twice — the second failure correctly stopped
+  and flagged a false 100%-row-5 population (zero API rows fetched, not "no employee has an
+  empID") rather than passing it through. Fix: additive nullable `audit_rows.emp_id text`
+  (`supabase/schema-audit-rows-emp-id.sql`), populated by the SAME proven pull going forward
+  (`mapRow()`/`saveAuditRows()` in both the server-side script and its client-side twin
+  `src/lib/supabase.js`) — `manualRefCnt`/`manOverringAmt` is the worked example of the identical
+  round trip already in that file. Once backfilled, Phase 0 becomes one repeatable SQL query, no
+  API. **Additive only — does not open Phase 1, does not touch the vault/token keying, does not
+  change `audit_rows`' `(loc,date,emp)` PK.** Also fixed a stale "UNVERIFIED FIELD NAME" comment on
+  `manOverringQty`, confirmed absent three ways as of dispatch #49/finding-cash003 — mapping left
+  unchanged. **Backfill not yet run** — blocked on the schema migration, an owner action item (not
+  yet applied to live Supabase, confirmed via direct read before writing any code). Full status in
+  the dispatch file's own "Status" section.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Store 0013113 — a packaging counting problem, not loss](finding-store-13113-packaging-variance-2026-08-21.md)** —
-  **NEWEST. The first operational finding this build has produced** — every prior inventory result
+  **The first operational finding this build has produced** — every prior inventory result
   described the build's own measurement error. Store `0013113` flags INV-001 at **14.4% (28/195) vs
   a 3.4–4.1% pack, 3.5×** — and it is NOT a size effect, since every store carries 193–208 subjects.
   The items are **store-specific** (16 of the top 25 flag at only this store, so not the 30

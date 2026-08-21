@@ -869,6 +869,7 @@ export async function saveAuditRows(rows) {
     loc:             String(r.loc),
     date:            toDate(r),
     emp:             r.emp || '',
+    emp_id:          r.empId ?? null,
     emp_token:       tokenMap.get((r.emp || '').trim()) ?? null,
     drawer_sales:    r.drawerSales    ?? null,
     avg_check:       r.avgCheck       ?? null,

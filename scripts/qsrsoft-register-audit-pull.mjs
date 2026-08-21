@@ -27,7 +27,14 @@
 //     auto-pull to empID would split-brain the (loc,date,emp) history for the same real person
 //     across manual vs auto rows, breaking freshest-wins continuity with 5+ months of existing
 //     manually-uploaded data. A same-name collision at one store is an existing, unchanged risk,
-//     not one this dispatch introduces.
+//     not one this dispatch introduces. STILL TRUE under dispatch #51 -- the PK/emp column is
+//     untouched; see empId below.
+//   - empId = empID (dispatch #51, memory/dispatch-51.md), ADDITIVE ONLY, alongside emp. Confirmed
+//     field name from a live DEBUG key-name run (dispatch #49, run 32431369072) -- measured, not
+//     inferred. This exists purely to make dispatch #49's Phase 0 identity-vault-re-key gate
+//     measurable as a repeatable SQL query instead of a bespoke API re-pull: audit_rows.emp_id is
+//     nullable, nothing reads it, and it does NOT feed get_or_create_employee_token() or any token
+//     keying -- Phase 1 (the actual re-key) is explicitly NOT started by this column existing.
 //   - drawerGC = transactions. parseRegisterAudit's own header list calls this column "Drawer
 //     GC"/"GC" (guest count); analyzeRegisterAudit uses it as the denominator for its own
 //     avgCheck computation (totalSales/totalGC) -- transactions is the only response field that
@@ -37,20 +44,19 @@
 //     Overrings $"/"POS Overrings Cnt" (-> posOverAmt/posOverCnt, from overringAmt/overringQty).
 //     The manual Excel export already treats these as two separate columns; manOverringAmt's own
 //     name matches the "Manual Refund/Overring" concept far better than a fold-in.
-//   - manualRefCnt = manOverringQty (dispatch #44). UNVERIFIED FIELD NAME -- the real dispatch-44
-//     brief (memory/dispatch-44.md, landed on main after this code was first written) requires
-//     confirming this by running the pull once and logging Object.keys(rows[0]) BEFORE mapping
-//     anything -- key names only, never values, every row here is employee-attributed PII. That
-//     live check could not be done from this sandbox (no QSRSOFT_USERNAME/QSRSOFT_PASSWORD), so
-//     "manOverringQty" is a strong but UNCONFIRMED hypothesis: it follows the exact Amt/Qty pairing
-//     every other override category in this response already has (overringAmt/overringQty,
-//     refundCashAmt/refundCashQty), and manOverringAmt is the only one pulled without a Qty
-//     sibling -- but nobody has actually seen this key in a live response. If the real field is
-//     named something else (or does not exist), this line silently maps to `null` via num()'s
-//     undefined-safe handling -- no crash, just an always-empty column, which is exactly why this
-//     needs a live-run confirmation before CASH-003 is ever reactivated on it. No manual-upload
-//     equivalent exists either way: parseRegisterAudit's Excel header search (src/parsers/index.js)
-//     has no "Manual Refund/Overring Qty" column to find, only the $ one.
+//   - manualRefCnt = manOverringQty (dispatch #44). CONFIRMED ABSENT, three independent ways
+//     (memory/finding-cash003-manoverringqty-absent-2026-08-20.md): the field followed the exact
+//     Amt/Qty pairing every other override category in this response has (overringAmt/overringQty,
+//     refundCashAmt/refundCashQty) -- a reasonable inference, but wrong. (1) 0 of 19,985 backfilled
+//     rows carry a value for it. (2) A live DEBUG key-name run (dispatch #49) printed the response's
+//     real top-level keys and manOverringQty is not among them. (3) The owner checked the Register
+//     Audit report in the QSRSoft UI directly -- no manual over-ring COUNT column exists there
+//     either, only the $ one, matching parseRegisterAudit's own Excel header search (no "Manual
+//     Refund/Overring Qty" column to find). CASH-003 was rebuilt around this as an absolute-dollar
+//     threshold on manualRefAmt instead (which DOES carry real data) rather than a count -- see the
+//     finding doc for why a rate/count was the wrong instrument for a rare event either way. This
+//     line is left mapping manOverringQty -> null: harmless (num()'s undefined-safe handling), and
+//     changing it isn't the fix -- there is no live equivalent to map instead.
 //   - avgCheck, cashOSPct, promoPct, tRedBPct/tRedBAvg, tRedAPct/tRedAAvg are NOT present as
 //     pre-computed fields in the API response (parseRegisterAudit's manual path just READS these
 //     from Excel columns QSRSoft pre-computes there -- it doesn't derive them, so "mirror its
@@ -130,6 +136,7 @@ async function saveAuditRows(rows) {
   const tokenMap = await tokenizeRows(supabase, rows, 'emp');
   const upsert = rows.map(r => ({
     loc: r.loc, date: r.date, emp: r.emp,
+    emp_id:   r.empId ?? null,
     emp_token: tokenMap.get((r.emp || '').trim()) ?? null,
     drawer_sales:    r.drawerSales    ?? null,
     avg_check:       r.avgCheck       ?? null,
@@ -211,6 +218,7 @@ export function mapRow(r) {
     loc:  nsn7(r.nsn),
     date: r.busnDt,
     emp:  (r.empName || '').trim(),
+    empId: (r.empID == null ? '' : String(r.empID).trim()) || null,
     drawerSales:    sales,
     avgCheck:       ratio(sales, trans),
     drawerOpens:    num(r.drawerOpens),

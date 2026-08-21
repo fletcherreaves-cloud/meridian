@@ -35,6 +35,22 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
     expect(r.emp).toBe('Aaden W');
   });
 
+  it('maps empId from empID (dispatch #51) additively alongside emp -- confirmed field name, not inferred', () => {
+    const r = mapRow(SAMPLE_ROW);
+    expect(r.empId).toBe('E4471');
+  });
+
+  it('empId is null (not undefined/empty string) when empID is missing -- same honest-missing contract as manualRefCnt', () => {
+    const { empID, ...withoutId } = SAMPLE_ROW;
+    const r = mapRow(withoutId);
+    expect(r.empId).toBeNull();
+  });
+
+  it('empId trims whitespace and treats a blank string the same as missing', () => {
+    expect(mapRow({ ...SAMPLE_ROW, empID: '  E4471  ' }).empId).toBe('E4471');
+    expect(mapRow({ ...SAMPLE_ROW, empID: '' }).empId).toBeNull();
+  });
+
   it('maps drawerSales/drawerGC from allNetSales/transactions (the analyzeRegisterAudit-consumed pair)', () => {
     const r = mapRow(SAMPLE_ROW);
     expect(r.drawerSales).toBe(1240.50);
