@@ -14,12 +14,20 @@ const loadSecurityFindingsMock = vi.fn();
 const loadSecurityRulesMock = vi.fn();
 const loadGmIdentityRevealEnabledMock = vi.fn();
 const rpcMock = vi.fn();
+// dispatch #52 -- the drill-down's own on-demand loaders, mocked the same way as the rest of
+// this file's Supabase surface (no live session in this sandbox).
+const loadQsrVarianceStatMock = vi.fn();
+const loadQsrVarianceHistoryAllMock = vi.fn();
+const loadAuditRowsWindowMock = vi.fn();
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
   loadSecurityFindings: (...args) => loadSecurityFindingsMock(...args),
   loadSecurityRules: (...args) => loadSecurityRulesMock(...args),
   loadGmIdentityRevealEnabled: (...args) => loadGmIdentityRevealEnabledMock(...args),
+  loadQsrVarianceStat: (...args) => loadQsrVarianceStatMock(...args),
+  loadQsrVarianceHistoryAll: (...args) => loadQsrVarianceHistoryAllMock(...args),
+  loadAuditRowsWindow: (...args) => loadAuditRowsWindowMock(...args),
 }));
 
 import {
@@ -545,5 +553,102 @@ describe('SecurityPanel — dispatch #50 Part B: admin sees names without clicki
     expect(rpcMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toMatch(/🔒 reveal/);
     expect(container.textContent).not.toMatch(/Alice Andrews/);
+  });
+});
+
+// dispatch #52 -- the drill-down, scoped from the store 0013113 investigation
+// (memory/dispatch-52.md). Render-based per its own closing rule ("a test asserting a query's
+// shape passes with the panel unwired") -- these click through the REAL SecurityPanel, not the
+// engine module alone (already covered by src/__tests__/security-drilldown.test.js).
+describe('SecurityPanel — dispatch #52: the drill-down renders through the real panel, both domains', () => {
+  let container, root;
+  const INV_RULES = [
+    { ruleId: 'INV-001', domain: 'inventory', method: 'Item TvA variance rate', description: 'desc', baselineType: 'store', logicType: 'z-score', active: true, investigationAction: 'Check item setup.' },
+  ];
+  const INV_FINDINGS = [
+    { empToken: null, wrin: 'CUP', loc: '0000001', ruleId: 'INV-001', pass: true, value: 45, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-31', computedAt: '2026-09-01T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: null, wrin: 'LID', loc: '0000001', ruleId: 'INV-001', pass: true, value: 38, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-31', computedAt: '2026-09-01T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: null, wrin: 'BUN', loc: '0000002', ruleId: 'INV-001', pass: true, value: 25, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-31', computedAt: '2026-09-01T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+  const INV_POP_ROWS = [
+    { loc: '0000001', period: '2026-08', wrin: 'CUP', cls: 'paper', expUsage: 100, actUsage: 50, variance: 45, rawWaste: 100, compWaste: 50 },
+    { loc: '0000001', period: '2026-08', wrin: 'LID', cls: 'paper', expUsage: 100, actUsage: 60, variance: 38, rawWaste: 80, compWaste: 20 },
+    { loc: '0000001', period: '2026-08', wrin: 'PATTY', cls: 'food', expUsage: 100, actUsage: 98, variance: 2, rawWaste: 30, compWaste: 10 },
+    { loc: '0000002', period: '2026-08', wrin: 'BUN', cls: 'food', expUsage: 100, actUsage: 78, variance: 25, rawWaste: 40, compWaste: 20 },
+    { loc: '0000002', period: '2026-08', wrin: 'CUP', cls: 'paper', expUsage: 100, actUsage: 96, variance: 4, rawWaste: 90, compWaste: 10 },
+  ];
+
+  const CASH_RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'Pull drawer-count photos.' },
+  ];
+  const CASH_DRILLDOWN_FINDINGS = [
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 110, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-dave', wrin: null, loc: '0000002', ruleId: 'CASH-001', pass: false, value: 1, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+  const CASH_AUDIT_ROWS = [
+    { loc: '0000001', empToken: 'tok-alice', date: '2026-08-05', manualRefAmt: 50, drawerSales: 500, posOverCnt: 0, drawerGC: 100, promoAmt: 0 },
+    { loc: '0000001', empToken: 'tok-alice', date: '2026-08-12', manualRefAmt: 60, drawerSales: 500, posOverCnt: 0, drawerGC: 100, promoAmt: 0 },
+    { loc: '0000001', empToken: 'tok-bob', date: '2026-08-05', manualRefAmt: 5, drawerSales: 500, posOverCnt: 0, drawerGC: 100, promoAmt: 0 },
+    { loc: '0000002', empToken: 'tok-dave', date: '2026-08-05', manualRefAmt: 5, drawerSales: 500, posOverCnt: 0, drawerGC: 100, promoAmt: 0 },
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadQsrVarianceStatMock.mockReset().mockResolvedValue(INV_POP_ROWS);
+    loadQsrVarianceHistoryAllMock.mockReset().mockResolvedValue(INV_POP_ROWS.map(r => ({ loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, variance: r.variance })));
+    loadAuditRowsWindowMock.mockReset().mockResolvedValue(CASH_AUDIT_ROWS);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('inventory: clicking "Investigate further" fetches on demand (not before) and renders all five measurements with a baseline beside each number', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(INV_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(INV_RULES);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const itemLabel = [...container.querySelectorAll('div')].find(d => d.textContent === 'Item CUP');
+    const subjectRow = itemLabel?.parentElement;
+    expect(subjectRow).toBeTruthy();
+    await act(async () => { subjectRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
+    expect(investigateBtn).toBeTruthy();
+    // Nothing fetched yet -- on-demand, per dispatch #43's eager-load discipline.
+    expect(loadQsrVarianceStatMock).not.toHaveBeenCalled();
+    await act(async () => { investigateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadQsrVarianceStatMock).toHaveBeenCalledWith({ period: '2026-08' });
+    expect(container.textContent).toMatch(/Drill-down — measurements, not conclusions/);
+    // Metric 1: flag rate by store -- 2 of 3 subjects flagged at this store, above the other store.
+    expect(container.textContent).toMatch(/66\.7%/);
+    // Metric 3: composition -- subject is 100% paper (CUP+LID), estate (BUN) is 100% food.
+    expect(container.textContent).toMatch(/paper: 100\.0% of this subject's flags vs 0\.0% estate-wide/);
+  });
+
+  it('cash: renders the flag rate and rule-mix through the real panel for an employee subject', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_DRILLDOWN_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(CASH_RULES);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const subjectRow = storeLabel?.parentElement;
+    await act(async () => { subjectRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
+    expect(investigateBtn).toBeTruthy();
+    await act(async () => { investigateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadAuditRowsWindowMock).toHaveBeenCalledTimes(1);
+    // Metric 1: this store has 1 of 2 distinct employees flagged.
+    expect(container.textContent).toMatch(/1 of 2/);
+    expect(container.textContent).toMatch(/Drill-down — measurements, not conclusions/);
   });
 });

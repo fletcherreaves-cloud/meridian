@@ -968,6 +968,38 @@ export async function loadAuditRows(daysBack = 400) {
   }));
 }
 
+// dispatch #52 -- the Security panel's drill-down (src/engine/security-drilldown.js) needs a
+// bounded, ALL-STORES window of audit_rows to compute a store-population denominator and a
+// month-bucketed trend, on demand, only when a subject's drill-down is actually opened. Unlike
+// loadAuditRows() (400 days, eager, feeds the district-wide startup load per #191), this is
+// deliberately narrow -- a fixed [start,end] window, minimal columns, no loc filter (every store
+// is needed for the estate comparison). A short in-memory cache means opening a second subject's
+// drill-down in the same session doesn't refetch the same window.
+const _drilldownAuditCache = new Map(); // "start|end" -> { at, rows }
+const _DRILLDOWN_AUDIT_TTL = 5 * 60 * 1000;
+export async function loadAuditRowsWindow({ start, end }) {
+  if (!supabase || !start || !end) return [];
+  const key = start + '|' + end;
+  const hit = _drilldownAuditCache.get(key);
+  if (hit && (Date.now() - hit.at) < _DRILLDOWN_AUDIT_TTL) return hit.rows;
+  const data = await fetchAll((from, to) =>
+    supabase.from('audit_rows')
+      .select('loc,date,emp,emp_token,drawer_sales,drawer_gc,cash_os_dollar,pos_over_cnt,pos_over_amt,manual_ref_amt,manual_ref_cnt,refund_cash,refund_cashless,refund_cnt,promo_amt,t_red_a_cnt,t_red_a_dollar,t_red_b_cnt,t_red_b_dollar')
+      .gte('date', start).lte('date', end).range(from, to), 1000, 'audit_rows (drill-down)');
+  const rows = (data || []).map(r => ({
+    loc: r.loc, date: r.date, emp: r.emp, empToken: r.emp_token,
+    drawerSales: r.drawer_sales, drawerGC: r.drawer_gc, cashOSDollar: r.cash_os_dollar,
+    posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
+    manualRefAmt: r.manual_ref_amt, manualRefCnt: r.manual_ref_cnt,
+    refundCash: r.refund_cash, refundCashless: r.refund_cashless, refundCnt: r.refund_cnt,
+    promoAmt: r.promo_amt,
+    tRedACnt: r.t_red_a_cnt, tRedADollar: r.t_red_a_dollar,
+    tRedBCnt: r.t_red_b_cnt, tRedBDollar: r.t_red_b_dollar,
+  }));
+  _drilldownAuditCache.set(key, { at: Date.now(), rows });
+  return rows;
+}
+
 // ── QSRSoft FOB daily rows (automated pull) ──────────────────────────────────
 export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
   if (!supabase) return [];

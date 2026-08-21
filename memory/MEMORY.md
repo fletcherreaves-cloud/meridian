@@ -65,8 +65,17 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #52 — the Security drill-down, and 15 real schema-drift instances](dispatch52-drilldown.md)** —
+  **NEWEST.** Five measurements scoped from the real store 0013113 investigation (not Part C's
+  wish list), generalized to both cash and inventory subjects, wired into the real panel behind an
+  on-demand "🔎 Investigate further" button — new `src/engine/security-drilldown.js`. **The
+  rider found far more than expected**: building the schema-drift guard test (per #510's review)
+  turned up **15 columns across 7 tables** missing from `schema.sql`'s own `CREATE TABLE`,
+  including **`audit_rows.emp_token` — the identity-reveal system's own key column** — silently
+  drifted this whole time. All 15 fixed in the same change; the new test (mutation-tested against
+  the real file) keeps the count at zero going forward. 1856/1856 tests, build clean.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job A — the registry now drives label/icon/perm](dispatch-54-job-a.md)** —
-  **NEWEST.** `shell.js`'s sidebar reads label/icon/permission from `panel-registry.js` instead of
+  `shell.js`'s sidebar reads label/icon/permission from `panel-registry.js` instead of
   duplicating them as literals (~44 nav items), via new `navP`/`navPBeta` lookups — pure refactor,
   verified by *rendering* `AppSidebar` and diffing its exact text output against a pre-refactor
   capture, not just asserting the registry's shape. Caught one real drift doing it: the Test
