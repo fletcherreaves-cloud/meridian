@@ -65,6 +65,19 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 — the forecasting section, then Job C Batch 1](dispatch-55.md)** —
+  **NEWEST.** Two parts, two PRs, A first. **Part A** closes Job B's one remaining open decision:
+  the **Forecasting and Labor Projections** section. The owner list Job B reported as unavailable
+  **was committed the whole time** (`notes-67-queue.md:34-36`), and so were its three parentheticals
+  — the LifeLenz Bridge rename was in **dispatch #54's own brief** (`:149`). Measured consequence
+  that makes this bigger than a `section:` edit: **all ten panels are `kind:'test-kitchen'` and
+  there are exactly ten test-kitchen panels**, so promoting them **empties ⚗ TEST KITCHEN entirely**
+  and inverts their betaMode behaviour — accepted, but it goes in the changelog. Trap: `proj`'s
+  inert `section:'planning'` would drop Projections into the four-link Planning section (#516) the
+  moment `kind` flips. **Part B** is Job C Batch 1 — six overlay→page conversions, owner-approved,
+  where the failure mode is a working render with a broken `modal===` deep link (the #366 shape).
+  Standing lesson recorded at the top of the brief: **`grep -rn` in `memory/` before reporting
+  anything blocked.**
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job B — the actual regroup, v2 sidebar finally adopted](dispatch54-job-b.md)** —
   **NEWEST.** `AppSidebar` now genuinely renders from `SECTIONS` + `panelsForSection()` (Job A kept
   the v1 hand-built list on purpose, since its own registry corrections were only truthful for
