@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
+import { PANEL_BY_ID } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 import { supabase } from '../lib/supabase.js';
@@ -169,6 +170,28 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   const pis = (permKey, ...args) => (!permKey || can(permKey)) ? navItem(...args) : null;
   const pi  = (permKey, ...args) => (!permKey || can(permKey)) && !betaMode ? navItem(...args) : null;
 
+  // ── Registry-backed nav (dispatch #54 Job A) ─────────────────────────────
+  // label/icon/perm now come from panel-registry.js -- the single source of truth -- instead of
+  // being duplicated as literal strings here (the exact drift this was meant to stop: e.g. the
+  // registry's 'proj' entry said "Proj Workflow"/lock icon, a stale label from the pruned
+  // duplicate line below, while the live nav has said "Projections"/▦ since v4.517; found by
+  // this refactor and fixed in panel-registry.js, not silently left to disagree).
+  // navP = pis()-equivalent (always visible if permitted); navPBeta = pi()-equivalent (also
+  // hidden when betaMode is on, same as every Test Kitchen item). Order/grouping below is
+  // UNCHANGED from before this refactor -- see memory/dispatch-54-job-a.md for the section:
+  // corrections made alongside it and the items that could NOT move to this helper (non-panel
+  // actions with no registry id: Home, District View, Save/Restore Session).
+  const navP = (id, extra) => {
+    const p = PANEL_BY_ID[id];
+    const { onClick, active, badge, disabled } = extra || {};
+    return pis(p.perm, p.label, p.icon, onClick || (() => onOpenModal(id)), active, badge, disabled);
+  };
+  const navPBeta = (id, extra) => {
+    const p = PANEL_BY_ID[id];
+    const { onClick, active, badge, disabled } = extra || {};
+    return pi(p.perm, p.label, p.icon, onClick || (() => onOpenModal(id)), active, badge, disabled);
+  };
+
   const sideStyle=isMobile
     ?{position:'fixed',top:0,left:mobileOpen?0:'-270px',height:'100%',width:w,zIndex:300,
       background:'var(--surf)',borderRight:'.5px solid var(--bdr)',
@@ -207,59 +230,59 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // ── DAILY ──────────────────────────────────────────────────
       navLabel('DAILY'),
       navItem('Home',              '⌂', ()=>setView('command'),         view==='command'),
-      navItem('Needs Attention',   '🔴', ()=>onOpenModal('attention'),  false, needsCount),
-      pis('analytics.brief', 'Daily Brief',      '☀️', ()=>onOpenModal('morning-brief'), false),
-      navItem('Date-Range Report', '📅', ()=>onOpenModal('report'),     false),
-      navItem('Events & Tags',     '◷', ()=>onOpenModal('events'),     false),
-      pis('analytics.dashboard', 'Calendar',        '📅', ()=>onOpenModal('calendar-manager'), false),
-      pis('analytics.dashboard', 'Event Impact',    '📈', ()=>onOpenModal('event-impact'),     false),
+      navP('attention',        { badge: needsCount }),
+      navP('morning-brief'),
+      navP('report'),
+      navP('events'),
+      navP('calendar-manager'),
+      navP('event-impact'),
       // ── PERFORMANCE ────────────────────────────────────────────
       can('analytics.store') && navLabel('PERFORMANCE'),
-      pis('analytics.district', 'Org Summary',        '📊', ()=>onOpenModal('operator-summary'), false),
-      pis('analytics.store',    'Rankings',           '🏆', ()=>onOpenModal('ranking'),           false),
+      navP('operator-summary'),
+      navP('ranking'),
       // Planning hub (Notes 24): Targets · Monthly Projections · Pace · Yearly · Smart Targets, tabbed
-      pis('analytics.store',    'Planning',           '🎯', ()=>onOpenModal('planning'),          false),
+      navP('planning'),
       // ── LABOR & SCHEDULING ─────────────────────────────────────
       // Scheduling hub (Notes 24): Labor Analytics · Scheduling · Schedule Summary · Labor Analysis · Skills, tabbed
       can('analytics.store') && navLabel('LABOR & SCHEDULING'),
-      pis('analytics.store',    'Scheduling',         '🗓', ()=>onOpenModal('sched-hub'),         false),
+      navP('sched-hub'),
       // ── PEOPLE / HR (Notes 24) ─────────────────────────────────
       (can('reviews.view')||can('analytics.store')) && navLabel('PEOPLE / HR'),
-      pis('reviews.view',       'Performance Reviews','📋', ()=>onOpenModal('perf-reviews'),      false),
-      pis('analytics.store',    'Visit Readiness',    '🛡️', ()=>onOpenModal('visit-readiness'),    false),
-      pis('analytics.store',    'Graded Visits',      '📋', ()=>onOpenModal('graded-visits'),      false),
+      navP('perf-reviews'),
+      navP('visit-readiness'),
+      navP('graded-visits'),
       // Dispatch #43: static nav gate only -- admin/supervisor always match security_findings'
       // RLS tier, but manager also needs org_config.gm_identity_reveal_enabled, a runtime flag
       // this permission key can't express. security-panel.js's securityPanelAccess() does the
       // real, live check once opened; this only decides whether the nav entry is worth showing.
-      pis('security.view',      'Security',           '🔒', ()=>onOpenModal('security'),          false),
+      navP('security'),
       // ── OPERATIONS ─────────────────────────────────────────────
       can('analytics.store') && navLabel('OPERATIONS'),
-      pis('analytics.store',    'Food Cost',          '🥗', ()=>onOpenModal('fob-analysis'),     false),
-      pis('analytics.store',    'End of Month',       '📋', ()=>onOpenModal('fob-eom'),          false),
-      pis('analytics.district', 'EOM Supervisor',     '📊', ()=>onOpenModal('eom-summary'),      false),
-      pis('analytics.district', 'Inventory Control',   '📦', ()=>onOpenModal('eom-dashboard'),    false),
-      pis('analytics.store',    'Count Cycle',         '📋', ()=>onOpenModal('count-cycle'),      false),
-      pis('analytics.store',    'Guest Voice',        '💬', ()=>onOpenModal('smg-voice'),        false, ds&&ds.smgRows&&ds.smgRows.length?ds.smgRows.length:null),
-      pis('analytics.store',    '3PO Delivery',       '🛵', ()=>onOpenModal('delivery-mix'),     false),
-      pis('analytics.store',    'Promo / Discount ROI','🎟️', ()=>onOpenModal('promo-roi'),        false),
+      navP('fob-analysis'),
+      navP('fob-eom'),
+      navP('eom-summary'),
+      navP('eom-dashboard'),
+      navP('count-cycle'),
+      navP('smg-voice',    { badge: ds&&ds.smgRows&&ds.smgRows.length?ds.smgRows.length:null }),
+      navP('delivery-mix'),
+      navP('promo-roi'),
       // ── ANALYTICS ──────────────────────────────────────────────
       can('analytics.store') && navLabel('ANALYTICS'),
-      pis('analytics.store',    'Signals',            '📡', ()=>onOpenModal('signals'),            false),
-      pis('analytics.store',    'DT Speed of Service','🚗', ()=>onOpenModal('dt-sos'),             false),
-      pis('analytics.store',    'Local News',          '📰', ()=>onOpenModal('news'),             false),
-      navItem('SAGE',                                  '🧠', ()=>onOpenModal('sage'),               false),
-      navItem('Feature Requests',                      '💡', ()=>onOpenModal('feature-requests'),   false),
-      navItem('Task Queue',                             '⚡', ()=>onOpenModal('task-queue'),         false),
-      navItem('Printable Forms',                        '🖨', ()=>onOpenModal('forms-print'),        false),
-      navItem('Leadership One-Pager',                   '📋', ()=>onOpenModal('leader-one-pager'),   false),
-      pis('analytics.district','Above-Store One-Pager', '📄', ()=>onOpenModal('above-store'),         false),
-      pis('analytics.dashboard','My Reports',           '🗂', ()=>onOpenModal('my-reports'),          false),
-      navItem('Forms Library',                          '🗂', ()=>onOpenModal('forms-library'),      false),
-      pi('analytics.brief',       'Forecast Brief',   '🔭', ()=>onOpenModal('brief'),            false),
-      pi('analytics.store',       'Market Intelligence','🗺',()=>onOpenModal('loc-intel'),        false),
+      navP('signals'),
+      navP('dt-sos'),
+      navP('news'),
+      navP('sage'),
+      navP('feature-requests'),
+      navP('task-queue'),
+      navP('forms-print'),
+      navP('leader-one-pager'),
+      navP('above-store'),
+      navP('my-reports'),
+      navP('forms-library'),
+      navPBeta('brief'),
+      navPBeta('loc-intel'),
       pi('analytics.district',    'District View',    '⊞', ()=>{setView('district');},   view==='district'),
-      pi('analytics.store',       'Store One-Pager',  '📄', ()=>onOpenModal('one-pager'),        false),
+      navPBeta('one-pager'),
       // ── TEST KITCHEN ───────────────────────────────────────────
       // PRUNE (Notes 24, v4.517): only NAV entries are trimmed here — every panel's
       // component + modal routing in App.js is left intact, so a pruned panel is still
@@ -267,18 +290,18 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // Recall list is also kept in memory/panel-catalog.md. The forecast/engineered
       // diagnostic cluster is deliberately NOT pruned (standing owner directive: protect it).
       !betaMode && navLabel('⚗ TEST KITCHEN'),
-      pi('analytics.forecasting', 'Projections',        '▦',  ()=>onOpenModal('proj'),          false),
-      pi('analytics.forecasting', 'Proj vs Actuals',    '◑',  ()=>onOpenModal('pvsa'),          false),
+      navPBeta('proj'),
+      navPBeta('pvsa'),
       // PRUNED — exact duplicate of "Projections" (same 'proj' modal). Recall: uncomment.
-      // pi('analytics.forecasting', 'Proj Workflow',      '🔒', ()=>onOpenModal('proj'),          false),
-      pi('analytics.forecasting', 'Forecast Models',    '🎯', ()=>onOpenModal('model-assign'),  false),
-      pi('analytics.forecasting', 'DI Calibration',     '◎',  ()=>onOpenModal('dialedin'),      false),
-      pi('analytics.forecasting', 'Forecast Accuracy',  '🎯', ()=>onOpenModal('fcst-accuracy'), false),
-      pi('analytics.forecasting', 'LifeLenz Gap',       '📊', ()=>onOpenModal('lfz-gap'),       false),
-      pi('analytics.forecasting', 'DI Compare',         '⚡', ()=>onOpenModal('dicompare'),     false),
-      pi('analytics.forecasting', 'Fcst Reference',     '📐', ()=>onOpenModal('fcst-ref'),      false),
-      pi('analytics.forecasting', 'Forecast Audit',     '🔬', ()=>onOpenModal('forecast-audit'),false, undefined, !selStore),
-      pi('analytics.forecasting', 'LifeLenz Bridge',    '🌉', ()=>onOpenModal('lifelenz-bridge'),false),
+      // navPBeta('proj'),
+      navPBeta('model-assign'),
+      navPBeta('dialedin'),
+      navPBeta('fcst-accuracy'),
+      navPBeta('lfz-gap'),
+      navPBeta('dicompare'),
+      navPBeta('fcst-ref'),
+      navPBeta('forecast-audit', { disabled: !selStore }),
+      navPBeta('lifelenz-bridge'),
       // Optional / experimental panels (registry-driven) — hidden by default, toggled back
       // on per-panel in Admin → Panel Manager. Nothing deleted; modal routing stays in App.js.
       ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
@@ -287,15 +310,15 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       // 870-event cloud calendar + the 📁 Bulk Import, it earns a top-level home again.
       // ── ADMIN ──────────────────────────────────────────────────
       navLabel('ADMIN'),
-      pis('settings.view', 'Settings',     '⚙', ()=>onOpenModal('settings'),               false),
-      pis('settings.view', 'Panel Manager','🧩', ()=>onOpenModal('panel-manager'),          false),
-      navItem('About',           'ℹ️', ()=>onOpenModal('about'),                false),
-      navItem('Knowledge Base',  '📖', ()=>onOpenModal('kb'),                   false),
-      navItem('Metric Lineage',  '🔍', ()=>onOpenModal('metric-lineage'),       false),
-      pis('data.upload',   'Data Manager', '🗄', ()=>onOpenModal('data-manager'),           false),
+      navP('settings'),
+      navP('panel-manager'),
+      navP('about'),
+      navP('kb'),
+      navP('metric-lineage'),
+      navP('data-manager'),
       navItem('Save Session',    '💾', ()=>onSaveSession&&onSaveSession(),      false),
       navItem('Restore Session', '📂', ()=>onRestoreSession&&onRestoreSession(),false),
-      navItem('Help',            '?',  ()=>onOpenModal('help'),                 false),
+      navP('help'),
     ),
 
     // ── Footer status ───────────────────────────────────────────

@@ -30,8 +30,19 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job A — the registry now drives label/icon/perm](dispatch-54-job-a.md)** —
+  **NEWEST.** `shell.js`'s sidebar reads label/icon/permission from `panel-registry.js` instead of
+  duplicating them as literals (~44 nav items), via new `navP`/`navPBeta` lookups — pure refactor,
+  verified by *rendering* `AppSidebar` and diffing its exact text output against a pre-refactor
+  capture, not just asserting the registry's shape. Caught one real drift doing it: the Test
+  Kitchen "Projections" entry's registry label/icon had gone stale ("Proj Workflow"/lock, from a
+  pruned duplicate line) vs. the live "Projections"/▦ — fixed, today's UI wins. Also corrected
+  `section:` on 21 panels so it stops implying a regroup (~60%) that is 0% done in the UI — this
+  is Job B's real starting catalog, not a finished regroup; two items flagged for Job B's
+  attention (Inventory has no sidebar entry at all; Forms Library/Printable Forms' corrected
+  section is `analytics`, not their eventual `forms` target). 1817/1817 tests, build clean.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=0 — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
-  **NEWEST.** Dispatch #53 Phases A–D, same day as the Phase 0 measurement below. **Phase A**: the
+  Dispatch #53 Phases A–D, same day as the Phase 0 measurement below. **Phase A**: the
   403 that stopped the prior backfill was **session-token expiry**, not a rate limit (six uniform
   ~48s chunks then a deterministic cliff at ~5 minutes — an IAM explicit-deny doesn't tighten with
   volume) — closed the remaining 48-day tail in **one 3-chunk job**, 8,507 rows, 27/27 stores, no
