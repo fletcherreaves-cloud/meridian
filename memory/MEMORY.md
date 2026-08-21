@@ -29,6 +29,41 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 `src/utils/` before writing a mechanism into any durable doc — the grep that refutes you costs
 seconds, and the theory that survives one costs a PR.
 
+### Dispatch files come in TWO naming conventions — grep for the NUMBER, not a filename
+
+A missed pairing here reads as an unindexed file and invites a pointless "fix" (this exact
+confusion cost a PM pass on 2026-08-21). Both shapes exist on purpose:
+
+| Shape | What it is | Example |
+|---|---|---|
+| `dispatch-NN.md` | the **PM brief** — the spec handed to the engineer, written before the work | `dispatch-52.md` |
+| `dispatchNN-topic.md` | the **engineer writeup** — what actually shipped, written after | `dispatch44-cash003-count-rule.md` |
+
+Most briefs are linked from this index directly. **Measured 2026-08-21, exactly four are not**,
+and each for a reason:
+
+- **`dispatch-44.md` / `dispatch-45.md` / `dispatch-46.md`** — the engineer writeup carries the
+  durable content and *is* linked (`dispatch44-…`, `dispatch45-…` + `dispatch45b-…`,
+  `dispatch46-…`); the briefs are cited in prose instead. Not drift.
+- **`dispatch-32.md`** — **superseded the day it was written**, deliberately kept with a
+  correction notice on top. Read `dispatch32-pipeline-contract.md` instead.
+
+Everything else, #20 through #54, has a linked entry. A few dispatches also carry a second file
+for their implementation pass (`dispatch-48-inv003-inv005-identity-vault.md`,
+`dispatch-50-implementation.md`).
+
+**One genuine hole: dispatch #47 has NO memory file at all.** The number was used — #47 was the
+Register Audit response-key diagnostic (the DEBUG-gated key-name log in
+`scripts/qsrsoft-register-audit-pull.mjs`) and the CASH-003 manual-report check — and #48's and
+#49's briefs both cite it, but its own brief was never committed, so those citations are dangling
+pointers. This is exactly CLAUDE.md's *"never end a session with an uncommitted memory file"* rule
+being violated once and the cost landing later. Recover #47's intent from
+`dispatch-48-inv003-inv005-identity-vault.md:174`, `dispatch-48.md:151`, and `dispatch-49.md:44`
+— not from a file, because there isn't one.
+
+**So: `grep -rn "dispatch.\?NN" memory/` — never conclude a dispatch is undocumented, or that the
+index has drifted, from one filename missing.**
+
 ## ⭐ READ FIRST — latest handoff & vision
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0's gate closed, G=0 — Phase 1 landed](finding-phase0-gate-result-2026-08-21.md)** —
   **NEWEST.** Dispatch #53 Phases A–D, same day as the Phase 0 measurement below. **Phase A**: the
