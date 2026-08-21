@@ -110,6 +110,32 @@
   a{color:var(--gate)}
   a:focus-visible,*:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
   @media (max-width:560px){body{font-size:16.5px}header{padding-top:40px}.meta{gap:0 22px}}
+  @media print{
+    @page{ size:letter; margin:0.65in }
+    :root, :root[data-theme="dark"]{
+      --paper:#ffffff; --card:#ffffff;
+      --ink:#12151c; --ink-2:#3d4552; --ink-3:#697386;
+      --rule:#c8ccd4; --rule-2:#e4e7ec;
+      --gold:#a67806; --gold-soft:#fdf4dd;
+      --neg:#a8302a; --neg-soft:#fbeceb;
+      --pos:#0f6d63; --pos-soft:#e7f2f0;
+      --gate:#5b3fa8; --gate-soft:#f1ecfb;
+    }
+    *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact }
+    body{ padding:0; font-size:12px; background:#fff }
+    .wrap{ max-width:100% }
+    header{ padding-top:0 }
+    h1{ font-size:30px }
+    h2{ margin-top:26px; break-after:avoid; page-break-after:avoid }
+    h3{ break-after:avoid; page-break-after:avoid }
+    p, li{ orphans:3; widows:3 }
+    table, .callout, .figrow, svg, .tablewrap, .say, .fig{
+      break-inside:avoid; page-break-inside:avoid
+    }
+    a{ color:var(--ink); text-decoration:none }
+    a[href]:after{ content:"" }
+    footer{ break-inside:avoid; page-break-inside:avoid }
+  }
 </style>
 
 <div class="wrap">
@@ -471,8 +497,8 @@ working.</em></p>
 <h2>The line built to be retold</h2>
 <p class="say">For six weeks after launch there was no promotion running and no price change in
 our restaurants. Traffic fell 3.14 points against last year. That is McValue on its own, with
-nothing else to blame and nothing subtracted — and everything that happened after June is our own
-price, which we measured before you had to ask.</p>
+nothing else to blame and nothing subtracted — and everything that happened after June is the
+recommended price round, which we measured before you had to ask.</p>
 
 <footer>
   Meridian BI · 19 Oklahoma restaurants, 6 Florida control · Figures measured against
