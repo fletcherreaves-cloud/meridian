@@ -132,9 +132,12 @@ conditional branching, or a form revision mid-window. **Never divide `totalQuest
 `submissions` and treat the result as the form's length.**
 
 **2. "Completion percent" is ambiguous and the two readings are different metrics.** Within-form
-completeness (`answered/total`, what this endpoint gives) is **not** the same as form-compliance
-(`submitted/required`, which it cannot give). Both are naturally called "completion percent." The
-dashboard must label them distinctly or it will be actively misleading.
+completeness (`answered/total`) is **not** the same as form-compliance (`submitted/required`). Both
+are naturally called "completion percent." Label them distinctly or the dashboard misleads.
+⚠️ **And `completionDetail`'s numeric `status` gives the ratio but NOT its denominator** — so it
+cannot be aggregated correctly on its own (averaging ratios violates the never-average-averages
+rule). `completionByForm`'s `answeredQuestions`/`totalQuestions` are the numerator and denominator
+you need to roll thoroughness up across forms. **That is why both endpoints are still required.**
 
 **3. Never average the averages.** Estate within-form completion is **98.76%** dollar-weighted
 (17,199 / 17,415 questions) vs **99.21%** as an unweighted mean of the 86 row rates — 0.45pp apart on
@@ -186,113 +189,149 @@ runs two parallel pre-shift sets, a naive per-form compliance view double-counts
 understates each form's rate. **One week, one snapshot — measure it before calling it duplicate
 work.**
 
-## ⭐ `completionDetail` — the endpoint to build on (owner capture, same session)
+## ⭐ `completionDetail` — the endpoint to build on (FULL response measured, 2026-08-21)
 
 ```
 POST https://forms.home.myqsrsoft.com/api/forms/reports/completionDetail?orgId=a546d4ef-…
-{"startDate":"2026-08-15T05:00:00.000Z","endDate":"2026-08-22T04:59:59.999Z",
+{"startDate":"2026-08-19T05:00:00.000Z","endDate":"2026-08-22T04:59:59.999Z",
  "locations":["3708",…,"noLocation"]}          <- NO formIds. That is the point.
 ```
 
-**No `formIds`.** Identical host, path family, org id, window and `locations` array to
-`completionByForm`, but the 61-UUID list is simply absent — the server already knows what each store
-is assigned. This **defeats caveat 9 outright** (a hardcoded form list going stale invisibly) and
-means no forms-list endpoint has to be found.
+**No `formIds`.** The server already knows what each store is assigned, so this **defeats caveat 9
+outright** — no forms-list endpoint has to be found and no hardcoded UUID list can go stale.
 
-### The response — one row per SCHEDULED OCCURRENCE, not per submission
+**Measured against the complete response: 4,714 rows, 3 days × 27 stores, 13 distinct forms.**
+
+### One row per scheduled occurrence — the full field set
 
 ```json
-{"formTitle":"Breakfast Pre-Shift", "formId":"03b62c8f-709c-4b11-ab90-5ffaa03fa989",
- "location":"10034",
- "status":"MISSED", "missed":true, "hasResponse":false,
- "scheduledAt":"2026-08-15T11:00:00Z",
- "completedBy":"--", "reviewedWith":"N/A", "score":null,
- "assignedTo":[{"name":"General Manager","type":"group"},
-               {"name":"Shift Manager","type":"group"},
-               {"name":"Department Manager","type":"group"},
-               {"name":"Floor Supervisor","type":"group"}]}
+{"formTitle":"Breakfast Pre-Shift", "formId":"03b62c8f-…", "location":"37566",
+ "status":1, "missed":false, "hasResponse":true,
+ "scheduledAt":"2026-08-19T11:00:00Z",
+ "startedAt":"2026-08-19T10:09:24.638Z", "completedOn":"2026-08-19T10:16:49.097Z",
+ "timeToComplete":444444, "completedBy":"<NAME>", "userId":"<uuid>",
+ "score":null, "reviewedWith":"N/A", "assignedTo":[{"name":"General Manager","type":"group"}, …]}
 ```
 
-**This is the schedule and the outcome in one row**, which is what makes the owner's dashboard
-possible:
+### 🔴 `status` IS POLYMORPHIC — a string enum OR a float. This is the biggest trap in the payload.
 
-| field | answers |
-|---|---|
-| `scheduledAt` | **"per day"** — the occurrence's own timestamp, no per-day loop needed |
-| `status` / `missed` / `hasResponse` | **"completed vs missed"** — the denominator is the row itself |
-| `completedBy` | **"manager submitting"** |
-| `assignedTo` | which *role groups* the form was assigned to |
-| `location` / `formId` | the grid keys, same unpadded NSN convention |
+| `status` | n | `missed` | `hasResponse` | meaning |
+|---|---:|---|---|---|
+| `"MISSED"` | 3,886 | `true` | `false` | scheduled, window passed, never done |
+| `"--"` | 599 | `false` | `false` | **scheduled but still open — NOT a miss** |
+| a **number 0–1** | 229 | `false` | `true` | **completed**, and the number is the completion fraction |
 
-Because a **missed occurrence is a returned row**, this endpoint does not have `completionByForm`'s
-omission problem: nothing has to be reconstructed from the request list.
+**Three states, not two.** Treating `"--"` as missed over-reports misses by 599 rows (13% of the
+dataset). A dashboard must carry *done / missed / still-open* or it lies about the current day.
 
-### ⚠️ Caveats on `completionDetail`
+`missed === (status === "MISSED")` on **all 4,714 rows, zero disagreements** — so `missed` is a
+reliable boolean, and the safe way to read this field is: **branch on `missed`/`hasResponse`, and
+only then treat `status` as a number.** Never `String(status)`, never a `switch` on it.
 
-**A. `completedBy: "--"` and `reviewedWith: "N/A"` are STRING SENTINELS, not null.** Exactly the
-`emp_id = '0'` trap from the identity-vault work, which cost a wrong count once already. Never treat
-`"--"` as a name; never let `"N/A"` reach a UI as a reviewer. Normalise both to null on ingest, and
-**do not assume these are the only sentinels** — the captured slice is all-MISSED, so the completed-
-row vocabulary is unseen.
+**The numeric `status` is the within-form completion ratio.** `0.9893617021276596` = **93/94**, on
+the 94-question Breakfast Pre-Shift. So per-submission thoroughness is available here after all —
+but see the aggregation caveat below.
 
-**B. 🔴 `completedBy` WILL carry a plaintext employee name on completed rows** — that is the entire
-point of the field. **The identity-vault rules apply unchanged and are not optional:** route through
-`get_or_create_employee_token()` on ingest, `security_findings`-style subjects stay tokenised, never
-persist a plaintext name, never log one, never put one in a test fixture, and surface a name only via
-the logged `reveal_employee_identity()` path.
+### Fields that exist ONLY on completed rows
 
-**C. `assignedTo` is ROLE GROUPS, not people** (`type:"group"`). It says who *could* have done it, not
-who did. `completedBy` is the person. Conflating them would attribute a miss to four managers at once.
-`type` being present implies a non-`group` variant (individual assignment) exists — unseen here.
+`completedBy`, `userId`, `startedAt`, `completedOn`, `timeToComplete` are present on **all 229
+completed rows and none of the other 4,485**. Any ingest must treat them as nullable, not optional-
+in-principle-but-always-there.
 
-**D. `scheduledAt` is UTC; convert before bucketing by day.** `2026-08-15T11:00:00Z` = **06:00 CDT**,
-a plausible breakfast pre-shift time. Bucketing on the raw UTC string puts late-evening occurrences on
-the wrong day. And per caveat 5 above, decide deliberately whether the dashboard's day is the local
-calendar day (what this endpoint's own window uses) or the **4am business day** (`compType=trading`,
-what every DAR-sourced number uses) — they are not the same day.
+- **`timeToComplete` is MILLISECONDS of ACTIVE time, not wall-clock elapsed.** Median ratio to
+  `completedOn − startedAt` is 0.9999, but the floor is 0.0000: one Dinner Pre-Shift shows **28.97
+  days elapsed against 109 seconds of `timeToComplete`** — a form left open and finished much later.
+  So `timeToComplete` is the honest "how long did this actually take" (median **125 s**, p10 24 s,
+  max 6,878 s) and the timestamp difference is not. **Do not derive one from the other.**
+- **`score` is null on all 4,714 rows and `reviewedWith` is `"N/A"` on all 4,714.** Measured, not
+  assumed — both fields are entirely unused by this estate's forms today. Keep the columns (a scored
+  audit form presumably populates `score`), but no metric can be built on them now.
+- **`userId` is a UUID — 229 present, 40 distinct people.** This matters for the vault: it is a
+  **stable, non-identifying person key**, so ingest can key on `userId` and never store
+  `completedBy` at all. Better than tokenising a display name, which is not guaranteed stable.
 
-**E. `score: null` on every captured row, and `completionByForm` gave `pointsPossible: 0`.** Consistent
-with these being unscored checklists. A scored audit form presumably populates both; don't drop the
-field.
+### 🔴 `scheduledAt` can be NULL — 32 rows, every one of them completed
 
-**F. ⚠️ The capture is TRUNCATED — it ends mid-object on the fifth row.** Row count, the full status
-vocabulary, and what a COMPLETED row looks like are all **unseen**. In particular, store 10034 appears
-in rows 1 and 5 for the same form, and row 5's `scheduledAt` is cut off, so **whether rows duplicate
-is unknown** — do not read the repeat as a duplicate-row bug or as two occurrences. Get a complete
-response before designing the ingest key. A plausible PK is `(location, formId, scheduledAt)`, and
-that is a guess.
+These are **ad-hoc submissions**: someone filed a form with no scheduled occurrence behind it (6
+Travel Path, 6 Lunch Pre-Shift, 6 Red Bull, 5 EA Lunch PS, and others). **This kills the obvious
+primary key.** `(location, formId, scheduledAt)` drops or collides all 32, and they are real
+completed work. Key on something that survives a null `scheduledAt`.
 
-### 📌 It sharpens the FL duplicate-forms question into something urgent
+## 🔴 The headline number is a CADENCE ARTIFACT — do not ship it
 
-All four fully-captured MISSED rows are **Breakfast Pre-Shift at 10034, 37566, 6178, 6838** — every one
-a **Florida** store, and every one of them is in the set that submits the **EA** pre-shift forms
-instead (see below). The obvious reading is that FL stores are still *assigned* the legacy
-94-question pre-shift after moving to the 35-question EA version, so they are scored as MISSED for a
-form they were never meant to file.
+Estate-wide the response reads **229 completed / 3,886 missed / 599 open = 4.9% completion.** That
+number is worthless, and shipping it would tell every GM they fail 95% of the time.
 
-**That is a hypothesis on four rows of a truncated response, not a finding** — but it is the highest-
-stakes one here, because it inverts the dashboard's meaning: those MISSED rows would be a **stale
-assignment**, not an operational failure, and shipping them as a compliance score blames GMs for
-following the rollout. **Settle this before the dashboard shows anyone a miss rate.** Per the
-`CLAUDE.md` voice rule, a number that names a decision must be a number that is right.
+**Travel Path is scheduled 27–45 times per store per day** and accounts for **4,096 of 4,714 rows
+(87%)**. Nobody performs 27 travel paths a day; the schedule is a high-frequency window, not an
+expectation of 27 completions. Decomposed by cadence:
+
+| form group | median schedule | completed |
+|---|---|---:|
+| Daily pre-shifts (Breakfast/Lunch/Dinner, ±EA) | **1 / store / day** | **77 / 302 = 25.5%** |
+| Travel Path (No Play Place / With Playland) | **27–45 / store / day** | 129 / 4,096 = 3.1% |
+| Everything else (Red Bull 3/day, Cash Audit, Food Safety) | mixed | 23 / 316 = 7.3% |
+
+**So the dashboard must segment by form cadence.** Only the ~1/day forms support a true
+completed-vs-missed rate. High-frequency forms need "completions per day" against a realistic
+target, never a percentage of the schedule.
+
+**On the daily pre-shifts — where the denominator IS meaningful — 25.5% estate-wide is a real,
+actionable number**, and it names a decision. Two forms were **never once completed** anywhere:
+**Cash Audit** (8 scheduled, 4 stores) and **Food Safety Visit 2026** (36 scheduled, 1 store).
+
+### 🎯 Seven stores completed ZERO daily pre-shifts in three days
+
+**5183 Chickasha · 6972 Ada · 18213 Lindsay · 29760 Duncan · 33109 Marietta · 34222 Harrah ·
+38609 Freeport.** All 27 stores *are* scheduled the pre-shifts, so these are genuine zeros, not
+unassigned stores. This is a **superset** of the five that `completionByForm` returned no row for —
+it adds 6972 and 33109, which `completionByForm` hid because they had *some* submission of *some*
+other form. That difference is the clearest argument for `completionDetail` being the primary source.
+
+## ❌ CORRECTION — my FL "stale assignment" hypothesis is REFUTED
+
+The earlier draft of this file called it *"the highest-stakes hypothesis here"*: that Florida stores
+had moved to the 35-question EA pre-shifts while still being assigned the 94-question legacy set, so
+their MISSED rows were a rollout artifact rather than a failure. **The full response disproves it.**
+
+- Legacy Breakfast Pre-Shift completion: **FL 17/45 = 38%** vs **OK/other 24/61 = 39%.** Statistically
+  indistinguishable. FL is not being penalised relative to OK.
+- **All 27 stores** are scheduled the legacy pre-shifts — this was never an FL-only assignment.
+- The EA forms are **scheduled at essentially one store (35242 Cottondale)**. The EA completions at
+  6178 and 6838 that made it look estate-wide were **ad-hoc rows with a null `scheduledAt`**.
+
+I built that hypothesis on four rows of a truncated response and on a weekly aggregate that showed
+*submissions* without showing *assignments*. It looked strong and it was wrong — the standing
+measure-don't-reason rule, working as intended. **The MISSED rows are real; there is no artifact to
+subtract.**
 
 ## Open questions a pull must settle
 
-The two that blocked the dashboard — the assignment/schedule denominator and the submitter — are
-**both answered by `completionDetail`**. What remains:
+The dashboard is no longer blocked — the denominator, the submitter, the per-day date and the
+completion ratio are all measured. What remains:
 
-1. **🔴 A COMPLETE `completionDetail` response.** The capture is truncated at ~4½ rows, all `MISSED`
-   at FL stores. Unseen: the full `status` vocabulary, what a completed row's `completedBy` and
-   `score` look like, the row count, and whether occurrences can repeat. **This is the one blocker**
-   — the ingest key cannot be chosen without it.
-2. **Is the FL legacy-pre-shift assignment stale?** Decides whether MISSED means a failure or a
-   rollout artifact, and therefore whether the dashboard is trustworthy at all. Highest stakes.
-3. **Auth shape for `forms.home`** — get the DevTools request-header panel; do not infer from curl.
-   `sec-fetch-site: same-site` makes an invisible cookie genuinely plausible on this host.
-4. **The rest of the sibling family** — `completionByForm`/`completionDetail` confirm the naming
-   pattern; a `completionByLocation` or per-user variant may exist and may be cheaper for rollups.
-5. **Range limits and paging.** One week × 27 stores already produced a large `completionDetail`
-   response. Check for a cap or cursor before attempting a backfill — and per the standing rule,
-   depth is not a limiter, so plan the backfill rather than scoping around it.
-6. **Overlap with anything Meridian already has** — nothing today covers shift checklists, so this is
-   probably net-new rather than redundant, but check per the auto-first rules before adding a stream.
+1. **The cadence question, and it is a product decision not a data one.** Travel Path is scheduled
+   27–45×/store/day. What *is* the expectation? Until someone says, the panel can only report
+   "N completed today," never a percentage. **Ask the owner before designing that tile.**
+2. **Auth shape for `forms.home`** — still unverified. Get the DevTools request-header panel;
+   `sec-fetch-site: same-site` means a cookie would be attached invisibly, so curl cannot settle it.
+3. **The ingest key**, given 32 completed rows carry a null `scheduledAt`. `(location, formId,
+   scheduledAt)` is not viable. A surrogate key plus a natural-key index is the likely answer.
+4. **Range limits and paging.** 3 days × 27 stores = 4,714 rows with no pagination envelope visible.
+   A year's backfill is ~570k rows — find the cap before attempting it. Depth is not a limiter per
+   the standing rule; plan the backfill rather than scoping around it.
+5. **Whether `userId` is stable across stores and over time.** If it is, it is the vault key for this
+   stream and `completedBy` never needs storing.
+6. **The rest of the sibling family** — `completionByForm`/`completionDetail` confirm the naming
+   pattern; a per-user or per-location variant may be cheaper for rollups.
+7. **Overlap with anything Meridian already has** — nothing today covers shift checklists, so this is
+   net-new rather than redundant, but check per the auto-first rules before adding a stream.
+
+## ⚠️ PII handling for this stream — not optional
+
+`completedBy` is a **plaintext employee name**. The identity-vault rules apply unchanged: route
+through `get_or_create_employee_token()` on ingest, never persist a plaintext name, never log one,
+never put one in a test fixture, and surface a name only via the logged `reveal_employee_identity()`
+path. **Prefer keying on `userId`** (a UUID) so the name never needs to be stored at all.
+
+No name, `userId`, or other identifier from the captured response is recorded in this file.

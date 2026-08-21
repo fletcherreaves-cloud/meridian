@@ -65,28 +65,31 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
-  **Owner-requested dashboard** (*"forms completed vs missed per day per store … manager submitting
-  and completion percent"*). A **third host family**, `forms.home.myqsrsoft.com` — **neither** the
-  DAR's Playwright requirement **nor** the security host's token-only finding transfers; get the
-  DevTools header panel, because `sec-fetch-site: same-site` means a cookie *would* be attached
-  invisibly. ⭐ **Two siblings, and you need both: build on `completionDetail`.** It takes **no
-  `formIds`** and returns **one row per SCHEDULED OCCURRENCE** — `status`/`missed`, `scheduledAt`,
-  `completedBy`, `assignedTo` role groups — so it carries the **assignment denominator** that makes
-  "missed" computable, and a missed occurrence is a *returned row*. `completionByForm` is the
-  secondary source: it alone gives within-form thoroughness (`answered/total`), which matters because
-  a form can be COMPLETED and still 20% blank (10034 Bonifay at **79.6%**, ~one whole 94-question form
-  left unfilled, when every other row is 96.8–100%). ⚠️ **`completedBy:"--"` and `reviewedWith:"N/A"`
-  are string sentinels, not null** (the `emp_id='0'` trap again), and **`completedBy` carries a
-  plaintext employee name on completed rows — identity-vault rules apply unchanged**. Other traps:
-  `completionByForm` **omits** absences (49 of 61 forms and **5 of 27 stores returned no row**);
-  `totalQuestions` is summed-per-submission and **not** a form constant; the window is **local
-  midnight, NOT `compType=trading`**; key on `formId` (titles have trailing spaces and a typo).
-  🔴 **Unsettled and blocking:** the `completionDetail` capture is truncated, and all its MISSED rows
-  are FL stores that had moved to the shorter "EA" form set — if that assignment is stale, MISSED
-  means rollout artifact, not failure, and the dashboard would blame GMs for complying. 🎯 It also
-  **corrects the `event_details` finding**: the security host's `storeRef` **is** the unpadded NSN
-  (`29760` = Duncan-Hwy 81), so dispatch #56 Part E needs no mapping hunt.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
+  **Owner-requested dashboard**, and it is **no longer blocked** — the full 4,714-row
+  `completionDetail` response is measured. A **third host family**, `forms.home.myqsrsoft.com`;
+  **neither** the DAR's Playwright requirement **nor** the security host's token-only finding
+  transfers, and `sec-fetch-site: same-site` means curl cannot rule out an invisible cookie — get the
+  DevTools header panel. ⭐ **Build on `completionDetail`** (no `formIds`, one row per *scheduled
+  occurrence*, so a miss is a returned row); keep `completionByForm` as the denominator source, since
+  `completionDetail` gives a completion *ratio* with no question counts and ratios cannot be averaged.
+  🔴 **`status` is POLYMORPHIC — a string enum OR a float**, and there are **three** states, not two:
+  `"MISSED"` (3,886), `"--"` = **scheduled but still open, NOT a miss** (599), and a **number 0–1**
+  that is the completion fraction (229). `missed === (status==="MISSED")` on all 4,714 rows, so
+  branch on `missed`/`hasResponse` and only then read `status` as a number. 🔴 **The 4.9% estate
+  completion headline is a CADENCE ARTIFACT — do not ship it:** Travel Path is scheduled **27–45×
+  per store per day** and is 87% of all rows. Segment by cadence — daily pre-shifts (1/store/day) run
+  **25.5%**, a real and actionable number; **seven stores completed ZERO in three days** (5183, 6972,
+  18213, 29760, 33109, 34222, 38609), a superset of what `completionByForm` could see. Other measured
+  traps: **`scheduledAt` can be NULL** on completed ad-hoc rows (32), which kills the obvious
+  `(location, formId, scheduledAt)` PK; `timeToComplete` is **ms of ACTIVE time**, not wall-clock (one
+  row: 28.97 days elapsed, 109 s recorded); `score` and `reviewedWith` are unused on every row;
+  `completedBy` is a **plaintext name** so vault rules apply, but **`userId` is a UUID** and is the
+  better key. ❌ **My FL "stale assignment" hypothesis is REFUTED** — FL 38% vs OK 39% on the legacy
+  pre-shift, all 27 stores are assigned it, and the EA forms are scheduled at essentially one store.
+  The MISSED rows are real; there is no artifact to subtract. 🎯 It also **corrects the
+  `event_details` finding**: the security host's `storeRef` **is** the unpadded NSN (`29760` =
+  Duncan-Hwy 81), so dispatch #56 Part E needs no mapping hunt.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`time-punches-matched` — punch edits, and the geid answer (RETURNS SSNs)](finding-qsrsoft-time-punches-endpoint-2026-08-21.md)** —
   **🔴 THIS ENDPOINT RETURNS SOCIAL SECURITY NUMBERS + full legal names. NEVER put `ssn` in
   `selectCols`** — it is caller-chosen, so the field never has to leave QSRSoft. Never persist, never
