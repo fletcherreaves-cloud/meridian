@@ -99,8 +99,37 @@ Too trivial-feeling to write up, and cheap enough that nobody bothers.
 
 That single story explains all four measurements at once, which no earlier hypothesis did.
 
-**⚠️ NOT CONCLUDED — the waste comparison is confounded, and the confound is the variable under
-study.** `waste_logged` is a **dollar** sum, and this store's problem is concentrated in **paper**,
+### ❌ REFUTED same day — the unlogged-waste mechanism is wrong
+
+The confound-removing query ran (latest period, per-store waste split by class):
+
+| | paper waste | food waste |
+|---|---:|---:|
+| **store 0013113** | **530** | **2,654** |
+| other stores (avg, n=26) | 486 | 4,876 |
+
+**Paper waste logging is NORMAL — slightly ABOVE average (+9%).** The 42% total gap is **entirely
+food** (−46%). The store logs packaging waste fine, and its variance problem is packaging. The two
+do not connect. **The unlogged-waste mechanism proposed above is dead.**
+
+This was flagged in advance as a live outcome, which is why the 42% was never cited as a finding.
+
+**What survives, untouched:** the whole finding above — store-specific items, 82% paper vs 47%,
+3.5× flag rate, chronic, complete counts, not theft.
+
+**What is now unexplained again:** the mechanism. Note the distinction that matters — *waste
+logging* and *counting accuracy* are different activities, and this only rules out the former. A
+store can log every crushed sleeve it discards and still miscount the sleeves on its shelf. So
+**"packaging counting practice" remains the leading explanation with no specific mechanism behind
+it.** Remaining candidates, none tested: partial-sleeve counting, receiving/delivery posting on
+packaging, transition-SKU handling where old and new stock coexist.
+
+**A separate new thread:** why is this store's FOOD waste logging 46% below the estate average when
+food is *not* where its flags are (5 of 28)? Either genuine efficiency, or food under-logging
+contributing to the elevated 21.3% median. **Do not conflate this with the paper problem** — they
+are two findings, and only one of them has evidence behind it.
+
+**Superseded note, kept for the reasoning trail:** `waste_logged` is a **dollar** sum, and this store's problem is concentrated in **paper**,
 which is cheap. A store whose waste is mostly packaging shows low waste dollars even if it logs
 every cup. It is also not normalised to sales volume. Two queries remove both confounds and are
 written but unrun: waste per $1,000 of sales (`qsr_daily_activity.net_sales`), and the paper-vs-food

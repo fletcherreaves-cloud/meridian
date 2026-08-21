@@ -1,98 +1,108 @@
 ---
 name: dispatch-51
-description: Makes dispatch #49's Phase 0 gate measurable as a repeatable SQL query instead of a bespoke API re-pull. Adds a nullable audit_rows.emp_id column, populated by the existing (proven) register-audit pull, backfilled 2026-03-01 -> today. Additive only -- does not touch the identity vault, token keying, or audit_rows' PK, and does not open Phase 1.
+description: Phase 0's measurement failed twice on a bespoke API pull. This moves it onto the production pull path - capture empID into audit_rows as a nullable column, backfill through the existing hardened script, then run Phase 0 as pure SQL with no API dependency. Owner-approved as a deliberate, additive slice ahead of the gate; the gate on the re-key itself still holds.
 metadata:
   node_type: memory
   type: dispatch
 ---
 
-# Dispatch #51 — make Phase 0 measurable, don't re-implement the pull
+# Dispatch #51 — capture `empID`, then measure Phase 0 in SQL
 
-Owner-approved scope call, 2026-08-21. Does not replace dispatch #49 (memory/dispatch-49.md) --
-it fixes how Phase 0's measurement gets its data.
+**Owner-approved 2026-08-21** as a deliberate scope call. Read `memory/dispatch-49.md` first — this
+dispatch does not replace it, it makes its Phase 0 measurable.
 
-## Why
+## Why this exists
 
-The engineer's first Phase 0 attempt built a bespoke measurement script
-(`scripts/dispatch49-phase0-measure.mjs`) that re-implemented `qsrsoft-register-audit-pull.mjs`'s
-auth/fetch logic instead of reusing it, and inherited none of the two-path auth, Playwright
-fallback, or retry handling that makes the real pull reliable. It failed twice on a widened
-window and printed a Row 5 of 100% from zero API rows fetched -- an artifact of "no data pulled,"
-not "no employee has an empID." **The stop and the artefact call were both correct** -- flagging a
-false population rather than passing it through is the difference between a real decision and a
-wrong one. But the right fix is to stop re-implementing the pull, not to retry the bespoke path.
+Phase 0's measurement failed **twice**. Both attempts pulled the widened Register Audit window
+through a **bespoke, one-off API call written for the measurement**, and both hit the same auth
+flakiness (`token captured: false`, cookie fallback 401 on the first chunk). The engineer stopped at
+the two-failure bar and — correctly — **flagged the resulting "row 5 = 1,140 (100%)" as an artefact
+of fetching zero rows, not a finding.** That is exactly the false row-5 population dispatch #49
+warned about, and passing it through would have sent the decision to option B on no evidence.
 
-`qsrsoft-register-audit-pull.mjs` already has a proven 80-day / 14,528-row / 27-store backfill
-(run `32415565305`) and, as of dispatch #49, a confirmed field name: `empID` sits beside
-`empName` on every response row (run `32431369072`'s DEBUG key-name log). It just never got
-written anywhere -- `mapRow()` deliberately keeps `emp` (the name) as the PK-facing identity and
-discards `empID` by design (see the file's own header on why: switching the PK to empID would
-split-brain 5+ months of manual-upload history).
+**The problem is the approach, not the flakiness.** A production pull for this endpoint already
+exists — `scripts/qsrsoft-register-audit-pull.mjs` — with two-path auth, a Playwright fallback,
+retry handling, and a proven 80-day / 14,528-row / 27-store run (`32415565305`). The measurement
+script re-implemented that and inherited none of its hardening. **Do not retry the bespoke path a
+third time.**
 
-## The fix
+**Banked from the failed run, and real:** `audit_rows` holds **1,140 distinct employee names across
+36,631 rows, 2026-03-01 → 2026-08-20**. That is Phase 0's denominator and does not need re-measuring.
 
-Additive column, not a PK change: `audit_rows.emp_id text`, nullable, populated by the SAME
-pull that already works, alongside the existing `emp` name column. `manualRefCnt`/`manOverringAmt`
-is the worked example of the same round trip already living in this file at every site -- a
-response field mapped in `mapRow()`, carried through `saveAuditRows()`'s upsert, landing in an
-additive column nothing else reads yet.
+## Scope boundary — read this before starting
 
-Once populated, Phase 0's five numbers (memory/dispatch-49.md) become a single SQL query against
-`audit_rows` -- group by `emp`, count distinct `emp_id` per name and distinct `emp` per `emp_id`,
-count nulls -- no QSRSoft credentials, no Playwright, no re-pull, repeatable any time.
+This is **additive only** and does NOT open Phase 1. Specifically:
 
-## Scope boundary (hard)
+- ✅ A **nullable** `emp_id` column on `audit_rows`, populated by the existing pull. Nothing reads it.
+- ❌ **Do not touch the identity vault**, `get_or_create_employee_token()`, or any token keying.
+- ❌ **Do not change `audit_rows`' PK.** It stays `(loc, date, emp)`. Five months of manual-upload
+  history and freshest-wins continuity depend on it.
+- ❌ **Do not reconcile, merge, or re-key anything.**
 
-- **Additive only.** Nothing reads `emp_id` yet. This dispatch does NOT open Phase 1.
-- Does **not** touch the identity vault, `get_or_create_employee_token()`, or any token keying.
-- Does **not** change `audit_rows`' `(loc, date, emp)` PK -- five months of manual history and
-  freshest-wins continuity ride on it, unchanged.
-- Does **not** reconcile or merge anything. The gate holds exactly as dispatch #49 left it.
+The gate stands: the owner sees the five numbers before anyone commits to the re-key, and taking the
+option-B fallback remains a success.
 
-## Also in scope: fix a stale comment
+## Part A — capture `empID`
 
-`mapRow()`'s header still called `manOverringQty` an "UNVERIFIED FIELD NAME" -- it's confirmed
-absent three independent ways (`memory/finding-cash003-manoverringqty-absent-2026-08-20.md`): zero
-of 19,985 backfilled rows carry a value, a live DEBUG key-name run doesn't list it among the
-response's real keys, and the owner checked the QSRSoft UI directly and confirmed no count column
-exists. Comment corrected to state that plainly; the mapping itself (`null` via `num()`'s
-undefined-safe handling) is left unchanged -- there is no live equivalent to map instead.
+The field is **confirmed**, not inferred: `empID` sits immediately beside `empName` in the response
+(dispatch #49's key-name run, merged in #504).
 
-## Banked, no re-measurement needed
+Sites, all of which already have `manualRefCnt` as a worked example of the same round trip:
 
-Row 1 (the Phase 0 denominator), from the failed run's own Supabase read before the API side
-broke: **1,140 distinct names across 36,631 rows, 2026-03-01 → 2026-08-20.**
+| file | line | change |
+|---|---|---|
+| `supabase/schema.sql` | ~779 | `emp_id text` on `audit_rows` (nullable) |
+| `scripts/qsrsoft-register-audit-pull.mjs` | ~213 | `empId: (r.empID \|\| '').trim() \|\| null` in `mapRow()` |
+| `scripts/qsrsoft-register-audit-pull.mjs` | ~132 | `emp_id: r.empId ?? null` in the upsert row |
+| `src/lib/supabase.js` | ~880, ~946 | both directions of the round trip |
+| migration | new | `alter table public.audit_rows add column if not exists emp_id text;` |
 
-## Backfill constraint
+**Null on manually-uploaded rows, by design** — `parseRegisterAudit`'s Excel path has no ID column,
+exactly like `manual_ref_cnt`. Say so in the comment; do not invent a fallback.
 
-**One retry maximum on the backfill, then stop and report.** Repeated Playwright logins run
-against the owner's own QSRSoft account; a lockout takes DAR and eBOS down too -- this is not a
-free retry loop.
+**While you are in `mapRow()`, fix a now-stale comment.** Line ~40 still calls `manualRefCnt`'s
+source field "UNVERIFIED FIELD NAME." It is no longer unverified — `manOverringQty` is **confirmed
+absent** three independent ways (the key-name run, `parseRegisterAudit`'s headers, and the owner
+checking the report). Update it to say confirmed-absent and point at
+`finding-cash003-manoverringqty-absent-2026-08-20.md`. The mapping itself is harmless (always null)
+and CASH-003 now runs on an absolute dollar threshold — leave the mapping, fix the words.
 
-## Status (implementation)
+## Part B — backfill
 
-- `audit_rows.emp_id text`, nullable, additive: `supabase/schema-audit-rows-emp-id.sql`. **Not yet
-  applied to live Supabase** -- confirmed via direct read (`42703: column audit_rows.emp_id does
-  not exist`) before writing any pull-script change, per this build's own "measure before
-  deciding" rule. This is the one prerequisite before the backfill can run: PostgREST will reject
-  every row in the upsert with "column not found" until the migration lands, and deliberately
-  running the backfill against a known-missing column would burn a real QSRSoft login for a
-  guaranteed failure -- the exact risk the retry-limit language above is protecting against. Owner
-  action item, same manual-migration pattern as every other `schema-*.sql` file in this repo.
-- `mapRow()` (`scripts/qsrsoft-register-audit-pull.mjs`) captures `empId` from `r.empID`
-  (trimmed, null on missing/blank) alongside the existing `emp` field. `saveAuditRows()`'s upsert
-  carries `emp_id: r.empId ?? null` into the same row shape `emp_token` already rides in. The
-  client-side twin (`src/lib/supabase.js:saveAuditRows`, used by the manual-upload path) gets the
-  same field for consistency with its own "shared verbatim" comment -- `parseRegisterAudit` never
-  produces `empId`, so manually-uploaded rows correctly stay `null`.
-  onConflict key `'loc,date,emp'` is unchanged.
-  3 new tests in `src/__tests__/register-audit-pull.test.js` (empId mapped, null-on-missing,
-  trim/blank handling). Full suite 1815/1815, build clean, budget headroom unaffected (this
-  doesn't touch a bundled panel).
-- The stale `manOverringQty` comment is corrected in `mapRow()`'s header.
-- **Backfill not yet run** -- blocked on the schema migration above. Once the owner confirms
-  `schema-audit-rows-emp-id.sql` is applied, the next step is one `workflow_dispatch` of
-  `qsrsoft-register-audit-pull.yml` with `start_date=2026-03-01`, `end_date=<today>` (one retry
-  maximum per the constraint above), after which Phase 0's rows 2-5 are a SQL query against the
-  now-populated `emp_id` column, and dispatch #49's gate decision (proceed to Phase 1 vs. fall
-  back to option B) can actually be made.
+Run the **existing** workflow with `start_date=2026-03-01`, `end_date=today` — matching the banked
+`audit_rows` span so row 5 measures real coverage rather than a narrow window.
+
+**One retry maximum on failure, then stop and report.** This auth path is intermittent (it worked
+for 1,781 rows hours before it failed twice), and repeated Playwright logins run against the
+owner's own QSRSoft account — a lockout would take down the daily DAR and eBOS syncs too. **Do not
+grind.**
+
+## Part C — Phase 0, now pure SQL
+
+With `emp_id` populated, the five numbers come from Supabase with **no API dependency**, and the
+measurement becomes repeatable — which matters, because it will want re-running after any future
+backfill.
+
+1. distinct `emp` names (**1,140**, already known)
+2. names resolving to exactly one `emp_id` — the clean core
+3. names resolving to **multiple** `emp_id`s — people currently **merged** into one token
+4. `emp_id`s resolving to **multiple** names — people currently **split** across tokens
+5. names with **no** `emp_id` on any row — manual-only / departed. **The row that decides it**
+
+**Report all five as counts and percentages, then STOP.** Rows 3 and 4 are worth reporting even if
+the re-key never happens — they are the first measurement of how many findings are attributed to the
+wrong person, or split across two identities for one person.
+
+**Row 5 caveat that must travel with the number:** a name with no `emp_id` could be genuinely
+ID-less, or simply absent from the backfilled window. Say which, or say you cannot tell. **A
+non-trivial row 5 is a legitimate result pointing at option B — do not treat it as a failure to be
+worked around.**
+
+## Guardrails
+
+- **Never log a name or an ID value.** Counts and status lines only; every row here is
+  employee-attributed PII. Both failed runs were clean on this — keep it that way.
+- **Would this pass if reverted?** A test that only asserts the mapper's output shape would pass
+  with the pull's wiring deleted. Exercise the round trip.
+- **`MEASURED_MAX` and the loader field map** — regenerate with
+  `node scripts/gen-loader-emits.mjs --write` if a loader changed.
