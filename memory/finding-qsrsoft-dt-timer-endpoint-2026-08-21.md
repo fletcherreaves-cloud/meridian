@@ -51,8 +51,21 @@ Three things about the shape:
 ## ⚠️ Four measured caveats. Each one produces a wrong number if read naively.
 
 **1. The time fields are CUMULATIVE SECONDS, not averages.** Divide by car count yourself.
-Verified across seven stores: `oepeWithoutPark / (lane1Cars + lane2Cars)` lands at **123–190 s**,
-which is a plausible OEPE; the raw field is a five- or six-digit total.
+
+⚠️ **And the sibling `mobile` endpoint on this same host reports MILLISECONDS** — see
+`finding-qsrsoft-mobile-endpoint-2026-08-21.md`. Same host, same day, same request shape, unit
+differs by 1000×. Do not share a parser between them.
+
+Established with a discriminator, not just plausibility: service-time distributions are
+**right-skewed**, so mean > median. Reading these as cumulative seconds puts the mean above the
+median implied by the endpoint's own `oepe90…210` buckets at every store; reading them as
+average-milliseconds puts the mean *below* the median, which is backwards.
+
+| store | mean if TOTAL SECONDS | mean if AVG MS | median from its own buckets | consistent |
+|---|---:|---:|---:|---|
+| 3708 | 184.8 s | 153.7 s | ~164 s | **total seconds** |
+| 33109 | 122.9 s | 73.9 s | ~105 s | **total seconds** |
+| 43701 | 163.2 s | 38.7 s | ~114 s | **total seconds** |
 
 | store | cars | `oepeWithoutPark` | ÷ cars |
 |---|---:|---:|---:|
@@ -80,8 +93,14 @@ greet-based metric until it's explained**, and check whether the set moves day t
 
 **4. Stores with no data are OMITTED, not returned as zero.** The request named **27** stores; the
 response held **24**. Missing: **18213, 35242, 37566**. A pull must not assume a row per requested
-store, and must not read absence as zero — "closed", "no DT", and "timer down" are indistinguishable
-here without another signal.
+store, and must not read absence as zero.
+
+✅ **RESOLVED by the `mobile` capture** (`finding-qsrsoft-mobile-endpoint-2026-08-21.md`): `mobile`
+returns **all 27** and shows those three had drive-thru mobile orders that day (71, 45, 76
+`driveThruNotROATrans`). So they were open and do have a drive-thru — this is a **dead or
+unreported DT timer**, not a closed store. **`mobile` is therefore a usable coverage cross-check
+for `dt-timer`**, distinguishing "no data" from "no activity" the way #171's per-stream staleness
+problem needs.
 
 ## Field notes
 

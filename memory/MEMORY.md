@@ -65,6 +65,16 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`mobile` — MOP service times by channel and ROA](finding-qsrsoft-mobile-endpoint-2026-08-21.md)** —
+  **Logged for later, owner capture.** Mobile-order service time split by **channel** (drive-thru /
+  front counter / curbside / table service) × **ROA vs not-ROA**, all 27 stores in one request, with
+  **`ly.` last-year twins built in**. 🔴 **THE UNIT TRAP: `mobile` is MILLISECONDS while its sibling
+  `dt-timer` is SECONDS** — same host, same day, same request shape, 1000× apart; never share a
+  parser. Also: `driveThruROA*`/`frontCounterROA*` are **structurally zero** (ROA is a curbside
+  concept), and a store with no LY history returns `ly.*=0`, which is **absence, not a 100%
+  decline**. ✅ It also **resolves `dt-timer`'s open question** — the 3 stores `dt-timer` omitted
+  show mobile DT orders, so those are dead timers, not closed stores, making `mobile` a coverage
+  cross-check.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`dt-timer` — whole-estate DT segments + an OEPE distribution](finding-qsrsoft-dt-timer-endpoint-2026-08-21.md)** —
   **Logged for later, owner capture, not yet scoped.** Returns what today's DT averages cannot: an
   **OEPE distribution** (cars under 90/120/150/180/210s) plus per-**segment** times (greet, order,
