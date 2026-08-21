@@ -65,6 +65,24 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Forms dashboard — Slice 1: schema + normalizer, done](project-forms-dashboard-slice1.md)** —
+  **NEWEST.** First of three slices, structured so the one unverifiable piece (the Slice 3 pull
+  script's auth against `forms.home.myqsrsoft.com`) ships last, isolated. New
+  `supabase/schema-qsr-forms-completion.sql` — one row per scheduled occurrence from
+  `completionDetail` (not `completionByForm`, which has no denominator and can't answer "missed"),
+  `tenant_id` + RLS from day one matching `schema-product-mix.sql`'s current pattern.
+  `occurrence_key` (not `scheduled_at`, which can be null on 32 ad-hoc completed rows) is the key
+  column, falling back to `completed_on`. `status_state` is a real three-value column
+  (missed/open/completed, `check`-constrained) — the raw `status` field is polymorphic (string enum
+  OR float) and reading `"--"` as missed over-reports by 13%. `completed_by` (a plaintext name) is
+  deliberately not a column at all — `user_id` is the person key, so there's nothing to leak. New
+  `src/engine/forms-completion.js` — pure `normalizeFormsCompletionRow()`/`Rows()`, the one place
+  the polymorphic status gets read, everything downstream works off `statusState`/`completionRatio`.
+  1926/1926 tests (22 net new, **every fixture synthetic** — a dedicated test asserts the output has
+  no `completedBy` key and the fixture name never appears in the serialized result). Build flat
+  (module not wired into any panel yet). **Slice 2** (panel: per-form 80% threshold, resolved-
+  occurrences-only, total-day attribution — 0 of 3,886 missed rows carry a person) and **Slice 3**
+  (pull script, gated on an owner auth capture) are next, separate PRs.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
   **Owner-requested dashboard**, and it is **no longer blocked** — the full 4,714-row
   `completionDetail` response is measured. A **third host family**, `forms.home.myqsrsoft.com`;

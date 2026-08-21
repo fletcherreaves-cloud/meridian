@@ -1,0 +1,28 @@
+// @ts-nocheck
+export default {version:'5.097', date:'2026-08-21', changes:[
+  'Forms dashboard, Slice 1 of 3 -- schema + normalizer, fully testable with no live QSRSoft '
+  + 'access. Structured to isolate the one unverifiable piece (the pull script\'s auth against '
+  + 'forms.home.myqsrsoft.com) last, in Slice 3.\n\n'
+  + 'New supabase/schema-qsr-forms-completion.sql: one row per scheduled occurrence from '
+  + 'QSRSoft\'s completionDetail endpoint (not its sibling completionByForm, which has no '
+  + 'denominator and cannot answer "missed" at all). tenant_id + RLS from day one, matching '
+  + 'schema-product-mix.sql\'s current canonical pattern. occurrence_key (not scheduled_at) is '
+  + 'the key column -- 32 captured rows are ad-hoc completions with a null scheduled_at, so the '
+  + 'key falls back to completed_on, which is always present when scheduled_at is not. '
+  + 'status_state is a real three-value column (missed/open/completed) with a check constraint '
+  + '-- the raw status field is polymorphic (a string enum OR a float) and reading "--" as missed '
+  + 'over-reports by 13% on the captured week. completed_by (a plaintext name) is deliberately '
+  + 'not a column at all -- user_id (a stable QSRSoft UUID) is the person key, so there is '
+  + 'nothing to leak.\n\n'
+  + 'New src/engine/forms-completion.js: pure normalizeFormsCompletionRow()/'
+  + 'normalizeFormsCompletionRows(), no Supabase, no fetch. The one place the polymorphic status '
+  + 'field gets read -- every future consumer works off statusState/completionRatio. Branches on '
+  + 'missed/hasResponse before ever touching status as a number (measured zero disagreements '
+  + 'against missed on all 4,714 captured rows). A malformed or unkeyable row is dropped, not '
+  + 'fabricated.\n\n'
+  + '1926/1926 tests (22 net new, all synthetic fixtures -- the real captured response carries '
+  + 'plaintext names, so nothing from it went into a test file; a dedicated test asserts the '
+  + 'normalized output has no completedBy key and the fixture name never appears in the '
+  + 'serialized output). Build clean, entry chunk unchanged (module not wired into any panel '
+  + 'yet -- that\'s Slice 2). Full writeup: memory/project-forms-dashboard-slice1.md.',
+]};
