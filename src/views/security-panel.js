@@ -17,9 +17,14 @@
 // stand in for a permission check. securityPanelAccess() is the one place that decision is made.
 import * as React from 'react';
 import { supabase } from '../lib/supabase.js';
-import { loadSecurityFindings, loadSecurityRules, loadGmIdentityRevealEnabled } from '../lib/supabase.js';
+import {
+  loadSecurityFindings, loadSecurityRules, loadGmIdentityRevealEnabled,
+  loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
+} from '../lib/supabase.js';
 import { INV_ORG_COORDS } from '../constants.js';
 import { RevealName } from './store-analytics.js';
+import { addD, fmtDI } from '../utils/date.js';
+import { monthsBack, assembleInventoryDrilldown, assembleCashDrilldown } from '../engine/security-drilldown.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -235,7 +240,100 @@ const TREND_META = {
   'insufficient-history': { label: 'Not enough history yet to call this new or chronic', color: 'var(--text3)' },
 };
 
-function SubjectDetail({ group, rulesById, subjectLabel }) {
+function fPct(n) { return n == null ? '—' : (n * 100).toFixed(1) + '%'; }
+
+// dispatch #52 -- the drill-down, scoped from a real investigation (memory/dispatch-52.md,
+// memory/finding-store-13113-packaging-variance-2026-08-21.md). On-demand only: nothing fetches
+// until the reader clicks "Investigate further" -- matching dispatch #43's eager-load discipline
+// and keeping every subject row's initial expand cheap. Every number below renders beside the
+// baseline it's judged against, and none of them is labelled a cause -- see the engine module's
+// own header comment for why.
+function SubjectDrilldown({ group, domain, findings, domainRuleIds, subjectLabel }) {
+  const [state, setState] = React.useState('idle'); // idle | loading | loaded | error
+  const [data, setData] = React.useState(null);
+
+  const load = React.useCallback(() => {
+    setState('loading');
+    (async () => {
+      try {
+        if (domain === 'inventory') {
+          const invEnds = group.verdicts.filter(v => domainRuleIds.has(v.ruleId) && !v.lifecycleCategory && v.windowEnd).map(v => v.windowEnd);
+          const period = invEnds.length ? invEnds.reduce((a, b) => (b > a ? b : a)).slice(0, 7) : null;
+          if (!period) { setState('error'); return; }
+          const periods = monthsBack(period, 4);
+          const [popRows, histRows] = await Promise.all([
+            loadQsrVarianceStat({ period }),
+            loadQsrVarianceHistoryAll({ periods }),
+          ]);
+          setData(assembleInventoryDrilldown({ subjectLoc: group.loc, findings, domainRuleIds, popRows, histRows, periods }));
+        } else {
+          const cashEnds = group.verdicts.filter(v => domainRuleIds.has(v.ruleId) && !v.lifecycleCategory && v.windowEnd).map(v => v.windowEnd);
+          const end = cashEnds.length ? cashEnds.reduce((a, b) => (b > a ? b : a)) : null;
+          if (!end) { setState('error'); return; }
+          const start = fmtDI(addD(end, -112)); // ~4 months, matching the inventory side's 4-period trend
+          const period = end.slice(0, 7);
+          const months = monthsBack(period, 4);
+          const rows = await loadAuditRowsWindow({ start, end });
+          setData(assembleCashDrilldown({ subjectLoc: group.loc, subjectEmpToken: group.empToken, findings, domainRuleIds, rows, months }));
+        }
+        setState('loaded');
+      } catch {
+        setState('error');
+      }
+    })();
+  }, [group, domain, findings, domainRuleIds]);
+
+  if (state === 'idle') {
+    return div({ style: { padding: '10px 14px', borderTop: '1px solid var(--bdr)' } },
+      btn({ onClick: load, style: { fontSize: 11.5, fontWeight: 600, color: 'var(--accent,#f5bc00)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '5px 12px', cursor: 'pointer' } },
+        '🔎 Investigate further'));
+  }
+  if (state === 'loading') return div({ style: { padding: '10px 14px', fontSize: 11.5, color: 'var(--text3)', borderTop: '1px solid var(--bdr)' } }, 'Running the drill-down…');
+  if (state === 'error') return div({ style: { padding: '10px 14px', fontSize: 11.5, color: 'var(--crit,#ef4444)', borderTop: '1px solid var(--bdr)' } }, 'Could not run the drill-down — no windowed finding to anchor a period to.');
+
+  const row = (label, node) => div({ style: { marginTop: 6 } },
+    span({ style: { fontSize: 10.5, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.4px' } }, label),
+    div({ style: { fontSize: 12, color: 'var(--text)', marginTop: 2, lineHeight: 1.4 } }, node));
+
+  const flagRateNode = data.flagRate.subject
+    ? `${subjectLabel.startsWith('This') || subjectLabel.startsWith('Item') ? 'This store' : 'This subject\'s store'} flags ${fPct(data.flagRate.subject.rate)} of its ${data.flagRate.subject.total} subjects (${data.flagRate.subject.flagged} of ${data.flagRate.subject.total}) — ${data.flagRate.multiple != null ? `${data.flagRate.multiple.toFixed(1)}× the other stores' average of ${fPct(data.flagRate.otherMean)}` : 'no comparable other-store rate yet'}.`
+    : 'Not enough population data to compute a store rate.';
+
+  const prevalenceNode = data.prevalence.total
+    ? `${data.prevalence.localOnly} of ${data.prevalence.total} of this subject's discriminators flag at ONLY this store (${fPct(data.prevalence.localOnlyShare)} local-only) — ${domain === 'inventory' ? 'a high local-only share is a real lead; a low one means the estate-wide broken-mapping set, not this store' : 'a high local-only share means these rules are specific here, not an estate-wide threshold issue'}.`
+    : 'Nothing currently flagged to check prevalence on.';
+
+  const compositionNode = domain === 'inventory'
+    ? (data.composition.length
+      ? data.composition.slice(0, 3).map(c => `${c.class}: ${fPct(c.subjectShare)} of this subject's flags vs ${fPct(c.estateShare)} estate-wide${c.z != null ? ` (z=${c.z.toFixed(1)})` : ''}`).join(' · ')
+      : 'No class data available for this subject\'s flagged items.')
+    : (data.ruleMix.length
+      ? data.ruleMix.map(r => `${r.ruleId}: ${fPct(r.estateShare)} of all OTHER flagged subjects\' rule-mix estate-wide`).join(' · ')
+      : 'This subject has no currently-flagged rules to compare.');
+
+  const trendNode = domain === 'inventory'
+    ? (data.trend.some(t => t.medianValue != null)
+      ? data.trend.map(t => `${t.period}: ${t.medianValue != null ? t.medianValue.toFixed(1) + '%' : '—'}`).join(' → ')
+      : 'No period history yet for this subject\'s flagged items.')
+    : (data.trendByRule.length
+      ? data.trendByRule.map(t => `${t.ruleId}: ` + t.months.map(m => `${m.period} ${m.value != null ? m.value.toFixed(1) : '—'}`).join(' → ')).join(' | ')
+      : 'This subject has no currently-flagged rules to trend.');
+
+  const secondaryNode = data.secondary.length
+    ? data.secondary.map(s => `${s.label}: ${typeof s.subjectValue === 'number' && s.subjectValue < 1.5 && s.subjectValue >= 0 && s.label.toLowerCase().includes('rate') ? fPct(s.subjectValue) : fNum(s.subjectValue)} vs. ${typeof s.estateMedian === 'number' && s.estateMedian < 1.5 && s.estateMedian >= 0 && s.label.toLowerCase().includes('rate') ? fPct(s.estateMedian) : fNum(s.estateMedian)} estate median${s.ratio != null ? ` (${s.ratio.toFixed(2)}×)` : ''}`).join(' · ')
+    : 'No other metrics available for comparison.';
+
+  return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)' } },
+    span({ style: { fontSize: 11.5, fontWeight: 700, color: 'var(--text)' } }, '🔎 Drill-down — measurements, not conclusions'),
+    row('1. Flag rate by store (normalized over subjects present)', flagRateNode),
+    row(domain === 'inventory' ? '2. Cross-store prevalence (is this item local, or estate-wide?)' : '2. Cross-store prevalence (is this rule local, or estate-wide?)', prevalenceNode),
+    row(domain === 'inventory' ? '3. Item-class composition vs. estate' : '3. Rule-mix vs. estate (descriptive — too few flags per subject for a statistical claim)', compositionNode),
+    row('4. Period trend', trendNode),
+    row('5. Secondary metrics vs. estate — is this subject unusual on anything else?', secondaryNode),
+  );
+}
+
+function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
     group.verdicts.map((v, i) => {
       const rule = rulesById[v.ruleId] || {};
@@ -278,6 +376,7 @@ function SubjectDetail({ group, rulesById, subjectLabel }) {
         ),
       );
     }),
+    domainRuleIds && h(SubjectDrilldown, { group, domain, findings, domainRuleIds, subjectLabel }),
   );
 }
 
@@ -288,7 +387,7 @@ function explanationReason(explanation) {
 function fNum(n) { return n == null ? '—' : Number(n).toFixed(2); }
 function fDateTime(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
 
-function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter }) {
+function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds }) {
   const chips = group.verdicts
     .filter(v => !ruleFilter || v.ruleId === ruleFilter)
     .map(v => h(VerdictChip, { key: v.ruleId, ruleId: v.ruleId, active: (rulesById[v.ruleId] || {}).active, verdict: v }));
@@ -318,7 +417,7 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
       div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 } }, chips),
       span({ style: { fontSize: 11, color: 'var(--text3)' } }, expanded ? '▲' : '▼'),
     ),
-    expanded && h(SubjectDetail, { group, rulesById, subjectLabel }),
+    expanded && h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds }),
   );
 }
 
@@ -522,6 +621,7 @@ export function SecurityPanel({ userRole, onClose }) {
         h(SubjectRow, {
           key: g.key, group: g, rulesById, revealed, onReveal, ruleFilter,
           expanded: expanded === g.key, onToggle: () => setExpanded(expanded === g.key ? null : g.key),
+          domain, findings, domainRuleIds,
         })),
     ),
   );

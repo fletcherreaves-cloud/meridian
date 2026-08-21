@@ -44,7 +44,8 @@ create table if not exists public.org_config (
   key        text primary key,
   data       jsonb not null default '{}',
   updated_by uuid references public.profiles(id),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  tenant_id  uuid default '00000000-0000-0000-0000-000000000001'  -- schema-multitenant-phase1.sql
 );
 
 -- ── Reviews ───────────────────────────────────────────────────────────────────
@@ -332,6 +333,7 @@ create table if not exists public.smg_fullscale (
   -- Problem rates (lower=better)
   dt_problem       float,               -- % Drive-Thru customers experiencing a problem
   overall_problem  float,               -- % any customer experiencing a problem
+  n                integer,             -- OSAT response count, for n-weighted roll-ups (schema-smg-n.sql)
   updated_at       timestamptz default now(),
   updated_by       uuid references public.profiles(id),
   primary key (loc, year, month)
@@ -812,6 +814,7 @@ create table if not exists public.audit_rows (
   t_red_a_pct     numeric,
   t_red_a_avg     numeric,
   t_red_a_dollar  numeric,
+  emp_token       uuid references public.employee_identity_vault(id),  -- schema-identity-vault.sql
   updated_at      timestamptz default now(),
   primary key (loc, date, emp)
 );
@@ -1046,6 +1049,10 @@ create table if not exists public.daily_glimpse_daily (
   dn_car_cnt          numeric,
   digital_pct_sales   numeric,
   app_pct_sales       numeric,
+  emp_meal_amt        numeric,          -- schema-glimpse-meals.sql
+  mgr_meal_amt        numeric,          -- schema-glimpse-meals.sql
+  emp_meal_cnt        numeric,          -- schema-glimpse-meal-counts.sql
+  mgr_meal_cnt        numeric,          -- schema-glimpse-meal-counts.sql
   updated_at          timestamptz default now(),
   primary key (loc, date)
 );
@@ -1197,13 +1204,20 @@ create policy "smart_target_adjustments: public write" on public.smart_target_ad
 -- Reusable SAGE prompts the owner saves for quick re-run (and, in Phase 2, for
 -- scheduled auto-runs). Consumed by src/views/sage.js.
 create table if not exists public.sage_prompts (
-  id           uuid primary key default gen_random_uuid(),
-  title        text not null,
-  prompt_text  text not null,
-  tags         text,                        -- optional comma-separated labels
-  created_by   text,
-  created_at   timestamptz default now(),
-  updated_at   timestamptz default now()
+  id                uuid primary key default gen_random_uuid(),
+  title             text not null,
+  prompt_text       text not null,
+  tags              text,                        -- optional comma-separated labels
+  created_by        text,
+  created_at        timestamptz default now(),
+  updated_at        timestamptz default now(),
+  -- Phase 2 scheduling (schema-pending-optional.sql) -- also see that file's own header for the
+  -- freq/dow/hour contract this drives sage-run.mjs's cron matching against.
+  schedule_enabled  boolean default false,
+  schedule_hour     int,
+  schedule_freq     text,
+  schedule_dow      int,
+  last_run_at       timestamptz
 );
 
 alter table public.sage_prompts enable row level security;
@@ -1212,13 +1226,6 @@ create policy "sage_prompts: public read" on public.sage_prompts
   for select using (true);
 create policy "sage_prompts: public write" on public.sage_prompts
   for all using (true);
-
--- Phase 2 scheduling columns (safe to run against an existing sage_prompts table).
-alter table public.sage_prompts add column if not exists schedule_enabled boolean default false;
-alter table public.sage_prompts add column if not exists schedule_hour    int;      -- UTC hour 0-23
-alter table public.sage_prompts add column if not exists schedule_freq    text;     -- 'daily' | 'weekly'
-alter table public.sage_prompts add column if not exists schedule_dow     int;      -- 0=Sun..6=Sat (weekly only)
-alter table public.sage_prompts add column if not exists last_run_at      timestamptz;
 
 -- ── SAGE: scheduled-prompt run history ──────────────────────────────────────────
 -- One row per auto-run (scripts/sage-run.mjs). Feeds the At-A-Glance "Scheduled
@@ -1354,6 +1361,8 @@ create table if not exists public.qsr_onhand (
   on_hand_amt    numeric,
   last_counted   date,                       -- when the item was last physically counted
   last_submitted date,                       -- when the count was submitted
+  active         boolean,                    -- On-Hand API active_in_recipe flag (schema-onhand-active-flag.sql)
+  recipe_item    boolean,                    -- On-Hand API recipe_item flag, Topic 6 rescue (schema-onhand-active-flag.sql)
   updated_at     timestamptz default now(),
   primary key (loc, period, wrin)
 );
@@ -1432,6 +1441,7 @@ create table if not exists public.qsr_waste (
   wsource     text,                            -- 'BOS' | 'MobileApp'
   edited      boolean default false,
   reason      text,
+  emp_token   uuid references public.employee_identity_vault(id),  -- schema-identity-vault-qsr-waste.sql
   updated_at  timestamptz default now(),
   primary key (loc, event_id)
 );

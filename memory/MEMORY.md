@@ -65,8 +65,28 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job B — the actual regroup, v2 sidebar finally adopted](dispatch54-job-b.md)** —
+  **NEWEST.** `AppSidebar` now genuinely renders from `SECTIONS` + `panelsForSection()` (Job A kept
+  the v1 hand-built list on purpose, since its own registry corrections were only truthful for
+  today's ad hoc grouping, not the target IA). The owner's three answered decisions applied: Visit
+  Readiness + Graded Visits → Operations; Calendar/Events & Tags/Event Impact folded into Planning
+  **behind the hub** (hub first, five internal tabs NOT exploded); a new Inventory & Food Cost
+  section giving `Inventory` its first-ever sidebar entry (Job A's own finding — it had none at
+  all). Org Summary/Rankings → Reports, Forms Library/Printable Forms → Forms, a new (currently
+  empty) Analysis section. Two items explicitly left open for a future pass: forecasting-section
+  membership (references an owner list not available this session) and the help-vs-admin sidebar
+  split. 1859/1859 tests, build clean.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #52 — the Security drill-down, and 15 real schema-drift instances](dispatch52-drilldown.md)** —
+  Five measurements scoped from the real store 0013113 investigation (not Part C's
+  wish list), generalized to both cash and inventory subjects, wired into the real panel behind an
+  on-demand "🔎 Investigate further" button — new `src/engine/security-drilldown.js`. **The
+  rider found far more than expected**: building the schema-drift guard test (per #510's review)
+  turned up **15 columns across 7 tables** missing from `schema.sql`'s own `CREATE TABLE`,
+  including **`audit_rows.emp_token` — the identity-reveal system's own key column** — silently
+  drifted this whole time. All 15 fixed in the same change; the new test (mutation-tested against
+  the real file) keeps the count at zero going forward. 1856/1856 tests, build clean.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 Job A — the registry now drives label/icon/perm](dispatch-54-job-a.md)** —
-  **NEWEST.** `shell.js`'s sidebar reads label/icon/permission from `panel-registry.js` instead of
+  `shell.js`'s sidebar reads label/icon/permission from `panel-registry.js` instead of
   duplicating them as literals (~44 nav items), via new `navP`/`navPBeta` lookups — pure refactor,
   verified by *rendering* `AppSidebar` and diffing its exact text output against a pre-refactor
   capture, not just asserting the registry's shape. Caught one real drift doing it: the Test
