@@ -65,6 +65,17 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [PR #537 review — two reproduced defects in the forms normalizer](review-537-forms-slices-1-2.md)** —
+  **(1) `"noLocation"` → the garbage loc `"0000NaN"`** — it is a genuine member of every request's
+  `locations` array, `parseInt` gives `NaN`, and the usable-row guard only checks non-null. Fix with
+  a sentinel (`'NOLOC'`), **not** by dropping the row — those are real unattached completions.
+  **(2) `LOCAL_MIDNIGHT_OFFSET_MS = 5h` hardcoded misbuckets a day for the whole CST half of the
+  year** — a completion at 23:30 local on Dec 20 lands on Dec 21, so a store shows a miss on day N
+  and a phantom completion on N+1. Silent. Fix with `Intl.DateTimeFormat('en-CA', {timeZone:
+  'America/Chicago'})`, verified across both DST transitions. **`America/Chicago` covers the whole
+  estate** — the seven FL stores are Panhandle-west-of-the-Apalachicola and therefore Central, which
+  is worth a comment since "Florida" reads as Eastern. Everything else passed: resolved-only
+  judging, Σ/Σ aggregation, no `completedBy` in the output, `timeToComplete` not derived.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #57 — persist per-person employee tenure (Part B)](dispatch-57.md)** —
   **NEWEST.** 🔴 **Owner-approved reversal of a deliberate privacy decision**: the roster pull's own
   header says *"No individual-employee data is stored anywhere"* — it already FETCHES the hire dates
