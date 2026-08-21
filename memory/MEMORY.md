@@ -65,8 +65,25 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Parts A and C — rule directory, and a name instead of a WRIN](dispatch56-parts-a-c.md)** —
+  **NEWEST.** Two owner asks on the Security panel, both "cheap and independent" per the dispatch's
+  own scoping. **Part A:** a rule directory in the Legend, collapsed by default, rendered ENTIRELY
+  from the live `security_rules` array (never hardcoded — the anti-hardcode test adds a rule to
+  the fixture that exists in no real schema file and asserts it renders). `loadSecurityRules()`
+  gained `false_positives` plus the Part D "free win" — `corroboration_rules`/`exoneration_rules`,
+  populated in the table, dropped by the loader until now. **Part C:** inventory findings showed a
+  bare WRIN; now shows `qsr_variance_stat.descr` as the heading, joined on `(loc, wrin, period)`
+  **never** `(loc, wrin)` alone (dropping period inflated a real join ~3.5x during the 0013113
+  investigation). New `inventoryItemKey()` helper shared with dispatch #52's own drill-down so the
+  two period derivations can't drift apart. **One real behavior change:** viewing the Inventory tab
+  now fetches `loadQsrVarianceStat({period})` once per period present, before any click — a
+  deliberate, small departure from dispatch #43's "nothing fetches before a click" rule (which
+  governs the much heavier drill-down pull, still genuinely click-gated). The dispatch #52 pinned
+  test was updated, not weakened, to prove both halves explicitly. 1880/1880 tests (6 net new),
+  build flat. Parts B/D/E remain out of scope — B needs a hire-date-source investigation first, D
+  is a real subject-history build, E needs an auth/endpoint investigation before any pull design.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 Part B — Job C Batch 1: six overlay-to-page conversions, done](dispatch55-part-b.md)** —
-  **NEWEST.** Separate PR from Part A (built off `origin/main` before Part A merged, deliberately —
+  Separate PR from Part A (built off `origin/main` before Part A merged, deliberately —
   see `dispatch-55.md`'s "ship as two PRs, do not combine them"). Converted Scheduling
   (`sched-hub`), Performance Reviews (`perf-reviews`), Food Cost (`fob-analysis`), End of Month
   (`fob-eom`), Inventory Control (`eom-dashboard`) and Count Cycle (`count-cycle`) from

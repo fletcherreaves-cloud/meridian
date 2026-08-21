@@ -3995,6 +3995,13 @@ export async function loadSecurityRules() {
     description: r.description, logicType: r.logic_type, baselineType: r.baseline_type,
     severity: r.severity, weight: r.weight, active: r.active, windowDays: r.window_days,
     investigationAction: r.investigation_action, updatedAt: r.updated_at,
+    // dispatch #56 Part A: the only field the rule directory needed that wasn't mapped yet.
+    // corroboration_rules/exoneration_rules (Part D's "free win" -- populated, dropped here until
+    // now) ride along since the directory surfaces them too; the finding-level cross-link Part D
+    // itself describes is not built here.
+    falsePositives: r.false_positives || [],
+    corroborationRules: r.corroboration_rules || [],
+    exonerationRules: r.exoneration_rules || [],
   }));
 }
 

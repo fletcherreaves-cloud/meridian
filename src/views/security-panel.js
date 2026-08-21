@@ -242,6 +242,22 @@ const TREND_META = {
 
 function fPct(n) { return n == null ? '—' : (n * 100).toFixed(1) + '%'; }
 
+// dispatch #56 Part C -- the (loc, wrin, period) key for looking up an inventory subject's
+// product name in qsr_variance_stat. `period` is the subject's OWN latest inventory verdict
+// windowEnd, sliced to 'YYYY-MM' (qsr_variance_stat.period's own grain) -- the same derivation
+// SubjectDrilldown already used for its population-baseline fetch, factored out so both call
+// sites can't drift apart. Never join on (loc, wrin) alone: dropping period inflated a real join
+// ~3.5x during the 0013113 investigation (658 rows vs the correct 188).
+export function inventoryItemKey(group, domainRuleIds) {
+  if (group.subjectType !== 'wrin') return null;
+  const ends = group.verdicts
+    .filter(v => domainRuleIds.has(v.ruleId) && !v.lifecycleCategory && v.windowEnd)
+    .map(v => v.windowEnd);
+  if (!ends.length) return null;
+  const period = ends.reduce((a, b) => (b > a ? b : a)).slice(0, 7);
+  return { period, key: `${group.loc}|${group.wrin}|${period}` };
+}
+
 // dispatch #52 -- the drill-down, scoped from a real investigation (memory/dispatch-52.md,
 // memory/finding-store-13113-packaging-variance-2026-08-21.md). On-demand only: nothing fetches
 // until the reader clicks "Investigate further" -- matching dispatch #43's eager-load discipline
@@ -257,8 +273,7 @@ function SubjectDrilldown({ group, domain, findings, domainRuleIds, subjectLabel
     (async () => {
       try {
         if (domain === 'inventory') {
-          const invEnds = group.verdicts.filter(v => domainRuleIds.has(v.ruleId) && !v.lifecycleCategory && v.windowEnd).map(v => v.windowEnd);
-          const period = invEnds.length ? invEnds.reduce((a, b) => (b > a ? b : a)).slice(0, 7) : null;
+          const period = inventoryItemKey(group, domainRuleIds)?.period || null;
           if (!period) { setState('error'); return; }
           const periods = monthsBack(period, 4);
           const [popRows, histRows] = await Promise.all([
@@ -387,17 +402,22 @@ function explanationReason(explanation) {
 function fNum(n) { return n == null ? '—' : Number(n).toFixed(2); }
 function fDateTime(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
 
-function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds }) {
+function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds, item }) {
   const chips = group.verdicts
     .filter(v => !ruleFilter || v.ruleId === ruleFilter)
     .map(v => h(VerdictChip, { key: v.ruleId, ruleId: v.ruleId, active: (rulesById[v.ruleId] || {}).active, verdict: v }));
+  // dispatch #56 Part C -- "list the name of the product." `descr` (qsr_variance_stat) as the
+  // heading, WRIN as the secondary identifier -- the code still matters for lookups, it just
+  // stops being the only thing shown. Falls back to the bare WRIN when the item's period hasn't
+  // resolved yet (itemInfo still loading) or has no variance_stat row for that period.
+  const itemName = item?.descr || null;
   // dispatch #46 §B -- the decision sentence names the subject in restaurant words, not a bare
   // token. An employee not yet revealed (reveal is a deliberate, logged action -- never automatic)
   // still gets a real sentence via a generic "This employee," rather than the panel forcing a
   // reveal just to read the analysis.
   const subjectLabel = group.subjectType === 'emp'
     ? (revealed[group.empToken] || 'This employee')
-    : `Item ${group.wrin} (store ${group.loc})`;
+    : (itemName ? `${itemName} (${group.wrin}, store ${group.loc})` : `Item ${group.wrin} (store ${group.loc})`);
   return div(null,
     div({
       onClick: onToggle,
@@ -408,12 +428,15 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
         fontSize: 12, fontWeight: 800, color: '#fff',
         background: group.flaggedCount >= 2 ? 'var(--crit,#ef4444)' : group.flaggedCount === 1 ? 'var(--amber,#f59e0b)' : 'var(--text3)',
       } }, group.flaggedCount),
-      div({ style: { minWidth: 150, fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } },
+      div({ style: { minWidth: 150, maxWidth: 220, fontWeight: 700, fontSize: 12.5, color: 'var(--text)' }, title: itemName ? `${itemName} — WRIN ${group.wrin}` : undefined },
         group.subjectType === 'emp'
           ? h(RevealName, { token: group.empToken, cache: revealed, onReveal })
-          : `Item ${group.wrin}`,
+          : (itemName
+              ? [itemName, span({ key: 'wrin', style: { fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginLeft: 5 } }, group.wrin)]
+              : `Item ${group.wrin}`),
       ),
       span({ style: { fontSize: 11, color: 'var(--text3)', minWidth: 60 } }, `Store ${group.loc}`),
+      item?.cls && span({ style: { fontSize: 10, color: 'var(--text3)', border: '1px solid var(--bdr)', borderRadius: 999, padding: '1px 7px' } }, item.cls),
       div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 } }, chips),
       span({ style: { fontSize: 11, color: 'var(--text3)' } }, expanded ? '▲' : '▼'),
     ),
@@ -426,7 +449,7 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
 // this is a per-device UI preference, not data).
 const LEGEND_DISMISSED_KEY = 'mf_security_legend_dismissed_v1';
 
-function Legend({ onDismiss }) {
+function Legend({ onDismiss, rules }) {
   const ROWS = [
     ['🔴 Flagged', 'The rule found this genuinely unusual AND, where applicable, big enough to matter (materiality floors exist specifically to keep tiny amounts from flagging).'],
     ['🟢 Clear', 'The rule evaluated and found nothing unusual — a real, decided answer.'],
@@ -446,6 +469,77 @@ function Legend({ onDismiss }) {
       span({ style: { minWidth: 150, fontWeight: 700, color: 'var(--text)' } }, term),
       span({ style: { color: 'var(--text2)', flex: 1 } }, def),
     )),
+    h(RuleDirectory, { rules }),
+  );
+}
+
+const RULE_DOMAIN_LABEL = { cash: 'Cash', inventory: 'Inventory' };
+
+// dispatch #56 Part A -- owner: "let's add directory of what each policy covers." Renders
+// ENTIRELY from the live `rules` array (loadSecurityRules()'s own security_rules read) -- never a
+// hand-written list. A hardcoded directory is a second copy of text that lives in a table an
+// owner can edit, and starts drifting the moment a rule is retuned, renamed, or deactivated with
+// nothing to catch it -- this repo has already paid for that exact class three times in one week
+// (Job A's stale 'Proj Workflow' label, dispatch #52's 15 schema-drift columns, proj's false
+// section:'planning'). If a rule is added to security_rules tomorrow, it must appear here with no
+// code change -- that is the whole test this component has to pass.
+//
+// Collapsed by default (below the vocabulary rows, own subsection) -- 9 rules x 8 fields would
+// bury the 8 rows that answer "what am I looking at?" above. Local open/closed state only, no
+// second localStorage key -- reuses the legend's own dismiss/remember behaviour for the legend as
+// a whole; add persistence here only if it proves annoying in use.
+function RuleDirectory({ rules }) {
+  const [open, setOpen] = React.useState(false);
+  if (!rules || !rules.length) return null;
+  const byDomain = {};
+  for (const r of rules) (byDomain[r.domain] = byDomain[r.domain] || []).push(r);
+  // Both domains shown regardless of the panel's cash/inventory toggle -- this is reference
+  // material ("is there a rule that covers X?"), which a tab-filtered directory can't answer.
+  const domains = Object.keys(byDomain).sort();
+  return div({ style: { marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--bdr)' } },
+    btn({
+      onClick: () => setOpen(o => !o),
+      style: { fontSize: 11.5, fontWeight: 700, color: 'var(--text)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 },
+    }, (open ? '▾ ' : '▸ ') + `Rule directory — what each policy covers (${rules.length})`),
+    open && domains.map(d => div({ key: d, style: { marginTop: 10 } },
+      div({ style: { fontWeight: 700, fontSize: 11.5, color: 'var(--text)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.03em' } },
+        RULE_DOMAIN_LABEL[d] || d),
+      byDomain[d].map(r => h(RuleDirectoryRow, { key: r.ruleId, rule: r })),
+    )),
+  );
+}
+
+// Inactive rules are LISTED, not hidden (dispatch #56 Part A) -- omitting one makes a reader
+// wonder whether a rule they remember was removed, renamed, or is silently not running. Reuses
+// the legend's own ⏸ marker and wording rather than inventing a second way to say "not current."
+function RuleDirectoryRow({ rule: r }) {
+  const fps = Array.isArray(r.falsePositives) ? r.falsePositives : [];
+  const corrob = Array.isArray(r.corroborationRules) ? r.corroborationRules : [];
+  const exon = Array.isArray(r.exonerationRules) ? r.exonerationRules : [];
+  return div({ style: { padding: '8px 0', borderBottom: '1px solid var(--bdr)' } },
+    div({ style: { display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' } },
+      span({ style: { fontWeight: 700, color: 'var(--text)' } }, (r.method || r.ruleId) + (r.active ? '' : ' ⏸')),
+      span({ style: { fontSize: 10, color: 'var(--text3)' } }, r.ruleId),
+      span({ style: { fontSize: 10, color: 'var(--text3)', marginLeft: 'auto' } }, `Severity ${r.severity ?? '—'}`),
+    ),
+    r.description && div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 3, fontStyle: 'italic' } }, r.description),
+    div({ style: { display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--text3)', marginTop: 4 } },
+      r.baselineType && span(null, `Baseline: ${r.baselineType}`),
+      span(null, `Logic: ${r.logicType || '—'}${r.windowDays != null ? ` over ${r.windowDays}d` : ''}`),
+      !r.active && span({ style: { color: 'var(--accent,#f5bc00)' } }, '⏸ inactive — historical output, not current truth'),
+    ),
+    // "say the number AND the decision" -- a directory naming a rule but not what to do when it
+    // fires is a number nobody acts on (CLAUDE.md's standing voice rule).
+    r.investigationAction && div({ style: { fontSize: 11, color: 'var(--text)', marginTop: 4 } },
+      span({ style: { fontWeight: 700 } }, 'When it fires: '), r.investigationAction),
+    fps.length > 0 && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 3 } },
+      span({ style: { fontWeight: 700 } }, 'Known false positives: '),
+      fps.map(fp => (typeof fp === 'string' ? fp : (fp.label || fp.reason || JSON.stringify(fp)))).join('; ')),
+    (corrob.length > 0 || exon.length > 0) && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 3 } },
+      corrob.length > 0 && span(null, `Corroborates with: ${corrob.join(', ')}`),
+      corrob.length > 0 && exon.length > 0 && span(null, '   ·   '),
+      exon.length > 0 && span(null, `Weakened by: ${exon.join(', ')}`),
+    ),
   );
 }
 
@@ -560,6 +654,38 @@ export function SecurityPanel({ userRole, onClose }) {
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
 
+  // dispatch #56 Part C -- "list the name of the product." `${loc}|${wrin}|${period}` ->
+  // {descr, cls} from qsr_variance_stat, so an inventory subject's heading can show the item name
+  // instead of a bare WRIN. On-demand, matching dispatch #43's discipline: fires only while
+  // viewing the inventory tab, and only for periods actually present among the currently-loaded
+  // findings (loadQsrVarianceStat({period}) is a whole-estate pull for one period, the same call
+  // SubjectDrilldown already makes for the population baseline). loadedPeriodsRef guards against
+  // re-fetching a period already resolved when `groups` gets a new reference from an unrelated
+  // filter change (scope/ruleFilter/minSignals).
+  const [itemInfo, setItemInfo] = React.useState({});
+  const loadedPeriodsRef = React.useRef(new Set());
+  React.useEffect(() => {
+    if (domain !== 'inventory' || dataState !== 'loaded') return;
+    const periods = [...new Set(groups.map(g => inventoryItemKey(g, domainRuleIds)?.period).filter(Boolean))];
+    const toLoad = periods.filter(p => !loadedPeriodsRef.current.has(p));
+    if (!toLoad.length) return;
+    toLoad.forEach(p => loadedPeriodsRef.current.add(p));
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(toLoad.map(period => loadQsrVarianceStat({ period })));
+      if (cancelled) return;
+      setItemInfo(prev => {
+        const next = { ...prev };
+        results.forEach((rows, i) => {
+          const period = toLoad[i];
+          for (const r of (rows || [])) next[`${r.loc}|${r.wrin}|${period}`] = { descr: r.descr, cls: r.cls };
+        });
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [domain, dataState, groups, domainRuleIds]);
+
   const domainRules = rules.filter(r => r.domain === domain);
   const states = React.useMemo(() => [...new Set(Object.values(INV_ORG_COORDS).map(o => o.state).filter(Boolean))], []);
 
@@ -594,7 +720,7 @@ export function SecurityPanel({ userRole, onClose }) {
       newestBatch && span({ style: { marginLeft: showLegend ? 0 : 'auto', fontSize: 10.5, color: 'var(--text3)' } }, `Latest batch: ${fDateTime(newestBatch)}`),
     ),
     // dispatch #46 §A point 2 -- a legend defining the vocabulary, dismissible and remembered.
-    showLegend && h(Legend, { onDismiss: dismissLegend }),
+    showLegend && h(Legend, { onDismiss: dismissLegend, rules }),
     // ── Rule + signal filters ──
     dataState === 'loaded' && div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
       div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11 } },
@@ -617,12 +743,15 @@ export function SecurityPanel({ userRole, onClose }) {
       permState === 'allowed' && dataState === 'loading' && emptyState('Loading findings…'),
       permState === 'allowed' && dataState === 'error' && emptyState('Could not load findings — try again.', true),
       permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
-      permState === 'allowed' && dataState === 'loaded' && groups.map(g =>
-        h(SubjectRow, {
+      permState === 'allowed' && dataState === 'loaded' && groups.map(g => {
+        const ik = domain === 'inventory' ? inventoryItemKey(g, domainRuleIds) : null;
+        const item = ik ? itemInfo[ik.key] : null;
+        return h(SubjectRow, {
           key: g.key, group: g, rulesById, revealed, onReveal, ruleFilter,
           expanded: expanded === g.key, onToggle: () => setExpanded(expanded === g.key ? null : g.key),
-          domain, findings, domainRuleIds,
-        })),
+          domain, findings, domainRuleIds, item,
+        });
+      }),
     ),
   );
 }
