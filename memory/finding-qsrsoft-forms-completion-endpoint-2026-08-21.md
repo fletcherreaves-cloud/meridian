@@ -305,6 +305,69 @@ I built that hypothesis on four rows of a truncated response and on a weekly agg
 measure-don't-reason rule, working as intended. **The MISSED rows are real; there is no artifact to
 subtract.**
 
+## 📐 Dashboard spec — owner-stated 2026-08-21
+
+*"Maybe include an in-app threshold. Ideally they complete them all, realistically, they need to
+complete at least 80%. Hopefully can be attributed to manager(s) on duty. If not, for now, total
+day, and we can research tying to scheduled shifts and punched times by employee to measure."*
+
+**Threshold: configurable in-app, default 80% of scheduled occurrences completed.** Note this is the
+*compliance* reading (submitted ÷ scheduled), not within-form thoroughness — thoroughness already
+runs ~98.8% estate-wide, so a threshold there would never fire.
+
+**Judge a store-day only on RESOLVED occurrences.** `"--"` (still open) must be excluded from both
+numerator and denominator — you cannot miss something that is not yet due. Including it would mark
+every store red for the current day, every day.
+
+### ⚠️ At 80%, almost everything is red on day one. That is a finding, not a reason to move the line.
+
+| form | store-days | pass ≥80% | **% passing** |
+|---|---:|---:|---:|
+| Breakfast Pre-Shift | 81 | 28 | **35%** |
+| Lunch Pre-Shift | 80 | 13 | 16% |
+| Dinner Pre-Shift | 54 | 5 | 9% |
+| Travel Path No Play Place | 87 | 6 | 7% |
+| Red Bull Tracking | 81 | 5 | 6% |
+| Travel Path With Playland | 21 | 0 | **0%** |
+| Cash Audit · Food Safety · EA Lunch · EA Breakfast | 13 | 0 | **0%** |
+
+Roughly **85% of all store-days fail an 80% bar today.** The owner set 80% as a *standard*, not a
+prediction, so the honest move is to show it — but a panel that is uniformly red names no decision
+and gets ignored (`CLAUDE.md`: *"a number nobody acts on is not a shipped feature"*).
+
+**Therefore: make the threshold PER-FORM, not one global number.** A daily pre-shift (1/store/day)
+and a Travel Path (27–45/store/day) are different commitments and cannot share a bar. Default every
+form to 80%, let the owner tune each, and show the store-day pass rate beside the bar so a
+mis-set threshold is visible rather than silently flagging everything.
+
+### 🔴 Manager attribution is NOT possible from the forms data alone — measured
+
+| | |
+|---|---|
+| completed rows carrying a person (`userId`) | **229 / 229** |
+| **MISSED rows carrying a person** | **0 / 3,886** |
+
+**A miss has nobody attached to it**, which is exactly the row a manager would be accountable for.
+`assignedTo` is role *groups* (General Manager / Shift Manager / …), not individuals, and
+`completedBy` is whoever *filed* the form — not necessarily the manager on duty. So the owner's own
+fallback is the correct one: **total-day for now.**
+
+**The research path he named is real and the data already exists.** Attribution needs
+`scheduledAt` → who was on shift at that moment:
+
+- **`lifelenz_schedules`** — scheduled shifts, already pulled daily. The cheaper first join.
+- **`people/time-punches-matched`** — actual punches, endpoint captured
+  (`finding-qsrsoft-time-punches-endpoint-2026-08-21.md`), not yet pulled. More accurate, since
+  scheduled ≠ worked. 🔴 **Never put `ssn` in its `selectCols`.**
+
+Encouraging for tractability: the median store-day has **1 distinct submitter** (max 3), and only
+**40 distinct people** filed across 22 stores in three days. Attribution is a small join, not a
+disambiguation problem.
+
+⚠️ **Both joins need the boundary decided first.** `scheduledAt` is UTC on a local-midnight window;
+LifeLenz and the punches are on their own boundaries, and the DAR is on the 4am business day. Per
+`CLAUDE.md`, both legs of any such join must sit on the same boundary.
+
 ## Open questions a pull must settle
 
 The dashboard is no longer blocked — the denominator, the submitter, the per-day date and the
