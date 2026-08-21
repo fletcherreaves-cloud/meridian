@@ -62,9 +62,13 @@ Referer: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
    `audit_rows` carries as a daily count almost certainly has an event token behind it, and that is
    the difference between "12 refunds that day" and twelve rows with times, registers and names.
    This is the single highest-value unknown here.
-2. **What is `29760` in the path?** It is not the NSN and not our zero-padded `loc`. A QSRSoft
-   internal store id, presumably. A pull needs a `loc → storeRef` mapping, and where that mapping
-   comes from is unresolved.
+2. **~~What is `29760` in the path?~~ ✅ RESOLVED 2026-08-21 — it IS the unpadded NSN. Store
+   `29760` = Duncan-Hwy 81 (`src/constants.js:294`), and it appears in the QSRSoft Forms
+   `locations` list alongside the other 26 NSNs (`finding-qsrsoft-forms-completion-endpoint-2026-08-21.md`).**
+   My earlier "not the NSN, a QSRSoft internal store id presumably" was simply wrong — I asserted it
+   without checking `STORE_NAMES`, which answers it in one `grep`. **No `loc → storeRef` mapping
+   needs discovering:** `storeRef` is `String(Number(loc))`, the same unpadded-NSN conversion the DAR
+   pull already performs. Reuse it; do not write a second one.
 3. **~~Auth shape.~~ ✅ RESOLVED 2026-08-21 — token-only, NO session cookies. This host is not
    the DAR host.** The owner supplied the DevTools **request-header panel** for the live call, which
    shows what the browser actually sent: an alphabetical list running `Accept` → `User-Agent` with

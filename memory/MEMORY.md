@@ -65,6 +65,28 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
+  **Owner-requested dashboard** (*"forms completed vs missed per day per store … manager submitting
+  and completion percent"*). A **third host family**, `forms.home.myqsrsoft.com` — **neither** the
+  DAR's Playwright requirement **nor** the security host's token-only finding transfers; get the
+  DevTools header panel, because `sec-fetch-site: same-site` means a cookie *would* be attached
+  invisibly. ⭐ **Two siblings, and you need both: build on `completionDetail`.** It takes **no
+  `formIds`** and returns **one row per SCHEDULED OCCURRENCE** — `status`/`missed`, `scheduledAt`,
+  `completedBy`, `assignedTo` role groups — so it carries the **assignment denominator** that makes
+  "missed" computable, and a missed occurrence is a *returned row*. `completionByForm` is the
+  secondary source: it alone gives within-form thoroughness (`answered/total`), which matters because
+  a form can be COMPLETED and still 20% blank (10034 Bonifay at **79.6%**, ~one whole 94-question form
+  left unfilled, when every other row is 96.8–100%). ⚠️ **`completedBy:"--"` and `reviewedWith:"N/A"`
+  are string sentinels, not null** (the `emp_id='0'` trap again), and **`completedBy` carries a
+  plaintext employee name on completed rows — identity-vault rules apply unchanged**. Other traps:
+  `completionByForm` **omits** absences (49 of 61 forms and **5 of 27 stores returned no row**);
+  `totalQuestions` is summed-per-submission and **not** a form constant; the window is **local
+  midnight, NOT `compType=trading`**; key on `formId` (titles have trailing spaces and a typo).
+  🔴 **Unsettled and blocking:** the `completionDetail` capture is truncated, and all its MISSED rows
+  are FL stores that had moved to the shorter "EA" form set — if that assignment is stale, MISSED
+  means rollout artifact, not failure, and the dashboard would blame GMs for complying. 🎯 It also
+  **corrects the `event_details` finding**: the security host's `storeRef` **is** the unpadded NSN
+  (`29760` = Duncan-Hwy 81), so dispatch #56 Part E needs no mapping hunt.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`time-punches-matched` — punch edits, and the geid answer (RETURNS SSNs)](finding-qsrsoft-time-punches-endpoint-2026-08-21.md)** —
   **🔴 THIS ENDPOINT RETURNS SOCIAL SECURITY NUMBERS + full legal names. NEVER put `ssn` in
   `selectCols`** — it is caller-chosen, so the field never has to leave QSRSoft. Never persist, never
