@@ -69,6 +69,21 @@ Once the registry drives the nav, each of the owner's changes is a `section:` ed
 - **Calendar / Events / Event Impact**: owner floated a new group *or* folding into Planning.
   **Unresolved — ask.**
 
+### ✅ The three open questions — ANSWERED by the owner, 2026-08-21
+
+1. **Visit Readiness + Graded Visits → Operations.** ("They would be more Operations.")
+2. **Calendar / Events & Tags / Event Impact → fold into Planning**, but Planning then needs clear
+   internal sub-navigation. Owner: *"may need to have clear sections when planning is opened. Use
+   menus or something. Be consistent with our preferences though."*
+   **⚠️ There is no single house idiom today — pick one and make it the standard.** Two exist:
+   `store-analytics.js:1415` uses **underline tabs** (amber `borderBottom`), and `security-panel.js:481`
+   uses **pill buttons**. **Use pills**: CLAUDE.md's UI conventions already name pill-style for
+   location selectors, and the Security panel is the newest surface. State the choice in the
+   writeup so the next panel does not re-decide it.
+3. **Inventory and Food Cost takes ALL inventory/food-cost panels** — Food Cost, End of Month,
+   Inventory Control, Count Cycle, **plus Inventory and Product Mix**. ("all inventory and food
+   cost related items should be grouped together.")
+
 ### Job C — overlay → page (the owner's actual complaint)
 
 The owner's words: *"dozens of popup overlay panels/modals … converting them to url based."* The
@@ -85,6 +100,34 @@ right-side modal today and would need one built.
 
 **And every popup needs a minimize-and-close option**, which does not universally exist. That is its
 own small job and applies to the exceptions, not the conversions.
+
+**BUILD the three missing right-side modals** (owner-approved 2026-08-21): About, Metric Lineage,
+Feature Requests. These have no right-side modal today, so this is new work, not conversion. SAGE is
+the reference implementation — match it.
+
+### Four more interruption candidates, and the rule behind them
+
+Owner asked for other candidates. `routing.js`'s own test is the right one: *"would I ever want to
+send someone a link to this?"* By it, four more qualify:
+
+| panel | why |
+|---|---|
+| **Settings** | Nobody links to settings. Pure interruption, consulted mid-task. |
+| **Panel Manager** | Same — configuration, never a destination. |
+| **Help** | Reference consulted *while* doing something else, not a place you navigate to. |
+| **Task Queue** | A personal work list, read alongside other work. |
+
+**And the pattern worth adopting as a rule:** those four plus the owner's six are almost exactly the
+registry's **`help` and `admin`** sections. So rather than hand-maintaining an exception list —
+**`help` and `admin` panels are interruptions (right-side modal); everything else is a destination
+(routed page).** That is explainable, it survives new panels being added, and it falls out of
+section metadata Job A is already wiring up.
+
+**One genuine ambiguity — do NOT decide it silently: `Data Manager`.** It is in `admin`, but uploading
+files is a task you go and do rather than a thing you glance at. Ask the owner.
+
+**Not candidates**, for the record: Forms Library and Printable Forms sit in `forms`, and you *would*
+link someone to a form — destinations.
 
 ## Known bugs riding along in Notes 67 (verify each before fixing — all unverified)
 

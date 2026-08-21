@@ -46,9 +46,20 @@ seconds, and the theory that survives one costs a PR.
   change is a one-line `section:` edit), **C** overlay→page in batches of 5–6 — which is the owner's
   *actual* complaint, since it's presentation not addressability. Six panels stay right-side modals
   (SAGE, KB, About, Metric Lineage, Feature Requests, Local News; three need one built) and all
-  popups need minimize+close. **Three genuinely open questions to ask, not assume:** where Visit
-  Readiness/Graded Visits go, Calendar as its own group vs folded into Planning, and whether
-  Inventory/Product Mix join the new Inventory & Food Cost section.
+  popups need minimize+close. **All three open questions ANSWERED by the owner 2026-08-21:** Visit Readiness + Graded
+  Visits → **Operations**; Calendar/Events/Event Impact → **fold into Planning**, which then needs
+  internal sub-nav (**⚠️ no house idiom exists — `store-analytics.js` uses underline tabs,
+  `security-panel.js` uses pills; **standardise on pills** per CLAUDE.md's selector convention and
+  say so, or the next panel re-decides it); and Inventory & Food Cost takes **all six**
+  inventory/food-cost panels including Inventory and Product Mix. **Owner also approved BUILDING**
+  the three missing right-side modals (About, Metric Lineage, Feature Requests — SAGE is the
+  reference). **Four more interruption candidates identified — Settings, Panel Manager, Help, Task
+  Queue — and the rule behind them:** those four plus the owner's six are almost exactly the
+  registry's `help` + `admin` sections, so rather than a hand-maintained exception list, **`help` and
+  `admin` panels are interruptions (right-side modal); everything else is a destination (routed
+  page)** — explainable, survives new panels, and falls out of the section metadata Job A wires up.
+  One genuine ambiguity flagged rather than decided: **Data Manager** (in `admin`, but uploading is a
+  task you go do). Forms panels are destinations, not candidates.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #53 — close the tail, then re-key](dispatch-53.md)** —
   **NEWEST, briefed.** Executes #49's remainder. Owner approved the direction on rows 3–4 (**54 live
   identity defects** — 40 names resolving to multiple employee IDs means the vault merges distinct
