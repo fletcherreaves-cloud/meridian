@@ -183,11 +183,17 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the four panels the plan flagged as misclassified destinations', () => {
-    // Ratchet, not a ceiling: adding a fifth route panel is a real routing change (a new
+  it('is exactly the ten panels converted so far (Dispatch27 + Dispatch #55 Part B)', () => {
+    // Ratchet, not a ceiling: adding an eleventh route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
-    // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal.
-    expect(ROUTE_IDS.slice().sort()).toEqual(['dicompare', 'fcst-accuracy', 'proj', 'report']);
+    // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
+    // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
+    // Dispatch #55 Part B (Job C Batch 1) added the other six as the first overlay-to-page
+    // conversion batch.
+    expect(ROUTE_IDS.slice().sort()).toEqual([
+      'count-cycle', 'dicompare', 'eom-dashboard', 'fcst-accuracy', 'fob-analysis',
+      'fob-eom', 'perf-reviews', 'proj', 'report', 'sched-hub',
+    ]);
   });
 
   it('every route panel is opened via goRoute(...), not a showX(true) call', () => {
@@ -202,6 +208,45 @@ describe('route panels (Dispatch27 Workstream E)', () => {
       const re = new RegExp(`routePanel===['"]${id}['"]`);
       expect(re.test(APP), `${id}: no routePanel==='${id}' render gate found in App.js`).toBe(true);
     }
+  });
+
+  it('every route panel\'s DEEP LINK reaches its route -- modal===id and goRoute(id) in the same branch', () => {
+    // The gap the two tests above cannot see, and the exact failure mode dispatch #55 Part B
+    // named as primary: "a conversion that renders the panel but breaks its deep link."
+    // Those tests only prove goRoute('id') and routePanel==='id' exist SOMEWHERE in App.js.
+    // Delete the `modal==='id'` branch entirely and both still pass -- the panel opens fine
+    // from the nav while every saved link, bookmark and in-app deep link to it silently does
+    // nothing. This asserts the two halves are actually connected: the modal-dispatch branch
+    // for an id calls goRoute for THAT SAME id.
+    //
+    // Verified 2026-08-21 against all ten route panels, the original four (Dispatch27) as well
+    // as Part B's six -- every one already pairs correctly, so this is a ratchet on working
+    // behaviour rather than a fix. App.js has no render-level test harness (nothing in
+    // src/__tests__ mounts it, checked), so this source-level pairing is the strongest
+    // available check short of building one; it is strictly more than the existence tests
+    // above, not a substitute for a real render.
+    const unpaired = ROUTE_IDS.filter(id => {
+      const re = new RegExp(`modal===['"]${id}['"][^\\n]*goRoute\\('${id}'\\)`);
+      return !re.test(APP);
+    });
+    expect(unpaired, `deep link broken -- modal===<id> branch does not call goRoute(<id>): ${unpaired.join(', ')}`).toEqual([]);
+  });
+
+  it('Dispatch #55 Part B: no setShowX(true) call site survives for the six converted booleans', () => {
+    // The exact regression class the dispatch calls out: a panel that renders fine via its new
+    // routePanel gate while a stale setShowX(true) call site sits unnoticed elsewhere (the #366
+    // shape -- engine right, call site unwired, just inverted). A working render is not proof the
+    // old modal-open path was actually removed; grep for it directly.
+    const REMOVED_SETTERS = [
+      'setShowSchedHub', 'setShowPerfReviews', 'setShowFOB', 'setShowFOBEOM',
+      'setShowEOMDash', 'setShowCountCycle',
+    ];
+    const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
+    expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
+    // And the state itself should be gone entirely -- not just unused -- since nothing else in
+    // this batch needs the modal-visibility boolean once the panel is routed.
+    const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
+    expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
   });
 });
 

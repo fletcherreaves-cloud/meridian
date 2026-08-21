@@ -31,7 +31,12 @@ const ROOTS = ['src/views', 'src/features'];
 // report-subscriptions.js and labor-allocation.js's standalone-modal branch to ModalShell —
 // per the standing rule (ratchet-raw-metric-rows.test.js's own header, and dispatch26's own
 // explicit instruction) to never copy a number from a dispatch/plan doc into a CEILING.
-const CEILING = 78;
+// Lowered 78 → 77 by Dispatch #55 Part B (Job C Batch 1): count-cycle-panel.js's hand-rolled
+// backdrop/card/close-button was converted to RoutePanelShell as part of its overlay-to-page
+// conversion (routePanel==='count-cycle'). sched-hub/perf-reviews/eom-dashboard's hand-rolled
+// chrome used a different shape (no literal `position:'fixed', inset:0` on one line, or was
+// caught by other means) so they don't move this count.
+const CEILING = 77;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 
