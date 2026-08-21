@@ -228,7 +228,26 @@ directory, and on a finding where a corroborating rule actually fired on the sam
 **Not renderable today, and not because of a UI gap.** `audit_rows` is a **daily per-employee
 aggregate** — PK `(loc, date, emp)`, no register number, no timestamp. Nothing to surface.
 
-**But the source is already found, captured, and documented.**
+**⚠️ SUPERSEDED SOURCE — read `finding-qsrsoft-event-details-endpoint-2026-08-21.md` FIRST.**
+The owner captured a **better-fitting endpoint** after this Part was written: `event_details`
+(`POST api.security.myqsrsoft.com/security/event_details/v1/{orgId}/{storeRef}`), the drill-in
+behind the **Register Audit** report Meridian already pulls daily as `audit_rows`. One row per
+event, already carrying **`event_tm` (time), `reg_num` (register), `crew` (name + badge), `mgr`,
+`daypart_name`, `tender_type`, `event_amt`, `order_key`** — i.e. the owner's ask, directly, without
+needing a per-transaction drill for the common case.
+
+**Use both, in tiers:** `event_details` is the **list** (what happened, when, on which register, by
+whom); `transaction_detail` is the **drill-in** on one `order_key` from that list when someone wants
+the itemisation. Build the list first — it answers the question on its own.
+
+**The highest-value unknown is `event_token`.** The capture used `"all_promo"`. Enumerating the
+other values (refunds, voids, over-rings, T-Reds before/after, cash over/short) is what turns every
+daily count in `audit_rows` into timed, named, register-attributed events. **Settle that before
+designing the pull** — it determines the shape of everything downstream. The finding file lists four
+further open questions (the `29760` store ref, auth shape, `remaining_amt` semantics, and an
+`order_key`-vs-`reg_num` mismatch that could silently mis-attribute a join).
+
+**The previously-captured source, still valid for the drill-in:**
 `memory/dispatch-34-phase0a-findings.md:145-180` records the `transaction_detail` endpoint
 (`api.security.myqsrsoft.com/security/transaction_detail`), reached from the `any_transaction` list,
 returning:

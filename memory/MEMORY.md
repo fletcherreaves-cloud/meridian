@@ -79,7 +79,12 @@ index has drifted, from one filename missing.**
   daily aggregate with neither, but `transaction_detail` was **already captured**
   (`dispatch-34-phase0a-findings.md:145-180`: register #, session times, POD, itemized lines, tender
   split, manager badge) and parked *"until an actual investigation needs it"* — **this is that
-  moment.**
+  moment** — and the owner then captured a **better-fitting endpoint** for it, `event_details`
+  ([finding](finding-qsrsoft-event-details-endpoint-2026-08-21.md)): one row per controls event with
+  time, register, cashier name+badge, manager, daypart and tender. `event_details` is the list,
+  `transaction_detail` the drill-in. **Highest-value unknown: enumerate `event_token`** (the capture
+  used `all_promo`) — that is what turns every daily count in `audit_rows` into timed, named,
+  register-attributed events.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #55 — the section-metadata standard, then Job C Batch 1](dispatch-55.md)** —
   **NEWEST.** Two parts, two PRs, A first. **Part A carries a STANDING RULE the owner set
   2026-08-21: `kind:` is lifecycle, `section:` is placement, and `section:` must be truthful even
