@@ -50,11 +50,16 @@ seconds, and the theory that survives one costs a PR.
   skipped-count theory. And a fourth measurement reframes the mechanism: **this store logs 42% less
   waste than the median store** ($3,173 vs $5,497) — elevated variance + complete counts + low waste
   logging is the signature of *product wasted but never logged*, which lands in variance by
-  definition. **Not concluded:** `waste_logged` is a DOLLAR sum and this store's problem is in cheap
-  PAPER, so the comparison is confounded by the very variable under study, and it isn't
-  sales-normalised. Two queries fix both (waste per $1k sales; paper-vs-food split of the gap) —
-  **do not cite the 42% until they run.** This is exactly what `INV-003` is built to detect, so it
-  may answer itself once that rule activates. Visible only because of the
+  definition. **❌ REFUTED same day:** the confound-removing query shows **paper waste logging is NORMAL**
+  (530 vs a 486 estate average, +9%) — the 42% gap is **entirely food** (−46%). The store logs
+  packaging waste fine and its variance problem IS packaging, so the two don't connect. Flagged in
+  advance as a live outcome, which is why the 42% was never cited. **What survives:** the entire
+  finding — store-specific, 82% paper, 3.5×, chronic, complete counts, not theft. **What is
+  unexplained again:** the mechanism — and note *waste logging* ≠ *counting accuracy*, so
+  "packaging counting practice" still leads, just without a mechanism. Untested candidates:
+  partial-sleeve counting, receiving/posting, transition-SKU handling. **Separate new thread:** the
+  store's FOOD waste logging is 46% below average while food is only 5 of its 28 flags — genuine
+  efficiency, or food under-logging feeding the elevated 21.3% median. Two findings; don't conflate. Visible only because of the
   #42 z-score conversion; under the old flat ratio this store was buried in 2,603 estate-wide flags.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 implemented — scroll fix, frictionless reveal, and INV-004](dispatch-50-implementation.md)** —
   **NEWEST.** Both parts of the brief below shipped: Part A's `minHeight:0` fix (both the root flex
