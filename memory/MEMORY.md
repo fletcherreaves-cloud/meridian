@@ -30,6 +30,84 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #54 — the IA / URL-view conversion, scoped against real code](dispatch-54.md)** —
+  **NEWEST.** The PM pass `notes-67-queue.md` §1 explicitly asked for. **Two findings reshape the
+  work.** (1) **The routing infrastructure already exists** — `src/app/routing.js` does
+  `pushState`+`searchParams`, dependency-free — but is deliberately scoped to `route:true` panels,
+  **4 of 57**. Separately `App.js` has an **82-key `modal===` chain**, so most panels are
+  *deep-linkable on load* but **not routed** (opening one doesn't change the URL). Not "build
+  routing" — "extend a working mechanism." (2) **⚠️ The registry's `SECTIONS` and
+  `panelsForSection()` are DEAD CODE — nothing consumes them**; the nav is hand-built in `shell.js`
+  with hardcoded `navLabel`/`pi(...)` calls. **This nearly produced a wrong dispatch:** the
+  `section:` values suggest the owner's regrouping is ~60% done (Org Summary/Rankings already
+  `reports`, Calendar/Events already `planning`, a `forecasting` section exists) and **none of it is
+  true in the UI.** Sequenced as three independent jobs: **A** wire `shell.js` to the registry (pure
+  refactor, nav identical after, today's UI wins any disagreement), **B** the regrouping (then each
+  change is a one-line `section:` edit), **C** overlay→page in batches of 5–6 — which is the owner's
+  *actual* complaint, since it's presentation not addressability. Six panels stay right-side modals
+  (SAGE, KB, About, Metric Lineage, Feature Requests, Local News; three need one built) and all
+  popups need minimize+close. **All three open questions ANSWERED by the owner 2026-08-21:** Visit Readiness + Graded
+  Visits → **Operations**; Calendar/Events/Event Impact → **fold into Planning**, which then needs
+  internal sub-nav (**⚠️ no house idiom exists — `store-analytics.js` uses underline tabs,
+  `security-panel.js` uses pills; **standardise on pills** per CLAUDE.md's selector convention and
+  say so, or the next panel re-decides it); and Inventory & Food Cost takes **all six**
+  inventory/food-cost panels including Inventory and Product Mix. **Owner also approved BUILDING**
+  the three missing right-side modals (About, Metric Lineage, Feature Requests — SAGE is the
+  reference). **Four more interruption candidates identified — Settings, Panel Manager, Help, Task
+  Queue — and the rule behind them:** those four plus the owner's six are almost exactly the
+  registry's `help` + `admin` sections, so rather than a hand-maintained exception list, **`help` and
+  `admin` panels are interruptions (right-side modal); everything else is a destination (routed
+  page)** — explainable, survives new panels, and falls out of the section metadata Job A wires up.
+  One genuine ambiguity flagged rather than decided: **Data Manager** (in `admin`, but uploading is a
+  task you go do). Forms panels are destinations, not candidates.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #53 — close the tail, then re-key](dispatch-53.md)** —
+  **NEWEST, briefed.** Executes #49's remainder. Owner approved the direction on rows 3–4 (**54 live
+  identity defects** — 40 names resolving to multiple employee IDs means the vault merges distinct
+  humans into one token *today*). **Phase A: close the 48-day tail with PACING AS A HARD
+  CONSTRAINT** — the endpoint began returning a **403 explicit-deny IAM** after ~6 of 9 chunks, a
+  third distinct failure mode and **the only volume-triggered one, so retrying harder makes it
+  worse.** Three separate ~2-week runs, one retry *per run*, not before 2026-08-22; repeated
+  Playwright logins hit the owner's own account and a lockout takes DAR and eBOS with it.
+  **Phase B: re-measure row 5 ONLY** (rows 1–4 are settled) and report it three ways — total,
+  **genuinely ID-less**, still-uncovered — since only the middle figure decides anything.
+  **Phase C: the gate, with the rule written BEFORE the number exists** (a policy choice, stated in
+  advance precisely so it can't be rationalised after): G ≤ 25 → proceed; 26–57 → stop, owner
+  decides; > 57 → option B, a mapping table. **Landing high is a legitimate result, not a failure —
+  do not tune to get under it.** **Phase D: #49's Phase 1 only** — vault gains `employee_id`,
+  additive, name-keyed path unchanged, **no Phase 2/3**, and adversarially probe every
+  `SECURITY DEFINER` change with the anon key.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Phase 0 — the identity match rate, measured](finding-phase0-identity-match-rate-2026-08-21.md)** —
+  **NEWEST. Dispatch #49's gate, measured.** 1,140 names → **977 clean 1:1 (85.7%)**, 40 merged,
+  14 split, 123 with no `emp_id`. **Row 5 resolved as a coverage artefact, categorically:** zero of
+  the 123 have any row on or before the backfill boundary (2026-07-04) — and those tail rows were
+  pulled *before `emp_id` existed*, so the null is **structural**. Within the covered window the
+  clean rate is **96.1%**. **Rows 3–4 are a finding in their own right and nobody had measured them:
+  40 names currently resolve to MULTIPLE employee IDs — the vault is merging distinct humans into
+  one token today, co-mingling their findings in a system that names people — plus 14 IDs split
+  across name variants. 54 live identity defects.** They are not a reason for caution about the
+  re-key; they are the strongest argument for it. **PM recommendation: proceed to Phase 1, after
+  closing the 48-day tail** (2026-07-05 → 08-21, 2–3 chunks) — the gate was designed around row 5
+  and a strong inference is not a measurement. **Not immediately:** the backfill tripped a **403
+  explicit-deny IAM policy** after 6 of 9 chunks — a THIRD distinct failure mode on this endpoint
+  (alongside 401-cached-token and `token captured: false`), and the only volume-triggered one, so
+  retrying harder makes it worse. Chunk future backfills across separate runs.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #52 — the drill-down, specced from a real investigation](dispatch-52.md)** —
+  **NEWEST, briefed.** Scopes dispatch #46 Part C from **evidence rather than a wish list**: the
+  2026-08-21 store `0013113` dig took ~8 hand-written queries over an hour, five did the real work,
+  and **three of those five are discriminators Part C never named** — `stores_flagging_item`
+  (store-specific vs the estate-wide broken WRINs — *the* difference between a lead and noise),
+  **item-class composition vs baseline** (82.1% paper vs 47.0% is what actually identified the
+  problem, and a class skew is a mechanism hint), and **secondary-metric comparison** (count
+  completeness, waste logged — which both ruled out skipped counts AND produced the replacement
+  hypothesis). Plus normalised flag rate **run first, deliberately, because it can end an
+  investigation early** — a drill-down that can't dissolve its own premise isn't an investigation
+  tool. **The lesson built in, not just written:** two hypotheses died in that hour, and the second
+  ("under-logs packaging waste") explained all four measurements and was still wrong — killed by
+  splitting one number by class. So **every comparison shows the estate baseline beside the
+  subject's value**, and **the panel displays the measurement, never the inferred cause** — the
+  mechanism at `0013113` is *still unknown* after eight queries. **Rider:** close the schema-drift
+  class (a test asserting migration `ADD COLUMN`s appear in `schema.sql`'s `CREATE TABLE`) — third
+  "nothing checks that two files agree" instance in three days.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #51 — capture empID, then measure Phase 0 in SQL](dispatch-51.md)** —
   **NEWEST, owner-approved.** Phase 0 failed **twice** — both attempts used a **bespoke one-off API
   pull** written for the measurement, both hit the same auth flakiness, and the engineer correctly
