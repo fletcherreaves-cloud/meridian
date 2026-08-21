@@ -30,6 +30,22 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #51 — capture empID, then measure Phase 0 in SQL](dispatch-51.md)** —
+  **NEWEST, owner-approved.** Phase 0 failed **twice** — both attempts used a **bespoke one-off API
+  pull** written for the measurement, both hit the same auth flakiness, and the engineer correctly
+  **flagged the resulting "row 5 = 1,140 (100%)" as an artefact of fetching zero rows, not a
+  finding** — exactly the false row-5 population #49 warned about. **The problem is the approach:**
+  a hardened production pull already exists (`qsrsoft-register-audit-pull.mjs`, proven at 80 days /
+  14,528 rows / 27 stores) and the measurement script inherited none of it. So: add a **nullable**
+  `emp_id` to `audit_rows`, populate via the existing pull, backfill `2026-03-01→today`, then run
+  Phase 0 as **pure SQL with no API dependency** — and repeatable, which matters for future
+  backfills. **Banked and real from the failed run:** 1,140 distinct names across 36,631 rows,
+  2026-03-01→2026-08-20 — Phase 0's denominator, no re-measuring needed. **Scope boundary is
+  explicit:** additive only, nothing reads the column, **do NOT touch the vault, token keying, or
+  `audit_rows`' `(loc, date, emp)` PK** — five months of manual history ride on it. The gate on the
+  re-key still holds. Also fixes a now-stale comment calling `manOverringQty` "UNVERIFIED" when it
+  is confirmed absent three ways. One retry max on the backfill — repeated Playwright logins run
+  against the owner's own QSRSoft account and a lockout would take DAR and eBOS down too.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Store 0013113 — a packaging counting problem, not loss](finding-store-13113-packaging-variance-2026-08-21.md)** —
   **NEWEST. The first operational finding this build has produced** — every prior inventory result
   described the build's own measurement error. Store `0013113` flags INV-001 at **14.4% (28/195) vs
@@ -50,11 +66,16 @@ seconds, and the theory that survives one costs a PR.
   skipped-count theory. And a fourth measurement reframes the mechanism: **this store logs 42% less
   waste than the median store** ($3,173 vs $5,497) — elevated variance + complete counts + low waste
   logging is the signature of *product wasted but never logged*, which lands in variance by
-  definition. **Not concluded:** `waste_logged` is a DOLLAR sum and this store's problem is in cheap
-  PAPER, so the comparison is confounded by the very variable under study, and it isn't
-  sales-normalised. Two queries fix both (waste per $1k sales; paper-vs-food split of the gap) —
-  **do not cite the 42% until they run.** This is exactly what `INV-003` is built to detect, so it
-  may answer itself once that rule activates. Visible only because of the
+  definition. **❌ REFUTED same day:** the confound-removing query shows **paper waste logging is NORMAL**
+  (530 vs a 486 estate average, +9%) — the 42% gap is **entirely food** (−46%). The store logs
+  packaging waste fine and its variance problem IS packaging, so the two don't connect. Flagged in
+  advance as a live outcome, which is why the 42% was never cited. **What survives:** the entire
+  finding — store-specific, 82% paper, 3.5×, chronic, complete counts, not theft. **What is
+  unexplained again:** the mechanism — and note *waste logging* ≠ *counting accuracy*, so
+  "packaging counting practice" still leads, just without a mechanism. Untested candidates:
+  partial-sleeve counting, receiving/posting, transition-SKU handling. **Separate new thread:** the
+  store's FOOD waste logging is 46% below average while food is only 5 of its 28 flags — genuine
+  efficiency, or food under-logging feeding the elevated 21.3% median. Two findings; don't conflate. Visible only because of the
   #42 z-score conversion; under the old flat ratio this store was buried in 2,603 estate-wide flags.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 implemented — scroll fix, frictionless reveal, and INV-004](dispatch-50-implementation.md)** —
   **NEWEST.** Both parts of the brief below shipped: Part A's `minHeight:0` fix (both the root flex
