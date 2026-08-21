@@ -244,8 +244,10 @@ the itemisation. Build the list first — it answers the question on its own.
 other values (refunds, voids, over-rings, T-Reds before/after, cash over/short) is what turns every
 daily count in `audit_rows` into timed, named, register-attributed events. **Settle that before
 designing the pull** — it determines the shape of everything downstream. The finding file lists four
-further open questions (the `29760` store ref, auth shape, `remaining_amt` semantics, and an
-`order_key`-vs-`reg_num` mismatch that could silently mis-attribute a join).
+further open questions — two of which are now **resolved**: auth is **token-only** on this host (no
+Playwright), and the path's **`storeRef` is the unpadded NSN** (`29760` = Duncan-Hwy 81), so reuse
+the DAR pull's existing conversion rather than hunting for a mapping. Still open: `remaining_amt`
+semantics, and an `order_key`-vs-`reg_num` mismatch that could silently mis-attribute a join.
 
 **The previously-captured source, still valid for the drill-in:**
 `memory/dispatch-34-phase0a-findings.md:145-180` records the `transaction_detail` endpoint

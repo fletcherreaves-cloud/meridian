@@ -65,8 +65,33 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [QSRSoft Forms — shift-checklist completion & the MISSED denominator](finding-qsrsoft-forms-completion-endpoint-2026-08-21.md)** —
+  **Owner-requested dashboard**, and it is **no longer blocked** — the full 4,714-row
+  `completionDetail` response is measured. A **third host family**, `forms.home.myqsrsoft.com`;
+  **neither** the DAR's Playwright requirement **nor** the security host's token-only finding
+  transfers, and `sec-fetch-site: same-site` means curl cannot rule out an invisible cookie — get the
+  DevTools header panel. ⭐ **Build on `completionDetail`** (no `formIds`, one row per *scheduled
+  occurrence*, so a miss is a returned row); keep `completionByForm` as the denominator source, since
+  `completionDetail` gives a completion *ratio* with no question counts and ratios cannot be averaged.
+  🔴 **`status` is POLYMORPHIC — a string enum OR a float**, and there are **three** states, not two:
+  `"MISSED"` (3,886), `"--"` = **scheduled but still open, NOT a miss** (599), and a **number 0–1**
+  that is the completion fraction (229). `missed === (status==="MISSED")` on all 4,714 rows, so
+  branch on `missed`/`hasResponse` and only then read `status` as a number. 🔴 **The 4.9% estate
+  completion headline is a CADENCE ARTIFACT — do not ship it:** Travel Path is scheduled **27–45×
+  per store per day** and is 87% of all rows. Segment by cadence — daily pre-shifts (1/store/day) run
+  **25.5%**, a real and actionable number; **seven stores completed ZERO in three days** (5183, 6972,
+  18213, 29760, 33109, 34222, 38609), a superset of what `completionByForm` could see. Other measured
+  traps: **`scheduledAt` can be NULL** on completed ad-hoc rows (32), which kills the obvious
+  `(location, formId, scheduledAt)` PK; `timeToComplete` is **ms of ACTIVE time**, not wall-clock (one
+  row: 28.97 days elapsed, 109 s recorded); `score` and `reviewedWith` are unused on every row;
+  `completedBy` is a **plaintext name** so vault rules apply, but **`userId` is a UUID** and is the
+  better key. ❌ **My FL "stale assignment" hypothesis is REFUTED** — FL 38% vs OK 39% on the legacy
+  pre-shift, all 27 stores are assigned it, and the EA forms are scheduled at essentially one store.
+  The MISSED rows are real; there is no artifact to subtract. 🎯 It also **corrects the
+  `event_details` finding**: the security host's `storeRef` **is** the unpadded NSN (`29760` =
+  Duncan-Hwy 81), so dispatch #56 Part E needs no mapping hunt.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Parts E and B — status after PR #534, nothing built this pass](finding-dispatch56-part-e-b-status-2026-08-21.md)** —
-  **NEWEST.** PR #534 (not yet merged, read directly off its branch) resolved two of `event_details`'s
+  PR #534 (merged) resolved two of `event_details`'s
   open questions: **`storeRef` is the plain unpadded NSN** (`29760` = Duncan-Hwy 81 — no `loc →
   storeRef` mapping to hunt, the original finding was simply wrong, unchecked against `STORE_NAMES`)
   and **auth is token-only** (no Playwright). Three more remain, and **none are answerable from

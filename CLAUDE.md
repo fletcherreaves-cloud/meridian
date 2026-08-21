@@ -306,15 +306,66 @@ actual code — this note nearly caused a duplicate reimplementation.
   prescribed fix would have paved over. A wrong call reproduced and found wrong is worth more
   than a plausible call implemented unverified.
   Full evidence in `memory/feedback-measure-dont-reason.md`.
-- **Docs-only commits do not deploy — that is deliberate, not a broken pipeline.** `vercel.json`'s
-  `ignoreCommand` skips the Vercel build when a commit touches nothing outside `memory/` and
-  `*.md`, because those produce a byte-identical site. Added 2026-08-21 after the account hit
-  Vercel's free-tier `api-deployments-free-per-day` cap (~113 builds on the day, limit 100) — and
-  **19 of that day's 35 commits were docs-only**, so this removes roughly half the build volume.
-  It fails SAFE in both directions: a `.sql`, script, or `src/` change always builds, and if
+- **Docs-only commits do not deploy, and NO preview branch builds — both deliberate, not a broken
+  pipeline.** `vercel.json`'s `ignoreCommand` is:
+  ```
+  if [ "$VERCEL_ENV" = "preview" ]; then exit 0; fi; git diff --quiet HEAD^ HEAD -- . ':(exclude)memory/*' ':(exclude)*.md'
+  ```
+  Two skips in one command: **any preview (branch) build**, and **any production commit touching
+  nothing outside `memory/` and `*.md`** (those produce a byte-identical site). Exit 0 skips,
+  non-zero builds — **do not invert that**, since backwards means real code silently never
+  deploying.
+  **⚠️ The preview test is `= "preview"`, NOT `!= "production"`. Do not "simplify" it.** Measured
+  2026-08-21: with `VERCEL_ENV` empty or unset, `!= "production"` skips a **code** commit — real
+  code silently never deploying, the exact failure this rule exists to prevent. `= "preview"` falls
+  through to the diff and builds. Verified across all six cases (production/preview/empty ×
+  code/docs) by executing the literal string from `vercel.json`.
+  It fails SAFE elsewhere too: a `.sql`, script, or `src/` change on main always builds, and if
   `HEAD^` is unreachable in Vercel's shallow clone the command errors (exit 128) and builds anyway.
-  Exit 0 skips, non-zero builds — **do not invert that**, since backwards means real code silently
-  never deploying. If you merge a docs PR and the site doesn't rebuild, that is this rule working.
+  If you merge a docs PR and the site doesn't rebuild, that is this rule working.
+- **⚠️ The `ignoreCommand` optimizes BUILD TIME, and build time is NOT the constraint. Do not
+  reach for it again when a deploy cap bites (measured 2026-08-21).** It was added that morning in
+  response to the free-tier `api-deployments-free-per-day` cap, on the assumption it would relieve
+  it. **It did not — the cap was hit again the same evening, on a docs-only commit.** The owner's
+  usage charts settle why:
+  - **Build Time: 5 h of 100 h. Billable build minutes: 0 s.** The build-side quota is at **5%**
+    utilization and has never been close to binding.
+  - The cap that actually bites is a **count of deployments per day (limit 100)**, and **the limiter
+    runs at deployment CREATION, before the ignore step** — so an `ignoreCommand`-skipped commit
+    still consumes one. Established by observed ordering, not inference: docs-only commits whose
+    builds *would* have been skipped were nonetheless **refused** by the limiter (if the ignore ran
+    first and exempted them there would be nothing to refuse), and a later docs-only commit was seen
+    going **created → Building → Ignored under one deployment id**. So skipping a build never skips
+    the count.
+  - **"Retry in 24 hours" is misleading** — it is a rolling window. A deployment succeeded seven
+    minutes after a refusal on 2026-08-21. Capacity frees continuously; you are not locked out.
+  - This is the second platform-level deploy limit this project has hit, and both times the mental
+    model was wrong. `memory/project-hosting.md` records the Netlify→Vercel move as buying
+    "6,000 build minutes/month" — again a **build-time** framing for a **deployment-count** problem.
+    **When a deploy limit fires, read the error's resource name first** (`api-deployments-free-per-day`),
+    not the build charts.
+- **Preview deployments are OFF by design — main is the deploy path (owner-stated 2026-08-21).**
+  *"As long as we are pushing to main, no… not necessary."* Nobody opens the preview URL before
+  merging, so every `claude/**` push was spending a scarce daily deployment on an artifact no one
+  looked at. **Re-enable previews only for a specific, named need** — chiefly when someone outside
+  this workflow is reviewing — and turn them back off afterwards. Treat a preview deploy as
+  emergency/exception use, not the default.
+  **⚠️ Nothing in the repo or the dashboard actually stops preview DEPLOYMENTS on Hobby. Both known
+  levers were checked and neither works — do not re-litigate this (2026-08-21):**
+  - `vercel.json`'s **`git.deploymentEnabled`** takes either `false` (which also kills main's
+    auto-deploy) or a map of **exact branch names** (`{"gh-pages": false}`). No glob support is
+    documented, and this project's branches are `claude/<slug>-<random>`, new every session.
+  - The dashboard's **Ignored Build Step** (Settings → **Build and Deployment**, *not* Settings →
+    Git — Vercel moved it) offers "Only build production". But its own description says Vercel
+    *"skips **builds**"*, and per the creation-ordering evidence above a skipped build still spends
+    a deployment. It also risks conflicting with `vercel.json`'s `ignoreCommand`, and if the
+    dropdown won it would build **every** main commit including docs-only ones, undoing the
+    docs-skip. **Left on "Automatic" deliberately.**
+
+  **So the only real lever on deployment count is workflow: FEWER PUSHES.** Every push to any branch
+  creates a deployment. Batch commits and push once per work chunk rather than per commit — on
+  2026-08-21 roughly 46 commits were pushed largely one at a time, which alone can exhaust a
+  100/day budget.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.
 - No TypeScript — plain JS with `// @ts-nocheck`.

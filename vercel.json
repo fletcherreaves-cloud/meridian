@@ -1,5 +1,5 @@
 {
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)memory/*' ':(exclude)*.md'",
+  "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"preview\" ]; then exit 0; fi; git diff --quiet HEAD^ HEAD -- . ':(exclude)memory/*' ':(exclude)*.md'",
   "rewrites": [
     {
       "source": "/(.*)",
