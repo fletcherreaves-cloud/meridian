@@ -308,13 +308,38 @@ actual code — this note nearly caused a duplicate reimplementation.
   Full evidence in `memory/feedback-measure-dont-reason.md`.
 - **Docs-only commits do not deploy — that is deliberate, not a broken pipeline.** `vercel.json`'s
   `ignoreCommand` skips the Vercel build when a commit touches nothing outside `memory/` and
-  `*.md`, because those produce a byte-identical site. Added 2026-08-21 after the account hit
-  Vercel's free-tier `api-deployments-free-per-day` cap (~113 builds on the day, limit 100) — and
-  **19 of that day's 35 commits were docs-only**, so this removes roughly half the build volume.
-  It fails SAFE in both directions: a `.sql`, script, or `src/` change always builds, and if
-  `HEAD^` is unreachable in Vercel's shallow clone the command errors (exit 128) and builds anyway.
-  Exit 0 skips, non-zero builds — **do not invert that**, since backwards means real code silently
-  never deploying. If you merge a docs PR and the site doesn't rebuild, that is this rule working.
+  `*.md`, because those produce a byte-identical site. It fails SAFE in both directions: a `.sql`,
+  script, or `src/` change always builds, and if `HEAD^` is unreachable in Vercel's shallow clone
+  the command errors (exit 128) and builds anyway. Exit 0 skips, non-zero builds — **do not invert
+  that**, since backwards means real code silently never deploying. If you merge a docs PR and the
+  site doesn't rebuild, that is this rule working.
+- **⚠️ The `ignoreCommand` optimizes BUILD TIME, and build time is NOT the constraint. Do not
+  reach for it again when a deploy cap bites (measured 2026-08-21).** It was added that morning in
+  response to the free-tier `api-deployments-free-per-day` cap, on the assumption it would relieve
+  it. **It did not — the cap was hit again the same evening, on a docs-only commit.** The owner's
+  usage charts settle why:
+  - **Build Time: 5 h of 100 h. Billable build minutes: 0 s.** The build-side quota is at **5%**
+    utilization and has never been close to binding.
+  - The cap that actually bites is a **count of deployments per day (limit 100)**, and an
+    `ignoreCommand`-skipped commit **still creates a deployment record** (it reports as "Ignored"
+    with its own deployment id and inspector URL) — so skipping the build does not skip the count.
+  - This is the second platform-level deploy limit this project has hit, and both times the mental
+    model was wrong. `memory/project-hosting.md` records the Netlify→Vercel move as buying
+    "6,000 build minutes/month" — again a **build-time** framing for a **deployment-count** problem.
+    **When a deploy limit fires, read the error's resource name first** (`api-deployments-free-per-day`),
+    not the build charts.
+- **Preview deployments are OFF by design — main is the deploy path (owner-stated 2026-08-21).**
+  *"As long as we are pushing to main, no… not necessary."* Nobody opens the preview URL before
+  merging, so every `claude/**` push was spending a scarce daily deployment on an artifact no one
+  looked at. **Re-enable previews only for a specific, named need** — chiefly when someone outside
+  this workflow is reviewing — and turn them back off afterwards. Treat a preview deploy as
+  emergency/exception use, not the default.
+  **⚠️ `vercel.json`'s `git.deploymentEnabled` cannot express this — do not try.** It takes either
+  `false` (which also kills main's auto-deploy) or a map of **exact branch names**
+  (`{"gh-pages": false}`); no glob/wildcard support is documented, and this project's branches are
+  `claude/<slug>-<random>`, a new name every session. The lever is the **Vercel dashboard Git
+  setting**, not a repo file — so a future session cannot fix this in a commit, and should say so
+  rather than shipping a `vercel.json` change that silently does nothing.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.
 - No TypeScript — plain JS with `// @ts-nocheck`.
