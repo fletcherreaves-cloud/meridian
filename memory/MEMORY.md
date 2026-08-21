@@ -45,8 +45,16 @@ seconds, and the theory that survives one costs a PR.
   `SMPLY DEL`/`MCCAFE REFRESH` transition SKUs where old and new packaging coexist. **It surfaced
   from a panel called "Security" and it is NOT a security finding** — a process conversation, not an
   investigation, and saying so plainly matters because the cost of the other framing is paid by a
-  real person. Still open: whether the store's *median* variance is ordinary (narrow, concentrated
-  problem) or elevated (broader sloppiness) — different conversations. Visible only because of the
+  real person. **ANSWERED same day: it is BOTH** — median 21.3% vs an estate median of 15.5% (1.4×), so
+  moderately elevated across the board AND paper-concentrated. `uncounted = 0` firmly kills the
+  skipped-count theory. And a fourth measurement reframes the mechanism: **this store logs 42% less
+  waste than the median store** ($3,173 vs $5,497) — elevated variance + complete counts + low waste
+  logging is the signature of *product wasted but never logged*, which lands in variance by
+  definition. **Not concluded:** `waste_logged` is a DOLLAR sum and this store's problem is in cheap
+  PAPER, so the comparison is confounded by the very variable under study, and it isn't
+  sales-normalised. Two queries fix both (waste per $1k sales; paper-vs-food split of the gap) —
+  **do not cite the 42% until they run.** This is exactly what `INV-003` is built to detect, so it
+  may answer itself once that rule activates. Visible only because of the
   #42 z-score conversion; under the old flat ratio this store was buried in 2,603 estate-wide flags.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #50 implemented — scroll fix, frictionless reveal, and INV-004](dispatch-50-implementation.md)** —
   **NEWEST.** Both parts of the brief below shipped: Part A's `minHeight:0` fix (both the root flex

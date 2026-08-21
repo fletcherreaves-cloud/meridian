@@ -76,12 +76,42 @@ SKUs where outgoing and incoming packaging sit on the shelf together.
 "Security," and it is not a security finding. Saying so plainly matters: the cost of treating a
 counting problem as a suspicion is paid by a real person at a real store.
 
-## Still open, and would sharpen it
+## ✅ ANSWERED same day — it is BOTH, and a fourth measurement reframes the mechanism
 
-Whether the store's **median** variance is ordinary or also elevated. If ordinary, this is a normal
-store with a narrow, concentrated packaging problem. If elevated, it is broader counting sloppiness
-that shows up worst in paper. Those imply different conversations. The query is written and unrun
-(estate-median comparison from `qsr_variance_stat`, latest period, `exp_usage > 10`).
+The estate-median comparison ran (latest period, `exp_usage > 10`):
+
+| | items | uncounted | waste logged | median var % |
+|---|---:|---:|---:|---:|
+| **store 0013113** | 173 | **0** | **$3,173** | **21.3%** |
+| estate median | 169 | 0 | $5,497 | 15.5% |
+
+**The median is elevated too — 1.4× the estate.** So this is not "a normal store with one narrow
+problem." It is both moderately elevated across the board *and* heavily concentrated in packaging.
+
+**Counting completeness is firmly ruled out:** `uncounted = 0`, matching the estate median exactly.
+They are counting everything.
+
+**New, and it reframes the mechanism: this store logs 42% less waste than the median store.**
+Elevated variance + complete counts + low waste logging is the signature of **product wasted but
+never logged** — unlogged waste lands in variance by definition. Packaging waste is the classic
+thing not to log: a crushed sleeve of cups, a dropped stack of cartons, damaged transition stock.
+Too trivial-feeling to write up, and cheap enough that nobody bothers.
+
+That single story explains all four measurements at once, which no earlier hypothesis did.
+
+**⚠️ NOT CONCLUDED — the waste comparison is confounded, and the confound is the variable under
+study.** `waste_logged` is a **dollar** sum, and this store's problem is concentrated in **paper**,
+which is cheap. A store whose waste is mostly packaging shows low waste dollars even if it logs
+every cup. It is also not normalised to sales volume. Two queries remove both confounds and are
+written but unrun: waste per $1,000 of sales (`qsr_daily_activity.net_sales`), and the paper-vs-food
+split of the waste gap itself. **Do not cite the 42% figure as a finding until those run.**
+
+If waste-per-$1k is normal and only the paper share is low → **under-logged packaging waste**, and
+that is the answer. If waste-per-$1k is low across both classes → a broader logging-discipline gap.
+Either way it stays a process conversation; which process changes.
+
+**This is also precisely what `INV-003` (variance unmatched by logged waste) is built to detect** —
+so the question may answer itself once that rule is activated, without anyone running SQL.
 
 ## Why this one matters beyond itself
 
