@@ -65,6 +65,22 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #56 Part D — is this an instance, a pattern, or a trend?](dispatch56-part-d.md)** —
+  **NEWEST.** *"A first-time flag and a fifth consecutive flag are completely different situations
+  and the panel currently presents them identically."* Two engine functions, both extending
+  `security-drilldown.js` (no new data source — everything from `security_findings` already
+  loaded): `buildSubjectTimeline()` flattens a subject's per-rule window history into one
+  oldest→newest cross-rule rollup ("flagged N of M evaluations since \<date\>"); `classifySubjectShape()`
+  answers instance/pattern/trend — a DIFFERENT, more precise question than dispatch #46's existing
+  `classifySubjectTrend()` (checked before building anything: that one only asks "is it still going
+  on," a two-state chronic/new/improving/clear story; this one asks how many times and in what
+  arrangement, with a 3-consecutive-window minimum before a directional "trend" claim is allowed —
+  the "do not label a shape from two windows" case dispatch #56 itself warns against). Renders
+  BESIDE the existing chronic/new line, not instead of it. Plus the corroboration_rules
+  finding-level cross-link — Part A already mapped the field and surfaced the static directory
+  half; `corroboratingFlags()` is the other half, showing when a corroborating rule ALSO fired for
+  the same subject. 1900/1900 tests (20 net new), build flat. Parts B/E next per the owner's own
+  sequencing; Job C Batches 2+ deferred.
 - **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`time-punches-matched` — punch edits, and the geid answer (RETURNS SSNs)](finding-qsrsoft-time-punches-endpoint-2026-08-21.md)** —
   **🔴 THIS ENDPOINT RETURNS SOCIAL SECURITY NUMBERS + full legal names. NEVER put `ssn` in
   `selectCols`** — it is caller-chosen, so the field never has to leave QSRSoft. Never persist, never

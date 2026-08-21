@@ -3,6 +3,7 @@ import {
   median, twoProportionZ, flagRateByStore, crossStorePrevalence,
   compositionVsEstate, periodTrend, secondaryMetrics, monthsBack,
   assembleInventoryDrilldown, assembleCashDrilldown, CASH_RULE_FIELDS,
+  classifySubjectShape, buildSubjectTimeline, corroboratingFlags,
 } from '../engine/security-drilldown.js';
 
 describe('median', () => {
@@ -242,5 +243,114 @@ describe('assembleCashDrilldown', () => {
 describe('CASH_RULE_FIELDS', () => {
   it('covers exactly the four cash rules, matching the live seeds', () => {
     expect(Object.keys(CASH_RULE_FIELDS).sort()).toEqual(['CASH-001', 'CASH-002', 'CASH-003', 'CASH-004']);
+  });
+});
+
+// dispatch #56 Part D -- "a first-time flag and a fifth consecutive flag are completely different
+// situations." classifySubjectShape asks a different question from dispatch #46's
+// classifySubjectTrend (chronic/new/improving/clear, a two-state "is it still going on"): this
+// asks how many times, and in what arrangement -- instance / pattern / trend, with an explicit
+// minimum before a directional "trend" claim is allowed.
+describe('classifySubjectShape', () => {
+  const w = (pass, value) => ({ pass, value, windowStart: '2026-01-01', windowEnd: '2026-01-28' });
+
+  it('no flagged windows -> never-flagged', () => {
+    expect(classifySubjectShape([w(false, 1), w(null, null)])).toEqual({ shape: 'never-flagged', flaggedCount: 0 });
+  });
+
+  it('exactly one flagged window -> instance, regardless of how many clear windows surround it', () => {
+    expect(classifySubjectShape([w(false, 1), w(true, 10), w(false, 1)]))
+      .toEqual({ shape: 'instance', flaggedCount: 1 });
+  });
+
+  it('two flagged windows with a clear window between them -> pattern, asserted even at n=2 (a count, not a direction)', () => {
+    expect(classifySubjectShape([w(true, 5), w(false, 1), w(true, 8)]))
+      .toEqual({ shape: 'pattern', flaggedCount: 2 });
+  });
+
+  it('two CONSECUTIVE flagged windows, below the default minTrendWindows -> insufficient-history, not trend -- the exact "do not label a shape from two windows" case', () => {
+    expect(classifySubjectShape([w(false, 1), w(true, 5), w(true, 8)]))
+      .toEqual({ shape: 'insufficient-history', flaggedCount: 2, minTrendWindows: 3 });
+  });
+
+  it('three consecutive flagged windows, rising value -> trend, direction rising', () => {
+    expect(classifySubjectShape([w(true, 5), w(true, 8), w(true, 12)]))
+      .toEqual({ shape: 'trend', flaggedCount: 3, direction: 'rising' });
+  });
+
+  it('three consecutive flagged windows, falling value -> direction falling', () => {
+    expect(classifySubjectShape([w(true, 12), w(true, 8), w(true, 5)]))
+      .toEqual({ shape: 'trend', flaggedCount: 3, direction: 'falling' });
+  });
+
+  it('three consecutive flagged windows, same first and last value -> direction flat', () => {
+    expect(classifySubjectShape([w(true, 8), w(true, 20), w(true, 8)]))
+      .toEqual({ shape: 'trend', flaggedCount: 3, direction: 'flat' });
+  });
+
+  it('a run of 3+ consecutive flags plus one more flag elsewhere (a gap in between) -> pattern, not trend -- the overall arrangement is not one unbroken run', () => {
+    expect(classifySubjectShape([w(true, 5), w(true, 8), w(true, 12), w(false, 1), w(true, 20)]))
+      .toEqual({ shape: 'pattern', flaggedCount: 4 });
+  });
+
+  it('minTrendWindows is a caller-supplied option, not a hardcoded 3', () => {
+    expect(classifySubjectShape([w(true, 5), w(true, 8)], { minTrendWindows: 2 }))
+      .toEqual({ shape: 'trend', flaggedCount: 2, direction: 'rising' });
+  });
+
+  it('a null value in the run yields direction null rather than a fabricated comparison', () => {
+    expect(classifySubjectShape([w(true, null), w(true, 8), w(true, 12)]))
+      .toEqual({ shape: 'trend', flaggedCount: 3, direction: null });
+  });
+});
+
+describe('buildSubjectTimeline', () => {
+  it('flattens every rule\'s own history into one oldest->newest list, and counts flags + first window', () => {
+    const historyByRule = {
+      'CASH-001': [
+        { pass: false, value: 1, windowStart: '2026-06-01', windowEnd: '2026-06-28', computedAt: '2026-06-29T00:00:00Z' },
+        { pass: true, value: 10, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T00:00:00Z' },
+      ],
+      'CASH-004': [
+        { pass: true, value: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T00:00:00Z' },
+      ],
+    };
+    const out = buildSubjectTimeline(historyByRule);
+    expect(out.totalWindows).toBe(3);
+    expect(out.flaggedCount).toBe(2);
+    expect(out.firstWindowStart).toBe('2026-06-01');
+    // Sorted by windowEnd across BOTH rules, not grouped by rule.
+    expect(out.rows.map(r => r.ruleId)).toEqual(['CASH-001', 'CASH-001', 'CASH-004']);
+    expect(out.rows.map(r => r.windowEnd)).toEqual(['2026-06-28', '2026-07-28', '2026-08-28']);
+  });
+
+  it('an empty or missing historyByRule returns an empty, honest result -- not a crash', () => {
+    expect(buildSubjectTimeline({})).toEqual({ rows: [], totalWindows: 0, flaggedCount: 0, firstWindowStart: null });
+    expect(buildSubjectTimeline(undefined)).toEqual({ rows: [], totalWindows: 0, flaggedCount: 0, firstWindowStart: null });
+  });
+});
+
+// dispatch #56 Part D's "free win": corroboration_rules is populated in security_rules and mapped
+// by loadSecurityRules() as of Part A, but nothing checked whether a corroborating rule ACTUALLY
+// fired for this subject until this function.
+describe('corroboratingFlags', () => {
+  const rule = { ruleId: 'CASH-003', corroborationRules: ['CASH-001', 'CASH-002'] };
+
+  it('returns the corroborating rule ids that are ALSO currently flagged for this subject', () => {
+    const verdicts = [
+      { ruleId: 'CASH-001', pass: true },
+      { ruleId: 'CASH-002', pass: false },
+      { ruleId: 'CASH-003', pass: true },
+    ];
+    expect(corroboratingFlags(rule, verdicts)).toEqual(['CASH-001']);
+  });
+
+  it('a hygiene-routed verdict (lifecycleCategory set) does not count as a corroborating flag', () => {
+    const verdicts = [{ ruleId: 'CASH-001', pass: true, lifecycleCategory: 'deactivated' }];
+    expect(corroboratingFlags(rule, verdicts)).toEqual([]);
+  });
+
+  it('no corroboration_rules on the rule -> empty, no crash', () => {
+    expect(corroboratingFlags({ ruleId: 'CASH-004' }, [{ ruleId: 'CASH-001', pass: true }])).toEqual([]);
   });
 });

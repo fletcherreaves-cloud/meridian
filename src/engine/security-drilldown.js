@@ -163,6 +163,76 @@ export function secondaryMetrics(rows) {
   }));
 }
 
+// ── 6. Subject flag-shape + cross-rule history — dispatch #56 Part D ────────────────────────────
+// "A first-time flag and a fifth consecutive flag are completely different situations and the
+// panel currently presents them identically." Two pieces, both pure over data the panel already
+// has loaded (security_findings, via groupFindingsBySubject's own historyByRule) -- no new fetch,
+// per the dispatch's own "extend security-drilldown.js rather than writing a parallel history
+// calculation" instruction.
+
+// classifySubjectShape: names the SHAPE of one rule's own flag history for one subject --
+// deliberately a different question from dispatch #46's classifySubjectTrend (security-panel.js),
+// which only asks "is the LATEST verdict flagged, and was ANY prior verdict flagged" (a two-state
+// chronic/new/improving/clear). This asks how many times, and in what arrangement:
+//   instance = flagged exactly once.
+//   pattern  = flagged 2+ times with at least one clear/undetermined window between two flags
+//              (recurring, not a running streak) -- asserted even at n=2, since it is a factual
+//              count, not a directional claim.
+//   trend    = flagged in an UNBROKEN run of `minTrendWindows`+ consecutive windows, direction
+//              from the run's first value vs its last.
+//   insufficient-history = a consecutive flagged run exists but is shorter than minTrendWindows --
+//              exactly the "do not label a shape from two windows" case dispatch #56 itself warns
+//              against (the same discipline dispatch #52 already applied by declining a z-test on
+//              1-4 flagged cash rules). The caller shows the raw history, not a shape word.
+// history: one rule's own windows for one subject, oldest->newest -- groupFindingsBySubject's own
+// historyByRule[ruleId] shape ({pass, value, windowStart, windowEnd, computedAt, ...}).
+export function classifySubjectShape(history, { minTrendWindows = 3 } = {}) {
+  const h = Array.isArray(history) ? history : [];
+  const flaggedIdx = [];
+  h.forEach((w, i) => { if (w.pass === true) flaggedIdx.push(i); });
+  const flaggedCount = flaggedIdx.length;
+  if (flaggedCount === 0) return { shape: 'never-flagged', flaggedCount: 0 };
+  if (flaggedCount === 1) return { shape: 'instance', flaggedCount: 1 };
+  const isConsecutiveRun = flaggedIdx[flaggedIdx.length - 1] - flaggedIdx[0] + 1 === flaggedCount;
+  if (!isConsecutiveRun) return { shape: 'pattern', flaggedCount };
+  if (flaggedCount < minTrendWindows) return { shape: 'insufficient-history', flaggedCount, minTrendWindows };
+  const run = flaggedIdx.map(i => h[i]);
+  const first = run[0].value, last = run[run.length - 1].value;
+  const direction = (first == null || last == null) ? null : last > first ? 'rising' : last < first ? 'falling' : 'flat';
+  return { shape: 'trend', flaggedCount, direction };
+}
+
+// buildSubjectTimeline: flattens historyByRule (every rule's own window history for one subject)
+// into a single oldest->newest list across ALL rules -- "has this subject been flagged before, on
+// which rules, in which windows." Pure flattening + sort, no classification -- the reader reads
+// the list, same discipline as periodTrend's own undecorated medians.
+export function buildSubjectTimeline(historyByRule) {
+  const rows = [];
+  for (const [ruleId, windows] of Object.entries(historyByRule || {})) {
+    for (const w of (windows || [])) rows.push({ ruleId, ...w });
+  }
+  rows.sort((a, b) => (a.windowEnd || '').localeCompare(b.windowEnd || '') || (a.computedAt || '').localeCompare(b.computedAt || ''));
+  const flaggedCount = rows.filter(r => r.pass === true).length;
+  const firstWindowStart = rows.reduce((m, r) => (!m || (r.windowStart && r.windowStart < m)) ? r.windowStart : m, null);
+  return { rows, totalWindows: rows.length, flaggedCount, firstWindowStart };
+}
+
+// corroboratingFlags: for a flagged verdict on one rule, which of that rule's corroboration_rules
+// (schema-security-findings-exoneration.sql; mapped by loadSecurityRules() as of dispatch #56 Part
+// A) are ALSO currently flagged for the SAME subject. Part A already mapped + surfaced
+// corroboration_rules in the static rule directory; this is Part D's own "free win" half --
+// "on a finding where a corroborating rule actually fired on the same subject."
+// rule: the security_rules row for the verdict's own ruleId (carries `corroborationRules`).
+// subjectVerdicts: the subject's own group.verdicts (one per rule, latest window).
+export function corroboratingFlags(rule, subjectVerdicts) {
+  const ids = Array.isArray(rule?.corroborationRules) ? rule.corroborationRules : [];
+  if (!ids.length) return [];
+  const flaggedIds = new Set((subjectVerdicts || [])
+    .filter(v => v.pass === true && !v.lifecycleCategory)
+    .map(v => v.ruleId));
+  return ids.filter(id => flaggedIds.has(id));
+}
+
 // ── Assembly — wires the five primitives above into one result per domain ───────────────────────
 // Still pure: callers (the panel) fetch the on-demand rows and pass them in here. Each function
 // below is what a render-based test exercises through the actual UI, per dispatch #52's own

@@ -770,3 +770,95 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     expect(container.textContent).toMatch(/Drill-down — measurements, not conclusions/);
   });
 });
+
+// dispatch #56 Part D -- "a first-time flag and a fifth consecutive flag are completely different
+// situations and the panel currently presents them identically." Render-based, through the real
+// SecurityPanel, not just the engine unit tests -- proves the subject-history rollup, the
+// instance/pattern/trend shape line, and the corroboration cross-link are actually wired into
+// SubjectDetail, not just correct in isolation.
+describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and corroboration render through the real panel', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act', corroborationRules: ['CASH-004'] },
+    { ruleId: 'CASH-004', domain: 'cash', method: 'Promo/discount rate', description: 'desc2', baselineType: 'peer', logicType: 'ratio', active: true, investigationAction: 'act2' },
+  ];
+  // Alice: CASH-001 flagged in three CONSECUTIVE windows with a rising value (6 -> 9 -> 12) --
+  // a real trend -- plus CASH-004 flagged in the latest window, which corroborates CASH-001 per
+  // the RULES fixture above. Four windows total, all flagged.
+  const FINDINGS = [
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 6, thresholdUsed: 5, windowStart: '2026-06-01', windowEnd: '2026-06-28', computedAt: '2026-06-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 9, thresholdUsed: 5, windowStart: '2026-07-01', windowEnd: '2026-07-28', computedAt: '2026-07-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-alice', wrin: null, loc: '0000001', ruleId: 'CASH-004', pass: true, value: 100, thresholdUsed: 50, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:05:00Z', baselineContext: {}, explanation: [] },
+  ];
+  // Bob: a single CASH-001 window -- the "first-time flag" side of the dispatch's own contrast.
+  const BOB_FINDINGS = [
+    { empToken: 'tok-bob', wrin: null, loc: '0000001', ruleId: 'CASH-001', pass: true, value: 6, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+
+  beforeEach(() => {
+    localStorage.clear();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  async function expandAliceRow() {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const row = storeLabel?.parentElement;
+    expect(row).toBeTruthy();
+    await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+  }
+
+  it('the subject history rollup shows the total window count and flags, and the per-window timeline once there is more than one window', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    await expandAliceRow();
+    expect(container.textContent).toMatch(/Subject history: flagged 4 of 4 evaluations since 2026-06-01/);
+    expect(container.textContent).toMatch(/CASH-001 2026-06-28: flagged/);
+    expect(container.textContent).toMatch(/CASH-004 2026-08-28: flagged/);
+  });
+
+  it('a single-window subject gets a history line but no redundant per-window list (identical to the one verdict already shown)', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(BOB_FINDINGS);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    await act(async () => { storeLabel.parentElement.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Subject history: flagged 1 of 1 evaluation since 2026-08-01/);
+    // "evaluation" singular, not "evaluations" -- and Bob is the dispatch's own "first-time flag"
+    // contrast case, so his shape is Instance, not Trend.
+    expect(container.textContent).not.toMatch(/Subject history: flagged 1 of 1 evaluations/);
+    expect(container.textContent).toMatch(/Instance — flagged once/);
+  });
+
+  it('three consecutive rising windows classify as Trend, rendered beside (not instead of) the existing chronic/new line', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    await expandAliceRow();
+    expect(container.textContent).toMatch(/Trend — 3 consecutive flagged windows, rising/);
+    // The pre-existing dispatch #46 chronic/new line still renders too -- additive, not replaced.
+    expect(container.textContent).toMatch(/Chronic — flagged before, still flagged/);
+  });
+
+  it('a corroborating rule that also fired for the same subject renders the cross-link on the finding', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    await expandAliceRow();
+    expect(container.textContent).toMatch(/Corroborated by CASH-004 — also flagged for this subject/);
+  });
+
+  it('no corroboration cross-link when the corroborating rule is NOT flagged for this subject', async () => {
+    const noCorrobFindings = FINDINGS.filter(f => f.ruleId !== 'CASH-004');
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(noCorrobFindings);
+    await expandAliceRow();
+    expect(container.textContent).not.toMatch(/Corroborated by/);
+  });
+});

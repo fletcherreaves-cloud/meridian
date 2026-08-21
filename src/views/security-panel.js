@@ -24,7 +24,10 @@ import {
 import { INV_ORG_COORDS } from '../constants.js';
 import { RevealName } from './store-analytics.js';
 import { addD, fmtDI } from '../utils/date.js';
-import { monthsBack, assembleInventoryDrilldown, assembleCashDrilldown } from '../engine/security-drilldown.js';
+import {
+  monthsBack, assembleInventoryDrilldown, assembleCashDrilldown,
+  classifySubjectShape, buildSubjectTimeline, corroboratingFlags,
+} from '../engine/security-drilldown.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -240,6 +243,17 @@ const TREND_META = {
   'insufficient-history': { label: 'Not enough history yet to call this new or chronic', color: 'var(--text3)' },
 };
 
+// dispatch #56 Part D -- "instance / pattern / trend." A different axis from TREND_META above:
+// that one asks "is it still going on" (a 2-state chronic/new/improving/clear); this one asks how
+// many times and in what arrangement. Rendered alongside, not instead of, the existing line.
+const SHAPE_META = {
+  'never-flagged':        { label: null, color: 'var(--text3)' }, // not rendered -- no shape to name
+  instance:                { label: n => 'Instance — flagged once', color: 'var(--amber,#f59e0b)' },
+  pattern:                 { label: n => `Pattern — flagged ${n} times, not consecutively`, color: 'var(--crit,#ef4444)' },
+  trend:                   { label: (n, dir) => `Trend — ${n} consecutive flagged windows, ${dir || 'moving'}`, color: 'var(--crit,#ef4444)' },
+  'insufficient-history':  { label: (n, dir, min) => `${n} consecutive flagged windows — below the ${min}-window minimum to call this a trend`, color: 'var(--text3)' },
+};
+
 function fPct(n) { return n == null ? '—' : (n * 100).toFixed(1) + '%'; }
 
 // dispatch #56 Part C -- the (loc, wrin, period) key for looking up an inventory subject's
@@ -348,8 +362,28 @@ function SubjectDrilldown({ group, domain, findings, domainRuleIds, subjectLabel
   );
 }
 
+// dispatch #56 Part D -- "has this subject been flagged before, on which rules, in which
+// windows." A subject-level rollup across ALL the subject's rules, rendered once above the
+// per-rule breakdown -- purely a flatten+sort of data already loaded (buildSubjectTimeline),
+// no fetch. Renders nothing for a subject with no history at all (the common case today, per
+// dispatch #46's own measurement that every real subject currently has exactly one window).
+function SubjectHistory({ group }) {
+  const timeline = buildSubjectTimeline(group.historyByRule);
+  if (!timeline.totalWindows) return null;
+  return div({ style: { marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--bdr)' } },
+    span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text)' } },
+      `Subject history: flagged ${timeline.flaggedCount} of ${timeline.totalWindows} evaluation${timeline.totalWindows === 1 ? '' : 's'}`
+      + (timeline.firstWindowStart ? ` since ${timeline.firstWindowStart}` : '')),
+    // A single-window subject's timeline is identical to the one verdict already shown below --
+    // only render the list once there is a second window to actually compare against.
+    timeline.totalWindows > 1 && div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 3 } },
+      timeline.rows.map(r => `${r.ruleId} ${r.windowEnd}: ${r.pass === true ? 'flagged' : r.pass === false ? 'clear' : 'n/a'}`).join('  ·  ')),
+  );
+}
+
 function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domainRuleIds }) {
   return div({ style: { padding: '10px 14px 14px', borderTop: '1px solid var(--bdr)', background: 'var(--surf2)' } },
+    h(SubjectHistory, { group }),
     group.verdicts.map((v, i) => {
       const rule = rulesById[v.ruleId] || {};
       const state = verdictState(v.pass, v.lifecycleCategory);
@@ -357,7 +391,19 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
       const bc = v.baselineContext || {};
       const trend = classifySubjectTrend(group.historyByRule?.[v.ruleId] || [v]);
       const trendMeta = TREND_META[trend];
+      // dispatch #56 Part D -- instance/pattern/trend, a different axis from chronic/new above
+      // (how many times, and in what arrangement, not just "is it still going on"). Never
+      // rendered for a rule that has never actually flagged (SHAPE_META['never-flagged'].label
+      // is null) -- there is no shape to name yet.
+      const shapeResult = classifySubjectShape(group.historyByRule?.[v.ruleId] || [v]);
+      const shapeMeta = SHAPE_META[shapeResult.shape];
+      const shapeLabel = typeof shapeMeta.label === 'function'
+        ? shapeMeta.label(shapeResult.flaggedCount, shapeResult.direction, shapeResult.minTrendWindows)
+        : shapeMeta.label;
       const exonerated = v.exonerationShare != null && v.exonerationShare >= 0.5;
+      // dispatch #56 Part D's "free win": which of this rule's corroboration_rules are ALSO
+      // currently flagged for this same subject -- only meaningful on an actual flag.
+      const corrob = v.pass === true ? corroboratingFlags(rule, group.verdicts) : [];
       return div({ key: v.ruleId + i, style: { padding: '8px 0', borderBottom: i < group.verdicts.length - 1 ? '1px solid var(--bdr)' : 'none' } },
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
           span({ style: { fontWeight: 700, fontSize: 12.5, color: 'var(--text)' } }, rule.method || v.ruleId),
@@ -375,8 +421,14 @@ function SubjectDetail({ group, rulesById, subjectLabel, domain, findings, domai
         // at least half the usage variance; a lower share isn't worth a claim ("largely explained").
         exonerated && div({ style: { fontSize: 11, color: 'var(--ok,#10b981)', marginTop: 3 } },
           `✓ ${(v.exonerationShare * 100).toFixed(0)}% of this variance is covered by logged waste (raw + comp) — likely explained by waste, not shrink.`),
+        // dispatch #56 Part D -- corroborating rules that also fired for this subject, the
+        // finding-level half of the corroboration_rules free win (the static directory half
+        // shipped in Part A).
+        corrob.length > 0 && div({ style: { fontSize: 11, color: 'var(--crit,#ef4444)', marginTop: 3 } },
+          `⚠ Corroborated by ${corrob.join(', ')} — also flagged for this subject.`),
         // dispatch #46 §C item 1 -- chronic vs. new, from the subject's own history for this rule.
         div({ style: { fontSize: 10.5, color: trendMeta.color, marginTop: 3 } }, trendMeta.label),
+        shapeLabel && div({ style: { fontSize: 10.5, color: shapeMeta.color, marginTop: 1 } }, shapeLabel),
         v.lifecycleCategory
           ? null // the decision sentence above already carries the full hygiene explanation
           : v.pass == null
