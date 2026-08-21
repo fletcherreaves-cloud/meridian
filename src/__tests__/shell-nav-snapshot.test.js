@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import * as React from 'react';
 import ReactDOMServer from 'react-dom/server';
-import { PANEL_BY_ID } from '../app/panel-registry.js';
+import { PANEL_BY_ID, SECTIONS } from '../app/panel-registry.js';
 
 // AppSidebar reads window.innerWidth/addEventListener at mount and performance.now() for a
 // render-time instrumentation mark -- neither exists in vitest's node environment.
@@ -42,9 +42,21 @@ function renderNavTexts(permFn) {
     .filter(Boolean);
 }
 
-// Captured 2026-08-21, from the section-driven render immediately after Job B landed. This is
-// the intended post-regroup layout, not a "preserve exactly" baseline the way Job A's was.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','🔬','Forecast Audit','🌉','LifeLenz Bridge','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Captured 2026-08-21, from the section-driven render immediately after Job B landed, then
+// re-captured the same day for dispatch #55 Part A: the ONLY change is the LifeLenz Bridge ->
+// Recommended WFM Forecast Adjustments rename (notes-67-queue.md:82, dispatch-54.md:149).
+// proj/lfz-gap/lifelenz-bridge's section: corrections (planning/scheduling -> forecasting) and
+// the section's own label rename (Forecasting -> Forecasting and Labor Projections) are BOTH
+// inert here -- all ten forecasting-section members stay kind:'test-kitchen', so the section
+// still renders no header, and Test Kitchen (kind-driven, not section-driven) is unaffected by
+// a section: edit. That is Part A's whole point: metadata becomes truthful with zero nav motion.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','🔬','Forecast Audit','🌉','Recommended WFM Forecast Adjustments','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+
+// Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
+// baseline except for exactly one lost label and one gained label. Frozen here so the diff is
+// asserted directly rather than left implicit in EXPECTED's equality above.
+const PRE_PART_A_LABEL = 'LifeLenz Bridge';
+const POST_PART_A_LABEL = 'Recommended WFM Forecast Adjustments';
 
 describe('AppSidebar renders the section-driven nav (dispatch #54 Job B)', () => {
   it('produces the exact post-regroup text content, in order', () => {
@@ -93,7 +105,7 @@ const HIDDEN_WHEN_DENIED = {
   'analytics.brief': ['Daily Brief', 'Forecast Brief', '☀️', '🔭'],
   'analytics.dashboard': ['Calendar', 'Event Impact', 'My Reports', '📈'],
   'analytics.district': ['Above-Store One-Pager', 'District View', 'EOM Supervisor', 'Inventory Control', 'Org Summary', '⊞'],
-  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Bridge', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', '▦', '◎', '◑', '🌉', '📐', '🔬'],
+  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', 'Recommended WFM Forecast Adjustments', '▦', '◎', '◑', '🌉', '📐', '🔬'],
   'analytics.labor': [],
   'analytics.store': ['3PO Delivery', 'Count Cycle', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '🎟️', '🏆', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
@@ -128,5 +140,106 @@ describe('AppSidebar permission gates survive the Job B section-driven render', 
     // blanket reaction to any permission denial anywhere in the nav.
     expect(shown).toContain('Operations');
     expect(shown).toContain('EOM Supervisor');
+  });
+});
+
+// ── Dispatch #55 Part A ──────────────────────────────────────────────────────
+// Part A is pure metadata (three section: corrections + a section-label rename, all inert
+// while every forecasting-section member stays kind:'test-kitchen') plus one cosmetic rename.
+// Its verification bar is therefore much tighter than Job B's: the nav must be IDENTICAL to
+// the pre-Part-A baseline except for exactly the one renamed label, in either direction.
+
+describe('Part A membership diff -- the nav moves by exactly one renamed label', () => {
+  it('loses PRE_PART_A_LABEL and gains POST_PART_A_LABEL, nothing else, across every dimension', () => {
+    // full-access / betaMode-on / betaMode-off / optional-panels-visible, per the dispatch's
+    // own verification bar. betaMode is a prop AppSidebar reads directly (not exercised by
+    // renderNavTexts's fixed props above), so build each dimension's props explicitly here.
+    const base = {
+      view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
+      settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+      onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+    };
+    const dimensions = {
+      'full-access, betaMode off': { ...base, betaMode: false, panelVis: {} },
+      'betaMode on': { ...base, betaMode: true, panelVis: {} },
+      'optional panels visible': { ...base, betaMode: false, panelVis: { pmix: true, corr_explorer: true, why_engine: true } },
+    };
+    for (const [label, props] of Object.entries(dimensions)) {
+      const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, props));
+      const texts = html.replace(/<[^>]+>/g, '|').split('|')
+        .map(s => s.trim().replace(/&amp;/g, '&')).filter(Boolean);
+      const hasPre = texts.includes(PRE_PART_A_LABEL);
+      const hasPost = texts.includes(POST_PART_A_LABEL);
+      expect(hasPre, `[${label}] '${PRE_PART_A_LABEL}' must not survive the rename`).toBe(false);
+      // lifelenz-bridge is kind:'test-kitchen', so under betaMode:true it is beta-hidden like
+      // every other Test Kitchen panel -- the renamed label correctly does NOT render there,
+      // same as it wouldn't have under its old name. Only the non-beta dimensions must gain it.
+      const expectPost = !props.betaMode;
+      expect(hasPost, `[${label}] '${POST_PART_A_LABEL}' visibility`).toBe(expectPost);
+    }
+  });
+
+  it('⚗ TEST KITCHEN still exists and its ten panels still vanish under betaMode:true, exactly as before Part A', () => {
+    const off = renderNavTexts();
+    expect(off).toContain('⚗ TEST KITCHEN');
+    const testKitchenIds = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
+    expect(testKitchenIds.length, 'ratchet: Part A must not change the Test Kitchen census').toBe(10);
+    for (const p of testKitchenIds) expect(off).toContain(p.label);
+
+    const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
+      view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
+      settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
+      onSaveSession: () => {}, onRestoreSession: () => {}, loadMsg: '', perm: () => true,
+      betaMode: true, panelVis: {},
+    }));
+    const on = html.replace(/<[^>]+>/g, '|').split('|')
+      .map(s => s.trim().replace(/&amp;/g, '&')).filter(Boolean);
+    expect(on).not.toContain('⚗ TEST KITCHEN');
+    for (const p of testKitchenIds) expect(on).not.toContain(p.label);
+  });
+});
+
+describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle, section is placement")', () => {
+  // The owner's own reason for the standing rule: flipping kind to 'nav' should land a panel
+  // under the right section header with "no second decision to make." A test that only checks
+  // panel.section === 'forecasting' would pass even if renderSection/panelsForSection were
+  // broken -- the #366 shape this repo has already paid for once (engine right, call site
+  // unwired). This renders the ACTUAL consumer with the flip applied, same standard as the
+  // membership-diff tests above.
+  //
+  // Scope note: this proves the SECTION half of promotion (panelsForSection picks the panel up
+  // the moment kind becomes 'nav', which is the whole point of making section: truthful now).
+  // It does NOT assert the panel disappears from ⚗ TEST KITCHEN -- that block is a separate,
+  // hand-maintained list of literal navPBeta('id') calls in shell.js (see the block starting
+  // "PRUNE (Notes 24, v4.517)"), not derived from panel.kind. A real future promotion is
+  // therefore still two edits, not one: flip kind: here, AND delete the navPBeta('id') line
+  // there. Collapsing that to a true one-field flip is a shell.js refactor Part A does not
+  // attempt (out of scope: nothing about today's nav may move) -- reported, not silently
+  // assumed away.
+  const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
+
+  it('covers all ten current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+    expect(testKitchenPanels.length).toBe(10);
+  });
+
+  it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header', (id, panel) => {
+    const sectionMeta = SECTIONS.find(s => s.id === panel.section);
+    expect(sectionMeta, `${id}: section '${panel.section}' is not a real SECTIONS id`).toBeTruthy();
+    const originalKind = panel.kind;
+    try {
+      panel.kind = 'nav'; // simulate promotion on the live registry object, restored below
+      const texts = renderNavTexts();
+      const headerIdx = texts.indexOf(sectionMeta.label);
+      expect(headerIdx, `${id}: header '${sectionMeta.label}' did not render after promotion`).toBeGreaterThan(-1);
+      const allHeaders = new Set(SECTIONS.map(s => s.label));
+      let end = texts.length;
+      for (let i = headerIdx + 1; i < texts.length; i++) {
+        if (allHeaders.has(texts[i])) { end = i; break; }
+      }
+      const underHeader = texts.slice(headerIdx, end);
+      expect(underHeader, `${id}: label '${panel.label}' did not render under '${sectionMeta.label}'`).toContain(panel.label);
+    } finally {
+      panel.kind = originalKind; // never leave the shared registry singleton mutated
+    }
   });
 });

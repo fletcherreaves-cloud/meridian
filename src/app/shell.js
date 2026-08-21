@@ -147,11 +147,15 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       transition:'all .15s',justifyContent:collapsed?'center':'flex-start',
       position:'relative',fontSize:'12px',fontWeight:active?600:400},
       onClick:disabled?undefined:(...a)=>{onClick(...a);closeMobile();},
-      title:disabled?'Select a store first':(collapsed?label:undefined),
+      // Always carry the full label as a tooltip, not just when collapsed -- a label longer
+      // than the sidebar's fixed width (dispatch #55 Part A's LifeLenz Bridge rename, ~3x its
+      // old length) now truncates with an ellipsis instead of silently clipping mid-word with
+      // no way to see the rest.
+      title:disabled?'Select a store first':label,
       onMouseEnter:disabled?undefined:e=>{e.currentTarget.style.background=active?'var(--adim)':'var(--surf2)';},
       onMouseLeave:disabled?undefined:e=>{e.currentTarget.style.background=active?'var(--adim)':'transparent';}},
       span({style:{fontSize:14,flexShrink:0}},icon),
-      !collapsed&&span(null,label),
+      !collapsed&&span({style:{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},label),
       !collapsed&&badge>0&&span({style:{marginLeft:'auto',background:'rgba(239,68,68,.15)',
         color:'#ef4444',border:'.5px solid rgba(239,68,68,.25)',borderRadius:10,
         fontSize:9,padding:'1px 5px',fontWeight:700}},badge)
