@@ -306,6 +306,15 @@ actual code — this note nearly caused a duplicate reimplementation.
   prescribed fix would have paved over. A wrong call reproduced and found wrong is worth more
   than a plausible call implemented unverified.
   Full evidence in `memory/feedback-measure-dont-reason.md`.
+- **Docs-only commits do not deploy — that is deliberate, not a broken pipeline.** `vercel.json`'s
+  `ignoreCommand` skips the Vercel build when a commit touches nothing outside `memory/` and
+  `*.md`, because those produce a byte-identical site. Added 2026-08-21 after the account hit
+  Vercel's free-tier `api-deployments-free-per-day` cap (~113 builds on the day, limit 100) — and
+  **19 of that day's 35 commits were docs-only**, so this removes roughly half the build volume.
+  It fails SAFE in both directions: a `.sql`, script, or `src/` change always builds, and if
+  `HEAD^` is unreachable in Vercel's shallow clone the command errors (exit 128) and builds anyway.
+  Exit 0 skips, non-zero builds — **do not invert that**, since backwards means real code silently
+  never deploying. If you merge a docs PR and the site doesn't rebuild, that is this rule working.
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.
 - No TypeScript — plain JS with `// @ts-nocheck`.

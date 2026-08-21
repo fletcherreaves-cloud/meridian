@@ -1,9 +1,20 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)memory/*' ':(exclude)*.md'",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
     }
   ]
 }
