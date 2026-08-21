@@ -30,6 +30,22 @@ adding one"* covers code. It applies just as hard to **explanations**. Search `m
 seconds, and the theory that survives one costs a PR.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #51 — capture empID, then measure Phase 0 in SQL](dispatch-51.md)** —
+  **NEWEST, owner-approved.** Phase 0 failed **twice** — both attempts used a **bespoke one-off API
+  pull** written for the measurement, both hit the same auth flakiness, and the engineer correctly
+  **flagged the resulting "row 5 = 1,140 (100%)" as an artefact of fetching zero rows, not a
+  finding** — exactly the false row-5 population #49 warned about. **The problem is the approach:**
+  a hardened production pull already exists (`qsrsoft-register-audit-pull.mjs`, proven at 80 days /
+  14,528 rows / 27 stores) and the measurement script inherited none of it. So: add a **nullable**
+  `emp_id` to `audit_rows`, populate via the existing pull, backfill `2026-03-01→today`, then run
+  Phase 0 as **pure SQL with no API dependency** — and repeatable, which matters for future
+  backfills. **Banked and real from the failed run:** 1,140 distinct names across 36,631 rows,
+  2026-03-01→2026-08-20 — Phase 0's denominator, no re-measuring needed. **Scope boundary is
+  explicit:** additive only, nothing reads the column, **do NOT touch the vault, token keying, or
+  `audit_rows`' `(loc, date, emp)` PK** — five months of manual history ride on it. The gate on the
+  re-key still holds. Also fixes a now-stale comment calling `manOverringQty` "UNVERIFIED" when it
+  is confirmed absent three ways. One retry max on the backfill — repeated Playwright logins run
+  against the owner's own QSRSoft account and a lockout would take DAR and eBOS down too.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Store 0013113 — a packaging counting problem, not loss](finding-store-13113-packaging-variance-2026-08-21.md)** —
   **NEWEST. The first operational finding this build has produced** — every prior inventory result
   described the build's own measurement error. Store `0013113` flags INV-001 at **14.4% (28/195) vs
