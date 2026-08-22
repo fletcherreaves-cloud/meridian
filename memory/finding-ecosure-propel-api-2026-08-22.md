@@ -468,3 +468,56 @@ arguably more actionable than the readiness score itself — and Ardmore-Broadwa
 FS-flagged and unvisited is exactly the case a "who's overdue" surface would raise. `VisitPatterns`
 already computes `daysSinceLast` per store from the manual uploads; this endpoint gives the same
 thing authoritatively, estate-wide, for free.
+
+---
+
+## 🔴 Cadence answered by the owner — and it exposes a discrepancy in this very capture
+
+**Owner, 2026-08-22:** *"CFV's I think we determined are 3 per year. EcoSure I believe is 2 per
+year."*
+
+That settles the question `memory/dispatch-69.md` Part B said to confirm. **It is per visit type,
+not one estate number** — which is better than either single figure, and changes the planning:
+
+| stream | visits/yr | ρ≥0.4 (n=46) | ρ≥0.3 (n=84) | direction ±10% (n=96) |
+|---|---|---|---|---|
+| **CFV 3/store/yr** | **81** | **~2.8 mo** | ~8.4 mo | ~10.2 mo |
+| EcoSure 2/store/yr | 54 | ~4.2 mo | ~12.7 mo | ~15.3 mo |
+
+⚠️ **Do not pool CFV and EcoSure to get there faster.** A mystery-shopped transaction and a
+third-party food-safety audit measure different things; pooling them into one correlation is the
+same mixing-regimes error already flagged for the pre/post visit-window change. Analyse per type;
+each type's n grows at its own rate.
+
+### 🔴 …but the 15 visits in THIS capture do not look like CFVs. Flagging, not concluding.
+
+Two things in the data sit awkwardly with a 3/yr CFV cadence:
+
+1. **Every scored store shows `visitQuantity: 1.0`.** At 3 CFVs/store/year, roughly eight months
+   into 2026, a store with any CFV activity should show **2–3**, not 1.
+2. **Each visit scores all seven PACE areas** — quality, service, cleanliness, shiftLeadership,
+   foodSafety, healthAndSafety. A CFV is a *single-channel transaction*
+   (`src/parsers/graded-visits.js` — modules are the order channel plus "Behind the Counter"). It
+   would not produce a cleanliness or a health-and-safety score.
+
+**The inference this suggests** — that `visitType=0` is not "all types", and these 15 are an
+annual comprehensive/RGR-class visit while the CFVs sit under some other `visitType` — **is an
+inference, and this file does not assert it.** This session has already produced two confident
+inferences about these external systems that survived until someone checked. It is recorded as the
+top open question, not a finding.
+
+**Why it matters enough to test before planning on it:** the time-to-power table above assumes the
+Model Check's pairs are CFV-based (81/yr). If the pairs are actually comprehensive visits at ~1
+per store per year, the supply is **27/yr** and *"~2.8 months"* becomes *~8 months* — which lands
+after the cycle restarts, which is precisely the outcome the owner said is useless.
+
+**The test, cheapest first:**
+1. Compare this list against `VisitPatterns` in the panel — it already renders actual CFV/RGR
+   counts per store from the manual uploads. If Meridian shows 2–3 CFVs for a store this list shows
+   as `visitQuantity: 1.0`, the two are enumerating different things and the question is answered
+   with no new capture at all.
+2. Call the endpoint with a **non-zero `visitType`** and see what changes. That also answers open
+   question 3 (how CFV/RGR/EcoSure are separated) and tells us the id for `year=2025`.
+
+📌 **Until that is settled, `year=2025` remains the right next capture regardless** — it multiplies
+whatever these visits are, and it is a one-parameter change.

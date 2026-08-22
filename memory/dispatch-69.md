@@ -119,9 +119,23 @@ supports.
    **"27 of ~46 visits needed to tell"**. It is honest, it is actionable (it says *wait*, and how
    long), and it stops a small sample reading as a broken model.
 
-   ⚠️ **Confirm the cadence with the owner before hardcoding it — 3/yr vs 2/yr changes every
-   figure by ~40%**, and the owner was still checking. Whatever it is, it belongs in a named
-   constant, not inline.
+   ✅ **ANSWERED by the owner, 2026-08-22:** *"CFV's I think we determined are 3 per year. EcoSure
+   I believe is 2 per year."* It is **per visit type**, not one estate number — so the panel needs
+   two constants, not one, and must not pool the two streams into a single correlation (they
+   measure different things; pooling is the same mixing-regimes error flagged in Part D).
+
+   | stream | visits/yr | ρ≥0.4 (n=46) | ρ≥0.3 (n=84) | direction ±10% (n=96) |
+   |---|---|---|---|---|
+   | CFV 3/store/yr | 81 | ~2.8 mo | ~8.4 mo | ~10.2 mo |
+   | EcoSure 2/store/yr | 54 | ~4.2 mo | ~12.7 mo | ~15.3 mo |
+
+   ⚠️ **But do not hardcode the 81/yr planning number yet.** Propel's 2026 visit list shows every
+   scored store at `visitQuantity: 1.0` with all seven PACE areas graded — which does not look like
+   a CFV at 3/yr. If the Model Check's pairs are actually comprehensive visits at ~1/store/yr, the
+   supply is 27/yr and "~2.8 months" becomes ~8 months, landing after the cycle restarts. The
+   cheapest test needs no new capture: compare Propel's list against `VisitPatterns`, which already
+   renders per-store CFV/RGR counts. Full detail in
+   `memory/finding-ecosure-propel-api-2026-08-22.md`.
 
    | goal | pairs needed | at 81/yr | at 54/yr |
    |---|---|---|---|
