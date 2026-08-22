@@ -848,9 +848,29 @@ Two things follow:
    fails nearly half. **That is where the operational signal lives**, and none of it is in Meridian
    from these captures.
 
-**Next capture:** whatever request the *Customer First* card fires — a different `category=` value
-on the same `/api/visits` endpoint. Also note the UI's **"List Results — …"** section has a
-**download/export control**, which may hand over the per-store CFV list in one file.
+**Next capture — CORRECTED 2026-08-22.** An earlier draft of this line said to look for *"a
+different `category=` value on the same `/api/visits` endpoint."* **That is wrong.** Owner:
+*"Clicking on CFV takes you to PEAK site fwiw."*
+
+**CFV is not on Propel.** The Customer First card is a summary tile that *links out* to
+`peak.mcd.com`. So the division of labour across the two hosts is now settled:
+
+| host | carries |
+|---|---|
+| `propel.mcd.com` | **RGR** (`category=visitResult`) + **EcoSure** (`thirdPartyFoodSafety`) + a summary tile linking out for CFV |
+| `peak.mcd.com` | **CFV** detail — `POST /API/Visit/RoipSurvey/<VisitId>`, `SurveyType.TypeId 3801` (`memory/finding-peak-cfv-api-2026-08-22.md`) |
+
+This also explains why the owner described PEAK as *"another site for CFV and RGR and other
+reports"* — the two systems overlap rather than partition cleanly.
+
+📌 **The capture to make is therefore on PEAK, not Propel: click through from Customer First and
+capture whatever the CFV LIST page fires on landing.** That is the still-missing visit-list endpoint
+recorded as open question 6 in this file and as the top open question in the PEAK finding — PEAK's
+`RoipSurvey/<VisitId>` needs an id nobody can currently enumerate. A click-through from Propel is
+the most likely thing to hand one over, because the landing page must list visits to link to them.
+
+Propel's **"List Results — …"** export control is still worth a try for the RGR/EcoSure side, but
+it will not produce CFV.
 
 ## ⚠️ This creates a scoping caveat on the test-retest ceiling — read before using ρ=0.342
 

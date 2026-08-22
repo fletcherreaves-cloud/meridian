@@ -305,3 +305,34 @@ the session id is recorded here.** The eID and the personal names are also delib
 only the node→store mapping, which is org config, is kept. Per the standing rule, any name reaching
 a table goes through `get_or_create_employee_token()`. **Re-authenticate the Propel session**; it
 should be treated as disclosed by sharing.
+
+
+---
+
+## ✅ How to reach a CFV `VisitId` — owner-confirmed route (2026-08-22)
+
+Open question 1 in this file asked for a visit-LIST endpoint, since `RoipSurvey/<VisitId>` needs an
+id nobody could enumerate. **There is a known route to one.**
+
+Owner: *"Clicking on CFV takes you to PEAK site fwiw."*
+
+Propel's **Customer First** card (`propel.mcd.com`, the summary tile reading *% Meeting 80% / %
+Below 80%*) is a link-out to PEAK. So Propel holds RGR + EcoSure and a CFV *summary*; PEAK holds the
+CFV detail. **The click-through must land on a page that lists CFV visits in order to link to them
+— so that landing request is the visit-list endpoint.**
+
+**Capture instruction:** from Propel, click Customer First; on the PEAK page that loads, take the
+request in the Network tab that returns the visit list (not `RoipSurvey`, which is the per-visit
+detail). Response body only — no cookies needed.
+
+⚠️ **Untested.** It is the most likely route, not a measured one. If the landing page turns out to
+be a single pre-selected visit rather than a list, that is a finding too — say so rather than
+assuming a list must exist somewhere.
+
+### Why this is now the highest-value open capture
+
+Propel's card reads **55.3% meeting 80% / 44.7% below**. RGR passes ~100% and EcoSure ~93–98%.
+**CFV fails nearly half** — and at 3/store/yr it is also the highest-volume instrument (~81/yr vs
+RGR ~27 and EcoSure ~54). It is simultaneously the biggest pair supply for the Visit Readiness
+Model Check and the only instrument with real spread in its outcomes. Nothing else outstanding
+comes close on either axis.
