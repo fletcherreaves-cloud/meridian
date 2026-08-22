@@ -87,7 +87,37 @@ a live counterexample, not just a documentary argument.**
    authentication is impossible** — not difficult, impossible. Any design that assumes a
    credential can be minted from stored secrets is dead on arrival. Do not attempt one.
 
-   **Two viable paths. Recommendation: START MANUAL.**
+   ### ✅ THE ANSWER: on-demand, not scheduled (owner, 2026-08-22)
+
+   *"I feel like we could run this on demand."* **This is the right design and it dissolves the MFA
+   problem rather than working around it.**
+
+   The whole difficulty above comes from wanting an *unattended* pull. Remove that requirement and
+   MFA stops mattering: **if the owner triggers the run, the owner is present.** Session alive → it
+   pulls. Session expired → it fails loudly, he logs in on the Mac mini, triggers again. No token
+   refresh machinery, no silent expiry, no LifeLenz-style outage that goes unnoticed for six days.
+
+   **Precedent already exists in this repo:** Data Manager's in-app **Sync buttons dispatch pull
+   workflows** (v4.406–v4.426 sprint). Add one more button; the runner is the #65 Mac mini, already
+   on a permitted network, already proven to execute jobs.
+
+   **Shape:** `workflow_dispatch` only — **no `schedule:` block** — running on
+   `[self-hosted, macOS, qsr-security]`, using Playwright against a **persistent browser profile**
+   the owner has logged into interactively (MFA completed by a human, once per session lifetime).
+
+   ⚠️ **Freshness needs different handling.** `stream-freshness.js`'s `STREAMS` assumes a
+   *cadence* — `warnAt = cadence+1`. An on-demand stream has no cadence, so wiring it in naively
+   would alarm constantly. Either set a deliberately loose `cadenceDays` (~30, matching real
+   EcoSure frequency) or **surface "last pulled" next to the button instead** and leave it out of
+   `STREAMS`. Decide explicitly; do not default into a permanent false alarm.
+
+   ⚠️ **`sync-failure-watch.yml` still applies** — an on-demand run that *starts and fails* should
+   still be caught. It is only the *never-ran* case that stops being a defect here, because a human
+   chose not to run it.
+
+   ---
+
+   **Superseded options, kept for the reasoning.** Recommendation was START MANUAL:
 
    - ✅ **Manual capture into the existing upload path — do this first.** Run the numbers:
      ~3 EcoSure visits/store/year × 27 stores ≈ **81/year ≈ 1.5 per week**. One capture a month
