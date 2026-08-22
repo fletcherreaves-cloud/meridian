@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits, READINESS_GAPS, srcMeta,
-  calibrateReadiness, CALIBRATION_PAIRS_FOR_POWER, CALIBRATION_PAIRS_PER_YEAR } from '../engine/visit-readiness.js';
+  calibrateReadiness, CFV_CORRELATION_CEILING } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase } from '../views/visit-readiness-report.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
@@ -480,39 +480,78 @@ describe('visit-readiness', () => {
     expect(res.calibration.r).toBeGreaterThan(0);
   });
 
-  // Dispatch #69 — calibrateReadiness now reports progress toward enough statistical power to
-  // judge the model at all, instead of a strength verdict that a small n can't actually support.
-  describe('calibrateReadiness progress fields', () => {
-    const mkStores = n => Array.from({ length: n }, (_, i) => ({
+  // Ceiling follow-up — the print/PDF report (readinessReportHTML) has its own, entirely
+  // separate strength-ladder text that was NOT touched by dispatch #69's original panel fix and
+  // still said "Weak agreement so far" for the same r that the on-screen panel no longer calls
+  // weak. Same class of bug as CLAUDE.md's "when two panels disagree, diff the two computations"
+  // standing lesson -- here the panel and the print report disagreed in their CLAIM about one
+  // number, not the number itself. Fixed to match the panel's byType/ceiling approach.
+  it('the print report shows the CFV ceiling, not the retired strength-ladder text', () => {
+    const A = '3708', B = '5183', C = Object.keys(DEFAULT_TARGETS).filter(l => /^\d+$/.test(l) && l !== A && l !== B)[0];
+    const ds = mkDs(goodRows(A), badRows(B), goodRows(C));
+    ds.gradedVisits = [
+      { store: A, dateISO: '2026-06-10', reportType: 'CFV', score: 92, pass: true },
+      { store: C, dateISO: '2026-06-11', reportType: 'CFV', score: 85, pass: true },
+      { store: B, dateISO: '2026-06-12', reportType: 'CFV', score: 60, pass: false },
+    ];
+    const res = computeVisitReadiness(ds);
+    const html = readinessReportHTML(res, { scopeLabel: 'All stores', detail: 'full' });
+    expect(html).not.toContain('Weak agreement');
+    expect(html).not.toContain('Strong agreement');
+    expect(html).not.toContain('Moderate agreement');
+    expect(html).toContain('CFV rank corr');
+    expect(html).toContain('ceiling ~0.30');
+  });
+
+  // Dispatch #69 follow-up (same day) — memory/finding-cfv-predictability-ceiling-2026-08-22.md
+  // measured that rank corr >= 0.4 (what the retired countdown powered toward) is ABOVE the
+  // achievable ceiling for any store-level predictor of CFV outcomes (ICC=0.087 -> ceiling
+  // sqrt(ICC) ~= 0.30). calibrateReadiness now reports the ceiling beside a per-instrument
+  // estimate (Part D0: split by reportType) instead of a countdown toward an unreachable target.
+  describe('calibrateReadiness byType + ceiling fields (Part D0 + ceiling follow-up)', () => {
+    const mkStores = (n, type = 'CFV') => Array.from({ length: n }, (_, i) => ({
       loc: String(i), readiness: 50 + i, band: i % 2 ? 'ready' : 'at-risk',
-      lastVisit: { score: 50 + i, pass: true, type: 'CFV', dateISO: '2026-01-01' },
+      lastVisit: { score: 50 + i, pass: true, type, dateISO: '2026-01-01' },
     }));
 
-    it('reports pairsNeeded and a month-label ETA below the power threshold', () => {
+    it('exposes the CFV correlation ceiling constant, unchanged by n', () => {
+      expect(CFV_CORRELATION_CEILING).toBeCloseTo(0.30, 2);
+    });
+
+    it('no longer reports a pairsNeeded/etaLabel countdown', () => {
       const cal = calibrateReadiness(mkStores(27));
-      expect(cal.n).toBe(27);
-      expect(cal.pairsForPower).toBe(CALIBRATION_PAIRS_FOR_POWER);
-      expect(cal.pairsNeeded).toBe(CALIBRATION_PAIRS_FOR_POWER - 27);
-      expect(cal.etaLabel).toMatch(/^~[A-Z][a-z]{2}$/); // e.g. "~Dec"
+      expect(cal.pairsNeeded).toBeUndefined();
+      expect(cal.etaLabel).toBeUndefined();
+      expect(cal.pairsForPower).toBeUndefined();
+      expect(cal.strength).toBeUndefined();
     });
 
-    it('pairsNeeded is exactly 0 (not negative, not omitted) once n reaches the threshold', () => {
-      const cal = calibrateReadiness(mkStores(CALIBRATION_PAIRS_FOR_POWER));
-      expect(cal.pairsNeeded).toBe(0);
-      expect(cal.etaLabel).toBeNull();
+    it('byType.CFV carries the ceiling; a type with no measured ceiling does not', () => {
+      const mixed = [...mkStores(15, 'CFV'), ...mkStores(15, 'RGR').map((s, i) => ({ ...s, loc: 'r' + i }))];
+      const cal = calibrateReadiness(mixed);
+      expect(cal.byType.CFV.ceiling).toBeCloseTo(CFV_CORRELATION_CEILING, 2);
+      expect(cal.byType.RGR.ceiling).toBeNull();
     });
 
-    it('pairsNeeded stays 0 well past the threshold, never negative', () => {
-      const cal = calibrateReadiness(mkStores(CALIBRATION_PAIRS_FOR_POWER + 20));
-      expect(cal.pairsNeeded).toBe(0);
+    it('Part D0 — splits pooled pairs by reportType so CFV and RGR get independent n/r', () => {
+      const cfv = mkStores(15, 'CFV');
+      const rgr = mkStores(12, 'RGR').map((s, i) => ({ ...s, loc: 'r' + i }));
+      const cal = calibrateReadiness([...cfv, ...rgr]);
+      expect(cal.n).toBe(27); // pooled, unchanged
+      expect(cal.byType.CFV.n).toBe(15);
+      expect(cal.byType.RGR.n).toBe(12);
+      // Both subsets are monotonic-by-construction (score = 50+i, ascending) so each type's
+      // own rank corr should be strongly positive on its own -- independent of pooling.
+      expect(cal.byType.CFV.r).toBeGreaterThan(0.9);
+      expect(cal.byType.RGR.r).toBeGreaterThan(0.9);
     });
 
-    it('the ETA lengthens for a smaller n, using the settled 81/yr cadence', () => {
-      // memory/finding-cfv-2026-visit-rules.md settled 27 stores x 3 CFV visits/yr = 81/yr.
-      expect(CALIBRATION_PAIRS_PER_YEAR).toBe(81);
-      const near = calibrateReadiness(mkStores(CALIBRATION_PAIRS_FOR_POWER - 1)); // 1 pair short
-      const far = calibrateReadiness(mkStores(3)); // far short
-      expect(far.pairsNeeded).toBeGreaterThan(near.pairsNeeded);
+    it('a type with fewer than 3 pairs reports n<3 rather than a null/undefined stat', () => {
+      const cfv = mkStores(20, 'CFV');
+      const rgr = mkStores(2, 'RGR').map((s, i) => ({ ...s, loc: 'r' + i }));
+      const cal = calibrateReadiness([...cfv, ...rgr]);
+      expect(cal.byType.RGR.n).toBe(2);
+      expect(cal.byType.RGR.r).toBeNull();
     });
   });
 });

@@ -18,8 +18,10 @@
 // vs the loader's .loc) and silently drop every row. computeFormStoreDayRollup takes normalized
 // rows directly, which is exactly what the loader already returns.
 //
-// Table is empty until Slice 3's pull script ships -- rendered as an honest "no data synced yet"
-// state, not hidden or faked.
+// Dispatch #71: Slice 3's pull script has shipped and is scheduled -- an empty table here now
+// means the pull genuinely returned nothing for the window, not that it was never built. See
+// dispatch-71.md for the bug that made "genuinely nothing" and "the pull silently failed"
+// indistinguishable, and the escalate-to-Playwright fix in the pull script itself.
 import * as React from 'react';
 import { loadQsrFormsCompletion } from '../lib/supabase.js';
 import { computeFormStoreDayRollup, computeFormSummary } from '../engine/forms-completion.js';
