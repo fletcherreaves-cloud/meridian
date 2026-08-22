@@ -106,4 +106,21 @@ describe('dedupeByConflictKey (dispatch #71 -- ON CONFLICT batch collision)', ()
     ];
     expect(dedupeByConflictKey(rows)).toEqual(rows);
   });
+
+  // The gap the first version of this dedup left: a live run collapsed 1840+612 same-batch
+  // duplicates and the SAME ON CONFLICT error fired again immediately after. occurrence_key is a
+  // `timestamptz` column -- Postgres compares the cast instant, not the source string -- so two
+  // rows whose occurrence_key strings differ only in sub-second precision are ONE conflict target
+  // to the database but were two distinct Map keys under plain string equality.
+  it('collapses two rows whose occurrence_key strings differ only in precision but are the same instant', () => {
+    const a = { loc: '3708', form_id: 'f1', occurrence_key: '2026-08-19T11:00:00Z' };
+    const b = { loc: '3708', form_id: 'f1', occurrence_key: '2026-08-19T11:00:00.000Z' };
+    expect(dedupeByConflictKey([a, b])).toEqual([b]);
+  });
+
+  it('collapses two rows whose form_id differs only in UUID case', () => {
+    const a = { loc: '3708', form_id: '03B62C8F-709C-4B11-AB90-5FFAA03FA989', occurrence_key: '2026-08-19T11:00:00Z' };
+    const b = { loc: '3708', form_id: '03b62c8f-709c-4b11-ab90-5ffaa03fa989', occurrence_key: '2026-08-19T11:00:00Z' };
+    expect(dedupeByConflictKey([a, b])).toEqual([b]);
+  });
 });

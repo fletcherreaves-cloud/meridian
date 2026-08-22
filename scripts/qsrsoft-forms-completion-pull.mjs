@@ -138,9 +138,24 @@ export async function fetchWindow(token, startDay, endDay, evalPage) {
 // (loc, formId, occurrenceKey) within one pull is a real, expected collision, not corrupt data.
 // Dedupe within each batch before upserting -- last one wins, same as a normal upsert would do
 // across two separate calls.
+// Dispatch #71 follow-up: the first version of this dedup collapsed a real chunk of duplicates
+// (1840 + 612 rows) but the SAME ON CONFLICT error still fired immediately after, on the very
+// next live run -- proof some duplicate pairs survived string-equality grouping. occurrence_key is
+// stored as `timestamptz`; Postgres's conflict check compares the CAST value, not the original
+// string, so two API rows carrying the same instant in different textual forms (e.g. differing
+// sub-second precision) are one conflict target to Postgres but two distinct Map keys here. Same
+// trap on form_id (`uuid` -- case-insensitive once cast). Canonicalize both before keying so the
+// grouping matches what the database actually treats as identical, not just what the raw strings
+// look like.
+function canonicalOccurrenceKey(v) {
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? String(v) : new Date(t).toISOString();
+}
 export function dedupeByConflictKey(mapped) {
   const byKey = new Map();
-  for (const r of mapped) byKey.set(`${r.loc}|${r.form_id}|${r.occurrence_key}`, r);
+  for (const r of mapped) {
+    byKey.set(`${r.loc}|${String(r.form_id).toLowerCase()}|${canonicalOccurrenceKey(r.occurrence_key)}`, r);
+  }
   return [...byKey.values()];
 }
 
