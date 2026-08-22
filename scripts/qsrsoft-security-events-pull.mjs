@@ -274,7 +274,14 @@ async function viaPlaywright(dates, tracker) {
   const page = await (await browser.newContext()).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
+  // Dispatch #67 -- track EVERY request the listener saw, not just ones carrying x-auth-token.
+  // Zero total requests and zero matching requests are different diagnoses: the first means the
+  // page never made any network calls (unlikely, but distinguishes "nothing loaded" from "things
+  // loaded, none of them authenticated"); the second alone was already logged before and left the
+  // question open.
+  let totalRequestsSeen = 0;
   page.on('request', async req => {
+    totalRequestsSeen++;
     try {
       const all = await req.allHeaders();
       const t = all['x-auth-token'];
@@ -292,6 +299,37 @@ async function viaPlaywright(dates, tracker) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[auth] post-login url:', page.url());
     await snap('secevents-01-post-login.png');
+    // Dispatch #67 Resolution -- the live run got no token from either localStorage or
+    // interception, and the only way to tell "login didn't complete" from "login completed but
+    // mints no token anywhere" was a screenshot this sandbox cannot reach. Assert and log
+    // everything a screenshot would have shown, in text, so this settles from the Actions log
+    // alone next run:
+    const postLoginState = await page.evaluate(() => {
+      const loginFieldPresent = !!document.querySelector(
+        'input[name="username"], input[name="email"], input[type="email"], #username, #email, ' +
+        'input[autocomplete="username"], input[type="password"], input[name="password"]'
+      );
+      const alertEl = document.querySelector('[role="alert"]');
+      const alertText = alertEl ? alertEl.textContent.trim().slice(0, 200) : null;
+      const bodyText = document.body ? document.body.innerText.trim() : '';
+      return {
+        title: document.title,
+        loginFieldPresent,
+        alertText,
+        // Only when the page renders almost nothing (a bare error page, not the real app shell)
+        // is the body text itself informative -- a loaded SPA's body text would be enormous and
+        // useless to log, so cap what's captured to short pages only.
+        shortBodyText: bodyText.length > 0 && bodyText.length <= 300 ? bodyText : null,
+        localStorageKeys: Object.keys(localStorage).sort(),
+      };
+    });
+    console.log('[auth] post-login document.title:', JSON.stringify(postLoginState.title));
+    console.log('[auth] post-login login-form-still-present:', postLoginState.loginFieldPresent);
+    console.log('[auth] post-login localStorage key NAMES:', postLoginState.localStorageKeys.length
+      ? postLoginState.localStorageKeys.join(', ') : '(empty -- no keys of any kind)');
+    if (postLoginState.alertText) console.log('[auth] post-login role="alert" text:', JSON.stringify(postLoginState.alertText));
+    if (postLoginState.shortBodyText) console.log('[auth] post-login short body text:', JSON.stringify(postLoginState.shortBodyText));
+    console.log('[auth] post-login requests seen so far: total', totalRequestsSeen, '| carrying x-auth-token:', token ? 1 : 0);
     // Dispatch #67 Task 1 -- the owner measured (browser console, exact x-auth-token value from
     // a working event_details request vs localStorage) that the SPA sends the plain Cognito ID
     // token straight out of storage: nothing is minted at click time, nothing derived, nothing
@@ -319,7 +357,8 @@ async function viaPlaywright(dates, tracker) {
     await new Promise(r => setTimeout(r, 5000));
     console.log('[auth] report page url:', page.url(),
       '| nav error:', navError || '(none)',
-      '| interception token captured:', token ? `true (${token.length} chars)` : 'false');
+      '| interception token captured:', token ? `true (${token.length} chars)` : 'false',
+      '| requests seen: total', totalRequestsSeen, 'carrying x-auth-token:', token ? 1 : 0);
     await snap('secevents-02-report-page.png');
     // Dispatch #67 Task 1 -- localStorage read is primary; interception is the fallback only,
     // exactly the priority the dispatch specified.
