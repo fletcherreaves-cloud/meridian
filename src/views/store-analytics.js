@@ -3,7 +3,7 @@ import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB } from '../constants.js';
 import { addD, dKey, sodOf, eodOf, fmtDI } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
-import { analyzeRegisterAudit } from '../utils/register-audit.js';
+import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable } from './store-dash.js';
@@ -1349,9 +1349,22 @@ function RegisterAuditTab({ds, loc}) {
   // return (hooks can't be conditional).
   const [revealed, setRevealed] = React.useState({});
   const onReveal = React.useCallback((token, name) => setRevealed(r => ({...r, [token]: name})), []);
+  // dispatch #62 -- register-type filter/pill state, plus which blended employee (if any) has
+  // its per-type breakdown expanded. Declared here, before the early returns below, for the
+  // same reason revealed/onReveal are (hooks can't be conditional).
+  const [registerFilter, setRegisterFilter] = React.useState('all');
+  const [expandedEmp, setExpandedEmp] = React.useState(null);
 
   const auditRows = ds&&ds.auditRows ? ds.auditRows.filter(r=>r.loc===loc) : [];
-  const auditData = auditRows.length>0 ? analyzeRegisterAudit(auditRows) : null;
+  // The filter narrows the INPUT rows, not analyzeRegisterAudit's own aggregation -- the default
+  // ('all') passes every row through unfiltered, so a cashier-only store (or any employee who
+  // never touches more than one register) renders behaviourally identically to before #62.
+  const filteredAuditRows = registerFilter==='all' ? auditRows : auditRows.filter(r=>(r.registerType||'cashier')===registerFilter);
+  const auditData = filteredAuditRows.length>0 ? analyzeRegisterAudit(filteredAuditRows) : null;
+  // Breakdown is always computed against the FULL (unfiltered) rows -- an employee's "blended"
+  // status and per-type split shouldn't disappear just because the filter narrowed the table.
+  const breakdown = React.useMemo(() => registerTypeBreakdown(auditRows), [auditRows]);
+  const availableTypes = React.useMemo(() => [...new Set(auditRows.map(r=>r.registerType||'cashier'))].sort(), [auditRows]);
 
   if(pending && !auditRows.length) return div({style:{padding:20}},
     div({className:'empty-st'},
@@ -1373,6 +1386,61 @@ function RegisterAuditTab({ds, loc}) {
   const riskColor = s=>s>=70?'var(--crit)':s>=40?'var(--warn)':s>=15?'#84cc16':'#10b981';
   const riskLabel = s=>s>=70?'HIGH':s>=40?'WATCH':s>=15?'LOW':'CLEAN';
 
+  // dispatch #62 -- register type is now a visible, filterable dimension instead of an inert
+  // column on the wire. Pill style copied from PanelControls.js's _pillStyle (the established
+  // selector idiom, memory/feedback-selector-ui-standard.md) rather than inventing a new one.
+  const REGISTER_TYPE_LABELS = {cashier:'Cashier',manager:'Manager',preparer:'Preparer'};
+  const registerTypeLabel = t => REGISTER_TYPE_LABELS[t]||t;
+  const registerPillStyle = active => ({
+    padding:'4px 12px',borderRadius:'var(--r)',
+    border:'.5px solid '+(active?'rgba(245,158,11,.4)':'var(--bdr)'),
+    background:active?'var(--adim)':'transparent',
+    color:active?'var(--amber)':'var(--text2)',
+    fontSize:'10px',fontWeight:active?700:400,cursor:'pointer',
+  });
+  const blendedCount = Object.keys(breakdown).length;
+  // A "blended" employee's Register cell is a click target that expands a per-type split row
+  // right beneath them -- their totals above stay the #59-audited sum-across-types, unchanged.
+  const registerCell = e => {
+    const types = e.registerTypes && e.registerTypes.length ? e.registerTypes : ['cashier'];
+    if (types.length<=1) return span({style:{fontSize:'9px',color:'var(--text3)'}},registerTypeLabel(types[0]));
+    const key = e.loc+'::'+e.id, isOpen = expandedEmp===key;
+    return span({
+      onClick:ev=>{ev.stopPropagation();setExpandedEmp(isOpen?null:key);},
+      title:'Blended across '+types.map(registerTypeLabel).join(' + ')+' -- click to split by type',
+      style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,cursor:'pointer',
+        background:'rgba(245,158,11,.15)',color:'var(--warn)',border:'.5px solid rgba(245,158,11,.35)',
+        textDecoration:'underline dotted',whiteSpace:'nowrap'},
+    },(isOpen?'▾ ':'▸ ')+'Blended ('+types.length+')');
+  };
+  // The expanded per-type split row for one blended employee, or null. Rendered as a second
+  // <tr> immediately under the employee's normal row so it reads as "this row, split open" --
+  // reuses registerTypeBreakdown's finalized per-type numbers, computed with the same
+  // accumulate/finalize pipeline as the combined totals (register-audit.js), not a re-derivation.
+  const registerBreakdownRow = (e, colSpan) => {
+    const key = e.loc+'::'+e.id;
+    if (expandedEmp!==key) return null;
+    const b = breakdown[key];
+    if (!b) return null;
+    return tr({key:key+'-bd'},td({colSpan,style:{padding:'6px 10px 10px 26px',background:'var(--surf2)'}},
+      div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:4}},'Split by register type (the totals above are the sum across all of these):'),
+      tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+        h('thead',null,tr(null,ColHdr('Type'),ColHdr('Days','right'),ColHdr('T-Red A#','right'),ColHdr('Refunds','right'),ColHdr('O/S','right'),ColHdr('Disc%','right'))),
+        h('tbody',null,b.registerTypes.map(t=>{
+          const et = b.byType[t];
+          return tr({key:t},
+            Cell(registerTypeLabel(t)),
+            Cell(et.days,'var(--text3)','right'),
+            Cell(et.tRedACnt||0,'var(--text)','right'),
+            Cell(et.refundCnt||0,'var(--text)','right'),
+            Cell(((et.cashOS||0)>=0?'+':'')+(et.cashOS||0).toFixed(2),'var(--text)','right'),
+            Cell((et.discPct||0)>0?fP(et.discPct,2):'—','var(--text)','right'),
+          );
+        }))
+      )
+    ));
+  };
+
   const SECTIONS = [
     {k:'overview', l:'Overview'},
     {k:'treds',    l:'T-Reds'},
@@ -1391,6 +1459,25 @@ function RegisterAuditTab({ds, loc}) {
     div({style:{fontSize:'13px',fontWeight:700,marginBottom:4}},'⚖ Register Audit Analysis'),
     div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:10}},
       auditRows.length+' transactions · '+employees.length+' employees · sorted by risk score'),
+
+    // dispatch #62 -- register-type filter pill row. Only shown once there's more than one
+    // type to filter between -- a cashier-only store (or a window before the #59 pull started
+    // collecting Manager/Preparer) has nothing to click and sees no new UI.
+    availableTypes.length>1 && div({style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:8}},
+      span({style:{fontSize:'9px',color:'var(--text3)',marginRight:2}},'Register:'),
+      btn({style:registerPillStyle(registerFilter==='all'),onClick:()=>setRegisterFilter('all')},'All'),
+      ...availableTypes.map(t=>btn({key:t,style:registerPillStyle(registerFilter===t),onClick:()=>setRegisterFilter(t)},registerTypeLabel(t))),
+    ),
+
+    // Voice-by-role: the decision, in restaurant words, before the analyst-only Register column
+    // below. Shown only when there's something to act on (dispatch #62 standing rule: "a number
+    // nobody acts on is not a shipped feature").
+    blendedCount>0 && registerFilter==='all' && div({style:{fontSize:'10px',color:'var(--warn)',
+      background:'rgba(245,158,11,.08)',border:'.5px solid rgba(245,158,11,.25)',borderRadius:'var(--r)',
+      padding:'6px 10px',marginBottom:8}},
+      '⚠ '+blendedCount+' employee'+(blendedCount>1?'s have':' has')+' activity on more than one register '
+      +'this period — their totals below blend Cashier/Manager/Preparer drawers together. Click '
+      +'"Blended" in the Register column to split one apart before flagging or pulling video.'),
 
     // Summary KPIs
     div({style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}},
@@ -1421,13 +1508,14 @@ function RegisterAuditTab({ds, loc}) {
     activeSection==='overview'&&div({style:{overflowX:'auto'}},
       tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
         h('thead',null,tr(null,
-          ColHdr('Employee'),ColHdr('Risk'),ColHdr('Days'),ColHdr('T-Red A#','right'),ColHdr('T-Red A$','right'),
+          ColHdr('Employee'),ColHdr('Risk'),ColHdr('Register'),ColHdr('Days'),ColHdr('T-Red A#','right'),ColHdr('T-Red A$','right'),
           ColHdr('Refunds','right'),ColHdr('POS Over','right'),ColHdr('O/S','right'),ColHdr('Disc%','right')
         )),
-        h('tbody',null,sorted.map((e,i)=>tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
+        h('tbody',null,sorted.flatMap((e,i)=>[tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
           td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
           td({style:{padding:'5px 8px'}},span({style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,
             background:riskColor(e.riskScore||0)+'22',color:riskColor(e.riskScore||0),border:`.5px solid ${riskColor(e.riskScore||0)}44`}},riskLabel(e.riskScore||0))),
+          td({style:{padding:'5px 8px'}},registerCell(e)),
           Cell(e.txCount||'—','var(--text3)','right'),
           Cell(e.tRedACnt||0, e.tRedACnt>5?'var(--crit)':e.tRedACnt>2?'var(--warn)':'var(--text)','right'),
           Cell('$'+(e.tRedADollar||0).toFixed(2), e.tRedADollar>20?'var(--crit)':e.tRedADollar>5?'var(--warn)':'var(--text)','right'),
@@ -1435,7 +1523,7 @@ function RegisterAuditTab({ds, loc}) {
           Cell(e.posOver||0, e.posOver>5?'#f59e0b':'var(--text)','right'),
           Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'var(--crit)':Math.abs(e.cashOS||0)>2?'var(--warn)':'var(--text)','right'),
           Cell((e.discPct||0)>0?fP(e.discPct,2):'—', (e.discPct||0)>.2?'var(--crit)':(e.discPct||0)>.1?'var(--warn)':'var(--text)','right')
-        )))
+        ), registerBreakdownRow(e,10)].filter(Boolean)))
       )
     ),
 

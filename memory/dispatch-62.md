@@ -138,3 +138,94 @@ this dispatch's business.
 - Cashier-only employees must render **behaviourally identically** before and after.
 - `npm run build` clean; entry-chunk before/after in the commit body.
 - **Check `node -v` against `ci.yml`'s `[20, 22]` matrix before trusting a local green** (#60).
+
+---
+
+## Resolution (2026-08-22, v5.105) — Part A SHIPPED, Part B deliberately deferred
+
+### Step 0
+
+Ran the exact query from this brief (service-role, `audit_rows`, last 7 days from 2026-08-22,
+via `.env.local`'s `SUPABASE_SERVICE_ROLE_KEY` + the REST API — no `@supabase/supabase-js`
+dependency in this repo, matched `scripts/build-golden-fixture.mjs`'s own fetch pattern instead
+of adding one):
+
+```
+distinct employee-days in window:            1611
+employee-days with >1 register_type:           321   (19.9%)
+row counts by type:  cashier 1216 · preparer 439 · manager 406
+stores: 27 · dates: 7  (2026-08-15 .. 2026-08-22)
+```
+
+**Materially non-zero, not disjoint.** Ten of the first ten multi-type examples pulled were the
+same employee ringing Cashier + Preparer + Manager on ONE calendar day (e.g. `0043701::
+2026-08-17::Shannon H`). Per the brief's own decision rule, Part A is a **correctness fix**, not
+an enhancement, and shipped first / only.
+
+### Part A — shipped
+
+- `src/utils/register-audit.js`: extracted `newAccumulator()`/`accumulateRow()`/`finalizeGroup()`
+  from `analyzeRegisterAudit`'s inline reducer (behaviour-preserving refactor, pinned by the
+  existing 43 register-audit tests passing unchanged). `analyzeRegisterAudit` now also tracks
+  `_seenTypes` per employee, finalized into a sorted `e.registerTypes` array — additive, every
+  existing field/total untouched. New export `registerTypeBreakdown(auditRows)` reuses the same
+  accumulate/finalize functions to compute a per-register-type split for any employee whose rows
+  span more than one type, keyed `loc::empToken` (never raw `emp`, preserving dispatch #37's
+  identity-vault invariant for the breakdown too) — employees with no token are excluded rather
+  than risk merging two different real people under the shared `'Unknown'` id.
+- `src/views/store-analytics.js`'s `RegisterAuditTab`: a register-type filter pill row (`All /
+  Cashier / Manager / Preparer`, pill style copied from `PanelControls.js`'s `_pillStyle` per
+  `memory/feedback-selector-ui-standard.md` — no new control idiom invented), shown **only** when
+  more than one type is present in the store's current rows (a cashier-only store sees zero new
+  UI). The filter narrows `analyzeRegisterAudit`'s INPUT rows, not its aggregation logic — the
+  default (`'all'`) is every row unfiltered, identical to pre-#62 behaviour. A new **Register**
+  column on the Overview table shows a plain "Cashier" for single-type employees, or a clickable
+  amber "▸ Blended (n)" badge for multi-type ones; clicking it expands a per-type split sub-table
+  beneath that employee's row, reusing `registerTypeBreakdown`'s numbers. A one-line banner states
+  the decision in plain language ("their totals below blend Cashier/Manager/Preparer drawers
+  together... split by type before flagging or pulling video") — voice-by-role, not just a column
+  only an analyst could read.
+
+### Verification
+
+- **Revert-sensitive, demonstrated**: `src/__tests__/register-audit-type-surface.test.js` renders
+  the actual `RegisterAuditTab` (not `analyzeRegisterAudit`/`registerTypeBreakdown` in isolation).
+  Temporarily reverting `store-analytics.js`'s UI wiring (keeping the engine changes) failed 4 of
+  its 5 assertions — confirmed, then restored to green. The 5th ("cashier-only employee shows no
+  new UI") correctly stayed green on both sides, since nothing in that path changed.
+- `src/__tests__/register-audit-breakdown.test.js` pins `registerTypeBreakdown`'s pure logic:
+  per-type sums reconcile to `analyzeRegisterAudit`'s own combined totals, no-token groups are
+  excluded, and the raw employee name never appears anywhere in the output.
+- All pre-existing register-audit tests (43) pass unchanged — the accumulate/finalize extraction
+  is behaviour-preserving.
+- `node -v` in this sandbox: 22 (matches one leg of `ci.yml`'s `[20, 22]` matrix — the other leg
+  is CI's own job, not re-derivable locally per dispatch #60's own lesson).
+- 2016/2016 total tests. `npm run build` clean; entry chunk 511.64 → 511.84 KB gzip (+0.20 KB) —
+  a real net-new filter/breakdown UI, not a pure refactor, so growth (not neutrality) is expected;
+  the amount is negligible against the 850 KB budget (336 KB headroom remaining).
+
+### Part B — deliberately NOT shipped
+
+The brief's own instruction: measure first, do not invent a threshold. Step 0's window is only
+7 days of manager-register data (406 manager rows / 439 preparer rows) — nowhere near this
+project's own bar for setting one (the swing alarm's -10% came from 676 measured store-weeks).
+Two real blockers, not a preference:
+
+1. **No QSRSoft credentials in this sandbox.** `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`/
+   `QSRSOFT_TOKEN` exist only as GitHub Secrets consumed by
+   `.github/workflows/qsrsoft-register-audit-pull.yml` — this environment has Supabase access
+   (`.env.local`) but not QSRSoft's, so a backfill can't be triggered by running the pull script
+   directly here.
+2. **Threshold-setting is an explicit owner decision**, not something to automate — the dispatch
+   says so directly ("bring the numbers back for the owner to set. Do not ship a guessed
+   threshold behind a security flag that names a person").
+
+**Recommendation for whoever picks this up:** design #1 (a CASH-004-sibling rule scoped to
+manager-register rows only) over design #2 (`opportunity_factor` as a real engine input) — #1's
+blast radius is one new rule; #2 makes a metadata field load-bearing across every rule that
+carries it, which is a bigger, harder-to-review change for the same outcome. To get a real
+distribution, trigger `qsrsoft-register-audit-pull.yml` via `workflow_dispatch` with an explicit
+`start_date` (e.g. 60–90 days back) and `end_date=today` — the pull script already handles this
+window without re-running the whole live-token/backfill decision tree (`QSRSOFT_AUDIT_START_DATE`/
+`QSRSOFT_AUDIT_END_DATE`, confirmed by reading `getDateRange()`), or simply wait for the daily
+scheduled pull to accumulate enough days organically, then re-run Step 0's query at a larger N.
