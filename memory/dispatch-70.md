@@ -133,18 +133,23 @@ entitle.
 The owner separately confirmed at the time that the captured browser session was **email+password,
 not SSO**, which agrees.
 
-### ⚠️ The one thing that would overturn this — worth 30 seconds
+### ✅ The one thing that would have overturned this — checked, and it holds
 
 The chain rests entirely on that browser `sub` hash having come from **the same session that
-produced the 200**. If it was read at a different time, after a re-login, or from another tab or
-profile, the comparison is void and SSO is back on the table.
+produced the 200**. Read at a different time, after a re-login, or from another tab or profile, the
+comparison would be void and SSO would be back on the table.
 
-**Re-check:** in the same tab that gets the 200 on `event_details`, decode `localStorage.idToken`
-and confirm the `sub` hash still ends `9378eb7a6502`. Hash only — never the raw `sub`.
+**Owner confirmed, 2026-08-22:** *"same login and tab."*
 
-### The forward test that IS worth running
+So the hash and the 200 come from one session. **SSO is eliminated, not merely unlikely** — the
+principal that succeeds is the same native principal `getFreshToken()` already mints, and there is
+no second Cognito user in this picture. Do not re-raise it.
 
-Regardless of the above, the SSO credential is an **untried principal**, and trying it is cheap:
+### The forward test — now demoted, but not deleted
+
+With SSO eliminated above, this drops from "next thing to try" to "a last resort if everything
+else is exhausted." Kept only because it is cheap and because the reasoning about its *cost* is
+what matters if anyone reaches for it later. The SSO credential is an untried principal:
 sign in via SSO, take that session's token, and call `event_details` with it. If it returns 200
 where the native token returns 403, that is the answer and it is a credentials problem, not an
 infrastructure one.
@@ -156,6 +161,10 @@ different credential path entirely, and SSO + MFA puts it behind exactly the wal
 `memory/finding-ecosure-propel-api-2026-08-22.md` hit on Propel: a persistent authenticated browser
 profile with periodic manual re-auth, not a headless mint.
 
-**Order of work is unchanged.** Run #70's one-line runner fix and read #67's result first — it is
-free, it tests a hypothesis that is still live, and it does not depend on any of this. The SSO test
-is the next thing to try if #67 comes back with the two tokens identical.
+**Order of work is unchanged, and now clearer.** Run #70's one-line runner fix and read #67's
+result — it is free, it tests the one hypothesis still live (SPA `localStorage.idToken` vs what we
+mint), and with SSO eliminated it is no longer competing with anything. If #67 comes back with the
+two tokens **identical**, this repo has genuinely exhausted what it can test alone, and the next
+step is the QSRSoft question — not another local hypothesis. Give them the `x-amzn-requestid`
+values from a 403 run so they can find the denial in their own logs, and ask what actually
+distinguishes the two requests, since by then every variable we can see will be equal.
