@@ -220,14 +220,16 @@ function parseTotalPL(wb) {
 
 // ── Analysis engine ───────────────────────────────────────────────────────────
 
-function analyzeData({contributors, onHand, summary, variance, pl}) {
+function analyzeData({contributors, onHand, summary, variance, pl, period}) {
   // Build lookup maps
   const sumMap = {};
   (summary||[]).forEach(r=>sumMap[r.wrin]=r);
   const vsMap = {};
   (variance||[]).forEach(r=>vsMap[r.wrin]=r);
 
-  // period is derived from filename in the calling component, not from file content
+  // Dispatch #72 A2 -- period is derived from filename in the calling component, not from
+  // file content, so it must be passed in rather than read off an outer scope that doesn't
+  // exist here (this was an unconditional ReferenceError on every call).
 
   // FOB contributors
   const fobStatus = contributors || [];
@@ -803,6 +805,10 @@ function StoreSelectorBar({storeData, selStore, setSelStore, stores}) {
   );
 }
 
+// Exported for dispatch #72 A2's test -- analyzeData is otherwise module-private, but it's a
+// pure function and this is the exact call the ReferenceError lived in.
+export { analyzeData };
+
 export function FOBEOMPanel({stores, ds, settings, onClose}) {
   // storeData: { [storeNum]: { contributors, onhand, summary, variance, pl, history } }
   const [storeData,    setStoreData]    = useState({});
@@ -843,20 +849,8 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
     return [...s].filter(Boolean).sort();
   },[loadedFiles]);
 
-  const analysis = useMemo(()=>{
-    const {contributors,onhand,summary,variance,pl} = loadedFiles;
-    if (!contributors&&!onhand&&!variance) return null;
-    const byClass = r => !selClasses.size || selClasses.has(r.cls||'');
-    return analyzeData({
-      contributors: contributors||null,
-      onHand:   onhand   ? onhand.filter(byClass)   : null,
-      summary:  summary  ? summary.filter(byClass)  : null,
-      variance: variance ? variance.filter(byClass) : null,
-      pl: pl||null,
-    });
-  },[loadedFiles, selClasses]);
-
-  // Detect period from uploaded filenames (stored as _name_<type> keys in storeData)
+  // Detect period from uploaded filenames (stored as _name_<type> keys in storeData) --
+  // computed before `analysis` below so it can be passed into analyzeData().
   const period = useMemo(()=>{
     // Try each file type in priority order
     for (const type of ['contributors','pl','onhand','summary','variance']) {
@@ -873,6 +867,20 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
     }
     return 'Current Month';
   },[loadedFiles,storeData]);
+
+  const analysis = useMemo(()=>{
+    const {contributors,onhand,summary,variance,pl} = loadedFiles;
+    if (!contributors&&!onhand&&!variance) return null;
+    const byClass = r => !selClasses.size || selClasses.has(r.cls||'');
+    return analyzeData({
+      contributors: contributors||null,
+      onHand:   onhand   ? onhand.filter(byClass)   : null,
+      summary:  summary  ? summary.filter(byClass)  : null,
+      variance: variance ? variance.filter(byClass) : null,
+      pl: pl||null,
+      period,
+    });
+  },[loadedFiles, selClasses, period]);
 
   const anyLoaded = Object.keys(storeData).length>0;
   const hasData = !!analysis;

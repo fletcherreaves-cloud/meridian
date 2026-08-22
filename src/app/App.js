@@ -2529,9 +2529,15 @@ function App() {
       setShowAIScan(false);setShowAbout(false);setShowAttention(false);
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);
-      setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
+      // Dispatch #72 A3 -- setShowDev/setShowInsights never existed (no matching useState
+      // anywhere in this file): an unconditional ReferenceError on EVERY Escape press, which
+      // aborted every setter after it in this single function call -- so the "Escape always
+      // closes every modal, full stop" contract above was actually broken for nearly all of
+      // the ~70 modals swept below, not just these two. Removed rather than invented, since
+      // there is no real showDev/showInsights state to close.
+      setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
       setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
-      setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
+      setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
@@ -2763,9 +2769,9 @@ function App() {
           else if(modal==='fcst-accuracy')goRoute('fcst-accuracy');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
-      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'}),
+      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings}),
+      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
       // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations
       // ("would I ever want to send someone a link to this?" — yes). routePanel is URL-synced
       // (src/app/routing.js) and REPLACES whichever view/store was selected, exactly like the

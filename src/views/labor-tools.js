@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB } from '../constants.js';
-import { avg6, forecastDay, getModelAssignment, saveModelOverride } from '../engine/forecast.js';
+import { avg6, forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { TH, f$, gCol } from '../utils/fmt.js';
@@ -512,6 +512,12 @@ function ModelAssignmentPanel({stores, ds, settings, userEvents, onClose}) {
 
   const handleOvr = (loc,hz,m) => { saveModelOverride(loc,hz,m); _pushModelAssignments(); refresh(); };
   const clearOvr  = (loc,hz) => {
+    // Dispatch #72 (post-triage sweep) -- _masgnInvalidate is exported from engine/forecast.js
+    // (used correctly by App.js and backtest.js) but was never imported here, so this bare
+    // catch{} silently swallowed a ReferenceError on every "clear override" click.
+    // getModelAssignment's _masgnCache stayed stale until something else invalidated it, so a
+    // cleared override could keep showing its old model until an unrelated write happened to
+    // reset the cache.
     try{const o=JSON.parse(localStorage.getItem(MODEL_ASSIGNMENT_KEY)||'{}');
       if(o[loc]){delete o[loc][hz];if(!Object.keys(o[loc]).length)delete o[loc];}
       localStorage.setItem(MODEL_ASSIGNMENT_KEY,JSON.stringify(o));
