@@ -328,3 +328,89 @@ the real runner — none of that has been exercised. The next session with acces
 `Fletchers-Mac-mini` (or the owner directly) needs to: run the schema migration, install/start the
 runner, `workflow_dispatch` this workflow once and confirm real rows land, then come back and
 finish the `stream-freshness.js` wiring with the role-gating question above actually settled.
+
+---
+
+## 🔴 CORRECTION #2 (2026-08-22, first live run) — it is the TOKEN, not the source IP
+
+**The first live run from the Mac mini FAILED with the same 403.** Run `32584444370`, job
+`97058595631`, runner `mac-mini-qsr`:
+
+```
+[secevents-pull] 3708/2026-08-08/all_promo: 403 body:
+  {"Message":"User is not authorized to access this resource with an explicit deny in an identity-based policy"}
+[auth] mint-and-fetch failed (AUTH_FAILED:403) — falling back to Playwright
+[auth] post-login url: https://v3.myqsrsoft.com/
+[auth] ✗ no x-auth-token seen on any request during SPA login
+[secevents-pull] ✗ zero rows saved across 3240 requested unit(s) -- a quiet no-op, not a success.
+```
+
+**This disproves the source-IP conclusion in dispatch-63.md's CORRECTION section**, which drove
+this dispatch's whole architecture. Same machine and same network as the owner's `curl` that
+returned **200 with real rows** — only the token differed.
+
+### How the wrong conclusion was reached
+
+The tether test changed the **network** while keeping the **browser's token**, and returned 200.
+That was read as *"consumer IPs allowed, datacenter IPs blocked."* The correct reading is
+**"this token works from anywhere"** — it controlled for IP and showed IP is NOT the variable.
+Every failing case it was compared against (GitHub Actions) differed in **both** token and
+network. Two variables, one attributed cause.
+
+⚠️ **This is the same confound the CORRECTION section had just criticised the engineer for.**
+Theirs compared two of *our* tokens against each other and called the principal question closed;
+this one compared across token *and* network and called it IP. **Change one variable at a time.**
+
+### The corrected matrix
+
+| token | origin | result |
+|---|---|---|
+| browser (Amplify/SRP session) | owner's home network | **200 + rows** |
+| browser (same token) | mobile tether | **200 + rows** |
+| `getFreshToken()` (USER_PASSWORD_AUTH) | **Mac mini — permitted origin** | **403** |
+| `getFreshToken()` ID *and* access | GitHub Actions | 403 |
+| Playwright "SRP" token | GitHub Actions | 403 |
+
+Network is held constant in rows 1-3 in the ways that matter; the token is the only thing that
+tracks the outcome. **The discriminator is the token.**
+
+### The one untested cell
+
+**An SRP/SPA-minted token used FROM the Mac mini.** Nobody has run it. Rows 1-2 used a browser
+token but by hand; row 5 used a Playwright token but from a blocked-or-not network with the
+confound above.
+
+### Why the fallback could not answer it — a real bug
+
+`scripts/qsrsoft-security-events-pull.mjs:283`:
+```js
+await page.goto(REPORT_PAGE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+```
+The navigation to the report page **failed and the error was swallowed**, so no authenticated
+request ever fired and no token was seen. The tell is in the log: `qsrsoft-register-audit-pull.mjs`
+prints `report page url: … | token captured: true (1475 chars)` at the equivalent point, and that
+line is **absent entirely** here — only `post-login url` appears.
+
+**Fix:** do not swallow that error. Log the failure and the resulting URL, and treat "navigated
+but saw no token" as distinct from "navigation failed" — `qsrsoft-register-audit-pull.mjs:502`
+already documents that exact distinction as a lesson learned. Reuse its listener wholesale rather
+than reimplementing.
+
+### What is NOT invalidated
+
+- **The runner is fine and worth keeping.** It registered, picked the job up in 3 seconds, and
+  runs `npm ci` in 2s versus ~30s hosted. Whatever the auth answer, this is a good place to run
+  a pull that touches the owner's own network.
+- **The host hardening** (sleep, updates, FileVault decision, `en1`) all stands.
+- **The failure-loudness guard worked perfectly**: 3240 units, zero rows, exit 1, and a printed
+  re-run command. It refused to report success on nothing — exactly as designed.
+- **#58's empty-array answer** (empty = ALL) is unaffected; it was measured with a browser token.
+
+### Next step, in order
+
+1. Fix the swallowed navigation error and capture the SPA-minted token on the Mac mini.
+2. Retry `event_details` with it, from the Mac mini. **That single result decides everything.**
+3. If it 200s: the fix is the auth path, and the pull ships.
+4. If it 403s: the browser session carries something neither flow reproduces, and the next
+   measurement is a full header/claim diff between the browser's working request and ours —
+   **one variable at a time.**
