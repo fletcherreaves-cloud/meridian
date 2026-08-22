@@ -20,6 +20,7 @@ import { supabase } from '../lib/supabase.js';
 import {
   loadSecurityFindings, loadSecurityRules, loadGmIdentityRevealEnabled,
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
+  loadQsrSecurityEventsForSubject,
 } from '../lib/supabase.js';
 import { INV_ORG_COORDS } from '../constants.js';
 import { RevealName } from './store-analytics.js';
@@ -303,7 +304,15 @@ function SubjectDrilldown({ group, domain, findings, domainRuleIds, subjectLabel
           const period = end.slice(0, 7);
           const months = monthsBack(period, 4);
           const rows = await loadAuditRowsWindow({ start, end });
-          setData(assembleCashDrilldown({ subjectLoc: group.loc, subjectEmpToken: group.empToken, findings, domainRuleIds, rows, months }));
+          const assembled = assembleCashDrilldown({ subjectLoc: group.loc, subjectEmpToken: group.empToken, findings, domainRuleIds, rows, months });
+          // dispatch #58 (#56 Part E) -- event-level detail (time, register, daypart, amount,
+          // tender) for this same subject/window, reusing THIS drill-down surface rather than a
+          // parallel one. Only meaningful for an employee subject (qsr_security_events has no
+          // item/wrin dimension) -- inventory drilldowns above never reach this branch at all.
+          const events = group.empToken
+            ? await loadQsrSecurityEventsForSubject({ empToken: group.empToken, loc: group.loc, start, end })
+            : [];
+          setData({ ...assembled, events });
         }
         setState('loaded');
       } catch {
@@ -359,6 +368,32 @@ function SubjectDrilldown({ group, domain, findings, domainRuleIds, subjectLabel
     row(domain === 'inventory' ? '3. Item-class composition vs. estate' : '3. Rule-mix vs. estate (descriptive — too few flags per subject for a statistical claim)', compositionNode),
     row('4. Period trend', trendNode),
     row('5. Secondary metrics vs. estate — is this subject unusual on anything else?', secondaryNode),
+    domain === 'cash' && h(SubjectEvents, { events: data.events || [] }),
+  );
+}
+
+// dispatch #58 (#56 Part E) -- "any other key info such as drawer (register) worked and time of
+// event." One row per qsr_security_events match for this subject/window: time, register,
+// daypart, tender, amount. crewBadge/mgrBadge are shown (a stable, low-cardinality identifier
+// that isn't a name) but crewToken/mgrToken are never resolved to a name here -- reveal happens
+// only through the existing RevealName / reveal_employee_identity() path, same as every other
+// subject identity in this panel.
+//
+// 🔴 The explicit caveat is REQUIRED, not optional (dispatch #58): cash over/short -- the single
+// biggest controls metric -- has NO event-level drill-down at all (it's a computed variance, not
+// a discrete event). On a loss-prevention screen, silence must never read as "nothing happened."
+function SubjectEvents({ events }) {
+  return div({ style: { marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--bdr)' } },
+    span({ style: { fontSize: 11.5, fontWeight: 700, color: 'var(--text)' } }, `6. Matching events (${events.length})`),
+    div({ style: { fontSize: 10.5, color: 'var(--text3)', marginTop: 3, fontStyle: 'italic' } },
+      'Cash over/short has no event-level detail — it is a computed variance, not a discrete event, so it never appears here regardless of how large it is. Discount is not on this report at all. Absence of an event below is not evidence of absence for either.'),
+    events.length === 0
+      ? div({ style: { fontSize: 11.5, color: 'var(--text3)', marginTop: 6 } }, 'No matching events in this window.')
+      : div({ style: { marginTop: 6 } }, events.map(e => div({
+          key: e.id, style: { fontSize: 11, color: 'var(--text2)', padding: '4px 0', borderBottom: '1px solid var(--bdr)' },
+        },
+          `${e.eventDt} ${e.eventTm} · ${e.eventDisplay || e.eventToken} · reg ${e.regNum || '—'} · ${e.daypartName || '—'} · ${e.tenderType || '—'} · $${fNum(e.eventAmt)}`,
+        ))),
   );
 }
 

@@ -19,6 +19,9 @@ const rpcMock = vi.fn();
 const loadQsrVarianceStatMock = vi.fn();
 const loadQsrVarianceHistoryAllMock = vi.fn();
 const loadAuditRowsWindowMock = vi.fn();
+// dispatch #58 -- defaults to an empty match so every EXISTING cash-drilldown test (which never
+// asserts on events) keeps passing unchanged; dedicated tests below override this per-case.
+const loadQsrSecurityEventsForSubjectMock = vi.fn().mockResolvedValue([]);
 
 vi.mock('../lib/supabase.js', () => ({
   supabase: { rpc: (...args) => rpcMock(...args) },
@@ -28,6 +31,7 @@ vi.mock('../lib/supabase.js', () => ({
   loadQsrVarianceStat: (...args) => loadQsrVarianceStatMock(...args),
   loadQsrVarianceHistoryAll: (...args) => loadQsrVarianceHistoryAllMock(...args),
   loadAuditRowsWindow: (...args) => loadAuditRowsWindowMock(...args),
+  loadQsrSecurityEventsForSubject: (...args) => loadQsrSecurityEventsForSubjectMock(...args),
 }));
 
 import {
@@ -768,6 +772,52 @@ describe('SecurityPanel — dispatch #52: the drill-down renders through the rea
     // Metric 1: this store has 1 of 2 distinct employees flagged.
     expect(container.textContent).toMatch(/1 of 2/);
     expect(container.textContent).toMatch(/Drill-down — measurements, not conclusions/);
+  });
+
+  // dispatch #58 (#56 Part E) -- the event-level "matching events" section, rendered through the
+  // real panel (not just qsr_security_events' own loader in isolation), and its required caveat.
+  it('cash: renders matching events (time, register, daypart, tender, amount) and the cash-over/short "no drill-down" caveat', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_DRILLDOWN_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(CASH_RULES);
+    loadQsrSecurityEventsForSubjectMock.mockReset().mockResolvedValue([
+      { id: 'evt-1', loc: '0000001', eventToken: 'all_promo', eventDt: '2026-08-14', eventTm: '23:44:07', regNum: 'POS0013', orderKey: 'POS0012:1', eventName: 'Mobile Promo', eventDisplay: 'Mobile Promo', eventAmt: 3.89, remainingAmt: 5.21, tenderType: 'Cash', daypartName: 'Dinner', crewToken: 'tok-alice', crewBadge: '91', mgrToken: null, mgrBadge: null, mgrCode: 'Unknown' },
+    ]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const subjectRow = storeLabel?.parentElement;
+    await act(async () => { subjectRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
+    await act(async () => { investigateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadQsrSecurityEventsForSubjectMock).toHaveBeenCalledTimes(1);
+    expect(loadQsrSecurityEventsForSubjectMock).toHaveBeenCalledWith(expect.objectContaining({ empToken: 'tok-alice', loc: '0000001' }));
+    expect(container.textContent).toMatch(/Matching events \(1\)/);
+    expect(container.textContent).toMatch(/2026-08-14 23:44:07/);
+    expect(container.textContent).toMatch(/reg POS0013/);
+    expect(container.textContent).toMatch(/Dinner/);
+    expect(container.textContent).toMatch(/Cash/);
+    // The required caveat: cash over/short has no drill-down at all, on every render of this
+    // section, not just when the subject's events happen to be empty.
+    expect(container.textContent).toMatch(/Cash over\/short has no event-level detail/);
+  });
+
+  it('cash: an employee subject with no matching events renders an honest empty state, not a blank section', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_DRILLDOWN_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(CASH_RULES);
+    loadQsrSecurityEventsForSubjectMock.mockReset().mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabel = [...container.querySelectorAll('span')].find(s => s.textContent === 'Store 0000001');
+    const subjectRow = storeLabel?.parentElement;
+    await act(async () => { subjectRow.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const investigateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '🔎 Investigate further');
+    await act(async () => { investigateBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Matching events \(0\)/);
+    expect(container.textContent).toMatch(/No matching events in this window/);
   });
 });
 

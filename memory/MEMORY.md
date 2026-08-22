@@ -65,8 +65,24 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #58 — schema, parser, panel shipped; the pull script's request-logic is deliberately blocked on a probe](dispatch58-part-e-status-2026-08-21.md)** —
+  **NEWEST.** Everything that doesn't depend on the dispatch's own "settle this first" empty-
+  registers/cashiers question is built: `supabase/schema-qsr-security-events.sql` (role-gated RLS,
+  copied from `security_findings`, NOT the plain tenant-only pattern), `src/engine/security-events.js`
+  (pure `parseSecurityEventRow()` — caught its own bug in its first test run: `isUsableRow()`
+  checked `raw.loc`, a field that isn't on the raw row at all, which would have silently dropped
+  every row), and `SubjectDrilldown`'s new "Matching events" section in `security-panel.js`
+  (reuses Part D's existing surface, per the dispatch's own instruction — time/register/daypart/
+  tender/amount, with the required "cash over/short has no drill-down at all" caveat rendered on
+  every load). **The daily pull script itself is NOT written** — its correctness depends on
+  whether empty `registers`/`cashiers` mean "all" (cheap) or are required filters (redesign), and
+  this sandbox has no QSRSoft credentials to test it. New
+  `scripts/qsrsoft-event-details-probe.mjs` + a `workflow_dispatch`-only Action (mirrors the
+  existing `lifelenz-ta-probe.yml` pattern) make that one comparison call and print a verdict —
+  run it, then write the pull. 1972/1972 tests, build clean (+0.28 KB, a new lazy-panel-only
+  loader). Full status in the linked file.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #58 — Part E: register worked + time of event](dispatch-58.md)** —
-  **NEWEST.** Turns `audit_rows`' daily counts into **timed, register-attributed events**. Every
+  Turns `audit_rows`' daily counts into **timed, register-attributed events**. Every
   prior blocker is settled: 8 `event_token`s, **token-only auth** (no Playwright), `storeRef` = the
   unpadded NSN. 🔴 **Settle ONE thing before writing any pull logic:** every captured body has
   populated `registers`/`cashiers` because each came from a drill-down click — **nobody has tested

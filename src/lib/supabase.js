@@ -1000,6 +1000,34 @@ export async function loadAuditRowsWindow({ start, end }) {
   return rows;
 }
 
+// dispatch #58 (#56 Part E) -- event-level controls detail (time, register, daypart, amount,
+// tender) for the Security panel's "matching events" drill-down. RLS on qsr_security_events is
+// role-gated (schema-qsr-security-events.sql), same tier as security_findings itself -- an empty
+// result from an unauthorized role is indistinguishable from "no events," matching how the panel
+// already treats security_findings' own RLS (never let an empty read stand in for a permission
+// check at the CALLER level; the panel's own securityPanelAccess() gate is what actually decides).
+// crew_token/mgr_token are already vault UUIDs at rest (tokenized on ingest) -- this loader never
+// reads or resolves a plaintext name; reveal happens only via the existing reveal_employee_identity() path.
+export async function loadQsrSecurityEventsForSubject({ empToken, loc, start, end } = {}) {
+  if (!supabase || !empToken) return [];
+  let q = supabase.from('qsr_security_events').select('*')
+    .eq('crew_token', empToken).order('event_dt', { ascending: false }).order('event_tm', { ascending: false });
+  if (loc) q = q.eq('loc', String(loc).padStart(7, '0'));
+  if (start) q = q.gte('event_dt', start);
+  if (end) q = q.lte('event_dt', end);
+  const { data, error } = await q.limit(200);
+  if (error) { console.warn('[loadQsrSecurityEventsForSubject]', error.message); return []; }
+  return (data || []).map(r => ({
+    id: r.id, loc: r.loc ? String(parseInt(r.loc, 10)) : null,
+    eventToken: r.event_token, eventDt: r.event_dt, eventTm: r.event_tm,
+    regNum: r.reg_num, orderKey: r.order_key, eventName: r.event_name, eventDisplay: r.event_display,
+    eventAmt: r.event_amt, remainingAmt: r.remaining_amt, tenderType: r.tender_type,
+    daypartName: r.daypart_name, storeBusnDt: r.store_busn_dt,
+    crewToken: r.crew_token, crewBadge: r.crew_badge, mgrToken: r.mgr_token, mgrBadge: r.mgr_badge,
+    mgrCode: r.mgr_code,
+  }));
+}
+
 // ── QSRSoft FOB daily rows (automated pull) ──────────────────────────────────
 export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
   if (!supabase) return [];
