@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits, READINESS_GAPS, srcMeta } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, READINESS_WEIGHTS, analyzeGradedVisits, READINESS_GAPS, srcMeta,
+  calibrateReadiness, CALIBRATION_PAIRS_FOR_POWER, CALIBRATION_PAIRS_PER_YEAR } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase } from '../views/visit-readiness-report.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
@@ -154,14 +155,38 @@ describe('visit-readiness', () => {
     expect(g.verdict).not.toBe(g.why);
   });
 
-  it('an elevated food-safety flag takes priority over the readiness band in the verdict', () => {
-    // Food safety is the more severe PACE consequence (criticals, not just a re-visit clock) --
-    // the verdict must lead with it even when the store is also at-risk on readiness, rather
-    // than picking one risk category arbitrarily.
+  it('an elevated waste & variance flag is a secondary note, never the headline verdict', () => {
+    // Dispatch #69 -- this used to invert: an elevated flag pre-empted the band/topDrivers
+    // verdict entirely, even for a store whose readiness band was 'ready' (the two are
+    // independent; fsFlag is deliberately kept OUT of the composite). That displaced the real
+    // coaching action, and the flag isn't even a food-safety measure (it reads waste/inventory
+    // variance -- memory/finding-food-safety-2026-what-is-actually-measured.md). The band-driven
+    // verdict must always lead; an elevated flag is appended as a secondary note only.
     const res = computeVisitReadiness(mkDs(badRows(BAD)));
     const b = res.stores.find(s => s.loc === BAD);
     expect(b.fsFlag).toBe('elevated'); // precondition, from the existing fs-flag test above
-    expect(b.verdict).toMatch(/food-safety risk/i);
+    expect(b.band).toBe('at-risk');
+    expect(b.verdict).toMatch(/^Coach /); // the band-driven verdict still leads
+    expect(b.verdict).toMatch(/waste & variance — elevated/i); // appended, not prepended
+    expect(b.verdict.indexOf('Coach')).toBeLessThan(b.verdict.indexOf('waste & variance'));
+  });
+
+  it('an elevated waste & variance flag does not override a "ready" band verdict', () => {
+    // The two computations are independent (fsFlag is excluded from the readiness composite),
+    // so a store can be genuinely ready on PACE readiness while its waste proxy is elevated.
+    // The verdict must still say "no action needed" as the headline, with the flag noted after.
+    // rawWaste stays GOOD here (not just statVar bad) because QUALITY also scores 'raw' --
+    // tanking it would drag the readiness band down too and defeat the point of this test,
+    // which needs band and fsFlag to genuinely disagree.
+    const t = DEFAULT_TARGETS[GOOD];
+    const ds = mkDs(goodRows(GOOD));
+    ds.fobRows = [{ loc: GOOD, date: recent(10), compWaste: t.tCompWaste * 0.7, rawWaste: t.tRawWaste * 0.7, statVar: t.tStatLoss * 5 }];
+    const res = computeVisitReadiness(ds);
+    const g = res.stores.find(s => s.loc === GOOD);
+    expect(g.fsFlag).toBe('elevated'); // precondition
+    expect(g.band).toBe('ready'); // precondition -- the two disagree, which is the whole point
+    expect(g.verdict).toMatch(/^On track for a graded visit — no action needed this week\./);
+    expect(g.verdict).toMatch(/waste & variance — elevated/i);
   });
 
   it('calibration: needs >=3 visits, else reports n and null r', () => {
@@ -453,5 +478,41 @@ describe('visit-readiness', () => {
     const res = computeVisitReadiness(ds);
     expect(res.calibration.n).toBe(3);
     expect(res.calibration.r).toBeGreaterThan(0);
+  });
+
+  // Dispatch #69 — calibrateReadiness now reports progress toward enough statistical power to
+  // judge the model at all, instead of a strength verdict that a small n can't actually support.
+  describe('calibrateReadiness progress fields', () => {
+    const mkStores = n => Array.from({ length: n }, (_, i) => ({
+      loc: String(i), readiness: 50 + i, band: i % 2 ? 'ready' : 'at-risk',
+      lastVisit: { score: 50 + i, pass: true, type: 'CFV', dateISO: '2026-01-01' },
+    }));
+
+    it('reports pairsNeeded and a month-label ETA below the power threshold', () => {
+      const cal = calibrateReadiness(mkStores(27));
+      expect(cal.n).toBe(27);
+      expect(cal.pairsForPower).toBe(CALIBRATION_PAIRS_FOR_POWER);
+      expect(cal.pairsNeeded).toBe(CALIBRATION_PAIRS_FOR_POWER - 27);
+      expect(cal.etaLabel).toMatch(/^~[A-Z][a-z]{2}$/); // e.g. "~Dec"
+    });
+
+    it('pairsNeeded is exactly 0 (not negative, not omitted) once n reaches the threshold', () => {
+      const cal = calibrateReadiness(mkStores(CALIBRATION_PAIRS_FOR_POWER));
+      expect(cal.pairsNeeded).toBe(0);
+      expect(cal.etaLabel).toBeNull();
+    });
+
+    it('pairsNeeded stays 0 well past the threshold, never negative', () => {
+      const cal = calibrateReadiness(mkStores(CALIBRATION_PAIRS_FOR_POWER + 20));
+      expect(cal.pairsNeeded).toBe(0);
+    });
+
+    it('the ETA lengthens for a smaller n, using the settled 81/yr cadence', () => {
+      // memory/finding-cfv-2026-visit-rules.md settled 27 stores x 3 CFV visits/yr = 81/yr.
+      expect(CALIBRATION_PAIRS_PER_YEAR).toBe(81);
+      const near = calibrateReadiness(mkStores(CALIBRATION_PAIRS_FOR_POWER - 1)); // 1 pair short
+      const far = calibrateReadiness(mkStores(3)); // far short
+      expect(far.pairsNeeded).toBeGreaterThan(near.pairsNeeded);
+    });
   });
 });
