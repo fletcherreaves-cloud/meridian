@@ -219,3 +219,156 @@ nodes), an `rtFa` SharePoint federation token, `connect.sid`, and Akamai cookies
 recorded here.** The JWT is short-lived (~12h), but the session should be treated as
 disclosed-by-sharing and re-authenticated. For future captures, the URL, header *names*, and the
 response body are sufficient — the cookie jar never needs to leave the browser.
+
+---
+
+# Addendum — 🔴 THE VISIT-LIST ENDPOINT (2026-08-22)
+
+Owner-captured. **This is the endpoint both this file and
+`memory/finding-peak-cfv-api-2026-08-22.md` recorded as the single highest-value missing capture.**
+It closes that open question and two others with it.
+
+```
+GET https://propel.mcd.com/api/visits
+      ?v=778
+      &action=getScoredVisitListResults
+      &parentHierarchyNode=<operator node>   &parentHierarchyLevel=11
+      &childHierarchyLevel=12
+      &page=1 &rowsPerPage=20 &sortBy=childHierarchyNodeName &descending=false
+      &visitType=0 &year=2026 &ownershipType=0 &category=visitResult
+```
+
+Headers as elsewhere on this host: `hierarchy-level: 11`, `hierarchy-node: <operator node>`,
+`territory-code: 840`, `referer: https://propel.mcd.com/app/`. Cookie auth.
+
+## What it changes
+
+### 1. 🎯 `year=` is a query parameter — the prior-year backfill is a parameter change
+
+`memory/finding-peak-cfv-api-2026-08-22.md` open question #3 asked whether a prior
+`ProgramCycleDescription` could be requested. **`year=2026` is right there in the query string.**
+The owner's own plan — *"I can backload data from last year"* — is `year=2025`, not a research
+problem.
+
+That is the binding constraint on the Visit Readiness Model Check
+(`memory/notes-visit-readiness-backlog-2026-08-22.md` item 2, `memory/dispatch-69.md` Part B/D):
+n=27 pairs, ρ CI [−0.16, 0.56], and *"knowing by December won't help — the cycle starts over in
+January."* ⚠️ **Untested — nobody has run `year=2025` yet.** Run it before planning on it.
+
+### 2. The estate is **27**, so the earlier 26 was a scope artifact — as flagged
+
+`totalCount: 27`. The `impersonateUser` capture recorded in the PEAK finding returned **26**
+Restaurant nodes and was missing Ponce de Leon (43701); that file flagged *"this is impersonateUser
+for ONE eID … re-run for the owner's own eID before treating it as the store universe."*
+**This confirms it** — the operator-node rollup counts 27, matching `STORE_NAMES` exactly.
+
+⚠️ **Ponce de Leon is still not directly observed.** `rowsPerPage=20` means the capture is page 1 of
+2. It is *implied* by `totalCount: 27` and by nothing in PACE being absent from Meridian, but it has
+not been seen. **Capture page 2** before treating the node map as complete.
+
+### 3. Per-PACE-AREA scores, per store — component-level ground truth
+
+Every row carries a block per PACE area, each with `visitQuantity`, `scorePercentage`,
+`passPercentage`, `passQuantity`, `criticalFail{Percentage,Quantity}`,
+`nonCriticalFail{Percentage,Quantity}`:
+
+`visitResult` (overall) · `quality` · `service` · `cleanliness` · `shiftLeadership` ·
+`foodSafety` · `people` · `healthAndSafety`
+
+**This is a materially better validation target than a single composite.** Visit Readiness scores
+Speed 35 / Accuracy 30 / Quality 20 / Leadership 15 and today can only be checked against one
+overall number. These areas map onto its components — so each can be validated *separately*, which
+is how you find out **which** component is carrying the model and which is noise. A composite ρ of
+0.23 cannot tell you that.
+
+### 4. 🔴 `cleanliness` IS scored — and Meridian records it as an acknowledged data gap
+
+`memory/project-graded-visits-pace.md` lists Cleanliness as having no daily-data proxy, and
+`CoverageGaps` says so honestly in the UI. **That remains true and should not change**: this is a
+*graded outcome*, not a predictor. Nothing here lets Meridian forecast cleanliness.
+
+What it does give is **ground truth for the gap** — the ability to say how cleanliness actually
+scored, and eventually whether any daily signal tracks it. Keep the gap declared; add the outcome.
+
+### 5. 🔴 `foodSafety` IS scored — this is the real number the waste proxy stands in for
+
+Directly relevant to `memory/dispatch-69.md` Part A. Meridian's `FOODSAFETY`
+(`src/engine/visit-readiness.js:139`) is inventory `statVar` + `raw` waste, labelled
+`Food safety: elevated`, and the owner's complaint is that the label claims far more than the
+metric supports.
+
+**PACE reports an actual food-safety score per visit.** Measured from this capture:
+
+| | 2026 rollup, 15 visits |
+|---|---|
+| `foodSafety.scorePercentage` | **0.925** |
+| `foodSafety.passPercentage` | **1.0** (15/15) |
+| `foodSafety.criticalFailQuantity` | **0.0** |
+| page-1 range across 10 scored stores | 0.840 – 1.000 |
+
+**Meridian currently flags 10 of 27 stores `FS ELEVATED`. PACE failed zero of 15.**
+
+⚠️ **That is a striking contrast, not yet a refutation, and it must not be written up as one.**
+Three things have to be controlled first, and every one of them could explain the gap:
+- **Different periods.** The flag reads the latest monthly `fobRows`; these visits are spread
+  across 2026. Not a matched comparison.
+- **Leading vs concurrent.** The flag is explicitly a *leading* indicator; a store can be trending
+  badly and still pass a visit. The two are not required to agree.
+- **Different constructs.** Waste/variance and a food-safety audit measure different things — which
+  is the owner's whole point.
+
+**The check to actually run:** for the 15 stores with a 2026 visit, compare Meridian's FS flag *as
+of each visit date* against that visit's `foodSafety.scorePercentage`. Matched, leak-free, n=15
+(plus `year=2025`). That is a real answer. Anything less is the same over-claiming dispatch #69
+exists to fix — do not replace an over-strong label with an over-strong refutation of it.
+
+### 6. `people` has zero visits estate-wide — that area is not graded this cycle
+
+Every row and the rollup show `people.visitQuantity: 0.0`. Do not build a component against it.
+
+## The 2026 picture (verified arithmetic, not eyeballed)
+
+Rollup, `parentRestaurantCount: 27`:
+
+| area | score | pass | fails |
+|---|---|---|---|
+| **overall** (`visitResult`) | **0.920** | **15/15** | 0 critical, 0 non-critical |
+| quality | 0.919 | 14/15 | 1 non-critical |
+| service | 0.935 | 15/15 | — |
+| **cleanliness** | **0.887** | **14/15** | **1 non-critical — the weakest area** |
+| shiftLeadership | 0.933 | 15/15 | — |
+| foodSafety | 0.925 | 15/15 | 0 critical |
+| healthAndSafety | 0.927 | 15/15 | 0 critical |
+| people | — | — | not graded |
+
+**15 visits across 27 stores so far in 2026.** Consistent with the owner's stated ceiling
+(2–3/store/year); at ~8 months elapsed it reads closer to a **2/yr** cadence than 3 — ⚠️ suggestive
+only, since visits are not evenly spaced and page 2 is unseen. It does *not* settle the 3-vs-2
+question dispatch #69 Part B says to confirm with the owner.
+
+Page-1 cross-check (10 scored stores) against the 15-visit rollup — every area within ~1.2 pts, and
+page 1's single sub-80% cleanliness (**33222 ELGIN, 0.770**) accounts for the rollup's one
+cleanliness `nonCriticalFail`; the one quality fail is on the uncaptured page 2. **The two levels
+reconcile**, which is the check that says the rollup is a real aggregate and not a separate feed.
+
+## Revised open questions
+
+1. ~~Is there a visit-list endpoint?~~ **Answered.**
+2. ~~Can a prior cycle be requested?~~ **`year=` is a parameter** — but **untested**. Run `year=2025`.
+3. **What does `visitType=0` enumerate?** `0` presumably means "all". PEAK's CFV discriminator is
+   `SurveyType.TypeId 3801`; whether `visitType` shares that numbering is unverified. This is how
+   CFV/RGR/EcoSure get separated — **capture one non-zero value and find out.**
+4. **`category=visitResult`** implies other categories exist. Unknown.
+5. **Page 2** — needed to observe Ponce de Leon and the remaining 5 visits.
+6. **Is there a per-visit detail link from these rows?** They carry no `visitId`, and PEAK's
+   `RoipSurvey/<VisitId>` needs one. Either another Propel action returns ids, or the two systems
+   are joined some other way. **Still open, and it is what per-question detail depends on.**
+
+## 🔒 Security
+
+Another full cURL with live cookies — `GlobalAS_SessionId`, `connect.sid`, `rtFa`, Akamai
+`_abck`/`bm_sz`, and a `token` JWT carrying the owner's name, email and allowed hierarchy nodes.
+**None recorded here.** Only the endpoint shape, the aggregate figures and the per-area schema are
+kept; the operator node's `hierarchyNodeName` is a list of individuals' names and is deliberately
+omitted. **Re-authenticate the Propel session** — treat it as disclosed by sharing. Future captures
+need only the URL, header *names* and the response body.
