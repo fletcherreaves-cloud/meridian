@@ -106,3 +106,69 @@ Check the upsert's behaviour on that before running: a null-overwrite would dest
   that only checks `saveGradedVisits` was called cannot tell "imported" from "imported and
   displayed".
 - Confirm idempotency by running the import twice and asserting the row count is unchanged.
+
+---
+
+## Resolution (2026-08-22)
+
+**Imported.** `scripts/import-cfv-history.mjs` upserted all 217 seed visits into live Supabase
+`graded_visits` (170 new + 47 that already existed from PDF uploads, refreshed in place). Table
+now carries 221 CFV rows total — the 217 imported plus 4 newer real visits (2026-08-19 through
+2026-08-21) uploaded from PDFs after this seed's 2026-08-18 capture cutoff, which is expected and
+correct, not a discrepancy.
+
+**The three named/discovered traps, all measured against the live table before writing upsert
+logic (not assumed):**
+
+1. **loc padding.** `graded_visits.loc` is 5-digit zero-padded ("NSN, zero-padded as in report"
+   per the table's own schema comment); `getCfvHistory` returns bare NSNs ("3708", not "03708").
+   Confirmed live: all 27 existing locs are uniformly 5 digits. Without padding, every 4-digit
+   loc in the seed would have silently created a duplicate row next to its real PDF-sourced
+   counterpart instead of updating it. Fixed with `padLoc()`.
+2. **daypart/weekpart null-overwrite.** Not present in `getCfvHistory` at all, and Supabase's
+   `upsert(..., {onConflict})` does a full-row replace on conflict, not a column-level coalesce —
+   a blind import would have nulled out a PDF-sourced row's real values on every key collision.
+   Measured live: 51/67 pre-existing rows carried a real daypart. Fixed by reading the existing
+   row (keyed on padded loc + visit_date + report_type) before building each upsert row and
+   carrying its daypart/weekpart forward untouched. **Extended beyond the dispatch's explicit
+   naming**: a live query showed owner/manager/visit_by are the identical risk — 100% PDF-only,
+   0% present in the Propel payload — so all five fields are preserved the same way.
+3. **channel vocabulary.** `getCfvHistory` returns camelCase (`driveThru`/`curbside`/
+   `inRestaurant`); measured the live table's actual values rather than trusting the PDF parser's
+   own source comment (which lists `'Front Counter'` as a possible value) — the real, only three
+   values in this dataset are `'Drive Thru'` / `'Curbside'` / `'In Restaurant'`. `'Front Counter'`
+   never occurs. Mapped explicitly; an unrecognized value passes through unmapped with a console
+   warning rather than being silently dropped.
+
+`pass` is derived, not sourced (`score >= 80`), matching the PDF parser's own `parseCFV()` rule
+verbatim — recorded as a derivation in the code and in this doc, per the dispatch's own warning.
+
+**Verification bar, all met:**
+- Re-running the import's own end-to-end check (bounded to the seed's own capture window,
+  `visit_date <= 2026-08-18`, not open-ended — see the "measure, don't reason" episode below)
+  reads **n=47, meeting80=55.3%, below80=44.7%**, matching the dispatch's Propel-card validation
+  exactly.
+- **Panel-level check, not loader-level**: `src/__tests__/dispatch-74-cfv-import-panel.test.js`
+  renders the actual `VisitPatterns` component with the real 47-visit 2026 subset from the
+  committed seed file (not a synthetic fixture) and asserts the panel's own header text —
+  `"47 actual visits"` and `"55.32% pass"` (the panel's own `pr()` formats to 2 decimals, so the
+  exact rendered string is 55.32%, not the dispatch prose's 1-decimal 55.3% — measured from the
+  seed, not assumed from the rounding in the brief).
+- **Idempotency confirmed**: running the import a second time reported 0 new rows / 217 existing
+  rows refreshed, and a direct count query before/after held at 221 CFV rows — no duplication.
+
+**A "measure, don't reason" episode worth recording**: the first live run's own built-in
+verification step failed (n=51, meeting80=56.9%, below80=43.1%, not the expected 55.3/44.7%).
+Per the standing rule, this did NOT get treated as "the import is broken" — a direct query
+confirmed the write itself was correct (all 217 rows present, right values), and the mismatch was
+traced to the verification query's own date filter being open-ended through year-end instead of
+bounded to the seed's `to` field, which was pulling in 4 genuine newer PDF-sourced CFV visits
+dated after the Propel snapshot was captured. Fixed the verification query, not the import.
+
+**Additional tests**: `src/__tests__/dispatch-74-import-cfv-history.test.js` unit-tests the
+script's pure helpers (`padLoc`, `mapChannel`, `buildRow`) directly, including a test that pins
+the daypart/weekpart/owner/manager/visit_by preservation trap explicitly.
+
+**Untouched, as scoped**: RGR/EcoSure history, the Model Check rebuild, and the CFV predictability
+ceiling (ρ=+0.023 / ICC=0.087). This is a one-time backfill — not added to
+`sync-failure-watch.yml`. No credentials in the committed seed file.
