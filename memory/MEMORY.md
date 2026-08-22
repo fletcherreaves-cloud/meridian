@@ -65,8 +65,51 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22): [Dispatch #69 — Visit Readiness overstates its own certainty, in both directions](dispatch-69.md)** —
+  **NEWEST.** Three owner-raised items from `notes-visit-readiness-backlog-2026-08-22.md`, one
+  theme. (1) The `FOODSAFETY` flag (`statVar`+`raw` waste/variance proxies) has **zero overlap**
+  with what an EcoSure Food Safety visit actually assesses (temps/pests/handwashing/shelf-life —
+  confirmed against the real PACE guide) and was mislabelled "Food Safety" throughout — renamed to
+  "Waste & variance." The real bug the mislabel hid: `buildVerdict()` let an elevated flag
+  **pre-empt** the store's actual band-driven coaching verdict as the headline, even for a `'ready'`
+  store (the two computations are independent by design) — displaced the real blocker on 10/27
+  stores; Ardmore-Broadway showed `FS elevated` while its real EcoSure audit scored 86/100. Now the
+  band verdict always leads; an elevated flag is a secondary note, never the headline. (2) The Model
+  Check caption asserted "Weak agreement so far" off a 27-visit sample whose own 95% CI (rank corr
+  −0.16 to 0.56) can't distinguish a useless model from a good one — evidence of a small sample, not
+  a weak model. Below a 46-pair power threshold (80% power to detect rank corr ≥0.4, not invented —
+  taken from the backlog's own table) the panel now shows `"27 of ~46 visits needed to tell — next
+  check ~<month>"` using the settled 81/yr cadence (27 stores × 3 CFV visits/yr, from
+  `finding-cfv-2026-visit-rules.md`), instead of a verdict the data can't support. (3) The
+  "Report detail" toggle sat among the scope filter pills (which DO change the view) while only
+  affecting the print report — moved to a split dropdown on the Report button itself. Revert-
+  sensitive test renders the actual panel (a fixed per-store margin saturates every store's score
+  near the ceiling → zero-variance `r=null`, which would silently mask the caption branch — varying
+  the margin is what makes this test meaningful). 2036/2036 tests (7 new), build clean, no
+  entry-chunk change.
+- **✅ SHIPPED (2026-08-22): [Dispatch #68 — `LaborAnalyticsPanel` was dropping every store, district-wide, right now](dispatch-68.md)** —
+  `data-sourcing-standard.md`'s exclusion list flagged this panel as suspicious after
+  #64 proved its sibling entry ("parallel-but-correct") was wrong — checked before writing
+  anything up, per the same standing rule #64's own correction states. Half the doc's premise was
+  stale: a prior dispatch (#324) already migrated `laborPct`/`tpph`/`otHrs`/`actVsNeed`/etc. to
+  `metric-source.js`'s auto-first chains, but the STORE-INCLUSION GATE (`if(!lRows.length&&
+  !cRows.length) return null`) was never updated to check them — still gating on raw manual
+  `laborRows`/`ctrlRows` presence. **Measured live**: manual `labor_rows`/`ctrl_rows` have been
+  **empty district-wide for 28+ days (0/27 stores)** while auto DAR + `opsLaborRows` cover all
+  27 — so the gate was dropping **every single store** from the default 4-week view, in
+  production, today. Also fixed: `totalSales` had no auto fallback despite `sales` already being
+  registered; a second, unrelated stale-comment bug in the same file (`dowStats`/`trendData`
+  both claimed `actVsNeed` "has no METRIC_SOURCES entry yet" — false, verified against
+  `metric-source.js` directly); and the top-level `hasData` all-or-nothing gate, which had the
+  same manual-only blind spot one layer up. `crewHrs` (genuinely no auto source) correctly stays
+  manual-only. Revert-sensitive test (3 new, renders the real panel) — stashed the fix, confirmed
+  the auto-only case fails exactly as expected, restored. Two structural ratchets (R1 raw-row
+  reads, R3 `.getDay()` count) needed their ceilings updated as a direct, expected, in-file-noted
+  consequence of the fix. 2030/2030 tests, build clean, no entry-chunk change. **Numbered #68, not
+  #67** — #67 was already claimed moments earlier by an unrelated, concurrent `event_details`
+  investigation thread; flagged rather than colliding.
 - **🟡 MEASURED, STILL OPEN (2026-08-22): [Dispatch #66 — the `event_details` SPA-minted-token test could not run](dispatch-66.md)** —
-  **NEWEST.** The Mac mini runner works (dispatch #65's architecture is live and picks up jobs).
+  The Mac mini runner works (dispatch #65's architecture is live and picks up jobs).
   Fixed a real bug in its own predecessor: `qsrsoft-security-events-pull.mjs`'s Playwright fallback
   swallowed its navigation error and never logged the post-navigation URL, so "navigation failed"
   and "navigated fine, no token" were printed identically — indistinguishable in every prior run's

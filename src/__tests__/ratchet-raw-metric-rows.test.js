@@ -29,7 +29,11 @@ const ROOT = 'src/views';
 // Measured fresh against origin/main, 2026-08-18 (re-measured per dispatch16's own instruction
 // — main has moved since the dispatch's "~162/13 files at v5.034" estimate; this run landed on
 // the identical number, so no drift occurred between v5.034 and this ratchet's seed commit).
-const CEILING = 162;
+// Dispatch #68 (2026-08-22): -1 in labor-tools.js's trendData — actVsNeed's own
+// METRIC_SOURCES chain already existed (a stale comment claimed otherwise) and this dropped
+// the raw ds.laborRows read it was routed through instead, switching to metricAvg like its
+// laborPct/tpph/otHrs siblings on the same line.
+const CEILING = 161;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 
