@@ -11,7 +11,7 @@ import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
-import { EventEntryModal, EventRegistryModal } from '../features/calendar.js';
+import { EventEntryModal, EventRegistryModal, generateReviewPack } from '../features/calendar.js';
 import { TH, f$, escapeHtml as esc } from '../utils/fmt.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, opfsClear } from '../db/index.js';
@@ -5963,7 +5963,13 @@ function DateRangeReport({stores, ds, settings, userEvents, onClose}) {
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
     // Named: DateRangeReport_StartDate_EndDate_LocationScope.csv
-    const _scope=selectedLocs.length===allLocs.length?'AllStores':selectedLocs.length===1?sNameC(selectedLocs[0]):'Multi('+selectedLocs.length+')';
+    // Dispatch #72 A4 -- selectedLocs/allLocs were never declared in this component (this
+    // component's own selection state is `selLocs`, whose "every store" sentinel is the
+    // literal 'all', not a same-length array -- see buildReport's `selLocs.includes('all')`
+    // just above). An unconditional ReferenceError, evaluated AFTER the blob URL was already
+    // created and the <a> built but BEFORE a.click() -- so the download silently never fired,
+    // on every CSV export.
+    const _scope=selLocs.includes('all')?'AllStores':selLocs.length===1?sNameC(selLocs[0]):'Multi('+selLocs.length+')';
     a.download='DateRangeReport_'+startDate+'_to_'+endDate+'_'+_scope.replace(/[^A-Za-z0-9]/g,'_')+'.csv';a.click();
   };
 

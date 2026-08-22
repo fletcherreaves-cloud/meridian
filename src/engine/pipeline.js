@@ -28,7 +28,18 @@ function buildDS(workbooks){
     records:{},targets:{},monthlyTargets:{},monthlyTargetsMeta:null,loaded:false,
     laborIdx:{},opsIdx:{},ctrlIdx:{},weatherIdx:{},storeIds:[],lastActual:{},
     laborByLoc:{},opsByLoc:{},ctrlByLoc:{},darByLoc:{}};
-  for(const{wb,type}of workbooks){
+  // Dispatch #72 C2 -- filename/file were read at several spots below without ever being
+  // destructured from a `workbooks` entry: `filename` (projections/inventory, already
+  // `||''`-guarded but an undeclared bare identifier throws regardless of the `||`) and `file`
+  // (dar/pmix, via `file.name`). mergeDS() (line ~478) is the function this codebase actually
+  // calls with real workbooks -- it already takes `filename` as an explicit parameter and uses
+  // it identically for 'projections'/'inventory'/'dar'/'pmix' (line ~503 onward). buildDS is
+  // currently only ever called with an empty array (App.js:2066), so these branches are
+  // unreachable in production today, but this is buildDS's own from-scratch rebuild path and
+  // the free variables would throw (caught by this loop's try/catch, logged, silently dropping
+  // that file) the moment anything calls it with real workbooks. Threaded `filename` through
+  // the destructure to match mergeDS's contract rather than reading a global that never existed.
+  for(const{wb,type,filename}of workbooks){
     try{
       if(type==='labor')    ds.laborRows.push(...parseLaborData(wb));
       else if(type==='ops') {
@@ -66,13 +77,13 @@ function buildDS(workbooks){
       else if(type==='trends') ds.trendsRows.push(...parseTrends(wb));
     else if(type==='dar') {
       // Extract date from filename: Daily_Activity_Report_YYYYMMDD.xlsx
-      const dm = file.name.match(/(\d{8})/);
+      const dm = (filename||'').match(/(\d{8})/);
       const dateHint = dm ? new Date(dm[1].slice(0,4)+'-'+dm[1].slice(4,6)+'-'+dm[1].slice(6,8)+'T12:00:00') : new Date();
       ds.darRows.push(...parseDARData(wb, dateHint));
     }
     else if(type==='pmix') {
       const pmx = parsePMixData(wb);
-      Object.assign(ds.pmixData, pmx.byFamily ? {[file.name]: pmx} : {});
+      Object.assign(ds.pmixData, pmx.byFamily ? {[filename||'pmix']: pmx} : {});
     }
       else if(type==='inventory'){const ir=parseInventoryData(wb,filename||'');if(ir.length)ds.inventoryRows.push(...ir);}
       else if(type==='records') Object.assign(ds.records,parseRecords(wb));

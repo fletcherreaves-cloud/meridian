@@ -1759,7 +1759,7 @@ function DaypartPaceCard({loc}) {
 }
 
 // STORE DASHBOARD (SECTION 13)
-function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections}) {
+function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections, onUpdateSettings}) {
   // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('StoreDash', 'render+commit', performance.now() - _rt0); });
@@ -1798,8 +1798,16 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
             calibrateStore(store.loc,ds,{...settings,_userEvents:userEvents}).then(result=>{
               if(!result) return;
               if(!_existing||result.mape<(_existing.mape||99)-0.5) {
+                // Dispatch #72 (post-triage sweep) -- `saveSettings` was never a prop or a
+                // local of this component: App.js's own saveSettings useCallback (which
+                // persists to localStorage + Supabase) never crossed the h(StoreDash,{...})
+                // boundary, unlike DialedInPanel's identical onUpdateSettings:saveSettings a
+                // few hundred lines away. Deep enough short-circuit (dialedInEnabled, 10+ new
+                // rows or first run, AND an improved MAPE) that this silently discarded a
+                // genuinely improved calibration on every hit -- the outer .catch(()=>{})
+                // swallowed the resulting rejected promise without a trace.
                 const next={...settings,dialedIn:{...(settings.dialedIn||{}),[store.loc]:result}};
-                saveSettings(next);
+                onUpdateSettings&&onUpdateSettings(next);
               }
             }).catch(()=>{});
           }
