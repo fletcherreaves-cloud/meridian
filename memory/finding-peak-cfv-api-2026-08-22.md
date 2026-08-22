@@ -1,6 +1,6 @@
 ---
 name: finding-peak-cfv-api-2026-08-22
-description: peak.mcd.com is a SECOND, separate McD site from propel.mcd.com and it carries CFV and RGR visits. A captured RoipSurvey response contains the full per-question CFV tree AND — critically — VisitDaypart, VisitWeekpart and the visited channel, which are exactly the two fields the Visit Readiness Model Check needs for a like-for-like comparison.
+description: peak.mcd.com is a SECOND, separate McD site from propel.mcd.com and it carries CFV and RGR visits. A captured RoipSurvey response gives per-QUESTION scores and TimerData score bands the current PDF parser does not have, plus a cycle handle that may make the owner's prior-year backfill a pull. Includes a correction — daypart/weekpart/channel are NOT new; Meridian already parses and stores all three, so the matched Model Check re-measure needs no new pull at all.
 metadata:
   node_type: memory
   type: finding
@@ -18,33 +18,65 @@ Owner-captured 2026-08-22. **No credentials are recorded in this file; see the s
 
 ---
 
-## Why this matters more than the endpoint itself
+## 🔴 CORRECTION — checked the codebase before shipping this claim
 
-The Visit Readiness **Model Check** (owner item #2 in
-`memory/notes-visit-readiness-backlog-2026-08-22.md`) is currently underpowered *and*
-structurally mismatched. `memory/finding-cfv-2026-visit-rules.md` named three mismatches
-between what the model predicts and what a CFV actually measures:
+My first draft of this file said the capture "unblocks" the daypart/channel-matched Model Check,
+on the reasoning that `finding-cfv-2026-visit-rules.md` had named daypart and channel as the two
+missing fields. **I then read the code, and that claim was wrong.** Recorded here rather than
+quietly edited out, per the standing measure-don't-reason rule — this is the second time in this
+session that a confident inference about an external system survived until someone checked.
 
-| mismatch | what was missing | PEAK supplies |
-|---|---|---|
-| **Daypart** | model scores an all-day store; a CFV is one daypart | `VisitDetails.VisitDaypart` (`"Snack"` observed) |
-| **Channel** | model blends DT/FC/curbside; a CFV shops one | `RootCategories[].Name` root (`"Curbside"` observed) |
-| **Selection** | "greatest growth opportunity" daypart is not random | `VisitDaypart` + `VisitWeekpart` make the realised selection observable |
+**Meridian already has daypart, weekpart and channel on every graded visit, today:**
 
-That file's stated requirement was, verbatim: *"capture the actual daypart and channel of each
-visit. If every pair records what was really visited, we compare like-for-like and the selection
-rule — followed or not — stops mattering."*
+| where | evidence |
+|---|---|
+| PDF parser | `src/parsers/graded-visits.js:80,81` — `daypart: _after(L,'Day parts')`, `weekpart: _after(L,'Weekpart')` |
+| channel | `channelOf()` (`:67`) — *"the FIRST module listed under the Score Calculator … 'Behind the Counter' is the always-present companion module, not the order method"* |
+| Supabase | `graded_visits` carries `daypart` / `weekpart` / `channel` columns (`src/lib/supabase.js:2653,2654,2660`) |
+| already rendered | `VisitPatterns` (`src/views/visit-readiness.js:266`) breaks actual outcomes down by day-of-week, **daypart**, **weekpart** and **channel** |
 
-**This capture supplies both.** The daypart/channel-matched comparison is unblocked — it is now a
-data-pull problem, not an unanswerable one.
+Note that `channelOf()`'s rule — first module that is not "Behind the Counter" — is **exactly** the
+structure the PEAK payload exposes as `RootCategories` (`"Curbside"` + `"Behind the Counter"`). The
+PDF and the API are two renderings of one object. That is corroboration, not new information.
 
-⚠️ It does **not** fix the sample size. ρ=0.23, CI [−0.16, 0.56]; direction 51.9%, CI
-[34.0%, 69.3%]. Matching on daypart and channel *sharpens* each pair; it does not create more of
-them. Max 3 visits/store/year × 27 ≈ 81/year. The owner's own proposal — **backload last year's
-visits** — remains the only route to a powered check inside this calendar cycle, and PEAK is
-plausibly the source for that backfill too (unverified: see open questions).
+### What this correction is worth
 
----
+**Good news, and better than the wrong version.** The daypart/channel-matched re-measure that
+`notes-visit-readiness-backlog-2026-08-22.md` item 2(b) proposes **needs no new data pull at all.**
+It can be run against the existing `graded_visits` rows today. The backlog note framed 2(b) as
+windowing the *model side* to 11:00–17:00 (`hour_slot` 12:00–17:00); the visit side can now be
+matched exactly, per visit, rather than assumed from the policy window — and it can be done for the
+old regime too, where the policy window did not apply. **That moves 2(b) from "cheap" to "cheapest
+thing on the list."**
+
+⚠️ Still unmeasured: **how populated those columns actually are.** `_after(L,'Day parts')` returns
+null when the PDF layout differs, RGR sets `channel: null` by design (`:158` — whole-restaurant, not
+single-channel), and the anon key returns zero rows on `graded_visits` (tenant-scoped RLS), so I
+could not count them from here. **Check per-visit fill rate before relying on the match** — a column
+that exists is not a column that is populated, which is the same trap `section:` fell into.
+
+## What PEAK genuinely adds
+
+Setting the daypart/channel claim aside, four things here are real:
+
+1. **An API in place of a manual PDF drop.** Graded visits are currently a manual upload. The
+   standing **API-over-email/manual** rule points straight at this: an API takes a range and can
+   re-pull to correct itself; a PDF drop cannot.
+2. **Backfill.** `ProgramCycleDescription: "Customer First Visit 2026"` suggests prior cycles are
+   addressable. That is precisely the owner's *"I can backload data from last year"* plan, and it is
+   the only route to a powered Model Check inside this calendar cycle. **Unverified — see open
+   questions.**
+3. **Per-QUESTION detail, which the PDF path does not have.** `parseModules()`
+   (`src/parsers/graded-visits.js:47`) extracts module-level `{pct, ach, pos}` only. PEAK gives
+   `ShortCode` / `Text` / `Score` / `PossibleScore` / `SelectedReasons` / `Comment` per question.
+   Genuinely new resolution.
+4. **`TimerData` score bands — the most actionable item in the capture.** Also absent from the PDF
+   path. See below.
+
+⚠️ It does **not** fix sample size. ρ=0.23, CI [−0.16, 0.56]; direction 51.9%, CI [34.0%, 69.3%].
+Matching on daypart and channel *sharpens* each pair; it does not create more of them. Max 3
+visits/store/year × 27 ≈ 81/year. Backfilling last year's cycle remains the only route to a powered
+check this cycle.
 
 ## The endpoint
 
@@ -80,7 +112,7 @@ Propel finding as the solution to the hierarchy-node mapping problem).
 | `StoreCode` | the store number |
 | `IsComplete`, `VisitCompleteTime` | completion state |
 
-### `VisitDetails` — the fields that unblock the Model Check
+### `VisitDetails` — confirms, but does not add, the daypart/channel fields
 
 | field | observed |
 |---|---|
@@ -96,6 +128,11 @@ Propel finding as the solution to the hierarchy-node mapping problem).
 The **root node is the channel**: `"Curbside"` observed, alongside `"Behind the Counter"`. So the
 channel is not a field — it is the tree's top level. Ingest must read it from the root name, not
 look for a `channel` key.
+
+This is the **same structure** `src/parsers/graded-visits.js:67`'s `channelOf()` already reads out
+of the PDF (*"the FIRST module listed … 'Behind the Counter' is the always-present companion
+module"*). Two renderings of one object — so an API ingest can reuse that rule verbatim rather than
+inventing a second one, and the two paths cannot drift on channel.
 
 Per question:
 
