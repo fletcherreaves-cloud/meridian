@@ -44,29 +44,51 @@ or fold it into the existing Quality area — and stop it pre-empting the top co
 genuine food-safety signal needs holding-time/temperature data, which `memory/project-graded-
 visits-pace.md` already records as an acknowledged gap.
 
-## 2. Model Check is barely better than a coin flip
+## 2. Model Check — the SAMPLE is too small to judge the model. Do not rework the scoring yet.
 
-On screen: **rank corr 0.23 (weak), direction match 52.00% (14/27)**, with the panel's own honest
-caption *"Weak agreement so far — treat as directional only."*
+On screen: **rank corr 0.23 (weak), direction match 52.00% (14/27)**, captioned *"Weak agreement
+so far — treat as directional only."*
 
-52% on a binary direction call is **coin-flip territory**. The honesty of the caption is good and
-should stay, but a predictor at that level is not yet decision-support.
+**Owner's revised read (2026-08-22), and it is correct:** *"May not need to change the scoring
+mechanism — it sounds legit — maybe needs more data."*
 
-**Owner:** *"I believe there is enough data present to rework the scoring mechanism here to
-reflect something more useful."*
+**Computed, n = 27:**
 
-**Worth doing, and worth doing properly:**
-- 27 stores with a recent actual visit score is the ground truth. That is a small n — enough to
-  *fit* something simple, **not** enough to justify an elaborate model, and the standing
-  no-invented-thresholds rule applies to any weights that come out of it.
-- The current weights (Speed 35 / Accuracy 30 / Quality 20 / Leadership 15) were **assigned, not
-  fitted** — see `memory/project-graded-visits-pace.md`. Fitting them against actual visit scores
-  is the obvious first move.
-- ⚠️ **#64 changed the inputs on 2026-08-22.** Several metrics now resolve auto-first instead of
-  from stale manual uploads (R2P moved 111.7s → 128.5s on one store). **Any correlation measured
-  before that date is against different inputs.** Re-measure the baseline before concluding
-  anything about the model.
-- Beware overfitting 27 points. Report the fit *and* a holdout or cross-validated figure.
+| statistic | point | 95% CI |
+|---|---|---|
+| direction match | 51.9% (14/27) | **[34.0%, 69.3%]** (Wilson) |
+| rank corr ρ | 0.23 | **[−0.16, 0.56]**, p ≈ 0.25 |
+
+At this n the true direction-match rate could be anywhere from a third to nearly 70%, and the true
+correlation anywhere from slightly negative to moderately strong. **These numbers cannot
+distinguish "the model is useless" from "the model is good."** They are not evidence of a weak
+model; they are evidence of a small sample.
+
+### So the actual defect is the CAPTION, not the scoring
+
+*"Weak agreement so far"* **asserts weakness**. What is true is **"not enough visits yet to tell."**
+The panel is claiming more than its data supports.
+
+⚠️ **That is the same error as item 1**, in the opposite direction — the UI making a stronger
+statement than the underlying metric earns. Two instances of one pattern in one panel is worth
+treating as a pattern: **Visit Readiness overstates its own certainty.** Any future work here
+should check the claim each label makes against what the number can actually support.
+
+### What to do instead of reworking the scoring
+
+1. **Fix the caption** to report uncertainty honestly — show the interval, or say the sample is
+   too small. Cheap, and it is the only part that is actually wrong today.
+2. **Accumulate paired observations.** The binding constraint is not total data, it is
+   *(predicted readiness, actual visit score)* pairs, which arrive only as CFV/RGRV visits happen.
+   Re-measure as n grows rather than refitting now.
+3. ⚠️ **Re-baseline first: #64 changed the inputs on 2026-08-22.** R2P moved 111.7s → 128.5s on
+   one store when it began resolving auto-first. **Every pair measured before that date is against
+   different inputs**, so the 0.23/52% figures are already stale. Re-measure before drawing any
+   conclusion.
+4. **Only then consider fitting the weights** (currently 35/30/20/15, assigned rather than fitted —
+   see `memory/project-graded-visits-pace.md`). At n=27 a fit would overfit; if it is ever done,
+   report a holdout or cross-validated figure alongside, and the no-invented-thresholds rule
+   applies to whatever comes out.
 
 ## 3. The Report-detail toggle reads as a view toggle
 
