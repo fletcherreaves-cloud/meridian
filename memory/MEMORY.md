@@ -65,8 +65,29 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🟡 MEASURED, STILL OPEN (2026-08-22): [Dispatch #66 — the `event_details` SPA-minted-token test could not run](dispatch-66.md)** —
+  **NEWEST.** The Mac mini runner works (dispatch #65's architecture is live and picks up jobs).
+  Fixed a real bug in its own predecessor: `qsrsoft-security-events-pull.mjs`'s Playwright fallback
+  swallowed its navigation error and never logged the post-navigation URL, so "navigation failed"
+  and "navigated fine, no token" were printed identically — indistinguishable in every prior run's
+  log. Fixed by reusing `qsrsoft-register-audit-pull.mjs`'s own working pattern (log URL + nav
+  error + token state together) rather than reimplementing it. Triggered live on the Mac mini (run
+  `32584962388`): direct auth 403'd as expected (the known cell), and the fixed Playwright path
+  proved the navigation itself succeeded — but **no `x-auth-token` was ever observed on ANY host**,
+  so the actual test (retry `event_details` with an SPA-minted token) had no token to test with.
+  This is a genuinely new, previously-invisible finding, not a re-test of anything in dispatch
+  #63's elimination table: the working browser capture in `finding-qsrsoft-event-details-endpoint-
+  2026-08-21.md` came from **clicking into a specific audit-row cell**, not from the report page
+  merely loading — `event_details` may only mint/attach a token on that interaction, which this run
+  never performed. **Deliberately did not chase this further** (scripting a cell-click is a new,
+  untested variable) — the brief's own explicit warning is that this exact investigation has
+  already produced two wrong conclusions today from comparing cases that differ in more than one
+  variable at once. Reported the measured result and stopped; recommended next step (script an
+  actual cell-click, or ask the owner whether their own browser ever calls `event_details` without
+  one first) left for whoever picks this up. No token value/sub/eID/email/plaintext name anywhere.
+  2027/2027 tests, build clean.
 - **🟡 PARTIALLY SHIPPED (2026-08-22, code-side only, NOT live-verified): [Dispatch #65 — the `qsr_security_events` pull, on a self-hosted runner](dispatch-65.md)** —
-  **NEWEST.** Built from a sandboxed session with **no physical/self-hosted-runner access** — read
+  Built from a sandboxed session with **no physical/self-hosted-runner access** — read
   the dispatch file's own Resolution section before trusting anything below is verified. Shipped:
   `scripts/qsrsoft-security-events-pull.mjs` (the actual daily pull, two-path auth mirroring
   `qsrsoft-ops-pull.mjs` — direct token + plain fetch first, Playwright SPA-login fallback; one
