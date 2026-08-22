@@ -114,8 +114,14 @@ will tell anyone the runner is down.
   1. **A UPS.** Cheap, and it eliminates the main cause (power blips). With no unexpected reboots
      the FileVault prompt essentially never fires. Best single purchase for this dispatch.
   2. **Disable automatic macOS updates on this machine.** The sneaky one: macOS will install an
-     update and reboot itself overnight, and FileVault then parks it at the unlock screen. Set to
-     notify-only and apply updates when someone is physically present.
+     update and reboot itself overnight, and FileVault then parks it at the unlock screen.
+     **✅ CONFIGURED 2026-08-22** (System Settings → General → Software Update → Automatically):
+     | setting | state | why |
+     |---|---|---|
+     | Download new updates when available | **ON** | Downloading never reboots; it just pre-stages so a supervised install is quick. |
+     | **Install macOS updates** | **OFF** | 🔴 The one that matters — this is the overnight self-reboot. |
+     | Install system data files and security updates | **ON** | Mostly XProtect malware definitions, which install with no reboot. Left ON deliberately: this box holds QSRSoft credentials and the Supabase service-role key, so continuous protection beats the rare Rapid Security Response that may want a restart — and the freshness alarm covers that case. |
+     Consider flipping the third to OFF *only* for the duration of a long trip, then back on.
   3. **`sudo fdesetup authrestart`** for *planned* reboots — unlocks once for the next boot only.
   Considered and rejected: disabling FileVault to enable auto-login. That removes the only
   protection on a disk holding QSRSoft credentials and the Supabase service-role key, *and* boots
