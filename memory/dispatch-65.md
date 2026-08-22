@@ -32,6 +32,32 @@ asking would be counterproductive. Do **not** contact them, and do not reopen th
 entitlement request (`memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md`). The
 data is the owner's own, accessed with the owner's own credentials, from the owner's own network.
 
+## ✅ HOST DECIDED (owner, 2026-08-22): the Mac mini
+
+`Fletchers-Mac-mini`, on the owner's own network. **Already proven as a permitted origin** — both
+`event_details` measurements in this dispatch and in #58 were run from it and returned 200 with
+real rows. No hardware to buy, no new network path to validate. The owner will confirm/ensure it
+stays powered on.
+
+### macOS specifics — get these right or the runner dies quietly
+
+- **Stop it sleeping.** `sudo pmset -a sleep 0 disablesleep 1`, and in System Settings → Energy,
+  enable *"Prevent automatic sleeping when the display is off."* A sleeping Mac is the single most
+  likely cause of a missed run.
+- **Come back after a power cut.** `sudo pmset -a autorestart 1`.
+- **Install the runner as a SERVICE, not a terminal session.** From the runner directory:
+  `./svc.sh install && ./svc.sh start`. That registers a `launchd` job so it survives logout and
+  reboot. A runner started with `./run.sh` in a Terminal window dies the moment the window closes
+  or the user logs out — and it will look fine right up until it doesn't.
+- **Label it** (e.g. `self-hosted, macOS, qsr-security`) and target that label in the workflow, so
+  a future second runner can't accidentally pick up this job.
+- **Verify it survives a reboot** before calling the setup done. Reboot the Mac, then confirm the
+  runner shows Idle in the repo's Actions → Runners page without anyone logging in.
+
+⚠️ **Private repo only.** A self-hosted runner executes workflow code on the host machine. This
+repo is private with a single trusted contributor, which is exactly the case where this is fine —
+but never enable self-hosted runners for public-fork PRs.
+
 ## The architecture — self-hosted GitHub Actions runner
 
 Install a GitHub self-hosted runner on an always-on machine on a **consumer connection** at the
