@@ -157,3 +157,63 @@ If the screenshot shows a real authenticated view, the mystery deepens and is wo
 independent Mac-mini run before theorizing further.
 
 No token value, `sub`, `eID`, or email anywhere in this section or the quoted logs.
+
+### Follow-up (2026-08-22, same day) — the hypothesis above is now confirmed, not just plausible
+
+The owner asked for the diagnostics the prior section said only a screenshot could supply, in
+text instead (`563ab78`): `document.title`, whether the login form is still in the DOM,
+`localStorage` key **names**, any `role="alert"` text, short body text when the page is brief, and
+total-vs-matching request counts. Re-triggered from the Mac mini (run `32593483334`,
+`debug=1`). The result settles it:
+
+```
+[auth] post-login url: https://v3.myqsrsoft.com/
+[auth] post-login document.title: "MyQSRSoft"
+[auth] post-login login-form-still-present: true
+[auth] post-login localStorage key NAMES: CognitoIdentityId-us-east-1:d9b200e7-ce76-4ddf-a804-494c93b57b70
+[auth] post-login short body text: "We make it easier to run great restaurants
+
+Sign in
+Email
+Password
+Signing in
+Forgot your password?
+OR
+Sign in with McD eID
+OR
+Sign in with Email Link
+ENGLISH
+
+QSRSoft, LLC Confidential
+
+© 2019-2026 QSRSoft, LLC. All rights reserved"
+[auth] post-login requests seen so far: total 22 | carrying x-auth-token: 0
+[auth] localStorage idToken read: false
+[auth] report page url: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
+  | nav error: (none) | interception token captured: false | requests seen: total 39 carrying x-auth-token: 0
+```
+
+**Login did not complete.** The page after the login click is still the sign-in form (`Email` /
+`Password` / `Sign in` fields present, `Signing in` visible), not any authenticated view. The only
+`localStorage` key is `CognitoIdentityId-us-east-1:...` — Cognito's unauthenticated **Identity
+Pool** guest ID, which Amplify writes on load regardless of sign-in state — not a
+`CognitoIdentityServiceProvider.*` key, which is what an actual sign-in writes and what carries
+`.idToken`. 22 requests fired before the read (real network activity, not a blank page) and 39 by
+the time the report-page navigation settled, and **zero** of them ever carried `x-auth-token` on
+any host. Three independent signals (form still present, no auth-shaped storage key, zero
+authenticated requests across two separate page loads) now agree instead of one ambiguous URL.
+
+**This resolves the open question, not just narrows it:** Task 1 and Task 2's code
+(`localStorage` read, claim-name diff) is correct and unreachable only because nothing upstream of
+it ever authenticates — not a bug in either task. The real defect is earlier: the Playwright login
+step (`page.fill` + `page.click` against `qsrsoft-register-audit-pull.mjs`'s same selector list)
+is not producing a signed-in session for `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` on this SPA, at
+least not the way this script drives it. Candidate causes, **not investigated further this
+session** (reporting and stopping, consistent with the dispatch's own repeated instruction not to
+stack an untested fix on top of a hypothesis before checking in): a selector mismatch specific to
+this login form vs. the one `qsrsoft-register-audit-pull.mjs` was built against, a client-side
+validation error the `role="alert"` selector doesn't catch (QSRSoft may use a different error UI
+pattern), bot/headless detection, or a genuinely stale/wrong credential in the
+`QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` secrets.
+
+Still no token value, `sub`, `eID`, or email anywhere in this section or the quoted logs.
