@@ -123,3 +123,41 @@ unchanged; this is additive.
 - **No backfill decision.** The pull is forward-looking by default; `employmentStatus=active` is a
   request filter, so terminated staff are reachable by changing it. Whether to backfill history or
   include leavers is an owner call, not this dispatch's.
+
+## ✅ Shipped (2026-08-22, v5.102)
+
+New `supabase/schema-qsr-employee-tenure.sql` — PK `(tenant_id, loc, geid)`, accessible_locs-scoped
+read RLS (per this brief's own "like every other table" instruction — matched against
+`schema-hourly-projection-accuracy.sql`'s pattern, not the plain tenant-only pattern most ordinary
+QSRSoft tables use, since this one carries a name and a pay rate), service-role write.
+
+`src/engine/people-reports.js`'s `parseEmployeeRosterApi()` gained `orgStartDate`/`hourlyPayRate`
+fields (both through the same `cleanDate()`/`num()` cleaning every other field already uses) —
+the one shared record shape `rosterCounts()`/`shiftCertifiedByLoc()`/the review auto-populate all
+still consume, unchanged. `qsrsoft-employee-roster-pull.mjs` gained `orgStartDate`/`hourlyPayRate`
+in `SELECT_COLS`, `assertNoDeniedSelectCols()` (called at import time, tested against every listed
+denied field individually — ssn, dob, protected-class attributes, address/contact fields), and
+`toTenureRows()` (padded loc, drops a record with no `geid` rather than fabricating a key) feeding
+a new `qsr_employee_tenure` upsert that runs alongside the existing `roster_role_counts` one,
+unchanged.
+
+Both header comments this brief flagged as now-inverted (the module header's "No individual-
+employee data is stored anywhere" and `SELECT_COLS`'s own "Deliberately EXCLUDES... so PII is
+never fetched") were rewritten to state the current, correct contract rather than the reversed one.
+
+Also added the `import.meta.url === file://process.argv[1]` direct-execution guard around
+`main()` (mirroring `qsrsoft-register-audit-pull.mjs`'s own precedent) and guarded the module-level
+`createClient()` call to return `null` when Supabase env vars are absent — neither existed before
+this dispatch, and both were required to make `toTenureRows()`/`assertNoDeniedSelectCols()`
+importable from a test without crashing at import time (this sandbox has no live Supabase
+credentials to exercise the actual upsert against).
+
+1989/1989 tests: 3 new in `people-reports.test.js` (orgStartDate vs storeStartDate divergence,
+the `0000-00-00` sentinel on `orgStartDate`, `hourlyPayRate` null-when-absent) + 12 new in the new
+`src/__tests__/employee-roster-tenure-pull.test.js` (loc padding, date-field divergence at the
+actual write-path row shape, the sentinel already-null, pay-rate passthrough, geid-drop, empty-
+input, `updated_at` stamping, and the denial guard passing on the real live `SELECT_COLS` plus
+failing on every individually-listed denied field). Build clean, no client-bundle size change
+(both touched files are Node-only pull-side code, never imported by `src/app`).
+
+Not built, per this brief's own explicit scope: no panel, no pay surfacing, no backfill decision.
