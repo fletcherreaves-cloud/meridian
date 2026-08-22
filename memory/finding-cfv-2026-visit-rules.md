@@ -68,25 +68,30 @@ Readiness mixes DT and front-counter metrics into one Speed score and compares i
 channel happened to be visited. **Pairs should be matched to the visited channel** — a DT visit
 compared against DT metrics only.
 
-### 3. 🔴 Selection bias — the daypart is chosen for WEAKNESS, and this biases direction, not just noise
+### 3. 🔴 Selection — the rule says target weakness; practice is inconsistent. Both hurt.
 
-The daypart is deliberately picked for *"greatest potential growth or opportunities to address
-performance gaps."* **Visits are not a random sample of the store's operating hours — they
-systematically target its worst window.** A model predicting *average* performance will therefore
-**over-predict** relative to what the visit finds, consistently rather than randomly.
+**The rule, as written.** The daypart is chosen for *"greatest potential growth or opportunities to
+address performance gaps."* Taken at face value, visits are **not a random sample of operating
+hours** — they deliberately target the store's worst window. A model predicting *average*
+performance would therefore **over-predict consistently**: a systematic bias, not noise.
 
-⚠️ **SOFTENED by the owner, 2026-08-22:** *"True or rules, but unfortunately corporate does not
-always follow this."* So the daypart is **not reliably** chosen for weakness — the stated rule is
-applied inconsistently.
+**Observed practice (owner, 2026-08-22):** *"True or rules, but unfortunately corporate does not
+always follow this."* The rule is applied inconsistently.
 
-**That is worse for modelling, not better.** A reliable "always picks the weakest daypart" rule
-would be a *predictable bias* we could correct for. Inconsistent application is **unpredictable
-variance in the selection process itself** — uncorrectable, and it cannot be estimated without
-knowing which daypart each visit actually used.
+**Keep these two facts separate — they have different consequences, and you need both:**
 
-**Which makes capturing the visit's actual daypart and channel the robust move regardless.** If
-each pair records what was visited, we compare like-for-like and the selection rule stops
-mattering. Without it, we are averaging over an unknown, inconsistently-applied sampling process.
+| | consequence for the model |
+|---|---|
+| **The rule** (target the weak daypart) | **Predictable bias.** Correctable *if* it were followed reliably — you could calibrate against a known worst-case sampling rule. |
+| **Inconsistent compliance** | **Unpredictable variance** layered on top. Not correctable, and not even estimable without knowing which daypart each visit actually used. |
+
+So the situation is the worse of both: a sampling process biased *in intent* toward weakness, applied
+*in practice* unpredictably. Fitting weights against this ground truth without accounting for it
+would bake in a bias whose magnitude nobody can measure.
+
+**Which makes one thing robust to all of it: capture the actual daypart and channel of each visit.**
+If every pair records what was really visited, we compare like-for-like and the selection rule —
+followed or not — stops mattering. That is the move regardless of how corporate behaves.
 
 ---
 
