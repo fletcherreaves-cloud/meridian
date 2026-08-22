@@ -371,6 +371,16 @@ actual code — this note nearly caused a duplicate reimplementation.
   approval: independently check the diff (never a relayed summary), confirm the gating check is
   green, and for a code change run the suite and build **on the merged result** — a local merge does
   this in a way the merge button cannot. Then merge and say what landed.
+  **⚠️ A green LOCAL run does not predict CI when the runtimes differ — check `ci.yml`'s
+  `node-version` against `node -v` before trusting it (learned the hard way, 2026-08-21).** CI runs
+  **Node 20**; this sandbox runs Node 22. Merging `1ca02ee` (Forms Slices 1-3) on a clean local
+  1952/1952 broke `main` for **seven consecutive commits**, two of them pushed by another session,
+  until hotfix #540. The bug was ICU-version-dependent: `hour12:false` alone leaves midnight
+  rendering (`00` vs `24`) to the runtime's default `hourCycle`, which differs by Node version.
+  **Anything touching `Intl`, `toLocaleString`, collation or timezone formatting is runtime-variant
+  by nature** — pin the behaviour explicitly (`hourCycle:'h23'`, not just `hour12:false`), and treat
+  a local pass on a different Node as unverified. When in doubt, wait for CI on the PR head rather
+  than merging on the local result alone.
   **Still stop and ask for:** anything failing or with unresolved review findings; a change whose
   scope, privacy posture, or product behaviour is a judgment call rather than an execution detail
   (e.g. persisting new PII, reversing a documented decision); and anything the owner has an open
