@@ -65,8 +65,43 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22, v5.106): [Dispatch #64 — Visit Readiness now sources through the shared auto-first resolver](dispatch-64.md)** —
+  **NEWEST.** `visit-readiness.js` kept its own local `srcs` chains instead of calling
+  `metric-source.js`, and they had drifted strictly worse: `r2p`/`park`/`tpph` were manual-only
+  while auto sources already existed, `oepe`/`kvst` were each missing two auto fallbacks. Found
+  from a real coaching report for Ardmore-Cooper/12th (#24471) scored off an R2P value **38 days
+  stale** — and because R2P feeds Speed (35%) and TPPH feeds Leadership (15%), roughly half that
+  report's composite was frozen on a report whose whole purpose is same-day coaching. Phase 1
+  (deletion, not construction): `oepe`/`kvst`/`park`/`r2p`/`tpph`/`labor` now resolve through
+  `METRIC_SOURCES`, via a new `metricSeriesWithSource()` export (`metricSeries()` is now a thin
+  wrapper over it) that recovers WHICH source answered per day, not just the value — needed to
+  keep `SOURCE_META`'s provenance column (the thing that made this findable) honest. Phase 2:
+  `tRedA` remapped onto the already-correct `tRedAPct` chain; `comp`/`raw`/`statVar` gained new
+  `METRIC_SOURCES` derive entries computing a % from the auto-pulled `qsr_fob` $ amounts, behind
+  the manual FOB Excel's own %. `accB2B`/`problem`/`osat` (SMG, no API) and `schedGap` (already
+  auto via `schedRows`) deliberately left on the local resolver.
+  **Two things self-caught before/during this session, not by the dispatch brief**: monthly
+  metrics (SMG/FOB) had NO window cutoff in the old resolver at all, so reusing the 45-day daily
+  window would have silently broken "latest value on record" for anything >45 days old — fixed
+  with a ~3-year lookback instead. And a live-data run against Ardmore-Cooper surfaced a real bug
+  in this dispatch's OWN first draft: blanket-excluding `v===0` from the daily mean (carried over
+  from the old single-source resolver, where it never mattered) silently discarded EVERY day of
+  `park` once the auto chain's real 0% answer got there first — the exact **#150/#178
+  zero-discarding bug class**, reintroduced by the fix meant to close a different sourcing gap.
+  Removed; `metric-source.js`'s own `mode` already decides what counts as a value.
+  **Verification bar was the score itself, live**: both the pre-dispatch and the new engine run
+  against the SAME real service-role-pulled Ardmore-Cooper data — R2P moved from `{111.7s,
+  opsRows, as-of 2026-07-15}` to `{128.5s, qsrActSummaryRows, as-of 2026-08-22}`, composite
+  readiness moved **48.6 → 53.2**. 5 new revert-sensitive tests (stashed the fix, confirmed all 5
+  fail, restored) — auto-only fixtures the old chains could never read, the exact key/field traps
+  named in the brief (`labor→laborPct`, `tRedA→tRedAPct`, `park→glimpseRows.parkedPct`), a
+  no-DAR-coverage store still falling back to `opsRows`/`manual`, the missing-reason message
+  reading the LIVE chain not a stale local one, and the actual HTML/CSV report (not just the
+  engine) surfacing a migrated driver's real source. 2021/2021 tests, build clean, entry chunk
+  511.84→512.03 KB gzip (`visit-readiness.js` is lazy-loaded, not in the entry chunk). Out of
+  scope, untouched: weights, targets, bands, the food-safety flag.
 - **✅ SETTLED (2026-08-22): [Dispatch #63 — the `api.security` 403 is a QSRSoft entitlement gap, not a bug here](dispatch-63.md)** —
-  **NEWEST.** `event_details`'s 403 (an AWS IAM explicit-deny: credential accepted, principal
+  `event_details`'s 403 (an AWS IAM explicit-deny: credential accepted, principal
   denied) survives every hypothesis this repo can test. Two tasks, both run in GitHub Actions
   (`workflow_dispatch`, no owner needed): (1) `POST /security/video_provider` — the route the
   owner's browser gets a 200 from, in the same module — also **403** with our token, so the

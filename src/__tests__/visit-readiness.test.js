@@ -329,6 +329,118 @@ describe('visit-readiness', () => {
     expect(name).toMatch(/^visit-readiness-audit-patch-brad-denley-\d{4}-\d{2}-\d{2}$/);
   });
 
+  // ── Dispatch #64 — routes through metric-source.js's shared auto-first chains ─────────
+  // Revert-sensitive: every source below is one the OLD local `srcs` chains never read at
+  // all (qsrActSummaryRows/opsCashRows/qsrFobRows), so if the wiring were reverted to the
+  // pre-dispatch local resolver, every driver asserted here would fall into `notMeasured`
+  // instead of scoring. Values deliberately beat target so a store lands in a state where
+  // "not measured" and "measured, on target" are distinguishable failure vs. pass.
+  it('resolves migrated metrics from auto-only sources the old local chains never read, with correct key remapping', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const days = [recent(1), recent(3), recent(6)];
+    const ds = {
+      // Auto DAR fallback for oepe/r2p/tpph — old chains only knew opsRows/laborRows.
+      qsrActSummaryRows: days.map(d => ({ loc: GOOD, date: d, oepe: t.tOepe * 0.85, r2p: t.tR2p * 0.85, tpph: t.tTpph * 1.15 })),
+      // Auto Ops-cash-sheet fallback for T-Reds after % — old chain only knew ctrlRows.
+      opsCashRows: days.map(d => ({ loc: GOOD, date: d, tRedAPct: t.tRedAPct * 0.5 })),
+      // Auto emailed Glimpse for park (field name trap: park -> glimpseRows.parkedPct) and
+      // labor (key trap: VR's `labor` -> metric-source.js's `laborPct`) — old chains only
+      // knew opsRows/laborRows for these.
+      glimpseRows: days.map(d => ({ loc: GOOD, date: d, parkedPct: t.tPark * 0.5, laborPct: t.tCrewLabor * 0.5 })),
+      // Auto qsr_fob $ amounts, derived into %'s — old chain only knew the manual fobRows %.
+      // loc intentionally zero-padded: qsrFobRows is the one source metric-source.js indexes
+      // under a normalized key precisely because its own loader emits it padded.
+      qsrFobRows: [{ loc: '000' + GOOD, date: recent(1), prodSalesAmt: 100000,
+        compWasteAmt: t.tCompWaste * 0.5 * 100000, rawWasteAmt: t.tRawWaste * 0.5 * 100000, statVarianceAmt: t.tStatLoss * 0.5 * 100000 }],
+    };
+    const res = computeVisitReadiness(ds);
+    const s = res.stores.find(x => x.loc === GOOD);
+    expect(s).toBeTruthy();
+    const drivers = s.audit.flatMap(a => a.drivers);
+    const byKey = k => drivers.find(d => d.key === k);
+
+    expect(byKey('oepe')?.source).toBe('qsrActSummaryRows');
+    expect(byKey('r2p')?.source).toBe('qsrActSummaryRows');
+    expect(byKey('tpph')?.source).toBe('qsrActSummaryRows');
+    expect(byKey('tRedA')?.source).toBe('opsCashRows');
+    expect(byKey('park')?.source).toBe('glimpseRows');
+    expect(byKey('park')?.field).toBe('parkedPct');       // field-name trap
+    expect(byKey('labor')?.source).toBe('glimpseRows');    // key-name trap (labor -> laborPct)
+    expect(byKey('comp')?.source).toBe('derived');          // key-name trap (comp -> compWaste)
+    expect(byKey('raw')?.source).toBe('derived');
+    const statVar = s.fsDrivers.find(d => d.key === 'statVar');
+    expect(statVar?.source).toBe('derived');
+
+    // None of these fell into "not measured" — the whole point of the migration.
+    const notMeasuredKeys = s.notMeasured.map(m => m.key);
+    for (const k of ['oepe', 'r2p', 'tpph', 'tRedA', 'park', 'labor', 'comp', 'raw']) {
+      expect(notMeasuredKeys).not.toContain(k);
+    }
+  });
+
+  it('a genuine 0 from an auto source (park) is not silently discarded as missing data', () => {
+    // #150/#178's zero-discarding bug class, reproduced at the msValueForLoc layer this
+    // dispatch added: a store that legitimately never parks cars (0%) must still score,
+    // not fall through to "not measured" because 0 was mistaken for "no value".
+    const t = DEFAULT_TARGETS[GOOD];
+    const days = [recent(1), recent(3), recent(6)];
+    const ds = { glimpseRows: days.map(d => ({ loc: GOOD, date: d, parkedPct: 0 })) };
+    const res = computeVisitReadiness(ds);
+    const s = res.stores.find(x => x.loc === GOOD);
+    const park = s.audit.flatMap(a => a.drivers).find(d => d.key === 'park');
+    expect(park).toBeTruthy();
+    expect(park.actual).toBe(0);
+    expect(park.source).toBe('glimpseRows');
+    expect(s.notMeasured.map(m => m.key)).not.toContain('park');
+  });
+
+  it('a store with no DAR/cloud coverage still falls back to the manual opsRows chain, and still reports it as manual', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const days = [recent(1), recent(3), recent(6)];
+    // No glimpseRows, no qsrActSummaryRows, no opsCashRows, no qsrFobRows — the auto tiers
+    // are entirely absent for this store, exactly like a store the cloud pulls haven't
+    // covered yet. Only the manual Ops Report upload has data.
+    const ds = { opsRows: days.map(d => ({ loc: GOOD, date: d, oepe: t.tOepe * 0.85, r2p: t.tR2p * 0.85, park: t.tPark * 0.5 })) };
+    const res = computeVisitReadiness(ds);
+    const s = res.stores.find(x => x.loc === GOOD);
+    const drivers = s.audit.flatMap(a => a.drivers);
+    for (const k of ['oepe', 'r2p', 'park']) {
+      const d = drivers.find(x => x.key === k);
+      expect(d?.source).toBe('opsRows');
+      expect(srcMeta(d.source).feed).toBe('manual');
+    }
+  });
+
+  it('the "not measured" reason for a migrated metric names the LIVE metric-source.js chain, not a stale local one', () => {
+    // No data anywhere for GOOD -> oepe should resolve to 0 sources. The reason string
+    // must list metric-source.js's actual chain (which includes qsrActSummaryRows, a
+    // source the pre-dispatch local `srcs` array never knew about) rather than the
+    // deleted local array — otherwise the message itself re-drifts stale exactly like the
+    // bug this dispatch closes.
+    // smgFullscale keeps the store from being dropped entirely (wSum===0 skips a store with
+    // NO data anywhere) while leaving every speed source absent, so oepe itself has nothing.
+    const ds = { smgFullscale: [{ loc: GOOD, year: 2026, month: 6, accuracyB2B: 98 }] };
+    const res = computeVisitReadiness(ds, { locs: [GOOD] });
+    const s = res.stores.find(x => x.loc === GOOD);
+    const missing = (s?.notMeasured || []).find(m => m.key === 'oepe');
+    expect(missing).toBeTruthy();
+    expect(missing.reason).toContain('qsrActSummaryRows');
+  });
+
+  // ── Report rendering — the standing revert rule requires exercising the ACTUAL consumer,
+  // not just the engine, so a revert of either half (the engine wiring OR the report's own
+  // read of it) fails this test.
+  it('report: HTML and CSV surface a migrated driver\'s real auto source, not a generic label', () => {
+    const t = DEFAULT_TARGETS[GOOD];
+    const days = [recent(1), recent(3), recent(6)];
+    const ds = { qsrActSummaryRows: days.map(d => ({ loc: GOOD, date: d, r2p: t.tR2p * 0.85 })) };
+    const res = computeVisitReadiness(ds, { locs: [GOOD] });
+    const html = readinessReportHTML(res, { scopeLabel: 'All stores', detail: 'full' });
+    const csv = readinessAuditCSV(res, { scopeLabel: 'All stores' });
+    expect(html).toContain('Daily Activity Report');   // srcMeta(qsrActSummaryRows).report
+    expect(csv).toContain('qsrActSummaryRows.r2p');
+  });
+
   it('calibration: positive rank correlation when predictions track actual visit scores', () => {
     // Three stores whose actual visit scores mirror their (good→bad) predicted order.
     const A = '3708', B = '5183', C = Object.keys(DEFAULT_TARGETS).filter(l => /^\d+$/.test(l) && l !== A && l !== B)[0];
