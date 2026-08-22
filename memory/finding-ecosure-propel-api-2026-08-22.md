@@ -185,10 +185,22 @@ a live counterexample, not just a documentary argument.**
    #65 runner), so the rule's requirement to name one is satisfied. Revisit if the capture burden
    grows or if Propel ever exposes a service account.
 
-3. **Akamai bot protection** (`_abck`, `bm_sz`) sits on top of the SSO problem. A plain server-side
-   fetch will likely be challenged. **Measure before designing** — this session has already
-   produced two wrong confident conclusions about an auth mechanism by reasoning instead of
-   testing.
+3. **Akamai bot protection** (`_abck`, `bm_sz`) sits on top of the SSO problem — but it is a
+   **smaller risk than it first looks, for the design we chose.**
+
+   Observed response headers on a successful call (2026-08-22): `Akamai-Grn`,
+   `Server-Timing: ak_p`, `cdn-cache MISS`, `origin dur=51`, clean `200 application/json`.
+   **Akamai is in front of these hosts and did not challenge the request.** A real Chromium with a
+   real logged-in profile is precisely the traffic Bot Manager is built to let through; the risk
+   was always about *headless or scripted* fetch, which MFA has already ruled out anyway.
+
+   **So do not over-engineer for Akamai.** Build the persistent-profile path, and treat a challenge
+   as a thing to handle *if observed* rather than designed around in advance. **Measure before
+   designing** — this session has already produced two wrong confident conclusions about an auth
+   mechanism by reasoning instead of testing.
+
+   Minor: responses are `Content-Encoding: br` (brotli). Node's `fetch` and Playwright both handle
+   it; a hand-rolled client might not.
 
    ✅ **Cadence makes this tractable.** EcoSure visits are infrequent — a handful per store per
    year, not daily. A weekly or even monthly pull suffices, so a semi-manual path that would be
