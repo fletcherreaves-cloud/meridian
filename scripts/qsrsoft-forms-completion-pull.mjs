@@ -98,23 +98,13 @@ const HDRS = t => ({
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
 });
 
-// Dispatch #71 follow-up: the escalation-to-Playwright fix is confirmed working (live run), and
-// a live run WITH a confirmed-valid, freshly-captured Playwright ID token STILL returned 0 rows
-// for the known-good window -- refuting the "silent 200+[] on a denied token" hypothesis this
-// dispatch started from (a genuinely denied/wrong token cannot explain a zero from a session that
-// just logged in and got a real token). Per the brief's own fallback instruction ("still zero ->
-// the next measurement is the raw response body and status, not another guess"), log the raw body
-// whenever a 2xx response parses to zero rows, so the next run shows what the server actually said
-// instead of another blind theory.
-function logIfEmpty(label, status, rawText) {
-  if (status >= 200 && status < 300) {
-    let n = null;
-    try { const p = JSON.parse(rawText); n = Array.isArray(p) ? p.length : (Array.isArray(p?.result) ? p.result.length : null); } catch { /* non-JSON body -- raw text below is the useful signal */ }
-    if (n === 0 || n === null) console.log(`[forms-completion] ${label} raw ${status} body (first 500 chars): ${String(rawText).slice(0, 500)}`);
-  }
-}
-
-async function fetchWindow(token, startDay, endDay, evalPage) {
+// Dispatch #71 -- the real root cause, found by logging the raw response body once every other
+// theory (silent-auth-denial, wrong token source) was measured and refuted: the server wraps rows
+// under `results` (plural), not `result`. `completionDetail` returns real, populated data on every
+// chunk -- `{"results":[{...MISSED row...}, ...]}` -- but `parsed?.result || []` reads a key that
+// never existed, so every response silently parsed to an empty array regardless of auth, token
+// source, or window correctness. None of those were ever the bug.
+export async function fetchWindow(token, startDay, endDay, evalPage) {
   const { startDate, endDate } = apiWindowForDays(startDay, endDay);
   const url = `${BASE}/api/forms/reports/completionDetail?orgId=${ORG_ID}`;
   const body = JSON.stringify({ startDate, endDate, locations: LOCATIONS });
@@ -126,25 +116,18 @@ async function fetchWindow(token, startDay, endDay, evalPage) {
           headers: { 'X-Auth-Token': token, 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/' },
           body,
         });
-        const text = await r.text();
-        if (!r.ok) return { error: `HTTP ${r.status}`, status: r.status, text };
-        return { status: r.status, text };
+        if (!r.ok) return { error: `HTTP ${r.status}` };
+        return { rows: await r.json() };
       } catch (e) { return { error: e.message }; }
     }, { url, body, token });
-    if (res.error && res.status == null) throw new Error(res.error);
     if (res.error) throw new Error(res.error);
-    logIfEmpty(`${startDay}..${endDay} (Playwright)`, res.status, res.text);
-    let parsed;
-    try { parsed = JSON.parse(res.text); } catch { parsed = null; }
-    return Array.isArray(parsed) ? parsed : (parsed?.result || []);
+    return Array.isArray(res.rows) ? res.rows : (res.rows?.results || res.rows?.result || []);
   }
   const resp = await fetch(url, { method: 'POST', headers: HDRS(token), body });
   if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
-  const rawText = await resp.text();
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${rawText.slice(0, 200)}`);
-  logIfEmpty(`${startDay}..${endDay} (direct)`, resp.status, rawText);
-  const parsed = JSON.parse(rawText);
-  return Array.isArray(parsed) ? parsed : (parsed?.result || []);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  const parsed = await resp.json();
+  return Array.isArray(parsed) ? parsed : (parsed?.results || parsed?.result || []);
 }
 
 async function upsertRows(rawRows) {
