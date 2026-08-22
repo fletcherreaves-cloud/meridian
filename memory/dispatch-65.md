@@ -92,7 +92,7 @@ will tell anyone the runner is down.
 - **✅ Wi-Fi watchdog, since wired is out.** A `launchd` job every few minutes turns "offline until
   someone notices" into "offline for five minutes":
   ```bash
-  IF=en1   # ⚠️ VERIFY FIRST — see below
+  IF=en1   # ✅ CONFIRMED 2026-08-22 — see below
   ping -c1 -t5 1.1.1.1 >/dev/null 2>&1 || {
     networksetup -setairportpower "$IF" off; sleep 5; networksetup -setairportpower "$IF" on; }
   ```
@@ -100,8 +100,11 @@ will tell anyone the runner is down.
   the MAGICWAKE kernel assertion on **`en1`** (`owner=IOSkywalkNetworkBSDClient`) — on a Mac mini
   with an unused Ethernet port, `en0` is the wired interface and `en1` is Wi-Fi. A watchdog
   hardcoded to `en0` would cycle a dead Ethernet port while Wi-Fi stayed broken, and would look
-  like it was working. **Confirm with `networksetup -listallhardwareports`** and read the Device
-  name under the `Wi-Fi` hardware port; do not trust either guess.
+  like it was working. **✅ Confirmed 2026-08-22** by `networksetup -listallhardwareports`:
+  `Hardware Port: Wi-Fi → Device: en1`. Use `en1`; the engineer need not re-check.
+  Also visible there: `Hardware Port: Ethernet → Device: en0`. The Mac mini **has** a physical
+  Ethernet port, it is simply not cabled today. If a cable run ever becomes practical, `en0` is
+  ready and wired remains the best fix for the Wi-Fi drop.
   Pair with a **static DHCP reservation** so it reclaims the same address.
 - **Install the runner as a SERVICE, not a terminal session.** From the runner directory:
   `./svc.sh install && ./svc.sh start`. That registers a `launchd` job so it survives logout and
