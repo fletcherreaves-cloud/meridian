@@ -19,6 +19,21 @@
 // 21-day windows (matching lifelenz-pull.mjs's own chunking convention) so a large backfill
 // doesn't risk one oversized/timing-out response, not because the API requires it.
 //
+// 🔴 registerType is a REQUEST FILTER, not a response field (dispatch #59). The Register Audit
+// offers Cashier · Manager · Preparer; this pull previously hardcoded 'cashier', so audit_rows
+// held one third of the report. Collecting all three means calling this SAME endpoint once per
+// type and concatenating -- the API never tells you which type a row belongs to, since you asked
+// for exactly one type per call. mapRow() below takes registerType as an argument for this
+// reason, not because it's ever present on `r`.
+//
+// This is a GRAIN CHANGE on audit_rows, not just a wider fetch. One employee can work a Cashier
+// drawer and a Manager drawer on the SAME day; the table's PK was (loc, date, emp), so the second
+// row would silently overwrite the first. The PK is now (loc, date, emp, register_type) --
+// supabase/schema-audit-rows-register-type.sql, backfilled 'cashier' not null default so no
+// existing row is ambiguous. See memory/dispatch-59.md for the full consumer audit (two readers
+// assumed the old grain: src/utils/register-audit.js's days/cashOSDays/avgCashOS, and
+// src/engine/security-baselines.js's personalBaseline -- both fixed in the same dispatch).
+//
 // mapRow() field mapping — resolved against src/utils/register-audit.js's analyzeRegisterAudit
 // (the actual consumer) and src/parsers/index.js:974's parseRegisterAudit (the manual-upload
 // path's own column semantics), not fabricated:
@@ -136,6 +151,7 @@ async function saveAuditRows(rows) {
   const tokenMap = await tokenizeRows(supabase, rows, 'emp');
   const upsert = rows.map(r => ({
     loc: r.loc, date: r.date, emp: r.emp,
+    register_type: r.registerType || 'cashier',
     emp_id:   r.empId ?? null,
     emp_token: tokenMap.get((r.emp || '').trim()) ?? null,
     drawer_sales:    r.drawerSales    ?? null,
@@ -171,7 +187,7 @@ async function saveAuditRows(rows) {
   const CHUNK = 500;
   let saved = 0; const errors = [];
   for (let i = 0; i < upsert.length; i += CHUNK) {
-    const { error } = await supabase.from('audit_rows').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date,emp' });
+    const { error } = await supabase.from('audit_rows').upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,date,emp,register_type' });
     if (error) { console.warn('[audit_rows] save error:', error); errors.push(error.message); }
     else saved += Math.min(CHUNK, upsert.length - i);
   }
@@ -207,7 +223,11 @@ async function getDateRange() {
 
 // Response row (dispatch #34's captured field names) → the shape saveAuditRows() above expects.
 // Exported for unit testing (no fetch/supabase dependency in this function itself).
-export function mapRow(r) {
+// `registerType` (dispatch #59) is NOT read off `r` -- the API returns no such field, since it's
+// the REQUEST filter that produced this exact response (see the header comment). The caller
+// supplies which of the three calls this row came from; defaults to 'cashier' so a caller that
+// doesn't pass it (every pre-#59 test and call site) keeps its exact prior behaviour.
+export function mapRow(r, registerType = 'cashier') {
   const sales   = num(r.allNetSales);
   const trans   = num(r.transactions);
   const tRedB   = num(r.tRedBeforeQty), tRedBAmt = num(r.tRedBeforeAmt);
@@ -218,6 +238,7 @@ export function mapRow(r) {
     loc:  nsn7(r.nsn),
     date: r.busnDt,
     emp:  (r.empName || '').trim(),
+    registerType,
     empId: (r.empID == null ? '' : String(r.empID).trim()) || null,
     drawerSales:    sales,
     avgCheck:       ratio(sales, trans),
@@ -289,10 +310,12 @@ export function mapRow(r) {
 // the call, run 32397005570 saw "(none)") and of the useless Referer.
 const REPORT_PAGE = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit';
 const REFERER = REPORT_PAGE;
-const buildUrl = (startDate, endDate) => `${BASE}/reports/mcd/controlsCash/regAudit?` + new URLSearchParams({
+// The Register Audit offers all three; dispatch #59 collects all three (was cashier-only).
+export const REGISTER_TYPES = ['cashier', 'manager', 'preparer'];
+export const buildUrl = (startDate, endDate, registerType = 'cashier') => `${BASE}/reports/mcd/controlsCash/regAudit?` + new URLSearchParams({
   nsn: STORE_NSNS.join(','), orgId: ORG_ID, enterpriseName: 'McDonalds',
   startDate, endDate, dsd: 'd', weekStart: '3', nsd: 'd',
-  resultType: 'byDateEmployee', registerType: 'cashier',
+  resultType: 'byDateEmployee', registerType,
 });
 // Mirrors the captured working request. Deliberately sends NO X-Auth-Token: the browser's own
 // successful call sends none, and sending an unexpected credential is the most likely cause of
@@ -402,48 +425,54 @@ async function runAll(token, chunks, evalPage, tracker, coveredStores) {
   // rows) -- the field-name guess was wrong, this is the measurement that guess stood in for.
   let loggedShapeThisRun = false;
   for (const chunk of chunks) {
-    const unit = `${chunk.start}..${chunk.end}`;
-    try {
-      const tok = await resolveToken(token, false);
-      let rows;
+    // Dispatch #59: one chunk now means three calls, one per register type -- the endpoint
+    // filters server-side, so there is no way to get Cashier+Manager+Preparer in one response.
+    // Nested inside the chunk loop (not a separate outer pass) so a Manager-call auth failure on
+    // one chunk doesn't require a second full pass over every chunk to retry it.
+    for (const registerType of REGISTER_TYPES) {
+      const unit = `${chunk.start}..${chunk.end}:${registerType}`;
       try {
-        rows = await fetchChunk(buildUrl(chunk.start, chunk.end), tok, evalPage);
-      } catch (e) {
-        if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
-          console.log(`[audit-pull] ${unit}: cached token rejected — forcing a re-mint and retrying once`);
-          const freshTok = await resolveToken(token, true);
-          rows = await fetchChunk(buildUrl(chunk.start, chunk.end), freshTok, evalPage);
-        } else throw e;
-      }
-      if (!rows.length) { console.log(`[audit-pull] ${unit}: 0 rows returned`); continue; }
-      if (DEBUG && !loggedShapeThisRun && rows[0] && typeof rows[0] === 'object') {
-        console.log(`[audit-pull] DEBUG response row shape (key names only): ${Object.keys(rows[0]).join(',')}`);
-        loggedShapeThisRun = true;
-      }
-      const mapped = rows.map(mapRow).filter(r => r.emp && r.loc && r.loc !== '0000000' && r.date);
-      const dropped = rows.length - mapped.length;
-      // UNCONDITIONAL, not DEBUG-gated. A wrong field name in mapRow() drops every row and prints
-      // "N rows -> 0 saved", which reads exactly like "the report is empty" -- the same silent-zero
-      // class as the envelope bug above, one layer further in. If most rows drop, print the first
-      // row's KEY NAMES so the mismatch is diagnosable without another run. Key names only: this
-      // payload is employee-attributed and every value is PII.
-      if (dropped) {
-        console.log(`[audit-pull] ${unit}: ${dropped}/${rows.length} row(s) dropped (missing emp/loc/date)`);
-        if (mapped.length === 0 && rows[0] && typeof rows[0] === 'object') {
-          console.error(`[audit-pull] ${unit}: ALL rows dropped -- first row's field names: ${Object.keys(rows[0]).join(',')}`);
+        const tok = await resolveToken(token, false);
+        let rows;
+        try {
+          rows = await fetchChunk(buildUrl(chunk.start, chunk.end, registerType), tok, evalPage);
+        } catch (e) {
+          if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+            console.log(`[audit-pull] ${unit}: cached token rejected — forcing a re-mint and retrying once`);
+            const freshTok = await resolveToken(token, true);
+            rows = await fetchChunk(buildUrl(chunk.start, chunk.end, registerType), freshTok, evalPage);
+          } else throw e;
         }
+        if (!rows.length) { console.log(`[audit-pull] ${unit}: 0 rows returned`); continue; }
+        if (DEBUG && !loggedShapeThisRun && rows[0] && typeof rows[0] === 'object') {
+          console.log(`[audit-pull] DEBUG response row shape (key names only): ${Object.keys(rows[0]).join(',')}`);
+          loggedShapeThisRun = true;
+        }
+        const mapped = rows.map(r => mapRow(r, registerType)).filter(r => r.emp && r.loc && r.loc !== '0000000' && r.date);
+        const dropped = rows.length - mapped.length;
+        // UNCONDITIONAL, not DEBUG-gated. A wrong field name in mapRow() drops every row and prints
+        // "N rows -> 0 saved", which reads exactly like "the report is empty" -- the same silent-zero
+        // class as the envelope bug above, one layer further in. If most rows drop, print the first
+        // row's KEY NAMES so the mismatch is diagnosable without another run. Key names only: this
+        // payload is employee-attributed and every value is PII.
+        if (dropped) {
+          console.log(`[audit-pull] ${unit}: ${dropped}/${rows.length} row(s) dropped (missing emp/loc/date)`);
+          if (mapped.length === 0 && rows[0] && typeof rows[0] === 'object') {
+            console.error(`[audit-pull] ${unit}: ALL rows dropped -- first row's field names: ${Object.keys(rows[0]).join(',')}`);
+          }
+        }
+        const { saved, errors } = await saveAuditRows(mapped);
+        if (errors.length) throw new Error(errors[0]);
+        total += saved;
+        for (const r of mapped) coveredStores.add(r.loc);
+        console.log(`[audit-pull] ${unit}: ${rows.length} rows → ${saved} saved`);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+        console.error(`[audit-pull] ${unit} ERROR: ${e.message}`);
+        tracker.fail(unit, e.message);
       }
-      const { saved, errors } = await saveAuditRows(mapped);
-      if (errors.length) throw new Error(errors[0]);
-      total += saved;
-      for (const r of mapped) coveredStores.add(r.loc);
-      console.log(`[audit-pull] ${unit}: ${rows.length} rows → ${saved} saved`);
-    } catch (e) {
-      if (String(e.message).startsWith('AUTH_FAILED')) throw e;
-      console.error(`[audit-pull] ${unit} ERROR: ${e.message}`);
-      tracker.fail(unit, e.message);
+      await new Promise(r => setTimeout(r, 150));
     }
-    await new Promise(r => setTimeout(r, 150));
   }
   return total;
 }
@@ -587,11 +616,14 @@ async function main() {
   if (fresh.message) (fresh.status === 'error' ? console.error : console.warn)(fresh.message);
 
   const chunks = chunkDateRange(startDate, endDate, 21);
-  console.log(`[audit-pull] ${chunks.length} chunk(s), ${STORE_LOCS.length} store(s): ${startDate} → ${endDate}`);
+  console.log(`[audit-pull] ${chunks.length} chunk(s) × ${REGISTER_TYPES.length} register type(s), ${STORE_LOCS.length} store(s): ${startDate} → ${endDate}`);
 
   const tracker = makeOutcomeTracker('audit-pull');
   const coveredStores = new Set();
-  const requestedUnits = chunks.map(c => `${c.start}..${c.end}`);
+  // One requested unit per (chunk, registerType) -- must match runAll()'s own `unit` strings
+  // exactly, or tracker.finalize()'s failRate = failed/requested denominator goes wrong the
+  // moment one register type's calls fail (dispatch #59: 3x the calls per chunk, not 1x).
+  const requestedUnits = chunks.flatMap(c => REGISTER_TYPES.map(t => `${c.start}..${c.end}:${t}`));
 
   let totalSaved = 0;
   try {

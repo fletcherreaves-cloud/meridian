@@ -65,20 +65,27 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #59 — the role dimension the security rules already need](dispatch-59.md)** —
-  **NEWEST.** Not a data-collection chore: **CASH-004 (`discount-abuse`, plan §2.1 "Unauthorized
-  discount / manager-meal abuse") already ships with `opportunity_factor` FALSE and a comment saying
-  "no role/authority column exists in `audit_rows` to check against yet".** This dispatch is that
-  column. `registerType` is hardcoded to `cashier`, so `audit_rows` holds one third of the Register
-  Audit (Cashier · Manager · Preparer). 🔴 **The work is the GRAIN CHANGE, not the pull:** PK is
-  `(loc, date, emp)`, so one person appearing as both Cashier and Manager in a day **silently
-  overwrites today** — it must become `(loc, date, emp, register_type)`, a migration on a live table
-  with **30+ referencing files**. Start by reading what breaks, not by editing the pull. Four things
-  to settle: backfill existing rows to `'cashier'`; decide **per consumer** whether an aggregate
-  wants the sum or cashier-only (highest-risk, where a silent wrong number gets in); subject grouping
-  in the panel; and **`security-baselines.js` — a baseline that silently changes meaning is worse
-  than one that breaks.** Meal rules are OUT until #58 has data. Bar: prove the PK collision with a
-  failing test first; the migration must be a behavioural no-op for every current reader.
+- **✅ SHIPPED (2026-08-22, v5.103): [Dispatch #59 — the role dimension the security rules already need](dispatch-59.md)** —
+  **NEWEST.** `audit_rows`' PK moved from `(loc, date, emp)` to `(loc, date, emp, register_type)`
+  (`schema-audit-rows-register-type.sql`, live-table migration, backfilled `'cashier'` via the
+  column default) so a Cashier + Manager row for the same employee-day no longer silently
+  overwrite each other. `qsrsoft-register-audit-pull.mjs` now calls the endpoint once per
+  register type (Cashier · Manager · Preparer) and concatenates, instead of hardcoding cashier —
+  both writers (the pull script and `src/lib/supabase.js`'s twin) moved together. **Consumer
+  audit found exactly the two sites the addendum predicted**: `src/utils/register-audit.js`'s
+  `days`/`cashOSDays`/`avgCashOS` were counting ROWS as a DAYS proxy (now a `Set` of distinct
+  calendar dates — dollar/count sums were already correct) and `security-baselines.js`'s
+  `personalBaseline()` (one rate per row → now collapsed to one rate per DAY, the decision
+  explicitly pinned: preserves existing meaning exactly on cashier-only data rather than silently
+  redefining every baseline). Everywhere else that sums `audit_rows` across rows — including
+  `security-rules-run.mjs`'s own aggregation — needed **no change**, confirmed empirically through
+  the real `computeFindingsForRule()` call site, not just by reading. **CASH-004's
+  `opportunity_factor` flips to TRUE** (`schema-security-rules-cash004-authority.sql`) — examined,
+  not assumed: `security-rules.js` has zero runtime readers for that flag today, so this is a
+  metadata correction matching the column's now-met precondition, not a behaviour change. Meal
+  rules stay explicitly OUT (dispatch #58's pull is still blocked on auth — untestable against an
+  empty source). Three fixes were each demonstrated to FAIL on a revert of their own code before
+  being trusted, per the standing rule. 2005/2005 tests (16 new), build clean.
 - **✅ SHIPPED (2026-08-22, v5.102): [Dispatch #57 — per-person employee tenure, storage half](dispatch-57.md)** —
   **NEWEST.** Owner-approved reversal of a deliberate decision: `qsrsoft-employee-roster-pull.mjs`
   used to discard every individual-employee field it fetched, persisting ONLY aggregate counts

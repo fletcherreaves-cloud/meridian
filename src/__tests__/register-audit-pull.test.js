@@ -8,7 +8,7 @@
 // left ambiguous is covered here against realistic fixture rows shaped like the documented
 // real response, not against actual production data.
 import { describe, it, expect, vi } from 'vitest';
-import { mapRow, extractRows } from '../../scripts/qsrsoft-register-audit-pull.mjs';
+import { mapRow, extractRows, buildUrl, REGISTER_TYPES } from '../../scripts/qsrsoft-register-audit-pull.mjs';
 
 // Shaped like dispatch #34's captured field list (memory/dispatch-34-phase0a-findings.md Part 1).
 const SAMPLE_ROW = {
@@ -142,6 +142,72 @@ describe('mapRow() — field-by-field against the confirmed response shape', () 
   it('pads a 4-digit nsn the same way as a 5-digit one', () => {
     expect(mapRow({ ...SAMPLE_ROW, nsn: 6178 }).loc).toBe('0006178');
     expect(mapRow({ ...SAMPLE_ROW, nsn: 43701 }).loc).toBe('0043701');
+  });
+
+  // Dispatch #59 -- registerType is a REQUEST FILTER, never a response field (the API returns no
+  // such key; see SAMPLE_ROW above, which has none). mapRow() takes it as an argument for this
+  // reason, defaulting to 'cashier' so every test above (and every pre-#59 call site) keeps its
+  // exact prior behaviour unchanged.
+  describe('registerType (dispatch #59) -- argument, not a response field', () => {
+    it('defaults to "cashier" when the caller passes nothing, matching every pre-#59 call site', () => {
+      expect(mapRow(SAMPLE_ROW).registerType).toBe('cashier');
+    });
+    it('is set from the caller-supplied argument, independent of anything on the raw row', () => {
+      expect(mapRow(SAMPLE_ROW, 'manager').registerType).toBe('manager');
+      expect(mapRow(SAMPLE_ROW, 'preparer').registerType).toBe('preparer');
+    });
+    it('a registerType field on the raw row itself (if the API ever added one) would be ignored -- the argument is authoritative', () => {
+      expect(mapRow({ ...SAMPLE_ROW, registerType: 'bogus' }, 'manager').registerType).toBe('manager');
+    });
+  });
+});
+
+describe('buildUrl (dispatch #59) -- registerType is a query parameter', () => {
+  it('defaults to cashier, matching mapRow\'s own default', () => {
+    const url = new URL(buildUrl('2026-08-01', '2026-08-07'));
+    expect(url.searchParams.get('registerType')).toBe('cashier');
+  });
+  it('carries whichever registerType is passed', () => {
+    for (const t of REGISTER_TYPES) {
+      const url = new URL(buildUrl('2026-08-01', '2026-08-07', t));
+      expect(url.searchParams.get('registerType')).toBe(t);
+    }
+  });
+  it('REGISTER_TYPES is exactly the three the Register Audit report offers', () => {
+    expect(REGISTER_TYPES).toEqual(['cashier', 'manager', 'preparer']);
+  });
+});
+
+// Dispatch #59's own verification bar: "Prove the collision first. Write the failing case -- same
+// (loc, date, emp) with two register types -- and show it overwrites on today's PK and doesn't on
+// the new one." Simulated here as a plain upsert-semantics reducer (last-row-wins per key), since
+// this sandbox has no live Supabase to exercise a real upsert against -- this tests the KEY SHAPE
+// the migration changes, which is exactly what an onConflict target controls.
+describe('the PK collision this dispatch\'s migration fixes (dispatch #59)', () => {
+  // Mirrors what a real Postgres `upsert(rows, {onConflict: <cols>})` does: later rows with an
+  // identical key silently replace earlier ones with the same key.
+  function simulateUpsert(rows, keyFn) {
+    const byKey = new Map();
+    for (const r of rows) byKey.set(keyFn(r), r);
+    return [...byKey.values()];
+  }
+
+  it('on the OLD (loc,date,emp) key, a Cashier row and a Manager row for the same employee-day collide -- one is silently lost', () => {
+    const cashierRow = mapRow(SAMPLE_ROW, 'cashier');
+    const managerRow = mapRow(SAMPLE_ROW, 'manager'); // SAME loc/date/emp as SAMPLE_ROW -- only registerType differs
+    const oldKey = r => `${r.loc}|${r.date}|${r.emp}`;
+    const result = simulateUpsert([cashierRow, managerRow], oldKey);
+    expect(result).toHaveLength(1); // the collision -- one row silently overwrote the other
+    expect(result[0].registerType).toBe('manager'); // last-write-wins: cashier's row is gone
+  });
+
+  it('on the NEW (loc,date,emp,register_type) key, the same two rows do NOT collide -- both survive', () => {
+    const cashierRow = mapRow(SAMPLE_ROW, 'cashier');
+    const managerRow = mapRow(SAMPLE_ROW, 'manager');
+    const newKey = r => `${r.loc}|${r.date}|${r.emp}|${r.registerType}`;
+    const result = simulateUpsert([cashierRow, managerRow], newKey);
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.registerType).sort()).toEqual(['cashier', 'manager']);
   });
 });
 

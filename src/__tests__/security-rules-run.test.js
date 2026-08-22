@@ -106,6 +106,37 @@ describe('computeFindingsForRule() — RULE_A (personal baseline, cash O/S)', ()
   });
 });
 
+// Dispatch #59's own consumer audit concluded computeFindingsForRule() needs NO code change --
+// subjectRows already includes every register-type row for an (loc,empToken) pair, and
+// evaluateRule() sums numerator/denominator across all of them, which is the CORRECT behaviour
+// (separate drawers genuinely sum). This is that conclusion, reproduced empirically through the
+// real call site rather than trusted from reading -- per CLAUDE.md's "a reviewer's root cause is
+// a hypothesis, reproduce it" rule. Adds a Manager-register row for Alice on her EXISTING
+// 2026-08-01 date, so this also exercises personalBaseline()'s collapse fix end-to-end: the new
+// row must combine with her Cashier row into ONE day's rate, not add a third observation.
+describe('computeFindingsForRule() — register_type rows sum correctly through the real call site (dispatch #59)', () => {
+  const ALICE_MANAGER_ROW = { loc: '0000001', emp: 'Alice', empToken: 'tok-alice', registerType: 'manager', date: '2026-08-01', drawerSales: 1000, drawerGC: 100, cashOSDollar: -10, posOverCnt: 0 };
+  const ROWS_WITH_MANAGER = [...ROWS, ALICE_MANAGER_ROW];
+
+  it("value sums cashOSDollar/drawerSales across BOTH register types: (6+10+2)/(1000+1000+1000)*1000 = 6, not the cashier-only 4", () => {
+    const f = computeFindingsForRule(RULE_A, ROWS_WITH_MANAGER, WIN).find(x => x.empToken === 'tok-alice');
+    expect(f.value).toBeCloseTo(6, 6);
+  });
+
+  it("personalBaseline collapses the two 2026-08-01 rows (cashier -6/1000, manager -10/1000) into ONE day's combined rate (16/2000*1000=8), so n stays 2 (two DAYS: 08-01 combined, 08-02), not 3 (three rows)", () => {
+    const f = computeFindingsForRule(RULE_A, ROWS_WITH_MANAGER, WIN).find(x => x.empToken === 'tok-alice');
+    expect(f.baselineContext.n).toBe(2);
+    expect(f.baselineContext.mean).toBeCloseTo(5, 6);   // (8 + 2) / 2
+    expect(f.baselineContext.stdev).toBeCloseTo(3, 6);  // sqrt(((8-5)^2+(2-5)^2)/2) = sqrt(9) = 3
+  });
+
+  it("Bob (untouched by the new Manager row) is unaffected -- still value=6, pass=true", () => {
+    const f = computeFindingsForRule(RULE_A, ROWS_WITH_MANAGER, WIN).find(x => x.empToken === 'tok-bob');
+    expect(f.value).toBeCloseTo(6, 6);
+    expect(f.pass).toBe(true);
+  });
+});
+
 describe('computeFindingsForRule() — RULE_B (peer baseline, POS overring)', () => {
   it("Alice's own value=15 (at the RULE_B threshold, exactly), pass=true", () => {
     const f = computeFindingsForRule(RULE_B, ROWS, WIN).find(x => x.empToken === 'tok-alice');

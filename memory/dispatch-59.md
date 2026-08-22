@@ -209,3 +209,63 @@ the test asserts it.
 - Cashier-only data must be **behaviourally identical** before and after, for every consumer.
 - `npm run build` clean, and **check `node -v` against `ci.yml`'s matrix** before trusting a local
   green (dispatch #60).
+
+## ✅ Shipped (2026-08-22, v5.103)
+
+**The migration.** New `supabase/schema-audit-rows-register-type.sql` — `add column if not
+exists register_type text not null default 'cashier'`, then unconditional `drop constraint if
+exists` + `add constraint` on the PK (Postgres has no `ADD CONSTRAINT IF NOT EXISTS` for a
+primary key, so drop-then-add is the idempotent shape, not a guarded `do $$` block). Also updated
+`schema.sql`'s own `CREATE TABLE` so a fresh install starts with the correct grain — that file
+doesn't itself migrate the live table (`create table if not exists` no-ops against one that
+already exists), the incremental file does that.
+
+**The pull.** `scripts/qsrsoft-register-audit-pull.mjs`: `REGISTER_TYPES = ['cashier', 'manager',
+'preparer']` (exported), `buildUrl(startDate, endDate, registerType='cashier')`,
+`mapRow(r, registerType='cashier')` (the API returns no such field — it's the request filter
+that produced the response, so the caller supplies it). `runAll()`'s chunk loop gained a nested
+register-type loop; `main()`'s `requestedUnits` now lists `(chunk, registerType)` pairs to match
+— missed on the first pass, then caught: `tracker.finalize()`'s `failRate = failed/requested`
+would have gone wrong (any single register-type's calls failing would report against the OLD
+1x-per-chunk denominator) if `requestedUnits` had stayed chunk-only while `runAll()`'s own `unit`
+strings became 3x-per-chunk. `src/lib/supabase.js`'s `saveAuditRows`/`loadAuditRows`/
+`loadAuditRowsWindow` all updated together (onConflict, select list, camelCase mapping).
+
+**The consumer audit — exactly the two sites the addendum predicted, no others.**
+`src/utils/register-audit.js`: `days`/`cashOSDays` now built from `Set`s of `dateKey(r.date)`
+(handles both the `Date`-object and raw-string wire shapes different loaders return), finalized
+once per employee after the accumulation loop. `src/engine/security-baselines.js`:
+`personalBaseline()`'s `perDay` now groups `subject` by `dateKeyOf(r.date)` first
+(`groupBy` — already existed, reused) and rates each day's combined rows, not each raw row. Both
+fixes are no-ops on cashier-only data (still 100% of history until the pull's next real run) —
+demonstrated, not assumed: each was reverted to its pre-fix form and the new tests were shown to
+fail, then restored and shown to pass again.
+
+**`computeFindingsForRule()` — verified safe empirically, not just by reading.** Added a test in
+`security-rules-run.test.js` that hands a real Manager-register row (same date as an existing
+Cashier row) through the actual call site: `value` correctly sums across both register types
+((6+10+2)/3000*1000=6, not the cashier-only 4), and `baselineContext.n` stays 2 (two collapsed
+days), not 3. `peerBaseline`/`storeBaseline`/`evaluateRule`'s own aggregation needed no change —
+confirmed by that same test, not asserted.
+
+**CASH-004.** New `supabase/schema-security-rules-cash004-authority.sql` flips
+`opportunity_factor` to `true` and rewrites the description. Grepped `security-rules.js` (the
+one interpreter, per its own header) before flipping: zero references to `rule.opportunity_factor`
+anywhere in the evaluator — it's a documentation column (`schema-security-rules.sql`'s own
+comment: "does this rule need an access/authority check to fire meaningfully"), not a runtime
+gate. So this is a metadata correction reflecting the now-met precondition, not a computed-value
+change — `logic_expression` and the summed-across-all-register-types population are untouched.
+
+**Not built, per the dispatch's own scope:** meal-signal rules on `employee_meal`/`manager_meal`
+(sequenced after #58's pull has data — #58 is still blocked on its own auth question), any new
+panel, pay surfacing.
+
+2005/2005 tests (16 new): `register-audit-pull.test.js` (registerType passthrough, `buildUrl`'s
+query param, and the PK-collision proof itself — a plain upsert-semantics simulator showing the
+old key collapses two rows to one and the new key keeps both); `register-audit-units.test.js`
+(two register-type rows on one date count as one day, not two; two distinct dates still count as
+two); `security-baselines.test.js` (the collapse decision, pinned against the real
+`personalBaseline()` call, plus the multi-type day's combined rate and the unaffected
+dollar-weighted `overall`); `security-rules-run.test.js` (the empirical "no change needed" proof
+above). Build clean, no client-bundle size change (all touched files are engine/pull-side, not
+imported by any lazy panel differently than before).

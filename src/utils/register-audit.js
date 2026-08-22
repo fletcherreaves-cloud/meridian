@@ -6,11 +6,21 @@ import { STORE_NAMES } from '../constants.js';
 // grouping key (never assigned onto the returned `e` object) and is never stored — a caller
 // that needs the real name calls reveal_employee_identity() with e.id (the token), deliberately
 // and logged. `.name` below is the STORE name (STORE_NAMES[r.loc]), not personnel data.
+// dateKey() -- a caller-agnostic string key for "which calendar day is this row." audit_rows
+// callers disagree on the wire type: loadAuditRows() hands back a Date object, loadAuditRowsWindow()
+// hands back the raw 'YYYY-MM-DD' string, and this file's own tests use both. Needed at all only
+// because of dispatch #59: register_type joined the row grain, so one employee can now have up to
+// three rows on ONE calendar day (Cashier/Manager/Preparer), and `days`/`cashOSDays` below count
+// DISTINCT DAYS, not rows -- summing dollar/count fields across those rows is still correct
+// (separate drawers genuinely sum), only the "how many days" proxy needed fixing.
+const dateKey = d => d instanceof Date ? d.toISOString().slice(0, 10) : String(d);
+
 function analyzeRegisterAudit(auditRows) {
   const byEmp={};
   for(const r of auditRows){
     const key=r.loc+'::'+r.emp;
-    if(!byEmp[key])byEmp[key]={empToken:null,loc:r.loc,name:STORE_NAMES[r.loc]||('Store '+r.loc),days:0,
+    if(!byEmp[key])byEmp[key]={empToken:null,loc:r.loc,name:STORE_NAMES[r.loc]||('Store '+r.loc),
+      _seenDays:new Set(),_cashOSSeenDays:new Set(),days:0,
       totalSales:0,totalGC:0,avgCheck:0,drawerOpens:0,cashOSTotal:0,cashOSDays:0,
       tRedACnt:0,tRedBCnt:0,tRedADollar:0,tRedBDollar:0,
       manualRef:0,posOver:0,posOverAmt:0,
@@ -18,9 +28,14 @@ function analyzeRegisterAudit(auditRows) {
       promoAmt:0,flags:[]};
     const e=byEmp[key];
     if(!e.empToken && r.empToken) e.empToken = r.empToken; // first non-null wins across this group's rows
-    e.days++;e.totalSales=Math.round((e.totalSales+r.drawerSales)*100)/100;e.totalGC+=r.drawerGC;
+    // `days` counts DISTINCT CALENDAR DAYS (a Set, not a per-row increment) -- dispatch #59: an
+    // employee working Cashier AND Manager on the same date must still count as ONE day worked,
+    // not two. Pre-#59 this was always one row per day, so the Set and the old e.days++ agree
+    // exactly on cashier-only data -- behaviourally identical, not just "close."
+    e._seenDays.add(dateKey(r.date));
+    e.totalSales=Math.round((e.totalSales+r.drawerSales)*100)/100;e.totalGC+=r.drawerGC;
     e.drawerOpens+=r.drawerOpens;e.cashOSTotal=Math.round((e.cashOSTotal+(r.cashOSDollar||0))*100)/100;
-    if(r.cashOSDollar!==0)e.cashOSDays++;
+    if(r.cashOSDollar!==0)e._cashOSSeenDays.add(dateKey(r.date));
     e.tRedACnt+=r.tRedACnt;e.tRedBCnt+=r.tRedBCnt;
     e.tRedADollar=Math.round((e.tRedADollar+(r.tRedADollar||0))*100)/100;
     e.tRedBDollar=Math.round((e.tRedBDollar+(r.tRedBDollar||0))*100)/100;
@@ -37,6 +52,9 @@ function analyzeRegisterAudit(auditRows) {
     e.promoAmt=Math.round((e.promoAmt+(r.promoAmt||0))*100)/100;
   }
   const results=Object.values(byEmp).map(e=>{
+    // Finalize days/cashOSDays from the Sets built above -- DISTINCT calendar days, not rows.
+    e.days=e._seenDays.size; e.cashOSDays=e._cashOSSeenDays.size;
+    delete e._seenDays; delete e._cashOSSeenDays;
     e.avgCheck       = e.totalGC>0 ? Math.round(e.totalSales/e.totalGC*100)/100 : 0;
     e.avgDrawerOpens = e.days>0 ? Math.round(e.drawerOpens/e.days*10)/10 : 0;
     e.avgCashOS      = e.cashOSDays>0 ? Math.round(e.cashOSTotal/e.cashOSDays*100)/100 : 0;

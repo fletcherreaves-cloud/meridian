@@ -41,14 +41,46 @@ describe('analyzeRegisterAudit — units contract', () => {
   });
 
   it('sums refund counts across days without drift', () => {
+    // Distinct dates (dispatch #59): `days` now counts DISTINCT CALENDAR DAYS, not rows -- two
+    // same-day rows for one employee (e.g. a Cashier row and a Manager row) must count as ONE
+    // day worked, not two. This test's own "2 days" intent needs two real, different dates to
+    // exercise that correctly; see the sibling multi-register-type test below for the case this
+    // guards against.
     const { employees: [e] } = analyzeRegisterAudit([
-      row({ refundCnt: 1, refundCashless: 10.25 }),
-      row({ refundCnt: 3, refundCashless: 5.75 }),
+      row({ date: '2026-08-01', refundCnt: 1, refundCashless: 10.25 }),
+      row({ date: '2026-08-02', refundCnt: 3, refundCashless: 5.75 }),
     ]);
 
     expect(e.refundCnt).toBe(4);
     expect(e.refundCashless).toBeCloseTo(16.0, 2);
     expect(e.avgRefundCnt).toBeCloseTo(2.0, 1);       // 4 refunds over 2 days
+  });
+
+  // Dispatch #59 -- the actual regression this dispatch fixes: an employee working two register
+  // types on the SAME date must count as one day, and cashOSDays/avgCashOS must follow the same
+  // rule. Written to FAIL on a revert (i.e. against the old `e.days++`-per-row code) per the
+  // standing "would this verification still pass if the change were reverted" rule.
+  it('two register-type rows on the SAME date count as ONE day, not two', () => {
+    const { employees: [e] } = analyzeRegisterAudit([
+      row({ date: '2026-08-01', registerType: 'cashier', drawerSales: 600, cashOSDollar: -3 }),
+      row({ date: '2026-08-01', registerType: 'manager', drawerSales: 400, cashOSDollar: -2 }),
+    ]);
+    expect(e.days).toBe(1);
+    expect(e.cashOSDays).toBe(1);
+    // Dollar sums are correct to keep adding across register types -- separate drawers genuinely
+    // sum -- only the day-count proxy needed fixing.
+    expect(e.totalSales).toBeCloseTo(1000, 2);
+    expect(e.cashOSTotal).toBeCloseTo(-5, 2);
+    expect(e.avgCashOS).toBeCloseTo(-5, 2);   // -5 total / 1 day, not / 2
+  });
+
+  it('the same employee across TWO distinct dates still counts two days, register type notwithstanding', () => {
+    const { employees: [e] } = analyzeRegisterAudit([
+      row({ date: '2026-08-01', registerType: 'cashier', cashOSDollar: -3 }),
+      row({ date: '2026-08-02', registerType: 'cashier', cashOSDollar: -2 }),
+    ]);
+    expect(e.days).toBe(2);
+    expect(e.cashOSDays).toBe(2);
   });
 
   it('every *Cnt field stays integral for integral inputs', () => {
