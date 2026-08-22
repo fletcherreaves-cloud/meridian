@@ -1,5 +1,14 @@
 name: QSRSoft Security Events Pull
 
+# TEMPORARY dispatch #70 test -- DO NOT MERGE with this comment/runs-on still in place.
+# dispatch-65.md's own CORRECTION #2 (same day it was written) disproved the network-origin
+# theory that justified the self-hosted runner: the discriminator is the TOKEN, not the source
+# IP (getFreshToken() 403s identically from the Mac mini AND from GitHub Actions). If Playwright
+# login also completes fine on a hosted runner, there is no remaining reason for this workflow to
+# require self-hosted at all. Running on ubuntu-latest here ONLY to measure that, per the "one
+# untested cell" dispatch-65.md's CORRECTION #2 named: an SPA-minted token, used from ANY origin,
+# against event_details.
+#
 # Dispatch #65. api.security.myqsrsoft.com's event_details endpoint refuses GitHub-hosted
 # runners by NETWORK ORIGIN, not credential (memory/dispatch-63.md's CORRECTION, memory/
 # dispatch-65.md) -- so this workflow, uniquely among this repo's scheduled pulls, runs on a
@@ -49,7 +58,7 @@ on:
 
 jobs:
   pull:
-    runs-on: [self-hosted, macOS, qsr-security]
+    runs-on: ubuntu-latest  # TEMPORARY dispatch #70 test -- see comment above, revert before merge
     timeout-minutes: 120
 
     steps:
