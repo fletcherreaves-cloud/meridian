@@ -75,9 +75,18 @@ performance gaps."* **Visits are not a random sample of the store's operating ho
 systematically target its worst window.** A model predicting *average* performance will therefore
 **over-predict** relative to what the visit finds, consistently rather than randomly.
 
-That is a **bias**, not variance. More pairs will not wash it out, and it may partly explain a
-direction-match near chance. Any recalibration must account for it; naively fitting weights against
-biased ground truth bakes the bias in.
+⚠️ **SOFTENED by the owner, 2026-08-22:** *"True or rules, but unfortunately corporate does not
+always follow this."* So the daypart is **not reliably** chosen for weakness — the stated rule is
+applied inconsistently.
+
+**That is worse for modelling, not better.** A reliable "always picks the weakest daypart" rule
+would be a *predictable bias* we could correct for. Inconsistent application is **unpredictable
+variance in the selection process itself** — uncorrectable, and it cannot be estimated without
+knowing which daypart each visit actually used.
+
+**Which makes capturing the visit's actual daypart and channel the robust move regardless.** If
+each pair records what was visited, we compare like-for-like and the selection rule stops
+mattering. Without it, we are averaging over an unknown, inconsistently-applied sampling process.
 
 ---
 
