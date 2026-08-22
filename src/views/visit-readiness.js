@@ -347,7 +347,7 @@ export function VisitPatterns({ ds, locs }) {
         // f.overdueAt, not a flat 60-day constant that fired on 87% of on-cadence stores.
         // Labeled here so the colour's meaning isn't left for the reader to guess.
         h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 4, fontStyle: 'italic' } },
-          'Amber = days since last visit exceeds 1.5x that store’s own instrument cadence (CFV ~182d, EcoSure ~273d, RGR ~548d) -- not a fixed schedule, since McDonald’s controls visit timing.'),
+          'Amber = days since last visit exceeds 2x that store’s own instrument cadence (CFV ~242d, EcoSure ~364d, RGR ~730d) -- roughly the 90th percentile of real gaps, not a fixed schedule, since McDonald’s controls visit timing.'),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
           ...a.freq.map(f => h('div', { key: f.store, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 } },
             h('span', { style: { flex: 1, color: 'var(--text2)' } }, sName(f.store)),

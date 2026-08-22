@@ -495,12 +495,22 @@ const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // late visits already run against the target, and using it AS the target would just re-encode
 // today's lateness as normal. See memory/dispatch-73.md for the full interval distribution.
 const EXPECTED_CADENCE_DAYS = { CFV: 121, EcoSure: 182, RGR: 365 }; // 365/3, 365/2, 365/1
-// "Overdue" fires past this multiple of the expected gap. 1.5x means a store exactly on
-// cadence never trips it, and ordinary early/late variation still has headroom before the
-// flag fires (measured: even CFV's own p90 gap, 255d, sits under CFV's 1.5x line of 181.5d
-// only when a store is running close to on-time -- the multiplier is deliberately loose, not
-// tuned to just barely exclude the p90 tail).
-const OVERDUE_MULTIPLIER = 1.5;
+// "Overdue" fires past this multiple of the expected gap. 2x is MEASURED against the 190 real
+// CFV intervals, not reasoned: the share of NORMAL intervals the flag would fire on is
+//
+//     flat 60d (retired)  87.4%      1.5x = 182d  33.7%
+//     1.0x = 121d         58.4%      2.0x = 242d  12.6%
+//
+// and the observed p90 gap is 255d = 2.11x cadence -- so 2x lands essentially ON the 90th
+// percentile, the conventional line for "unusual". 1.5x shipped first and was a large
+// improvement, but left roughly a THIRD of stores amber at any moment, which is close to the
+// noise problem this dispatch exists to remove. Owner chose 2x on these figures (2026-08-22).
+//
+// ⚠️ This is a signal-to-noise choice, not a service standard: it says nothing about when a
+// visit SHOULD happen, only when a gap has become unusual for this estate. Re-measure if the
+// programme cadence changes -- the multiple is anchored to the observed distribution, and a
+// different cadence moves the distribution with it.
+const OVERDUE_MULTIPLIER = 2;
 function _cadenceKey(reportType) {
   const t = String(reportType || 'CFV');
   if (/eco|food\s*safety|fs/i.test(t)) return 'EcoSure';
