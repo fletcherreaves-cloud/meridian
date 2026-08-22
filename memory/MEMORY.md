@@ -65,19 +65,26 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 READY TO START (2026-08-22): [Dispatch #61 — derive the Test Kitchen block from `panel.kind`](dispatch-61.md)** —
-  **NEWEST, unstarted.** Makes promotion the one-field flip CLAUDE.md's standing rule already
-  claims it is. Today it is two edits and getting it wrong renders the panel **twice**
-  (`shell.js`'s `⚗ TEST KITCHEN` is a hand-maintained literal `navPBeta('id')` list, not derived).
-  **Measured 2026-08-22: 11 `navPBeta` call sites vs 11 `kind:'test-kitchen'` registry panels,
-  set difference zero** — membership has NOT drifted, so derivation is a provable pure refactor
-  *right now*; once the lists disagree it becomes a product decision instead. The reason #55
-  Part A deferred it is ORDER, not effort: registry order is alphabetical, `shell.js`'s is
-  curated, and the two share no positions, so naive derivation moves all eleven and fails Part
-  A's "nothing about today's nav may move" bar. Design: derive membership AND order from the
-  registry via a new order field. Safety net already exists —
-  `shell-nav-snapshot.test.js:62` renders the real sidebar and compares full ordered text.
-  ⚠️ `grep -c "kind:'test-kitchen'"` returns 14, not 11 — three are comment mentions.
+- **✅ SHIPPED (2026-08-22, v5.104): [Dispatch #61 — derive the Test Kitchen block from `panel.kind`](dispatch-61.md)** —
+  **NEWEST.** Promotion is now the one-field `kind:` flip CLAUDE.md's standing rule already
+  claimed it was. It wasn't: `shell.js`'s `⚗ TEST KITCHEN` was a hand-maintained literal
+  `navPBeta('id')` list, not derived, so promoting a panel meant flipping `kind:` **and** deleting
+  its `navPBeta` line — skipping the second edit rendered the panel **twice** (measured
+  2026-08-21 on `fcst-accuracy`). Membership had not drifted (11 call sites, 11
+  `kind:'test-kitchen'` panels, zero set difference), so this was a provable pure refactor.
+  Order was the real blocker `#55 Part A` deferred it behind: registry declaration order is
+  alphabetical, `shell.js`'s was curated, sharing no positions — fixed by an explicit `tkOrder`
+  field (1–11) on each `test-kitchen` entry plus a new `testKitchenPanels(can)` export
+  (`panel-registry.js`) that filters `kind==='test-kitchen'`, applies the permission check, and
+  sorts by `tkOrder`. `shell.js`'s block is now 4 lines calling it, replacing the 18-line literal
+  list. `forecast-audit`'s one per-item option (`{ disabled: !selStore }`) is now declarative —
+  `disabledWhen:'noStore'` on the registry entry, mapped to the real predicate in `shell.js`. The
+  commented-out `proj` prune record moved to `panel-catalog.md` since its line was deleted.
+  **Revert-sensitive, demonstrated**: reverting `shell.js`'s derivation back to the old hardcoded
+  list reproduces the double-render and fails 12 tests (confirmed, then restored).
+  `shell-nav-snapshot.test.js:62`'s exact-text-content snapshot and `:221`'s eleven-panel ratchet
+  both pass **unchanged** — zero nav motion. 2006/2006 tests, build clean, entry chunk +0.14 KB
+  gzip (net-neutral). Full resolution in `dispatch-61.md`.
 - **✅ SHIPPED (2026-08-22, v5.103): [Dispatch #59 — the role dimension the security rules already need](dispatch-59.md)** —
   **NEWEST.** `audit_rows`' PK moved from `(loc, date, emp)` to `(loc, date, emp, register_type)`
   (`schema-audit-rows-register-type.sql`, live-table migration, backfilled `'cashier'` via the

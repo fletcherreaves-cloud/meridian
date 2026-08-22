@@ -128,3 +128,63 @@ beta-gated exceptions in play — verified; every uncommented `navPBeta` today i
   frozen at today's eleven; this dispatch changes **how the block is computed, not what it
   contains.**
 - Promoting anything. The point is to make promotion cheap, not to spend it.
+
+---
+
+## Resolution (2026-08-22, v5.104) — SHIPPED
+
+Implemented the recommended design exactly: `tkOrder` (1–11) added to each `kind:'test-kitchen'`
+entry in `panel-registry.js`, numbered to reproduce today's rendered order
+(`proj·pvsa·model-assign·dialedin·fcst-accuracy·lfz-gap·dicompare·fcst-ref·forms-completion·
+forecast-audit·lifelenz-bridge`). A new `testKitchenPanels(can)` export filters
+`kind === 'test-kitchen'`, applies the permission check, and sorts by `tkOrder`. `shell.js`'s
+`⚗ TEST KITCHEN` block is now:
+
+```js
+const DISABLED_WHEN = { noStore: !selStore };
+const renderTestKitchen = () => {
+  if (betaMode) return null;
+  const panels = testKitchenPanels(can);
+  if (!panels.length) return null;
+  return [
+    navLabel('⚗ TEST KITCHEN'),
+    ...panels.map(p => navPBeta(p.id, p.disabledWhen ? { disabled: DISABLED_WHEN[p.disabledWhen] } : undefined)),
+  ];
+};
+```
+called via `...(renderTestKitchen() || [])` where the 18-line literal list used to live.
+
+**The one wrinkle**, exactly as flagged: `forecast-audit`'s `{ disabled: !selStore }` is now
+`disabledWhen:'noStore'` on its registry entry, mapped to the real predicate in `shell.js` (the
+registry has no access to component-local state). The commented-out `// navPBeta('proj')` prune
+record (Notes 24, v4.517) had nowhere to live once its line was deleted for real — moved to
+`memory/panel-catalog.md` as an addendum to the existing recall-list entry, not a rewrite of it.
+
+**`panel-registry.test.js:93`** was rewritten, not deleted, per the brief's instruction: it now
+asserts (a) `testKitchenPanels()` returns exactly the registry's `kind:'test-kitchen'` set with
+distinct `tkOrder` values, and (b) no literal `navPBeta('id')` call site has crept back into
+`shell.js` (there are zero after derivation; a nonzero count means the hand-built list returned).
+
+**Verification bar, all six items:**
+1. `shell-nav-snapshot.test.js:62`'s exact-text-content snapshot passes **unchanged** — zero nav
+   motion, confirmed rather than assumed.
+2. The promotion test (`:202`) and its eleven-panel ratchet (`:221`) still pass.
+3. **The actual defect, proven both ways.** The promotion test's `it.each` now also asserts a
+   promoted panel's label renders **exactly once** in the real sidebar and `⚗ TEST KITCHEN`
+   itself survives (ten panels remain). Reverting `shell.js`'s derivation back to the old
+   hardcoded list (temporarily, via `git stash`) reproduces the double-render and fails 12 tests
+   across both files — confirmed before restoring the fix, per the standing revert-sensitivity
+   bar.
+4. `⚗ TEST KITCHEN` still vanishes under `betaMode:true` (`renderTestKitchen()` returns `null`
+   early on `betaMode`, matching the old `!betaMode &&` guard's visible behaviour exactly).
+5. `npm run build` clean on Node 22 (this sandbox); `ci.yml`'s Node 20/22 matrix (dispatch #60)
+   covers the other leg.
+6. Entry chunk: **511.50 KB → 511.64 KB gzip (+0.14 KB)**, eager total 513.36 KB → 513.50 KB.
+   Net-neutral, measured via a real before/after build (stash the diff, build, restore, build
+   again), not estimated.
+
+2006/2006 tests (2 rewritten, 0 net new files — the new assertions were folded into the existing
+promotion `it.each` and the existing guard test rather than added as separate `it()` blocks).
+
+**Not done, out of scope as specified:** no panel's `kind:` or `section:` changed; nothing was
+promoted. `memory/MEMORY.md`'s READ-FIRST entry updated from "ready to start" to "shipped."

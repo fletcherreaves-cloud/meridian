@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
-import { PANEL_BY_ID, SECTIONS, panelsForSection } from './panel-registry.js';
+import { PANEL_BY_ID, SECTIONS, panelsForSection, testKitchenPanels } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
 import { supabase } from '../lib/supabase.js';
@@ -222,6 +222,25 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     ];
   };
 
+  // ── ⚗ TEST KITCHEN (dispatch #61) ─────────────────────────────────────────
+  // Derived from panel.kind === 'test-kitchen' + testKitchenPanels()'s tkOrder (panel-registry.js)
+  // instead of a hand-maintained list of literal navPBeta(id) calls -- the old list rendered a promoted
+  // panel TWICE (once under its new section:, once still hardcoded here). Promoting a panel is
+  // now just flipping its kind: in the registry; nothing here needs to change.
+  // disabledWhen is the one per-item option that survived derivation --
+  // forecast-audit's { disabled: !selStore } -- declared in the registry and mapped to the real
+  // predicate here, since the registry has no access to this component's local state.
+  const DISABLED_WHEN = { noStore: !selStore };
+  const renderTestKitchen = () => {
+    if (betaMode) return null;
+    const panels = testKitchenPanels(can);
+    if (!panels.length) return null;
+    return [
+      navLabel('⚗ TEST KITCHEN'),
+      ...panels.map(p => navPBeta(p.id, p.disabledWhen ? { disabled: DISABLED_WHEN[p.disabledWhen] } : undefined)),
+    ];
+  };
+
   const sideStyle=isMobile
     ?{position:'fixed',top:0,left:mobileOpen?0:'-270px',height:'100%',width:w,zIndex:300,
       background:'var(--surf)',borderRight:'.5px solid var(--bdr)',
@@ -269,25 +288,10 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
       ...SECTIONS.filter(s => s.id !== 'admin').flatMap(s => renderSection(s.id) || []),
 
       // ── TEST KITCHEN ───────────────────────────────────────────
-      // PRUNE (Notes 24, v4.517): only NAV entries are trimmed here — every panel's
-      // component + modal routing in App.js is left intact, so a pruned panel is still
-      // reachable via onOpenModal('<id>') and is restored by uncommenting its line below.
-      // Recall list is also kept in memory/panel-catalog.md. The forecast/engineered
-      // diagnostic cluster is deliberately NOT pruned (standing owner directive: protect it).
-      !betaMode && navLabel('⚗ TEST KITCHEN'),
-      navPBeta('proj'),
-      navPBeta('pvsa'),
-      // PRUNED — exact duplicate of "Projections" (same 'proj' modal). Recall: uncomment.
-      // navPBeta('proj'),
-      navPBeta('model-assign'),
-      navPBeta('dialedin'),
-      navPBeta('fcst-accuracy'),
-      navPBeta('lfz-gap'),
-      navPBeta('dicompare'),
-      navPBeta('fcst-ref'),
-      navPBeta('forms-completion'),
-      navPBeta('forecast-audit', { disabled: !selStore }),
-      navPBeta('lifelenz-bridge'),
+      // Derived -- see renderTestKitchen() above. A 'proj' duplicate ("Proj Workflow", same
+      // 'proj' modal) was pruned from this list at v4.517; the recall note now lives in
+      // memory/panel-catalog.md instead of a commented-out line here (dispatch #61).
+      ...(renderTestKitchen() || []),
       // Optional / experimental panels (registry-driven) — hidden by default, toggled back
       // on per-panel in Admin → Panel Manager. Nothing deleted; modal routing stays in App.js.
       ...OPTIONAL_PANELS.filter(p=>(panelVis&&panelVis[p.id])&&(!p.perm||can(p.perm)))
