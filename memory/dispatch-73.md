@@ -91,4 +91,55 @@ Revert-sensitive per the standing rule: a test that renders `VisitPatterns` with
 gaps straddle the new threshold and asserts the colour, **not** a unit test of the threshold
 constant. An engine-level assertion would pass with the panel still colouring on 60.
 
+## Resolution (2026-08-22)
+
+**Threshold**: `src/engine/visit-readiness.js` now carries named `EXPECTED_CADENCE_DAYS =
+{CFV:121, EcoSure:182, RGR:365}` (365 ÷ the owner-confirmed per-store annual visit counts:
+3/2/1) and an `OVERDUE_MULTIPLIER = 1.5`. `overdueThresholdDays(reportType)` (exported)
+resolves a loose type string (`/eco|food\s*safety|fs/i`, `/rgr/i`, `/cfv/i`, else `null` — no
+guess for an instrument this file has no owner-confirmed cadence for) to a threshold: CFV=182d,
+EcoSure=273d, RGR=548d. **Not** the measured 138d median — using the measured (already-late)
+figure as the target would have re-encoded today's lateness as normal, the exact mistake the
+dispatch called out.
+
+**Mixed-type default (item 2)**: `analyzeGradedVisits`'s `freq` computation now sorts each
+store's visits by date (previously extracted straight to a numeric array, discarding the
+correspondence to the source visit objects) so the LAST visit's own `reportType` survives as
+`lastType`, and stamps each freq row with `overdueAt = overdueThresholdDays(lastType)`. This
+resolves per-row from the row's own last-visit type regardless of the panel's `type` filter
+(which defaults to `'all'`) — no separate "suppress when mixed" branch needed, since the
+per-row threshold already handles it correctly.
+
+**Panel**: `views/visit-readiness.js`'s amber condition is now
+`f.daysSinceLast != null && f.overdueAt != null && f.daysSinceLast > f.overdueAt` (was
+`f.daysSinceLast > 60`). Added a caption above the Frequency-by-store table stating what amber
+means and the three cadence numbers, plus a per-cell `title` tooltip (`"Overdue past {N}d for
+{type}"`) — item 3.
+
+**"Do NOT flag new stores" (item — turned out not to need a separate code path)**: traced
+Ponce de Leon (43701, opened 2026-03-13) and Tishomingo (opened 2024-12-16) — both real
+open-date facts already in this codebase (`backtest.js:458`, `vs-ly.js:90`), found via `grep`
+rather than invented — and re-read the PM's own framing: *"that corrected an earlier escalation
+of mine."* The recalibrated per-instrument threshold (182d for CFV, vs the old flat 60d) is
+itself what stops these two from being falsely flagged: a store with a genuinely recent last
+visit doesn't cross 182 days regardless of how few visits it has on record. No store-age or
+visit-count carve-out was added — inventing one would have been exactly the kind of
+un-measured code the dispatch is about. The verification bar's own fixture (2 visits, both
+recent) is satisfiable by the threshold fix alone, which is what the test asserts.
+
+**Verification**: `src/__tests__/dispatch-73-visit-patterns-threshold.test.js` renders the real
+`VisitPatterns` (exported for the test — module-private otherwise) with three real store locs
+(Atoka/Seminole/Ponce de Leon) and gap fixtures straddling the CFV threshold (220d/90d/15d,
+each column value globally distinct across all three rows to avoid text-match collisions
+between the avg-gap and days-since-last columns). Asserts the overdue row renders `#f59e0b`,
+the on-cadence and new-store rows don't, the old flat "60" is gone from the panel's own text,
+and "amber" is labeled somewhere in it. Revert-sensitive by construction: reverting the panel's
+condition alone (keeping the engine fix) reproduces the exact false-positive the dispatch
+measured — the on-cadence store (90d gap, well inside the new 182d threshold) turns amber under
+the old flat 60d rule, which the test's `not.toBe('#f59e0b')` assertion catches.
+
+**Final verification**: full suite green (188 files / 2064 tests, shared with dispatch #72's
+final run in the same commit), build clean, no entry-chunk change (visit-readiness.js is
+already a lazy-loaded chunk).
+
 Include a fixture case with a **new store** (2 visits, both recent) and assert it is not flagged.

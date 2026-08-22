@@ -484,6 +484,37 @@ function subScore(ds, specs, loc, cache) {
 // patterns in when/where visits go well or poorly surface (e.g. Fridays underperform,
 // or breakfast DT is the weak channel). Pure over ds.gradedVisits; no side effects.
 const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Dispatch #73 (2026-08-22) -- the panel's "overdue" amber was a flat 60 days, never measured:
+// on 190 real CFV inter-visit intervals (all 27 stores, 2023-01 -> 2026-08) it fired on 166/190
+// (87.4%) -- a store perfectly on cadence sits amber PERMANENTLY, which carries no information.
+// Fix is per-instrument, not a re-pointed constant: CFV/EcoSure/RGR run on different program
+// cadences (owner-confirmed 3/2/1 visits per store per year), so pooling them under one number
+// was the other half of the defect. Expected gaps below are the CADENCE THE PROGRAM TARGETS
+// (365 / visits-per-year), NOT the measured median (138d) -- that measured figure describes how
+// late visits already run against the target, and using it AS the target would just re-encode
+// today's lateness as normal. See memory/dispatch-73.md for the full interval distribution.
+const EXPECTED_CADENCE_DAYS = { CFV: 121, EcoSure: 182, RGR: 365 }; // 365/3, 365/2, 365/1
+// "Overdue" fires past this multiple of the expected gap. 1.5x means a store exactly on
+// cadence never trips it, and ordinary early/late variation still has headroom before the
+// flag fires (measured: even CFV's own p90 gap, 255d, sits under CFV's 1.5x line of 181.5d
+// only when a store is running close to on-time -- the multiplier is deliberately loose, not
+// tuned to just barely exclude the p90 tail).
+const OVERDUE_MULTIPLIER = 1.5;
+function _cadenceKey(reportType) {
+  const t = String(reportType || 'CFV');
+  if (/eco|food\s*safety|fs/i.test(t)) return 'EcoSure';
+  if (/rgr/i.test(t)) return 'RGR';
+  if (/cfv/i.test(t)) return 'CFV';
+  return null; // an instrument this file has no owner-confirmed cadence for -- no threshold,
+               // not a guess (same reasoning as the CFV-only correlation ceiling above).
+}
+// Exported so the panel can label what the colour means without re-deriving the number.
+export function overdueThresholdDays(reportType) {
+  const key = _cadenceKey(reportType);
+  return key ? Math.round(EXPECTED_CADENCE_DAYS[key] * OVERDUE_MULTIPLIER) : null;
+}
+
 export function analyzeGradedVisits(gradedVisits, opts = {}) {
   const type = opts.type || 'all';
   const visits = (gradedVisits || []).filter(v =>
@@ -511,13 +542,20 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
   const byStore = {};
   for (const v of visits) { const s = _normLoc(v.store || v.loc); if (!s) continue; (byStore[s] || (byStore[s] = [])).push(v); }
   const freq = Object.entries(byStore).map(([store, vs]) => {
-    const days = vs.map(v => _ms(v.dateISO || v.date)).filter(x => !isNaN(x)).sort((a, b) => a - b);
+    // Sorted by date (not just extracted to a numeric array) so the LAST entry's own
+    // reportType is still attached -- dispatch #73 needs the overdue threshold to key off
+    // the type of the visit actually being waited on, not the panel's (possibly 'all') filter.
+    const dated = vs.map(v => ({ v, ms: _ms(v.dateISO || v.date) })).filter(x => !isNaN(x.ms)).sort((a, b) => a.ms - b.ms);
+    const days = dated.map(x => x.ms);
     const gaps = []; for (let i = 1; i < days.length; i++) gaps.push((days[i] - days[i - 1]) / 864e5);
+    const lastType = dated.length ? (dated[dated.length - 1].v.reportType || 'CFV') : null;
     return {
       store, n: vs.length,
       avgGapDays: gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
       daysSinceLast: days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null,
       passRate: vs.length ? vs.filter(v => v.pass).length / vs.length : null,
+      lastType,
+      overdueAt: overdueThresholdDays(lastType),
     };
   }).sort((a, b) => b.n - a.n);
 

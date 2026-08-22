@@ -65,8 +65,43 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22): [Dispatch #73 — Visit Patterns' "overdue" amber fired on 87% of normal visits](dispatch-73.md)** —
+  **NEWEST.** A flat `daysSinceLast > 60` never measured against real data: on 190 real CFV
+  inter-visit intervals (all 27 stores, 2023-01→2026-08) it fired on 166/190 (87.4%) — a store
+  perfectly on cadence sat amber permanently, and the panel mixed CFV/EcoSure/RGR's very
+  different program cadences under one number by defaulting its type filter to `'all'`. Fixed
+  with a **per-instrument** threshold (`EXPECTED_CADENCE_DAYS × 1.5`: CFV=182d, EcoSure=273d,
+  RGR=548d, from the owner's stated 3/2/1 visits-per-store-per-year — NOT the measured 138d
+  median, which would have re-encoded today's lateness as the new normal) computed from each
+  store's own last-visit `reportType`, so the mixed-'all' view resolves correctly per row with
+  no separate suppress-when-mixed branch needed. The "don't flag new stores" requirement turned
+  out to need no separate code path either — Ponce de Leon and Tishomingo's real open dates
+  (found via existing code, `backtest.js`/`vs-ly.js`) confirmed the recalibrated threshold alone
+  stops the false flag the owner almost escalated. Revert-sensitive render test (real store
+  fixtures, gap values straddling 182d) — reverting the panel's condition alone (keeping the
+  engine fix) reproduces the exact false positive measured.
+- **✅ SHIPPED (2026-08-22): [Dispatch #72 — no-undef triage, all 25 (+3) sites fixed](dispatch-72-triage.md)**
+  (original brief: [dispatch-72.md](dispatch-72.md)) —
+  Every site from #563's `src/` no-undef sweep, sequenced A (unconditional throw) → B
+  (short-circuit-guarded) → C (needs-caller-read) → widen the guard, exactly as prescribed —
+  **the widened `src-no-undef.test.js` guard (ESLint no-undef over all of `src/**/*.js`) is now
+  permanent CI**, not just this PR's verification. Highlights: `OrgView` (store-dash.js) read a
+  sibling function's local unconditionally — an unconditional ReferenceError on every render of
+  Patch/Org, both nav views' every tab; App.js's "Escape always closes every modal" hatch threw
+  on its SECOND statement, silently aborting ~70 of its own setters on every press; an async
+  `lookupMissEvent` free variable turned into a silently-rejected promise a fire-and-forget
+  `onClick` never observed. **3 more sites surfaced when the widened guard first ran clean** (not
+  part of the original 25 — a sweep-tool coverage gap, not re-litigated further): a "📤 Pack"
+  button calling an unexported function, a stale model-assignment cache never invalidated on
+  "clear override," and `StoreDash`'s auto-calibration silently never persisting an improved
+  MAPE (a #366-shaped engine-vs-wiring gap — `onUpdateSettings` existed as App.js's real
+  `saveSettings` but never crossed the `h(StoreDash,{...})` prop boundary; caught only by a full
+  render test with `calibrateStore` mocked, since a static check can't tell "threaded
+  end-to-end" from "the call site forgot to pass it"). Every one of the 28 fixes carries its own
+  revert-sensitive test (stash → confirm exact original error reproduces → restore). 188 test
+  files / 2064 tests, build clean, no entry-chunk regression.
 - **✅ SHIPPED (2026-08-22): [Dispatch #71 — Form Completions pull silently no-op'd](dispatch-71.md)** —
-  **NEWEST.** Owner report ("Form Completions not populating") traced through **two genuinely
+  Owner report ("Form Completions not populating") traced through **two genuinely
   distinct defects** across 8 live `workflow_dispatch` runs, plus one incomplete fix — read the
   Resolution section for the full honest arc before assuming the first plausible cause was the
   real one. (1) The structural bug the brief named — the direct path could only escalate to

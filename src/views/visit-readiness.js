@@ -290,7 +290,10 @@ function CalibrationCard({ cal }) {
 
 // CFV / graded-visit statistic tracker (Notes 25 #2): actual outcomes broken down by
 // known variables (day-of-week, daypart, weekpart, channel) + per-store cadence.
-function VisitPatterns({ ds, locs }) {
+// Exported for dispatch #73's test -- VisitPatterns is otherwise module-private, but the
+// amber-threshold fix (per-instrument f.overdueAt) lives entirely inside this component's own
+// render, not in a separately-testable engine function.
+export function VisitPatterns({ ds, locs }) {
   const { useMemo, useState } = React;
   const [type, setType] = useState('all');
   const [open, setOpen] = useState(false);
@@ -339,12 +342,20 @@ function VisitPatterns({ ds, locs }) {
         block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart), block('Channel', a.channel)),
       a.freq.length ? h('div', { style: { marginTop: 14 } },
         h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
+        // Dispatch #73 -- the amber threshold is now per-instrument (CFV/EcoSure/RGR run on
+        // different program cadences), computed from each store's OWN last-visit type via
+        // f.overdueAt, not a flat 60-day constant that fired on 87% of on-cadence stores.
+        // Labeled here so the colour's meaning isn't left for the reader to guess.
+        h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 4, fontStyle: 'italic' } },
+          'Amber = days since last visit exceeds 1.5x that store’s own instrument cadence (CFV ~182d, EcoSure ~273d, RGR ~548d) -- not a fixed schedule, since McDonald’s controls visit timing.'),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
           ...a.freq.map(f => h('div', { key: f.store, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 } },
             h('span', { style: { flex: 1, color: 'var(--text2)' } }, sName(f.store)),
             h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 24, textAlign: 'right' } }, f.n),
             h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 42, textAlign: 'right' } }, f.avgGapDays == null ? '—' : f.avgGapDays + 'd'),
-            h('span', { style: { fontFamily: 'var(--mono)', color: f.daysSinceLast != null && f.daysSinceLast > 60 ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' } }, f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
+            h('span', { style: { fontFamily: 'var(--mono)', color: f.daysSinceLast != null && f.overdueAt != null && f.daysSinceLast > f.overdueAt ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' },
+              title: f.overdueAt != null ? 'Overdue past ' + f.overdueAt + 'd for ' + (f.lastType || 'CFV') : undefined },
+              f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
             h('span', { style: { fontFamily: 'var(--mono)', color: prCol(f.passRate), width: 40, textAlign: 'right' } }, pr(f.passRate)))))) : null));
 }
 

@@ -1836,4 +1836,4 @@ async function searchUpcomingEvents(loc){
   }));
 }
 
-export { CalendarManagerPanel, EventEntryModal, EventRegistryModal, loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents, encodeShareCode, decodeShareCode };
+export { CalendarManagerPanel, EventEntryModal, EventRegistryModal, loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurringInstancesNeedingConfirm, searchUpcomingEvents, encodeShareCode, decodeShareCode, generateReviewPack };

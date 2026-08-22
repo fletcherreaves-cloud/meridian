@@ -2032,10 +2032,15 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
 }
 
 // ORG VIEW
-function OrgView({stores, settings, onSelectStore}) {
+function OrgView({stores, ds, settings, onSelectStore}) {
   // #189: same pattern as AtAGlance — one of 4 possible active-panel views.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('OrgView', 'render+commit', performance.now() - _rt0); });
+  // Dispatch #72 A1 -- priceChanges was read here without ever being declared in this
+  // function (it's DistrictGrid's own local, a sibling function): an unconditional
+  // ReferenceError on every render of Patch/Org, both nav views' every tab. Computed the
+  // same way DistrictGrid does, from the ds this component now also receives.
+  const priceChanges = useMemo(()=>lastPriceChangeByStore(ds&&ds.pmixRows||[]),[ds&&ds.pmixRows]);
   const operators = settings.operators||{};
   const supervisors = settings.supervisorGroups||{};
   const byOp = Object.entries(operators).map(([name,locs])=>({name,stores:stores.filter(s=>locs.includes(s.loc))})).filter(g=>g.stores.length>0);
