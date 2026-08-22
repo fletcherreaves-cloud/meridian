@@ -92,9 +92,16 @@ will tell anyone the runner is down.
 - **✅ Wi-Fi watchdog, since wired is out.** A `launchd` job every few minutes turns "offline until
   someone notices" into "offline for five minutes":
   ```bash
+  IF=en1   # ⚠️ VERIFY FIRST — see below
   ping -c1 -t5 1.1.1.1 >/dev/null 2>&1 || {
-    networksetup -setairportpower en0 off; sleep 5; networksetup -setairportpower en0 on; }
+    networksetup -setairportpower "$IF" off; sleep 5; networksetup -setairportpower "$IF" on; }
   ```
+  🔴 **The interface is `en1`, NOT `en0`, on this host.** `pmset -g assertions` (2026-08-22) shows
+  the MAGICWAKE kernel assertion on **`en1`** (`owner=IOSkywalkNetworkBSDClient`) — on a Mac mini
+  with an unused Ethernet port, `en0` is the wired interface and `en1` is Wi-Fi. A watchdog
+  hardcoded to `en0` would cycle a dead Ethernet port while Wi-Fi stayed broken, and would look
+  like it was working. **Confirm with `networksetup -listallhardwareports`** and read the Device
+  name under the `Wi-Fi` hardware port; do not trust either guess.
   Pair with a **static DHCP reservation** so it reclaims the same address.
 - **Install the runner as a SERVICE, not a terminal session.** From the runner directory:
   `./svc.sh install && ./svc.sh start`. That registers a `launchd` job so it survives logout and
