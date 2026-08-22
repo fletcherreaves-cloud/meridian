@@ -65,6 +65,20 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #59 — the role dimension the security rules already need](dispatch-59.md)** —
+  **NEWEST.** Not a data-collection chore: **CASH-004 (`discount-abuse`, plan §2.1 "Unauthorized
+  discount / manager-meal abuse") already ships with `opportunity_factor` FALSE and a comment saying
+  "no role/authority column exists in `audit_rows` to check against yet".** This dispatch is that
+  column. `registerType` is hardcoded to `cashier`, so `audit_rows` holds one third of the Register
+  Audit (Cashier · Manager · Preparer). 🔴 **The work is the GRAIN CHANGE, not the pull:** PK is
+  `(loc, date, emp)`, so one person appearing as both Cashier and Manager in a day **silently
+  overwrites today** — it must become `(loc, date, emp, register_type)`, a migration on a live table
+  with **30+ referencing files**. Start by reading what breaks, not by editing the pull. Four things
+  to settle: backfill existing rows to `'cashier'`; decide **per consumer** whether an aggregate
+  wants the sum or cashier-only (highest-risk, where a silent wrong number gets in); subject grouping
+  in the panel; and **`security-baselines.js` — a baseline that silently changes meaning is worse
+  than one that breaks.** Meal rules are OUT until #58 has data. Bar: prove the PK collision with a
+  failing test first; the migration must be a behavioural no-op for every current reader.
 - **✅ SHIPPED (2026-08-22, v5.102): [Dispatch #57 — per-person employee tenure, storage half](dispatch-57.md)** —
   **NEWEST.** Owner-approved reversal of a deliberate decision: `qsrsoft-employee-roster-pull.mjs`
   used to discard every individual-employee field it fetched, persisting ONLY aggregate counts
