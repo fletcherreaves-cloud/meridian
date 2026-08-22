@@ -366,6 +366,20 @@ actual code — this note nearly caused a duplicate reimplementation.
   creates a deployment. Batch commits and push once per work chunk rather than per commit — on
   2026-08-21 roughly 46 commits were pushed largely one at a time, which alone can exhaust a
   100/day budget.
+- **Merge without asking, once verified (owner-stated 2026-08-21: *"You don't have to ask me to
+  merge"*).** Do not stop and request permission for each PR. The standing bar is verification, not
+  approval: independently check the diff (never a relayed summary), confirm the gating check is
+  green, and for a code change run the suite and build **on the merged result** — a local merge does
+  this in a way the merge button cannot. Then merge and say what landed.
+  **Still stop and ask for:** anything failing or with unresolved review findings; a change whose
+  scope, privacy posture, or product behaviour is a judgment call rather than an execution detail
+  (e.g. persisting new PII, reversing a documented decision); and anything the owner has an open
+  question on. Vercel's deploy-cap red on a docs-only PR is **not** a blocker — nothing deploys.
+  **After every merge, audit for stranding:** `git merge-base --is-ancestor <sha> origin/main` plus
+  `git show origin/main:<file>` on anything a dispatch cites. A clean working tree is NOT evidence
+  the work reached `main`. Two near-misses in one session: the `event_token` enumeration sat on an
+  unmerged branch, and a `checkout -B <branch> origin/main` run immediately after a commit silently
+  discarded it — **never `checkout -B` a branch you have just committed to.**
 - **Never break working features.** Every commit should leave the app fully functional.
 - `npm run build` must pass clean before commit.
 - No TypeScript — plain JS with `// @ts-nocheck`.
