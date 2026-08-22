@@ -11,8 +11,13 @@
 // built from metrics scored against each store's OWN targets (DEFAULT_TARGETS) or
 // the McDonald's standard, so you always see WHY a store is flagged. Weighted toward
 // Service Speed + Accuracy — the areas that are both heavily graded AND proxied
-// ~1:1 by the data. Food Safety is a separate binary-ish RISK FLAG (cook-temp
-// criticals aren't predictable from sales; waste/holding is a directional proxy).
+// ~1:1 by the data. Waste & variance is a separate binary-ish RISK FLAG built from
+// waste/holding discipline proxies — it is NOT a food-safety prediction (cook-temp
+// and pest criticals aren't inferable from sales/inventory data at all; see
+// READINESS_GAPS' 'Food Safety criticals' entry for that genuine, unmodelled gap).
+// memory/finding-food-safety-2026-what-is-actually-measured.md settles this: FS-A
+// through FS10 are temperatures/pests/handwashing/shelf-life/checklist competence —
+// zero overlap with stat variance % or raw waste %, which is what this flag reads.
 // Cleanliness is an acknowledged data gap.
 
 import { DEFAULT_TARGETS } from '../constants.js';
@@ -78,7 +83,7 @@ export const READINESS_GAPS = [
     detail: 'Exits/extinguishers, PPE, fire-suppression service dates and CO2 alarms are physical checks with no operational data trail in Meridian.' },
   { area: 'Food Safety criticals',  pace: 'EcoSure FS1–FS7 (cook temps, pest, access) — any miss = fail',
     status: 'not predicted — proxy flag only',
-    detail: 'Cook-temp and pest criticals are not inferable from sales/labor data. Meridian reports a SEPARATE food-safety RISK FLAG built from waste/holding discipline proxies (stat variance %, raw waste %) — it is a directional flag, not a predicted Food Safety score, and it is deliberately kept out of the readiness composite.' },
+    detail: 'Cook-temp and pest criticals are not inferable from sales/labor data. Meridian reports a SEPARATE Waste & variance RISK FLAG built from waste/holding discipline proxies (stat variance %, raw waste %) — it has no overlap with what an EcoSure Food Safety visit actually assesses (temperatures, pests, handwashing, shelf life, checklist competence) and is deliberately kept out of the readiness composite.' },
   { area: 'DFSC completion %',      pace: 'EcoSure FS31 (Daily Food Safety Checklist ≥90% over 60 days)',
     status: 'gap — not yet ingested',
     detail: 'Named in the standards as the single best food-safety leading indicator, but no DFSC completion feed exists in Meridian today.' },
@@ -135,7 +140,8 @@ const LEADERSHIP = [
   { key: 'schedGap', label: 'Schedule gap vs ideal (hrs)', srcs: [['schedRows', 'schVsIdealDiff']], tgt: 0, dir: 'abs', band: null, unit: 'hrs', absTol: 8,
     pace: 'RGRV Shift Leadership — positioning 24h ahead / schedule built to the forecast' },
 ];
-// Food-safety proxy metrics (waste/holding discipline). NOT a % score — feeds a flag.
+// Waste & variance proxy metrics (waste/holding discipline). NOT a food-safety score —
+// feeds the fsFlag below, which is a waste/variance risk indicator, not a Food Safety one.
 const FOODSAFETY = [
   { key: 'statVar', label: 'Stat variance %', tgt: 'tStatLoss', dir: 'lower', band: 0.6, monthly: true,
     pace: 'Directional holding/handling proxy only — NOT an EcoSure prediction' },
@@ -166,8 +172,8 @@ function buildWhy(store) {
   const phrases = bad.map(d => `${d.label} at ${_fmtVal(d.actual, d.unit)} vs ${_fmtVal(d.target, d.unit)} target`);
   const gapList = phrases.length === 1 ? phrases[0]
     : phrases.slice(0, -1).join(', ') + ' and ' + phrases[phrases.length - 1];
-  const fs = store.fsFlag === 'elevated' ? ' Food-safety proxies (waste/holding) are also elevated.'
-    : store.fsFlag === 'watch' ? ' Food-safety proxies are worth a look.' : '';
+  const fs = store.fsFlag === 'elevated' ? ' Waste & variance proxies (waste/holding) are also elevated.'
+    : store.fsFlag === 'watch' ? ' Waste & variance proxies are worth a look.' : '';
   return `${bandWord} — the biggest gaps are ${gapList}.${fs}`;
 }
 
@@ -181,22 +187,34 @@ function buildWhy(store) {
 // and the same 0.85 driver-badness threshold buildWhy already uses — no new threshold invented.
 // The panel shows `verdict` AND `why` side by side (never one replacing the other), per the
 // standing rule's explicit both/and: "say the number AND the decision."
+// Dispatch #69 — the waste & variance flag USED to pre-empt this verdict entirely whenever
+// elevated, even for a store whose readiness band was 'ready' (the two are computed
+// independently — fsFlag is deliberately kept OUT of the readiness composite, so nothing
+// stops them disagreeing). That displaced the real coaching action on 10/27 stores and was
+// backwards on a live counterexample: a store flagged "elevated" here can pass its actual
+// EcoSure audit clean, because this proxy measures waste/inventory variance, not food
+// safety (memory/finding-food-safety-2026-what-is-actually-measured.md — zero overlap with
+// what EcoSure/RGRV Food Safety actually assesses). The band/topDrivers verdict — the thing
+// PACE readiness is actually about — now always leads; an elevated flag is appended as a
+// secondary note, never the headline.
 function buildVerdict(store) {
-  if (store.fsFlag === 'elevated') {
-    return `Address food-safety risk first — waste/holding proxies are elevated${store.fsScore != null ? ` (score ${Math.round(store.fsScore)})` : ''}.`;
-  }
   const top = (store.topDrivers || []).find(d => d.score < 0.85);
+  let verdict;
   if (store.band === 'at-risk') {
-    return top
+    verdict = top
       ? `Coach ${top.label} — ${_fmtVal(top.actual, top.unit)} vs ${_fmtVal(top.target, top.unit)} target, the biggest blocker to PACE-ready.`
       : 'At risk — no single metric stands out; the gap is spread across several areas, review the full breakdown.';
-  }
-  if (store.band === 'watch') {
-    return top
+  } else if (store.band === 'watch') {
+    verdict = top
       ? `Watch ${top.label} — ${_fmtVal(top.actual, top.unit)} vs ${_fmtVal(top.target, top.unit)} target, trending toward the readiness threshold.`
       : 'On watch — no single metric stands out; keep monitoring.';
+  } else {
+    verdict = 'On track for a graded visit — no action needed this week.';
   }
-  return 'On track for a graded visit — no action needed this week.';
+  if (store.fsFlag === 'elevated') {
+    verdict += ` Also check waste & variance — elevated${store.fsScore != null ? ` (score ${Math.round(store.fsScore)})` : ''}.`;
+  }
+  return verdict;
 }
 
 // Spearman rank correlation (Pearson on ranks) — robust to the different scales of
@@ -223,6 +241,28 @@ function _spearman(xs, ys) {
   return (dx && dy) ? +(num / Math.sqrt(dx * dy)).toFixed(2) : null;
 }
 
+// Dispatch #69 — the caption used to assert "Weak agreement" off n=27, which
+// memory/notes-visit-readiness-backlog-2026-08-22.md computed a 95% CI for: direction match
+// [34.0%, 69.3%] (Wilson), rank corr [−0.16, 0.56]. That interval can't distinguish "the
+// model is useless" from "the model is good" — it's evidence of a small sample, not a weak
+// model, and the caption was claiming more than the data supports (the same UI defect as
+// item 1, in the opposite direction). CALIBRATION_PAIRS_FOR_POWER is the n needed for 80%
+// power to detect rank corr >= 0.4 (a Fisher z-transform power calculation), not an invented
+// threshold — same source file's own table. CALIBRATION_PAIRS_PER_YEAR (27 stores × 3 CFV
+// visits/yr) is settled in memory/finding-cfv-2026-visit-rules.md, which also answered the
+// open 2-vs-3 cadence question. Below this n, report progress toward enough power to judge
+// the model at all; only once there's enough data does the strength ladder mean anything.
+export const CALIBRATION_PAIRS_FOR_POWER = 46;
+export const CALIBRATION_PAIRS_PER_YEAR = 81;
+function calibrationProgress(n) {
+  const pairsNeeded = Math.max(0, CALIBRATION_PAIRS_FOR_POWER - n);
+  if (!pairsNeeded) return { pairsNeeded: 0, etaLabel: null };
+  const monthsNeeded = Math.ceil(pairsNeeded / (CALIBRATION_PAIRS_PER_YEAR / 12));
+  const eta = new Date(); eta.setMonth(eta.getMonth() + monthsNeeded);
+  const etaLabel = '~' + eta.toLocaleDateString('en-US', { month: 'short' });
+  return { pairsNeeded, etaLabel };
+}
+
 // Validate predicted readiness against the ACTUAL graded-visit scores the engine loads.
 // Trust signal: do stores we rate lower actually score lower on their real visits?
 export function calibrateReadiness(stores) {
@@ -240,7 +280,9 @@ export function calibrateReadiness(stores) {
     hitRate = +(hits / n).toFixed(2);
   }
   const strength = r == null ? null : Math.abs(r) >= 0.6 ? 'strong' : Math.abs(r) >= 0.3 ? 'moderate' : 'weak';
-  return { n, r, strength, hits, hitRate, rows: rows.sort((a, b) => a.predicted - b.predicted) };
+  const { pairsNeeded, etaLabel } = calibrationProgress(n);
+  return { n, r, strength, hits, hitRate, rows: rows.sort((a, b) => a.predicted - b.predicted),
+    pairsNeeded, etaLabel, pairsForPower: CALIBRATION_PAIRS_FOR_POWER };
 }
 
 const _isoDay = ms => (ms == null || isNaN(ms)) ? null : new Date(ms).toISOString().slice(0, 10);

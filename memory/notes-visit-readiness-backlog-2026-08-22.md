@@ -8,6 +8,13 @@ metadata:
 
 # Visit Readiness — three owner-raised items (2026-08-22)
 
+**✅ All three shipped 2026-08-22 as dispatch #69 (v5.108).** Rename to "Waste & variance" +
+fixed buildVerdict() to stop the flag pre-empting the readiness-band verdict; Model Check
+caption now reports pairs-needed progress (46-pair power threshold, 81/yr cadence) instead of
+a strength verdict a 27-visit sample can't support; Report-detail is now a split dropdown on
+the Report button. Full writeup: `memory/dispatch-69.md`. The daypart/channel-window fix,
+historical backfill, and weight-fitting named below are still open — not part of #69.
+
 Owner framed these as **"for when we have time."** Not urgent. Captured because chat does not
 survive the session.
 

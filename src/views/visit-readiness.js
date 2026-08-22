@@ -12,7 +12,10 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../consta
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
 const BAND = { 'ready': { c: '#10b981', l: 'Ready' }, 'watch': { c: '#f59e0b', l: 'Watch' }, 'at-risk': { c: '#ef4444', l: 'At risk' } };
-const FS = { low: { c: '#10b981', l: 'FS low' }, watch: { c: '#f59e0b', l: 'FS watch' }, elevated: { c: '#ef4444', l: 'FS elevated' }, unknown: { c: '#6b7280', l: 'FS n/a' } };
+// Dispatch #69 — renamed from "FS"/"Food Safety": this flag reads stat variance % and raw
+// waste %, which has zero overlap with what an EcoSure Food Safety visit actually assesses
+// (memory/finding-food-safety-2026-what-is-actually-measured.md). "W&V" for Waste & variance.
+const FS = { low: { c: '#10b981', l: 'W&V low' }, watch: { c: '#f59e0b', l: 'W&V watch' }, elevated: { c: '#ef4444', l: 'W&V elevated' }, unknown: { c: '#6b7280', l: 'W&V n/a' } };
 
 // One formatter for screen, print and CSV (imported from the report module) so a value
 // never reads differently depending on where you looked at it.
@@ -88,7 +91,7 @@ function storeReportHTML(s) {
   </style></head><body>
     <h1>${esc(sName(s.loc))} <span style="color:#999;font-weight:400;font-size:13px">#${esc(s.loc)}</span></h1>
     <div class="sub">Visit Readiness coaching report · ${date}</div>
-    <div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('FS', 'Food safety:')}</span>
+    <div><span class="score">${Math.round(s.readiness)}</span><span class="band">${b.l}</span><span class="fs">${fs.l.replace('W&V', 'Waste & variance:')}</span>
       ${s.coverage < 1 ? `<span style="color:#999;font-size:11px;margin-left:8px">${(s.coverage * 100).toFixed(2)}% data coverage</span>` : ''}</div>
     ${s.verdict ? `<div class="verdict"><b>Coaching action:</b> ${esc(s.verdict)}</div>` : ''}
     <div class="why"><b>Why:</b> ${esc(s.why || '')}</div>
@@ -104,7 +107,7 @@ function storeReportHTML(s) {
       ${(s.audit || []).flatMap(a => (a.drivers || [])).map(driverRow).join('') || '<tr><td colspan="8">No metric resolved for this store.</td></tr>'}</table>
     ${notMeasured}
     <p style="margin-top:10px">${lv}</p>
-    <div class="foot">Meridian · Readiness is a directional early-warning from daily operating metrics (Speed 35 / Accuracy 30 / Quality 20 / Leadership 15), each scored against this store's own target where one exists — not an official predicted visit score. Cleanliness, Health &amp; Safety and food-safety criticals have no daily-data proxy and are excluded; the food-safety flag shown above is a waste/holding proxy only. Printed ${new Date().toISOString().slice(0, 10)}.</div>
+    <div class="foot">Meridian · Readiness is a directional early-warning from daily operating metrics (Speed 35 / Accuracy 30 / Quality 20 / Leadership 15), each scored against this store's own target where one exists — not an official predicted visit score. Cleanliness, Health &amp; Safety and food-safety criticals have no daily-data proxy and are excluded; the waste & variance flag shown above is a waste/holding proxy and has no overlap with a Food Safety assessment. Printed ${new Date().toISOString().slice(0, 10)}.</div>
   </body></html>`;
 }
 function printStoreReport(s) {
@@ -226,9 +229,9 @@ function StoreAudit({ s }) {
         h('div', { style: { fontSize: 9.5, fontWeight: 800, color: '#f5bc00', marginBottom: 3 } }, 'Not measured (' + s.notMeasured.length + ') — dropped from the area means, never estimated'),
         s.notMeasured.map(mi => h('div', { key: mi.key + mi.label, style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } }, '• ', mi.label, ' — ', mi.reason))),
       h('div', { style: { marginTop: 8, fontSize: 9, color: 'var(--text3)', lineHeight: 1.5 } },
-        h('b', null, 'Food-safety flag: '), FS[s.fsFlag].l.replace('FS', ''), s.fsScore != null ? ' (' + s.fsScore.toFixed(1) + ')' : '',
+        h('b', null, 'Waste & variance flag: '), FS[s.fsFlag].l.replace('W&V', ''), s.fsScore != null ? ' (' + s.fsScore.toFixed(1) + ')' : '',
         ' — built from ', (s.fsDrivers || []).map(d => d.label + ' ' + fmt(d.actual, d.unit) + ' vs ' + fmt(d.target, d.unit)).join(', ') || 'no data',
-        '. Deliberately kept OUT of the readiness composite: cook-temp and pest criticals are not inferable from operating data.')));
+        '. Deliberately kept OUT of the readiness composite, and has no overlap with a Food Safety assessment: cook-temp and pest criticals are not inferable from operating data.')));
 }
 
 // Model-check card: does predicted readiness track the ACTUAL graded-visit scores?
@@ -255,9 +258,14 @@ function CalibrationCard({ cal }) {
         h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`)),
       h('div', { style: { flex: 1, minWidth: 180, fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
         cal.r == null ? 'Correlation needs more visits.'
+          // Dispatch #69 — below cal.pairsForPower, "Strong/Moderate/Weak agreement" claims more
+          // than an n this small can support (memory/notes-visit-readiness-backlog-2026-08-22.md
+          // computed the 95% CI at n=27: rank corr [-0.16, 0.56] — can't distinguish a useless
+          // model from a good one). Report progress toward enough power instead of a verdict.
+          : cal.pairsNeeded > 0 ? `${cal.n} of ~${cal.pairsForPower} visits needed to tell — next check ${cal.etaLabel}.`
           : cal.r >= 0.6 ? 'Strong agreement — stores rated lower really do score lower on real visits.'
           : cal.r >= 0.3 ? 'Moderate agreement — the estimate leans the right way; keep validating.'
-          : cal.r >= 0 ? 'Weak agreement so far — treat as directional only.'
+          : cal.r >= 0 ? 'Weak agreement — treat as directional only.'
           : 'Estimate is currently inverted vs actuals — investigate before trusting it.')));
 }
 
@@ -360,6 +368,31 @@ function CoverageGaps({ res }) {
         res.method?.dailyWindow, ' ', res.method?.monthlyWindow)));
 }
 
+// Dispatch #69 — "Report detail" used to sit as its own pill-button pair among the scope
+// filters, styled identically to All/OK/FL (which DO change the on-screen view). It printed
+// nothing on its own and only ever affected what doPrint() built, so it read as a broken view
+// toggle. Split-button dropdown on the action it actually modifies, per the backlog's own
+// direction: Report ▾ → Full audit / Summary, each option prints immediately.
+function ReportButton({ detail, setDetail, onPrint }) {
+  const { useState, useRef, useEffect } = React;
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  const pick = v => { setDetail(v); setOpen(false); onPrint(v); };
+  return h('div', { ref, style: { position: 'relative', display: 'inline-block' } },
+    h('button', { className: 'btn btn-sm', title: 'Print / PDF the Visit Readiness calibration report for this scope', style: { fontSize: 10 }, onClick: () => setOpen(o => !o) }, '🖨 Report ▾'),
+    open && h('div', { style: { position: 'absolute', top: '100%', right: 0, marginTop: 3, background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', boxShadow: '0 4px 16px rgba(0,0,0,.35)', zIndex: 10, minWidth: 130, overflow: 'hidden' } },
+      [['full', 'Full audit'], ['summary', 'Summary']].map(([v, l]) => h('div', {
+        key: v, onClick: () => pick(v),
+        style: { padding: '7px 12px', fontSize: 10.5, cursor: 'pointer', color: detail === v ? 'var(--amber)' : 'var(--text)', fontWeight: detail === v ? 700 : 400, background: detail === v ? 'rgba(245,188,0,.08)' : 'transparent' },
+      }, l))));
+}
+
 export function VisitReadinessPanel({ ds, onClose, initialScope }) {
   const { useMemo, useState } = React;
   // Scope follows the app-wide selector standard (All → State → Patch → Store) and is
@@ -380,7 +413,10 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
   const [detail, setDetail] = useState('full');   // print: full per-store audit vs summary
   const d = res.district;
 
-  const doPrint = () => openPrint(readinessReportHTML(res, { scopeLabel, detail }));
+  // Dispatch #69 — takes an explicit detail level rather than reading `detail` state, so the
+  // dropdown below can print immediately with the just-picked value (setDetail is async; a
+  // closure read here could still see the PREVIOUS value on the same click).
+  const doPrint = dtl => openPrint(readinessReportHTML(res, { scopeLabel, detail: dtl ?? detail }));
   const doCsv = () => downloadCsv(readinessAuditCSV(res, { scopeLabel }), reportFileBase(scopeLabel, 'audit') + '.csv');
 
   const stat = (label, val, col) => h('div', { style: { flex: '1 1 96px', minWidth: 90, background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '8px 12px' } },
@@ -395,7 +431,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
         h('div', { style: { flex: 1, minWidth: 200 } },
           h('div', { style: { fontSize: 14, fontWeight: 800 } }, 'Visit Readiness'),
           h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, 'PACE graded-visit readiness (CFV / RGRV / EcoSure) from daily ops metrics · coach the at-risk stores before the visit')),
-        h('button', { className: 'btn btn-sm', title: 'Print / PDF the Visit Readiness calibration report for this scope', style: { fontSize: 10 }, onClick: doPrint }, '🖨 Report'),
+        h(ReportButton, { detail, setDetail, onPrint: doPrint }),
         h('button', { className: 'btn btn-sm', title: 'Download the full calibration audit — one row per store × area × metric, with targets, tolerances and sources', style: { fontSize: 10 }, onClick: doCsv }, '⬇ Audit CSV'),
         h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
@@ -412,11 +448,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
           h('option', { value: '' }, '— store —'),
           Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l) || sName(l)))),
         h('span', { style: { fontSize: 9.5, color: 'var(--text3)' } }, scopeLabel + ' · ' + (res.stores || []).length + ' with data'),
-        h('span', { style: { flex: 1 } }),
-        h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'Report detail'),
-        h('div', { style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-          ...[['full', 'Full audit'], ['summary', 'Summary']].map(([v, l]) => h('button', { key: v, onClick: () => setDetail(v),
-            style: { padding: '3px 9px', border: 'none', fontSize: 9.5, cursor: 'pointer', background: detail === v ? 'var(--amber)' : 'transparent', color: detail === v ? '#000' : 'var(--text3)', fontWeight: detail === v ? 700 : 400 } }, l)))),
+        h('span', { style: { flex: 1 } })),
 
       h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
         !d ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
@@ -426,14 +458,14 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
           h('div', { style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
             'Readiness (0–100) is a weighted blend — ', h('b', null, 'Speed 35%'), ' · ', h('b', null, 'Accuracy 30%'), ' · ',
             h('b', null, 'Quality 20%'), ' · ', h('b', null, 'Leadership 15%'), ' — each metric scored against that store\'s own target. ',
-            'Weighted toward the areas most heavily graded and most directly measured in your data. Food Safety is a separate risk flag (waste/holding proxies). ',
+            'Weighted toward the areas most heavily graded and most directly measured in your data. Waste & variance is a separate risk flag (waste/holding proxies) — it is not a Food Safety measure. ',
             h('b', null, 'This is an early-warning estimate, not a predicted score.')),
 
           h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 } },
             stat('District readiness', Math.round(d.readiness), scoreColor(d.readiness)),
             stat('At risk', d.atRisk, d.atRisk ? '#ef4444' : '#10b981'),
             stat('Watch', d.watch, '#f59e0b'),
-            stat('FS elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
+            stat('W&V elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
             stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
             stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
 
