@@ -300,6 +300,11 @@ async function runPeriod(period, token) {
       // space from audit_rows.emp's name-keyed tokens for the same real person. See
       // schema-identity-vault-qsr-waste.sql's own header for why that gap is not closed this
       // pass (no eID->name mapping exists anywhere in this codebase to close it with).
+      // REGRESSION FIX: cab407e (dispatch #48) refactored the two lines below into the
+      // tokenized form and dropped this fetch in the process, leaving `rawWaste` undefined --
+      // a ReferenceError on every store, every run, silently until the pull's own 25%
+      // failure-rate guard caught it. Restored verbatim from that commit's own deletion.
+      const rawWaste = await ebosGet(token, nsn, `raw_waste_promo?${range}`).catch(() => []);
       const wasteEvents = mapWasteEvents(rawWaste);
       const wasteTokenMap = await tokenizeRows(supabase, wasteEvents, 'manager');
       const wasteRows = wasteEvents.map((w, i) => ({
