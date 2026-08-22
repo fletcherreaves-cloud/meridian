@@ -117,10 +117,16 @@ const DAY_FMT = new Intl.DateTimeFormat('en-CA', {
 });
 // hourCycle explicitly 'h23' (NOT just hour12:false) -- hour12:false alone leaves the actual
 // midnight-hour rendering to the runtime's default hourCycle resolution for the locale, which
-// is NOT guaranteed portable: this exact code rendered midnight as "00:00" on Node 22 locally
-// but "24:00" on Node 24 in CI, breaking chicagoMidnightUTC's string match on every input and
-// failing CI while passing locally (measured, not assumed -- see the CI job log this comment
-// was added in response to). Forcing hourCycle explicitly removes the ambiguity outright.
+// is NOT guaranteed portable: this exact code rendered midnight as "00:00" on the sandbox's
+// Node 22 locally but "24:00" on CI's Node **20.20.2** (ci.yml:42's pin -- confirmed by reading
+// the actual CI job log's "Environment details" block, not assumed from the runner's own
+// unrelated "Node 20 is being deprecated, running Node 24 by default" banner, which is about the
+// Actions runner's own JS-action execution environment, a different layer from the pinned
+// setup-node version that actually runs `npm test`/`npm run build` -- see dispatch #60), breaking
+// chicagoMidnightUTC's string match on every input and failing CI while passing locally (measured,
+// not assumed -- see the CI job log this comment was added in response to). Forcing hourCycle
+// explicitly removes the ambiguity outright. Guarded by
+// src/__tests__/ratchet-intl-hourcycle.test.js so this can't silently regress again.
 const TIME_FMT = new Intl.DateTimeFormat('en-US', {
   timeZone: ESTATE_TZ, hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
 });
