@@ -65,6 +65,19 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 READY TO START (2026-08-22): [Dispatch #61 — derive the Test Kitchen block from `panel.kind`](dispatch-61.md)** —
+  **NEWEST, unstarted.** Makes promotion the one-field flip CLAUDE.md's standing rule already
+  claims it is. Today it is two edits and getting it wrong renders the panel **twice**
+  (`shell.js`'s `⚗ TEST KITCHEN` is a hand-maintained literal `navPBeta('id')` list, not derived).
+  **Measured 2026-08-22: 11 `navPBeta` call sites vs 11 `kind:'test-kitchen'` registry panels,
+  set difference zero** — membership has NOT drifted, so derivation is a provable pure refactor
+  *right now*; once the lists disagree it becomes a product decision instead. The reason #55
+  Part A deferred it is ORDER, not effort: registry order is alphabetical, `shell.js`'s is
+  curated, and the two share no positions, so naive derivation moves all eleven and fails Part
+  A's "nothing about today's nav may move" bar. Design: derive membership AND order from the
+  registry via a new order field. Safety net already exists —
+  `shell-nav-snapshot.test.js:62` renders the real sidebar and compares full ordered text.
+  ⚠️ `grep -c "kind:'test-kitchen'"` returns 14, not 11 — three are comment mentions.
 - **✅ SHIPPED (2026-08-22, v5.103): [Dispatch #59 — the role dimension the security rules already need](dispatch-59.md)** —
   **NEWEST.** `audit_rows`' PK moved from `(loc, date, emp)` to `(loc, date, emp, register_type)`
   (`schema-audit-rows-register-type.sql`, live-table migration, backfilled `'cashier'` via the
