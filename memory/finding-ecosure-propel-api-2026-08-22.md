@@ -76,15 +76,40 @@ a live counterexample, not just a documentary argument.**
 
 1. **Enumeration is unsolved.** This endpoint needs a `visitId`. There must be a list/search
    endpoint; find it before designing anything. Also unknown: how `hierarchy-node` maps to stores.
-2. **Akamai bot protection is present** (`_abck`, `bm_sz` cookies). That is a materially harder
-   automation target than QSRSoft, and a plain server-side fetch will likely be challenged.
-   Expect Playwright, and expect it to be fragile. **Measure before designing** — this session has
-   already produced two wrong confident conclusions about an auth mechanism by reasoning instead of
+2. **🔴 `propel.mcd.com` is SSO (owner, 2026-08-22)** — and the `rtFa` cookie indicates Microsoft
+   federation (Entra/ADFS/SharePoint). **This is categorically harder than QSRSoft.** QSRSoft has a
+   Cognito `USER_PASSWORD_AUTH` grant, so `getFreshToken()` can mint a credential from a stored
+   username and password. **SSO has no equivalent** — there is no password grant to call, and if
+   MFA is enforced (likely on corporate McDonald's identity) then *no* unattended flow can
+   authenticate at all.
+
+   ❓ **Ask first: is MFA enforced on this login?** That single answer decides which of the options
+   below is even possible. Do not design before it is known.
+
+   **Realistic paths, best first:**
+   - **Persistent authenticated browser profile on the Mac mini.** Log in interactively once;
+     Playwright attaches to that profile (`launchPersistentContext`) and reuses the session. The
+     self-hosted runner built in #65 is already the right host, and it is already on a permitted
+     network. Re-authentication becomes an occasional manual step, like the `LIFELENZ_TOKEN`
+     refresh runbook. **Survives MFA**, because the human does the MFA once.
+   - **Manual capture into the existing upload path.** Least engineering, and see the cadence note
+     below for why it may be sufficient.
+   - **Headless SSO automation.** Only viable with no MFA, and even then Akamai (`_abck`, `bm_sz`)
+     will likely challenge it. Treat as a last resort.
+
+3. **Akamai bot protection** (`_abck`, `bm_sz`) sits on top of the SSO problem. A plain server-side
+   fetch will likely be challenged. **Measure before designing** — this session has already
+   produced two wrong confident conclusions about an auth mechanism by reasoning instead of
    testing.
-3. **PII on ingest.** `reviewedWithName` is an employee name. It must go through
+
+   ✅ **Cadence makes this tractable.** EcoSure visits are infrequent — a handful per store per
+   year, not daily. A weekly or even monthly pull suffices, so a semi-manual path that would be
+   unacceptable for a daily stream is perfectly reasonable here. **Do not over-engineer this into a
+   daily automated pull.**
+4. **PII on ingest.** `reviewedWithName` is an employee name. It must go through
    `get_or_create_employee_token()` like every other person field — no plaintext name in the table,
    a log, a fixture, or a memory file.
-4. **A new stream means the full checklist**: Supabase table with `tenant_id` + RLS,
+5. **A new stream means the full checklist**: Supabase table with `tenant_id` + RLS,
    `sync-failure-watch.yml` registration, per-stream `STREAMS` freshness, manual fallback.
 
 ## 🔒 Security note
