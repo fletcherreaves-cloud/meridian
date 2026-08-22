@@ -424,3 +424,24 @@ never put one in a test fixture, and surface a name only via the logged `reveal_
 path. **Prefer keying on `userId`** (a UUID) so the name never needs to be stored at all.
 
 No name, `userId`, or other identifier from the captured response is recorded in this file.
+
+
+---
+
+## 🔴 UPDATE 2026-08-22 — the token-only server-side path returns NOTHING
+
+The pull script built on this endpoint (`scripts/qsrsoft-forms-completion-pull.mjs`) has run twice
+in production and returned **zero rows on every chunk**, including a window that OVERLAPS the
+4,714-row capture recorded above. No 401, no 403, no non-2xx — a 200 with an empty array, in under
+a second.
+
+**This is the caveat in the host table above coming true.** That table says
+`forms.home.myqsrsoft.com` auth is **"UNKNOWN — assume nothing"**; the pull script assumed the same
+shape as `api.reports` and shipped untested against a populated window. The likely reality is that
+this host fails **silently** (200 + `[]`) where `api.reports` fails **loudly** (401).
+
+📌 **For anyone extending this finding: the 4,714-row measurement above was taken from a BROWSER
+session.** Nothing here establishes that a server-side token-only request can read this endpoint at
+all. Treat the response schema as measured and trustworthy; treat the *access method* as unproven.
+
+Full diagnosis and the test that settles it: `memory/dispatch-71.md`.

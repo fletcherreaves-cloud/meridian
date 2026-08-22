@@ -715,3 +715,89 @@ saying so rather than silently scoring it from ops data alone.
 `24471 ARDMORE-NEC` is worst in 2025 comprehensive (0.832, quality 0.693) **and** 3rd-worst on
 EcoSure (0.835). Given how little year-to-year signal there is generally, a store that is bad on two
 different instruments is more likely to be genuinely bad than a one-visit outlier.
+
+---
+
+# 🔴 Addendum — 2024 comprehensive, and a REVISED test-retest ceiling (supersedes the ρ=0.113 figure)
+
+Owner-captured, `year=2024`, `category=visitResult`. 27 rows, **27 visits across 25 scored
+stores** (DeFuniak and Cottondale have 2 each; **Tishomingo and Ponce de Leon have none**).
+Computed overall mean 0.9442 vs published rollup 0.945 ✅.
+
+⚠️ **A prior capture labelled "2024" was in fact the 2025 data.** The snippet carried the year in
+two places — the URL and a hardcoded output label — so changing one produced a mislabelled but
+otherwise valid 2025 payload, byte-identical to the earlier pull. Caught by comparing rows, not by
+trusting the label. **The snippet now derives the label from a single `YEAR` constant.** Recorded
+because a self-labelling export that *can* lie is a trap worth not rebuilding.
+
+## 🔴 CORRECTION — the ρ=0.113 ceiling was a small-sample artifact, and it pointed the wrong way
+
+The previous addendum computed test-retest at **ρ = +0.113 (n=15**, 2025→2026) and concluded:
+
+> *"0.23 is not weak against this benchmark — it is higher than the store's own prior score
+> achieves. The panel is disparaging a model that beats the natural baseline."*
+
+**2024→2025 gives a better estimate on a larger, fully-covered sample, and it reverses the
+direction:**
+
+| pairing | n | ρ | 95% CI |
+|---|---|---|---|
+| 2025 → 2026 | 15 | +0.113 | [−0.42, +0.59] |
+| **2024 → 2025** | **25** | **+0.342** | **[−0.06, +0.65]** |
+
+2024→2025 is the better of the two: both years have near-complete coverage, where 2026 is a
+partial year of 15 visits. **So the ceiling is ≈0.34, not ≈0.11 — and it sits ABOVE the Model
+Check's 0.23, not below it.** My earlier claim that the model beats the baseline does not survive
+the larger sample and is withdrawn.
+
+### What the honest read now is
+
+| | ρ | 95% CI |
+|---|---|---|
+| Visit Readiness model vs actual | 0.23 | [−0.16, +0.56] |
+| store's own prior visit (ceiling) | 0.34 | [−0.06, +0.65] |
+
+1. **The two are statistically indistinguishable.** The intervals overlap almost entirely. Nothing
+   here says the model is worse than the baseline either — only that it is not measurably better.
+2. **The ceiling is real but modest.** Even the best imaginable predictor of a graded visit is
+   working against an outcome where the same store's own prior visit explains ~12% of variance.
+   **A model scoring 0.9 here is not achievable and should not be the target.**
+3. **So dispatch #69 Part B's caption fix stands, and its "do not refit the weights" stands** — but
+   for a sharpened reason. Not merely "n is too small to fit": **the achievable ceiling is low
+   enough that the payoff from a better fit is bounded regardless of n.** Report ρ *against the
+   test-retest benchmark* so a reader can see what "good" looks like — 0.23 against a 0.34 ceiling
+   is a very different statement from 0.23 against an implied 1.0.
+4. ⚠️ **Do not now swing to "the model is underperforming."** That is the same over-claim in the
+   other direction, on overlapping intervals. Two estimates of the ceiling (0.11, 0.34) from two
+   samples is not a settled number either.
+
+📌 **Method note for anyone extending this:** the ceiling should be re-estimated whenever another
+year lands, and reported *with its CI*, never as a point. Two samples have already produced
+0.11 and 0.34.
+
+## 2024 → 2025 movement
+
+Mean **0.9442 → 0.9265 (−0.0177)**; **15 of 25 stores worse**, 10 better. Combined with 2025→2026's
+−0.0090 that is two consecutive down years on the overall score.
+
+⚠️ Given ρ≈0.34, single-store year-over-year moves are mostly noise. The exception is a store that
+moves consistently: **`24471 ARDMORE-NEC` fell −0.117 (0.949 → 0.832), the largest mover**, and is
+also worst overall in 2025, carries 2025's only sub-80% component (quality 0.693), and is
+3rd-worst on EcoSure. **Four independent signals on one store** — that is not noise.
+
+Also `11657 PURCELL` −0.079 and `31357 PAULS VALLEY` −0.077; both were also bottom-5 in 2025.
+
+## Two structural differences in 2024 worth knowing
+
+1. **Not every visit graded every area.** Area `visitQuantity` varies: `visitResult` 27, but
+   `quality`/`service`/`cleanliness`/`shiftLeadership` **25**, `foodSafety`/`healthAndSafety` **26**.
+   In 2025 all seven were 27. **A per-area rollup denominator is not the visit count** — read each
+   area's own `visitQuantity` rather than assuming.
+2. **2024 had TWO failed visits** (`visitResult.passPercentage` 0.926 = 25/27). 2025 and 2026 to
+   date have zero. So the estate's pass record improved while its mean score fell.
+
+## Ponce de Leon — now confirmed across FIVE datasets
+
+Zero visits in 2024 comprehensive, 2025 comprehensive, 2026 comprehensive, and **both** EcoSure
+years. Tishomingo also has none in 2024 or in one EcoSure year, but does appear elsewhere — Ponce
+de Leon appears nowhere. **This is no longer a curiosity; escalate it to PACE.**
