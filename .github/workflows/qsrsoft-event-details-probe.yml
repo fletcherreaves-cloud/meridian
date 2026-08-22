@@ -1,0 +1,53 @@
+name: QSRSoft Event Details Empty-Array Probe
+
+# Dispatch #58 — read-only, workflow_dispatch-only. Settles whether empty registers[]/cashiers[]
+# on event_details means "all" (cheap daily pull) or is a required filter (redesign needed)
+# BEFORE any scheduled pull script is written. See memory/dispatch-58.md's own "SETTLE THIS
+# FIRST" section. Makes no writes to Supabase or anywhere else.
+
+on:
+  workflow_dispatch:
+    inputs:
+      store_ref:
+        description: 'Unpadded NSN to probe (default: 29760, Duncan-Hwy 81)'
+        required: false
+        default: ''
+      date:
+        description: 'YYYY-MM-DD to probe (default: 7 days ago)'
+        required: false
+        default: ''
+      event_token:
+        description: 'event_token to probe (default: all_promo)'
+        required: false
+        default: ''
+      registers:
+        description: 'Comma-separated register numbers for the "populated" call (default: 13)'
+        required: false
+        default: ''
+      cashiers:
+        description: 'Comma-separated cashier badges for the "populated" call (default: 91,0)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Probe event_details empty-array behavior
+        run: node scripts/qsrsoft-event-details-probe.mjs
+        env:
+          QSRSOFT_USERNAME:             ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:             ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_EVENT_PROBE_STORE_REF: ${{ github.event.inputs.store_ref   || '' }}
+          QSRSOFT_EVENT_PROBE_DATE:      ${{ github.event.inputs.date        || '' }}
+          QSRSOFT_EVENT_PROBE_TOKEN:     ${{ github.event.inputs.event_token || '' }}
+          QSRSOFT_EVENT_PROBE_REGISTERS: ${{ github.event.inputs.registers   || '' }}
+          QSRSOFT_EVENT_PROBE_CASHIERS:  ${{ github.event.inputs.cashiers    || '' }}
