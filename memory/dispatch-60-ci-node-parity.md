@@ -77,3 +77,52 @@ is that CI could not verify the last one either. Guard first, refactor separatel
   demonstrate both in the PR, since that is the entire point.
 - Full suite green on both matrix entries.
 - No behaviour change to `forms-completion.js` itself.
+
+## ✅ Resolved (2026-08-22, v5.100)
+
+**1. Source-level guard shipped:** `src/__tests__/ratchet-intl-hourcycle.test.js`. Scans a
+`new Intl.DateTimeFormat(...)` constructor call's own options object for `hour:` without
+`hourCycle:`, or bare `hour12:`, anywhere under `src/` or `scripts/` (not just `src/` — the sweep
+found the second instance lives under `scripts/`). Zero-tolerance (`toEqual([])`), not a ratcheting
+CEILING — unlike R4's color-concat check, there is no call shape in this codebase where the trapped
+pattern is legitimate. **Bar demonstrated**: reverted both `forms-completion.js`'s `TIME_FMT` and
+`qsrsoft-onhand-pull.mjs`'s `centralHour()` to their pre-fix `hour12: false` shape — the guard
+failed, naming both `file:line`s exactly. Restored the fix — guard passed. Full suite (1952 → 1954
+with the guard's own 2 tests) green on both states as expected.
+
+**2. CI Node matrix shipped:** `ci.yml`'s `verify` job now runs `strategy.matrix.node-version:
+[20, 22]` instead of a single pin — 20 for historical/production parity, 22 to match the sandbox
+that keeps producing "clean local" runs. Confirmed this doesn't touch the Vercel deploy-count cap
+(`CLAUDE.md`'s "merge without asking" section) — that's a separate quota (deployments/day on
+Vercel), not GitHub Actions minutes.
+
+**3. Sweep result — NOT an "only instance."** `scripts/qsrsoft-onhand-pull.mjs`'s `centralHour()`
+had the identical `hour12:false`-without-`hourCycle` shape, feeding the formatted hour into
+`Number()` for a `CT_START`/`CT_END` business-hours range check. **Currently latent** — the
+8am–6pm CT window never spans midnight, so "00" vs "24" both fail the range check identically —
+but fixed to `hourCycle:'h23'` anyway, before either env-var bound ever changes to include
+midnight. Every other `Intl.DateTimeFormat` call site in the codebase (`compute-hourly-projection-
+accuracy.mjs`, `eom-snapshot-pull.mjs`) requests no `hour` at all and is unaffected — confirmed by
+the guard test itself passing at zero hits post-fix, not by a one-time grep that could go stale.
+The various `toLocaleTimeString`/`toLocaleDateString` display-only calls elsewhere (`projections.js`,
+`at-a-glance.js`, `eom-dashboard.js`, `eom-share-view.js`, `session.js`, `fob-eom.js`) are a
+**different, unaffected case**: none forces a 24-hour cycle (no `hour12:false`/`hourCycle:` at
+all) and none compares formatted output against a literal — they just render a label, so `en-US`'s
+locale-stable 12-hour default applies the same on every Node/ICU version. Deliberately not folded
+into the guard (which is scoped to `Intl.DateTimeFormat` per the dispatch's own "keep it narrow").
+
+**⚠️ Node-version discrepancy resolved.** Read the actual CI job log for the originally-failing
+run (`get_job_logs`, job that ran PR #539's `verify` before the hotfix merged into it). The
+`actions/setup-node@v4` step's own "Environment details" block shows `node: v20.20.2` — CI's real
+test-running Node, exactly matching `ci.yml:42`'s `node-version: 20` pin. `CLAUDE.md`'s existing
+"20" claim needed **no correction**. The hotfix's own comment/commit message (`b72d377`, "breaking
+on Node 24 in CI") was the wrong one — it had conflated the Actions runner's own "Node 20 is being
+deprecated, this workflow runs with Node 24 by default" banner (which is about the runner's
+internal JS-action execution layer — checkout, setup-node itself — a separate layer from the
+pinned Node the `setup-node` step actually installs and runs `npm test`/`npm run build` with) with
+the project's own pinned test Node. Corrected in `forms-completion.js`'s `TIME_FMT` comment; the
+already-merged `main` commit message itself cannot be rewritten, hence this note.
+
+**Confirmed out of scope, as specified:** `chicagoMidnightUTC` itself is unchanged — still
+string-matches formatted output, still not refactored to `formatToParts()`. That stays a separate,
+deliberate future call if ever made.
