@@ -1,0 +1,104 @@
+# Dispatch #65 — run the `api.security` pull from a permitted network origin
+
+**Status:** ready to start. Architecture is settled by measurement; no vendor contact involved.
+**Reads:** `memory/dispatch-63.md` (the CORRECTION section) and
+`memory/finding-qsrsoft-event-details-endpoint-2026-08-21.md`.
+
+---
+
+## What was measured
+
+`api.security` refuses our requests by **network origin**, not by credential, principal, auth
+flow, or request shape — all of which were controlled and eliminated in #63.
+
+| origin | credential | result |
+|---|---|---|
+| owner's home/office network, browser | owner's SPA token | **200** |
+| owner's home/office network, **`curl`, no browser** | same token | **200 + real rows** |
+| owner's **mobile carrier** (laptop tethered), `curl` | same token | **200 + real rows** |
+| **GitHub Actions** (Azure), real Chromium + real SPA login | Playwright SRP token | **403** |
+| **GitHub Actions**, `getFreshToken()` | ID token *and* access token | **403** (byte-identical) |
+
+The owner's browser `sub` hash is `9378eb7a6502` — **identical to ours**. One Cognito principal,
+allowed from two consumer networks and denied from a cloud network.
+
+**So the rule is not an allowlist of the owner's specific IPs** — a mobile carrier IP the vendor
+has never seen also works. It is a **block on datacenter/cloud ranges**. `api.reports` is
+unaffected (every existing pull runs on hosted runners daily), so this is specific to the
+security module — unsurprising for one whose routes include `video_provider`.
+
+**⚠️ The vendor is not a participant.** Per the owner (2026-08-22), QSRSoft will not assist and
+asking would be counterproductive. Do **not** contact them, and do not reopen the superseded
+entitlement request (`memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md`). The
+data is the owner's own, accessed with the owner's own credentials, from the owner's own network.
+
+## The architecture — self-hosted GitHub Actions runner
+
+Install a GitHub self-hosted runner on an always-on machine on a **consumer connection** at the
+owner's home or office (a Mac mini, NUC, spare laptop, or a Pi all qualify — the mobile result
+means even an LTE-connected device works). Then:
+
+- the `api.security` workflow gets **`runs-on: self-hosted`**
+- **every other workflow stays on hosted runners, unchanged.** Do not migrate the other 24
+  scheduled pulls; they work today and moving them adds risk for no benefit.
+
+Why this over the alternatives:
+
+- **It changes almost nothing.** Secrets, logging, `sync-failure-watch.yml`, the retry plumbing
+  and the token path all carry over. `getFreshToken()` needs **no change** — it was never the
+  problem; a token it minted returns 200 from a permitted origin.
+- **Tailscale exit node** (hosted runner egressing through a device at the owner's site) is a
+  workable fallback if a persistent runner isn't wanted, but it adds a moving part inside the auth
+  path and a tailnet-uptime dependency. Second choice, not first.
+- **A local `launchd`/cron script** is a stopgap only: it dies when the machine sleeps and is
+  invisible to the failure-watch system, which is exactly the #171 failure mode.
+
+### 🔴 Explicitly rejected
+
+- **Third-party residential-proxy services.** The `event_details` response carries **plaintext
+  employee names** (`"crew":"Aaden W — 91"`). Routing that, plus a live credential, through a
+  commercial proxy hands both to an unaccountable third party. Not worth it at any price. Own
+  hardware on an owned connection, or nothing.
+- **A cloud VPS with a static IP.** Almost certainly the same datacenter block. Untested, and
+  testable for a few dollars if someone wants certainty, but do not build on it.
+
+## Still gating the pull's SHAPE — do not skip
+
+`memory/dispatch-58.md`'s **empty-`registers`/`cashiers`** question is still unanswered, and it
+decides whether the pull is 27 stores × 8 tokens or something far larger. The probe already tests
+this and can now run from a permitted origin. **Answer it before writing the pull loop.**
+
+## Build checklist (the standing new-pull rule, all in one PR)
+
+1. **Watch it** — add the workflow's exact `name:` to `sync-failure-watch.yml`;
+   `src/__tests__/sync-failure-watch.test.js` enforces this both ways. A self-hosted runner adds a
+   failure mode hosted runners don't have (machine asleep, runner offline), so this matters *more*
+   here, not less.
+2. **Per-stream staleness**, not pooled — `stream-freshness.js`, per #171.
+3. **`qsr_security_events` already exists** (created 2026-08-22, role-gated RLS, `tenant_id`).
+   Verified live. No migration needed.
+4. **Manual fallback** retained per the auto-first rule.
+5. **Two-path auth** matching the existing pulls.
+
+## Constraints
+
+- **Tokenize on ingest.** `crew`/`mgr` arrive as plaintext `"Name — badge"`. They go through
+  `get_or_create_employee_token()` into `crew_token`/`mgr_token`; the badge is kept as its own
+  column. **No plaintext name in the table, a log, a fixture, or a memory file** — the schema's
+  own header says so.
+- **Sane cadence** — once or twice daily, matching the existing pulls, with the usual backoff.
+  Do not hammer the endpoint; that is ordinary good behaviour toward an API and also keeps the
+  runner's traffic looking like what it is.
+- **Do not migrate other workflows** to the self-hosted runner.
+
+## Verification bar
+
+- The pull returns **200 and real rows from the self-hosted runner** — with the row count and
+  store/date window in the PR body. A 403 from there means the origin assumption is wrong and the
+  dispatch stops for a re-measure, not a workaround.
+- A deliberate **runner-offline** test: the workflow must fail loudly and trip
+  `sync-failure-watch`, not silently record zero rows. The register-audit pull's
+  *"✗ zero rows saved … a quiet no-op, not a success"* is the pattern to copy.
+- No plaintext name anywhere in the diff, logs, or test fixtures.
+- `npm run build` clean; **check `node -v` against `ci.yml`'s `[20, 22]`** before trusting a local
+  green (#60).
