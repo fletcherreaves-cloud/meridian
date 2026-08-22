@@ -705,10 +705,15 @@ Biggest overall swings: `33222 ELGIN` −0.098 (0.970→0.872), `10422 ATOKA` �
 
 ## 🔴 Ponce de Leon (43701) is ungraded across EVERY dataset seen
 
-Zero comprehensive visits in 2025. Zero in 2026. Zero EcoSure visits. Three independent datasets,
-no grades anywhere. It is a real store in the hierarchy (`195500938240`), so this is not a mapping
-artifact. **Worth asking PACE why one restaurant is going ungraded** — and worth Visit Readiness
-saying so rather than silently scoring it from ops data alone.
+Zero comprehensive visits in 2025. Zero in 2026. Zero EcoSure visits.
+
+🔴 **RESOLVED later the same day — see the Tishomingo/opening-dates section below. Ponce de Leon is
+a NEW STORE** (first CFV visit 2026-06-20, two visits total). The absence is its age, not neglect.
+**The "ask PACE why one restaurant is going ungraded" recommendation below is WITHDRAWN.**
+
+~~It is a real store in the hierarchy (`195500938240`), so this is not a mapping artifact. **Worth
+asking PACE why one restaurant is going ungraded** — and worth Visit Readiness saying so rather than
+silently scoring it from ops data alone.~~
 
 ## Consistency worth noting
 
@@ -1168,10 +1173,58 @@ the error that cost a round trip once today already.
 | ✅ supports | RGR's comprehensive `foodSafety` **area** fell 0.978 (2024) → 0.953 (2025). EcoSure A → B falls 0.896 → 0.882. **Same direction.** But these are different instruments, and a two-point comparison agrees by chance half the time. |
 | ⚠️ does not support | Tishomingo (43380): RGR has 0 visits in 2024 and 1 in 2025; EcoSure has 2 in A and 0 in B. Under A=2024/B=2025 that is EcoSure-but-not-RGR in 2024 and the reverse in 2025. Not contradictory — separate programmes — but no help either. |
 
-**Verdict: suggestive, not sufficient.** Use A=2024 / B=2025 as the working assumption if a date is
-needed, **always labelled as unconfirmed**, and close it properly with one dropdown change the next
-time anyone is in that UI. The numbers themselves are sound and reconciled; only their placement in
-time is open.
+## ✅ RESOLVED — and the answer is the REVERSE: **A = 2025, B = 2024**
+
+**Owner supplied the deciding test:** *"My evidence is when Tishomingo opened."* The method is
+right, and applied against the CFV history it settles the question — in the opposite direction to
+the recollection.
+
+**Measured from `getCfvHistory` (217 visits, per-store first-visit dates):**
+
+| store | first CFV visit | n |
+|---|---|---|
+| **43380 TISHOMINGO** | **2025-04-15** | 5 |
+| 43701 PONCE DE LEON | 2026-06-20 | 2 |
+| every other store | 2023-01-18 … 2023-06-27 | 6–12 |
+| estate median first visit | 2023-04-21 | |
+
+**Tishomingo generated no graded visits before April 2025**, while all 25 established stores reach
+back to early 2023.
+
+Therefore:
+
+| capture | Tishomingo EcoSure visits | ⇒ year |
+|---|---|---|
+| **A** (53 visits, 0.896, 1 critical fail) | **2** | **must be 2025** — it cannot be a year the store wasn't operating |
+| **B** (54 visits, 0.882, 1 critical + 3 non-critical) | **0** | **2024** |
+
+⚠️ Strictly this shows Tishomingo was not generating visits *under this operator* before Apr 2025 —
+"opened" versus "acquired" is not distinguished by the data. **The conclusion is robust to either**:
+a year with two Tishomingo EcoSure visits is not 2024 on either reading.
+
+**So EcoSure improved 2024 → 2025** (0.882 → 0.896, and 4 fails → 1), which is the opposite of the
+trend I noted when the ordering was assumed the other way. **Anything written against the earlier
+ordering is wrong and should be re-read.**
+
+📌 **This also retired my own weak counter-signal.** I had flagged Tishomingo's visit pattern as
+"does not support" the ordering. It was in fact the *decisive* evidence — I read it as noise
+because I had no store-opening context. **A pattern that looks like an anomaly is worth asking the
+owner about before filing it as noise;** he identified in one line what the statistics could not.
+
+## 🔴 And it withdraws the Ponce de Leon escalation
+
+Earlier in this file I wrote that Ponce de Leon (43701) is *"ungraded across EVERY dataset seen …
+no longer a curiosity; escalate it to PACE."*
+
+**Withdrawn. Ponce de Leon's first CFV visit is 2026-06-20 and it has exactly two, both in 2026.**
+It is a **new store**, not a neglected one. Zero RGR visits in 2024/2025/2026 and zero EcoSure in
+both years is exactly what a store that began operating mid-2026 should show — RGR runs ~1/store/yr
+and EcoSure 2/yr, so neither has come round yet.
+
+**Do not raise it with PACE.** The same applies to any Meridian surface that would flag it: a store
+with no graded-visit history because it is new must not be presented as a coverage failure.
+`43380` deserves the same care — 5 CFV visits since Apr 2025 is a full record for its age, not a
+thin one.
 
 ⚠️ Also still unknown: the EcoSure **`category=` value** itself. `thirdPartyFoodSafety` — its own
 response block name — returns HTTP 400, and the vocabulary is not guessable. Read it off a live
