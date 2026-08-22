@@ -1154,10 +1154,24 @@ say which was selected. They are recorded as year-unconfirmed:
 Both are ~2/store, consistent with a **complete** year at the owner's stated EcoSure cadence — so
 they are most likely two of 2024/2025, not the partial 2026. **But that is an inference.**
 
-📌 **Cheap to close, and worth closing** because EcoSure is in scope and the two years differ
-materially (a 1.4-point mean gap and four fails against one). Either re-run each with the year
-visible, or note the year alongside the next capture. **Until then, do not date any EcoSure claim**
-— the numbers are sound, their placement in time is not.
+**Owner's recollection, 2026-08-22:** *"I would think a is 2024 and b is 2025."*
+
+⚠️ **Recorded as a recollection, not a fact** — the phrasing is explicitly tentative, and *this same
+session already produced a mislabelled-year artifact* from exactly this kind of assumption (a
+capture labelled 2024 that was byte-identical 2025 data). Treating "I would think" as settled is
+the error that cost a round trip once today already.
+
+**Weak corroboration, both directions checked:**
+
+| | |
+|---|---|
+| ✅ supports | RGR's comprehensive `foodSafety` **area** fell 0.978 (2024) → 0.953 (2025). EcoSure A → B falls 0.896 → 0.882. **Same direction.** But these are different instruments, and a two-point comparison agrees by chance half the time. |
+| ⚠️ does not support | Tishomingo (43380): RGR has 0 visits in 2024 and 1 in 2025; EcoSure has 2 in A and 0 in B. Under A=2024/B=2025 that is EcoSure-but-not-RGR in 2024 and the reverse in 2025. Not contradictory — separate programmes — but no help either. |
+
+**Verdict: suggestive, not sufficient.** Use A=2024 / B=2025 as the working assumption if a date is
+needed, **always labelled as unconfirmed**, and close it properly with one dropdown change the next
+time anyone is in that UI. The numbers themselves are sound and reconciled; only their placement in
+time is open.
 
 ⚠️ Also still unknown: the EcoSure **`category=` value** itself. `thirdPartyFoodSafety` — its own
 response block name — returns HTTP 400, and the vocabulary is not guessable. Read it off a live
