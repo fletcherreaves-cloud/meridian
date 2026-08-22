@@ -1013,3 +1013,34 @@ and it now has support from two independent sources.
 test-retest per dimension across ~400 visits, and use it to set an honest expectation band on the
 Model Check — **without** ingesting CEV as a Meridian data source or attempting to pair it with ops
 data. It is a calibration study, not a stream.
+
+---
+
+## ⚠️ Negative result — the `category=` vocabulary is NOT guessable (2026-08-22)
+
+Probed six candidate values against `getScoredVisitListResults`, `year=2026`, operator node:
+
+| category | result |
+|---|---|
+| `customerFirst` | **HTTP 400** |
+| `customerFirstVisit` | **HTTP 400** |
+| `customerExperience` | **HTTP 400** |
+| `cfv` | **HTTP 400** |
+| `visitResult` | ✅ total 27, blocks `visitResult,quality,service,cleanliness,shiftLeadership,foodSafety,people,healthAndSafety` |
+| **`thirdPartyFoodSafety`** | **HTTP 400** |
+
+**Two things worth keeping:**
+
+1. 🔴 **`thirdPartyFoodSafety` — the EcoSure response BLOCK name — is not a valid category.** So the
+   category parameter is *not* named after the block it returns, which was the heuristic behind
+   every guess above. **The EcoSure category value is still unknown**, even though its response has
+   been captured twice. Do not re-derive it from the payload; read it off the request.
+2. ✅ **The server validates the enum — a bad category returns 400, not a silent default.** That is
+   a genuinely good property: no risk of an unrecognised category quietly returning `visitResult`
+   data under another name, which is the trap the block-name check in the probe existed to catch.
+   It also means probing is safe and cheap; it just doesn't work without the vocabulary.
+
+📌 **The only reliable route is to read the value off the live request.** In the Propel UI, select
+the card you want and copy the URL from the Network tab — **the whole URL, not just the category**,
+because CFV may also use a *different `action=`* (as `getCustomerExperienceVisits` does) rather than
+`getScoredVisitListResults` with a new category. Do not assume the action is shared.
