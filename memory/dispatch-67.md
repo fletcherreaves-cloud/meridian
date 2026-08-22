@@ -217,3 +217,15 @@ pattern), bot/headless detection, or a genuinely stale/wrong credential in the
 `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` secrets.
 
 Still no token value, `sub`, `eID`, or email anywhere in this section or the quoted logs.
+
+### Dispatch #70 cross-reference (2026-08-22) — login works elsewhere; the Mac mini is the anomaly
+
+A relayed claim that "the source-IP theory was disproven" was tested directly (not trusted) —
+see `memory/dispatch-70.md` for the full measurement. Result: Playwright login DOES complete on a
+hosted `ubuntu-latest` runner (real `localStorage` idToken, claim-identical to the bare token),
+but the retry against `event_details` with that same genuine token still 403s from that same
+hosted runner. So network origin still gates the actual data call — the source-IP theory was
+**not** disproven. What IS now narrower: whatever prevents login from completing specifically on
+the Mac mini (recorded above) is a Mac-mini-specific bug, since the identical script completes
+the same login step cleanly elsewhere. The next session should look there — Chromium/Playwright
+version or environment differences on that host — rather than at network or auth-flow theories.

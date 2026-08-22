@@ -1,13 +1,14 @@
 name: QSRSoft Security Events Pull
 
-# TEMPORARY dispatch #70 test -- DO NOT MERGE with this comment/runs-on still in place.
-# dispatch-65.md's own CORRECTION #2 (same day it was written) disproved the network-origin
-# theory that justified the self-hosted runner: the discriminator is the TOKEN, not the source
-# IP (getFreshToken() 403s identically from the Mac mini AND from GitHub Actions). If Playwright
-# login also completes fine on a hosted runner, there is no remaining reason for this workflow to
-# require self-hosted at all. Running on ubuntu-latest here ONLY to measure that, per the "one
-# untested cell" dispatch-65.md's CORRECTION #2 named: an SPA-minted token, used from ANY origin,
-# against event_details.
+# Dispatch #70 tested and REVERTED (2026-08-22): running this workflow on ubuntu-latest showed
+# Playwright login DOES complete on a hosted runner (localStorage idToken read: true, claim names
+# identical to the bare token) -- but the retry against event_details from that SAME hosted
+# runner, with that SAME genuine SPA-minted token, still 403s. That fills in CORRECTION #2's "one
+# untested cell" in the OTHER direction than expected: it is not "SPA token from the Mac mini",
+# it is "SPA token from a hosted runner" -- and the answer is 403. Network origin still gates the
+# actual data call; only the LOGIN step turned out to be runnable from anywhere. See
+# memory/dispatch-70.md and memory/dispatch-67.md's Resolution for the full measurement. Stays
+# self-hosted.
 #
 # Dispatch #65. api.security.myqsrsoft.com's event_details endpoint refuses GitHub-hosted
 # runners by NETWORK ORIGIN, not credential (memory/dispatch-63.md's CORRECTION, memory/
@@ -58,7 +59,7 @@ on:
 
 jobs:
   pull:
-    runs-on: ubuntu-latest  # TEMPORARY dispatch #70 test -- see comment above, revert before merge
+    runs-on: [self-hosted, macOS, qsr-security]
     timeout-minutes: 120
 
     steps:
