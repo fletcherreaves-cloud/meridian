@@ -262,9 +262,11 @@ Restaurant nodes and was missing Ponce de Leon (43701); that file flagged *"this
 for ONE eID … re-run for the owner's own eID before treating it as the store universe."*
 **This confirms it** — the operator-node rollup counts 27, matching `STORE_NAMES` exactly.
 
-⚠️ **Ponce de Leon is still not directly observed.** `rowsPerPage=20` means the capture is page 1 of
-2. It is *implied* by `totalCount: 27` and by nothing in PACE being absent from Meridian, but it has
-not been seen. **Capture page 2** before treating the node map as complete.
+✅ **Page 2 captured — Ponce de Leon directly observed.** `195500938240` →
+`43701 HWY 81 AND I-10-PONCE DE LEON, FL`. **The node map is complete at 27/27** (20 rows on page 1
++ 7 on page 2). The store was never missing from PACE; the earlier 26 was purely the per-user scope
+of `impersonateUser`, exactly as flagged. Add this row to the map in
+`memory/finding-peak-cfv-api-2026-08-22.md`.
 
 ### 3. Per-PACE-AREA scores, per store — component-level ground truth
 
@@ -359,7 +361,7 @@ reconcile**, which is the check that says the rollup is a real aggregate and not
    `SurveyType.TypeId 3801`; whether `visitType` shares that numbering is unverified. This is how
    CFV/RGR/EcoSure get separated — **capture one non-zero value and find out.**
 4. **`category=visitResult`** implies other categories exist. Unknown.
-5. **Page 2** — needed to observe Ponce de Leon and the remaining 5 visits.
+5. ~~Page 2~~ **Captured.** 7 rows, 5 visits, Ponce de Leon present. Nothing left open here.
 6. **Is there a per-visit detail link from these rows?** They carry no `visitId`, and PEAK's
    `RoipSurvey/<VisitId>` needs one. Either another Propel action returns ids, or the two systems
    are joined some other way. **Still open, and it is what per-question detail depends on.**
@@ -372,3 +374,97 @@ Another full cURL with live cookies — `GlobalAS_SessionId`, `connect.sid`, `rt
 kept; the operator node's `hierarchyNodeName` is a list of individuals' names and is deliberately
 omitted. **Re-authenticate the Propel session** — treat it as disclosed by sharing. Future captures
 need only the URL, header *names* and the response body.
+
+---
+
+## Page 2 — the complete 2026 visit set, and what reconciling it proves
+
+7 rows (20 + 7 = 27 ✓), 5 more visits (10 + 5 = **15** ✓, matching the rollup exactly).
+
+### 🔴 The rollup is a STRAIGHT UNWEIGHTED MEAN across visits — measured, not assumed
+
+Recomputed all seven areas from the 15 individual visit scores and compared to the published
+rollup:
+
+| area | computed | rollup | Δ |
+|---|---|---|---|
+| overall | 0.9197 | 0.920 | −0.0003 |
+| quality | 0.9185 | 0.919 | −0.0005 |
+| service | 0.9355 | 0.935 | +0.0005 |
+| cleanliness | 0.8859 | 0.887 | −0.0011 |
+| shiftLeadership | 0.9333 | 0.933 | +0.0003 |
+| foodSafety | 0.9253 | 0.925 | +0.0003 |
+| healthAndSafety | 0.9273 | 0.927 | +0.0003 |
+
+Every area within rounding of a 3-decimal published figure. **PACE averages the visit scores
+unweighted** — it does *not* weight by restaurant, despite reporting `parentRestaurantCount: 27`,
+and a store with no visit contributes nothing rather than a zero.
+
+📌 **This matters for how Meridian compares to it.** The standing rule here is *never average
+averages, dollar-weight aggregates*. PACE does average averages. That is not Meridian's bug to fix
+— it is PACE's published number and the one the owner is measured on — but **any Meridian-side
+district rollup that claims to match PACE has to replicate PACE's method, and any Meridian-side
+rollup that uses the correct weighting must not be labelled as the PACE figure.** Two numbers, two
+labels. Getting this wrong is exactly the #348 class of bug: both computations locally correct,
+silently inconsistent with each other.
+
+### A component can fail while the visit passes — confirmed on live data
+
+The two sub-80% components in the whole estate are precisely the rollup's two `nonCriticalFail`s:
+
+| store | area | score | overall | overall result |
+|---|---|---|---|---|
+| 33222 ELGIN | cleanliness | **0.770** | 0.872 | **PASS** |
+| 43380 TISHOMINGO | quality | **0.792** | 0.935 | **PASS** |
+
+So **`nonCriticalFail` ⇔ that component scored below 80%**, and one such component does not fail the
+visit. That is the rule `src/parsers/graded-visits.js` already encodes for RGR (*"overall ≥
+threshold, no critical question missed, and no more than ONE component below 80%"*) — now confirmed
+against the API rather than read off a PDF.
+
+⚠️ A district that is 15/15 PASS still has two stores one component away from a fail. **A
+readiness panel that only predicts pass/fail would call this a perfect quarter.** Predicting the
+*component* is where the value is, which is the same argument for per-area validation above.
+
+### 🔴 The food-safety check, run properly — and it cuts BOTH ways
+
+The previous addendum flagged "10 of 27 flagged FS ELEVATED vs 0 of 15 failed" and explicitly
+refused to call it a refutation. With the full set, the honest answer is **mixed, and that is a more
+useful result than either extreme.**
+
+Of the three stores whose *headline coaching line* is food safety
+(`memory/notes-visit-readiness-backlog-2026-08-22.md` item 1):
+
+| store | Meridian FS flag | PACE 2026 `foodSafety` | reading |
+|---|---|---|---|
+| **06838 DEFUNIAK SPRINGS** | elevated | **0.840 — the LOWEST in the estate** | **the flag was right** |
+| 35064 HOLDENVILLE | elevated | 0.910 — mid-pack (8th of 15) | weak |
+| 03708 ARDMORE-BROADWAY | elevated | **no 2026 visit** | untestable |
+
+Full ranking, all 15 PASS: 0.840 · 0.850 · 0.880 · 0.910 · 0.910 · 0.920 · 0.920 · 0.930 · 0.940 ·
+0.940 · 0.950 · 0.950 · 0.970 · 0.970 · 1.000.
+
+**What this does and does not license:**
+- ✅ The **label** is still wrong, and dispatch #69 Part A stands unchanged. Nothing failed, no
+  critical fails estate-wide, and *"Address food-safety risk first"* on a 92.5%-passing estate is
+  an over-claim regardless of ranking.
+- ❌ It does **not** license the opposite claim — that the waste proxy is worthless. DeFuniak
+  ranking dead last on the real measure while flagged is a point in the metric's favour, on n=1.
+  **Do not delete the metric; rename it and stop it leading.**
+- ⚠️ n=2 testable stores. This is nowhere near enough to judge, and one of the three headline
+  stores cannot be checked at all. **`year=2025` is what makes this answerable** — the same
+  parameter that unblocks the Model Check.
+
+**The proper test remains the one already specified:** Meridian's FS flag *as of each visit date*
+against that visit's `foodSafety.scorePercentage`, matched and leak-free, across 2026 **and** 2025.
+Not a rank-eyeball across mismatched periods, which is all the above is.
+
+### The 12 stores with no 2026 visit
+
+`3708 · 5183 · 6178 · 10034 · 13113 · 18213 · 24471 · 29760 · 32525 · 33109 · 38609 · 43701`
+
+📌 **Visit Readiness should know this.** These are the stores where a visit is *due*, which is
+arguably more actionable than the readiness score itself — and Ardmore-Broadway being both
+FS-flagged and unvisited is exactly the case a "who's overdue" surface would raise. `VisitPatterns`
+already computes `daysSinceLast` per store from the manual uploads; this endpoint gives the same
+thing authoritatively, estate-wide, for free.

@@ -255,6 +255,7 @@ ever built.
 | 195500857794 | 37566 MOSSY HEAD | 37566 |
 | 195500495156 | 38609 FREEPORT | 38609 |
 | 195500924854 | 43380 MAIN AND REFUGE-TISHOMINGO, OK | 43380 |
+| 195500938240 | 43701 HWY 81 AND I-10-PONCE DE LEON, FL | 43701 |
 
 ## 🔴 Measured against `STORE_NAMES` — one store is missing, and it is not a parse error
 
@@ -268,8 +269,14 @@ in PACE, not in Meridian:  0
 in Meridian, not in PACE:  1  →  43701  Ponce de Leon-Hwy 81/I-10
 ```
 
-**Every PACE store exists in Meridian. Exactly one Meridian store — Ponce de Leon (43701) — has no
-node in this hierarchy.** Nothing here explains why, and there are at least three ordinary
+✅ **RESOLVED same day — Ponce de Leon DOES have a node** (`195500938240`), observed on page 2 of
+Propel's `getScoredVisitListResults` (`memory/finding-ecosure-propel-api-2026-08-22.md`). The map
+above is complete at **27/27**. The gap was purely the per-user scope of `impersonateUser`, which is
+what caveat 1 below predicted — **kept here because the caveat is the reusable lesson**: a
+per-user endpoint is never the org roster.
+
+~~Every PACE store exists in Meridian. Exactly one Meridian store — Ponce de Leon (43701) — has no
+node in this hierarchy.~~ Nothing here explains why, and there are at least three ordinary
 explanations, all checkable:
 
 1. **The capture is scoped to ONE user.** This is `impersonateUser` for a *specific* eID, so the
