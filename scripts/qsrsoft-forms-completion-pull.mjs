@@ -173,35 +173,84 @@ async function getDayRange() {
   return { start: fmtDate(addDay(today, -back)), end: fmtDate(today) };
 }
 
-// ── Playwright fallback (mirrors qsrsoft-ops-pull.mjs's viaPlaywright) ───────────────────
+// ── Playwright fallback ────────────────────────────────────────────────────────────────
+// Dispatch #71 follow-up: the first version of this fallback sniffed the x-auth-token
+// REQUEST HEADER off any home.myqsrsoft.com call, and used waitForLoadState('networkidle')
+// as the login-complete signal. A live run showed it never captures a token on this host --
+// "[auth] could not capture x-auth-token via Playwright" -- which is exactly the race and
+// the wrong-token-source qsrsoft-forms-pull.mjs (the sibling script that already pulls form
+// TEMPLATES from this same forms.home.myqsrsoft.com host, and works) already diagnosed and
+// fixed: networkidle resolves ~3s after the click, before the SPA's auth request has even
+// fired (v4.853), and the API wants the Cognito ID token (token_use:"id"), which the SPA
+// persists to localStorage/sessionStorage under a `.idToken`-suffixed key -- not necessarily
+// whatever happens to appear in a request header in the sniff window. Mirrors that script's
+// captureToken() verbatim rather than re-deriving a second, worse version of it.
 async function viaPlaywright(chunks, tracker) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
-  if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD -- cannot use Playwright fallback'); return 0; }
+  if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD -- cannot use Playwright fallback'); return { grand: 0, coveredLocs: new Set() }; }
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ headless: true });
   const page = await (await browser.newContext({ userAgent: HDRS('')['User-Agent'] })).newPage();
   page.setDefaultTimeout(180000);
-  let token = null;
+  let sniffed = null;
   page.on('request', req => {
-    if (!req.url().includes('home.myqsrsoft.com')) return;
-    const t = req.headers()['x-auth-token'];
-    if (t && t.length > 20 && !token) token = t;
+    if (sniffed) return;
+    if (req.url().includes('home.myqsrsoft.com')) {
+      const t = req.headers()['x-auth-token'];
+      if (t && t.length > 20) sniffed = t;
+    }
   });
   try {
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
     const userSel = ['input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email'].join(', ');
-    await page.waitForSelector(userSel, { timeout: 20000 });
-    await page.fill(userSel, u);
-    await page.fill('input[type="password"], input[name="password"]', pw);
-    await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    const passSel = 'input[type="password"], input[name="password"]';
+    const subSel = 'button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")';
+    try {
+      await page.waitForSelector(userSel, { timeout: 20000 });
+      await page.fill(userSel, u);
+      await page.fill(passSel, pw);
+      await page.click(subSel);
+      // Completion signal is the password field detaching as the SPA leaves the login
+      // screen, NOT networkidle -- see comment above.
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        const stillOnLogin = await page.locator(passSel).count().catch(() => 1);
+        if (!stillOnLogin) break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    } catch (e) { console.log('[auth] login step:', e.message); }
+    await new Promise(r => setTimeout(r, 3000)); // let the SPA hydrate + persist tokens
+
+    const readIdToken = () => page.evaluate(() => {
+      const scan = (store) => {
+        let hit = null;
+        for (let i = 0; i < store.length; i++) {
+          const k = store.key(i);
+          if (/\.idToken$/.test(k)) { const v = store.getItem(k); if (v && v.length > 20) hit = v; }
+        }
+        return hit;
+      };
+      return scan(window.localStorage) || scan(window.sessionStorage) || null;
+    }).catch(() => null);
+
+    let token = await readIdToken();
     if (!token) {
-      // Nudge the app to fire a forms.home request the listener above can sniff.
       await page.goto('https://v3.myqsrsoft.com/forms/manage', { waitUntil: 'networkidle', timeout: 25000 }).catch(() => {});
       await new Promise(r => setTimeout(r, 4000));
+      token = await readIdToken() || sniffed;
     }
-    if (!token) { console.error('[auth] ✗ could not capture x-auth-token via Playwright'); return 0; }
-    console.log(`[auth] ✓ token captured via Playwright (${token.length} chars)`);
+    if (!token) {
+      const keys = await page.evaluate(() => ({
+        url: location.href,
+        ls: Object.keys(window.localStorage || {}),
+        ss: Object.keys(window.sessionStorage || {}),
+      })).catch(() => ({}));
+      console.error('[auth] ✗ could not capture ID token. url=' + (keys.url || '?'));
+      console.error('[auth]   localStorage keys: ' + (keys.ls || []).join(', ').slice(0, 800));
+      console.error('[auth]   sessionStorage keys: ' + (keys.ss || []).join(', ').slice(0, 400));
+      return { grand: 0, coveredLocs: new Set() };
+    }
+    console.log(`[auth] ✓ captured ID token${token === sniffed ? ' (via header sniff)' : ' (via storage)'} (${token.length} chars)`);
     let grand = 0;
     const coveredLocs = new Set();
     for (const c of chunks) {
