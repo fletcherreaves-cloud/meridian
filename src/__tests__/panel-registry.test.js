@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { PANELS, SECTIONS, PANEL_BY_ID, panelsForSection, canOpen,
+import { PANELS, SECTIONS, PANEL_BY_ID, panelsForSection, testKitchenPanels, canOpen,
          ORPHANS, VESTIGIAL_STATE } from '../app/panel-registry.js';
 
 // ── Registry integrity ───────────────────────────────────────────────────────
@@ -90,19 +90,30 @@ describe('registry matches the live code', () => {
     expect(relapsed, `id(s) re-hardcoded instead of using navP/navPBeta: ${relapsed.join(', ')}`).toEqual([]);
   });
 
-  it('navPBeta is used only for test-kitchen panels or the named beta-gated exceptions', () => {
-    // Everything under the ⚗ TEST KITCHEN header, plus three panels outside it (Forecast Brief,
-    // Market Intelligence, Store One-Pager) that are also hidden when betaMode is on even
-    // though they're ordinary kind:'nav' panels -- a real behavioural split the registry's
-    // kind field doesn't model. Named explicitly so a new navPBeta(id) call is a deliberate
-    // choice, not a copy-paste that silently starts hiding an ordinary nav panel.
-    const BETA_NAV_EXCEPTIONS = new Set(['brief', 'loc-intel', 'one-pager']);
-    const betaIds = [...SHELL.matchAll(/navPBeta\('([a-z0-9:_-]+)'/g)].map(m => m[1]);
-    const bad = betaIds.filter(id => {
-      const p = PANEL_BY_ID[id];
-      return !p || (p.kind !== 'test-kitchen' && !BETA_NAV_EXCEPTIONS.has(id));
-    });
-    expect(bad, `unexpected navPBeta usage: ${bad.join(', ')}`).toEqual([]);
+  it('navPBeta has no re-hardcoded literal id call sites (dispatch #61)', () => {
+    // Before dispatch #61, ⚗ TEST KITCHEN was a hand-maintained list of literal navPBeta('id')
+    // calls in shell.js, and this test asserted every one of them was kind:'test-kitchen' (or a
+    // named beta-gated exception outside it: Forecast Brief/Market Intelligence/Store One-Pager,
+    // an ordinary kind:'nav' panel hidden under betaMode via renderSection's BETA_HIDDEN_EXTRAS).
+    // Derivation removed the literal calls entirely -- shell.js now calls navPBeta(p.id, ...)
+    // dynamically inside a .map() over testKitchenPanels(), so "nothing sneaks into Test Kitchen
+    // that isn't kind:'test-kitchen'" is true by construction (see the membership test below).
+    // What can still regress is a NEW hardcoded navPBeta('literal-id') call reappearing outside
+    // that derivation -- exactly how the original list started -- so this guard now just watches
+    // for that pattern's return.
+    const literalCalls = [...SHELL.matchAll(/navPBeta\('([a-z0-9:_-]+)'/g)].map(m => m[1]);
+    expect(literalCalls, `hardcoded navPBeta('id') call(s): ${literalCalls.join(', ')}`).toEqual([]);
+    expect(SHELL).toMatch(/testKitchenPanels\(/);
+  });
+
+  it('testKitchenPanels() returns exactly the registry\'s kind:\'test-kitchen\' panels, ordered by tkOrder', () => {
+    const registryIds = PANELS.filter(p => p.kind === 'test-kitchen').map(p => p.id).sort();
+    const derivedIds = testKitchenPanels(() => true).map(p => p.id).sort();
+    expect(derivedIds).toEqual(registryIds);
+
+    const orders = testKitchenPanels(() => true).map(p => p.tkOrder);
+    expect(orders, 'every test-kitchen panel needs a distinct tkOrder').toEqual([...orders].sort((a, b) => a - b));
+    expect(new Set(orders).size).toBe(orders.length);
   });
 });
 

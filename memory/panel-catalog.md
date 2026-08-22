@@ -83,6 +83,13 @@ by id and is restored by uncommenting one line. Pruned so far:
 - **Proj Workflow** (`proj`) — exact duplicate of **Projections** (same modal id).
 - **Calendar Manager** (`calendar-manager`) — overlaps **Events & Tags**; recurring rules live there.
 
+  **Dispatch #61 (2026-08-22):** the commented-out `// navPBeta('proj')` line in `shell.js` that
+  held this recall note in place is gone — the Test Kitchen block is now derived from
+  `panel.kind === 'test-kitchen'` (`testKitchenPanels()` in `panel-registry.js`), not a literal
+  call list, so there's no line left to uncomment. The fact above is unchanged and still the
+  reason `proj` is not itself a `test-kitchen` duplicate entry; recovering it now means adding a
+  second registry entry with a distinct `id`, not restoring a shell.js line.
+
 **NOT pruned (protected):** the entire forecast/engineered-diagnostic cluster (Projections, Proj
 vs Actuals, Forecast Models, DI Calibration/Compare, Forecast Accuracy, Fcst Reference, LifeLenz
 Gap/Bridge) — standing owner directive to protect the engineered models.

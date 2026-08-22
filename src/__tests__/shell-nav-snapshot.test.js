@@ -207,22 +207,23 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // unwired). This renders the ACTUAL consumer with the flip applied, same standard as the
   // membership-diff tests above.
   //
-  // Scope note: this proves the SECTION half of promotion (panelsForSection picks the panel up
-  // the moment kind becomes 'nav', which is the whole point of making section: truthful now).
-  // It does NOT assert the panel disappears from ⚗ TEST KITCHEN -- that block is a separate,
-  // hand-maintained list of literal navPBeta('id') calls in shell.js (see the block starting
-  // "PRUNE (Notes 24, v4.517)"), not derived from panel.kind. A real future promotion is
-  // therefore still two edits, not one: flip kind: here, AND delete the navPBeta('id') line
-  // there. Collapsing that to a true one-field flip is a shell.js refactor Part A does not
-  // attempt (out of scope: nothing about today's nav may move) -- reported, not silently
-  // assumed away.
+  // Dispatch #61 (2026-08-22): promotion IS now the one-field flip. ⚗ TEST KITCHEN used to be a
+  // separate, hand-maintained list of literal navPBeta('id') calls in shell.js (the block
+  // starting "PRUNE (Notes 24, v4.517)"), not derived from panel.kind -- so a real promotion was
+  // still two edits (flip kind: here, AND delete the navPBeta('id') line there), and skipping
+  // the second edit rendered the panel TWICE (measured on fcst-accuracy, CLAUDE.md 2026-08-21).
+  // Test Kitchen is now derived from kind:'test-kitchen' (testKitchenPanels() in
+  // panel-registry.js), so the moment kind flips here the panel drops out of that filter by
+  // construction -- asserted below through the real render, not the registry, per the standing
+  // revert-sensitive bar (a registry-level check can't tell "derived" from "derived but still
+  // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
   it('covers all eleven current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
     expect(testKitchenPanels.length).toBe(11);
   });
 
-  it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header', (id, panel) => {
+  it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {
     const sectionMeta = SECTIONS.find(s => s.id === panel.section);
     expect(sectionMeta, `${id}: section '${panel.section}' is not a real SECTIONS id`).toBeTruthy();
     const originalKind = panel.kind;
@@ -238,6 +239,13 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
       }
       const underHeader = texts.slice(headerIdx, end);
       expect(underHeader, `${id}: label '${panel.label}' did not render under '${sectionMeta.label}'`).toContain(panel.label);
+
+      // The actual defect this dispatch fixes: a promoted panel used to also still render under
+      // the old hardcoded ⚗ TEST KITCHEN list. Assert it now appears exactly once in the whole
+      // sidebar, and the header itself survives (ten panels remain, not zero).
+      const occurrences = texts.filter(t => t === panel.label).length;
+      expect(occurrences, `${id}: '${panel.label}' rendered ${occurrences} time(s) after promotion (want exactly 1 -- it must not also still render under ⚗ TEST KITCHEN)`).toBe(1);
+      expect(texts).toContain('⚗ TEST KITCHEN');
     } finally {
       panel.kind = originalKind; // never leave the shared registry singleton mutated
     }

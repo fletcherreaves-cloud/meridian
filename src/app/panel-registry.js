@@ -63,24 +63,28 @@ export const PANELS = [
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations' },
-  { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
-  { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
+  { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:4 },
+  { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:7 },
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
-  { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
-  { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
-  { id:'forecast-audit', label:'Forecast Audit', icon:'🔬', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
+  { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:8 },
+  // disabledWhen:'noStore' (dispatch #61) -- the one per-item option in the old hand-built
+  // shell.js list (`navPBeta('forecast-audit', { disabled: !selStore })`). Declared here so the
+  // derived Test Kitchen loop doesn't need to special-case this id -- shell.js maps the key to
+  // the actual `!selStore` predicate (the registry has no access to component-local state).
+  { id:'forecast-audit', label:'Forecast Audit', icon:'🔬', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:10, disabledWhen:'noStore' },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   // QSRSoft Forms dashboard, Slice 2 of 3 -- kind:'test-kitchen' since Slice 3's pull script
   // (the data source) hasn't shipped yet; the panel renders an honest empty state against a real
   // read, not fake data. Promote to kind:'nav' once Slice 3 lands and the owner has seen it live.
-  { id:'forms-completion', label:'Form Completions', icon:'✅', perm:'analytics.store', kind:'test-kitchen', section:'forms' },
+  { id:'forms-completion', label:'Form Completions', icon:'✅', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:9 },
   { id:'forms-library', label:'Forms Library', icon:'🗂', perm:null, kind:'nav', section:'forms' },
   { id:'forms-print', label:'Printable Forms', icon:'🖨', perm:null, kind:'nav', section:'forms' },
   { id:'gm-brief', label:'GM Letters', icon:'👨‍💼', perm:'analytics.store', kind:'optional', section:'reports' },
@@ -97,14 +101,14 @@ export const PANELS = [
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
   { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics' },
-  { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:6 },
   // Renamed 2026-08-21 (dispatch #55 Part A, notes-67-queue.md:82 / dispatch-54.md:149) --
   // the only user-visible change in that dispatch. Still kind:'test-kitchen'; section corrected
   // from the stale 'scheduling' so a future promotion lands it under Forecasting directly.
-  { id:'lifelenz-bridge', label:'Recommended WFM Forecast Adjustments', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'lifelenz-bridge', label:'Recommended WFM Forecast Adjustments', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:11 },
   { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
-  { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily' },
   { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics' },
@@ -124,10 +128,10 @@ export const PANELS = [
   // went unnoticed only because kind:'test-kitchen' makes section: inert. Left wrong, a future
   // promotion would have dropped Projections into the Planning section's owner-approved four
   // links (#516) instead of Forecasting and Labor Projections where it belongs.
-  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true },
+  { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:1 },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations' },
-  { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting' },
+  { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:2 },
   { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports' },
   { id:'record-day', label:'Record Days', icon:'🏆', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'daily', route:true },
@@ -237,6 +241,18 @@ export function panelsForSection(sectionId, can, { includeTestKitchen = false } 
     p.section === sectionId &&
     (p.kind === 'nav' || (includeTestKitchen && p.kind === 'test-kitchen')) &&
     (!p.perm || can(p.perm)));
+}
+
+/** Panels a caller may see, for the ⚗ TEST KITCHEN block (dispatch #61). Derived from
+ * kind:'test-kitchen' + the permission filter, ordered by `tkOrder` -- NOT declaration order,
+ * which is alphabetical and does not match the curated order the sidebar has always rendered
+ * (see memory/dispatch-61.md). Promoting a panel out of Test Kitchen is now just flipping its
+ * `kind:` -- it drops out of this filter and picks up wherever its `section:` already routes it,
+ * with no second edit in shell.js and no duplicate render. */
+export function testKitchenPanels(can) {
+  return PANELS
+    .filter(p => p.kind === 'test-kitchen' && (!p.perm || can(p.perm)))
+    .sort((a, b) => a.tkOrder - b.tkOrder);
 }
 
 /** Single permission gate. Replaces the duplicate check in nav AND in onOpenModal. */
