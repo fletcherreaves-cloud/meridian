@@ -1044,3 +1044,79 @@ Probed six candidate values against `getScoredVisitListResults`, `year=2026`, op
 the card you want and copy the URL from the Network tab — **the whole URL, not just the category**,
 because CFV may also use a *different `action=`* (as `getCustomerExperienceVisits` does) rather than
 `getScoredVisitListResults` with a new category. Do not assume the action is shared.
+
+---
+
+# ⭐ Addendum — the full Propel `/api/visits` ACTION SURFACE (2026-08-22)
+
+Enumerated in one line from the browser, no Network-tab hunting and no guessing:
+
+```js
+performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/api/')).join('\n')
+```
+
+📌 **Record this technique.** The `category=` probe cost six 400s and produced nothing; resource
+timing listed every real URL the SPA had already called, including their exact `action=` values.
+**When an SPA's API vocabulary is unknown, enumerate what it actually fetched — never guess enum
+values.**
+
+## 🎯 `getCfvHistory` — the CFV endpoint, found
+
+```
+GET https://propel.mcd.com/api/visits
+      ?v=778 &action=getCfvHistory &locationId=<hierarchy node> &cultureName=en-US
+    headers: hierarchy-level: 12 · hierarchy-node: <same locationId> · territory-code: 840
+```
+
+**Per-store**, like `getCustomerExperienceVisits` — so a full pull is 27 calls. **No `year`
+parameter**, which on the CEV sibling meant "returns full history in one response"; expect the same
+here but ⚠️ **verify rather than assume** — the response shape is not yet measured.
+
+**This corrects the working assumption twice over.** CFV is *not* a `category=` on
+`getScoredVisitListResults` (every guess 400'd), and it is *not* only on PEAK — Propel has its own
+CFV history action. The earlier over-correction ("CFV is not on Propel") and the original guess
+("a different category on the same action") were both wrong; this is the third and measured answer.
+
+## The complete action list observed
+
+**Operator-level** (`hierarchy-level: 11`, `parentHierarchyNode`/`operatorId`):
+
+| action | notes |
+|---|---|
+| `getScoredVisitListResults` | the paged per-store rollup; takes `category=`, `year=`, `visitType=` |
+| `getPaceSupportOrgVisits` | `operatorId=` — unexplored |
+
+**Store-level** (`hierarchy-level: 12`, `locationId=<node>`, `cultureName=en-US`):
+
+| action | notes |
+|---|---|
+| **`getCfvHistory`** | 🎯 **CFV history — the target** |
+| `getCustomerExperienceVisits` | CEV, the pre-2020 predecessor (measured; see its addendum) |
+| `getBrandProtectionVisits` | unexplored |
+| `getPaceSupportVisits` | unexplored |
+| `getMarketSupportVisits` | unexplored |
+| `getMarketAdditionalVisits` | unexplored |
+
+**Per-visit detail:**
+
+| action | notes |
+|---|---|
+| `getThirdPartyFoodSafetyVisitReport` | `visitId=` — the EcoSure per-visit report this file opens with |
+
+**Supporting:** `/api/navigation` (`getNodeDetails`, `getHierarchyLevels`, `getDescendants`),
+`/api/role` (`getUserRoles`, `token`, `impersonateUser`), `/api/config`
+(`country_config`, `language_messages`), `/api/admin?action=getVersionInfo`,
+`/api/accuracy-scales?action=getAccuracyScalesLastRefreshDate`.
+
+⚠️ **`getScoredVisitListResults` is the ONLY action seen taking `category=`.** So the still-unknown
+EcoSure category value applies only to that rollup action — the per-visit EcoSure report has its own
+action, and CFV has its own action rather than a category. The category vocabulary may be a much
+smaller thing than assumed.
+
+📌 **Four unexplored store-level actions** (`getBrandProtectionVisits`, `getPaceSupportVisits`,
+`getMarketSupportVisits`, `getMarketAdditionalVisits`) are each a visit type Meridian knows nothing
+about. Not urgent, but worth one capture each before anyone concludes the estate's graded-visit
+picture is complete.
+
+🔒 The listing includes `role/getUserRoles?eid=…` and `role/impersonateUser?eid=…` with real eIDs in
+the query string. **Those values are deliberately not recorded here** — only the action names.
