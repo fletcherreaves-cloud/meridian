@@ -24,7 +24,32 @@ Sending **no** credential returns **401**; ours returns **403** with an IAM expl
 the route reads the token, ours is a valid credential, and it is refused at the **authorization**
 layer — not authentication, not request shape, not the app client, and not the claims we can see.
 
-### The hypothesis this dispatch tests
+### ⚠️ UPDATED 2026-08-22, after the owner answered
+
+**The captured browser session is `email+password`, NOT the SSO login.** The owner has an SSO
+login as well, but it is not what produced the 200s above. So the "two principals" hypothesis
+below is **demoted, not eliminated** — same email, same method, most likely the same native
+Cognito user.
+
+**What still differs is the auth FLOW.** Amplify's `Auth.signIn` defaults to **`USER_SRP_AUTH`**;
+`getFreshToken()` uses **`USER_PASSWORD_AUTH`** (`scripts/lib/qsrsoft-auth.mjs:81`). Same user,
+same app client, different flow — and a pre-token-generation Lambda can see the flow. This is
+precisely what Task 1 tests, since the Playwright path signs in through the real SPA and therefore
+through SRP.
+
+**New cheap discriminator, run it alongside Task 1 (nobody needed):** send **our** token to
+`POST /security/video_provider/29760?orgId={org}` with body `{}` — the route the browser gets a
+**200** from.
+
+- **our token → 200 on `video_provider`** → our principal is fine on `api.security` generally, and
+  the denial is scoped to `event_details` alone. That is a route-level entitlement.
+- **our token → 403 on `video_provider`** → our principal is denied across the whole security
+  module, and the difference is the principal or the flow, not the route. Much more likely to be
+  fixed by Task 1.
+
+This single call splits the remaining space in half and costs one request.
+
+### The hypothesis this dispatch tests (demoted — see above)
 
 **Same email, two different Cognito principals.** `QSRSOFT_USERNAME` is the owner's own address,
 but the owner also has **an SSO login**. A federated/SSO user is a *distinct* Cognito user from a
