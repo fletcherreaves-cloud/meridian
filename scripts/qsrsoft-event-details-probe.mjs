@@ -34,9 +34,11 @@
 //                                     (default: 91,0, matching the finding file's own capture)
 
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+import { createHash } from 'node:crypto';
 
 const BASE = 'https://api.security.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
+const REPORT_PAGE = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit';
 
 const STORE_REF = (process.env.QSRSOFT_EVENT_PROBE_STORE_REF || '29760').trim();
 const TOKEN_NAME = (process.env.QSRSOFT_EVENT_PROBE_TOKEN || 'all_promo').trim();
@@ -73,18 +75,30 @@ async function callEventDetails(token, body) {
 // These two checks separate them without anyone pasting a token anywhere.
 //
 // 🔴 NEVER log the token itself, or any claim VALUE that could identify a person. Claim NAMES,
-// and the handful of structural claims below, only.
+// and the handful of structural claims below, only. sha256(value).slice(0,12) lets two tokens'
+// `sub`/`eID` be compared for EQUALITY (same principal or not) without the hash itself being
+// reversible to the value -- dispatch #63's own privacy bar (Task 2), done without needing the
+// owner to run anything: this script now holds two tokens itself (the bare getFreshToken() one
+// and, when Task 1 succeeds, the Playwright-SRP one) and can compare them directly.
+const shortHash = v => v == null ? null : createHash('sha256').update(String(v)).digest('hex').slice(0, 12);
+
 function describeToken(token) {
   try {
     const [, payload] = token.split('.');
     const claims = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
     // Entitlement claims are the diagnostic ones and are NOT person-identifying. Deliberately
-    // excluded: eID, valid_eID, cognito:username, email, custom:authorName, sub, jti.
+    // excluded as raw values below: eID, valid_eID, cognito:username, email, custom:authorName,
+    // sub, jti -- sub/eID are surfaced ONLY as sha256 prefixes + lengths, never as themselves.
     const SAFE = ['aud', 'iss', 'token_use', 'exp', 'iat', 'auth_time', 'cognito:groups', 'scope',
                   'permissionsAccess', 'orgAdmin', 'lastOrgId'];
     const shown = {};
     for (const k of SAFE) if (claims[k] !== undefined) shown[k] = claims[k];
-    return { shown, allClaimNames: Object.keys(claims).sort() };
+    return {
+      shown, allClaimNames: Object.keys(claims).sort(),
+      subHash: shortHash(claims.sub), eIDHash: shortHash(claims.eID),
+      eIDLen: claims.eID != null ? String(claims.eID).length : null,
+      validEID: claims.valid_eID,
+    };
   } catch (e) { return { error: e.message }; }
 }
 
@@ -134,6 +148,81 @@ async function mintAccessToken() {
     const body = await resp.json();
     return body?.AuthenticationResult?.AccessToken || null;
   } catch { return null; }
+}
+
+// ── Task 2: one-request discriminator ────────────────────────────────────────────────────────
+// video_provider is the route the owner's browser gets a 200 from, in the SAME api.security
+// module as event_details. Sending our own token here splits the remaining hypothesis space in
+// half for the cost of one request:
+//   200 → our principal is fine on api.security generally; the denial is SCOPED to event_details
+//         (a route-level entitlement, not an account-wide one).
+//   403 → our principal is denied across the whole security module; more likely fixed by Task 1
+//         (a flow difference) than by anything scoped to this one route.
+async function callVideoProvider(token) {
+  const url = `${BASE}/security/video_provider/${STORE_REF}?orgId=${ORG_ID}`;
+  try {
+    const resp = await fetch(url, { method: 'POST', headers: HDRS(token), body: JSON.stringify({}) });
+    return { status: resp.status, ok: resp.ok, snippet: (await resp.text()).slice(0, 200) };
+  } catch (e) { return { status: 0, ok: false, snippet: `fetch failed: ${e.message}` }; }
+}
+
+// ── Task 1: retry with the token the real SPA mints via USER_SRP_AUTH ───────────────────────────
+// getFreshToken() mints via a bare Cognito USER_PASSWORD_AUTH grant (#312's deliberate choice --
+// SRP was never exercised there). Amplify's Auth.signIn (what the actual v3.myqsrsoft.com SPA
+// runs) defaults to USER_SRP_AUTH. Same user, same app client, genuinely different flow -- and a
+// pre-token-generation Lambda can see which flow produced the request. This logs in through the
+// real SPA with Playwright (thereby going through SRP, the same as the owner's own browser) and
+// captures whatever x-auth-token the app itself attaches to its own subsequent requests, then
+// hands that token back for main() to retry event_details with.
+//
+// Broadened beyond qsrsoft-register-audit-pull.mjs's own viaPlaywright() listener (which filters
+// to api.reports.myqsrsoft.com only): here we want ANY x-auth-token the SPA mints, on ANY host,
+// since the goal is the credential itself, not a specific endpoint's response.
+async function capturePlaywrightSRPToken() {
+  const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
+  if (!u || !pw) { console.log('[task1] no QSRSOFT_USERNAME/PASSWORD -- cannot drive the real SPA login'); return null; }
+  const { chromium } = await import('playwright');
+  const { mkdirSync } = await import('fs');
+  try { mkdirSync('screenshots', { recursive: true }); } catch {}
+  const browser = await chromium.launch({ headless: true });
+  const page = await (await browser.newContext()).newPage();
+  page.setDefaultTimeout(180000);
+  let token = null;
+  const seenHosts = new Set();
+  page.on('request', async req => {
+    try {
+      const all = await req.allHeaders(); // allHeaders() is async+COMPLETE; headers() can be provisional
+      const t = all['x-auth-token'];
+      if (t) seenHosts.add(new URL(req.url()).host);
+      if (t && t.length > 20 && !token) token = t;
+    } catch { /* request may have been torn down; not diagnostic, ignore */ }
+  });
+  const snap = name => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
+  try {
+    await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
+    const userSel = ['input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email', 'input[autocomplete="username"]'].join(', ');
+    await page.waitForSelector(userSel, { timeout: 20000 });
+    await page.fill(userSel, u);
+    await page.fill('input[type="password"], input[name="password"]', pw);
+    await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
+    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    console.log('[task1] post-login url:', page.url());
+    await snap('event-probe-01-post-login.png');
+
+    // Navigate to a page that is known to fire an api.*-bound request (regAudit, per
+    // qsrsoft-register-audit-pull.mjs's own confirmed navigation), to maximize the chance an
+    // x-auth-token-bearing request fires even if login itself didn't produce one.
+    await page.goto(REPORT_PAGE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 5000));
+    console.log('[task1] report page url:', page.url(), '| token captured:', !!token,
+      '| hosts that carried x-auth-token:', seenHosts.size ? [...seenHosts].join(', ') : '(none)');
+    await snap('event-probe-02-report-page.png');
+  } catch (e) {
+    console.log(`[task1] SPA login/navigation failed: ${e.message}`);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+  return token;
 }
 
 async function main() {
@@ -189,6 +278,63 @@ async function main() {
       console.log('[probe] ⇒ The token is refused on api.reports TOO, so this is a credential problem, not');
       console.log('[probe]   an entitlement one. Fix minting/expiry first; the security-host question is');
       console.log('[probe]   not yet answerable.');
+    }
+
+    // ── dispatch #63 Task 2: one-request discriminator (video_provider) ───────────────────────
+    console.log('\n[probe] ── dispatch #63 task 2: video_provider discriminator ──────');
+    const vp = await callVideoProvider(token);
+    console.log(`[probe] SAME token vs POST /security/video_provider/${STORE_REF} (same api.security module,`);
+    console.log(`[probe]   the route the owner's browser gets a 200 from) → status ${vp.status}`);
+    if (!vp.ok) console.log(`[probe]   snippet: ${vp.snippet}`);
+    if (vp.ok) {
+      console.log('[probe] ⇒ Our principal is FINE on api.security generally -- the denial is SCOPED to');
+      console.log('[probe]   event_details alone. A route-level entitlement, not an account-wide one.');
+    } else {
+      console.log('[probe] ⇒ Our principal is denied ACROSS the whole security module, not just this route.');
+      console.log('[probe]   More consistent with a principal/flow difference than a route-scoped one.');
+    }
+
+    // ── dispatch #63 Task 1: retry with the token the real SPA mints (USER_SRP_AUTH) ──────────
+    console.log('\n[probe] ── dispatch #63 task 1: Playwright SPA-login retry (USER_SRP_AUTH) ──');
+    const srpToken = await capturePlaywrightSRPToken();
+    if (!srpToken) {
+      console.log('[task1] no token captured from the SPA session -- cannot retry event_details with it.');
+      console.log('[task1] (the app may authenticate this navigation by session/cookie instead; see the');
+      console.log('[task1]  seenHosts log above for which host(s), if any, actually carried x-auth-token)');
+    } else {
+      const srpResult = await callEventDetails(srpToken, populatedBody);
+      console.log(`[task1] SRP-minted token vs event_details → status ${srpResult.status}`);
+      if (!srpResult.ok) console.log(`[task1]   snippet: ${srpResult.snippet}`);
+      if (srpResult.ok) {
+        console.log('[task1] 🎯 SRP TOKEN WORKS -- the fix is the auth flow, not a QSRSoft entitlement. Do NOT');
+        console.log('[task1]   write the pull yet regardless -- dispatch-58\'s empty-registers/cashiers question');
+        console.log('[task1]   (populated vs empty verdict below) is still open and decides the pull\'s shape.');
+      } else {
+        console.log('[task1] SPA-login-as-QSRSOFT_USERNAME is ALSO denied -- strongly implies the owner\'s');
+        console.log('[task1]   working browser session is a genuinely different identity. Entitlement question,');
+        console.log('[task1]   not a code question. Write up the QSRSoft request; do not widen scope further.');
+      }
+      // Privacy-safe principal comparison (Task 2 of the original dispatch-63.md, done without
+      // the owner: we hold both tokens ourselves now, same username, two different auth flows).
+      const bare = describeToken(token), srp = describeToken(srpToken);
+      if (bare.error || srp.error) {
+        console.log(`[task1] claim comparison unavailable (bare: ${bare.error || 'ok'}, srp: ${srp.error || 'ok'})`);
+      } else {
+        console.log(`[task1] principal comparison (hashes only, never raw): bare sub#${bare.subHash} eID#${bare.eIDHash} `
+          + `eID.len ${bare.eIDLen} valid_eID ${JSON.stringify(bare.validEID)}`);
+        console.log(`[task1]                                        srp:  sub#${srp.subHash} eID#${srp.eIDHash} `
+          + `eID.len ${srp.eIDLen} valid_eID ${JSON.stringify(srp.validEID)}`);
+        console.log(`[task1] same principal (sub hash equal): ${bare.subHash === srp.subHash}`);
+        console.log(`[task1] bare  claim NAMES: ${bare.allClaimNames.join(', ')}`);
+        console.log(`[task1] srp   claim NAMES: ${srp.allClaimNames.join(', ')}`);
+        const onlyInSrp = srp.allClaimNames.filter(c => !bare.allClaimNames.includes(c));
+        const onlyInBare = bare.allClaimNames.filter(c => !srp.allClaimNames.includes(c));
+        if (onlyInSrp.length || onlyInBare.length) {
+          console.log(`[task1] 🔴 claim-name DIFFERENCE -- only in srp: [${onlyInSrp.join(', ')}], only in bare: [${onlyInBare.join(', ')}]`);
+        } else {
+          console.log('[task1] claim NAMES are identical between the two tokens (values not compared beyond sub/eID hashes).');
+        }
+      }
     }
   }
 

@@ -4,6 +4,12 @@ name: QSRSoft Event Details Empty-Array Probe
 # on event_details means "all" (cheap daily pull) or is a required filter (redesign needed)
 # BEFORE any scheduled pull script is written. See memory/dispatch-58.md's own "SETTLE THIS
 # FIRST" section. Makes no writes to Supabase or anywhere else.
+#
+# Dispatch #63 (2026-08-22) added Playwright: the getFreshToken() calls above return 403 with an
+# IAM explicit-deny (credential accepted, principal denied), and Task 1 tests whether that's a
+# flow difference (getFreshToken() uses bare USER_PASSWORD_AUTH; the real SPA's Amplify login
+# uses USER_SRP_AUTH) by driving the actual SPA login and retrying with the token it mints. Task
+# 2 (video_provider) needs no browser. Still read-only, still workflow_dispatch-only.
 
 on:
   workflow_dispatch:
@@ -32,7 +38,7 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +46,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
-      - name: Probe event_details empty-array behavior
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Probe event_details empty-array behavior + dispatch #63 auth-flow tasks
         run: node scripts/qsrsoft-event-details-probe.mjs
         env:
           QSRSOFT_USERNAME:             ${{ secrets.QSRSOFT_USERNAME }}
@@ -51,3 +64,12 @@ jobs:
           QSRSOFT_EVENT_PROBE_TOKEN:     ${{ github.event.inputs.event_token || '' }}
           QSRSOFT_EVENT_PROBE_REGISTERS: ${{ github.event.inputs.registers   || '' }}
           QSRSOFT_EVENT_PROBE_CASHIERS:  ${{ github.event.inputs.cashiers    || '' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-details-probe-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
