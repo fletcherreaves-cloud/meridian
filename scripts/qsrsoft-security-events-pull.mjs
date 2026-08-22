@@ -250,6 +250,18 @@ async function getDateRange() {
   return { startDate: s, endDate: fmtDate(today), latestForFreshness: latest };
 }
 
+// Dispatch #67 Task 2 -- names only, never a claim value (sub/eID/email/cognito:username/
+// custom:authorName have been the repo's standing privacy bar since dispatch-63.md's own
+// version of this same helper). Used only to diff which claims one token carries that the
+// other doesn't; the diff is itself just claim NAMES, so it stays inside that bar too.
+function claimNames(token) {
+  try {
+    const [, payload] = token.split('.');
+    const claims = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return Object.keys(claims).sort();
+  } catch { return null; }
+}
+
 // ── Two-path auth (direct-first, matching qsrsoft-ops-pull.mjs -- this host is token-only, no
 // cookies, per memory/finding-qsrsoft-event-details-endpoint-2026-08-21.md) ─────────────────
 async function viaPlaywright(dates, tracker) {
@@ -280,6 +292,17 @@ async function viaPlaywright(dates, tracker) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[auth] post-login url:', page.url());
     await snap('secevents-01-post-login.png');
+    // Dispatch #67 Task 1 -- the owner measured (browser console, exact x-auth-token value from
+    // a working event_details request vs localStorage) that the SPA sends the plain Cognito ID
+    // token straight out of storage: nothing is minted at click time, nothing derived, nothing
+    // wrapped. So read it directly rather than depend on a request happening to carry it -- the
+    // request-interception listener above stays wired as a fallback only (a silent null from
+    // localStorage must not look identical to a failed login).
+    const spaToken = await page.evaluate(() => {
+      const k = Object.keys(localStorage).find(k => k.endsWith('.idToken'));
+      return k ? localStorage.getItem(k) : null;
+    });
+    console.log('[auth] localStorage idToken read:', spaToken ? `true (${spaToken.length} chars)` : 'false');
     // Dispatch #66: the previous .catch(() => {}) here swallowed the navigation error
     // AND never logged page.url() afterward, so a failed navigation was indistinguishable
     // from a successful one that simply saw no token -- the run just printed nothing
@@ -296,10 +319,33 @@ async function viaPlaywright(dates, tracker) {
     await new Promise(r => setTimeout(r, 5000));
     console.log('[auth] report page url:', page.url(),
       '| nav error:', navError || '(none)',
-      '| token captured:', token ? `true (${token.length} chars)` : 'false');
+      '| interception token captured:', token ? `true (${token.length} chars)` : 'false');
     await snap('secevents-02-report-page.png');
-    if (!token) { console.error('[auth] ✗ no x-auth-token seen on any request during SPA login'); tracker.fail('playwright-fallback', navError ? `navigation failed: ${navError}` : 'no token captured'); return { collected: [], coveredStores: new Set() }; }
-    return await runAll(token, dates, tracker);
+    // Dispatch #67 Task 1 -- localStorage read is primary; interception is the fallback only,
+    // exactly the priority the dispatch specified.
+    const finalToken = spaToken || token;
+    console.log('[auth] token source for retry:', spaToken ? 'localStorage' : (token ? 'request-interception (fallback)' : 'none'));
+    if (!finalToken) { console.error('[auth] ✗ no token from localStorage or interception during SPA login'); tracker.fail('playwright-fallback', navError ? `navigation failed: ${navError}` : 'no token captured'); return { collected: [], coveredStores: new Set() }; }
+    // Dispatch #67 Task 2 -- the claim-name diff, regardless of what the retry below returns.
+    // getFreshToken() is cheap here: runAll(getFreshToken, ...) already minted (and cached) one
+    // earlier in main()'s try block before falling through to this fallback, so this reads that
+    // cached mint rather than minting again.
+    try {
+      const bareToken = await getFreshToken();
+      const bareNames = claimNames(bareToken), spaNames = claimNames(finalToken);
+      if (bareNames && spaNames) {
+        const onlyInSpa = spaNames.filter(c => !bareNames.includes(c));
+        const onlyInBare = bareNames.filter(c => !spaNames.includes(c));
+        console.log('[auth] bare (getFreshToken) claim NAMES:', bareNames.join(', '));
+        console.log('[auth] spa  (localStorage/interception) claim NAMES:', spaNames.join(', '));
+        console.log(onlyInSpa.length || onlyInBare.length
+          ? `[auth] 🔴 claim-name DIFFERENCE -- only in spa: [${onlyInSpa.join(', ')}], only in bare: [${onlyInBare.join(', ')}]`
+          : '[auth] claim NAMES are identical between the bare and spa tokens.');
+      } else {
+        console.log(`[auth] claim-name diff unavailable -- bare ${bareNames ? 'ok' : 'unparseable'}, spa ${spaNames ? 'ok' : 'unparseable'}`);
+      }
+    } catch (e) { console.log('[auth] claim-name diff skipped:', e.message); }
+    return await runAll(finalToken, dates, tracker);
   } catch (e) {
     console.error(`[auth] ✗ Playwright fallback failed: ${e.message}`);
     tracker.fail('playwright-fallback', e.message);
