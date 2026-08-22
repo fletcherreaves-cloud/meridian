@@ -74,6 +74,40 @@ statement than the underlying metric earns. Two instances of one pattern in one 
 treating as a pattern: **Visit Readiness overstates its own certainty.** Any future work here
 should check the claim each label makes against what the number can actually support.
 
+### 🔴 The ground truth has a HARD CEILING — the panel should know it
+
+**Owner, 2026-08-22:** *"Maximum visits is 3 per store, so 81 total per year (may only be 2 per
+store now, let me check). Either way our model should have that information."*
+
+⚠️ **Confirm whether the cadence is currently 3/yr or 2/yr** — the owner was checking. It changes
+every figure below by ~40%.
+
+Pairs arrive **only** when a graded visit happens: 27 stores × 3 = **81/yr**, or × 2 = **54/yr**.
+That is the entire supply. Computed against it:
+
+| goal | pairs needed | at 81/yr | at 54/yr |
+|---|---|---|---|
+| detect ρ ≥ 0.4 (80% power) | 46 | **~3 months** | ~4 months |
+| detect ρ ≥ 0.3 (80% power) | 84 | ~8 months | ~13 months |
+| direction match to ±10% | 96 | ~10 months | ~15 months |
+| direction match to ±5% | 384 | ~4 years | ~6.6 years |
+
+**The good news is in the top row.** Distinguishing "moderately useful" from "no better than
+chance" needs only **19 more pairs — about one quarter.** It is *precise characterisation* that
+takes a year, and ±5% is out of reach on this estate at any horizon worth planning around.
+
+⚠️ **Statistical caveat: repeat visits to the same store are NOT independent.** Store-level effects
+persist between visits, so effective n grows more slowly than the raw count. Treat the table above
+as optimistic, and cluster by store when it is eventually analysed.
+
+### The product change this implies
+
+**The panel should carry the cadence and report progress toward power, not a verdict.** Instead of
+*"Weak agreement so far,"* something like *"27 of ~46 visits needed to tell — next check ~Dec."*
+That is honest, it is actionable (it says *wait*, and how long), and it stops a small sample
+reading as a broken model. It is also strictly more useful than the current line, which invites
+exactly the reaction the owner initially had: rework the scoring.
+
 ### What to do instead of reworking the scoring
 
 1. **Fix the caption** to report uncertainty honestly — show the interval, or say the sample is
