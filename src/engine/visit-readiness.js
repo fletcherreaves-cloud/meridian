@@ -241,34 +241,28 @@ function _spearman(xs, ys) {
   return (dx && dy) ? +(num / Math.sqrt(dx * dy)).toFixed(2) : null;
 }
 
-// Dispatch #69 — the caption used to assert "Weak agreement" off n=27, which
-// memory/notes-visit-readiness-backlog-2026-08-22.md computed a 95% CI for: direction match
-// [34.0%, 69.3%] (Wilson), rank corr [−0.16, 0.56]. That interval can't distinguish "the
-// model is useless" from "the model is good" — it's evidence of a small sample, not a weak
-// model, and the caption was claiming more than the data supports (the same UI defect as
-// item 1, in the opposite direction). CALIBRATION_PAIRS_FOR_POWER is the n needed for 80%
-// power to detect rank corr >= 0.4 (a Fisher z-transform power calculation), not an invented
-// threshold — same source file's own table. CALIBRATION_PAIRS_PER_YEAR (27 stores × 3 CFV
-// visits/yr) is settled in memory/finding-cfv-2026-visit-rules.md, which also answered the
-// open 2-vs-3 cadence question. Below this n, report progress toward enough power to judge
-// the model at all; only once there's enough data does the strength ladder mean anything.
-export const CALIBRATION_PAIRS_FOR_POWER = 46;
-export const CALIBRATION_PAIRS_PER_YEAR = 81;
-function calibrationProgress(n) {
-  const pairsNeeded = Math.max(0, CALIBRATION_PAIRS_FOR_POWER - n);
-  if (!pairsNeeded) return { pairsNeeded: 0, etaLabel: null };
-  const monthsNeeded = Math.ceil(pairsNeeded / (CALIBRATION_PAIRS_PER_YEAR / 12));
-  const eta = new Date(); eta.setMonth(eta.getMonth() + monthsNeeded);
-  const etaLabel = '~' + eta.toLocaleDateString('en-US', { month: 'short' });
-  return { pairsNeeded, etaLabel };
-}
+// Dispatch #69 first shipped a caption fix ("Weak agreement" off n=27, whose 95% CI
+// [-0.16, 0.56] can't distinguish a useless model from a good one) that reported a countdown
+// toward 46 pairs (80% power to detect rank corr >= 0.4). Follow-up, same day:
+// memory/finding-cfv-predictability-ceiling-2026-08-22.md measured, on 217 real CFV visits,
+// that rank corr >= 0.4 is ABOVE the achievable ceiling for ANY store-level predictor of this
+// outcome — store identity explains only ICC=0.087 of visit-to-visit variance (marginal,
+// permutation p=0.092), capping any predictor's correlation at sqrt(ICC) =~ 0.30. No amount of
+// additional data reaches 0.4, so a "you'll know by <month>" countdown is unsafe at ANY
+// threshold, not just this one (re-pointing the constant at 0.30 would repeat the same error).
+// The honest surface is the ceiling ALONGSIDE the estimate, not a verdict or a promise.
+//
+// This ceiling is CFV-specific (RGR's own test-retest is 0.342 at n=25, CI [-0.06, +0.65] —
+// too imprecise to use as a ceiling of its own, and not interchangeable with CFV's). That
+// matters because calibrateReadiness's pairs come from each store's single most recent graded
+// visit, which mixes CFV and RGR (dispatch #69 "Part D0", flagged the same day as a
+// prerequisite for interpreting either correlation: CFV runs at 55.3% meeting 80% in 2026,
+// RGR at ~100% — pooling two instruments with very different pass rates depresses the pooled
+// rho on its own, independent of model quality). Split by reportType before applying the
+// ceiling to anything.
+export const CFV_CORRELATION_CEILING = 0.30; // sqrt(ICC), see finding file above — approximate
 
-// Validate predicted readiness against the ACTUAL graded-visit scores the engine loads.
-// Trust signal: do stores we rate lower actually score lower on their real visits?
-export function calibrateReadiness(stores) {
-  const rows = stores
-    .filter(s => s.lastVisit && s.lastVisit.score != null)
-    .map(s => ({ loc: s.loc, predicted: s.readiness, band: s.band, actual: +s.lastVisit.score, pass: s.lastVisit.pass, type: s.lastVisit.type, dateISO: s.lastVisit.dateISO }));
+function _calibratePairs(rows) {
   const n = rows.length;
   const r = _spearman(rows.map(x => x.predicted), rows.map(x => x.actual));
   // Direction agreement: a store we did NOT rate "ready" should score below the group's
@@ -279,10 +273,27 @@ export function calibrateReadiness(stores) {
     hits = rows.filter(x => (x.band === 'ready') === (x.actual >= med)).length;
     hitRate = +(hits / n).toFixed(2);
   }
-  const strength = r == null ? null : Math.abs(r) >= 0.6 ? 'strong' : Math.abs(r) >= 0.3 ? 'moderate' : 'weak';
-  const { pairsNeeded, etaLabel } = calibrationProgress(n);
-  return { n, r, strength, hits, hitRate, rows: rows.sort((a, b) => a.predicted - b.predicted),
-    pairsNeeded, etaLabel, pairsForPower: CALIBRATION_PAIRS_FOR_POWER };
+  return { n, r, hits, hitRate };
+}
+
+// Validate predicted readiness against the ACTUAL graded-visit scores the engine loads.
+// Trust signal: do stores we rate lower actually score lower on their real visits?
+export function calibrateReadiness(stores) {
+  const rows = stores
+    .filter(s => s.lastVisit && s.lastVisit.score != null)
+    .map(s => ({ loc: s.loc, predicted: s.readiness, band: s.band, actual: +s.lastVisit.score, pass: s.lastVisit.pass, type: s.lastVisit.type || 'CFV', dateISO: s.lastVisit.dateISO }));
+
+  const pooled = _calibratePairs(rows);
+
+  // Part D0 — per-instrument breakdown, computed unconditionally (no new data required: the
+  // field is already on every row). CFV is the only type with a measured ceiling today.
+  const byType = {};
+  for (const type of [...new Set(rows.map(x => x.type))].sort()) {
+    byType[type] = { ..._calibratePairs(rows.filter(x => x.type === type)),
+      ceiling: type === 'CFV' ? CFV_CORRELATION_CEILING : null };
+  }
+
+  return { ...pooled, rows: rows.sort((a, b) => a.predicted - b.predicted), byType };
 }
 
 const _isoDay = ms => (ms == null || isNaN(ms)) ? null : new Date(ms).toISOString().slice(0, 10);

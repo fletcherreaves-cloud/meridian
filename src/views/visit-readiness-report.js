@@ -134,18 +134,30 @@ function calibrationHtml(cal, stores) {
           <td class="${r.pass === false ? 'bad' : r.pass ? 'ok' : ''}">${r.pass === false ? 'Fail' : r.pass ? 'Pass' : '—'}</td></tr>`).join('')}</table>` : ''}
     </div>`;
   }
+  // Dispatch #69 follow-up (memory/finding-cfv-predictability-ceiling-2026-08-22.md) — a
+  // strength ladder ("Strong/Moderate/Weak agreement") claims more than the measured ceiling
+  // supports: store identity explains only ~9% of visit-to-visit variance (marginal), which
+  // caps ANY store-level predictor's rank corr near ~0.30 -- so a pooled 0.23 reads as "weak"
+  // on this ladder while running near its achievable maximum. Report the per-instrument
+  // estimate against its ceiling instead (pairs mix CFV and RGR, two instruments with very
+  // different pass rates -- split before judging either).
   const rTxt = cal.r == null ? 'Correlation needs more visits.'
-    : cal.r >= 0.6 ? 'Strong agreement — stores rated lower really do score lower on their real visits.'
-    : cal.r >= 0.3 ? 'Moderate agreement — the estimate leans the right way; keep validating.'
-    : cal.r >= 0 ? 'Weak agreement so far — treat as directional only.'
-    : 'Estimate is currently INVERTED versus actuals — investigate before trusting it.';
+    : cal.r < 0 ? 'Estimate is currently INVERTED versus actuals — investigate before trusting it.'
+    : 'See the per-instrument breakdown below — CFV and RGR are different instruments with different pass rates, and only CFV has a measured ceiling to judge against.';
+  const typeRows = Object.entries(cal.byType || {}).map(([type, s]) => {
+    if (!s || s.n < 3) return `<div class="kpi"><div class="kv">—</div><div class="kl">${esc(type)} (n=${s ? s.n : 0}, not enough yet)</div></div>`;
+    const pct = (s.ceiling && s.r != null && s.r > 0) ? Math.round((s.r / s.ceiling) * 100) : null;
+    const ceilingTxt = s.ceiling != null ? ` vs ceiling ~${s.ceiling.toFixed(2)}${pct != null ? ` (~${pct}% of max)` : ''}` : '';
+    return `<div class="kpi"><div class="kv">${s.r == null ? '—' : s.r.toFixed(2)}</div><div class="kl">${esc(type)} rank corr (n=${s.n})${esc(ceilingTxt)}</div></div>`;
+  }).join('');
   return `<div class="sect"><h2>Model check — predicted vs actual visits</h2>
     <div class="kpis">
-      <div class="kpi"><div class="kv">${cal.r == null ? '—' : cal.r.toFixed(2)}</div><div class="kl">Spearman rank corr${cal.strength ? ' (' + esc(cal.strength) + ')' : ''}</div></div>
+      <div class="kpi"><div class="kv">${cal.r == null ? '—' : cal.r.toFixed(2)}</div><div class="kl">Spearman rank corr, pooled (mixed instruments)</div></div>
       <div class="kpi"><div class="kv">${cal.hitRate == null ? '—' : (cal.hitRate * 100).toFixed(2) + '%'}</div><div class="kl">Direction match (${cal.hits}/${cal.n})</div></div>
       <div class="kpi"><div class="kv">${cal.n}</div><div class="kl">Stores with a visit on record</div></div>
+      ${typeRows}
     </div>
-    <p class="note">${esc(rTxt)} Rank correlation is used (not Pearson) because predicted readiness (0–100 index) and an actual graded-visit percentage are different scales — only the ORDER is comparable. Direction match = share of stores where "rated Ready" agrees with "scored at or above the group median actual".</p>
+    <p class="note">${esc(rTxt)} Rank correlation is used (not Pearson) because predicted readiness (0–100 index) and an actual graded-visit percentage are different scales — only the ORDER is comparable. Direction match = share of stores where "rated Ready" agrees with "scored at or above the group median actual". The CFV ceiling (~0.30) is the maximum correlation any store-level predictor can achieve for that instrument, measured from 217 real visits (store identity explains only ~9% of visit-to-visit variance) — it is not a target, and does not apply to RGR.</p>
     <table><tr><th>Store</th><th class="n">Predicted readiness</th><th>Band</th><th class="n">Actual visit score</th><th>Type</th><th>Date</th><th>Result</th></tr>
       ${cal.rows.map(r => `<tr><td>${esc(nameOf(r.loc))}</td><td class="n">${sc0(r.predicted)}</td><td>${esc(BAND_L[r.band] || r.band)}</td>
         <td class="n">${r.actual.toFixed(2)}%</td><td>${esc(r.type || 'CFV')}</td><td>${esc(r.dateISO || '')}</td>

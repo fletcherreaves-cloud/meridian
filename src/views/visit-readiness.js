@@ -236,37 +236,56 @@ function StoreAudit({ s }) {
 
 // Model-check card: does predicted readiness track the ACTUAL graded-visit scores?
 // Builds trust by validating the estimate against real outcomes as they accumulate.
+// Dispatch #69 follow-up ("Part D0" + the ceiling finding, same day): a strength ladder
+// ("Strong/Moderate/Weak agreement") and a countdown toward a power threshold BOTH claim more
+// than this data can support, in different ways. memory/finding-cfv-predictability-ceiling-
+// 2026-08-22.md measured, on 217 real CFV visits, that store identity explains only ICC=0.087
+// of visit-to-visit variance (marginal, p=0.092) -- capping ANY store-level predictor's
+// correlation at sqrt(ICC) ~= 0.30. rank corr >= 0.4 (what the old countdown was powering
+// toward) is ABOVE that ceiling and unreachable at any sample size, so a "you'll know by
+// <month>" promise is unsafe regardless of the threshold chosen -- the fix is not a different
+// countdown, it's showing the ceiling beside the estimate instead of a verdict or a promise.
+// This also only applies to CFV: the pairs mix CFV and RGR (two instruments with very
+// different pass rates -- CFV 55.3% meeting 80% in 2026, RGR ~100%), which depresses a pooled
+// correlation on its own, independent of model quality. Split by type before comparing to a
+// ceiling that is CFV's alone.
+function TypeCalibrationLine({ type, stat }) {
+  if (!stat || stat.n < 3) {
+    return h('div', { style: { fontSize: 9.5, color: 'var(--text3)' } },
+      `${type}: only ${stat ? stat.n : 0} pair${stat && stat.n === 1 ? '' : 's'} — not enough yet.`);
+  }
+  const rC = stat.r == null ? 'var(--text3)' : stat.r >= 0.15 ? '#10b981' : stat.r <= -0.1 ? '#ef4444' : '#f59e0b';
+  const pctOfCeiling = (stat.ceiling && stat.r != null && stat.r > 0) ? Math.round((stat.r / stat.ceiling) * 100) : null;
+  return h('div', { style: { fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
+    h('span', { style: { fontWeight: 700, color: 'var(--text2)' } }, `${type}: `),
+    h('span', { style: { fontFamily: 'var(--mono)', fontWeight: 700, color: rC } }, stat.r == null ? '—' : stat.r.toFixed(2)),
+    ` (n=${stat.n})`,
+    stat.ceiling != null && ` against an estimated ceiling of ~${stat.ceiling.toFixed(2)} (store identity explains only ~9% of visit-to-visit variance, marginally)`,
+    pctOfCeiling != null && ` — ~${pctOfCeiling}% of the achievable maximum, not weak.`);
+}
+
 function CalibrationCard({ cal }) {
   if (!cal) return null;
-  const strengthCol = cal.strength === 'strong' ? '#10b981' : cal.strength === 'moderate' ? '#f59e0b' : '#ef4444';
   if (!cal.n || cal.n < 3) {
     return h('div', { style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.5, margin: '0 0 12px', padding: '9px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
       h('span', { style: { fontWeight: 700, color: 'var(--text2)' } }, 'Model check: '),
       `only ${cal.n || 0} store${cal.n === 1 ? '' : 's'} with a recent graded visit — not enough yet to validate the estimate. It self-checks against actual CFV/RGR/EcoSure scores as they land.`);
   }
   const rC = cal.r == null ? 'var(--text3)' : cal.r >= 0.3 ? '#10b981' : cal.r <= -0.1 ? '#ef4444' : '#f59e0b';
+  const types = Object.keys(cal.byType || {});
   return h('div', { style: { margin: '0 0 12px', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
     h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 6 } },
       h('span', { style: { fontSize: 11, fontWeight: 800, color: 'var(--text)' } }, 'Model check'),
       h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, `predicted readiness vs actual visit score, ${cal.n} stores with a recent visit`)),
-    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' } },
+    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: types.length ? 8 : 0 } },
       h('div', null,
         h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: rC } }, cal.r == null ? '—' : cal.r.toFixed(2)),
-        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr' + (cal.strength ? ' (' + cal.strength + ')' : ''))),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr, pooled (mixed instruments — see below)')),
       cal.hitRate != null && h('div', null,
         h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: cal.hitRate >= 0.6 ? '#10b981' : '#f59e0b' } }, (cal.hitRate * 100).toFixed(2) + '%'),
-        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`)),
-      h('div', { style: { flex: 1, minWidth: 180, fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
-        cal.r == null ? 'Correlation needs more visits.'
-          // Dispatch #69 — below cal.pairsForPower, "Strong/Moderate/Weak agreement" claims more
-          // than an n this small can support (memory/notes-visit-readiness-backlog-2026-08-22.md
-          // computed the 95% CI at n=27: rank corr [-0.16, 0.56] — can't distinguish a useless
-          // model from a good one). Report progress toward enough power instead of a verdict.
-          : cal.pairsNeeded > 0 ? `${cal.n} of ~${cal.pairsForPower} visits needed to tell — next check ${cal.etaLabel}.`
-          : cal.r >= 0.6 ? 'Strong agreement — stores rated lower really do score lower on real visits.'
-          : cal.r >= 0.3 ? 'Moderate agreement — the estimate leans the right way; keep validating.'
-          : cal.r >= 0 ? 'Weak agreement — treat as directional only.'
-          : 'Estimate is currently inverted vs actuals — investigate before trusting it.')));
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`))),
+    types.length > 0 && h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, paddingTop: types.length && cal.r != null ? 8 : 0, borderTop: types.length && cal.r != null ? '.5px solid var(--bdr)' : 'none' } },
+      types.map(type => h(TypeCalibrationLine, { key: type, type, stat: cal.byType[type] }))));
 }
 
 // CFV / graded-visit statistic tracker (Notes 25 #2): actual outcomes broken down by

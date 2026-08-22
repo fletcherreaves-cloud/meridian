@@ -77,16 +77,21 @@ index has drifted, from one filename missing.**
   band verdict always leads; an elevated flag is a secondary note, never the headline. (2) The Model
   Check caption asserted "Weak agreement so far" off a 27-visit sample whose own 95% CI (rank corr
   −0.16 to 0.56) can't distinguish a useless model from a good one — evidence of a small sample, not
-  a weak model. Below a 46-pair power threshold (80% power to detect rank corr ≥0.4, not invented —
-  taken from the backlog's own table) the panel now shows `"27 of ~46 visits needed to tell — next
-  check ~<month>"` using the settled 81/yr cadence (27 stores × 3 CFV visits/yr, from
-  `finding-cfv-2026-visit-rules.md`), instead of a verdict the data can't support. (3) The
+  a weak model. Shipped a power-threshold countdown first (below 46 pairs — 80% power to detect
+  rank corr ≥0.4 — "27 of ~46 visits needed to tell"), then **same-day follow-up**:
+  `finding-cfv-predictability-ceiling-2026-08-22.md` measured (217 real CFV visits) that rank corr
+  ≥0.4 is ABOVE the achievable ceiling for any store-level predictor (ICC=0.087 → ceiling √ICC
+  ≈0.30), so the countdown itself was an unsafe promise, not just a hard-to-reach one — retired the
+  whole mechanism (no re-pointing at a lower threshold) in favor of showing the ceiling beside a
+  **per-instrument** estimate ("Part D0": split pairs by `reportType` first, since CFV/RGR have very
+  different pass rates and pooling them depresses ρ on its own). Also fixed the print/PDF report's
+  own separate, untouched-by-the-first-pass "Weak agreement" text to match. (3) The
   "Report detail" toggle sat among the scope filter pills (which DO change the view) while only
   affecting the print report — moved to a split dropdown on the Report button itself. Revert-
-  sensitive test renders the actual panel (a fixed per-store margin saturates every store's score
-  near the ceiling → zero-variance `r=null`, which would silently mask the caption branch — varying
-  the margin is what makes this test meaningful). 2036/2036 tests (7 new), build clean, no
-  entry-chunk change.
+  sensitive tests render the actual panel and the print HTML (a fixed per-store margin saturates
+  every store's score near the ceiling → zero-variance `r=null`, which would silently mask the
+  caption branch — varying the margin is what makes the test meaningful). 2040/2040 tests
+  (17 new/changed across both passes), build clean, no entry-chunk change.
 - **✅ SHIPPED (2026-08-22): [Dispatch #68 — `LaborAnalyticsPanel` was dropping every store, district-wide, right now](dispatch-68.md)** —
   `data-sourcing-standard.md`'s exclusion list flagged this panel as suspicious after
   #64 proved its sibling entry ("parallel-but-correct") was wrong — checked before writing

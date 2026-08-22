@@ -171,3 +171,46 @@ RGR. The field is already on every row; no capture required. If they differ mate
 with CI [−0.06, +0.65] — too imprecise to use, and not interchangeable with CFV's. **A
 per-instrument ceiling is a prerequisite for interpreting either correlation**, which is why D0
 comes before the daypart/channel work.
+
+---
+
+# Resolution — follow-up implemented (2026-08-22, same day as the follow-up above)
+
+Both items above shipped together — the ceiling fix depends on D0's split, per the scope note.
+
+**`calibrateReadiness()`** (`src/engine/visit-readiness.js`) no longer returns `strength` /
+`pairsNeeded` / `etaLabel` / `pairsForPower` — the whole countdown-toward-a-power-threshold
+mechanism is retired, not re-pointed at a lower number, per the follow-up's own instruction ("a
+countdown is unsafe at any threshold"). In its place:
+- `byType`: pairs split by `reportType` (Part D0), each with its own `{n, r, hits, hitRate}`.
+- `byType.CFV.ceiling = CFV_CORRELATION_CEILING` (0.30, `sqrt(0.087)`, exported) — the measured,
+  approximate ceiling. Any other type's `ceiling` is `null`: RGR's own test-retest is too
+  imprecise to use as its own ceiling, and is explicitly not interchangeable with CFV's.
+- The pooled `{n, r, hits, hitRate}` fields are unchanged in shape, for callers that only want
+  the district-wide headline number.
+
+**`VisitReadinessPanel`**'s `CalibrationCard` (`src/views/visit-readiness.js`) shows the pooled
+rank corr labeled "pooled (mixed instruments)", then a per-type line for each instrument with
+n≥3 — e.g. `CFV: 0.23 (n=27) against an estimated ceiling of ~0.30 (store identity explains only
+~9% of visit-to-visit variance, marginally) — ~77% of the achievable maximum, not weak.` No
+strength ladder, no countdown.
+
+**`readinessReportHTML`**'s print/PDF calibration section (`src/views/visit-readiness-report.js`)
+had its OWN separate strength-ladder text — "Weak agreement so far" for the same r the panel no
+longer calls weak — that dispatch #69's original pass never touched, since it only fixed the
+on-screen caption. Same class of defect as CLAUDE.md's "when two panels disagree, diff the two
+computations" standing lesson, except here the panel and the print report disagreed in their
+*claim* about one number, not the number itself. Fixed to the same byType/ceiling shape.
+
+**Tests:** `src/__tests__/visit-readiness.test.js`'s "progress fields" suite rewritten for
+`byType`/`ceiling` (asserts the retired fields are `undefined`, Part D0's split produces
+independent per-type n/r, a sub-3 type reports `n<3` rather than a missing stat) plus a new print-
+report test. `src/__tests__/visit-readiness-caption.test.js` rewritten to render the actual panel
+and assert the retired countdown/strength text is gone and the ceiling text is present, plus a
+new mixed-CFV+RGR fixture proving the panel renders independent per-type lines (not one pooled
+verdict) and that RGR's line does not borrow CFV's ceiling. Revert-sensitivity demonstrated: all
+8 new/changed test cases fail cleanly against the pre-fix code (stashed and re-run), restored.
+
+Full suite: 2040/2040 (10 changed/new across 2 files). Build clean, no entry-chunk change
+(`visit-readiness.js` and `visit-readiness-report.js` are both reached only through the lazy-
+loaded panel).
