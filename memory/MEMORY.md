@@ -65,8 +65,29 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22): [Dispatch #68 — `LaborAnalyticsPanel` was dropping every store, district-wide, right now](dispatch-68.md)** —
+  **NEWEST.** `data-sourcing-standard.md`'s exclusion list flagged this panel as suspicious after
+  #64 proved its sibling entry ("parallel-but-correct") was wrong — checked before writing
+  anything up, per the same standing rule #64's own correction states. Half the doc's premise was
+  stale: a prior dispatch (#324) already migrated `laborPct`/`tpph`/`otHrs`/`actVsNeed`/etc. to
+  `metric-source.js`'s auto-first chains, but the STORE-INCLUSION GATE (`if(!lRows.length&&
+  !cRows.length) return null`) was never updated to check them — still gating on raw manual
+  `laborRows`/`ctrlRows` presence. **Measured live**: manual `labor_rows`/`ctrl_rows` have been
+  **empty district-wide for 28+ days (0/27 stores)** while auto DAR + `opsLaborRows` cover all
+  27 — so the gate was dropping **every single store** from the default 4-week view, in
+  production, today. Also fixed: `totalSales` had no auto fallback despite `sales` already being
+  registered; a second, unrelated stale-comment bug in the same file (`dowStats`/`trendData`
+  both claimed `actVsNeed` "has no METRIC_SOURCES entry yet" — false, verified against
+  `metric-source.js` directly); and the top-level `hasData` all-or-nothing gate, which had the
+  same manual-only blind spot one layer up. `crewHrs` (genuinely no auto source) correctly stays
+  manual-only. Revert-sensitive test (3 new, renders the real panel) — stashed the fix, confirmed
+  the auto-only case fails exactly as expected, restored. Two structural ratchets (R1 raw-row
+  reads, R3 `.getDay()` count) needed their ceilings updated as a direct, expected, in-file-noted
+  consequence of the fix. 2030/2030 tests, build clean, no entry-chunk change. **Numbered #68, not
+  #67** — #67 was already claimed moments earlier by an unrelated, concurrent `event_details`
+  investigation thread; flagged rather than colliding.
 - **🟡 MEASURED, STILL OPEN (2026-08-22): [Dispatch #66 — the `event_details` SPA-minted-token test could not run](dispatch-66.md)** —
-  **NEWEST.** The Mac mini runner works (dispatch #65's architecture is live and picks up jobs).
+  The Mac mini runner works (dispatch #65's architecture is live and picks up jobs).
   Fixed a real bug in its own predecessor: `qsrsoft-security-events-pull.mjs`'s Playwright fallback
   swallowed its navigation error and never logged the post-navigation URL, so "navigation failed"
   and "navigated fine, no token" were printed identically — indistinguishable in every prior run's

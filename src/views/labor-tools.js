@@ -1724,14 +1724,12 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // CRITICAL: parseCtrlData (Operations Report) pushes NO sales field, so r.sales>0
       // is always false for those rows. Remove sales filter here — gate by date+loc only.
       const cRows=(ds.ctrlRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&String(r.loc)===loc);
-      if(!lRows.length&&!cRows.length) return null;
       // ── Period length from date range (calendar days the user selected) ──────
       // Using rangeDays for "days" ensures "2 Wk" always shows 14, "4 Wk" shows 28, etc.
       // regardless of how many rows happen to be in the loaded data files.
       const rangeDays = Math.max(1, Math.floor((range.e.getTime()-range.s.getTime())/86400000)+1);
       // Day count for display = calendar days in range
       const days       = rangeDays;
-      const totalSales = _sum(lRows,'sales');
       // Period-summary detection: significantly fewer ctrl rows than calendar days.
       // Operations Report produces 1 aggregate row per store for the entire period.
       // Robust detection that works even when lRows is empty (no daily Labor Analysis loaded).
@@ -1772,6 +1770,29 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       const otSeries = metricSeries(ds,loc,range,'otDollar');
       const otDays   = Object.keys(otSeries);
       const otCost   = otDays.length ? otDays.reduce((a,dk)=>a+otSeries[dk],0) : null;
+      // Sales — same period-total-from-daily-series idiom as otCost above. 'sales' already
+      // has a registered auto-first chain (qsrActSummaryRows.sales/allNetSales → laborRows),
+      // so summing it here instead of raw lRows is the same fix as every metric above, not a
+      // new mechanism. Kept as a $ total (not null) when no day resolves, matching _sum's
+      // original zero-not-null contract — nothing downstream (district wA weighting, the
+      // table's $K display) was written to expect null here.
+      const salesSeries = metricSeries(ds,loc,range,'sales');
+      const totalSales  = Object.keys(salesSeries).length
+        ? Object.values(salesSeries).reduce((a,b)=>a+b,0) : _sum(lRows,'sales');
+      // ── Store inclusion ─────────────────────────────────────────────────────
+      // Dispatch #68 (measured live, 2026-08-22): manual labor_rows/ctrl_rows have been
+      // EMPTY district-wide for 28+ days (0/27 stores) while the auto DAR + opsLaborRows
+      // streams cover all 27 — so the OLD gate here (lRows/cRows presence only) was
+      // dropping every single store from the default 4-week view, even though every rate
+      // metric above already resolves via metric-source.js's auto-first chains. Same
+      // "auto chain exists, inclusion gate never checks it" bug class as #64 (Visit
+      // Readiness). Include a store if EITHER the legacy manual rows exist OR any migrated
+      // metric actually resolved for it — crewHrs is the one metric with no auto chain
+      // (#324's own note above), so it alone resolving is not sufficient to include a
+      // store that has nothing else, but it's never the ONLY thing checked here either.
+      const hasAnyMetric = [laborPct,tpph,avgRate,actVsNeed,otHrs,actHrs,salMgrHrs,otCost]
+        .some(v=>v!=null) || totalSales>0;
+      if(!lRows.length&&!cRows.length&&!hasAnyMetric) return null;
       return{loc,days,laborPct,tpph,otHrs,avgRate,actVsNeed,actHrs,crewHrs,salMgrHrs,
         otCost,totalSales,tgt,
         storeName:loc+' — '+(STORE_NAMES[loc]||loc)};
@@ -1824,23 +1845,33 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   const DOW_N=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const dowStats = uM(()=>{
     if(!range||!ds) return [];
-    // DOW breakdown uses daily lRows only for otHrs/actVsNeed — period-summary ctrlRows have
-    // a single date and add no day-of-week signal. lRows requires sales>0 to filter bad rows.
+    // count: still from raw lRows — this column means "how many manually-uploaded daily
+    // rows landed on this weekday", a manual-coverage diagnostic, not a metric value, so it
+    // is deliberately NOT routed through the auto-first resolver.
     const all=(ds.laborRows||[]).filter(r=>r.date>=range.s&&r.date<=range.e&&r.sales>0&&activeLocs.includes(String(r.loc)));
-    // laborPct/tpph now bucketed from metricSeries's auto-first per-day values (2026-08-05)
-    // instead of raw laborRows — metricAvg itself wants one contiguous range, but its
-    // underlying per-day resolver works fine bucketed by weekday after the fact.
-    const byDow={}; for(let d=0;d<7;d++) byDow[d]={laborPct:[],tpph:[]};
+    // laborPct/tpph/otHrs/actVsNeed all bucketed from metricSeries's auto-first per-day
+    // values (2026-08-05 laborPct/tpph; dispatch #68 otHrs/actVsNeed) instead of raw
+    // laborRows — metricAvg itself wants one contiguous range, but its underlying per-day
+    // resolver works fine bucketed by weekday after the fact. Both otHrs and actVsNeed
+    // already had a registered METRIC_SOURCES chain (mode:'any' — 0/negative are real, not
+    // missing) that this DOW breakdown wasn't using; a comment here previously claimed
+    // actVsNeed "has no METRIC_SOURCES entry yet", which was stale by the time it was
+    // written (verified against metric-source.js before touching this — the chain has
+    // existed since #64's era) and is exactly the kind of unrechecked assumption dispatch
+    // #68 exists to close.
+    const byDow={}; for(let d=0;d<7;d++) byDow[d]={laborPct:[],tpph:[],otHrs:[],actVsNeed:[]};
     for(const loc of activeLocs){
       const lp=metricSeries(ds,loc,range,'laborPct'), tp=metricSeries(ds,loc,range,'tpph');
+      const oh=metricSeries(ds,loc,range,'otHrs'), av=metricSeries(ds,loc,range,'actVsNeed');
       for(const dk in lp) byDow[new Date(dk+'T00:00:00').getDay()].laborPct.push(lp[dk]);
       for(const dk in tp) byDow[new Date(dk+'T00:00:00').getDay()].tpph.push(tp[dk]);
+      for(const dk in oh) byDow[new Date(dk+'T00:00:00').getDay()].otHrs.push(oh[dk]);
+      for(const dk in av) byDow[new Date(dk+'T00:00:00').getDay()].actVsNeed.push(av[dk]);
     }
     const mean=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:null;
     return DOW_N.map((name,dow)=>{
       const rows=all.filter(r=>new Date(r.date).getDay()===dow);
-      const avgZ=f=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
-      return{name,dow,count:rows.length,laborPct:mean(byDow[dow].laborPct),tpph:mean(byDow[dow].tpph),otHrs:avgZ('otHrs'),actVsNeed:avgZ('actVsNeed')};
+      return{name,dow,count:rows.length,laborPct:mean(byDow[dow].laborPct),tpph:mean(byDow[dow].tpph),otHrs:mean(byDow[dow].otHrs),actVsNeed:mean(byDow[dow].actVsNeed)};
     });
   },[range,activeLocs,ds]);
 
@@ -1850,13 +1881,13 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
     const weeks=[];
     for(let w=5;w>=0;w--){
       const wEnd=addDx(today,-w*7), wStart=addDx(wEnd,-7);
-      // laborPct/tpph/otHrs now auto-first via metricAvg (2026-08-05) — each weekly bucket IS
-      // a contiguous range, unlike the DOW breakdown above, so metricAvg applies directly.
-      // actVsNeed has no METRIC_SOURCES entry yet, so it stays a manual lRows-only average.
-      const rows=(ds.laborRows||[]).filter(r=>r.date>=wStart&&r.date<wEnd&&r.sales>0&&activeLocs.includes(String(r.loc)));
-      const avgZ=f=>{const v=rows.map(r=>r[f]).filter(v=>v!=null&&!isNaN(v));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+      // laborPct/tpph/otHrs/actVsNeed all auto-first via metricAvg — each weekly bucket IS a
+      // contiguous range, unlike the DOW breakdown above, so metricAvg applies directly.
+      // actVsNeed already had a registered METRIC_SOURCES chain; a comment here previously
+      // claimed otherwise (stale by the time it was written — see dowStats's matching note,
+      // dispatch #68) and kept this on a manual-only lRows average despite the chain existing.
       const wr={s:wStart,e:addDx(wEnd,-1)};
-      weeks.push({label:wEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'}),laborPct:metricAvg(ds,activeLocs,wr,'laborPct'),tpph:metricAvg(ds,activeLocs,wr,'tpph'),otHrs:metricAvg(ds,activeLocs,wr,'otHrs'),actVsNeed:avgZ('actVsNeed')});
+      weeks.push({label:wEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'}),laborPct:metricAvg(ds,activeLocs,wr,'laborPct'),tpph:metricAvg(ds,activeLocs,wr,'tpph'),otHrs:metricAvg(ds,activeLocs,wr,'otHrs'),actVsNeed:metricAvg(ds,activeLocs,wr,'actVsNeed')});
     }
     return weeks;
   },[activeLocs,ds]);
@@ -1893,7 +1924,12 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
   const thSL={padding:'5px 8px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'};
 
   // ── No data guard ──
-  const hasData=ds&&((ds.laborRows||[]).length>0||(ds.ctrlRows||[]).length>0);
+  // Dispatch #68: was manual-only (laborRows/ctrlRows), so a district with real auto DAR/
+  // opsLabor coverage but zero manual uploads (measured live 2026-08-22 — the district's
+  // actual current state) hit this dead-end "No Labor Data Loaded" screen instead of the
+  // per-period "no data for this range" state locStats already handles correctly below.
+  const hasData=ds&&((ds.laborRows||[]).length>0||(ds.ctrlRows||[]).length>0
+    ||(ds.qsrActSummaryRows||[]).length>0||(ds.opsLaborRows||[]).length>0);
   if(!hasData)return div({style:embedded?{position:'relative',flex:1,minHeight:0,display:'flex',alignItems:'center',justifyContent:'center'}:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:40,marginBottom:12}},'👷'),

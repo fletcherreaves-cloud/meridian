@@ -35,7 +35,12 @@ const ROOTS = ['src/views', 'src/features'];
 // v5.034 and this ratchet's seed commit). 60 bare `.getDay()` calls across 14 files. Every hit
 // was inspected: none are comments or an unrelated object's `.getDay` — all are genuine Date
 // instances (`d`, `r.date`, `dt`, `t`, `w`, `ws`, `evDate`, `date`, or `new Date(...)`).
-const CEILING = 60;
+// Dispatch #68 (2026-08-22): +2 in labor-tools.js's dowStats — bucketing otHrs/actVsNeed
+// per-day-of-week the same way the two adjacent, already-counted laborPct/tpph buckets do
+// (this is DOW bucketing of an already-resolved metric series, not week-start/business-day
+// boundary math — the bug class this ratchet exists to catch — so it is not itself a
+// violation; reviewed and added deliberately).
+const CEILING = 62;
 
 const PATTERN = /\.getDay\(\)/g;
 

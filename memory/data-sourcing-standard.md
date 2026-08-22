@@ -46,9 +46,19 @@ replaced). Both have test suites (`__tests__/metric-source.test.js`, `__tests__/
 - **forecast table Actual/GC** — auto-first from DAR (`forecast.js:_qsrActIdx`).
 
 **Intentionally NOT migrated (wrong shape for the simple resolver — leave as-is):**
-- `LaborAnalyticsPanel` (labor-tools.js) — labor-HOURS-centric; drops stores with no manual
+- ~~`LaborAnalyticsPanel` (labor-tools.js) — labor-HOURS-centric; drops stores with no manual
   labor/ctrl rows by design (needs actual punched hours). Rates could be migrated but the panel's
-  hours/period-summary logic makes it risky; revisit only if it becomes a reported gap.
+  hours/period-summary logic makes it risky; revisit only if it becomes a reported gap.~~
+  🔴 **WRONG, corrected 2026-08-22 (dispatch #68).** The rate VALUES were already migrated
+  (a prior dispatch, #324) — the STORE-INCLUSION GATE never was. Measured live: manual
+  `labor_rows`/`ctrl_rows` have been empty district-wide for 28+ days (0/27 stores) while auto
+  DAR + `opsLaborRows` cover all 27 — so the gate was dropping every single store from the
+  default 4-week view, in production, right now. Fixed: a store is included if either legacy
+  manual rows exist or any already-migrated metric resolved. Same fix for `totalSales` (had no
+  auto fallback despite `sales` already being registered) and for a second, unrelated staleness
+  bug in the same file: `dowStats`/`trendData` both claimed `actVsNeed` "has no METRIC_SOURCES
+  entry yet" — false by the time either comment was written; both now read the registered chain.
+  `crewHrs` genuinely has no auto source and correctly stays manual-only.
 - `store-analytics.js` `dowData` — a day-of-WEEK breakdown (per-DOW means), not a range mean;
   metricAvg would change its semantics.
 - ~~Visit Readiness engine (`visit-readiness.js`) already has its own per-metric `srcs` chains
