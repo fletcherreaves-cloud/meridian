@@ -74,8 +74,53 @@ a live counterexample, not just a documentary argument.**
 
 ## ⚠️ Before anyone builds a pull
 
-1. **Enumeration is unsolved.** This endpoint needs a `visitId`. There must be a list/search
-   endpoint; find it before designing anything. Also unknown: how `hierarchy-node` maps to stores.
+1. **Enumeration — HALF SOLVED (owner, 2026-08-22).** The store half is done; the visit half is not.
+
+   ### ✅ The store roster + the `hierarchy-node` mapping
+
+   ```
+   POST https://peak.mcd.com/API/Stores/Paged/     body: {"page": 0}
+   ```
+   Cookie-authenticated, `origin`/`referer` = `https://peak.mcd.com`. Paged — iterate `page` until
+   empty (10 per page observed).
+
+   Returns per store: `ID`, `LocalCode`, `Name`, `Description`, `Address1..4` (⚠️ `Address3` is the
+   **state**, `Address4` the **county**), `City`, `PostalCode`, `Status`, `ActiveStore`,
+   `OwnershipType`, `OperatorUserId`, `OperatorName`.
+
+   **🔑 The key finding: `ID` IS the `hierarchy-node`.** Ardmore-Broadway's `ID` is
+   `195500300689` — byte-identical to the `hierarchy-node: 195500300689` header on the EcoSure
+   call. So PEAK's store list is the lookup table Propel needs. No guessing required.
+
+   **The full identity chain, now closed:**
+
+   | system | value for Ardmore-Broadway |
+   |---|---|
+   | PEAK `ID` / Propel `hierarchy-node` | `195500300689` |
+   | PEAK `LocalCode` = NSN | `03708` |
+   | EcoSure `restaurantNumber` | `03708` |
+   | Meridian `loc` (7-pad, per CLAUDE.md) | `0003708` |
+   | QSRSoft `storeRef` (unpadded) | `3708` |
+
+   Cross-checked on a second store: Duncan `LocalCode 29760` is the same `STORE_REF` the
+   `event_details` probe uses, and Meridian's `loc` for it is `0029760`. **The chain holds.**
+
+   **🔑 One SSO session spans both hosts.** `GlobalAS_SessionId` is identical in the `peak.mcd.com`
+   and `propel.mcd.com` captures — so a single authenticated browser profile reaches both. That
+   matters for the on-demand design: one interactive login, both APIs.
+
+   **Bonus:** this is a canonical, authoritative store roster with addresses and active flags.
+   `STORE_NAMES` in `constants.js` is hardcoded; this could validate or replace it. Separate
+   work — noted, not scoped here.
+
+   ⚠️ `OperatorName` / `OperatorUserId` are **people**. Same tokenisation rule if ever ingested.
+
+   ### ❌ Still missing: the VISIT list
+
+   `getThirdPartyFoodSafetyVisitReport` needs a `visitId` (`1000132876` in the sample) and nothing
+   captured so far produces one. **Next capture:** in Propel, open the page that *lists* food-safety
+   visits for a store and grab that request — URL and header names only, no cookie jar. It very
+   likely takes `hierarchy-node`, which we can now supply for all 27 stores.
 2. **🔴 `propel.mcd.com` is SSO (owner, 2026-08-22)** — and the `rtFa` cookie indicates Microsoft
    federation (Entra/ADFS/SharePoint). **This is categorically harder than QSRSoft.** QSRSoft has a
    Cognito `USER_PASSWORD_AUTH` grant, so `getFreshToken()` can mint a credential from a stored
