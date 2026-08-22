@@ -288,6 +288,45 @@ function CalibrationCard({ cal }) {
       types.map(type => h(TypeCalibrationLine, { key: type, type, stat: cal.byType[type] }))));
 }
 
+// One channel's row across every year -- title + one cell per year, in the engine's own year
+// order (calendar order, since analyzeGradedVisits already sorts `years`).
+function _channelYearRow(channel, cby, pr, prCol) {
+  return h('div', { key: channel },
+    h('div', { style: { fontSize: 10.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 3 } }, channel),
+    h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      ...cby.years.map(year => {
+        const cell = cby.rows.find(r => r.channel === channel && r.year === year);
+        const yLabel = year + (year === cby.partialYear ? '*' : '');
+        if (!cell) return h('div', { key: year, style: { fontSize: 9.5, color: 'var(--text3)', minWidth: 74 } },
+          h('div', null, yLabel), h('div', { style: { fontFamily: 'var(--mono)' } }, 'no visits'));
+        if (cell.thin) return h('div', { key: year, style: { fontSize: 9.5, color: 'var(--text3)', opacity: .6, minWidth: 74 } },
+          h('div', null, yLabel), h('div', { style: { fontFamily: 'var(--mono)' } }, 'n=' + cell.n + ' (thin)'));
+        const below = 1 - cell.passRate;
+        return h('div', { key: year, style: { fontSize: 9.5, minWidth: 74 } },
+          h('div', { style: { color: 'var(--text3)' } }, yLabel),
+          h('div', { style: { fontFamily: 'var(--mono)', color: prCol(cell.passRate), fontWeight: 700 } }, pr(below) + ' below'),
+          h('div', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)' } }, pr(cell.share) + ' of yr · n=' + cell.n));
+      })));
+}
+
+// Dispatch #75 -- replaces the pooled Channel block. cby = analyzeGradedVisits(...).channelByYear.
+// Shows both share-of-visits and below-80% per (channel, year), n on every cell, thin cells
+// (< CHANNEL_YEAR_MIN_N, measured in the engine) de-emphasised to a count only, and the current
+// calendar year labeled as partial. Deliberately no trend line/arrow (see the engine comment) --
+// this is a table, not a chart, because four annual points with single-digit n do not support a
+// slope.
+function renderChannelByYear(cby, pr, prCol) {
+  if (!cby.rows.length) return null;
+  return h('div', { style: { marginTop: 4 } },
+    h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Channel over time (share of visits · below-80% · n)'),
+    h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 8, fontStyle: 'italic' } },
+      `Cells under n=${cby.minN} are too thin to rate -- shown as a count only, not a percentage.`),
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+      ...[...new Set(cby.rows.map(r => r.channel))].map(channel => _channelYearRow(channel, cby, pr, prCol))),
+    cby.partialYear ? h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginTop: 6 } },
+      '* ' + cby.partialYear + ' is a partial year, not yet complete.') : null);
+}
+
 // CFV / graded-visit statistic tracker (Notes 25 #2): actual outcomes broken down by
 // known variables (day-of-week, daypart, weekpart, channel) + per-store cadence.
 // Exported for dispatch #73's test -- VisitPatterns is otherwise module-private, but the
@@ -339,7 +378,14 @@ export function VisitPatterns({ ds, locs }) {
           t === 'all' ? 'All types' : t))),
       h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 8, fontFamily: 'var(--mono)' } }, 'columns: n · pass-rate · avg-score'),
       h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18 } },
-        block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart), block('Channel', a.channel)),
+        block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart)),
+      // Dispatch #75 -- Channel used to be one of the pooled blocks above (`block('Channel',
+      // a.channel)`), and pooling all 4 years into one pass-rate per channel is exactly what hid
+      // the 2026 drive-thru finding: drive-thru went 43%->60% of visits AND 25%->54% below-80 in
+      // the SAME year, and neither move is visible in an all-time average. Replaced with a
+      // per-year breakdown showing both figures, because either alone tells the wrong story (a
+      // channel getting worse and a channel getting shopped more are different problems).
+      renderChannelByYear(a.channelByYear, pr, prCol),
       a.freq.length ? h('div', { style: { marginTop: 14 } },
         h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
         // Dispatch #73 -- the amber threshold is now per-instrument (CFV/EcoSure/RGR run on

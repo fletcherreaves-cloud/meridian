@@ -525,6 +525,53 @@ export function overdueThresholdDays(reportType) {
   return key ? Math.round(EXPECTED_CADENCE_DAYS[key] * OVERDUE_MULTIPLIER) : null;
 }
 
+// Dispatch #75 -- Visit Patterns' Channel block pools all 4 years of CFV history into one
+// pass-rate per channel, which is exactly what hid the 2026 drive-thru finding (43%->60% share,
+// 25%->54% below-80, memory/finding-cfv-2026-drivethru-decline-2026-08-22.md). Splitting by
+// (channel, year) fixes that, but 217 visits / 4 years / 3 channels averages ~18/cell and the
+// real distribution is far worse -- in-restaurant 2023 is n=1.
+//
+// MEASURED against the real 217-visit dataset (all 12 channel x year cells that have any
+// visits at all): sorted n = [1, 3, 5, 7, 14, 20, 23, 28, 28, 29, 29, 30]. The gap between 7
+// and 14 (a jump of 7) is by far the largest in that sorted list -- every other consecutive gap
+// is <=6 -- and it cleanly separates in-restaurant's four cells (1/3/5/7, every year) from every
+// drive-thru/curbside cell (14+). 10 sits in that gap: not a round-number guess, the boundary
+// the data itself draws. A cell below this is THIN and must be suppressed/de-emphasised by the
+// panel, never rendered as a bare percentage -- see memory/dispatch-75.md.
+export const CHANNEL_YEAR_MIN_N = 10;
+
+// Per (channel, year): n, share of that YEAR's total visits (not all-time), and passRate.
+// Deliberately returns passRate, not a "below-80" field -- pass is already the estate's own
+// derived definition (dispatch #74, score>=80) and the panel converts to "below" for display,
+// so there is exactly one place (buildRow's CFV_PASS_THRESHOLD) that encodes what "pass" means.
+// No trend/slope field is computed here on purpose -- 4 annual points with several single-digit
+// n do not support one (dispatch #75's explicit "do not add a trend line").
+function _channelByYear(visits) {
+  const yearOf = v => { const d = new Date(v.dateISO || v.date); return isNaN(+d) ? null : String(d.getFullYear()); };
+  const years = [...new Set(visits.map(yearOf).filter(Boolean))].sort();
+  const yearTotal = {};
+  for (const y of years) yearTotal[y] = visits.filter(v => yearOf(v) === y).length;
+  const channels = [...new Set(visits.map(v => v.channel).filter(Boolean))];
+  const rows = [];
+  for (const channel of channels) {
+    for (const year of years) {
+      const cell = visits.filter(v => v.channel === channel && yearOf(v) === year);
+      const n = cell.length;
+      if (!n) continue; // no visits at all -- nothing to show, not a 0%
+      rows.push({
+        channel, year, n,
+        share: yearTotal[year] ? n / yearTotal[year] : null,
+        passRate: cell.filter(v => v.pass).length / n,
+        thin: n < CHANNEL_YEAR_MIN_N,
+      });
+    }
+  }
+  // The current calendar year is necessarily partial (e.g. 2026 through whenever "now" is) --
+  // the panel must label it, per dispatch #75's explicit "do not present it as completed".
+  const partialYear = String(new Date().getFullYear());
+  return { years, rows, partialYear: years.includes(partialYear) ? partialYear : null, minN: CHANNEL_YEAR_MIN_N };
+}
+
 export function analyzeGradedVisits(gradedVisits, opts = {}) {
   const type = opts.type || 'all';
   const visits = (gradedVisits || []).filter(v =>
@@ -575,6 +622,7 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
     daypart: byVar(v => v.daypart),
     weekpart: byVar(v => v.weekpart),
     channel: byVar(v => v.channel),
+    channelByYear: _channelByYear(visits),
     byType: byVar(v => v.reportType || 'CFV'),
     freq,
     types: [...new Set((gradedVisits || []).map(v => v && (v.reportType || 'CFV')).filter(Boolean))],
