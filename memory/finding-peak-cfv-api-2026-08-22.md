@@ -199,3 +199,102 @@ The captures were shared as full cURLs including live session cookies (`GlobalAS
 `rtFa`, Akamai `_abck`/`bm_sz`). **None of it is recorded here.** The session should be treated as
 disclosed-by-sharing and re-authenticated. For future captures the URL, header *names*, and the
 response body are sufficient — the cookie jar never needs to leave the browser.
+
+---
+
+# Addendum — the complete `hierarchyNodeId` → store map (2026-08-22)
+
+Owner-captured. **`hierarchy-node` was the blocking unknown for BOTH Propel and PEAK, and this
+resolves it for 26 of Meridian's 27 stores.**
+
+```
+GET https://propel.mcd.com/api/role/impersonateUser?eid=<EID>&v=778
+    headers: hierarchy-level: 0 · hierarchy-node: <eid, lowercased> · territory-code: 840
+             referer: https://propel.mcd.com/app/
+```
+
+Returns `roles[]`, one entry per node the user can act on. Two `hierarchyLevelType`s appear:
+
+| type | `hierarchyLevelDescription` | what it is |
+|---|---|---|
+| **11** | `Operator` | the ownership entity — one node covering the whole estate |
+| **12** | `Restaurant` | one node per store — **this is the `hierarchy-node` the visit APIs want** |
+
+`hierarchyNodeName` is `"<5-digit store number> <STORE NAME>"`, so the join to Meridian's `loc` is
+`hierarchyNodeName.slice(0,5).replace(/^0+/,'')`. Also returned: **`paceLastRefreshDate`**
+(`"2026-08-18"` observed) — a real freshness stamp for the PACE side, worth surfacing if a pull is
+ever built.
+
+## The map
+
+| `hierarchyNodeId` | store | Meridian `loc` |
+|---|---|---|
+| 195500300689 | 03708 ARDMORE-BROADWAY | 3708 |
+| 195500300825 | 05183 CHICKASHA-SO 4TH | 5183 |
+| 195500300979 | 05985 DURANT-US HWY 70 | 5985 |
+| 195500235660 | 06178 CHIPLEY-ST.RD.77 | 6178 |
+| 195500235547 | 06838 DEFUNIAK SPRINGS | 6838 |
+| 195500301143 | 06972 ADA-COUNTRY CLUB | 6972 |
+| 195500236896 | 10034 BONIFAY | 10034 |
+| 195500301617 | 10422 ATOKA, OK-MISSISSIPPI | 10422 |
+| 195500301679 | 10915 SEMINOLE, OK-MILT PHILLIPS | 10915 |
+| 195500301853 | 11657 PURCELL | 11657 |
+| 195500301860 | 13113 MADILL, HWY. 70 | 13113 |
+| 195500302362 | 18213 LINDSAY, OK-WAL*MART | 18213 |
+| 195500302430 | 20475 OKC-I-240/SOONER | 20475 |
+| 195500332338 | 24471 ARDMORE, OK-NEC COOPER/12TH | 24471 |
+| 195500347486 | 29760 DUNCAN, OK-HWY 81 (RELO) | 29760 |
+| 195500511764 | 31357 PAULS VALLEY RELO - BALLARD RD NO. | 31357 |
+| 195500479224 | 32525 SULPHUR,  OK | 32525 |
+| 195500545486 | 33109 MARIETTA, OK | 33109 |
+| 195500547640 | 33222 ELGIN, OK - STO | 33222 |
+| 195500574400 | 33704 TECUMSEH, OK | 33704 |
+| 195500602196 | 34222 HARRAH, OK | 34222 |
+| 195500695075 | 35064 HOLDENVILLE, OK | 35064 |
+| 195500698571 | 35242 COTTONDALE | 35242 |
+| 195500857794 | 37566 MOSSY HEAD | 37566 |
+| 195500495156 | 38609 FREEPORT | 38609 |
+| 195500924854 | 43380 MAIN AND REFUGE-TISHOMINGO, OK | 43380 |
+
+## 🔴 Measured against `STORE_NAMES` — one store is missing, and it is not a parse error
+
+Checked programmatically against `src/constants.js` rather than eyeballed:
+
+```
+STORE_NAMES:              27
+PACE Restaurant roles:    26
+matched:                  26
+in PACE, not in Meridian:  0
+in Meridian, not in PACE:  1  →  43701  Ponce de Leon-Hwy 81/I-10
+```
+
+**Every PACE store exists in Meridian. Exactly one Meridian store — Ponce de Leon (43701) — has no
+node in this hierarchy.** Nothing here explains why, and there are at least three ordinary
+explanations, all checkable:
+
+1. **The capture is scoped to ONE user.** This is `impersonateUser` for a *specific* eID, so the
+   response is *that user's* access, not the org's roster. Ponce de Leon may simply sit outside it.
+   ⚠️ **Do not treat this list as the authoritative store universe until it is re-run for the
+   owner's own eID** — that is the single check that settles it.
+2. Ponce de Leon may belong to a different operating entity.
+3. It may be newer than the node set, or graded under a different program.
+
+📌 **Whichever it is, a PACE-backed pull must not silently cover 26 of 27.** If Ponce de Leon
+genuinely has no node, that is a declared coverage gap and belongs in `CoverageGaps`, not an
+unremarked absence — the same discipline Visit Readiness already applies to Cleanliness.
+
+## Why this matters
+
+`memory/finding-ecosure-propel-api-2026-08-22.md` recorded `hierarchy-node` as the mapping problem
+and named the PEAK store list as its solution. **This is a better solution**: one call, no
+pagination, and it returns the node id *paired with the store number* rather than needing a join.
+The same `hierarchyNodeId` addresses both hosts — Propel's EcoSure reports and PEAK's CFV/RGR
+visits.
+
+## 🔒 Security
+
+The capture included a live `GlobalAS_SessionId`, an employee `eID`, and a person's name. **None of
+the session id is recorded here.** The eID and the personal names are also deliberately omitted —
+only the node→store mapping, which is org config, is kept. Per the standing rule, any name reaching
+a table goes through `get_or_create_employee_token()`. **Re-authenticate the Propel session**; it
+should be treated as disclosed by sharing.
