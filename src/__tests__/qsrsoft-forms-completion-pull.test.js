@@ -8,7 +8,7 @@
 // outcome for this estate (27 active stores on QSRSoft Forms daily), so pullWithEscalation()
 // retries via Playwright before trusting a direct-path zero.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { pullWithEscalation, fetchWindow } from '../../scripts/qsrsoft-forms-completion-pull.mjs';
+import { pullWithEscalation, fetchWindow, dedupeByConflictKey } from '../../scripts/qsrsoft-forms-completion-pull.mjs';
 
 const chunks = [{ start: '2026-08-19', end: '2026-08-21' }];
 const tracker = { fail: vi.fn() };
@@ -81,5 +81,29 @@ describe('fetchWindow response parsing (dispatch #71 root cause)', () => {
     }));
     const rows = await fetchWindow('faketoken', '2026-08-19', '2026-08-21', null);
     expect(rows).toEqual([]);
+  });
+});
+
+// Found immediately after the `results`-key fix, on the first live run against real data: Postgres
+// rejects an upsert batch containing two rows for the same conflict target ("ON CONFLICT DO UPDATE
+// command cannot affect row a second time"). Travel Path alone is scheduled 27-45x/store/day and
+// ad-hoc (scheduledAt-null) rows key on completedOn instead, so two distinct API rows landing on
+// the same (loc, formId, occurrenceKey) within one pull window is expected, not corrupt data.
+describe('dedupeByConflictKey (dispatch #71 -- ON CONFLICT batch collision)', () => {
+  it('collapses two rows sharing (loc, form_id, occurrence_key), keeping the last', () => {
+    const a = { loc: '3708', form_id: 'f1', occurrence_key: '2026-08-19T11:00:00Z', missed: true };
+    const b = { loc: '3708', form_id: 'f1', occurrence_key: '2026-08-19T11:00:00Z', missed: false };
+    const rows = dedupeByConflictKey([a, b]);
+    expect(rows).toEqual([b]);
+  });
+
+  it('leaves distinct keys (different loc, form, or occurrence) untouched', () => {
+    const rows = [
+      { loc: '3708', form_id: 'f1', occurrence_key: '2026-08-19T11:00:00Z' },
+      { loc: '5183', form_id: 'f1', occurrence_key: '2026-08-19T11:00:00Z' },
+      { loc: '3708', form_id: 'f2', occurrence_key: '2026-08-19T11:00:00Z' },
+      { loc: '3708', form_id: 'f1', occurrence_key: '2026-08-20T11:00:00Z' },
+    ];
+    expect(dedupeByConflictKey(rows)).toEqual(rows);
   });
 });

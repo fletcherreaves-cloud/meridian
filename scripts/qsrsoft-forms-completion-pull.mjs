@@ -130,6 +130,20 @@ export async function fetchWindow(token, startDay, endDay, evalPage) {
   return Array.isArray(parsed) ? parsed : (parsed?.results || parsed?.result || []);
 }
 
+// Postgres rejects a single upsert statement whose VALUES contain two rows mapping to the same
+// conflict target ("ON CONFLICT DO UPDATE command cannot affect row a second time") -- found on
+// the first live run against real data. The finding file already flagged the reason: scheduledAt
+// can be null (ad-hoc submissions fall back to completedOn as occurrenceKey), and Travel Path
+// alone is scheduled 27-45x/store/day, so two distinct API rows landing on the same
+// (loc, formId, occurrenceKey) within one pull is a real, expected collision, not corrupt data.
+// Dedupe within each batch before upserting -- last one wins, same as a normal upsert would do
+// across two separate calls.
+export function dedupeByConflictKey(mapped) {
+  const byKey = new Map();
+  for (const r of mapped) byKey.set(`${r.loc}|${r.form_id}|${r.occurrence_key}`, r);
+  return [...byKey.values()];
+}
+
 async function upsertRows(rawRows) {
   const mapped = rawRows.map(normalizeFormsCompletionRow).filter(Boolean).map(r => ({
     loc: r.loc, form_id: r.formId, form_title: r.formTitle, occurrence_key: r.occurrenceKey,
@@ -141,15 +155,20 @@ async function upsertRows(rawRows) {
   }));
   const dropped = rawRows.length - mapped.length;
   if (dropped > 0 && DEBUG) console.log(`[forms-completion] ${dropped} row(s) dropped by the normalizer (unusable/unkeyable)`);
+
+  const deduped = dedupeByConflictKey(mapped);
+  const collapsed = mapped.length - deduped.length;
+  if (collapsed > 0) console.log(`[forms-completion] ${collapsed} row(s) shared a (loc, formId, occurrenceKey) with another row in the same batch -- collapsed, last one kept`);
+
   const CHUNK = 500;
   let saved = 0;
-  for (let i = 0; i < mapped.length; i += CHUNK) {
+  for (let i = 0; i < deduped.length; i += CHUNK) {
     const { error } = await supabase.from('qsr_forms_completion')
-      .upsert(mapped.slice(i, i + CHUNK), { onConflict: 'tenant_id,loc,form_id,occurrence_key' });
+      .upsert(deduped.slice(i, i + CHUNK), { onConflict: 'tenant_id,loc,form_id,occurrence_key' });
     if (error) throw new Error(`[qsr_forms_completion] ${error.message}`);
-    saved += Math.min(CHUNK, mapped.length - i);
+    saved += Math.min(CHUNK, deduped.length - i);
   }
-  return { saved, dropped, locs: new Set(mapped.map(r => r.loc)) };
+  return { saved, dropped, locs: new Set(deduped.map(r => r.loc)) };
 }
 
 function chunkDays(start, end, chunkSize) {
