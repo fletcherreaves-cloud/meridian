@@ -65,8 +65,29 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22): [Dispatch #71 — Form Completions pull silently no-op'd](dispatch-71.md)** —
+  **NEWEST.** Owner report ("Form Completions not populating") traced through **two genuinely
+  distinct defects** across 8 live `workflow_dispatch` runs, plus one incomplete fix — read the
+  Resolution section for the full honest arc before assuming the first plausible cause was the
+  real one. (1) The structural bug the brief named — the direct path could only escalate to
+  Playwright on a thrown `AUTH_FAILED` (401/403), never on a silent-empty 200 — was real, fixed
+  (`pullWithEscalation()`), and verified live, but **did not fix the outage**. (2) Playwright's own
+  login was ALSO broken (networkidle-race completion signal + header-sniff instead of the
+  localStorage ID token — found by diffing against the already-working sibling
+  `qsrsoft-forms-pull.mjs`), fixed and verified (real token captured) — **still did not fix it**.
+  (3) With a confirmed-valid token, rows were still zero, **refuting** the dispatch's own leading
+  auth-denial hypothesis. (4) The actual root cause, found via raw-response-body logging per the
+  brief's own fallback instruction: `completionDetail` wraps rows under `results` (plural) but the
+  parser read `result` (singular) — every response, on every auth path, silently parsed to an
+  empty array. (5) Fixing that surfaced a second, real, independent bug: a Postgres `ON CONFLICT`
+  batch-uniqueness collision from `scheduledAt`-null ad-hoc rows + Travel Path's 27–45×/store/day
+  scheduling. (6) The first dedup fix (plain string equality) was itself incomplete — timestamp
+  sub-second-precision and UUID-case variants slipped through — fixed by canonicalizing before
+  keying. **Verified live, not a green unit test**: run #8, 2,993 rows upserted across 27/27
+  stores. 2040/2040 tests (10 new), build clean, no entry-chunk change (script isn't in the client
+  bundle).
 - **✅ SHIPPED (2026-08-22): [Dispatch #69 — Visit Readiness overstates its own certainty, in both directions](dispatch-69.md)** —
-  **NEWEST.** Three owner-raised items from `notes-visit-readiness-backlog-2026-08-22.md`, one
+  Three owner-raised items from `notes-visit-readiness-backlog-2026-08-22.md`, one
   theme. (1) The `FOODSAFETY` flag (`statVar`+`raw` waste/variance proxies) has **zero overlap**
   with what an EcoSure Food Safety visit actually assesses (temps/pests/handwashing/shelf-life —
   confirmed against the real PACE guide) and was mislabelled "Food Safety" throughout — renamed to
