@@ -132,11 +132,17 @@ index has drifted, from one filename missing.**
   run it, then write the pull. 1972/1972 tests, build clean (+0.28 KB, a new lazy-panel-only
   loader). Full status in the linked file.
 - **[Dispatch #58 — Part E: register worked + time of event](dispatch-58.md)** — the PM brief this
-  dispatch shipped against. **Superseded by the writeup above** (schema/parser/panel shipped, the
-  "settle this first" empty-registers/cashiers question is resolved by the probe script this
-  dispatch also built). Kept for the fuller context the writeup doesn't repeat: the 8-token
-  enumeration, the `crew`/`mgr` PII → vault rule, and the `order_key` register-prefix ≠ `reg_num`
-  non-join caveat.
+  dispatch shipped against. Schema/parser/panel shipped. 🔴 **The pull is BLOCKED ON AUTH, and the
+  empty-array question is NOT resolved** — the probe ran 2026-08-22 and returned **403 on both
+  calls**: `"explicit deny in an identity-based policy"`, which is AWS IAM for *credential accepted,
+  principal denied*, **not** "invalid token". **Nothing in this repo has ever successfully called
+  `api.security.myqsrsoft.com`**; the "token-only" finding came from a browser header panel, which
+  shows what the browser sent, not that OUR credential is accepted. Either the security host wants a
+  different token than `api.reports`, or `QSRSOFT_USERNAME` lacks the entitlement the owner's login
+  has — **30-second test: compare the first ~10 chars of `x-auth-token` on an `api.security` request
+  vs an `api.reports` one in the same DevTools session.** Do not write the pull until settled; the
+  probe answers the array question unchanged once auth works. Also holds the 8-token enumeration,
+  the `crew`/`mgr` PII → vault rule, and the `order_key` register-prefix ≠ `reg_num` non-join caveat.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`event_token` ENUMERATED — dispatch #56 Part E is unblocked](finding-qsrsoft-event-details-endpoint-2026-08-21.md)** —
   **NEWEST.** Owner sweep of the Register Audit drill-downs. **8 tokens, 5 families:** `all_promo` ·
   `t_red_before`/`t_red_after` · `cash_refund`/`cashless_refund` · **`employee_meal`/`manager_meal`** ·
