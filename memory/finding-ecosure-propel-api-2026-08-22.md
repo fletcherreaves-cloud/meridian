@@ -83,19 +83,32 @@ a live counterexample, not just a documentary argument.**
    MFA is enforced (likely on corporate McDonald's identity) then *no* unattended flow can
    authenticate at all.
 
-   ❓ **Ask first: is MFA enforced on this login?** That single answer decides which of the options
-   below is even possible. Do not design before it is known.
+   ✅ **ANSWERED (owner, 2026-08-22): MFA IS enforced.** So **headless/unattended SSO
+   authentication is impossible** — not difficult, impossible. Any design that assumes a
+   credential can be minted from stored secrets is dead on arrival. Do not attempt one.
 
-   **Realistic paths, best first:**
-   - **Persistent authenticated browser profile on the Mac mini.** Log in interactively once;
-     Playwright attaches to that profile (`launchPersistentContext`) and reuses the session. The
-     self-hosted runner built in #65 is already the right host, and it is already on a permitted
-     network. Re-authentication becomes an occasional manual step, like the `LIFELENZ_TOKEN`
-     refresh runbook. **Survives MFA**, because the human does the MFA once.
-   - **Manual capture into the existing upload path.** Least engineering, and see the cadence note
-     below for why it may be sufficient.
-   - **Headless SSO automation.** Only viable with no MFA, and even then Akamai (`_abck`, `bm_sz`)
-     will likely challenge it. Treat as a last resort.
+   **Two viable paths. Recommendation: START MANUAL.**
+
+   - ✅ **Manual capture into the existing upload path — do this first.** Run the numbers:
+     ~3 EcoSure visits/store/year × 27 stores ≈ **81/year ≈ 1.5 per week**. One capture a month
+     picks up ~7 visits. Building a fragile Playwright + persistent-profile + Akamai path for 1.5
+     visits a week is poor value, and it delays the actual win — replacing the waste proxy with
+     real data.
+   - **Persistent authenticated browser profile on the Mac mini** — the automation path *if*
+     manual proves painful. Log in interactively once (human completes MFA); Playwright attaches
+     via `launchPersistentContext` and reuses the session. The #65 runner is already the right
+     host and already on a permitted network. Re-auth becomes a periodic manual step, structurally
+     identical to the `LIFELENZ_TOKEN` refresh runbook.
+     ⚠️ **And subject to the same warning CLAUDE.md already records about that runbook:** the
+     LifeLenz Playwright fallback became unreliable, so an expiry is a *full outage, not a soft
+     one*. Expect the same here, on top of Akamai.
+   - ❌ **Headless SSO automation — ruled out.** MFA makes it impossible.
+
+   📌 **On the "manual sourcing is always temporary" standing rule:** this is a *legitimate*
+   exception of the same class as "LifeLenz Oklahoma begins Oct 2025" — a real external constraint,
+   not deferred work. The intended auto source is named above (persistent-profile Playwright on the
+   #65 runner), so the rule's requirement to name one is satisfied. Revisit if the capture burden
+   grows or if Propel ever exposes a service account.
 
 3. **Akamai bot protection** (`_abck`, `bm_sz`) sits on top of the SSO problem. A plain server-side
    fetch will likely be challenged. **Measure before designing** — this session has already
