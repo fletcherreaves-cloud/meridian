@@ -100,6 +100,60 @@ takes a year, and ±5% is out of reach on this estate at any horizon worth plann
 persist between visits, so effective n grows more slowly than the raw count. Treat the table above
 as optimistic, and cluster by store when it is eventually analysed.
 
+### 🔴 December is too late — and TWO things change the plan (owner, 2026-08-22)
+
+**Owner:** *"Knowing by December won't help much in foresight. The cycle starts over in January.
+As long as the rules of the visit are unchanged, then no problem there. Alternative is that I can
+backload data from last year. Also, worth noting, the times they are allowed to shop, beginning
+this month, is only 11am to 5pm now. So no breakfast and essentially no dinner visits upcoming.
+Only Lunch and snack."*
+
+#### (a) Backfill last year's visits — the right move, with one discipline
+
+Waiting for pairs is a **~3-month wait for a result that lands after the cycle restarts**. Useless
+for foresight. Backfilling last year's graded visits could take n from 27 to ~100+ **immediately**,
+clearing the ρ≥0.3 bar and approaching ±10% on direction.
+
+**It must be a leak-free reconstruction**, not a lookup: predicted readiness has to be recomputed
+using only data available **as of each historical visit date**. This project already has that
+discipline and the precedent — the forecast backtests run strictly leak-free in Back Test mode
+(`runPeriodTotalBacktest`, `BT_DAYS`/`BT_FOLDS`). Reuse the pattern; do not hand-roll an `asOf`.
+
+⚠️ **But last year is a DIFFERENT REGIME** — see (b). Mixing old-window and new-window visits
+naively confounds the very thing being measured. Tag every pair with its regime and report them
+separately before pooling.
+
+#### (b) 🔴 The visit window changed to 11am–5pm THIS MONTH — and this may be why ρ is low
+
+Graded visits can now only occur **11:00–17:00**: lunch and snack. **No breakfast, essentially no
+dinner.**
+
+**This is a structural explanation for weak correlation that has nothing to do with sample size.**
+Visit Readiness scores a store on **all-day averages** — OEPE, R2P, KVS, labor %, TPPH — while the
+visit observes a **six-hour slice**. A store with excellent lunch execution and poor breakfast
+scores mid on the model and well on the visit; the reverse also holds. That mismatch dilutes
+correlation no matter how good the underlying metrics are, and **no amount of extra data fixes
+it** — more pairs would just measure the mismatch more precisely.
+
+**And it is testable and fixable today.** `qsr_daily_activity` is hourly — PK `(loc, dt,
+hour_slot)`, slots running `05:00 → 28:00`, and `loadQsrActSummary` already selects `hour_slot`
+alongside sales, DT and labor-hour fields. **`hour_slot` is the END of its block**
+(`"06:00"` = 5–6am), so the visit window is slots **`12:00`–`17:00`**.
+
+Recompute the Speed metrics restricted to that window and re-measure the correlation against the
+same 27 pairs. If ρ jumps, the model was right and the *aggregation window* was wrong — a far
+better outcome than either "weak model" or "small sample", and available now rather than in a year.
+
+⚠️ Front-counter R2P is derived from `fc_untilserve`/`fc_untilclosedrawer` (`supabase.js:1990`) —
+**confirm those are available per `hour_slot`** before assuming every Speed metric can be windowed.
+DT fields (`dt_untilserve`, `dt_trans_cnt`) are confirmed hourly.
+
+⚠️ Also confirm **when** the window changed. Pairs from before it are old-regime, and the old
+regime is what last year's backfill would supply.
+
+**This is now dispatch-worthy rather than backlog** — it is cheap, it is testable against existing
+data, and it plausibly explains the headline number.
+
 ### The product change this implies
 
 **The panel should carry the cadence and report progress toward power, not a verdict.** Instead of
