@@ -79,7 +79,7 @@ index has drifted, from one filename missing.**
   credential, wrong token type, non-admin, wrong app client, no-token, `valid_eID`, route-scoped,
   auth-flow, two-principals) is eliminated by measurement, tabulated in the resolution section.
   **Wrote the QSRSoft entitlement request**
-  (`memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md`) and stopped there per the
+  (`memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md` — ⚠️ SUPERSEDED, do NOT send: it is a SOURCE-IP restriction, one principal, see dispatch-63.md's CORRECTION) and stopped there per the
   dispatch's own instruction — no retries, no scope widening, no UI-scraping fallback. Lives on
   branch `claude/project-orientation-clarify-x61o5r` (PR #553, open as of this entry) — read the
   dispatch file directly rather than this summary; its eliminated-hypotheses tables are the part

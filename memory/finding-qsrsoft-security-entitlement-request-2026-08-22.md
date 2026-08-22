@@ -1,6 +1,6 @@
 ---
 name: finding-qsrsoft-security-entitlement-request-2026-08-22
-description: Dispatch #63's conclusion -- the api.security 403 is a genuine QSRSoft account entitlement gap, not a bug in this repo. Everything needed to file the request with QSRSoft, and nothing more, since no PII belongs in this file.
+description: SUPERSEDED 2026-08-22. The api.security 403 is a SOURCE-IP restriction, not an entitlement gap -- one Cognito principal, allowed from the owner's network and denied from GitHub Actions. Do not send the entitlement request below; see the correction at the top.
 metadata:
   node_type: memory
   type: finding
@@ -8,7 +8,50 @@ metadata:
 
 # QSRSoft entitlement request — `api.security` module, automation account
 
-**Status:** ready to send to QSRSoft. This repo has exhausted everything it can test on its own.
+> # 🔴 SUPERSEDED — DO NOT SEND THIS REQUEST
+>
+> **Corrected 2026-08-22, hours after this file was written.** Its premise is false. There is no
+> entitlement gap and no separate automation account: it is **one Cognito principal**, and the
+> denial depends on **where the request comes from**.
+>
+> **What this file got wrong.** It closed "two principals sharing an email" by comparing the bare
+> `getFreshToken()` token against the Playwright SRP token — **both of them ours**. Identical
+> `sub` hashes there prove the two auth *flows* resolve to one principal (a real result, and it
+> does kill the auth-flow hypothesis). They say nothing about the principal that actually
+> succeeds. That row was never captured when this was written.
+>
+> **The two measurements that settle it**, taken afterwards by the owner:
+>
+> | # | token | from | result |
+> |---|---|---|---|
+> | 1 | owner's browser token, **`sub#9378eb7a6502`** | owner's network, browser | **200** |
+> | 2 | our minted token, **`sub#9378eb7a6502`** | GitHub Actions | **403** |
+> | 3 | Playwright SRP token, real Chromium, real SPA login | GitHub Actions | **403** |
+> | 4 | **same request via `curl`, no browser at all** | **owner's network** | **200 + real rows** |
+>
+> The owner's `sub` hash is **identical to ours** — so rows 1 and 2 are the same principal,
+> allowed and denied at once. And row 4 beats row 3: row 3 already controlled for browser-ness,
+> User-Agent, the SPA login flow and the app client, and still failed; row 4 removes the browser
+> entirely and **succeeds**. The only remaining variable is the **source IP**.
+>
+> `api.reports` works from those same runners all day (the Register Audit pull succeeded at
+> 11:23 UTC), so the restriction is specific to the **security module** — reasonable for one whose
+> routes include `video_provider` (surveillance integration).
+>
+> **What to ask QSRSoft instead:** not for an entitlement, but **what the network restriction on
+> `api.security` actually is** — IP allowlist, geo, ASN, or something else — and whether a static
+> egress IP can be permitted. Give them the `x-amzn-requestid` values from a 403 run so they can
+> find the denial in their own logs. Everything below is still accurate as *evidence* (org id,
+> denied routes, IAM message, elimination table); only the **conclusion and the ask** are wrong.
+>
+> **What the pull needs:** a permitted network origin — a self-hosted runner on a static IP, or an
+> egress proxy for these calls only. Allowlisting GitHub's hosted ranges is impractical. Confirm
+> the mechanism with QSRSoft **before** anyone provisions infrastructure.
+>
+> Full correction: `memory/dispatch-63.md`, "CORRECTION — it is the SOURCE IP".
+
+**Status (as written, now superseded):** ready to send to QSRSoft. This repo has exhausted
+everything it can test on its own.
 
 ## The ask
 
