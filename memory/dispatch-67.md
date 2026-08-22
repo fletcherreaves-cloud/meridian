@@ -89,3 +89,71 @@ it). **Change one variable at a time, and say which one you changed.**
 - The **claim-name diff**, both directions.
 - On a 200: no plaintext name anywhere in the diff, logs, or fixtures.
 - `npm run build` clean; `node -v` against `ci.yml`'s `[20, 22]` (#60).
+
+---
+
+## Resolution (2026-08-22) — a fourth outcome, not the one the brief planned for
+
+Task 1 shipped (`a8b7542`): `viaPlaywright()` reads `Object.keys(localStorage).find(k =>
+k.endsWith('.idToken'))` directly after login, prefers it over interception, keeps interception as
+fallback. Task 2 shipped alongside it: the claim-name diff against `getFreshToken()`'s cached
+bare token, names only. `npm run build` clean, 2027/2027 tests, `node -v` 22.
+
+**Triggered from the Mac mini (run `32593065224`, runner `mac-mini-qsr`, `debug=1`) — the live
+result is neither 200 nor 403. It's a third failure to get a token at all:**
+
+```
+[auth] post-login url: https://v3.myqsrsoft.com/
+[auth] localStorage idToken read: false
+[auth] report page url: https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit
+  | nav error: (none) | interception token captured: false
+[auth] ✗ no token from localStorage or interception during SPA login
+```
+
+Direct path (`getFreshToken()`) still gets the known, expected 403 first — consistent with every
+prior run, not new. The claim-name diff never ran: it needs a `finalToken` to diff against, and
+there wasn't one.
+
+**Read exactly:** `Object.keys(localStorage).find(k => k.endsWith('.idToken'))` found nothing —
+not a wrong value, an *absent key*. That is a stronger negative than #66's interception-only
+result: interception only proves no `event_details`-bound request carried a token; a direct
+`localStorage` read with no scoping proves Amplify (or whatever auth layer this SPA uses) never
+wrote an ID token to this browser context's storage **at all**, under any key, following this
+login sequence.
+
+**This is the same post-login URL #66 already recorded** (`https://v3.myqsrsoft.com/`, bare
+root) — not a new anomaly on its own; #66 read that as "login succeeded" without independent
+confirmation beyond the click completing without an exception. Combined with this run's
+`localStorage` result, that reading now looks like the weaker of two explanations, not the
+stronger one: **the more consistent account of both runs together is that the Playwright-driven
+login (`QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`, this exact selector/click sequence) is not
+completing authentication**, rather than "it authenticates but mints no token anywhere." Two
+independent negative measurements (no token via interception in #66; no token via direct storage
+read now) are more consistent with "never logged in" than with "logged in via some third
+mechanism neither check can see."
+
+**Flagging this as a hypothesis, not asserting it as a finding** — per the standing warning this
+dispatch itself carries twice over: two wrong confident conclusions today already came from
+comparing cases differing in more than one variable, and asserting "the login is failing" without
+visual confirmation would be exactly that shape of mistake a third time. The workflow uploads
+`screenshots/secevents-01-post-login.png` and `secevents-02-report-page.png` as a build artifact
+on every run specifically to make this checkable (artifact `9480834416` on this run) — **but this
+sandboxed session cannot reach that artifact.** `productionresultssa19.blob.core.windows.net` is
+not on this session's egress allowlist (`curl` returns a proxy-level `CONNECT tunnel failed,
+response 403`; confirmed via `$HTTPS_PROXY/__agentproxy/status`'s `recentRelayFailures`, not
+guessed). Only someone with a normal browser — the owner, viewing the artifact from the Actions
+run page — can look at those two screenshots and settle whether the login form shows an error,
+still shows the login fields, or actually reached an authenticated view at the bare root path.
+
+**Not attempted, deliberately:** no second code change stacked on this unconfirmed premise —
+no retry logic, no different selector, no longer wait, no scripted click. That would be a second
+untested variable on top of a first one that hasn't been visually confirmed, the identical mistake
+class #66's own warning names. **Recommended next step for whoever picks this up:** view
+`secevents-01-post-login.png` (does it show the login form still, an error, or the authenticated
+app?) before writing any further auth-flow code. If the screenshot shows a still-unauthenticated
+login page, the fix is in the login step itself (selector mismatch, timing, or a genuinely wrong
+credential) and Task 1/2's `localStorage`/claim-diff logic is unreachable code until that's fixed.
+If the screenshot shows a real authenticated view, the mystery deepens and is worth a second,
+independent Mac-mini run before theorizing further.
+
+No token value, `sub`, `eID`, or email anywhere in this section or the quoted logs.
