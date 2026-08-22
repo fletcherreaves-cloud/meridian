@@ -35,11 +35,21 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Dispatch #60: 1ca02ee broke main for seven commits on a clean local 1952/1952 because
+      # Intl.DateTimeFormat's hourCycle resolution for hour12:false is ICU/Node-version-dependent
+      # -- identical on the sandbox's Node 22 and CI's (then-)Node 20, but only after the fix.
+      # A single pinned Node version only catches divergence FROM that one version; running both
+      # the sandbox's Node (22) and the historical CI pin (20) catches the whole class, not just
+      # this instance. See memory/dispatch-60-ci-node-parity.md.
+      matrix:
+        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
 

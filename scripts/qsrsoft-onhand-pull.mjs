@@ -93,8 +93,14 @@ function isProgressSnapshotHour() {
 // DST-safe via America/Chicago. A manual/on-demand run (FORCE=1) overrides this anytime.
 const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
 const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
+// hourCycle explicitly 'h23' (NOT just hour12:false) -- hour12:false alone leaves midnight's
+// rendering ("00" vs "24") to the runtime's default hourCycle resolution, which is NOT portable
+// across Node/ICU versions (this exact pattern broke main's CI for seven commits via
+// src/engine/forms-completion.js -- see dispatch #60, memory/dispatch-60-ci-node-parity.md).
+// Currently latent here (CT_START/CT_END never span midnight, so "00" vs "24" both fail the
+// range check the same way) but fixed anyway so it can't become live the day either bound changes.
 function centralHour() {
-  return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hour12: false }).format(new Date()));
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: 'numeric' }).format(new Date()));
 }
 function inCtBusinessHours() { const h = centralHour(); return h >= CT_START && h < CT_END; }
 // Should this invocation do a pull at all, and in which mode?
