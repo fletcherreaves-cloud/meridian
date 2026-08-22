@@ -62,11 +62,20 @@ Why this over the alternatives:
 - **A cloud VPS with a static IP.** Almost certainly the same datacenter block. Untested, and
   testable for a few dollars if someone wants certainty, but do not build on it.
 
-## Still gating the pull's SHAPE — do not skip
+## ✅ The pull's SHAPE is now settled (2026-08-22) — it's the simple one
 
-`memory/dispatch-58.md`'s **empty-`registers`/`cashiers`** question is still unanswered, and it
-decides whether the pull is 27 stores × 8 tokens or something far larger. The probe already tests
-this and can now run from a permitted origin. **Answer it before writing the pull loop.**
+`memory/dispatch-58.md`'s empty-`registers`/`cashiers` question is **answered**. Measured by the
+owner from a permitted origin: same store/date/token, `registers:[13]/cashiers:[91,0]` → **38
+events**, `registers:[]/cashiers:[]` → **170 events**. Empty means **ALL**.
+
+So: **one request per `(store, date, event_token)` — 27 × 8 = 216/day.** No enumeration stage, no
+per-register discovery loop. Sizing: ~170 events / ~70 KB per cell for `all_promo`, so low tens of
+thousands of rows/day estate-wide — use the existing pulls' chunked-upsert pattern, not one insert.
+Confirm against a second store before assuming that ceiling holds.
+
+**A candidate runner already exists:** the owner ran these measurements from a **Mac mini**
+(`Fletchers-Mac-mini`) on the permitted network. If it is always-on, it is the obvious host — no
+hardware purchase required.
 
 ## Build checklist (the standing new-pull rule, all in one PR)
 
