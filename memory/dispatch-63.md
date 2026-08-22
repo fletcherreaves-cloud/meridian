@@ -230,3 +230,76 @@ than working from a condensed summary; the eliminated-hypotheses tables are the 
 most time and are easy to accidentally re-litigate from a paraphrase. If PR #553 hasn't merged to
 `main` yet by the time you start, either wait for it or cherry-pick this branch's commits — don't
 redo the measurement work it already contains.
+
+---
+
+## 🔴 CORRECTION (2026-08-22, same day) — the conclusion above is WRONG. It is the SOURCE IP.
+
+**Do not send the QSRSoft entitlement request drafted above.** Its premise is false.
+
+### What the section above got wrong
+
+It concluded "the automation account is a genuine principal, correctly authenticated and
+explicitly denied the `api.security` module," and eliminated "two principals sharing an email" on
+this evidence:
+
+```
+bare sub#9378eb7a6502   ← our USER_PASSWORD_AUTH token
+srp  sub#9378eb7a6502   ← our Playwright SRP token
+same principal (sub hash equal): true
+```
+
+**Both rows are our own credentials.** That comparison proves the two *auth flows* resolve to one
+principal — a real result, and it does kill the auth-flow hypothesis. It says nothing about the
+principal that actually succeeds, which is the owner's browser. That row was never captured.
+
+### The measurement that settles it
+
+| # | who | from | result |
+|---|---|---|---|
+| 1 | owner's browser token, `sub#9378eb7a6502` | browser, owner's network | **200** |
+| 2 | our minted token, `sub#9378eb7a6502` | GitHub Actions | **403** |
+| 3 | our Playwright SRP token, real Chromium, real SPA login | GitHub Actions | **403** |
+| 4 | **the same request via `curl`, no browser** | **owner's network** | **200 + full data** |
+
+The owner ran DevTools **Copy as cURL** in a terminal: **200, real rows.** Same token, same body,
+no browser involved.
+
+Row 4 against row 3 is decisive. Row 3 already controlled for browser-ness, User-Agent, the SPA
+login flow, and the app client — a real Chromium doing a real login — and still failed. Row 4
+removes the browser entirely and **succeeds**. And the owner's `sub` hash is `9378eb7a6502`,
+**identical to ours** — so it is one principal, allowed and denied at the same time depending only
+on **where the request originates**.
+
+**`api.security` restricts by source IP. Cloud/datacenter runner IPs are denied.** Corroborated by
+`api.reports` working fine from Actions all day (the Register Audit pull succeeded at 11:23 UTC on
+the same runners), so this is specific to the security module — reasonable for a module whose
+routes include `video_provider` (surveillance integration).
+
+### ❌ Also now eliminated
+
+9. **Account/entitlement.** One `sub`, allowed from one network and denied from another. There is
+   no automation account to grant anything to; asking QSRSoft to entitle a principal that already
+   has access would be bounced, correctly.
+
+### What the pull actually needs
+
+Not an entitlement — a **permitted network origin**. Options, roughly in order:
+
+1. **Self-hosted GitHub Actions runner on a static IP**, with that IP allowlisted by QSRSoft.
+2. **An egress proxy on a fixed IP** that only these `api.security` calls route through; the
+   workflow stays on hosted runners.
+3. Allowlisting GitHub's hosted ranges — **impractical**; they are large, Azure-owned and rotate.
+
+⚠️ **Confirm the mechanism before requesting anything.** "Denied from a cloud IP" is inferred from
+four measurements, not from QSRSoft telling us the rule. Ask them what the restriction actually
+is — IP allowlist, geo, ASN, or something else — before anyone buys a VPS. The `x-amzn-requestid`
+values from a 403 run will let them find the denial in their own logs.
+
+### ⚠️ PII note
+
+The successful `curl` response carries **plaintext employee names** (`"crew":"Aaden W — 91"`,
+`"mgr":"Kristina O — 100"`). This is exactly why `schema-qsr-security-events.sql` stores
+`crew_token`/`mgr_token` via `get_or_create_employee_token()` and never a name. That capture now
+exists in a session transcript and cannot be retracted; it must not be copied into a fixture, a
+test, or a memory file. The badge filter works as expected — `cashiers:[91,0]` returned badge 91.
