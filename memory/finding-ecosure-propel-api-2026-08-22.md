@@ -920,3 +920,96 @@ If the two differ materially, the pooled figure was never meaningful.
 
 **Add this to dispatch #69 Part D**, ahead of the daypart/channel split — it is cheaper, and a
 per-instrument ceiling is a prerequisite for interpreting either.
+
+---
+
+# Addendum — `getCustomerExperienceVisits` (CEV): a discontinued predecessor, and the best available test of the ceiling
+
+Owner-captured 2026-08-22, offered as *"maybe"* — correctly hedged. **This is not CFV.** It is
+**CEV (Customer Experience Visit)**, the pre-2020 predecessor programme.
+
+```
+GET https://propel.mcd.com/api/visits
+      ?v=778 &action=getCustomerExperienceVisits
+      &locationId=<hierarchy node> &cultureName=en-US
+    headers: hierarchy-level: 12 · hierarchy-node: <same locationId> · territory-code: 840
+```
+
+**Per-STORE, not estate-wide** — `hierarchy-level: 12` and a single `locationId`, so a full pull is
+**27 calls**, unlike the operator-level `getScoredVisitListResults`.
+
+**No `year` parameter — it returns the store's full history in one response.**
+
+## Shape
+
+| field | notes |
+|---|---|
+| `visitTypeId` / `visitTypeShortDescription` | **57/58/59/60 = CEV1/CEV2/CEV3/CEV4 — quarterly, 4/yr** |
+| `visitDate`, `visitYear`, **`visitId`** | a real visit id (e.g. `5517471`) |
+| `qualityPercentage` · `fastPercentage` · `accuratePercentage` · `friendlyPercentage` · `cleanlinessPercentage` | five dimensions, as **strings** |
+| `operationPercentage` | **null on every row** |
+
+⚠️ `visitTypeShortDescription` is **space-padded** (`"CEV1                "`) — trim on ingest, same
+trap as the EcoSure `questionCode` trailing spaces recorded earlier in this file.
+⚠️ Percentages are **strings**, not numbers.
+
+**Measured on `3708` (Ardmore-Broadway): 15 visits, 2016-06-01 → 2020-02-12. The series stops in
+February 2020** — a discontinued programme, presumably ended by COVID.
+
+## 🔴 Not useful for Model Check pairs — say so plainly
+
+A pair needs `(predicted readiness as of the visit date, actual score)`. Predicted readiness is
+computed from DAR / labor / ops streams. **Meridian has no such data for 2016–2020**, and while the
+standing rule is *never treat a gap as a floor, backfill it*, this one is different in kind:
+
+- pre-COVID, pre-current-menu, pre-current-POS;
+- **LifeLenz for Oklahoma begins Oct 2025** — CLAUDE.md's one acknowledged genuine floor;
+- the regime gap is larger than any this project has flagged, including the 11am–5pm window change.
+
+**So do not scope a CEV backfill for the Model Check.** Even if the ops data were pullable, pairing
+2017 operations against a model designed on 2026 data would measure the era, not the model.
+
+## 🎯 What it IS good for — and it is the single best available test of the ceiling
+
+**Test-retest needs no ops data at all.** It is visit-vs-visit: does a store's score predict its own
+next score? CEV supplies exactly that, at a scale nothing else can:
+
+| source | observations available |
+|---|---|
+| RGR comprehensive | 25 paired stores (2024→2025) — the current ρ=0.342, CI [−0.06, +0.65] |
+| **CEV** | **27 stores × ~15 quarterly visits ≈ 400** |
+
+That would move the ceiling estimate from "CI spanning almost the whole plausible range" to an
+actual number — and it is **27 GET requests with no parameters to tune.**
+
+### One store already shows the answer, and it is stark
+
+`3708`, 15 consecutive quarterly visits:
+
+| dimension | mean | min | max | sd |
+|---|---|---|---|---|
+| quality | 86.7 | 58.3 | 100.0 | 15.8 |
+| **fast** | **46.7** | **0.0** | **75.0** | **23.6** |
+| accurate | 94.4 | 50.0 | 100.0 | 14.5 |
+| friendly | 76.7 | 20.0 | 100.0 | 24.5 |
+| cleanliness | 67.8 | 33.3 | 100.0 | 19.7 |
+
+`fast`, in chronological order:
+`75 → 25 → 75 → 25 → 50 → 0 → 75 → 25 → 50 → 50 → 75 → 25 → 55 → 25 → 70`
+
+**Mean absolute change between consecutive visits: 39.6 points on a 0–100 scale.** Cleanliness: 15.5.
+
+**A restaurant's actual drive-thru speed does not swing forty points from one quarter to the next.**
+That is measurement noise, and it is independent corroboration of the low test-retest ceiling
+measured on the modern RGR data (ρ=0.342) — from a different instrument, a different decade, and a
+single store.
+
+⚠️ **CEV ≠ CFV ≠ RGR.** The numeric ceiling does not transfer between instruments. What transfers
+is the *qualitative* finding: **mystery-shop-style graded visits of these restaurants carry weak
+store-level signal and large per-visit variance.** That is the premise dispatch #69 Part B rests on,
+and it now has support from two independent sources.
+
+📌 **Recommended:** pull CEV for all 27 stores (27 calls, no parameters, one-off), compute
+test-retest per dimension across ~400 visits, and use it to set an honest expectation band on the
+Model Check — **without** ingesting CEV as a Meridian data source or attempting to pair it with ops
+data. It is a calibration study, not a stream.
