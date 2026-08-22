@@ -207,7 +207,36 @@ The note framed the visit side as unknown. **It is not. Meridian already stores 
 So the model side can be windowed to the **actual daypart of each visit**, per visit — not assumed
 from the policy window — and it works for the **old regime too**, where 11am–5pm did not apply.
 
-### Do this, in this order
+### 🔴 D0 — FIRST, split the existing pairs by `reportType`. No new pull, no new data.
+
+Added 2026-08-22 after the Propel captures. **This is cheaper than everything below it and may
+explain the headline number on its own.**
+
+Propel's UI has three separate visit-type cards, and their outcome distributions are nothing alike:
+
+| instrument | cadence | outcome |
+|---|---|---|
+| RGR (comprehensive) | ~1/store/yr | ~100% pass |
+| EcoSure (third-party food safety) | 2/store/yr | 93–98% pass |
+| **CFV (Customer First)** | **3/store/yr** | **55.3% meet 80% — 44.7% BELOW** |
+
+Meridian's Model Check pairs against `ds.gradedVisits`, which `src/parsers/graded-visits.js`
+populates from **both CFV and RGR** PDFs (`reportType: 'CFV'`, and the RGR branch at `:158`). **So
+its 27 pairs are plausibly a mix of two instruments — one nearly everyone passes and one nearly
+half fail.** Pooling them into a single correlation is the same mixing-regimes error this dispatch
+already flags twice (pre/post visit-window; CFV vs EcoSure), and it depresses ρ on its own,
+entirely independent of model quality.
+
+**Do:** group the existing pairs by `reportType` and compute ρ (with CI) separately for CFV and for
+RGR. The field is already on every row. If the two differ materially, the pooled 0.23 was never a
+meaningful number and the caption in Part B should never have been reporting it as one.
+
+⚠️ **Also scope the ceiling.** The test-retest benchmark in Part B (**ρ = +0.342, n=25, 2024→2025**)
+was measured on Propel's `category=visitResult` — **RGR only**. There is no CFV ceiling yet. A
+per-instrument ceiling is a prerequisite for interpreting either correlation, so D0 comes before
+the daypart/channel work below, not after it.
+
+### Then do this, in this order
 
 1. **FIRST, measure the fill rate.** ⚠️ A column that exists is not a column that is populated.
    `_after(L,'Day parts')` returns null when the PDF layout differs, and **RGR sets `channel: null`
