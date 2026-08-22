@@ -77,30 +77,55 @@ failure entirely.
 2. **`getFreshToken()` mints a Cognito ID token for `QSRSOFT_USERNAME`** via `USER_PASSWORD_AUTH`
    (`scripts/lib/qsrsoft-auth.mjs`, #312).
 
-### The two candidate causes — and the cheap test that separates them
+### ✅ Probe round 2 (2026-08-22) — three causes ELIMINATED, one fork left
 
-**(a) The security host wants a DIFFERENT token.** A separate authorizer/audience from the reports
-host, so the Cognito ID token that works for `api.reports` resolves to a principal with no
-entitlement here.
+| test | result |
+|---|---|
+| ID token → `api.reports/data_layer/v1/service/statistics` (ops-pull's own token-bearing path) | **200** |
+| ID token → `api.security/security/event_details` | **403** |
+| **Access token** → `api.security/security/event_details` | **403**, byte-identical message |
+| `orgAdmin` claim | `["org-a546d4ef-…"]` — the account **IS** org admin |
+| `permissionsAccess` claim | `["org-a546d4ef-…"]` — **only the org id; no module/feature list** |
 
-**(b) `QSRSOFT_USERNAME` lacks the security-module entitlement** that the owner's interactive login
-has — a QSRSoft permissions question, not a code one.
+**Eliminated:**
 
-**Decisive test, ~30 seconds, no token leaves the browser:** in one DevTools session on the Register
-Audit page, compare the **first ~10 characters** of the `x-auth-token` header on a request to
-`api.security.myqsrsoft.com` versus one to `api.reports.myqsrsoft.com`.
+- ❌ **Bad or expired credential.** It returns 200 on a token-bearing reports path in the same run.
+- ❌ **Wrong token type.** The access token fails identically, so this is not a JWT authorizer
+  rejecting `token_use:"id"` for want of a scope.
+- ❌ **Account not an admin.** `orgAdmin` carries this org.
 
-- **Different values → cause (a).** The security host issues/expects its own token, and the next
-  question is how the SPA obtains it. Design the pull around that, not around `getFreshToken()`.
-- **Same value → cause (b).** Our credential is the same one the browser uses, so the difference is
-  the *account*. Then it is a QSRSoft entitlement request for the automation user, and no amount of
-  code changes it.
+**And a fourth thing worth stating:** `permissionsAccess` contains **only the org id** — there is no
+per-module entitlement list in the token at all. So the Deny is **not** being computed from a
+module claim the automation user is missing. Whatever denies this request is doing it on something
+the token does not carry.
 
-⚠️ **Do not write the pull script until this is settled.** Both causes lead to materially different
-designs, and one of them cannot be solved in this repo at all.
+⚠️ **The identical response to two different token types is itself the clue.** If an authorizer
+were reading the JWT, an ID token and an access token would not usually fail the same way. That is
+more consistent with **the credential never being read at all** — i.e. `api.security` may not
+authenticate via `X-Auth-Token`.
 
-**The empty-array question remains genuinely open** — the probe was built correctly and will answer
-it the moment auth works. Re-run it unchanged once the credential is sorted.
+**Which exposes a real gap in the original finding:** the "token-only, no cookie" conclusion came
+from the DevTools request-header panel showing no `Cookie`. It inferred `x-auth-token` was the
+mechanism because that header *sorts below the fold* — **it was never actually seen on a
+`api.security` request.** Absence of a cookie was established; presence of a working token header
+was assumed.
+
+### 🔴 The one remaining fork, and the 30-second test
+
+**Does the browser send the SAME `x-auth-token` to `api.security` as to `api.reports`?**
+
+In one DevTools session on the Register Audit page, compare the **first ~10 characters** of the
+`x-auth-token` header on a request to each host.
+
+- **Same value → the credential is identical to ours, so the difference is the ACCOUNT.** A QSRSoft
+  entitlement request for the automation user. No code change in this repo fixes it.
+- **Different value → the security host issues its own token**, and the pull must obtain it the way
+  the SPA does. Design around that, not around `getFreshToken()`.
+- **No `x-auth-token` on the `api.security` request at all → the mechanism is something else**
+  entirely (and the original finding's inference was wrong). Capture the full header list.
+
+**Do not write the pull until this returns.** All three outcomes lead to different designs and one
+is not solvable in this repo.
 
 ## The response — what to store
 
