@@ -80,7 +80,12 @@ const END_DATE    = (process.env.QSRSOFT_FORMS_COMPLETION_END_DATE   || '').trim
 const CHUNK_DAYS  = parseInt(process.env.QSRSOFT_FORMS_COMPLETION_CHUNK_DAYS  || '3', 10);
 const DEBUG       = process.env.QSRSOFT_FORMS_COMPLETION_DEBUG === '1';
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Dispatch #71 -- guarded, not unconditional, matching qsrsoft-register-audit-pull.mjs's and
+// qsrsoft-security-events-pull.mjs's identical comment: keeps this module importable (for
+// pullWithEscalation and the other pure helpers) under vitest, where neither env var is set.
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 const fmtDate = d => d.toISOString().slice(0, 10);
 const addDay  = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + n); return r; };
@@ -198,10 +203,12 @@ async function viaPlaywright(chunks, tracker) {
     if (!token) { console.error('[auth] ✗ could not capture x-auth-token via Playwright'); return 0; }
     console.log(`[auth] ✓ token captured via Playwright (${token.length} chars)`);
     let grand = 0;
+    const coveredLocs = new Set();
     for (const c of chunks) {
       try {
         const rows = await fetchWindow(token, c.start, c.end, page);
-        const { saved } = await upsertRows(rows);
+        const { saved, locs } = await upsertRows(rows);
+        for (const l of locs) coveredLocs.add(l);
         console.log(`[forms-completion] ${c.start}..${c.end}: ${rows.length} row(s) -> ${saved} saved`);
         grand += saved;
       } catch (e) {
@@ -209,7 +216,7 @@ async function viaPlaywright(chunks, tracker) {
         tracker?.fail(`${c.start}..${c.end}`, e.message);
       }
     }
-    return grand;
+    return { grand, coveredLocs };
   } finally { await browser.close(); }
 }
 
@@ -243,6 +250,46 @@ async function runDirect(chunks, tracker) {
   return { grand, coveredLocs };
 }
 
+// Dispatch #71 -- the direct path's own fallback trigger (runDirect's thrown AUTH_FAILED on
+// 401/403) can never fire against a host that denies a token-only request with 200 + [] instead
+// of a 4xx: forms.home.myqsrsoft.com's auth shape was ASSUMED, never confirmed, unlike
+// api.reports.myqsrsoft.com (CLAUDE.md's own documented "requires browser session cookies" case
+// for that sibling host). A live run returned zero rows across every chunk of a window
+// independently confirmed (by hand, and in Completion_Details.xlsx) to hold thousands of real
+// rows -- the two very different conditions "authorized, genuinely nothing scheduled" and "not
+// really authorized" were producing byte-identical output, same shape as #66's swallowed nav
+// error one layer out. This estate runs 27 active stores on QSRSoft Forms daily; a real
+// zero-total across every chunk in a rolling sync is never an expected outcome, so any all-zero
+// direct-path result is retried via the Playwright path before the run is allowed to report its
+// (possibly false) zero.
+//
+// Extracted from main() and given injectable direct/playwright callables specifically so this
+// escalation DECISION is unit-testable without a real network/Supabase/browser -- the brief's own
+// verification bar asks for a test that the Playwright path is actually ATTEMPTED on a 200-empty
+// result, not merely that some internal flag flips.
+export async function pullWithEscalation(chunks, tracker, { runDirectFn = runDirect, viaPlaywrightFn = viaPlaywright } = {}) {
+  try {
+    const r = await runDirectFn(chunks, tracker);
+    if (r.grand > 0) return r;
+    console.log('[forms-completion] direct path saved 0 row(s) across all chunks -- a silent-empty '
+      + '200 is indistinguishable from a real auth denial on this host (dispatch #71); escalating '
+      + 'to the Playwright fallback to check before trusting the zero');
+    const pw = await viaPlaywrightFn(chunks, tracker);
+    if (pw.grand > 0) {
+      console.log(`[forms-completion] Playwright fallback recovered ${pw.grand} row(s) the direct `
+        + 'path silently missed -- the direct path\'s auth is confirmed broken for this host, not '
+        + 'merely an empty period');
+      return pw;
+    }
+    console.log('[forms-completion] Playwright fallback also saved 0 row(s) -- the direct path\'s '
+      + 'zero appears genuine (or Playwright itself could not authenticate; check the log above)');
+    return r;
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) -- falling back to Playwright`);
+    return await viaPlaywrightFn(chunks, tracker);
+  }
+}
+
 async function main() {
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[forms-completion] missing Supabase env'); process.exit(1);
@@ -252,14 +299,7 @@ async function main() {
   console.log(`[forms-completion] pulling ${start}..${end} in ${chunks.length} chunk(s) of ≤${CHUNK_DAYS} day(s)`);
 
   const tracker = makeOutcomeTracker('forms-completion-pull');
-  let total = 0, coveredLocs = new Set();
-  try {
-    const r = await runDirect(chunks, tracker);
-    total = r.grand; coveredLocs = r.coveredLocs;
-  } catch (e) {
-    console.log(`[auth] mint-and-fetch failed (${e.message}) -- falling back to Playwright`);
-    total = await viaPlaywright(chunks, tracker);
-  }
+  const { grand: total, coveredLocs } = await pullWithEscalation(chunks, tracker);
   console.log(`[forms-completion] done -- ${total} row(s) upserted for ${start}..${end}.`);
 
   logPartitionCoverage(coveredLocs, STORE_NSNS.map(n => n.padStart(7, '0')), { label: 'forms-completion-pull', kind: 'store' });
@@ -276,4 +316,11 @@ async function main() {
   process.exit(code);
 }
 
-main().catch(e => { console.error('[forms-completion-pull] FATAL:', e); process.exit(1); });
+// Dispatch #71 -- this script was missing the guard every sibling pull script has
+// (qsrsoft-security-events-pull.mjs, qsrsoft-register-audit-pull.mjs): without it, main() ran
+// unconditionally on import, so importing this module for pullWithEscalation/its other pure
+// helpers under vitest would kick off a real network/Supabase run and crash the test process on
+// process.exit(). Only run main() when executed directly.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(e => { console.error('[forms-completion-pull] FATAL:', e); process.exit(1); });
+}
