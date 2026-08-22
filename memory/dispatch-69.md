@@ -107,3 +107,67 @@ still see the previous value.
   mismatch `finding-cfv-2026-visit-rules.md` already names. This changes what "n" and "pairsNeeded"
   mean (per-type n, not pooled n) and needs its own design pass — not a drop-in to this dispatch's
   `calibrateReadiness()` signature.
+
+---
+
+# 🔴 FOLLOW-UP added after this shipped (2026-08-22, same day)
+
+Two items that post-date the work above. **Neither is a criticism of what shipped** — both rest on
+a measurement taken after it landed.
+
+## 1. `CALIBRATION_PAIRS_FOR_POWER = 46` is powering for an effect that cannot exist
+
+Section 2 ships the caption **"{n} of ~46 visits needed to tell — next check ~{month}"**, with 46
+taken from the backlog's power table (80% power to detect rank corr **≥ 0.4**). That was the right
+number given what was known, and it is a large improvement on *"Weak agreement so far"*.
+
+**But ρ ≥ 0.4 is above the achievable ceiling.**
+`memory/finding-cfv-predictability-ceiling-2026-08-22.md` measured, on **217 CFV visits (2023-2026)
+validated against Propel's own published card**:
+
+| | |
+|---|---|
+| a store's CFV score vs its **own next** CFV score | ρ = **+0.023**, n=190, CI **[−0.12, +0.17]** |
+| store identity's share of CFV variance (ICC) | **0.087** (permutation p = 0.092) |
+| ⇒ ceiling for **any** store-level predictor, √ICC | **≈ 0.30** |
+
+So the panel now tells an operator that 46 visits will settle it. **46 visits will not settle it**,
+because the effect being powered for is larger than the outcome can produce. That is the same
+defect class as items 1 and 2 — a claim stronger than the data supports — in a third form:
+**a promise of future certainty that will not arrive.**
+
+⚠️ **Do not simply re-point the constant at 0.30 and move on.** Powering for ρ ≥ 0.3 needs ~84
+pairs and the ICC itself is marginal (p = 0.092), so a "you'll know by <month>" promise is
+unsafe at any threshold. The honest surface is **the ceiling alongside the estimate** — 0.23
+against a ~0.30 maximum — not a countdown.
+
+**Also worth revisiting:** `CALIBRATION_PAIRS_PER_YEAR = 81` (27 × 3 CFV/yr) is correct for CFV,
+but `calibrateReadiness` pairs against `ds.gradedVisits`, which the parser fills from **both CFV
+and RGR**. See item 2.
+
+## 2. Part D0 — split the pairs by `reportType` FIRST. No new pull, no new data.
+
+Added after this dispatch was picked up, so it was never in scope for the shipped work.
+
+The three graded-visit instruments have nothing like the same outcome distribution:
+
+| instrument | cadence | outcome |
+|---|---|---|
+| RGR (comprehensive) | ~1/store/yr | ~100% pass |
+| EcoSure | 2/store/yr | 93–98% pass |
+| **CFV** | **3/store/yr** | **55.3% meet 80% — 44.7% below** |
+
+`calibrateReadiness` pairs against `ds.gradedVisits`, populated from **both CFV and RGR** PDFs
+(`src/parsers/graded-visits.js` — `reportType: 'CFV'`, and the RGR branch at `:158`). **So its 27
+pairs are plausibly a mixture of one instrument nearly everyone passes and one nearly half fail.**
+Pooling them depresses ρ on its own, independent of model quality — the same mixing-regimes error
+flagged twice elsewhere in this file's source material.
+
+**Do:** group the existing pairs by `reportType` and compute ρ (with CI) separately for CFV and
+RGR. The field is already on every row; no capture required. If they differ materially, the pooled
+0.23 was never a meaningful number.
+
+⚠️ **Scope note:** the ≈0.30 ceiling above is **CFV's**. RGR's own test-retest is 0.342 at n=25
+with CI [−0.06, +0.65] — too imprecise to use, and not interchangeable with CFV's. **A
+per-instrument ceiling is a prerequisite for interpreting either correlation**, which is why D0
+comes before the daypart/channel work.
