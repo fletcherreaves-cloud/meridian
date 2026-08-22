@@ -16,6 +16,7 @@
 // Cleanliness is an acknowledged data gap.
 
 import { DEFAULT_TARGETS } from '../constants.js';
+import { metricSeriesWithSource, METRIC_SOURCES } from './metric-source.js';
 
 const _normLoc = l => String(parseInt(String(l ?? '').replace(/\D/g, ''), 10) || '');
 const _num = v => (typeof v === 'number' && isFinite(v)) ? v : (v != null && !isNaN(+v) ? +v : null);
@@ -42,6 +43,15 @@ export const SOURCE_META = {
   fobRows:      { system: 'QSRSoft',    report: 'FOB / Food Cost (Excel upload)',                table: 'fob_rows',            feed: 'manual'  },
   smgFullscale: { system: 'SMG VOICE',  report: 'FullScale scorecard (Excel upload, monthly)',   table: 'smg_fullscale',       feed: 'manual'  },
   schedRows:    { system: 'LifeLenz',   report: 'Schedules (daily API sync)',                    table: 'lifelenz_schedules',  feed: 'auto'    },
+  // Dispatch #64 — the auto/derived sources metric-source.js's shared chains can now
+  // resolve a driver from. Without these, srcMeta()'s unknown-key fallback would report
+  // these as "Meridian · feed unknown" — technically harmless (the report still names the
+  // real source key) but it silently loses the auto/manual distinction that made the R2P
+  // bug findable in the first place.
+  qsrActSummaryRows: { system: 'QSRSoft', report: 'Daily Activity Report (daily API sync)',       table: 'qsr_daily_activity_rollup', feed: 'auto' },
+  opsCashRows:       { system: 'QSRSoft', report: 'Operations Report cash-sheet (daily API sync)', table: 'qsr_cash_sheet',            feed: 'auto' },
+  qsrFobRows:        { system: 'QSRSoft', report: 'FOB / Food Cost (daily API sync)',              table: 'qsr_fob',                   feed: 'auto' },
+  derived:           { system: 'Meridian', report: 'Computed from other auto-pulled metrics',      table: '—',                         feed: 'auto' },
 };
 export const srcMeta = key => SOURCE_META[key] || { system: 'Meridian', report: key, table: key, feed: 'unknown' };
 
@@ -81,45 +91,55 @@ export const READINESS_GAPS = [
 // dir: 'lower' (at/below target = perfect) or 'higher'. band: tolerance as a fraction
 // of the target — actual worse than target by `band` scores 0. src list is tried in
 // order (freshest cloud stream first); monthly metrics take the latest value/store.
+// ⚠️ Dispatch #64: most specs below no longer carry their own `srcs:` — they are resolved
+// through metric-source.js's shared, auto-first METRIC_SOURCES registry instead (see
+// pickValue/MS_KEY below). A spec still carrying `srcs:` here is DELIBERATE: it names a
+// metric with no metric-source.js chain at all (SMG FullScale has no API — accB2B/problem/
+// osat stay manual by necessity) or one that already reads an auto stream directly and
+// correctly (schedGap ← schedRows, LifeLenz). Do not add `srcs:` back to a migrated spec —
+// that is exactly the local-chain drift this dispatch closes.
 const SPEED = [
-  { key: 'oepe', label: 'OEPE (DT total, sec)', srcs: [['glimpseRows', 'oepe'], ['opsRows', 'oepe']], tgt: 'tOepe', dir: 'lower', band: 0.22, unit: 's',
+  { key: 'oepe', label: 'OEPE (DT total, sec)', tgt: 'tOepe', dir: 'lower', band: 0.22, unit: 's',
     pace: 'CFV DT OEPE ≤120s (8 pts, tiered) · RGRV S6 + S7 (trended)' },
-  { key: 'kvst', label: 'KVS time (sec)',       srcs: [['glimpseRows', 'kvst'], ['opsRows', 'kvst']], tgt: 'tKvst', dir: 'lower', band: 0.35, unit: 's',
+  { key: 'kvst', label: 'KVS time (sec)',       tgt: 'tKvst', dir: 'lower', band: 0.35, unit: 's',
     pace: 'Kitchen (MFY) throughput behind CFV channel speed + RGRV Quality holding' },
-  { key: 'park', label: 'DT park rate',          srcs: [['opsRows', 'park']],                          tgt: 'tPark', dir: 'lower', band: 0.60, unit: 'pct',
+  { key: 'park', label: 'DT park rate',          tgt: 'tPark', dir: 'lower', band: 0.60, unit: 'pct',
     pace: 'Pull-forwards inflate OEPE and raise hand-off accuracy risk (CFV DT)' },
-  { key: 'r2p',  label: 'R2P front counter (sec)', srcs: [['opsRows', 'r2p']],                         tgt: 'tR2p',  dir: 'lower', band: 0.30, unit: 's',
+  { key: 'r2p',  label: 'R2P front counter (sec)', tgt: 'tR2p',  dir: 'lower', band: 0.30, unit: 's',
     pace: 'CFV In-Restaurant R2P ≤90s (8 pts) · RGRV S13 + S14 (trended)' },
 ];
 const ACCURACY = [
+  // Genuinely manual — no API exists for SMG FullScale. Left on the legacy local resolver.
   { key: 'accB2B',  label: 'SMG accuracy (B2B) %', srcs: [['smgFullscale', 'accuracyB2B']],  tgt: 95, dir: 'higher', band: 0.06, unit: 'pct', monthly: true, pct: true,
     pace: 'CFV order accuracy (8 pts, all-or-nothing, every channel)' },
   { key: 'problem', label: 'SMG problem %',        srcs: [['smgFullscale', 'overallProblem']], tgt: 10, dir: 'lower', band: 0.80, unit: 'pct', monthly: true, pct: true,
     pace: 'Guest-reported problem rate — the broadest accuracy/experience proxy' },
-  { key: 'tRedA',   label: 'T-Reds after total %', srcs: [['ctrlRows', 'tRedAPct']],          tgt: 'tRedAPct', dir: 'lower', band: 0.60, unit: 'pct',
+  { key: 'tRedA',   label: 'T-Reds after total %', tgt: 'tRedAPct', dir: 'lower', band: 0.60, unit: 'pct',
     pace: 'Post-total re-rings = orders rung wrong; best daily internal accuracy proxy' },
 ];
 const QUALITY = [
-  { key: 'comp', label: 'Comp waste %', srcs: [['fobRows', 'compWaste']], tgt: 'tCompWaste', dir: 'lower', band: 0.60, unit: 'pct', monthly: true,
+  { key: 'comp', label: 'Comp waste %', tgt: 'tCompWaste', dir: 'lower', band: 0.60, unit: 'pct', monthly: true,
     pace: 'RGRV Quality (75 pts) — holding discipline / remakes (ambiguous: discipline vs remakes)' },
-  { key: 'raw',  label: 'Raw waste %',  srcs: [['fobRows', 'rawWaste']],  tgt: 'tRawWaste',  dir: 'lower', band: 0.60, unit: 'pct', monthly: true,
+  { key: 'raw',  label: 'Raw waste %',  tgt: 'tRawWaste',  dir: 'lower', band: 0.60, unit: 'pct', monthly: true,
     pace: 'RGRV Quality — product handling / shelf-life discipline' },
+  // Genuinely manual — no API exists for SMG FullScale.
   { key: 'osat', label: 'SMG OSAT (B2B) %', srcs: [['smgFullscale', 'osatB2B']], tgt: 90, dir: 'higher', band: 0.10, unit: 'pct', monthly: true, pct: true,
     pace: 'Guest-rated overall satisfaction (taste/quality component of RGRV Quality)' },
 ];
 const LEADERSHIP = [
-  { key: 'tpph',  label: 'TPPH (throughput/labor-hr)', srcs: [['laborRows', 'tpph']], tgt: 'tTpph', dir: 'higher', band: 0.22, unit: '',
+  { key: 'tpph',  label: 'TPPH (throughput/labor-hr)', tgt: 'tTpph', dir: 'higher', band: 0.22, unit: '',
     pace: 'RGRV Shift Leadership (33 pts) — positioning and peak deployment' },
-  { key: 'labor', label: 'Labor % of sales', srcs: [['glimpseRows', 'laborPct'], ['laborRows', 'laborPct']], tgt: 'tCrewLabor', dir: 'lower', band: 0.18, unit: 'pct',
+  { key: 'labor', label: 'Labor % of sales', tgt: 'tCrewLabor', dir: 'lower', band: 0.18, unit: 'pct',
     pace: 'Thin peak staffing degrades speed + hospitality together (Shift Leadership)' },
+  // Already reads an auto stream (LifeLenz) directly and correctly — left alone.
   { key: 'schedGap', label: 'Schedule gap vs ideal (hrs)', srcs: [['schedRows', 'schVsIdealDiff']], tgt: 0, dir: 'abs', band: null, unit: 'hrs', absTol: 8,
     pace: 'RGRV Shift Leadership — positioning 24h ahead / schedule built to the forecast' },
 ];
 // Food-safety proxy metrics (waste/holding discipline). NOT a % score — feeds a flag.
 const FOODSAFETY = [
-  { key: 'statVar', label: 'Stat variance %', srcs: [['fobRows', 'statVar']], tgt: 'tStatLoss', dir: 'lower', band: 0.6, monthly: true,
+  { key: 'statVar', label: 'Stat variance %', tgt: 'tStatLoss', dir: 'lower', band: 0.6, monthly: true,
     pace: 'Directional holding/handling proxy only — NOT an EcoSure prediction' },
-  { key: 'raw',     label: 'Raw waste %',     srcs: [['fobRows', 'rawWaste']], tgt: 'tRawWaste', dir: 'lower', band: 0.6, monthly: true,
+  { key: 'raw',     label: 'Raw waste %',     tgt: 'tRawWaste', dir: 'lower', band: 0.6, monthly: true,
     pace: 'Directional holding/handling proxy only — NOT an EcoSure prediction' },
 ];
 
@@ -258,16 +278,86 @@ function valuesByLoc(ds, source, field, monthly) {
   return out;
 }
 
+// Dispatch #64 — key names are not identity between this file and metric-source.js.
+// Only list the exceptions; every other migrated key (oepe/kvst/park/r2p/tpph/statVar)
+// already matches metric-source.js's own key.
+const MS_KEY = { labor: 'laborPct', tRedA: 'tRedAPct', comp: 'compWaste', raw: 'rawWaste' };
+const _msKeyFor = spec => MS_KEY[spec.key] || spec.key;
+
+// metric-source.js carries no daily-vs-monthly distinction of its own — VR's old local
+// resolver applied NO window at all to monthly-cadence metrics (SMG/FOB), scanning full
+// history for the single latest-dated value. RECENT_DAYS (45) would silently break that
+// "latest value on record" semantic for anything uploaded more than 45 days ago, so
+// monthly lookups get a much wider lookback instead — wide enough to be, in practice, "all
+// of it" without literally scanning unbounded history.
+const MONTHLY_LOOKBACK_DAYS = 1095;
+
+// Per-store recent value for a metric-source.js key, resolved through metricSeriesWithSource
+// (auto-first per day, freshest-wins). daily → mean of the resolved observations in the
+// window; monthly → the single latest-dated value. Provenance (source/field) is taken from
+// whichever day is most recent, since that is the day the displayed number is actually
+// tracking, even though the average may blend more than one source across the window — the
+// same freshest-wins behaviour every other metric-source.js consumer gets.
+//
+// Does NOT drop v===0 the way the old local `valuesByLoc` did. That exclusion was measured
+// live against Ardmore-Cooper (#24471, 2026-08-22) to be actively wrong here: `park`'s
+// metric-source.js chain leads with glimpseRows.parkedPct under mode:'any' specifically so a
+// genuine 0% park rate counts as real data (#150/#178 — the same zero-discarding bug class).
+// _ok() already enforces that upstream: a mode:'pos' metric's series can never contain a 0
+// (filtered before it reaches here), so re-excluding 0 down here is a no-op for those and
+// actively wrong for mode:'any' ones — it silently turned every in-window day of a real 0%
+// park rate into "no data for this store," masking real (non-zero) data sitting in opsRows
+// one priority slot down. Trust metric-source.js's own mode to say what counts as a value.
+function msValueForLoc(ds, msKey, loc, monthly) {
+  const now = Date.now();
+  const range = monthly
+    ? { s: new Date(now - MONTHLY_LOOKBACK_DAYS * 864e5), e: new Date(now) }
+    : { s: new Date(now - RECENT_DAYS * 864e5), e: new Date(now) };
+  const series = metricSeriesWithSource(ds, loc, range, msKey);
+  const days = Object.keys(series).sort();
+  if (!days.length) return null;
+  if (monthly) {
+    const dk = days[days.length - 1];
+    const { value, source, field } = series[dk];
+    const ms = _ms(dk);
+    return { v: value, n: 1, firstMs: ms, lastMs: ms, source, field };
+  }
+  let sum = 0, n = 0, firstMs = null, lastMs = null, lastSrc = null, lastField = null;
+  for (const dk of days) {
+    const { value, source, field } = series[dk];
+    if (value == null) continue;
+    const ms = _ms(dk);
+    sum += value; n++;
+    if (firstMs == null || ms < firstMs) firstMs = ms;
+    if (lastMs == null || ms > lastMs) { lastMs = ms; lastSrc = source; lastField = field; }
+  }
+  if (!n) return null;
+  return { v: sum / n, n, firstMs, lastMs, source: lastSrc, field: lastField };
+}
+
 // First source with a value for this loc. Returns {value, source, field, n, from, asOf} or null.
+// A spec carrying its own `srcs:` (accB2B/problem/osat/schedGap — see the comment above
+// SPEED/ACCURACY/etc.) uses the legacy local resolver; every other spec is resolved through
+// metric-source.js's shared auto-first chain.
 function pickValue(ds, spec, loc, cache) {
-  for (const [source, field] of spec.srcs) {
-    const key = source + '|' + field + '|' + (spec.monthly ? 'm' : 'd');
-    const map = cache[key] || (cache[key] = valuesByLoc(ds, source, field, spec.monthly));
-    const hit = map[loc];
-    if (hit && hit.v != null) {
-      const val = spec.pct ? asPct(hit.v) : hit.v;
-      return { value: val, source, field, n: hit.n, from: _isoDay(hit.firstMs), asOf: _isoDay(hit.lastMs) };
+  if (spec.srcs) {
+    for (const [source, field] of spec.srcs) {
+      const key = source + '|' + field + '|' + (spec.monthly ? 'm' : 'd');
+      const map = cache[key] || (cache[key] = valuesByLoc(ds, source, field, spec.monthly));
+      const hit = map[loc];
+      if (hit && hit.v != null) {
+        const val = spec.pct ? asPct(hit.v) : hit.v;
+        return { value: val, source, field, n: hit.n, from: _isoDay(hit.firstMs), asOf: _isoDay(hit.lastMs) };
+      }
     }
+    return null;
+  }
+  const msKey = _msKeyFor(spec);
+  const cacheKey = 'ms|' + msKey + '|' + (spec.monthly ? 'm' : 'd') + '|' + loc;
+  const hit = cacheKey in cache ? cache[cacheKey] : (cache[cacheKey] = msValueForLoc(ds, msKey, loc, spec.monthly));
+  if (hit && hit.v != null) {
+    const val = spec.pct ? asPct(hit.v) : hit.v;
+    return { value: val, source: hit.source, field: hit.field, n: hit.n, from: _isoDay(hit.firstMs), asOf: _isoDay(hit.lastMs) };
   }
   return null;
 }
@@ -308,8 +398,12 @@ function subScore(ds, specs, loc, cache) {
   for (const spec of specs) {
     const picked = pickValue(ds, spec, loc, cache);
     if (!picked) {
+      // Migrated specs have no local `srcs:` any more — read the LIVE metric-source.js
+      // chain instead, or this message drifts stale exactly like the bug this dispatch
+      // exists to close (dispatch #64).
+      const chainSrcs = spec.srcs || (METRIC_SOURCES[_msKeyFor(spec)]?.srcs || []);
       missing.push({ key: spec.key, label: spec.label, pace: spec.pace,
-        reason: 'no data for this store in ' + spec.srcs.map(([s, f]) => s + '.' + f).join(' / ')
+        reason: 'no data for this store in ' + chainSrcs.map(([s, f]) => s + '.' + f).join(' / ')
           + (spec.monthly ? ' (monthly)' : ' (last ' + RECENT_DAYS + ' days)') });
       continue;
     }

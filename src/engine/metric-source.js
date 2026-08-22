@@ -37,7 +37,7 @@
 //
 // This is the single source of truth for the ordering rule, and metric-source-order.test.js
 // asserts against it: no chain may place a manual stream ahead of an auto one.
-export const MANUAL_FED_SOURCES = Object.freeze(['laborRows', 'opsRows', 'ctrlRows', 'auditRows']);
+export const MANUAL_FED_SOURCES = Object.freeze(['laborRows', 'opsRows', 'ctrlRows', 'auditRows', 'fobRows']);
 
 const _dk = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
 
@@ -223,6 +223,33 @@ export const METRIC_SOURCES = {
   // Owner corrected an earlier assessment that this was manual-only — it is carried by
   // the Controls upload AND derivable from the DAR, which has both hour columns.
   actVsNeed:      { mode: 'any', srcs: [['qsrActSummaryRows', 'actVsNeed'], ['ctrlRows', 'actVsNeed']] },
+
+  // ── FOB auto-pull $ amounts (dispatch #64) ──────────────────────────────────
+  // qsr_fob (auto-pulled, see loadQsrFob in supabase.js) carries DOLLAR amounts, not the
+  // %'s Visit Readiness and the manual FOB Excel upload actually score against. These are
+  // the $ legs a %-deriving metric below divides by sales — analytics.js's own cloudFobRows
+  // does the identical division for At A Glance/FOB Report, not invented here.
+  // mode:'any': a real $0 comp/raw-waste day is legitimate (no waste at all), and
+  // statVarianceAmt is signed — 'pos' would silently discard both as "not found," the
+  // exact zero-discarding bug class #150/#178 already fixed for park/kvsHealthy.
+  compWasteAmt:    { mode: 'any', srcs: [['qsrFobRows', 'compWasteAmt']] },
+  rawWasteAmt:     { mode: 'any', srcs: [['qsrFobRows', 'rawWasteAmt']] },
+  statVarianceAmt: { mode: 'any', srcs: [['qsrFobRows', 'statVarianceAmt']] },
+  prodSalesAmt:    { mode: 'pos', srcs: [['qsrFobRows', 'prodSalesAmt']] },
+
+  // FOB waste/variance %'s — the manual FOB Excel's own precomputed % stays the first
+  // source (unchanged behaviour), with the qsr_fob-derived % (amount ÷ sales, above) as
+  // the fallback for any day the manual upload doesn't cover. This closes the "auto not
+  // reachable AT ALL" gap dispatch #64 exists to fix. It does not yet force the derived
+  // value to outrank a manual one on a day BOTH exist for (srcs is always checked before
+  // derive here) — a smaller, secondary imperfection than the one being closed; flagged
+  // rather than silently accepted as correct.
+  compWaste: { mode: 'any', srcs: [['fobRows', 'compWaste']],
+               derive: { inputs: ['compWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
+  rawWaste:  { mode: 'any', srcs: [['fobRows', 'rawWaste']],
+               derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
+  statVar:   { mode: 'any', srcs: [['fobRows', 'statVar']],
+               derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
 };
 
 // ── Deliberately manual-only ────────────────────────────────────────────────
@@ -459,6 +486,20 @@ export function dailyDataFreshness(ds) {
   return max != null ? new Date(max) : null;
 }
 
+// Sources whose OWN r.loc is stored zero-padded rather than the bare-numeric-string
+// convention every other source (and every METRIC_SOURCES caller, e.g. DEFAULT_TARGETS'
+// own keys) uses. loadQsrFob's own comment in supabase.js explains why the loader itself
+// is not changed: four existing consumers already rely on reading it padded. Normalized
+// ONLY at this index-building boundary — callers keep passing the same unpadded loc they
+// always have, and every other source's indexing is untouched. Without this, a chain
+// sourced from qsrFobRows would silently never match and look identical to a genuinely
+// manual-only metric — the exact bug class dispatch #64 exists to close, reintroduced by
+// the fix itself if this is skipped.
+const _PADDED_LOC_SOURCES = new Set(['qsrFobRows']);
+const _srcLocKey = (src, rawLoc) => _PADDED_LOC_SOURCES.has(src)
+  ? (String(rawLoc).replace(/^0+/, '') || '0')
+  : String(rawLoc);
+
 // Lazy per-source index (loc_date → rows[]), cached non-enumerably on ds so it rebuilds
 // automatically when ds is replaced (setDs makes a new object).
 // Per-source, per-loc sorted date keys, cached on ds alongside _srcIdx. Built once from
@@ -469,7 +510,7 @@ function _srcDates(ds, src) {
     const byLoc = {};
     for (const r of (ds?.[src] || [])) {
       if (!r || r.loc == null || !r.date) continue;
-      const l = String(r.loc);
+      const l = _srcLocKey(src, r.loc);
       (byLoc[l] || (byLoc[l] = new Set())).add(_dk(r.date));
     }
     const out = {};
@@ -486,7 +527,7 @@ function _srcIdx(ds, src) {
     const idx = {};
     for (const r of (ds?.[src] || [])) {
       if (!r || r.loc == null || !r.date) continue;
-      const k = String(r.loc) + '_' + _dk(r.date);
+      const k = _srcLocKey(src, r.loc) + '_' + _dk(r.date);
       (idx[k] || (idx[k] = [])).push(r);
     }
     try { Object.defineProperty(ds, cacheKey, { value: idx, enumerable: false, configurable: true }); }
@@ -513,7 +554,11 @@ export function metricDaily(ds, loc, date, key) {
 // Date objects (cloud streams via _mkDate) OR strings — normalize both sides to
 // "YYYY-MM-DD" before comparing so a Date-vs-string mix doesn't silently drop rows
 // (a Date >= a bare date-string coerces to NaN and is always false).
-export function metricSeries(ds, loc, range, key, _depth = 0) {
+// Same per-day resolution as metricSeries, but each entry is { value, source, field } instead
+// of a bare number — dispatch #64 needs to know WHICH source answered (to keep a provenance
+// column honest), not just the resolved value. metricSeries (below) is a thin wrapper that
+// strips this down to { dateKey: value }, so every existing caller keeps its exact contract.
+export function metricSeriesWithSource(ds, loc, range, key, _depth = 0) {
   const spec = METRIC_SOURCES[key];
   const out = {};
   if (!ds || !spec) return out;
@@ -532,14 +577,14 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
   // no value rather than a wrong one.
   const _derive = (into) => {
     if (!spec.derive || _depth > 3) return into;      // depth guard: cyclic definitions
-    const parts = spec.derive.inputs.map(k => metricSeries(ds, loc, range, k, _depth + 1));
+    const parts = spec.derive.inputs.map(k => metricSeriesWithSource(ds, loc, range, k, _depth + 1));
     const days = new Set(parts.flatMap(p => Object.keys(p)));
     for (const dk of days) {
       if (into[dk] != null) continue;                 // a real source already answered
-      const vals = parts.map(p => p[dk]);
+      const vals = parts.map(p => p[dk]?.value);
       if (vals.some(v => v == null)) continue;        // incomplete inputs → no value
       const v = spec.derive.fn(...vals);
-      if (_ok(v, spec.mode)) into[dk] = v;
+      if (_ok(v, spec.mode)) into[dk] = { value: v, source: 'derived', field: key };
     }
     return into;
   };
@@ -565,7 +610,7 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
   for (const dk of dates) {
     for (const [src, field] of spec.srcs) {
       const rows = _srcIdx(ds, src)[L + '_' + dk];
-      if (rows) { let hit = false; for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) { out[dk] = v; hit = true; break; } } if (hit) break; }
+      if (rows) { let hit = false; for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) { out[dk] = { value: v, source: src, field }; hit = true; break; } } if (hit) break; }
     }
   }
   // LAST RESORT: compute the metric for days no source could answer. A precomputed value
@@ -573,6 +618,13 @@ export function metricSeries(ds, loc, range, key, _depth = 0) {
   // day with Glimpse (guest counts) and Controls (hours) but no DAR previously produced
   // nothing, even though both halves of transactions ÷ hours were sitting right there.
   return _derive(out);
+}
+
+export function metricSeries(ds, loc, range, key, _depth = 0) {
+  const withSrc = metricSeriesWithSource(ds, loc, range, key, _depth);
+  const out = {};
+  for (const dk in withSrc) out[dk] = withSrc[dk].value;
+  return out;
 }
 
 // Mean of the daily values across one or more locs over a range (auto-first per day).

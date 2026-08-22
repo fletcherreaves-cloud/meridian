@@ -65,6 +65,86 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🟡 PARTIALLY SHIPPED (2026-08-22, code-side only, NOT live-verified): [Dispatch #65 — the `qsr_security_events` pull, on a self-hosted runner](dispatch-65.md)** —
+  **NEWEST.** Built from a sandboxed session with **no physical/self-hosted-runner access** — read
+  the dispatch file's own Resolution section before trusting anything below is verified. Shipped:
+  `scripts/qsrsoft-security-events-pull.mjs` (the actual daily pull, two-path auth mirroring
+  `qsrsoft-ops-pull.mjs` — direct token + plain fetch first, Playwright SPA-login fallback; one
+  POST per (store, date, event_token), empty registers/cashiers = ALL per #58's own measurement);
+  `.github/workflows/qsrsoft-security-events-pull.yml` (`runs-on: [self-hosted, macOS,
+  qsr-security]`, the label #65's own brief names); registered in `sync-failure-watch.yml`; 6 new
+  unit tests for the pull's pure helpers. **Also found and fixed a real, pre-existing bug**:
+  `schema-qsr-security-events.sql`'s unique index targets an EXPRESSION
+  (`coalesce(order_key,'')`), which PostgREST's `onConflict` cannot reference at all — the pull's
+  first write would have failed outright. Fix in `schema-qsr-security-events-upsert-fix.sql`
+  (`UNIQUE NULLS NOT DISTINCT` on plain columns) — **not yet applied to the live DB**, needs the
+  same "owner runs it in the SQL editor" step every schema file in this repo has always needed.
+  **Deliberately NOT shipped, not silently skipped:** the `stream-freshness.js` `STREAMS` wiring
+  (the OTHER half of the brief's "do BOTH" alarm requirement) — `qsr_security_events`' RLS is
+  **role-gated** (admin/supervisor always, manager only with a flag), and App.js has **zero
+  existing precedent** for a role-conditional eager load; wiring it the same way every other
+  stream is wired would manufacture a guaranteed critical-severity false alarm on every
+  GM/office-staff/DO/VP session, not a corner case. Left explicitly for the next session with a
+  concrete recommendation (gate on `userRole==='admin'||userRole==='supervisor'`) rather than
+  shipped blind. **Nothing in the verification bar was attempted** — no self-hosted runner, no
+  QSRSoft network access, no way to run the schema migration, the runner-offline test, or the
+  weekend endurance check from this session. 2027/2027 tests, build clean, zero entry-chunk
+  change (none of this touches the client bundle). The next session needs physical access to
+  `Fletchers-Mac-mini` (or the owner) to actually finish this.
+- **✅ SHIPPED (2026-08-22, v5.106): [Dispatch #64 — Visit Readiness now sources through the shared auto-first resolver](dispatch-64.md)** —
+  `visit-readiness.js` kept its own local `srcs` chains instead of calling
+  `metric-source.js`, and they had drifted strictly worse: `r2p`/`park`/`tpph` were manual-only
+  while auto sources already existed, `oepe`/`kvst` were each missing two auto fallbacks. Found
+  from a real coaching report for Ardmore-Cooper/12th (#24471) scored off an R2P value **38 days
+  stale** — and because R2P feeds Speed (35%) and TPPH feeds Leadership (15%), roughly half that
+  report's composite was frozen on a report whose whole purpose is same-day coaching. Phase 1
+  (deletion, not construction): `oepe`/`kvst`/`park`/`r2p`/`tpph`/`labor` now resolve through
+  `METRIC_SOURCES`, via a new `metricSeriesWithSource()` export (`metricSeries()` is now a thin
+  wrapper over it) that recovers WHICH source answered per day, not just the value — needed to
+  keep `SOURCE_META`'s provenance column (the thing that made this findable) honest. Phase 2:
+  `tRedA` remapped onto the already-correct `tRedAPct` chain; `comp`/`raw`/`statVar` gained new
+  `METRIC_SOURCES` derive entries computing a % from the auto-pulled `qsr_fob` $ amounts, behind
+  the manual FOB Excel's own %. `accB2B`/`problem`/`osat` (SMG, no API) and `schedGap` (already
+  auto via `schedRows`) deliberately left on the local resolver.
+  **Two things self-caught before/during this session, not by the dispatch brief**: monthly
+  metrics (SMG/FOB) had NO window cutoff in the old resolver at all, so reusing the 45-day daily
+  window would have silently broken "latest value on record" for anything >45 days old — fixed
+  with a ~3-year lookback instead. And a live-data run against Ardmore-Cooper surfaced a real bug
+  in this dispatch's OWN first draft: blanket-excluding `v===0` from the daily mean (carried over
+  from the old single-source resolver, where it never mattered) silently discarded EVERY day of
+  `park` once the auto chain's real 0% answer got there first — the exact **#150/#178
+  zero-discarding bug class**, reintroduced by the fix meant to close a different sourcing gap.
+  Removed; `metric-source.js`'s own `mode` already decides what counts as a value.
+  **Verification bar was the score itself, live**: both the pre-dispatch and the new engine run
+  against the SAME real service-role-pulled Ardmore-Cooper data — R2P moved from `{111.7s,
+  opsRows, as-of 2026-07-15}` to `{128.5s, qsrActSummaryRows, as-of 2026-08-22}`, composite
+  readiness moved **48.6 → 53.2**. 5 new revert-sensitive tests (stashed the fix, confirmed all 5
+  fail, restored) — auto-only fixtures the old chains could never read, the exact key/field traps
+  named in the brief (`labor→laborPct`, `tRedA→tRedAPct`, `park→glimpseRows.parkedPct`), a
+  no-DAR-coverage store still falling back to `opsRows`/`manual`, the missing-reason message
+  reading the LIVE chain not a stale local one, and the actual HTML/CSV report (not just the
+  engine) surfacing a migrated driver's real source. 2021/2021 tests, build clean, entry chunk
+  511.84→512.03 KB gzip (`visit-readiness.js` is lazy-loaded, not in the entry chunk). Out of
+  scope, untouched: weights, targets, bands, the food-safety flag.
+- **✅ SETTLED (2026-08-22): [Dispatch #63 — the `api.security` 403 is a QSRSoft entitlement gap, not a bug here](dispatch-63.md)** —
+  `event_details`'s 403 (an AWS IAM explicit-deny: credential accepted, principal
+  denied) survives every hypothesis this repo can test. Two tasks, both run in GitHub Actions
+  (`workflow_dispatch`, no owner needed): (1) `POST /security/video_provider` — the route the
+  owner's browser gets a 200 from, in the same module — also **403** with our token, so the
+  denial is **module-wide, not route-scoped**. (2) Retried `event_details` with a token minted by
+  driving the real SPA through Playwright (`USER_SRP_AUTH`, matching the browser's own login
+  flow, not `getFreshToken()`'s bare `USER_PASSWORD_AUTH`) — **still 403**, byte-identical
+  message. **The privacy-safe principal check (sha256 of `sub`/`eID`, no raw values ever
+  logged) proves both tokens are the SAME Cognito principal** — closing the "same email, two
+  principals" hypothesis for good, not just demoting it. Every one of nine hypotheses (bad
+  credential, wrong token type, non-admin, wrong app client, no-token, `valid_eID`, route-scoped,
+  auth-flow, two-principals) is eliminated by measurement, tabulated in the resolution section.
+  **Wrote the QSRSoft entitlement request**
+  (`memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md` — ⚠️ SUPERSEDED, do NOT send: it is a SOURCE-IP restriction, one principal, see dispatch-63.md's CORRECTION) and stopped there per the
+  dispatch's own instruction — no retries, no scope widening, no UI-scraping fallback. Lives on
+  branch `claude/project-orientation-clarify-x61o5r` (PR #553, open as of this entry) — read the
+  dispatch file directly rather than this summary; its eliminated-hypotheses tables are the part
+  worth the most to whoever picks this up next.
 - **✅ SHIPPED (2026-08-22, v5.105 — Part A only): [Dispatch #62 — make the register-type dimension actually do something](dispatch-62.md)** —
   **NEWEST.** Step 0's live measurement (service-role query, 7 days of `audit_rows`, all 27
   stores) found **321 of 1,611 employee-days span more than one register type** — materially

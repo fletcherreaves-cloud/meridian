@@ -1,0 +1,89 @@
+name: QSRSoft Security Events Pull
+
+# Dispatch #65. api.security.myqsrsoft.com's event_details endpoint refuses GitHub-hosted
+# runners by NETWORK ORIGIN, not credential (memory/dispatch-63.md's CORRECTION, memory/
+# dispatch-65.md) -- so this workflow, uniquely among this repo's scheduled pulls, runs on a
+# SELF-HOSTED runner on a permitted consumer connection at the owner's home/office. Every other
+# scheduled workflow stays on hosted runners, unchanged -- do not migrate them here.
+#
+# ⚠️ Requires a self-hosted runner registered with the label below, always-on, installed as a
+# service (./svc.sh install), on a machine that will not sleep (see memory/dispatch-65.md's
+# macOS checklist). If no such runner is online, this job QUEUES rather than failing -- Sync
+# Failure Watch (workflow_run-based) cannot see a queued job, which is why
+# src/engine/stream-freshness.js's per-stream freshness check is the thing that actually
+# catches a dead/offline runner here, not this file.
+#
+# NOT live-verified from the session that wrote this pull script -- no self-hosted runner and no
+# QSRSoft network access from that sandboxed session. buildUrl/buildBody/extractRows are unit-
+# tested (src/__tests__/qsrsoft-security-events-pull.test.js); parseSecurityEventRow was already
+# unit-tested before this dispatch (src/__tests__/security-events.test.js). Before trusting the
+# first scheduled run's output, run this once via workflow_dispatch on the actual self-hosted
+# runner and confirm a real 200 + row count, per memory/dispatch-65.md's verification bar.
+
+on:
+  schedule:
+    # Once daily, matching the existing pulls' cadence -- 10:00 UTC alongside the DAR/eBOS pulls.
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 14)'
+        required: false
+        default: '14'
+      days_recent:
+        description: 'Rolling re-pull window in days (default: 2)'
+        required: false
+        default: '2'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date to pull an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: [self-hosted, macOS, qsr-security]
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Security Events data
+        run: node scripts/qsrsoft-security-events-pull.mjs
+        env:
+          VITE_SUPABASE_URL:              ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:      ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:                ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:                ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_SECEVENTS_DAYS_BACK:     ${{ github.event.inputs.days_back   || '14' }}
+          QSRSOFT_SECEVENTS_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '2'  }}
+          QSRSOFT_SECEVENTS_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
+          QSRSOFT_SECEVENTS_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
+          QSRSOFT_SECEVENTS_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-events-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

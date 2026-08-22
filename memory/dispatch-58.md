@@ -252,3 +252,41 @@ amount, tender. Reuse the `SubjectDetail` surface Part D already built; do not c
   table); `storeRef` conversion from padded `loc`; and the honest-null case where a subject has no
   events.
 - `npm run build` clean; the panel lazy so the entry chunk does not move.
+
+---
+
+## ✅ ANSWERED 2026-08-22 — empty `registers`/`cashiers` mean "ALL". The pull is the simple one.
+
+Measured by the owner from a permitted network origin (his own machine), same store/date/token,
+only the filter arrays changed:
+
+| `--data-raw` | events returned | payload |
+|---|---|---|
+| `"registers":[13] … "cashiers":[91,0]` | **38** | 15,472 bytes |
+| `"registers":[] … "cashiers":[]` | **170** | 70,166 bytes |
+
+170 > 38, and 38 matches this file's own original capture exactly — so the empty arrays are **not
+"no filter matches"**, they are **"every register, every cashier."**
+
+**Consequence: write the straightforward pull.** One request per `(store, date, event_token)` —
+**27 stores × 8 tokens = 216 requests/day**. No enumeration stage, no per-register or per-cashier
+discovery loop. The redesign this dispatch warned about is **not needed**; the paragraph above
+that says "the daily pull needs a redesign … do not write the straightforward per-store-per-token
+pull" is now **void** for the empty-array reason (the probe's own `EMPTY ARRAYS RETURN ZERO ROWS`
+branch did not fire).
+
+### Sizing, for whoever writes it
+
+One store · one date · one token (`all_promo`) = **170 events / ~70 KB**. `all_promo` is likely
+among the highest-volume tokens, so treat this as an upper-ish bound per cell. A naive ceiling of
+216 cells/day lands in the low tens of thousands of rows and ~10-15 MB of JSON per day —
+comfortable for Postgres and for a single scheduled run, but **large enough to warrant chunked
+upserts** (the existing pulls' `CHUNK` pattern) rather than one giant insert.
+
+⚠️ Measured on **one** store/date/token. Confirm the shape against a second store before assuming
+the ceiling holds estate-wide.
+
+### Still true
+
+The pull must run from a **permitted network origin** — see `memory/dispatch-65.md`. This answer
+unblocks the pull's *shape*, not its *hosting*.
