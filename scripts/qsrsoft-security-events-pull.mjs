@@ -280,11 +280,25 @@ async function viaPlaywright(dates, tracker) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[auth] post-login url:', page.url());
     await snap('secevents-01-post-login.png');
-    await page.goto(REPORT_PAGE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+    // Dispatch #66: the previous .catch(() => {}) here swallowed the navigation error
+    // AND never logged page.url() afterward, so a failed navigation was indistinguishable
+    // from a successful one that simply saw no token -- the run just printed nothing
+    // (qsrsoft-register-audit-pull.mjs's equivalent DOES log the post-navigation url
+    // unconditionally, which is the only reason its own "navigated but no token" case is
+    // diagnosable at all; that's the "tell" that flagged this bug). Catch and keep the
+    // error message instead of discarding it, and always log the URL + token state
+    // together so the three distinct outcomes (nav failed / navigated, no token / navigated,
+    // token captured) are each unambiguous in the log.
+    let navError = null;
+    try {
+      await page.goto(REPORT_PAGE, { waitUntil: 'networkidle', timeout: 30000 });
+    } catch (e) { navError = e.message; }
     await new Promise(r => setTimeout(r, 5000));
-    console.log('[auth] token captured via real SPA login (USER_SRP_AUTH):', !!token);
+    console.log('[auth] report page url:', page.url(),
+      '| nav error:', navError || '(none)',
+      '| token captured:', token ? `true (${token.length} chars)` : 'false');
     await snap('secevents-02-report-page.png');
-    if (!token) { console.error('[auth] ✗ no x-auth-token seen on any request during SPA login'); tracker.fail('playwright-fallback', 'no token captured'); return { collected: [], coveredStores: new Set() }; }
+    if (!token) { console.error('[auth] ✗ no x-auth-token seen on any request during SPA login'); tracker.fail('playwright-fallback', navError ? `navigation failed: ${navError}` : 'no token captured'); return { collected: [], coveredStores: new Set() }; }
     return await runAll(token, dates, tracker);
   } catch (e) {
     console.error(`[auth] ✗ Playwright fallback failed: ${e.message}`);

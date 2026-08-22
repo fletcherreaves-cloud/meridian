@@ -51,8 +51,18 @@ replaced). Both have test suites (`__tests__/metric-source.test.js`, `__tests__/
   hours/period-summary logic makes it risky; revisit only if it becomes a reported gap.
 - `store-analytics.js` `dowData` — a day-of-WEEK breakdown (per-DOW means), not a range mean;
   metricAvg would change its semantics.
-- Visit Readiness engine (`visit-readiness.js`) already has its own per-metric `srcs` chains
-  (incl. glimpse) — a parallel-but-correct system; fold into METRIC_SOURCES later if convenient.
+- ~~Visit Readiness engine (`visit-readiness.js`) already has its own per-metric `srcs` chains
+  (incl. glimpse) — a parallel-but-correct system; fold into METRIC_SOURCES later if convenient.~~
+  🔴 **WRONG, corrected 2026-08-22 (dispatch #64, v5.106).** It was parallel but **not correct**:
+  `r2p`/`park`/`tpph` were **manual-only** while auto sources already existed in `METRIC_SOURCES`,
+  and `oepe`/`kvst` each missed two auto fallbacks. The drift shipped a real coaching report
+  scoring a store off an R2P value **38 days stale** — and R2P feeds Speed (35% weight), so half
+  the composite was frozen in July. **Now migrated** via a new `metricSeriesWithSource()` export
+  that preserves the report's provenance column. R2P moved `{111.7s, opsRows, 2026-07-15}` →
+  `{128.5s, qsrActSummaryRows, 2026-08-22}`; composite 48.6 → 53.2.
+  **The lesson generalises: "parallel but correct" is an assumption, not a finding.** A second
+  sourcing system drifts silently because nothing compares the two. The remaining exclusions below
+  were written by the same judgement and have not been re-checked since.
 
 **Remaining candidates (migrate opportunistically when touching them):** morning-brief peaks
 metrics; any new panel — must use the helpers from day one.
