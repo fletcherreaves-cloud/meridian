@@ -64,6 +64,47 @@ async function callEventDetails(token, body) {
   return { status: resp.status, ok: resp.ok, rowCount: Array.isArray(rows) ? rows.length : null, snippet: text.slice(0, 300) };
 }
 
+// ── Auth discrimination (added after the 2026-08-22 run returned 403 on BOTH calls) ────────────
+// The 403 body was {"Message":"User is not authorized to access this resource with an explicit
+// deny in an identity-based policy"} -- AWS IAM for "credential accepted, principal DENIED", not
+// "invalid token". Two candidate causes, and the probe could not tell them apart:
+//   (a) api.security expects a DIFFERENT token than api.reports (different authorizer/audience);
+//   (b) QSRSOFT_USERNAME lacks the security-module entitlement the owner's login has.
+// These two checks separate them without anyone pasting a token anywhere.
+//
+// 🔴 NEVER log the token itself, or any claim VALUE that could identify a person. Claim NAMES,
+// and the handful of structural claims below, only.
+function describeToken(token) {
+  try {
+    const [, payload] = token.split('.');
+    const claims = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    const SAFE = ['aud', 'iss', 'token_use', 'exp', 'iat', 'auth_time', 'cognito:groups', 'scope'];
+    const shown = {};
+    for (const k of SAFE) if (claims[k] !== undefined) shown[k] = claims[k];
+    return { shown, allClaimNames: Object.keys(claims).sort() };
+  } catch (e) { return { error: e.message }; }
+}
+
+// Does the SAME token work against the host we KNOW works? If reports says 200 and security says
+// 403, the credential itself is fine and the difference is the resource/principal -- which is the
+// whole question. regAudit is chosen because it is a known-good, already-shipped call path.
+async function callKnownGoodReportsHost(token) {
+  const params = new URLSearchParams({
+    nsn: STORE_REF, orgId: ORG_ID, enterpriseName: 'McDonalds',
+    startDate: probeDate(), endDate: probeDate(), dsd: 'd', weekStart: '3', nsd: 'd',
+    resultType: 'byDateEmployee', registerType: 'cashier',
+  });
+  const url = `https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit?${params}`;
+  try {
+    const resp = await fetch(url, { headers: {
+      'X-Auth-Token': token, 'Accept': 'application/json',
+      'Origin': 'https://v3.myqsrsoft.com',
+      'Referer': 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit',
+    } });
+    return { status: resp.status, ok: resp.ok, snippet: (await resp.text()).slice(0, 160) };
+  } catch (e) { return { status: 0, ok: false, snippet: `fetch failed: ${e.message}` }; }
+}
+
 async function main() {
   const token = await getFreshToken();
   const date = probeDate();
@@ -83,9 +124,35 @@ async function main() {
   console.log(`[probe] empty     → status ${empty.status}, rows ${empty.rowCount ?? '(unparseable)'}`);
   if (empty.rowCount == null) console.log(`[probe]   snippet: ${empty.snippet}`);
 
+  // ── auth discrimination, only when the security host refused ────────────────────────────────
+  if (!populated.ok || !empty.ok) {
+    console.log('\n[probe] ── auth discrimination ──────────────────────────────');
+    const reports = await callKnownGoodReportsHost(token);
+    console.log(`[probe] SAME token vs api.reports/regAudit (known-good path) → status ${reports.status}`);
+    if (!reports.ok) console.log(`[probe]   snippet: ${reports.snippet}`);
+    const t = describeToken(token);
+    if (t.error) console.log(`[probe] token claims: unparseable (${t.error})`);
+    else {
+      console.log(`[probe] token claims (safe subset): ${JSON.stringify(t.shown)}`);
+      console.log(`[probe] all claim NAMES present: ${t.allClaimNames.join(', ')}`);
+    }
+    if (reports.ok) {
+      console.log('[probe] ⇒ The token WORKS on api.reports and is DENIED on api.security. The credential');
+      console.log('[probe]   is valid and accepted by the platform, so this is NOT a bad/expired token.');
+      console.log('[probe]   Either api.security uses a different authorizer, or this principal lacks the');
+      console.log('[probe]   security-module entitlement. Check the claim names above for a groups/roles');
+      console.log('[probe]   claim; if none is present, treat it as a QSRSoft entitlement request for the');
+      console.log('[probe]   automation user -- no code change in this repo will fix it.');
+    } else {
+      console.log('[probe] ⇒ The token is refused on api.reports TOO, so this is a credential problem, not');
+      console.log('[probe]   an entitlement one. Fix minting/expiry first; the security-host question is');
+      console.log('[probe]   not yet answerable.');
+    }
+  }
+
   console.log('\n[probe] ── verdict ──────────────────────────────────────────');
   if (!populated.ok || !empty.ok) {
-    console.log(`[probe] ⚠️ at least one call failed (populated ${populated.status}, empty ${empty.status}) -- fix auth/params before trusting a row-count comparison.`);
+    console.log(`[probe] ⚠️ at least one call failed (populated ${populated.status}, empty ${empty.status}) -- fix auth/params before trusting a row-count comparison. See the auth-discrimination block above.`);
   } else if (empty.rowCount == null || populated.rowCount == null) {
     console.log('[probe] ⚠️ could not parse rows from at least one response -- inspect the raw snippets above; the response shape may differ from the finding file\'s own capture.');
   } else if (empty.rowCount === 0 && populated.rowCount > 0) {
