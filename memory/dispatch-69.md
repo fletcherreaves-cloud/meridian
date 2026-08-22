@@ -100,3 +100,10 @@ still see the previous value.
   dispatch-sized effort, not folded in here.
 - Fitting `READINESS_WEIGHTS` — explicitly deferred until enough paired data exists (this dispatch
   is what makes "enough" honestly visible).
+- **New, flagged after this dispatch started (worth doing next, not folded in here): "Part D0"** —
+  split the existing Model Check pairs by `reportType` (CFV vs RGR) **before** any daypart/channel
+  work. The pairs behind the 0.23/52% figures are likely a mixture of two different instruments
+  with different pass rates; pooling them can depress ρ on its own, independent of the daypart
+  mismatch `finding-cfv-2026-visit-rules.md` already names. This changes what "n" and "pairsNeeded"
+  mean (per-type n, not pooled n) and needs its own design pass — not a drop-in to this dispatch's
+  `calibrateReadiness()` signature.
