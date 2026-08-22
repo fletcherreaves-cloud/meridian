@@ -801,3 +801,75 @@ Also `11657 PURCELL` −0.079 and `31357 PAULS VALLEY` −0.077; both were also 
 Zero visits in 2024 comprehensive, 2025 comprehensive, 2026 comprehensive, and **both** EcoSure
 years. Tishomingo also has none in 2024 or in one EcoSure year, but does appear elsewhere — Ponce
 de Leon appears nowhere. **This is no longer a curiosity; escalate it to PACE.**
+
+---
+
+# ✅ Addendum — the three visit types CONFIRMED, and what `category=visitResult` actually is
+
+Owner-supplied Propel UI screenshot + *"visitType dropdown options are Ecosure, CFV, and RGR > Not
+in a dropdown though."*
+
+The UI has no visit-type dropdown. Its filters are **Completed By** (All / McDonald's / Third
+Party / Franchisee — this is the `ownershipType`-style filter, **not** visit type), **Timeframe**,
+**Operations PACE Planned**, **Announced**. The three visit types are instead **three separate
+result cards**.
+
+## 🔴 The open question is closed by direct match, not inference
+
+The earlier addendum flagged a discrepancy — every scored store showing `visitQuantity: 1.0` with
+all seven PACE areas graded, which *"does not look like a CFV"* — and deliberately recorded it as
+an open question rather than a conclusion. **The UI confirms it.** The screenshot's left card, at
+`Completed By: All` / `Timeframe: 2026`, reads:
+
+| area | Propel UI | my `category=visitResult` 2026 rollup `passPercentage` |
+|---|---|---|
+| Overall | 100.0% | 1.000 |
+| Quality | **93.3%** | **0.933** |
+| Service | 100.0% | 1.000 |
+| Cleanliness | **93.3%** | **0.933** |
+| Shift Leadership | 100.0% | 1.000 |
+| Food Safety | 100.0% | 1.000 |
+| Health And Safety | 100.0% | 1.000 |
+
+**All seven match exactly.** So `category=visitResult` **is that card** — the comprehensive
+**RGR**-class visit, roughly 1 per store per year. It is **not** CFV.
+
+## 🔴 CFV has NOT been pulled, and it is the stream that matters most
+
+The screenshot's second card is **"Customer First — % Meeting 80% / % Below 80% = 55.3% / 44.7%"**.
+A completely different metric from anything captured: not a mean score, not a pass rate against the
+RGR rule, but a share meeting an 80% bar.
+
+Two things follow:
+
+1. **CFV is the high-volume stream.** Owner-stated cadence: CFV **3/store/yr** = ~81/yr, against
+   RGR's ~27/yr and EcoSure's ~54/yr. For pair supply it dominates.
+2. 🔴 **44.7% of Customer First visits are below 80%.** RGR passes ~100% and EcoSure ~93–98%; CFV
+   fails nearly half. **That is where the operational signal lives**, and none of it is in Meridian
+   from these captures.
+
+**Next capture:** whatever request the *Customer First* card fires — a different `category=` value
+on the same `/api/visits` endpoint. Also note the UI's **"List Results — …"** section has a
+**download/export control**, which may hand over the per-store CFV list in one file.
+
+## ⚠️ This creates a scoping caveat on the test-retest ceiling — read before using ρ=0.342
+
+The ceiling computed above (**ρ = +0.342**, 2024→2025, n=25) was measured on
+`category=visitResult`, i.e. **RGR-class visits only**. It is *not* established for CFV.
+
+And Meridian's Model Check pairs against `ds.gradedVisits`, which `src/parsers/graded-visits.js`
+populates from **both** CFV **and** RGR PDFs (`reportType: 'CFV'` / the RGR branch at `:158`). So:
+
+- The Model Check's 27 pairs are plausibly a **MIX of two different instruments** — one that nearly
+  everyone passes and one that nearly half fail.
+- **Pooling them into one correlation is the same mixing-regimes error already flagged twice** in
+  this file (pre/post visit-window, CFV-vs-EcoSure). It would depress ρ on its own, independent of
+  model quality.
+
+📌 **So there is now a third candidate explanation for the Model Check's 0.23, and it is cheap to
+test and not yet in `memory/dispatch-69.md`:** split the existing pairs by `reportType` and compute
+ρ separately for CFV and for RGR. `ds.gradedVisits` already carries the field; no new pull needed.
+If the two differ materially, the pooled figure was never meaningful.
+
+**Add this to dispatch #69 Part D**, ahead of the daypart/channel split — it is cheaper, and a
+per-instrument ceiling is a prerequisite for interpreting either.
