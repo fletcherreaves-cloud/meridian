@@ -90,7 +90,7 @@ create table if not exists public.qsr_forms_completion (
   scheduled_at         timestamptz,                         -- nullable -- ad-hoc completed rows have none
   started_at           timestamptz,
   completed_on         timestamptz,
-  time_to_complete_ms  integer,                             -- ACTIVE time -- never derive from completed_on - started_at
+  time_to_complete_ms  bigint,                              -- ACTIVE time -- never derive from completed_on - started_at; bigint, not int4: int4 caps at 24.9 DAYS in ms and the capture contains a 28.97-day span
   user_id              uuid,                                -- QSRSoft's stable person key -- name is NEVER stored, see header
   score                numeric,                             -- always null estate-wide today; column kept
   reviewed_with        text,                                -- always 'N/A' estate-wide today; column kept
