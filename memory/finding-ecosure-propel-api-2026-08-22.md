@@ -1113,10 +1113,52 @@ EcoSure category value applies only to that rollup action — the per-visit EcoS
 action, and CFV has its own action rather than a category. The category vocabulary may be a much
 smaller thing than assumed.
 
-📌 **Four unexplored store-level actions** (`getBrandProtectionVisits`, `getPaceSupportVisits`,
-`getMarketSupportVisits`, `getMarketAdditionalVisits`) are each a visit type Meridian knows nothing
-about. Not urgent, but worth one capture each before anyone concludes the estate's graded-visit
-picture is complete.
+📌 **Four unexplored store-level actions** — `getBrandProtectionVisits`, `getPaceSupportVisits`,
+`getMarketSupportVisits`, `getMarketAdditionalVisits`.
+
+🔴 **DEPRIORITISED by the owner, 2026-08-22:** *"Not sure we need the additional visits right now.
+Only CFV, RGR and EcoSure affect us at the moment. They would be nice to haves down the road, but
+not priority now."*
+
+**Do not spend captures on these.** Recorded so the list stays discoverable when the priority
+changes — they are known, named and one call each away — but the estate's graded-visit picture is
+**complete for present purposes** with the three that matter. Do not re-raise them as a gap.
 
 🔒 The listing includes `role/getUserRoles?eid=…` and `role/impersonateUser?eid=…` with real eIDs in
 the query string. **Those values are deliberately not recorded here** — only the action names.
+
+
+---
+
+# ✅ Scope closed on the three instruments that matter (2026-08-22)
+
+Owner: *"Only CFV, RGR and EcoSure affect us at the moment."* Against that scope, the capture work
+is **done**:
+
+| instrument | source | captured | state |
+|---|---|---|---|
+| **CFV** | `getCfvHistory`, per-store | **217 visits, 2023-01 → 2026-08** | ✅ analysed — `memory/finding-cfv-predictability-ceiling-2026-08-22.md` |
+| **RGR** | `getScoredVisitListResults`, `category=visitResult` | 2024 (27), 2025 (27), 2026 (15) | ✅ analysed, all reconciled to their rollups |
+| **EcoSure** | `getScoredVisitListResults`, third-party category | two full years, 53 and 54 visits | ⚠️ **analysed, but see below** |
+
+## ⚠️ The one loose end inside the scope: which YEARS the EcoSure captures are
+
+Both EcoSure pulls came from the Network tab, which does not echo the year, and the owner did not
+say which was selected. They are recorded as year-unconfirmed:
+
+| capture | visits | mean | pass | fails |
+|---|---|---|---|---|
+| A | 53 | 0.896 | 52/53 (98.1%) | 1 critical |
+| B | 54 | 0.882 | 50/54 (92.6%) | 1 critical + 3 non-critical |
+
+Both are ~2/store, consistent with a **complete** year at the owner's stated EcoSure cadence — so
+they are most likely two of 2024/2025, not the partial 2026. **But that is an inference.**
+
+📌 **Cheap to close, and worth closing** because EcoSure is in scope and the two years differ
+materially (a 1.4-point mean gap and four fails against one). Either re-run each with the year
+visible, or note the year alongside the next capture. **Until then, do not date any EcoSure claim**
+— the numbers are sound, their placement in time is not.
+
+⚠️ Also still unknown: the EcoSure **`category=` value** itself. `thirdPartyFoodSafety` — its own
+response block name — returns HTTP 400, and the vocabulary is not guessable. Read it off a live
+request via the resource-timing one-liner if an automated pull is ever built.
