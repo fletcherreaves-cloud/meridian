@@ -325,6 +325,13 @@ CFV detail. **The click-through must land on a page that lists CFV visits in ord
 request in the Network tab that returns the visit list (not `RoipSurvey`, which is the per-visit
 detail). Response body only — no cookies needed.
 
+⚠️ **But do Propel first.** Owner clarified that **Propel shows CFV *scoring*, just not the full
+visit**. A Model Check pair needs only `(predicted readiness, actual score)` per store, so **Propel
+alone answers it** — and its `year=` parameter is already proven, making 2024/2025/2026 a
+one-constant change. This PEAK capture is required only for the per-question work (daypart,
+channel, timer bands) in `memory/dispatch-69.md` Part D. Do not spend a PEAK capture on something
+Propel already answers more cheaply.
+
 ⚠️ **Untested.** It is the most likely route, not a measured one. If the landing page turns out to
 be a single pre-selected visit rather than a list, that is a finding too — say so rather than
 assuming a list must exist somewhere.

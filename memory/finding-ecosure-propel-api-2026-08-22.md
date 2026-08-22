@@ -852,8 +852,27 @@ Two things follow:
 different `category=` value on the same `/api/visits` endpoint."* **That is wrong.** Owner:
 *"Clicking on CFV takes you to PEAK site fwiw."*
 
-**CFV is not on Propel.** The Customer First card is a summary tile that *links out* to
-`peak.mcd.com`. So the division of labour across the two hosts is now settled:
+⚠️ **…and then I over-corrected. Owner, immediately after:** *"It shows scoring, just not full
+visit — on Propel."*
+
+**Both things are true, and they are not in conflict.** Propel carries CFV **scoring**; PEAK
+carries the **full visit**. The click-through exists for the detail, not because Propel lacks CFV
+entirely. Recording all three statements in sequence because the useful fact is the *split*, and I
+got it wrong in both directions before landing on it — first assuming Propel had everything, then
+assuming it had nothing.
+
+| what you need | where it lives |
+|---|---|
+| **per-store CFV score** (% meeting 80%) — enough for a Model Check pair | **Propel**, a `category=` on `/api/visits` |
+| **per-question detail** — daypart, channel, timer bands, reasons | **PEAK**, `RoipSurvey/<VisitId>` |
+
+🎯 **Practical upshot: for the Model Check, Propel is sufficient and is much the cheaper path.** A
+correlation needs `(predicted readiness, actual score)` per store — not per-question detail. Propel
+already proved `year=` works and is a one-parameter change, so **2024 / 2025 / 2026 CFV scores are
+reachable with the same console snippet and a different `category=`.** PEAK is only required if the
+daypart/channel-matched analysis (dispatch #69 Part D) goes ahead.
+
+So the division of labour across the two hosts:
 
 | host | carries |
 |---|---|
@@ -863,14 +882,22 @@ different `category=` value on the same `/api/visits` endpoint."* **That is wron
 This also explains why the owner described PEAK as *"another site for CFV and RGR and other
 reports"* — the two systems overlap rather than partition cleanly.
 
-📌 **The capture to make is therefore on PEAK, not Propel: click through from Customer First and
-capture whatever the CFV LIST page fires on landing.** That is the still-missing visit-list endpoint
+📌 **Two captures, and the Propel one is first.**
+
+**(a) Propel — the CFV `category=`, highest value and cheapest.** The screenshot's *"List Results —
+Third Party Food Safety"* section changes with the selected card, so selecting **Customer First**
+should fire the same `/api/visits` call with a CFV category. Capture that URL and body; then the
+existing snippet gives 2024/2025/2026 CFV per-store scores by changing one constant.
+
+**(b) PEAK — the visit-list endpoint, only if per-question detail is wanted:** click through from
+Customer First and capture whatever the CFV LIST page fires on landing. That is the still-missing visit-list endpoint
 recorded as open question 6 in this file and as the top open question in the PEAK finding — PEAK's
 `RoipSurvey/<VisitId>` needs an id nobody can currently enumerate. A click-through from Propel is
 the most likely thing to hand one over, because the landing page must list visits to link to them.
 
-Propel's **"List Results — …"** export control is still worth a try for the RGR/EcoSure side, but
-it will not produce CFV.
+Propel's **"List Results — …"** export control (the download icon in the screenshot) is worth a try
+for whichever card is selected — it may hand over the per-store list as a file and skip the console
+entirely.
 
 ## ⚠️ This creates a scoping caveat on the test-retest ceiling — read before using ρ=0.342
 
