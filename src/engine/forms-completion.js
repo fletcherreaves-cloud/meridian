@@ -115,8 +115,14 @@ const ESTATE_TZ = 'America/Chicago';
 const DAY_FMT = new Intl.DateTimeFormat('en-CA', {
   timeZone: ESTATE_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
 });
+// hourCycle explicitly 'h23' (NOT just hour12:false) -- hour12:false alone leaves the actual
+// midnight-hour rendering to the runtime's default hourCycle resolution for the locale, which
+// is NOT guaranteed portable: this exact code rendered midnight as "00:00" on Node 22 locally
+// but "24:00" on Node 24 in CI, breaking chicagoMidnightUTC's string match on every input and
+// failing CI while passing locally (measured, not assumed -- see the CI job log this comment
+// was added in response to). Forcing hourCycle explicitly removes the ambiguity outright.
 const TIME_FMT = new Intl.DateTimeFormat('en-US', {
-  timeZone: ESTATE_TZ, hour12: false, hour: '2-digit', minute: '2-digit',
+  timeZone: ESTATE_TZ, hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
 });
 
 function localDayKey(isoString) {
