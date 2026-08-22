@@ -5,7 +5,7 @@
 // coaches the right stores before the (mostly unannounced) visit. Transparent: every
 // score shows its driving metrics (actual vs the store's own target).
 import * as React from 'react';
-import { computeVisitReadiness, analyzeGradedVisits, srcMeta } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, analyzeGradedVisits, srcMeta, VISIT_CADENCE_DAYS, OVERDUE_CADENCE_MULTIPLE } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase, fmtMetric } from './visit-readiness-report.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 
@@ -338,13 +338,22 @@ function VisitPatterns({ ds, locs }) {
       h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18 } },
         block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart), block('Channel', a.channel)),
       a.freq.length ? h('div', { style: { marginTop: 14 } },
-        h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
+        h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 2 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
+        // Says what the amber MEANS. Scheduling is McDonald's-side -- the operator does not choose
+        // when a shopper arrives -- so this is framed as an expectation, never a store failing.
+        h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 4 } },
+          'Amber = past ' + OVERDUE_CADENCE_MULTIPLE + '× the expected gap for that visit type (CFV ~'
+          + VISIT_CADENCE_DAYS.CFV + 'd, RGR ~' + VISIT_CADENCE_DAYS.RGR + 'd). Visits are scheduled by McDonald\'s — a long gap is not a store issue.'),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
           ...a.freq.map(f => h('div', { key: f.store, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 } },
             h('span', { style: { flex: 1, color: 'var(--text2)' } }, sName(f.store)),
             h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 24, textAlign: 'right' } }, f.n),
             h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 42, textAlign: 'right' } }, f.avgGapDays == null ? '—' : f.avgGapDays + 'd'),
-            h('span', { style: { fontFamily: 'var(--mono)', color: f.daysSinceLast != null && f.daysSinceLast > 60 ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' } }, f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
+            h('span', { title: f.nextExpectedMs ? 'Next ' + (f.lastType || 'visit') + ' expected around '
+                + new Date(f.nextExpectedMs).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                + ' (~' + f.expectedGapDays + 'd cadence)' : undefined,
+              style: { fontFamily: 'var(--mono)', color: f.overdue ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' } },
+              f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
             h('span', { style: { fontFamily: 'var(--mono)', color: prCol(f.passRate), width: 40, textAlign: 'right' } }, pr(f.passRate)))))) : null));
 }
 

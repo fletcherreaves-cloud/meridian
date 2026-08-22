@@ -483,6 +483,19 @@ function subScore(ds, specs, loc, cache) {
 // daypart, weekpart, channel, report type — plus per-store frequency/cadence, so
 // patterns in when/where visits go well or poorly surface (e.g. Fridays underperform,
 // or breakfast DT is the weak channel). Pure over ds.gradedVisits; no side effects.
+// Expected days between graded visits, per instrument. Cadences are owner-stated
+// (2026-08-22: "CFV's I think we determined are 3 per year > EcoSure i believe is 2 per year");
+// RGR runs ~1/store/yr, measured across the 2024/2025/2026 Propel pulls (27 visits/yr, 27 stores).
+export const VISIT_CADENCE_DAYS = { CFV: Math.round(365 / 3), EcoSure: Math.round(365 / 2), RGR: 365 };
+export const DEFAULT_CADENCE_DAYS = VISIT_CADENCE_DAYS.CFV;
+
+// A gap is "unusual" past this multiple of the instrument's own cadence.
+// MEASURED, not chosen: across 190 real CFV intervals (27 stores, 2023-01..2026-08, Propel
+// getCfvHistory) the observed p90 gap is 255d = 2.10x the 122d CFV cadence, and a 2x threshold
+// fires on 12.1% of intervals. The previous hardcoded 60d was 0.49x cadence and fired on 87% --
+// i.e. on normal behaviour, carrying no information. See memory/dispatch-73.md.
+export const OVERDUE_CADENCE_MULTIPLE = 2;
+
 const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export function analyzeGradedVisits(gradedVisits, opts = {}) {
   const type = opts.type || 'all';
@@ -511,12 +524,27 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
   const byStore = {};
   for (const v of visits) { const s = _normLoc(v.store || v.loc); if (!s) continue; (byStore[s] || (byStore[s] = [])).push(v); }
   const freq = Object.entries(byStore).map(([store, vs]) => {
-    const days = vs.map(v => _ms(v.dateISO || v.date)).filter(x => !isNaN(x)).sort((a, b) => a - b);
+    // Sort the VISITS, not just their timestamps -- the most recent visit's reportType decides
+    // which cadence applies, and the default filter is 'all', so a row can mix CFV (122d) with
+    // RGR (365d). Without the type the view cannot pick a correct threshold at all.
+    const dated = vs.map(v => ({ v, ms: _ms(v.dateISO || v.date) })).filter(x => !isNaN(x.ms))
+      .sort((a, b) => a.ms - b.ms);
+    const days = dated.map(x => x.ms);
     const gaps = []; for (let i = 1; i < days.length; i++) gaps.push((days[i] - days[i - 1]) / 864e5);
+    const last = dated.length ? dated[dated.length - 1].v : null;
+    const lastType = last ? (last.reportType || 'CFV') : null;
+    const expectedGapDays = lastType ? (VISIT_CADENCE_DAYS[lastType] ?? DEFAULT_CADENCE_DAYS) : null;
+    const daysSinceLast = days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null;
     return {
       store, n: vs.length,
       avgGapDays: gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
-      daysSinceLast: days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null,
+      daysSinceLast, lastType, expectedGapDays,
+      // Null (not false) when unknowable, so the view renders neutral rather than "on time".
+      overdue: (daysSinceLast == null || expectedGapDays == null) ? null
+        : daysSinceLast > expectedGapDays * OVERDUE_CADENCE_MULTIPLE,
+      // When the next visit is roughly due. Scheduling is McDonald's-side, so this is an
+      // expectation, never a store obligation -- see the view's label.
+      nextExpectedMs: (last && expectedGapDays != null) ? last && days[days.length - 1] + expectedGapDays * 864e5 : null,
       passRate: vs.length ? vs.filter(v => v.pass).length / vs.length : null,
     };
   }).sort((a, b) => b.n - a.n);
