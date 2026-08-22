@@ -135,3 +135,98 @@ it.** Write up what to ask QSRSoft for — org id, the account, the exact route,
 - If Task 1 returns 200, the pull still does **not** get written in this dispatch — dispatch-58's
   empty-`registers`/`cashiers` question is still open and decides whether the pull is
   27 stores × 8 tokens or something much larger. Answer that first.
+
+---
+
+## Resolution (2026-08-22) — SETTLED. Both tasks 403. QSRSoft entitlement request written up.
+
+Ran via `workflow_dispatch` on `.github/workflows/qsrsoft-event-details-probe.yml` (run
+`32580752698`, ~19s of probe time). Extended `scripts/qsrsoft-event-details-probe.mjs` rather than
+writing a new script (same host/org/store setup as the existing empty-array probe).
+
+### Task 2 (video_provider discriminator) — 403
+
+```
+SAME token vs POST /security/video_provider/29760 → status 403
+{"Message":"User is not authorized to access this resource with an explicit deny in an
+identity-based policy"}
+```
+
+Byte-identical to `event_details`'s own denial. **Our principal is denied across the whole
+`api.security` module, not scoped to one route.** Rules out a route-level entitlement gap in
+favor of an account-level one — exactly the reading the brief called "much more likely to be
+fixed by Task 1," which then also came back negative (below).
+
+### Task 1 (Playwright SRP-login retry) — 403, and the principal comparison closes the loop
+
+The Playwright login succeeded, and a token **was** captured — not from `api.reports` (the app's
+own navigation to the register-audit report page didn't carry one this run) but from six other
+hosts hit during login/session bootstrap: `api.sso.myqsrsoft.com`, `accounts.home.myqsrsoft.com`,
+`chat.home.myqsrsoft.com`, `onboarding.home.myqsrsoft.com`, `api.datapass.myqsrsoft.com`, and
+(eventually) `api.reports.myqsrsoft.com`. Retrying `event_details` with that SRP-minted token:
+
+```
+SRP-minted token vs event_details → status 403
+{"Message":"User is not authorized to access this resource with an explicit deny in an
+identity-based policy"}
+```
+
+**Same denial, same message, via the SAME auth flow the real SPA itself uses.** The auth-flow
+hypothesis (`USER_SRP_AUTH` vs `USER_PASSWORD_AUTH`) is eliminated.
+
+**And the privacy-safe principal comparison — done automatically, without needing the owner —
+confirms it's genuinely the same Cognito user, not two principals sharing an email:**
+
+```
+bare sub#9378eb7a6502 eID#9378eb7a6502 eID.len 36 valid_eID "false"
+srp  sub#9378eb7a6502 eID#9378eb7a6502 eID.len 36 valid_eID "false"
+same principal (sub hash equal): true
+claim NAMES identical between the two tokens
+```
+
+The `sub` hash is identical between the bare `USER_PASSWORD_AUTH` token and the SRP token — same
+principal, confirmed by measurement rather than inferred. So the earlier "same email, two
+principals" hypothesis (already demoted after the owner confirmed email+password, not SSO) is now
+fully closed: it was never two principals sharing an email. It's one principal, denied.
+
+### Verdict
+
+Every hypothesis this repo can test is eliminated:
+
+| hypothesis | status |
+|---|---|
+| Bad/expired credential | ❌ eliminated (works on `api.reports`) |
+| Wrong token type | ❌ eliminated (ID and access tokens fail identically) |
+| Not an admin | ❌ eliminated (`orgAdmin` present) |
+| Wrong Cognito app client | ❌ eliminated (identical client both sides) |
+| "Send no token" | ❌ eliminated (that returns 401, not 403) |
+| `valid_eID` gates access | ❌ eliminated (`"false"` on the token that succeeds) |
+| Route-scoped entitlement (this route only) | ❌ eliminated — `video_provider`, a second route in the same module, is also denied |
+| Auth-flow difference (`USER_SRP_AUTH` vs `USER_PASSWORD_AUTH`) | ❌ eliminated — same principal, same flow as the SPA, still denied |
+| Two different Cognito principals sharing an email | ❌ eliminated — `sub` hashes are identical |
+
+What's left is not code-shaped: **the automation account is a genuine principal, correctly
+authenticated, explicitly denied the entire `api.security` module by an IAM policy.** No auth
+path, token type, or flow available to this repo changes that. Per the dispatch's own instruction,
+stopping here rather than widening scope or falling back to UI scraping.
+
+**Wrote up the request**: `memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md` —
+org id, the exact denied routes, the IAM message, and the full elimination table, with no token
+value, `sub`, `eID`, or email anywhere in it (only sha256 prefixes and claim-name lists, per the
+standing privacy bar this dispatch set for itself).
+
+### Not done, per the brief's own explicit scope
+
+- **The pull was not written**, 403 either way. Even had Task 1 returned 200, dispatch-58's
+  empty-`registers`/`cashiers` question would still be open and undecided — this dispatch never
+  reached that fork.
+- No retries, no widened scope, no scraping fallback.
+
+### For whoever picks this up next
+
+Everything above lives on `claude/project-orientation-clarify-x61o5r`, already the head of open PR
+**#553** — read that PR (or this file, or `dispatch-58.md`'s own evidence section) directly rather
+than working from a condensed summary; the eliminated-hypotheses tables are the part that save the
+most time and are easy to accidentally re-litigate from a paraphrase. If PR #553 hasn't merged to
+`main` yet by the time you start, either wait for it or cherry-pick this branch's commits — don't
+redo the measurement work it already contains.

@@ -65,6 +65,25 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SETTLED (2026-08-22): [Dispatch #63 — the `api.security` 403 is a QSRSoft entitlement gap, not a bug here](dispatch-63.md)** —
+  **NEWEST.** `event_details`'s 403 (an AWS IAM explicit-deny: credential accepted, principal
+  denied) survives every hypothesis this repo can test. Two tasks, both run in GitHub Actions
+  (`workflow_dispatch`, no owner needed): (1) `POST /security/video_provider` — the route the
+  owner's browser gets a 200 from, in the same module — also **403** with our token, so the
+  denial is **module-wide, not route-scoped**. (2) Retried `event_details` with a token minted by
+  driving the real SPA through Playwright (`USER_SRP_AUTH`, matching the browser's own login
+  flow, not `getFreshToken()`'s bare `USER_PASSWORD_AUTH`) — **still 403**, byte-identical
+  message. **The privacy-safe principal check (sha256 of `sub`/`eID`, no raw values ever
+  logged) proves both tokens are the SAME Cognito principal** — closing the "same email, two
+  principals" hypothesis for good, not just demoting it. Every one of nine hypotheses (bad
+  credential, wrong token type, non-admin, wrong app client, no-token, `valid_eID`, route-scoped,
+  auth-flow, two-principals) is eliminated by measurement, tabulated in the resolution section.
+  **Wrote the QSRSoft entitlement request**
+  (`memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md`) and stopped there per the
+  dispatch's own instruction — no retries, no scope widening, no UI-scraping fallback. Lives on
+  branch `claude/project-orientation-clarify-x61o5r` (PR #553, open as of this entry) — read the
+  dispatch file directly rather than this summary; its eliminated-hypotheses tables are the part
+  worth the most to whoever picks this up next.
 - **✅ SHIPPED (2026-08-22, v5.105 — Part A only): [Dispatch #62 — make the register-type dimension actually do something](dispatch-62.md)** —
   **NEWEST.** Step 0's live measurement (service-role query, 7 days of `audit_rows`, all 27
   stores) found **321 of 1,611 employee-days span more than one register type** — materially
