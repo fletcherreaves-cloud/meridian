@@ -65,6 +65,19 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔴⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #60 — the `hourCycle` fix is UNGUARDED and the trap is live](dispatch-60-ci-node-parity.md)** —
+  **NEWEST, small, do before #58.** `1ca02ee` merged on a clean local **1952/1952** and broke `main`
+  for **seven consecutive commits** (two from an unrelated session) until hotfix #540. Cause:
+  `hour12:false` does not pin the hourCycle, so `chicagoMidnightUTC`'s `'00:00'` string match
+  rendered `"24:00"` on CI and threw on every call. 🔴 **Measured — a faithful revert still passes
+  all 1952 tests on the sandbox's Node**, and **neither `format()` NOR `resolvedOptions()`
+  discriminates there** (both give `h23` either way), so **no behavioural test can guard this from
+  one Node version.** Needs (1) a **source-level** test — no `Intl.DateTimeFormat` requesting `hour`
+  without an explicit `hourCycle`, same shape as the existing ratcheting tests — and (2) a **CI Node
+  matrix**, since `ci.yml` pins 20 while the sandbox runs 22. ⚠️ `ci.yml` says **20**, hotfix
+  `b72d377` says **24** — one is wrong and unchecked; read a real job log. Out of scope: rewriting
+  `chicagoMidnightUTC` to stop string-matching formatted output (sturdier, but a behaviour change to
+  fresh date logic that CI demonstrably cannot verify).
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #58 — Part E: register worked + time of event](dispatch-58.md)** —
   **NEWEST.** Turns `audit_rows`' daily counts into **timed, register-attributed events**. Every
   prior blocker is settled: 8 `event_token`s, **token-only auth** (no Playwright), `storeRef` = the
