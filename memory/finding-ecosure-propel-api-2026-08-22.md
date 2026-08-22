@@ -626,3 +626,92 @@ pool only after checking the distributions are comparable.
 
 **`rowsPerPage=50` was NOT honored — the API capped the page at 20 rows.** Any client must page
 until `results.length` reaches `totalCount` rather than trusting a large `rowsPerPage`.
+
+---
+
+# 🔴 Addendum — 2025 comprehensive visits, and the TEST-RETEST CEILING nobody had measured
+
+Owner-captured via the console snippet, `year=2025`, `category=visitResult`. Complete: 27 rows,
+**27 visits**, matching the rollup exactly. All seven areas reconcile to ≤0.0022 (rounding on a
+3-decimal published figure), and the single sub-80% component — `24471 ARDMORE-NEC`, quality
+**0.693** — accounts for the rollup's one quality `nonCriticalFail` (26/27 pass = 0.963). The
+sub-80% ⇔ `nonCriticalFail` rule holds for a third dataset.
+
+**2025 has near-complete coverage: 26 of 27 stores.** 2026 has 15 so far. The year dropdown offers
+**2024 · 2025 · 2026**.
+
+## 🔴 The finding: a store's own past visit barely predicts its next one
+
+Matched on the **same 15 stores** that have both a 2025 and a 2026 comprehensive visit:
+
+**Spearman ρ between a store's 2025 overall score and its own 2026 overall score = +0.113 (n=15).**
+
+**This is the ceiling on what any predictor of this outcome can achieve, and it had never been
+measured.** If a store's own prior graded-visit score — the single most informative predictor
+available, embodying everything stable about that restaurant — explains almost none of its next
+score, then the outcome is dominated by **visit-specific variance**: which shopper, which day,
+which shift, which daypart, which channel.
+
+### What that does to `memory/dispatch-69.md` Part B
+
+The Model Check reports **ρ = 0.23** and captions it *"Weak agreement so far."*
+
+**0.23 is not weak against this benchmark — it is higher than the store's own prior score
+achieves.** The panel is disparaging a model that beats the natural baseline.
+
+⚠️ **State this carefully, and do NOT overclaim in the other direction.** At n=15 the CI on 0.113
+spans roughly [−0.42, 0.59], and at n=27 the CI on 0.23 is [−0.16, 0.56]. **These two intervals
+overlap almost entirely — the data cannot establish that 0.23 beats 0.113 either.** That is not a
+disappointment; it is the point:
+
+> The premise underneath "the model is weak" — that a good model *should* score high here — is
+> itself unevidenced, and the first evidence we have points the other way.
+
+**So the caption fix in Part B is not just more honest, it may be understating the model.** And the
+right thing to display is not a bare ρ but **ρ against the test-retest benchmark**, so a reader can
+see what "good" would even look like.
+
+📌 **Do this before any scoring rework, and cheaply:** the 2024 dropdown makes the test-retest
+figure computable at n≈26 instead of 15 (2024→2025 has near-complete coverage on both sides, unlike
+2025→2026). **That single number should gate Part B**, because if the ceiling really is ~0.1–0.2,
+then refitting weights is chasing noise no matter how much data arrives — and
+`notes-visit-readiness-backlog-2026-08-22.md`'s whole time-to-power table is measuring progress
+toward a target that may not exist.
+
+## Matched year-over-year — the operational read
+
+Same 15 stores, so store mix is controlled (the naive all-store comparison is confounded: 2026's 15
+are a subset, and it understated cleanliness by a point):
+
+| area | 2025 | 2026 | Δ | better/worse |
+|---|---|---|---|---|
+| overall | 0.9287 | 0.9197 | −0.0090 | 6/9 |
+| quality | 0.9057 | 0.9185 | **+0.0127** | 7/5 |
+| service | 0.9391 | 0.9355 | −0.0035 | 8/5 |
+| **cleanliness** | 0.9162 | 0.8859 | **−0.0303** | **3/11** |
+| **shiftLeadership** | 0.9060 | 0.9333 | **+0.0273** | **5/2** |
+| foodSafety | 0.9453 | 0.9253 | −0.0200 | 6/9 |
+| healthAndSafety | 0.9503 | 0.9273 | −0.0230 | 5/6 |
+
+**Cleanliness is the one area where the direction is consistent rather than noisy — 11 of 15 stores
+worse, and the largest drop.** Given ρ≈0.11 on the overall score, a 3-point move with 11/15 stores
+moving the same way is the signal to trust here; most of the other columns are within what
+visit-to-visit noise produces. **Shift Leadership improving (only 2 of 15 worse) is the other.**
+
+⚠️ 2026 is a partial year and these are single visits per store per year — treat as directional.
+
+Biggest overall swings: `33222 ELGIN` −0.098 (0.970→0.872), `10422 ATOKA` −0.056; `20475 OKC-I-240`
+**+0.070**, `31357 PAULS VALLEY` +0.054.
+
+## 🔴 Ponce de Leon (43701) is ungraded across EVERY dataset seen
+
+Zero comprehensive visits in 2025. Zero in 2026. Zero EcoSure visits. Three independent datasets,
+no grades anywhere. It is a real store in the hierarchy (`195500938240`), so this is not a mapping
+artifact. **Worth asking PACE why one restaurant is going ungraded** — and worth Visit Readiness
+saying so rather than silently scoring it from ops data alone.
+
+## Consistency worth noting
+
+`24471 ARDMORE-NEC` is worst in 2025 comprehensive (0.832, quality 0.693) **and** 3rd-worst on
+EcoSure (0.835). Given how little year-to-year signal there is generally, a store that is bad on two
+different instruments is more likely to be genuinely bad than a one-visit outlier.
