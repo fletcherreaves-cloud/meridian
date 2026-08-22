@@ -78,7 +78,10 @@ function describeToken(token) {
   try {
     const [, payload] = token.split('.');
     const claims = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-    const SAFE = ['aud', 'iss', 'token_use', 'exp', 'iat', 'auth_time', 'cognito:groups', 'scope'];
+    // Entitlement claims are the diagnostic ones and are NOT person-identifying. Deliberately
+    // excluded: eID, valid_eID, cognito:username, email, custom:authorName, sub, jti.
+    const SAFE = ['aud', 'iss', 'token_use', 'exp', 'iat', 'auth_time', 'cognito:groups', 'scope',
+                  'permissionsAccess', 'orgAdmin', 'lastOrgId'];
     const shown = {};
     for (const k of SAFE) if (claims[k] !== undefined) shown[k] = claims[k];
     return { shown, allClaimNames: Object.keys(claims).sort() };
@@ -88,21 +91,49 @@ function describeToken(token) {
 // Does the SAME token work against the host we KNOW works? If reports says 200 and security says
 // 403, the credential itself is fine and the difference is the resource/principal -- which is the
 // whole question. regAudit is chosen because it is a known-good, already-shipped call path.
-async function callKnownGoodReportsHost(token) {
+// ⚠️ CORRECTED 2026-08-22. The first version of this control sent the ID token to
+// api.reports/reports/mcd/controlsCash/regAudit and read its 403 as "the credential is bad".
+// That was an INVALID control: qsrsoft-register-audit-pull.mjs:297-303 deliberately sends NO
+// X-Auth-Token to that route, with a comment saying a token is the likely CAUSE of a 403 there.
+// The control reproduced a documented behaviour and mis-read it as a credential failure.
+//
+// The genuinely known-good control is /data_layer/v1/service/statistics, which
+// qsrsoft-ops-pull.mjs:101 calls WITH the ID token, on a schedule, successfully.
+async function callKnownGoodWithToken(token) {
   const params = new URLSearchParams({
-    nsn: STORE_REF, orgId: ORG_ID, enterpriseName: 'McDonalds',
-    startDate: probeDate(), endDate: probeDate(), dsd: 'd', weekStart: '3', nsd: 'd',
-    resultType: 'byDateEmployee', registerType: 'cashier',
+    nsn: STORE_REF, orgId: ORG_ID, catalogType: 'serviceStats', enterprise: 'mcd',
+    startDate: probeDate(), endDate: probeDate(), nsd: 'd', dsd: 's', weekStart: '3',
+    compType: 'calendar', timeSegment: 'openClose', segmentBy: 'summary',
+    segmentNames: 'timeSlice', segmentsSelected: 'open-close', selectCols: 'dtTrans',
   });
-  const url = `https://api.reports.myqsrsoft.com/reports/mcd/controlsCash/regAudit?${params}`;
+  const url = `https://api.reports.myqsrsoft.com/data_layer/v1/service/statistics?${params}`;
   try {
     const resp = await fetch(url, { headers: {
       'X-Auth-Token': token, 'Accept': 'application/json',
       'Origin': 'https://v3.myqsrsoft.com',
-      'Referer': 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerAudit',
+      'Referer': 'https://v3.myqsrsoft.com/reports/mcd/shift/operationsReport',
     } });
     return { status: resp.status, ok: resp.ok, snippet: (await resp.text()).slice(0, 160) };
   } catch (e) { return { status: 0, ok: false, snippet: `fetch failed: ${e.message}` }; }
+}
+
+// token_use is "id" and there is no `scope` claim -- an ID token. AWS API Gateway JWT authorizers
+// commonly expect an ACCESS token instead. Cognito's InitiateAuth returns both; getFreshToken()
+// keeps only the IdToken, so mint once more here and try the access token against the security
+// host. Cheap, and it separates "wrong token TYPE" from "insufficient entitlement".
+async function mintAccessToken() {
+  const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
+  const CLIENT_ID = process.env.QSRSOFT_COGNITO_CLIENT_ID || '2vt4qrqcakbeo9sh0ivli3lbui';
+  if (!u || !pw) return null;
+  try {
+    const resp = await fetch('https://cognito-idp.us-east-1.amazonaws.com/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-amz-json-1.1', 'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth' },
+      body: JSON.stringify({ AuthFlow: 'USER_PASSWORD_AUTH', ClientId: CLIENT_ID, AuthParameters: { USERNAME: u, PASSWORD: pw } }),
+    });
+    const body = await resp.json();
+    return body?.AuthenticationResult?.AccessToken || null;
+  } catch { return null; }
 }
 
 async function main() {
@@ -127,8 +158,9 @@ async function main() {
   // ── auth discrimination, only when the security host refused ────────────────────────────────
   if (!populated.ok || !empty.ok) {
     console.log('\n[probe] ── auth discrimination ──────────────────────────────');
-    const reports = await callKnownGoodReportsHost(token);
-    console.log(`[probe] SAME token vs api.reports/regAudit (known-good path) → status ${reports.status}`);
+    const reports = await callKnownGoodWithToken(token);
+    console.log(`[probe] SAME token vs api.reports /data_layer/v1/service/statistics (ops-pull's own`);
+    console.log(`[probe]   token-bearing path, runs green on a schedule) → status ${reports.status}`);
     if (!reports.ok) console.log(`[probe]   snippet: ${reports.snippet}`);
     const t = describeToken(token);
     if (t.error) console.log(`[probe] token claims: unparseable (${t.error})`);
@@ -136,6 +168,16 @@ async function main() {
       console.log(`[probe] token claims (safe subset): ${JSON.stringify(t.shown)}`);
       console.log(`[probe] all claim NAMES present: ${t.allClaimNames.join(', ')}`);
     }
+    const access = await mintAccessToken();
+    if (access) {
+      const r2 = await callEventDetails(access, populatedBody);
+      console.log(`[probe] ACCESS token (not ID token) vs api.security → status ${r2.status}`);
+      if (!r2.ok) console.log(`[probe]   snippet: ${r2.snippet}`);
+      if (r2.ok) console.log('[probe] 🎯 ACCESS TOKEN WORKS -- the security host wants an access token, not an ID token. One-line fix in the pull.');
+    } else {
+      console.log('[probe] (could not mint an access token -- creds unset or Cognito refused)');
+    }
+
     if (reports.ok) {
       console.log('[probe] ⇒ The token WORKS on api.reports and is DENIED on api.security. The credential');
       console.log('[probe]   is valid and accepted by the platform, so this is NOT a bad/expired token.');
