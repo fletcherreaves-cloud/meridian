@@ -105,3 +105,57 @@ when a swallowed navigation error made "navigation failed" and "no token found" 
 
 🔒 As throughout this thread: **no token value, `sub`, `eID`, or email in any log, fixture, or
 memory file** — hashes and lengths only.
+
+---
+
+## Addendum — owner: *"sso credentials are different if that matters"* (2026-08-22)
+
+**Short answer: on the evidence recorded, it does not — and one measurement is why.** But it is a
+fair thing to raise, it was a live hypothesis once, and there is a cheap re-check plus a genuinely
+useful forward test.
+
+### Why SSO is already ruled out of the 200
+
+A federated/SSO user is a **distinct Cognito user** from a native username+password user —
+different `sub`, potentially different `eID`. That was dispatch #63's original "same email, two
+principals" hypothesis. It closed on this:
+
+| token | `sub` hash | result |
+|---|---|---|
+| **owner's browser token** (the one that returns 200) | **`9378eb7a6502`** | 200 |
+| our `getFreshToken()` token (native, `QSRSOFT_USERNAME`/`PASSWORD`) | **`9378eb7a6502`** | 403 |
+
+**Same `sub`.** If the browser session that succeeds were the SSO identity, its `sub` would differ
+from ours. It doesn't. So the 200 is being produced by the *same native principal we already
+mint* — which is also why the entitlement request was withdrawn: there is no separate account to
+entitle.
+
+The owner separately confirmed at the time that the captured browser session was **email+password,
+not SSO**, which agrees.
+
+### ⚠️ The one thing that would overturn this — worth 30 seconds
+
+The chain rests entirely on that browser `sub` hash having come from **the same session that
+produced the 200**. If it was read at a different time, after a re-login, or from another tab or
+profile, the comparison is void and SSO is back on the table.
+
+**Re-check:** in the same tab that gets the 200 on `event_details`, decode `localStorage.idToken`
+and confirm the `sub` hash still ends `9378eb7a6502`. Hash only — never the raw `sub`.
+
+### The forward test that IS worth running
+
+Regardless of the above, the SSO credential is an **untried principal**, and trying it is cheap:
+sign in via SSO, take that session's token, and call `event_details` with it. If it returns 200
+where the native token returns 403, that is the answer and it is a credentials problem, not an
+infrastructure one.
+
+🔴 **But hope it is not the answer, because it is the expensive outcome.** `USER_PASSWORD_AUTH`
+**cannot authenticate a federated user at all** — so if the entitlement lives on the SSO principal,
+`getFreshToken()` can never mint it and no amount of fixing it helps. The pull would need a
+different credential path entirely, and SSO + MFA puts it behind exactly the wall
+`memory/finding-ecosure-propel-api-2026-08-22.md` hit on Propel: a persistent authenticated browser
+profile with periodic manual re-auth, not a headless mint.
+
+**Order of work is unchanged.** Run #70's one-line runner fix and read #67's result first — it is
+free, it tests a hypothesis that is still live, and it does not depend on any of this. The SSO test
+is the next thing to try if #67 comes back with the two tokens identical.
