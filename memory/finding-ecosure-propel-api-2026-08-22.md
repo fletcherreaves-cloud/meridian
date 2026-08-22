@@ -521,3 +521,108 @@ after the cycle restarts, which is precisely the outcome the owner said is usele
 
 📌 **Until that is settled, `year=2025` remains the right next capture regardless** — it multiplies
 whatever these visits are, and it is a one-parameter change.
+
+---
+
+# Addendum — the REAL EcoSure data, all 27 stores (2026-08-22)
+
+Owner-captured, both pages. **This is the actual third-party food-safety measure** — a different
+`category` from `visitResult`, returning a single `thirdPartyFoodSafety` block per store instead of
+the seven PACE areas.
+
+⚠️ **Which year this is has NOT been confirmed.** The owner reported the year dropdown offers
+**2024 · 2025 · 2026**, but did not say which was selected, and the response body does not echo it.
+53 visits ÷ 27 stores = **1.96/store**, matching the owner's stated EcoSure cadence of 2/yr for a
+*complete* year — which points to 2024 or 2025 rather than eight-months-in 2026, but that is an
+inference. **Confirm before using these numbers for anything dated.**
+
+⚠️ Also unrecorded: the exact `category=` value. Capture the URL next time.
+
+## Reconciliation (computed, all 27 rows)
+
+| | computed | rollup | |
+|---|---|---|---|
+| visits | 53 | 53 | ✅ |
+| mean score, unweighted | 0.8950 | 0.896 | ✅ |
+| mean score, visit-weighted | 0.8957 | 0.896 | ✅ |
+| pass | 52/53 = 0.981 | 0.981 | ✅ |
+| critical fails | 1 | 1 | ✅ |
+
+26 stores scored; **Ponce de Leon (43701) has zero EcoSure visits** — consistent with it also
+having no 2026 comprehensive visit. Worth asking why a store is going ungraded.
+
+Unweighted and visit-weighted agree to 0.0007 here only because 25 of 26 stores have exactly 2
+visits. **Do not read that as license to average averages** — with an uneven visit count the two
+diverge, and PACE publishes the unweighted figure (established in the page-2 addendum above).
+
+## 🔴 The single most actionable row: ADA has a CRITICAL food-safety fail
+
+`06972 ADA-COUNTRY CLUB` — **3 visits, 2 pass, 1 CRITICAL FAIL** (`criticalFailQuantity: 1.0`,
+`passPercentage: 0.667`). It is the **only** critical fail in the estate across all 53 visits.
+
+Note its *score* is 0.930 — **7th best of 26**. A store can carry a critical food-safety failure
+while sitting in the top third on average score. Any surface that ranks by score alone hides this
+completely, and a critical fail is categorically more serious than a low average.
+📌 **Whatever replaces the waste flag must surface `criticalFailQuantity` separately from score.**
+
+## 🔴 CORRECTION to this file's earlier food-safety read
+
+The page-2 addendum above said, of Meridian's three FS-flagged headline stores:
+
+> *"**06838 DEFUNIAK SPRINGS** | elevated | **0.840 — the LOWEST in the estate** | **the flag was
+> right**"*
+
+**That does not survive contact with the actual EcoSure measure.** The 0.840 was the `foodSafety`
+*area* inside a 2026 comprehensive visit — a different instrument. On the real third-party audit:
+
+| store | Meridian FS flag | EcoSure score | rank of 26 (1 = best) | vs estate mean 0.895 |
+|---|---|---|---|---|
+| 06838 DEFUNIAK SPRINGS | elevated | 0.895 | **13th** | **above** |
+| 35064 HOLDENVILLE | elevated | 0.890 | 16th | marginally below |
+| 03708 ARDMORE-BROADWAY | elevated | 0.870 | 20th | below |
+
+**None is in the bottom tier.** The genuinely worst are stores Meridian does *not* headline:
+
+| rank | store | score |
+|---|---|---|
+| 26 | 11657 PURCELL | **0.820** |
+| 25 | 18213 LINDSAY | 0.825 |
+| 24 | 24471 ARDMORE-NEC | 0.835 |
+| 23 | 32525 SULPHUR | 0.850 |
+
+Spread 0.820–0.955, sd 0.037.
+
+### What this does and does not establish
+
+- ✅ **Dispatch #69 Part A is strengthened considerably.** The waste/variance proxy is not merely
+  *mislabelled* — on this evidence its top-3 coaching picks are ranked 13th, 16th and 20th while
+  the four worst stores go unmentioned. That is the *"a number nobody acts on"* rule failing in the
+  worst way: it displaces the stores that need the attention.
+- ⚠️ **It is still NOT the matched leak-free test.** Only the 3 *headline* stores are known here,
+  not all 10 flagged, so no rank correlation can be computed. The year is unconfirmed. And the flag
+  reads the latest monthly `fobRows` while these visits span a whole year — periods do not line up.
+- ❌ **It does not establish the proxy is worthless**, and nothing here justifies deleting it. It
+  establishes that it should not be the headline, which is what the owner said in the first place.
+
+📌 **The honest summary: my earlier "the flag was right on DeFuniak" was an artifact of comparing
+against the wrong instrument.** Two different things are both called "food safety" in this data —
+the PACE `foodSafety` *area* within a comprehensive visit, and the standalone third-party EcoSure
+audit. They rank stores differently. **Always say which one.**
+
+## The proper test is now cheap, and the data reaches back to 2024
+
+The year dropdown offers **2024 · 2025 · 2026**. At ~53 EcoSure visits/year that is
+**~160 visits over three years** — far past every power threshold in
+`memory/notes-visit-readiness-backlog-2026-08-22.md`, and available today rather than next spring.
+
+**Run:** Meridian's FS flag *as of each visit date* vs that visit's EcoSure score, all stores, all
+three years, leak-free (reuse the Back Test discipline; do not hand-roll an `asOf`). That answers
+whether waste predicts food safety at all — properly, with n in the hundreds instead of anecdotes.
+
+⚠️ **Tag each year and keep them separable.** Three years of EcoSure spans standard revisions;
+pool only after checking the distributions are comparable.
+
+## Operational note for any pull
+
+**`rowsPerPage=50` was NOT honored — the API capped the page at 20 rows.** Any client must page
+until `results.length` reaches `totalCount` rather than trusting a large `rowsPerPage`.
