@@ -72,6 +72,15 @@ will tell anyone the runner is down.
   enable *"Prevent automatic sleeping when the display is off."* A sleeping Mac is the single most
   likely cause of a missed run.
 - **Come back after a power cut.** `sudo pmset -a autorestart 1`. Confirm with `pmset -g`.
+- **✅ APPLIED AND VERIFIED on the host, 2026-08-22** (`pmset -g`): `SleepDisabled 1`, `sleep 0`,
+  `disksleep 0`, `displaysleep 10`, `autorestart 1`, `standby 0`. Also already on by default and
+  worth knowing: **`tcpkeepalive 1`** — relevant here, since the runner holds an outbound long-poll
+  to GitHub and TCP keepalive is what stops an idle connection being dropped by the router or
+  carrier NAT. That may bear on the July disconnect. `womp` was already `1`; nothing was added.
+  ⚠️ **Run these one at a time.** Pasting them as a block collides with `sudo`'s password prompt —
+  the queued lines get swallowed as password input and silently never run. Authenticate with
+  `sudo -v` first, then one command per line. And do not append `# comments`: this shell has
+  `interactive_comments` off, so `pmset -g # note` fails with "unhandled argument #".
 - **❌ `pmset -a womp 1` does NOT help — do not add it.** "Wake for network access" wakes a Mac on
   an **inbound** packet. A self-hosted runner is the opposite shape: it opens an **outbound**
   long-poll to GitHub and waits. Nothing connects in, so nothing will wake it. On Wi-Fi it is
