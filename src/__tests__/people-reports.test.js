@@ -68,6 +68,37 @@ describe('parseEmployeeRosterApi (JSON endpoint)', () => {
     expect(c['35064']).toMatchObject({ crew: 1, shiftMgr: 2, gm: 1, maintenance: 1, total: 5 });
     expect(shiftCertifiedByLoc(parseEmployeeRosterApi(payload))['35064']).toBe(2);
   });
+
+  // Dispatch #57 -- orgStartDate/hourlyPayRate are the two fields added to this record for
+  // per-person tenure storage (qsr_employee_tenure). orgStartDate ("joined the ORGANIZATION")
+  // must never be conflated with startDate/storeStartDate ("joined THIS STORE") -- they diverge
+  // often and neither reconstructs the other, per the dispatch's own core requirement.
+  it('maps orgStartDate distinctly from storeStartDate, and hourlyPayRate as a number', () => {
+    const p = { result: [
+      { storeNum: 3708, geid: 9, fullEmployeeName: 'F Tenure', orgStartDate: '2018-03-01', storeStartDate: '2026-01-15', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650', jobTitleCodeDescription: 'CREW PERSON', hourlyPayRate: 16.5 },
+    ] };
+    const [r] = parseEmployeeRosterApi(p);
+    expect(r.orgStartDate).toBe('2018-03-01');
+    expect(r.startDate).toBe('2026-01-15');   // storeStartDate — distinct from orgStartDate
+    expect(r.orgStartDate).not.toBe(r.startDate);
+    expect(r.hourlyPayRate).toBe(16.5);
+  });
+
+  it('normalizes the "0000-00-00" sentinel to null on orgStartDate too, same as every other date field', () => {
+    const p = { result: [
+      { storeNum: 3708, geid: 10, fullEmployeeName: 'G NoOrgDate', orgStartDate: '0000-00-00', storeStartDate: '2026-01-15', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650' },
+    ] };
+    const [r] = parseEmployeeRosterApi(p);
+    expect(r.orgStartDate).toBeNull();
+  });
+
+  it('hourlyPayRate is null, not NaN or 0, when absent', () => {
+    const p = { result: [
+      { storeNum: 3708, geid: 11, fullEmployeeName: 'H NoPay', storeStartDate: '2026-01-15', storeEndDate: '0000-00-00', employmentStatus: 'Active', terminationEntryDate: '0000-00-00', jobTitleCode: '650' },
+    ] };
+    const [r] = parseEmployeeRosterApi(p);
+    expect(r.hourlyPayRate).toBeNull();
+  });
 });
 
 describe('parseRosterStatistics + headcount', () => {

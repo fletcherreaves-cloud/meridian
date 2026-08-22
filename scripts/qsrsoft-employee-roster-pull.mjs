@@ -1,22 +1,32 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-employee-roster-pull.mjs
-// QSRSoft Employee Roster → per-store active role-bucket counts, monthly.
-// Feeds the Performance-Review "# Shift Certified Managers" metric (Cert Swing +
-// Dept Mgrs) → roster_role_counts. Headcount itself comes from Roster Statistics.
+// QSRSoft Employee Roster → (1) per-store active role-bucket counts, monthly
+// (roster_role_counts, unchanged) AND (2) per-person tenure (qsr_employee_tenure,
+// dispatch #57 / #56 Part B).
+// (1) feeds the Performance-Review "# Shift Certified Managers" metric (Cert Swing +
+// Dept Mgrs). Headcount itself comes from Roster Statistics.
 //
-// PRIVACY: the Employee Roster catalog carries heavy PII (SSN, DOB, address, phone).
-// This pull requests a TRIMMED selectCols — only job-code + status fields — so SSN/
-// DOB/address never leave QSRSoft, and it persists ONLY aggregate integer counts per
-// store/month (roster_role_counts). No individual-employee data is stored anywhere.
+// PRIVACY: the Employee Roster catalog carries heavy PII (SSN, DOB, address, phone,
+// protected-class fields). This pull requests an ALLOWLIST selectCols so SSN/DOB/
+// address/protected-class fields never leave QSRSoft at all — never mind never being
+// stored. assertNoDeniedSelectCols() (below) fails loudly at import time if a future
+// edit ever widens SELECT_COLS to include one of them.
+//
+// 🔴 As of dispatch #57 (owner-approved 2026-08-21, reversing an earlier deliberate
+// decision), individual-employee data — name, both start dates, job title, status,
+// pay rate — IS now persisted, in qsr_employee_tenure. roster_role_counts stays an
+// aggregate-only table, unchanged; this is additive, not a replacement. Full scoping:
+// memory/dispatch-57.md.
 //
 // Endpoint (confirmed 2026-07-28, one call returns all stores):
 //   GET https://api.reports.myqsrsoft.com/reporting/v2/people/employee-roster
 //       ?catalogType=employeeRoster&nsd=d&nsn=<csv>&orgId=<org>&enterpriseName=McDonalds
 //       &startDate=YYYY-MM-01&endDate=YYYY-MM-DD&weekStart=3
-//       &locationType=home&employmentStatus=active&selectCols=<trimmed>
-//   → { result: [ {storeNum, geid, fullEmployeeName, storeStartDate, storeEndDate,
-//                  employmentStatus, locationType, terminationEntryDate, terminationReason,
-//                  jobTitleCode, jobCodeType, jobTitleCodeDescription, jobTitleCodeStartDate} ] }
+//       &locationType=home&employmentStatus=active&selectCols=<allowlist>
+//   → { result: [ {storeNum, geid, fullEmployeeName, orgStartDate, storeStartDate,
+//                  storeEndDate, employmentStatus, locationType, terminationEntryDate,
+//                  terminationReason, jobTitleCode, jobCodeType, jobTitleCodeDescription,
+//                  jobTitleCodeStartDate, hourlyPayRate} ] }
 // Parsed with parseEmployeeRosterApi() + rosterCounts() from src/engine/people-reports.js
 // (the SAME engine the manual xlsx-upload path uses — one source of truth).
 //
@@ -35,13 +45,42 @@ const ENTERPRISE = 'McDonalds';
 const REPORT_URL = 'https://v3.myqsrsoft.com/reports/mcd/people/employeeRoster';
 const DEBUG      = process.env.QSRSOFT_DEBUG === '1';
 
-// Trimmed column set — job-code + status only. Deliberately EXCLUDES ssn, dateOfBirth,
-// address, phone, email so PII is never fetched onto the CI runner.
-const SELECT_COLS = [
-  'homeLocation', 'geid', 'storeStartDate', 'storeEndDate', 'employmentStatus',
+// Job-code + status + (as of dispatch #57) name/tenure/pay fields. Still an ALLOWLIST,
+// not a denylist — nothing outside this set is ever requested. Adding orgStartDate
+// (dispatch #57's own "half of Part B" — not previously fetched at all) and
+// hourlyPayRate (the approved pay-rate column) alongside the pre-existing set.
+export const SELECT_COLS = [
+  'homeLocation', 'geid', 'orgStartDate', 'storeStartDate', 'storeEndDate', 'employmentStatus',
   'locationType', 'fullEmployeeName', 'terminationEntryDate', 'terminationReason',
   'jobTitleCode', 'jobCodeType', 'jobTitleCodeDescription', 'jobTitleCodeStartDate',
-].join(',');
+  'hourlyPayRate',
+];
+
+// 🔴 These field names were never on the table and dispatch #57's "do it all" does NOT
+// authorise them — they stay excluded from SELECT_COLS permanently. Two reasons, both
+// still live: (1) ssn must never leave QSRSoft — selectCols is caller-chosen, so this
+// costs nothing; (2) nationalOrigin/gender/dateOfBirth/federalMaritalStatus are
+// protected-class attributes — storing them beside performance data makes it possible
+// to compute a metric split by race/age/sex BY ACCIDENT, not a hypothetical in a system
+// that auto-correlates metric pairs (the Signals Scanner). Case-insensitive substring
+// match so a near-variant (e.g. "dob", "socialSecurityNumber") is still caught.
+const DENIED_SELECT_COLS = [
+  'ssn', 'socialsecuritynumber', 'dateofbirth', 'birthday', 'dob',
+  'nationalorigin', 'race', 'gender', 'sex', 'federalmaritalstatus', 'maritalstatus',
+  'address', 'streetaddress', 'city', 'zipcode', 'postalcode',
+  'emailaddress', 'email', 'phone', 'mobilephone', 'homephone', 'emergencycontact',
+];
+export function assertNoDeniedSelectCols(cols = SELECT_COLS) {
+  const lower = cols.map(c => String(c).toLowerCase());
+  const hits = lower.filter(c => DENIED_SELECT_COLS.some(denied => c.includes(denied)));
+  if (hits.length) {
+    throw new Error(
+      `[employee-roster] SELECT_COLS widened to include a denied PII/protected-class field: ` +
+      `${hits.join(', ')}. See dispatch-57.md — this fails loudly on purpose, do not remove.`
+    );
+  }
+}
+assertNoDeniedSelectCols();
 
 const STORE_NSNS = (process.env.ROSTER_STORES
   ? process.env.ROSTER_STORES.split(',').map(s => s.trim())
@@ -53,7 +92,14 @@ const STORE_NSNS = (process.env.ROSTER_STORES
     38609, 43380, 43701,
   ]).map(String);
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Guarded, not unconditional -- toTenureRows()/assertNoDeniedSelectCols() are unit-tested by
+// importing this module directly (no supabase/fetch dependency in those functions themselves),
+// and vitest's environment has neither env var set. An unconditional createClient() call at
+// module scope would throw at import time before a test could even reach them -- same pattern
+// qsrsoft-register-audit-pull.mjs already uses for its own mapRow()/extractRows() tests.
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 const pad2 = n => String(n).padStart(2, '0');
 function currentPeriod() {
@@ -77,7 +123,7 @@ function buildUrl(period) {
   const params = new URLSearchParams({
     catalogType: 'employeeRoster', nsd: 'd', nsn: STORE_NSNS.join(','),
     orgId: ORG_ID, enterpriseName: ENTERPRISE, startDate: first, endDate: last,
-    weekStart: '3', locationType: 'home', employmentStatus: 'active', selectCols: SELECT_COLS,
+    weekStart: '3', locationType: 'home', employmentStatus: 'active', selectCols: SELECT_COLS.join(','),
   });
   return `${API_BASE}/reporting/v2/people/employee-roster?${params}`;
 }
@@ -108,6 +154,48 @@ async function upsert(rows) {
     const slice = rows.slice(i, i + CHUNK);
     const { error } = await supabase.from('roster_role_counts').upsert(slice, { onConflict: 'loc,period_month' });
     if (error) throw error;
+    saved += slice.length;
+  }
+  return saved;
+}
+
+// parseEmployeeRosterApi() records → qsr_employee_tenure columns. geid is the PK (a
+// stable QSRSoft person key), so a record without one can't be keyed and is dropped —
+// same "drop, don't fabricate a placeholder key" contract as every other normalizer in
+// this repo. loc is re-padded to 7 chars here (records carry the unpadded form
+// rosterCounts()/roster_role_counts use) — the SAME padStart(7,'0') convention every
+// other QSRSoft pull script already uses, not a second one.
+export function toTenureRows(records) {
+  return (records || [])
+    .filter(r => r && r.geid != null && String(r.geid).trim() !== '')
+    .map(r => ({
+      loc: String(r.loc).padStart(7, '0'),
+      geid: String(r.geid),
+      full_employee_name: r.name || null,
+      employment_status: r.employmentStatus || null,
+      location_type: r.locationType || null,
+      org_start_date: r.orgStartDate || null,
+      store_start_date: r.startDate || null,
+      store_end_date: r.endDate || null,
+      termination_entry_date: r.terminationDate || null,
+      termination_reason: r.terminationReason || null,
+      job_title_code: r.primaryCode ?? null,
+      job_code_type: r.jobCodeType || null,
+      job_title_code_description: r.primaryDesc || null,
+      job_title_code_start_date: r.jobCodeStartDate || null,
+      hourly_pay_rate: r.hourlyPayRate ?? null,
+      updated_at: new Date().toISOString(),
+    }));
+}
+
+async function upsertTenure(rows) {
+  if (!rows.length) return 0;
+  const CHUNK = 500; let saved = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const { error } = await supabase.from('qsr_employee_tenure')
+      .upsert(slice, { onConflict: 'tenant_id,loc,geid' });
+    if (error) throw new Error(`[qsr_employee_tenure] ${error.message}`);
     saved += slice.length;
   }
   return saved;
@@ -237,13 +325,20 @@ async function main() {
   }
   if (rawRows == null) { console.error('[employee-roster] ✗ no auth method succeeded'); process.exit(1); }
 
-  const records = parseEmployeeRosterApi(rawRows);          // discards all PII; keeps job-code/status
+  const records = parseEmployeeRosterApi(rawRows);          // job-code/status/name/tenure/pay -- see header
   const byLoc = rosterCounts(records);                      // active-only bucket counts per loc
   const rows = toRows(byLoc, period);
   const found = Object.keys(byLoc).length;
   console.log(`[employee-roster] ${records.length} active employees → ${found} stores`);
   const saved = await upsert(rows);
   console.log(`[employee-roster] ✓ ${saved} store rows upserted to roster_role_counts for ${period}`);
+
+  // Dispatch #57: per-person tenure, additive to the aggregate above. Independent success --
+  // a tenure-upsert failure must not roll back or block the roster_role_counts write that
+  // already succeeded above.
+  const tenureRows = toTenureRows(records);
+  const tenureSaved = await upsertTenure(tenureRows);
+  console.log(`[employee-roster] ✓ ${tenureSaved} person rows upserted to qsr_employee_tenure`);
 
   // #263: a store missing from the response could be a genuine zero-active-employee
   // store, but a THIRD of the district missing at once is far more likely an API/org
@@ -258,4 +353,8 @@ async function main() {
   if (code) process.exit(code);
 }
 
-main().catch(err => { console.error('[employee-roster] FATAL:', err); process.exit(1); });
+// Only run main() when executed directly (not when imported for unit tests — see
+// register-audit-pull.mjs's own use of this same guard, mapRow()/extractRows() precedent).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => { console.error('[employee-roster] FATAL:', err); process.exit(1); });
+}

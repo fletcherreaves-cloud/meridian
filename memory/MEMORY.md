@@ -65,6 +65,22 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22, v5.102): [Dispatch #57 — per-person employee tenure, storage half](dispatch-57.md)** —
+  **NEWEST.** Owner-approved reversal of a deliberate decision: `qsrsoft-employee-roster-pull.mjs`
+  used to discard every individual-employee field it fetched, persisting ONLY aggregate counts
+  (`roster_role_counts`, unchanged). New `qsr_employee_tenure` (one row per person, keyed on
+  `geid`, accessible_locs-scoped RLS — NOT the plain tenant-only pattern, since this table
+  carries a name and a pay rate) stores **both start dates distinctly**: `org_start_date`
+  (joined the organization) vs `store_start_date` (joined this store) — they diverge often and
+  hugely and neither reconstructs the other; never render either as an unqualified "start
+  date." `hourly_pay_rate` is stored per the owner's "do it all" but **deliberately not
+  surfaced in any panel** — the owner explicitly deferred role-gating pay visibility.
+  `orgStartDate` was not previously fetched at all — new field, added to `SELECT_COLS`
+  alongside `hourlyPayRate`. What stays permanently excluded (unchanged): ssn, dateOfBirth,
+  nationalOrigin, gender, federalMaritalStatus, address/contact fields — guarded by a new
+  `assertNoDeniedSelectCols()` that fails loudly at import time if a future edit ever widens
+  the allowlist. 1989/1989 tests (15 new), build clean, no client-bundle change. **No panel in
+  this dispatch** — storage and pull only, per its own explicit scope.
 - **✅ RESOLVED (2026-08-22, v5.100): [Dispatch #60 — the `hourCycle` fix is now guarded](dispatch-60-ci-node-parity.md)** —
   `1ca02ee` merged on a clean local **1952/1952** and broke `main` for **seven consecutive commits**
   (two from an unrelated session) until hotfix #540. Cause: `hour12:false` does not pin the

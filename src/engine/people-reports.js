@@ -93,12 +93,18 @@ export function parseEmployeeRoster(rows) {
 // returns camelCase JSON (a FLAT `result: [...]` array — note: not result.resp like
 // roster-statistics), one object per employee. Normalize to the SAME record shape
 // parseEmployeeRoster emits so rosterCounts / shiftCertifiedByLoc / the review
-// auto-populate all consume one contract. The pull deliberately requests a trimmed
-// selectCols (job-code + status only) so PII (SSN/DOB/address) never leaves QSRSoft;
-// only these non-sensitive fields are read here, and only aggregate counts persist.
+// auto-populate all consume one contract. The pull requests a selectCols allowlist
+// that deliberately excludes ssn/dateOfBirth/address/phone/email/protected-class
+// fields (never fetched onto the CI runner at all — see assertNoDeniedSelectCols()
+// in qsrsoft-employee-roster-pull.mjs); the non-excluded fields below, INCLUDING
+// name and pay rate, are stored per-person in qsr_employee_tenure as of dispatch
+// #57 (owner-approved reversal of the earlier aggregate-only decision — the
+// roster_role_counts aggregate path is unchanged and still the source for
+// rosterCounts()/shiftCertifiedByLoc()).
 // Key map (JSON → record): storeNum→loc · fullEmployeeName→name · storeStartDate/
 // storeEndDate→start/end · terminationEntryDate→terminationDate · jobTitleCode→
-// primaryCode · jobTitleCodeDescription→primaryDesc.
+// primaryCode · jobTitleCodeDescription→primaryDesc · orgStartDate→orgStartDate ·
+// hourlyPayRate→hourlyPayRate.
 export function parseEmployeeRosterApi(payload) {
   const arr = Array.isArray(payload) ? payload
     : Array.isArray(payload?.result) ? payload.result
@@ -115,8 +121,14 @@ export function parseEmployeeRosterApi(payload) {
       homeLocation: r.homeLocation,
       geid: r.geid,
       name: r.fullEmployeeName,
+      // orgStartDate (joined the ORGANIZATION) vs startDate/storeStartDate (joined THIS
+      // STORE) — the core of dispatch #57. They diverge often and are never interchangeable;
+      // see qsr_employee_tenure's own schema comment. Both go through the same "0000-00-00"
+      // sentinel-to-null cleaning as every other date field here.
+      orgStartDate: cleanDate(r.orgStartDate),
       startDate: cleanDate(r.storeStartDate),
       endDate: cleanDate(r.storeEndDate),
+      hourlyPayRate: num(r.hourlyPayRate),
       employmentStatus: (r.employmentStatus || '').toString().trim(),
       locationType: r.locationType,
       terminationDate: cleanDate(r.terminationEntryDate),
