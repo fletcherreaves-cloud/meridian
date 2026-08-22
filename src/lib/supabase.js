@@ -869,6 +869,7 @@ export async function saveAuditRows(rows) {
     loc:             String(r.loc),
     date:            toDate(r),
     emp:             r.emp || '',
+    register_type:   r.registerType || 'cashier',
     emp_id:          r.empId ?? null,
     emp_token:       tokenMap.get((r.emp || '').trim()) ?? null,
     drawer_sales:    r.drawerSales    ?? null,
@@ -904,7 +905,7 @@ export async function saveAuditRows(rows) {
   const CHUNK = 500;
   let saved = 0; const errors = [];
   for (let i = 0; i < upsert.length; i += CHUNK) {
-    const { error } = await supabase.from('audit_rows').upsert(upsert.slice(i, i+CHUNK), { onConflict: 'loc,date,emp' });
+    const { error } = await supabase.from('audit_rows').upsert(upsert.slice(i, i+CHUNK), { onConflict: 'loc,date,emp,register_type' });
     if (error) { console.warn('[audit_rows] save error:', error); errors.push(error.message); }
     else saved += Math.min(CHUNK, upsert.length - i);
   }
@@ -936,6 +937,7 @@ export async function loadAuditRows(daysBack = 400) {
     loc:            r.loc,
     date:           new Date(r.date + 'T00:00:00'),
     emp:            r.emp,
+    registerType:   r.register_type || 'cashier',
     empToken:       r.emp_token,
     drawerSales:    r.drawer_sales,
     avgCheck:       r.avg_check,
@@ -984,10 +986,10 @@ export async function loadAuditRowsWindow({ start, end }) {
   if (hit && (Date.now() - hit.at) < _DRILLDOWN_AUDIT_TTL) return hit.rows;
   const data = await fetchAll((from, to) =>
     supabase.from('audit_rows')
-      .select('loc,date,emp,emp_token,drawer_sales,drawer_gc,cash_os_dollar,pos_over_cnt,pos_over_amt,manual_ref_amt,manual_ref_cnt,refund_cash,refund_cashless,refund_cnt,promo_amt,t_red_a_cnt,t_red_a_dollar,t_red_b_cnt,t_red_b_dollar')
+      .select('loc,date,emp,register_type,emp_token,drawer_sales,drawer_gc,cash_os_dollar,pos_over_cnt,pos_over_amt,manual_ref_amt,manual_ref_cnt,refund_cash,refund_cashless,refund_cnt,promo_amt,t_red_a_cnt,t_red_a_dollar,t_red_b_cnt,t_red_b_dollar')
       .gte('date', start).lte('date', end).range(from, to), 1000, 'audit_rows (drill-down)');
   const rows = (data || []).map(r => ({
-    loc: r.loc, date: r.date, emp: r.emp, empToken: r.emp_token,
+    loc: r.loc, date: r.date, emp: r.emp, registerType: r.register_type || 'cashier', empToken: r.emp_token,
     drawerSales: r.drawer_sales, drawerGC: r.drawer_gc, cashOSDollar: r.cash_os_dollar,
     posOverCnt: r.pos_over_cnt, posOverAmt: r.pos_over_amt,
     manualRefAmt: r.manual_ref_amt, manualRefCnt: r.manual_ref_cnt,

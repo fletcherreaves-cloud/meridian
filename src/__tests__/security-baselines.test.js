@@ -98,6 +98,49 @@ describe('networkBaseline() — every OTHER employee org-wide, ignoring store bo
   });
 });
 
+// Dispatch #59 -- register_type joined audit_rows' grain, so one employee can now carry 2-3 rows
+// for the same date (Cashier/Manager/Preparer). personalBaseline's own comment states the
+// invariant it depends on: "one rate per qualifying row in the window" -- this is precisely what
+// breaks if perDay keeps computing one observation per RAW ROW instead of one per DAY. The
+// dispatch's own decision (stated in its addendum): COLLAPSE to one row per employee-day before
+// rating, not keep per-register-type observations -- preserves cashier-only meaning exactly.
+// Per the standing revert rule, this calls personalBaseline() itself (not a row builder), so it
+// fails if the collapse decision is reverted back to one-observation-per-row.
+describe('personalBaseline() — the register_type collapse decision (dispatch #59)', () => {
+  const MULTI_TYPE_ROWS = [
+    // Dave works BOTH a Cashier and a Manager drawer on 2026-08-05 -- this MUST count as one
+    // day's observation, not two, or n inflates and the day gets double-weighted.
+    { loc: '0000003', emp: 'Dave', registerType: 'cashier', date: '2026-08-05', drawerSales: 600, cashOSDollar: -3 },
+    { loc: '0000003', emp: 'Dave', registerType: 'manager', date: '2026-08-05', drawerSales: 400, cashOSDollar: -2 },
+    // A second, ordinary single-register day.
+    { loc: '0000003', emp: 'Dave', registerType: 'cashier', date: '2026-08-06', drawerSales: 500, cashOSDollar: -1 },
+  ];
+  const OPTS2 = { emp: 'Dave', loc: '0000003', numField: 'cashOSDollar', denField: 'drawerSales', scale: 1000, abs: true, start: '2026-08-01', end: '2026-08-10' };
+
+  it('n stays 2 (two DAYS), not 3 (three rows) -- the collapse decision, pinned', () => {
+    const b = personalBaseline(MULTI_TYPE_ROWS, OPTS2);
+    expect(b.n).toBe(2);
+    expect(b.recordCount).toBe(3); // recordCount is the raw row count -- deliberately NOT collapsed, it's a different field for a different purpose (audit trail of rows seen)
+  });
+
+  it("the multi-type day's rate is the DAY'S combined dollars, not either register type alone", () => {
+    // 2026-08-05 combined: |−3|+|−2| = 5 over 600+400 = 1000 sales -> 5/1000*1000 = 5. If this
+    // were NOT collapsed (one obs per row instead), the two per-row rates would be 5 (cashier:
+    // 3/600*1000) and 5 (manager: 2/400*1000) -- coincidentally identical in this fixture, which
+    // is exactly why the n assertion above is the one that actually proves collapse happened.
+    // 2026-08-06: |−1|/500*1000 = 2.
+    const b = personalBaseline(MULTI_TYPE_ROWS, OPTS2);
+    expect(b.values.sort((a, c) => a - c)).toEqual([2, 5]);
+  });
+
+  it('overall stays dollar-weighted across ALL rows regardless of register type -- unaffected by the collapse', () => {
+    // overall is intentionally NOT collapsed -- exposureRate() already dollar-weights across
+    // every row handed to it, register type notwithstanding. |−3|+|−2|+|−1|=6 over 600+400+500=1500.
+    const b = personalBaseline(MULTI_TYPE_ROWS, OPTS2);
+    expect(b.overall).toBeCloseTo((6 / 1500) * 1000, 6);
+  });
+});
+
 describe('window bounds are honored — a row outside [start,end] never contributes', () => {
   it('narrowing the window to a single day changes personalBaseline', () => {
     const b = personalBaseline(ROWS, { emp: 'Alice', loc: '0000001', numField: 'cashOSDollar', denField: 'drawerSales', scale: 1000, abs: true, start: '2026-08-01', end: '2026-08-01' });

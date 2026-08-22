@@ -776,12 +776,17 @@ create policy "peaks_rows: public write" on public.peaks_rows for all    using (
 create index if not exists peaks_rows_date_idx on public.peaks_rows (date desc);
 
 -- ── Register Audit rows ───────────────────────────────────────────────────────
--- Per-employee per-day register audit data from QSRSoft Register Audit report.
--- Primary key: (loc, date, emp).
+-- Per-employee per-day (per-register-type as of dispatch #59) register audit data from the
+-- QSRSoft Register Audit report. Primary key: (loc, date, emp, register_type) -- see
+-- schema-audit-rows-register-type.sql for the migration this column/PK came from on a table
+-- that was already live and populated; this CREATE TABLE reflects the current true shape for a
+-- fresh install, it does not itself migrate an existing one (create table if not exists is a
+-- no-op against a table that already exists).
 create table if not exists public.audit_rows (
   loc             text not null,
   date            date not null,
   emp             text not null,
+  register_type   text not null default 'cashier', -- 'cashier' | 'manager' | 'preparer' (dispatch #59)
   emp_id          text,                          -- Register Audit API's own employee ID (empID), dispatch #51.
                                                  -- Additive alongside the name-keyed emp column; nullable, since
                                                  -- manual uploads never carry it. NOT part of the PK and NOT used
@@ -816,7 +821,7 @@ create table if not exists public.audit_rows (
   t_red_a_dollar  numeric,
   emp_token       uuid references public.employee_identity_vault(id),  -- schema-identity-vault.sql
   updated_at      timestamptz default now(),
-  primary key (loc, date, emp)
+  primary key (loc, date, emp, register_type)
 );
 alter table public.audit_rows enable row level security;
 create policy "audit_rows: public read"  on public.audit_rows for select using (true);

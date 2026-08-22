@@ -64,9 +64,30 @@ function distribution(values) {
 // "this employee's rate this period," and what a threshold/ratio rule should compare against)
 // -- deliberately not folded into `mean`, so nothing accidentally treats the per-day average
 // (wrong for a period total) as the period total (right only via `overall`).
+// dispatch #59's own decision, stated per its addendum ("pick one and write down why"): COLLAPSE
+// to one row per employee-day before computing perDay, not keep per-register-type observations.
+// register_type joined audit_rows' grain, so an employee working Cashier AND Manager on one date
+// now arrives here as TWO rows for that date. The comment above (this function's own, unchanged)
+// already states the invariant this distribution depends on: "one rate per qualifying row in the
+// window" -- i.e. one row IS one day. Keeping per-row observations would silently inflate `n` and
+// double-weight that day in mean/stdev for every subject who ever works two register types in a
+// shift, changing what every EXISTING stored/compared baseline means without anyone deciding
+// that. Collapsing (summing each day's rows before rating them) preserves the exact existing
+// meaning for cashier-only data -- BEHAVIOURALLY IDENTICAL when there's one row per day, which is
+// still 100% of history until the pull's next run adds manager/preparer rows -- and correctly
+// extends it once multi-register-type rows exist, rather than quietly becoming a new metric. The
+// alternative (per-register-type observations) is a legitimately different, finer-grained
+// baseline, but it is NOT this one: shipping it under the same function name would mean every
+// baseline computed before this dispatch keeps comparing against a population whose definition
+// just changed underneath it, with no error and no flag -- "a baseline that silently changes
+// meaning is worse than one that breaks" (dispatch #59's own words). If a per-register-type
+// baseline is ever wanted, it belongs in a new function, not a redefinition of this one.
+function dateKeyOf(d) { return d instanceof Date ? d.toISOString().slice(0, 10) : String(d); }
+
 export function personalBaseline(rows, { emp, loc, numField, denField, scale = PER_THOUSAND, abs = false, start, end }) {
   const subject = rows.filter(r => r.emp === emp && r.loc === loc && inWindow(r.date, start, end));
-  const perDay = subject.map(r => exposureRate([r], { numField, denField, scale, abs }));
+  const byDay = groupBy(subject, r => dateKeyOf(r.date));
+  const perDay = Object.values(byDay).map(dayRows => exposureRate(dayRows, { numField, denField, scale, abs }));
   return {
     ...distribution(perDay),
     overall: exposureRate(subject, { numField, denField, scale, abs }),
