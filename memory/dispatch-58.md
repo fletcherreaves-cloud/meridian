@@ -52,6 +52,56 @@ straightforward stream and a redesign, and it is a five-minute check. Note `time
 already empty in every capture and evidently means "no time filter", which is weak evidence for the
 "empty = all" reading — **weak evidence, not the answer.**
 
+## 🔴 PROBE RESULT 2026-08-22 — 403 on BOTH calls. The pull is blocked on AUTH, not on the array question.
+
+The empty-array probe ran (workflow_dispatch, ~9s) and **never got to compare row counts**:
+
+```
+[probe] populated → status 403   {"Message":"User is not authorized to access this resource
+[probe] empty     → status 403      with an explicit deny in an identity-based policy"}
+```
+
+**Read the message precisely — this is NOT "invalid token".** *"Explicit deny in an identity-based
+policy"* is AWS IAM language for: the credential **was accepted and resolved to a principal**, and
+that principal is denied this resource. Authentication succeeded; authorization failed. Compare the
+earlier manual `dt-timer` curl, which returned the literal string `Invalid token` — a different
+failure entirely.
+
+**Two facts that frame it:**
+
+1. **Nothing in this repo has ever successfully called `api.security.myqsrsoft.com`.** `grep` for
+   that host returns only the probe. Every working pull targets `api.reports.myqsrsoft.com`. So the
+   security host's auth has never actually been exercised from a server — the "token-only, no
+   cookie" finding was read off a *browser* request-header panel, which establishes what the browser
+   sent, **not that our credential is accepted there**.
+2. **`getFreshToken()` mints a Cognito ID token for `QSRSOFT_USERNAME`** via `USER_PASSWORD_AUTH`
+   (`scripts/lib/qsrsoft-auth.mjs`, #312).
+
+### The two candidate causes — and the cheap test that separates them
+
+**(a) The security host wants a DIFFERENT token.** A separate authorizer/audience from the reports
+host, so the Cognito ID token that works for `api.reports` resolves to a principal with no
+entitlement here.
+
+**(b) `QSRSOFT_USERNAME` lacks the security-module entitlement** that the owner's interactive login
+has — a QSRSoft permissions question, not a code one.
+
+**Decisive test, ~30 seconds, no token leaves the browser:** in one DevTools session on the Register
+Audit page, compare the **first ~10 characters** of the `x-auth-token` header on a request to
+`api.security.myqsrsoft.com` versus one to `api.reports.myqsrsoft.com`.
+
+- **Different values → cause (a).** The security host issues/expects its own token, and the next
+  question is how the SPA obtains it. Design the pull around that, not around `getFreshToken()`.
+- **Same value → cause (b).** Our credential is the same one the browser uses, so the difference is
+  the *account*. Then it is a QSRSoft entitlement request for the automation user, and no amount of
+  code changes it.
+
+⚠️ **Do not write the pull script until this is settled.** Both causes lead to materially different
+designs, and one of them cannot be solved in this repo at all.
+
+**The empty-array question remains genuinely open** — the probe was built correctly and will answer
+it the moment auth works. Re-run it unchanged once the credential is sorted.
+
 ## The response — what to store
 
 Confirmed fields (38-row sample, one store/date/register/cashier):
