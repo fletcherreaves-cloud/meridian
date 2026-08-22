@@ -110,6 +110,32 @@
   a{color:var(--gate)}
   a:focus-visible,*:focus-visible{outline:2px solid var(--gate);outline-offset:2px}
   @media (max-width:560px){body{font-size:16.5px}header{padding-top:40px}.meta{gap:0 22px}}
+  @media print{
+    @page{ size:letter; margin:0.65in }
+    :root, :root[data-theme="dark"]{
+      --paper:#ffffff; --card:#ffffff;
+      --ink:#12151c; --ink-2:#3d4552; --ink-3:#697386;
+      --rule:#c8ccd4; --rule-2:#e4e7ec;
+      --gold:#a67806; --gold-soft:#fdf4dd;
+      --neg:#a8302a; --neg-soft:#fbeceb;
+      --pos:#0f6d63; --pos-soft:#e7f2f0;
+      --gate:#5b3fa8; --gate-soft:#f1ecfb;
+    }
+    *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact }
+    body{ padding:0; font-size:12px; background:#fff }
+    .wrap{ max-width:100% }
+    header{ padding-top:0 }
+    h1{ font-size:30px }
+    h2{ margin-top:26px; break-after:avoid; page-break-after:avoid }
+    h3{ break-after:avoid; page-break-after:avoid }
+    p, li{ orphans:3; widows:3 }
+    table, .callout, .figrow, svg, .tablewrap, .say, .fig{
+      break-inside:avoid; page-break-inside:avoid
+    }
+    a{ color:var(--ink); text-decoration:none }
+    a[href]:after{ content:"" }
+    footer{ break-inside:avoid; page-break-inside:avoid }
+  }
 </style>
 
 <div class="wrap">
@@ -141,7 +167,7 @@ than execution.</p>
   <div class="fig"><div class="k">Full window</div><div class="v neg">−3.96 pp</div>
     <div class="n">carries price and six promotions</div></div>
   <div class="fig"><div class="k">After 2 June</div><div class="v neg">−4.45 pp</div>
-    <div class="n">the extra is our own price</div></div>
+    <div class="n">the extra is the recommended price round</div></div>
 </div>
 <p class="figcap">Pre-launch 1 Jan – 21 Apr, post-launch 22 Apr – 11 Aug. Every figure is a ratio of
 summed guest counts, never an average of per-restaurant rates.</p>
@@ -229,6 +255,43 @@ before either one moves</strong>, then separate by nearly three points the momen
 and the other doesn't. That is about as close as observational data gets to a controlled test, and
 it was sitting in the data the whole time.</p>
 
+<div class="tablewrap" style="margin:22px 0 34px">
+<svg viewBox="0 0 600 260" role="img" style="width:100%;max-width:600px;height:auto;display:block"
+     aria-label="Guest counts versus last year, control period through the thirteen-day price gap, repriced restaurants nearly flat, not-yet-repriced restaurants rising toward last year">
+  <text x="94" y="197" text-anchor="end" font-family="var(--sans)" font-size="10.5" fill="var(--ink-3)">−3%</text>
+  <line x1="100" y1="193" x2="520" y2="193" stroke="var(--rule-2)" stroke-width="1"/>
+  <text x="94" y="143" text-anchor="end" font-family="var(--sans)" font-size="10.5" fill="var(--ink-3)">−2%</text>
+  <line x1="100" y1="139" x2="520" y2="139" stroke="var(--rule-2)" stroke-width="1"/>
+  <text x="94" y="88" text-anchor="end" font-family="var(--sans)" font-size="10.5" fill="var(--ink-3)">−1%</text>
+  <line x1="100" y1="84" x2="520" y2="84" stroke="var(--rule-2)" stroke-width="1"/>
+  <line x1="100" y1="30" x2="520" y2="30" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="104" y="22" text-anchor="start" font-family="var(--sans)" font-size="11" fill="var(--ink-3)">even with last year</text>
+
+  <path d="M150,184 L470,34" stroke="var(--pos)" stroke-width="2.5" fill="none"/>
+  <path d="M150,184 L470,183" stroke="var(--neg)" stroke-width="2.5" fill="none"/>
+
+  <circle cx="150" cy="184" r="4.5" fill="var(--ink-2)"/>
+  <circle cx="470" cy="34" r="4.5" fill="var(--pos)"/>
+  <circle cx="470" cy="183" r="4.5" fill="var(--neg)"/>
+
+  <text x="165" y="169" font-family="var(--sans)" font-size="12" fill="var(--ink-2)">−2.83% — both groups, before either moves</text>
+
+  <text x="484" y="24" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--pos)">Not yet repriced</text>
+  <text x="484" y="40" font-family="var(--sans)" font-size="12" fill="var(--ink-2)">−0.08% (+2.75 pp)</text>
+
+  <text x="484" y="176" font-family="var(--sans)" font-size="13" font-weight="700" fill="var(--neg)">Repriced 13 June</text>
+  <text x="484" y="192" font-family="var(--sans)" font-size="12" fill="var(--ink-2)">−2.82% (+0.01 pp)</text>
+
+  <text x="150" y="228" text-anchor="middle" font-family="var(--sans)" font-size="12" font-weight="650" fill="var(--ink)">24 May – 12 Jun</text>
+  <text x="150" y="243" text-anchor="middle" font-family="var(--sans)" font-size="11" fill="var(--ink-3)">control period</text>
+  <text x="470" y="228" text-anchor="middle" font-family="var(--sans)" font-size="12" font-weight="650" fill="var(--ink)">13 – 25 Jun</text>
+  <text x="470" y="243" text-anchor="middle" font-family="var(--sans)" font-size="11" fill="var(--ink-3)">the thirteen-day gap</text>
+</svg>
+</div>
+<p class="figcap">Each line is a cohort's traffic against last year, control period vs. the
+thirteen-day gap. Both start at the same point because they were identical before either group
+took price.</p>
+
 <div class="callout warn">
   <h4>The mechanism matters more than the number</h4>
   <p>Mid-June carries a seasonal lift. The restaurants that hadn't repriced caught it and went
@@ -267,9 +330,9 @@ taken apart in the room.</p>
   <thead><tr><th>Block</th><th>Window</th><th>National activity</th><th>Price</th></tr></thead>
   <tbody>
     <tr><td>B1 – B3</td><td>22 Apr – 1 Jun</td><td class="pos">clean</td><td class="pos">clean</td></tr>
-    <tr><td>B4</td><td>2 – 15 Jun</td><td>World Cup Happy Meal</td><td class="neg">wave one</td></tr>
+    <tr><td>B4</td><td>2 – 15 Jun</td><td>FIFA Promotion</td><td class="neg">wave one</td></tr>
     <tr><td>B5</td><td>16 – 29 Jun</td><td>Fried Apple Pie LTO</td><td class="neg">wave two</td></tr>
-    <tr><td>B6 – B8</td><td>30 Jun – 10 Aug</td><td>rehit, two flavour launches</td><td class="neg">both in force</td></tr>
+    <tr><td>B6 – B8</td><td>30 Jun – 10 Aug</td><td>rehit, two flavor launches</td><td class="neg">both in force</td></tr>
   </tbody>
 </table>
 </div>
@@ -294,26 +357,28 @@ window in the whole post-launch period, on two independent grounds.</p>
   <h4>−3.14 pp is the headline figure</h4>
   <p>Six weeks. McValue and nothing else. No promotion to argue about, no price change to be
   accused of, no correction applied and no assumption made. Every other figure in this document
-  needs a sentence of defence; this one does not.</p>
+  needs a sentence of defense; this one does not.</p>
   <p>It is also slightly worse than the corrected full-window estimate of −2.5 to −2.8 pp — used
   here anyway, because a number that needs no defending is worth more than a better number that
   does.</p>
 </div>
 
 <h3>What the gap after 2 June actually is</h3>
-<p>Traffic deteriorates by 1.31 points between the clean weeks and everything after. Our June price
-increase was in force for roughly three-quarters of that stretch, and on its own accounts for
-<strong>1.8 to 2.3 points</strong> of it — more than the entire deterioration.</p>
+<p>Traffic deteriorates by 1.31 points between the clean weeks and everything after. The
+McDonald's-recommended June price round was in force for roughly three-quarters of that stretch,
+and on its own accounts for <strong>1.8 to 2.3 points</strong> of it — more than the entire
+deterioration.</p>
 
 <div class="callout stop">
   <h4>One tempting conclusion is wrong, and worth naming directly</h4>
   <p>Blocks 4 through 8 carry six national promotions and both June price rounds — the period with
   the most promotional support running exactly where traffic looks worst. It would be easy to read
   that as <em>"traffic got worse as marketing support increased."</em> That reading does not
-  survive the price test above: the June price increase alone accounts for more than the entire
+  survive the price test above: the June price round — McDonald's own recommendation, delivered
+  through Deloitte, not a local pricing call — alone accounts for more than the entire
   deterioration between the six clean weeks and everything after.</p>
-  <p><strong>The decline after 2 June is our price, not the offer failing harder.</strong> Which is
-  exactly why the six clean weeks are the number that matters.</p>
+  <p><strong>The decline after 2 June traces to that recommended price round, not the offer failing
+  harder.</strong> Which is exactly why the six clean weeks are the number that matters.</p>
 </div>
 
 <h2>The pre-window, tested for a hidden promo</h2>
@@ -342,7 +407,7 @@ each using its own last-year twin:</p>
 <p>A live confound predicts a traffic spike and a check dip in March. <strong>Both came back the
 opposite way</strong> — traffic 1.10 pp lower than the rest of the window, check 9¢ higher. That
 is not what a promotion inflating the baseline looks like; it is closer to the offer not moving
-behaviour detectably in either year, in either direction.</p>
+behavior detectably in either year, in either direction.</p>
 
 <div class="callout good">
   <h4>The pre-launch window is not shown to be inflated</h4>
@@ -356,8 +421,8 @@ pre-launch trend it is +5.1¢, half the figure — and the price dates now expla
 directly. Check sat at its pre-launch level through the first six weeks and stepped up in the
 block containing 13 June. That is the block the first price wave lands in.</p>
 
-<p><strong>This is not our number to claim.</strong> A check gain that turns out to be our own
-price increase isn't a McValue effect, so it's dropped here rather than claimed — and stated
+<p><strong>This is not our number to claim.</strong> A check gain that turns out to trace to the
+recommended price increase isn't a McValue effect, so it's dropped here rather than claimed — and stated
 plainly, since a document that retires its own best-sounding number is a document whose remaining
 numbers hold up.</p>
 
@@ -369,7 +434,7 @@ numbers hold up.</p>
 
 <p>Worth being honest about directly: one restaurant out of twenty-six is not a pattern, and Elgin
 is a travel-stop location whose customer base is not the same as the others'. It is a lead worth
-pulling, not a defence.</p>
+pulling, not a defense.</p>
 
 <div class="callout stop">
   <h4>Tishomingo looks positive and is not — this correction matters</h4>
@@ -388,9 +453,9 @@ pulling, not a defence.</p>
 
 <ul class="plain">
   <li><strong>Satisfaction held throughout.</strong> The slope turned positive after launch and
-  every dimension held during the FIFA promotion, accuracy peaking in June. If restaurants were
+  every dimension held during the FIFA Promotion, accuracy peaking in June. If restaurants were
   failing customers, this is where it would show.</li>
-  <li><strong>The FIFA Happy Meal did not move traffic</strong> — owner-confirmed as a commercial
+  <li><strong>The FIFA Promotion did not move traffic</strong> — owner-confirmed as a commercial
   miss, and corroborated by satisfaction holding right through it. Demand, not execution.</li>
   <li><strong>Florida fell further</strong> under a different District Officer.</li>
 </ul>
@@ -432,8 +497,8 @@ working.</em></p>
 <h2>The line built to be retold</h2>
 <p class="say">For six weeks after launch there was no promotion running and no price change in
 our restaurants. Traffic fell 3.14 points against last year. That is McValue on its own, with
-nothing else to blame and nothing subtracted — and everything that happened after June is our own
-price, which we measured before you had to ask.</p>
+nothing else to blame and nothing subtracted — and everything that happened after June is the
+recommended price round, which we measured before you had to ask.</p>
 
 <footer>
   Meridian BI · 19 Oklahoma restaurants, 6 Florida control · Figures measured against
