@@ -234,3 +234,97 @@ hardware purchase required.
 - No plaintext name anywhere in the diff, logs, or test fixtures.
 - `npm run build` clean; **check `node -v` against `ci.yml`'s `[20, 22]`** before trusting a local
   green (#60).
+
+---
+
+## Resolution — PARTIALLY shipped (2026-08-22), from a sandboxed session with NO physical/
+## self-hosted-runner access
+
+**Read this before assuming any item below is verified.** This session is the same kind of
+sandboxed environment #63's engineer used — no QSRSoft network access, no self-hosted runner, no
+terminal on `Fletchers-Mac-mini`. Everything the runner-install checklist above needed hands-on
+access for (`pmset`, `networksetup`, `./svc.sh install`, the Wi-Fi watchdog `launchd` job) is
+already annotated ✅ in this file by whoever *did* have that access before this session started —
+this session did not do any of it and cannot confirm it beyond reading the same annotations.
+
+### Shipped, code-side
+
+- **`scripts/qsrsoft-security-events-pull.mjs`** — the actual daily pull. Two-path auth mirrors
+  `qsrsoft-ops-pull.mjs` (direct `getFreshToken()` + plain fetch first, real-SPA-login Playwright
+  as fallback), NOT `qsrsoft-register-audit-pull.mjs`'s cookie/`page.request` dance — the finding
+  file already established `api.security` is token-only, no session cookie. One POST per
+  `(store, date, event_token)` with empty `registers`/`cashiers`/`time_slices` (dispatch #58's own
+  "empty means ALL" measurement) — 27 × 8 = 216 requests/day at the default cadence. Reuses
+  `src/engine/security-events.js`'s `parseSecurityEventRow`/`EVENT_TOKENS`/`storeRefFromLoc`
+  verbatim (already built and unit-tested under dispatch #56 Part E — nothing here re-derives
+  them). Tokenizes `crewName`/`mgrName` via `identity-vault.js`'s `tokenizeRows()` — called
+  **once per field, over the whole run's accumulated rows**, not per unit, to keep the RPC count
+  down at 216+ units/day. No plaintext name is logged anywhere (grepped the diff to confirm).
+- **`supabase/schema-qsr-security-events-upsert-fix.sql`** — a real bug caught by reading the
+  existing schema before writing the upsert call, not by running it and hitting the error live.
+  The original `schema-qsr-security-events.sql`'s unique index targets an EXPRESSION
+  (`coalesce(order_key, '')`), which PostgREST's `onConflict` (what `supabase-js`'s `.upsert()`
+  compiles to) cannot reference — only a plain column list. The pull's very first write would have
+  failed outright with "no unique or exclusion constraint matching the ON CONFLICT specification".
+  Fix: drop the expression index, add a real `UNIQUE NULLS NOT DISTINCT` constraint on the same
+  plain columns (Postgres 15+, which Supabase runs) — same "a null `order_key` still collides"
+  behaviour the original comment described, but a shape PostgREST can actually target.
+  **⚠️ This migration has NOT been applied to the live database from this session** — no direct
+  Postgres connection is available here (only the REST API via anon/service-role keys), and no
+  precedent in this repo for a sandboxed session running DDL exists. It needs the same "owner runs
+  it in the Supabase SQL editor" step every other `schema-*.sql` file in this repo has always
+  needed. **The pull script's first live run will fail on save until this runs.**
+- **`.github/workflows/qsrsoft-security-events-pull.yml`** — `runs-on: [self-hosted, macOS,
+  qsr-security]`, matching the label the dispatch itself names. Daily cron (10:00 UTC, alongside
+  the DAR/eBOS cadence) + `workflow_dispatch` with the same backfill inputs every other pull
+  offers. Playwright install step kept for the fallback path only.
+- **`sync-failure-watch.yml`** — `QSRSoft Security Events Pull` added to the watched list (half of
+  the brief's "do BOTH" — catches a run that starts and fails, per the standing new-pull rule).
+- **`src/__tests__/qsrsoft-security-events-pull.test.js`** — unit tests for the pull script's pure
+  helpers (`buildUrl`/`buildBody`/`extractRows`), matching this repo's own convention for these
+  scripts (mapping/URL/envelope logic unit-tested, the live network path verified by an actual
+  run). 2027/2027 tests total (6 new), build clean, no entry-chunk change (none of this touches
+  the client bundle).
+
+### NOT shipped — deliberately deferred, not silently skipped
+
+- **`src/engine/stream-freshness.js`'s `STREAMS` entry — the OTHER half of "do BOTH".** Read
+  through App.js's existing eager-load call sites (`loadFobRows`/`loadOpsRows`/`loadCtrlRows`/…)
+  before writing this and found **zero precedent for a role-conditional eager load** — every
+  existing `STREAMS`-eligible source loads unconditionally for every session, relying on RLS being
+  merely tenant-scoped (empty only when genuinely absent). `qsr_security_events`'s RLS is
+  **role-gated** (admin/supervisor always, manager only with `org_config.gm_identity_reveal_enabled`
+  — `schema-qsr-security-events.sql`'s own explicit, deliberate departure from the tenant-only
+  pattern). An unconditional eager load into `ds` would return `[]` for every GM/office-staff/
+  DO/VP session — and `streamFreshness()`'s own contract (its header comment, verified by reading
+  it) treats a **present-but-empty** array as a real incident (`staleDays: Infinity`, `severity:
+  'crit'`), not as "not loaded". That means wiring this the same way every other stream is wired
+  would manufacture a **guaranteed false critical alarm on every non-admin/supervisor session**,
+  every time — not a corner case, the default case for most of this app's role roster. Shipping
+  that blind, from a session with no way to log in as a GM and see the result, is a worse outcome
+  than shipping nothing here. **Left for the next session with:** gate the loader
+  (`loadQsrSecurityEventsRecent()` — does not exist yet either, would be a small eager wrapper
+  around the existing `qsr_security_events` read, windowed to a few days, not the full drill-down
+  query `loadQsrSecurityEventsForSubject` already does) behind `userRole==='admin'||userRole===
+  'supervisor'` before the `setDs` call — this would be the FIRST role-conditional eager load in
+  App.js, so treat that as worth a second look, not a mechanical copy-paste. The `manager`+flag
+  tier is not replicable client-side without also fetching `org_config` at startup; treating it as
+  "no verdict" (same as an unloaded field) rather than guessing is the safe direction to err.
+- **Everything requiring the physical Mac mini or the self-hosted runner itself**, none of which
+  is reachable from this sandboxed session:
+  - Installing/starting the runner service (`./svc.sh install && ./svc.sh start`) — this session
+    has no shell on that machine.
+  - **The verification bar's own three items, none attempted**: a real `200` + row count from the
+    self-hosted runner; the deliberate runner-offline test (stop the service, confirm the stream
+    reads stale — moot anyway until the `STREAMS` wiring above exists); the weekend unattended-
+    endurance check. All three need someone with hands-on access to that machine, on its own
+    timeline (the endurance check specifically needs days, not a single session).
+  - Running the schema migration above against the live database.
+
+**So: this dispatch is code-complete for what a sandboxed session can build and unit-test, and
+explicitly NOT verified end-to-end.** Do not read the presence of the pull script, the workflow
+file, or a green local test suite as evidence the pull actually works against the real API from
+the real runner — none of that has been exercised. The next session with access to
+`Fletchers-Mac-mini` (or the owner directly) needs to: run the schema migration, install/start the
+runner, `workflow_dispatch` this workflow once and confirm real rows land, then come back and
+finish the `stream-freshness.js` wiring with the role-gating question above actually settled.

@@ -56,6 +56,7 @@ on:
       - QSRSoft Product Mix Pull
       - QSRSoft Register Audit Pull
       - QSRSoft Roster Statistics Pull
+      - QSRSoft Security Events Pull
       - QSRSoft Shift Manager Pull
       - QSRSoft Turnover Pull
       - QSRSoft Variance Pull (EOM diagnosis data)

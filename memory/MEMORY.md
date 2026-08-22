@@ -65,8 +65,34 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🟡 PARTIALLY SHIPPED (2026-08-22, code-side only, NOT live-verified): [Dispatch #65 — the `qsr_security_events` pull, on a self-hosted runner](dispatch-65.md)** —
+  **NEWEST.** Built from a sandboxed session with **no physical/self-hosted-runner access** — read
+  the dispatch file's own Resolution section before trusting anything below is verified. Shipped:
+  `scripts/qsrsoft-security-events-pull.mjs` (the actual daily pull, two-path auth mirroring
+  `qsrsoft-ops-pull.mjs` — direct token + plain fetch first, Playwright SPA-login fallback; one
+  POST per (store, date, event_token), empty registers/cashiers = ALL per #58's own measurement);
+  `.github/workflows/qsrsoft-security-events-pull.yml` (`runs-on: [self-hosted, macOS,
+  qsr-security]`, the label #65's own brief names); registered in `sync-failure-watch.yml`; 6 new
+  unit tests for the pull's pure helpers. **Also found and fixed a real, pre-existing bug**:
+  `schema-qsr-security-events.sql`'s unique index targets an EXPRESSION
+  (`coalesce(order_key,'')`), which PostgREST's `onConflict` cannot reference at all — the pull's
+  first write would have failed outright. Fix in `schema-qsr-security-events-upsert-fix.sql`
+  (`UNIQUE NULLS NOT DISTINCT` on plain columns) — **not yet applied to the live DB**, needs the
+  same "owner runs it in the SQL editor" step every schema file in this repo has always needed.
+  **Deliberately NOT shipped, not silently skipped:** the `stream-freshness.js` `STREAMS` wiring
+  (the OTHER half of the brief's "do BOTH" alarm requirement) — `qsr_security_events`' RLS is
+  **role-gated** (admin/supervisor always, manager only with a flag), and App.js has **zero
+  existing precedent** for a role-conditional eager load; wiring it the same way every other
+  stream is wired would manufacture a guaranteed critical-severity false alarm on every
+  GM/office-staff/DO/VP session, not a corner case. Left explicitly for the next session with a
+  concrete recommendation (gate on `userRole==='admin'||userRole==='supervisor'`) rather than
+  shipped blind. **Nothing in the verification bar was attempted** — no self-hosted runner, no
+  QSRSoft network access, no way to run the schema migration, the runner-offline test, or the
+  weekend endurance check from this session. 2027/2027 tests, build clean, zero entry-chunk
+  change (none of this touches the client bundle). The next session needs physical access to
+  `Fletchers-Mac-mini` (or the owner) to actually finish this.
 - **✅ SHIPPED (2026-08-22, v5.106): [Dispatch #64 — Visit Readiness now sources through the shared auto-first resolver](dispatch-64.md)** —
-  **NEWEST.** `visit-readiness.js` kept its own local `srcs` chains instead of calling
+  `visit-readiness.js` kept its own local `srcs` chains instead of calling
   `metric-source.js`, and they had drifted strictly worse: `r2p`/`park`/`tpph` were manual-only
   while auto sources already existed, `oepe`/`kvst` were each missing two auto fallbacks. Found
   from a real coaching report for Ardmore-Cooper/12th (#24471) scored off an R2P value **38 days
