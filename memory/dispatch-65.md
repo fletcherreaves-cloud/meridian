@@ -109,6 +109,19 @@ will tell anyone the runner is down.
   reboots, `sudo fdesetup authrestart` unlocks once for the next boot.
   **Do not "fix" this by disabling FileVault.**
 
+- **✅ Instead, stop the unattended reboots — that is the real fix.** FileVault only bites when the
+  machine reboots with nobody there, so remove the causes rather than the encryption:
+  1. **A UPS.** Cheap, and it eliminates the main cause (power blips). With no unexpected reboots
+     the FileVault prompt essentially never fires. Best single purchase for this dispatch.
+  2. **Disable automatic macOS updates on this machine.** The sneaky one: macOS will install an
+     update and reboot itself overnight, and FileVault then parks it at the unlock screen. Set to
+     notify-only and apply updates when someone is physically present.
+  3. **`sudo fdesetup authrestart`** for *planned* reboots — unlocks once for the next boot only.
+  Considered and rejected: disabling FileVault to enable auto-login. That removes the only
+  protection on a disk holding QSRSoft credentials and the Supabase service-role key, *and* boots
+  to an unlocked desktop, to solve a problem that only occurs on reboot. Physical theft of a Mac
+  mini in a home or office is the realistic threat here; a reboot needing a human is not.
+
 ⚠️ **Private repo only.** A self-hosted runner executes workflow code on the host machine. This
 repo is private with a single trusted contributor, which is exactly the case where this is fine —
 but never enable self-hosted runners for public-fork PRs.
