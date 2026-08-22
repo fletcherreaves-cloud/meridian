@@ -65,6 +65,18 @@ being violated once and the cost landing later. Recover #47's intent from
 index has drifted, from one filename missing.**
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 READY TO START (2026-08-22): [Dispatch #62 — make the register-type dimension actually do something](dispatch-62.md)** —
+  **NEWEST, unstarted.** #59 collected 845 manager/preparer rows in five days (first prod run
+  2026-08-22: 871 cashier / 406 manager / 439 preparer, 27/27 stores) and **nothing reads them.**
+  `register_type` reaches the app (`supabase.js:989,992`) but no rule, panel or engine branches on
+  it, and `opportunity_factor` has **zero runtime readers** (#59's own changelog says so). 49% more
+  audit data, no number on any screen changed — the "a number nobody acts on is not a shipped
+  feature" rule. **Step 0 is a measurement that decides Part A's shape:** how many employee-days
+  span >1 register type? Zero → the sets are disjoint and Part A is an enhancement. Non-zero →
+  `analyzeRegisterAudit` (keys `loc::emp`) is **already blending authority contexts** on the live
+  per-employee risk panel, and it becomes a correctness fix. Part B (making `opportunity_factor`
+  load-bearing) must **not** invent a threshold — five days is not a distribution; backfill or
+  bring the numbers to the owner.
 - **✅ SHIPPED (2026-08-22, v5.104): [Dispatch #61 — derive the Test Kitchen block from `panel.kind`](dispatch-61.md)** —
   **NEWEST.** Promotion is now the one-field `kind:` flip CLAUDE.md's standing rule already
   claimed it was. It wasn't: `shell.js`'s `⚗ TEST KITCHEN` was a hand-maintained literal
