@@ -569,14 +569,35 @@ export const CHANNEL_YEAR_MIN_N = 10;
 // n do not support one (dispatch #75's explicit "do not add a trend line").
 function _channelByYear(visits) {
   const yearOf = v => { const d = _localDay(v.dateISO || v.date); return isNaN(+d) ? null : String(d.getFullYear()); };
-  const years = [...new Set(visits.map(yearOf).filter(Boolean))].sort();
+  // Only channel-bearing visits belong in this block AT ALL. RGR visits carry no channel, so
+  // counting them in the denominator dilutes every channel's share while contributing to no
+  // numerator -- the shares then do not sum to 100% and a year that happens to contain RGR looks
+  // like its channels shrank.
+  //
+  // MEASURED from a real screenshot of the shipped panel (2026-08-23, 'All types', 237 visits):
+  // 2023/2024/2025 rendered correct shares purely BY ACCIDENT -- the app holds no RGR rows for
+  // those years YET (RGR runs every year in reality, owner-stated 2026-08-23; 2026-only is an
+  // import gap, not a fact about the programme), so their totals already equalled their
+  // channel-bearing counts (29/0.4915 = 59 = CFV 2023;
+  // 28/0.4308 = 65 = CFV 2025). 2026 contains all 20 RGR visits, so its denominator rendered as
+  // 67 against 47 real channel-bearing visits -- understating every 2026 channel share by ~30%
+  // relative. Drive-thru 2026 showed ~41.8% of yr instead of its true 59.6%, against 43.1% in
+  // 2025 -- i.e. FLAT-to-DOWN on screen when the truth is a 16-point RISE. That is precisely the
+  // trend dispatch #75 was built to surface, hidden one layer down by the denominator.
+  //
+  // ⚠️ This bug gets WORSE and less visible once RGR history is backfilled: since RGR runs every
+  // year, the distortion stops being 2026-only and becomes uniform across every year -- which
+  // reads as the truth. The 2026-only anomaly is the ONLY reason it was catchable from a
+  // screenshot. Fixed before that backfill deliberately.
+  const chVisits = visits.filter(v => v.channel);
+  const years = [...new Set(chVisits.map(yearOf).filter(Boolean))].sort();
   const yearTotal = {};
-  for (const y of years) yearTotal[y] = visits.filter(v => yearOf(v) === y).length;
-  const channels = [...new Set(visits.map(v => v.channel).filter(Boolean))];
+  for (const y of years) yearTotal[y] = chVisits.filter(v => yearOf(v) === y).length;
+  const channels = [...new Set(chVisits.map(v => v.channel).filter(Boolean))];
   const rows = [];
   for (const channel of channels) {
     for (const year of years) {
-      const cell = visits.filter(v => v.channel === channel && yearOf(v) === year);
+      const cell = chVisits.filter(v => v.channel === channel && yearOf(v) === year);
       const n = cell.length;
       if (!n) continue; // no visits at all -- nothing to show, not a 0%
       rows.push({
