@@ -352,6 +352,44 @@ async function viaPlaywright(dates, tracker) {
       if (t && t.length > 20 && !token) token = t;
     } catch { /* torn-down request, not diagnostic */ }
   });
+  // ⚠️ "Failed to fetch" is all a TypeError from fetch() carries -- it is the SAME string for a
+  // CORS preflight rejection, a DNS failure, a connection reset and a CSP block. Chrome knows
+  // which; the page just isn't allowed to. Measured 2026-08-23: all 216 in-browser fetches to
+  // api.security returned exactly "Failed to fetch" and the run could not say why.
+  //
+  // These two listeners surface the real reason at the browser level. Both are capped and
+  // deduped, because 216 identical failures would otherwise bury the log (and the interesting
+  // case is a SECOND distinct reason, not the 200th copy of the first).
+  const seenFailReasons = new Map();
+  page.on('requestfailed', req => {
+    const u = req.url();
+    if (!u.includes('api.security')) return;
+    const reason = (req.failure() && req.failure().errorText) || 'unknown';
+    seenFailReasons.set(reason, (seenFailReasons.get(reason) || 0) + 1);
+    if (seenFailReasons.get(reason) === 1) {
+      console.log(`[diag] FIRST request failure -- ${req.method()} ${u.split('?')[0]} -> ${reason}`);
+    }
+  });
+  const seenConsole = new Set();
+  page.on('console', msg => {
+    if (msg.type() !== 'error') return;
+    const t = msg.text();
+    if (!/cors|access-control|blocked|preflight|refused|failed to load/i.test(t)) return;
+    // Dedupe on the message shape, not the exact URL -- 216 stores produce 216 near-identical
+    // strings that differ only in the store ref.
+    const key = t.replace(/[0-9a-f-]{8,}/gi, '<id>').slice(0, 180);
+    if (seenConsole.has(key)) return;
+    seenConsole.add(key);
+    if (seenConsole.size <= 5) console.log('[diag] browser console error:', key);
+  });
+  const dumpFetchDiagnostics = () => {
+    if (!seenFailReasons.size) { console.log('[diag] no api.security request-level failures observed.'); return; }
+    console.log('[diag] api.security request failure reasons (deduped):');
+    for (const [reason, n] of [...seenFailReasons.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`[diag]   ${n} x ${reason}`);
+    }
+  };
+
   const snap = name => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
   try {
     await page.goto('https://v3.myqsrsoft.com', { waitUntil: 'networkidle', timeout: 45000 });
@@ -471,6 +509,7 @@ async function viaPlaywright(dates, tracker) {
     }
     console.log(`[auth] ✓ token captured — fetching ${dates.length} day(s) × ${STORE_NSNS.length} store(s) × ${EVENT_TOKENS.length} event token(s) IN-BROWSER (${dates.length * STORE_NSNS.length * EVENT_TOKENS.length} page.evaluate() calls)…`);
     const result = await runSecurityEvents(page, finalToken, dates, tracker);
+    dumpFetchDiagnostics();
     await snap('secevents-final.png');
     return result;
   } catch (e) {
