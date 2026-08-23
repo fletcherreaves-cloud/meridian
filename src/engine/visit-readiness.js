@@ -525,6 +525,27 @@ export function overdueThresholdDays(reportType) {
   return key ? Math.round(EXPECTED_CADENCE_DAYS[key] * OVERDUE_MULTIPLIER) : null;
 }
 
+// A graded visit's dateISO is a bare 'YYYY-MM-DD' (src/parsers/graded-visits.js parseVisitDate),
+// and `new Date('2026-07-07')` parses a date-ONLY string as UTC midnight -- so .getDay() and
+// .getFullYear(), which both read LOCAL time, land on the PREVIOUS calendar day in every
+// negative-offset zone. Both of this estate's markets are negative-offset (Oklahoma Central,
+// Florida Eastern), so this was wrong for every real viewer while passing in UTC-based CI.
+//
+// MEASURED against the real 217-visit dataset (memory/data/cfv-history-2023-2026.json) under
+// TZ=America/Chicago: EVERY day-of-week label shifted back one. The panel reported 53 Monday and
+// 42 Sunday visits when the truth is 53 Tuesday and 42 Monday -- inventing a 42-visit Sunday
+// bucket PACE never shopped, and dropping Saturday (n=13) entirely. Year attribution has the same
+// flaw: today's data happens to contain no Jan-1 visit so nothing is misfiled yet, but the next
+// one would land in the wrong row of dispatch #75's channel-by-year table.
+//
+// Anchoring at local NOON reads back the calendar day the string actually names, and noon rather
+// than midnight keeps it safe across DST transitions. Same idiom as engine/waste-discipline.js:41.
+const _localDay = d => {
+  if (d instanceof Date) return d;
+  const s = String(d);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+};
+
 // Dispatch #75 -- Visit Patterns' Channel block pools all 4 years of CFV history into one
 // pass-rate per channel, which is exactly what hid the 2026 drive-thru finding (43%->60% share,
 // 25%->54% below-80, memory/finding-cfv-2026-drivethru-decline-2026-08-22.md). Splitting by
@@ -547,7 +568,7 @@ export const CHANNEL_YEAR_MIN_N = 10;
 // No trend/slope field is computed here on purpose -- 4 annual points with several single-digit
 // n do not support one (dispatch #75's explicit "do not add a trend line").
 function _channelByYear(visits) {
-  const yearOf = v => { const d = new Date(v.dateISO || v.date); return isNaN(+d) ? null : String(d.getFullYear()); };
+  const yearOf = v => { const d = _localDay(v.dateISO || v.date); return isNaN(+d) ? null : String(d.getFullYear()); };
   const years = [...new Set(visits.map(yearOf).filter(Boolean))].sort();
   const yearTotal = {};
   for (const y of years) yearTotal[y] = visits.filter(v => yearOf(v) === y).length;
@@ -592,7 +613,7 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
       .sort((a, b) => b.n - a.n);
   };
   // DOW keeps calendar order, not count order.
-  const dowRaw = byVar(v => { const d = new Date(v.dateISO || v.date); return isNaN(+d) ? null : _DOW[d.getDay()]; });
+  const dowRaw = byVar(v => { const d = _localDay(v.dateISO || v.date); return isNaN(+d) ? null : _DOW[d.getDay()]; });
   const dow = _DOW.map(d => dowRaw.find(x => x.key === d)).filter(Boolean);
 
   // Per-store frequency / cadence.
