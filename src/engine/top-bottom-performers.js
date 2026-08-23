@@ -9,10 +9,26 @@
 // Honesty guards, per memory/dispatch-77.md:
 //  - never rank a metric metricDirection() can't resolve -- an unrecognized/undecided key
 //    (park, actVsNeed, anything not yet given a direction) returns direction:null, rows:[].
-//  - "never average averages / dollar-weight aggregates" is satisfied BY CONSTRUCTION, not by
-//    a generic weighted-aggregator: this only ever compares one store's own daily values
-//    against another store's own daily values. No cross-store rollup happens anywhere in this
-//    file, so there is no aggregate to get wrong.
+//  - "never average averages / dollar-weight aggregates" is satisfied FOR THE CROSS-STORE
+//    DIMENSION ONLY, by construction: no cross-store rollup happens anywhere in this file, so
+//    there is no district aggregate to get wrong. Each store is compared against other stores
+//    on its own values.
+//    ⚠️ IT IS NOT SATISFIED ACROSS DAYS, and that half of the rule really does bite here.
+//    `value` below is the plain MEAN OF DAILY VALUES. For a count metric (sales, gc, otHrs)
+//    that is correct. For a RATIO it is an average-of-averages -- and 10 of the 16 metrics in
+//    PERFORMER_METRICS are ratios: tpph, avgCheck, laborPct, cashOSPct, tRedAPct, tRedBPct,
+//    discPct, compWaste, rawWaste, statVar. A low-volume day weighs the same as a high-volume
+//    one, so this is NOT the period figure a P&L would show.
+//    The size of the gap is already MEASURED in this repo, independently of this panel --
+//    metric-source.js's ROLLUP CAVEAT: SPPH on store 5985 for 2026-08 is $70.18/hr as
+//    mean-of-daily vs $67.04/hr as the true Sum/Sum, a 4.5% gap. That same comment says a
+//    consumer needing a true weighted rollup must sum the parts itself. This panel IS that
+//    consumer and does not yet do it.
+//    Consequence to keep in mind: on those 10 metrics a leaderboard can mis-order two close
+//    stores. The UI therefore labels the figure as a daily average rather than implying the
+//    period value. Real Sum/Sum needs metricSeries to return numerator and denominator rather
+//    than the finished ratio -- deferred with the owner's approval 2026-08-23, recorded in
+//    memory/dispatch-77.md, and probably the same job as notes-57-metric-registry-plan section 4.
 //  - count-completeness: "never rank a store with 3 days of data against one with 90." Thin
 //    rows are separated out (`thinRows`), not blended into the ranked list. The floor here is a
 //    STRUCTURAL, scope-relative rule (half of the best-covered store's day-count in THIS
