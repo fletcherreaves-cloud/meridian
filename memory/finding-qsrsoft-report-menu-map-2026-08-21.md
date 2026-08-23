@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-report-menu-map-2026-08-21
 description: The COMPLETE QSRSoft report catalog - 108 McDonald's report screens with exact paths - from an unauthenticated static menu.json on a fourth host. This is the map of everything the reporting API can give us. Flags the reports that directly serve open Meridian roadmap items (Product Mix pricing, automating SMG VOICE, manager attribution, Part B new-hires) and the ones that overlap what Meridian already computes.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

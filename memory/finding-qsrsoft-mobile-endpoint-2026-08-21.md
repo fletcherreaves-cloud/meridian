@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-mobile-endpoint-2026-08-21
 description: Owner-captured QSRSoft mobile (MOP Service Times) endpoint - mobile-order service times split by channel (drive-thru / front counter / curbside / table service) and by ROA vs not-ROA, with last-year comparisons built in, all 27 stores in one request. Logged for a future pull. Its time fields are MILLISECONDS while the sibling dt-timer endpoint's are SECONDS - the single most dangerous thing recorded here.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

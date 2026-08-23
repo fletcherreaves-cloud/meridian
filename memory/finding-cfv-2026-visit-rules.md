@@ -1,6 +1,7 @@
 ---
 name: finding-cfv-2026-visit-rules
 description: Customer First Visit (CFV) 2026 rules from the August Update execution guide — cadence, the Aug 3 2026 window change, single-daypart selection, the four channel types and their scored metrics. Establishes THREE structural mismatches between how Visit Readiness scores a store and how a CFV actually grades it.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

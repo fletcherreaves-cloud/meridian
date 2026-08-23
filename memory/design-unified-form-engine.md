@@ -1,6 +1,7 @@
 ---
 name: design-unified-form-engine
 description: North-star design note — a single shared "form engine" (typed-field schema + generic renderer + response store) that Perf Reviews, EOM checks, and the printable-forms model all sit on. Distilled from studying QSRSoft's forms schema (2026-07-27). Not urgent; a "when we consolidate" theme. Evaluate before the Perf Reviews template work goes deeper.
+sensitivity: open
 metadata:
   node_type: memory
   type: design

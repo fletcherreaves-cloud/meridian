@@ -1,6 +1,7 @@
 ---
 name: finding-unreachable-threshold-class-2026-08-20
 description: Three security rules shipped with a threshold above their own achievable range, making them silently incapable of firing while looking correctly configured. CASH-003 was live and returning unearned "clear" verdicts for 636 subjects. Records the class, why it recurs, the one guard that exists and the gap in it, and the open work to close both.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

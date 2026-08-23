@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-time-punches-endpoint-2026-08-21
 description: Owner-captured QSRSoft time-punches-matched endpoint - actual clock punches with shift/meal split, paid-break flag, and punch-EDIT flags. Two things dominate - it returns SSNs and full names and must never be pulled with ssn selected, and its geid resolves the identity vault's emp_id question by matching every audit_rows emp_id length band exactly.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

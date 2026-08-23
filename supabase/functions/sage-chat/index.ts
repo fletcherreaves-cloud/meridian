@@ -5,6 +5,7 @@
 // Secrets: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { qualifiesForRestricted, searchTerms, buildMemorySearchResult } from './memory-kb.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -182,6 +183,27 @@ Prefer this over guessing at QSRSoft terminology. Returns the most relevant arti
       required: ['query'],
     },
   },
+  {
+    name: 'search_project_memory',
+    description: `Search Meridian's curated internal project memory -- findings, reference material, analysis, and design notes written while building and operating this system.
+Use this for questions about WHY a metric or panel works the way it does, past investigations into specific stores/numbers, data-source reference material, or prior analysis on a topic (e.g. "what did we find about padding at a store", "how is R2P calculated", "what's the CFV predictability ceiling").
+This is a small, hand-curated slice of the project's internal notes -- not engineering process, not every file that exists. Some results may be withheld depending on your access level; do not assume a low or zero result count means nothing was ever found.
+Not a source of live store data -- use the query_* tools for that.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search terms -- a topic, metric, store, or past finding to look up. Required.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Max documents to return (1-8). Default 5.',
+        },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 // ── RBAC scoping ─────────────────────────────────────────────────────────────
@@ -246,7 +268,7 @@ function matchedLift(records: PRec[], marginRate: number, minDays = 24, minPerCe
 // `allowed` = the caller's accessible store set (null = full access). When set,
 // tools query ALL stores (for district context) but expose per-store detail only
 // for the caller's stores.
-async function runTool(name: string, input: Record<string, unknown>, allowed: Set<string> | null = null): Promise<string> {
+async function runTool(name: string, input: Record<string, unknown>, allowed: Set<string> | null = null, role = 'admin'): Promise<string> {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   if (name === 'query_daily_activity') {
@@ -518,6 +540,32 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     });
   }
 
+  if (name === 'search_project_memory') {
+    const raw = String((input.query as string) || '').trim();
+    if (!raw) return 'Provide a search query -- a topic, metric, store, or past finding to look up in project memory.';
+    const limit = Math.min(8, Math.max(1, Number(input.limit) || 5));
+    const { phrase, terms } = searchTerms(raw);
+    const ors = [`title.ilike.%${phrase}%`, `chunk_text.ilike.%${phrase}%`, ...terms.flatMap(t => [`title.ilike.%${t}%`, `chunk_text.ilike.%${t}%`])];
+
+    let q = sb.from('sage_memory_kb').select('filename,title,sensitivity,chunk_text').or(ors.join(','));
+    // Hard SQL-level filter, same pattern accessible_locs already uses -- a non-qualifying
+    // caller's restricted rows are never fetched at all, not filtered out after the fact.
+    // See index.ts:695's rbacBlock for the weaker, prompt-only pattern this deliberately does
+    // NOT extend to personnel-adjacent content.
+    if (!qualifiesForRestricted(role)) q = q.neq('sensitivity', 'restricted');
+
+    const { data, error } = await q.limit(80);
+    if (error) {
+      if (error.message?.includes('does not exist') || error.code === '42P01') {
+        return 'sage_memory_kb table not yet created, or the memory ingest has not been run yet.';
+      }
+      return `Database error: ${error.message}`;
+    }
+    if (!data?.length) return `No project memory matched "${raw}".`;
+
+    return JSON.stringify(buildMemorySearchResult(data, role, raw, limit));
+  }
+
   return `Unknown tool: ${name}`;
 }
 
@@ -727,11 +775,12 @@ Deno.serve(async (req: Request) => {
                         : tu.name === 'query_forecast_snapshots' ? 'forecast accuracy'
                         : tu.name === 'query_promo_roi'         ? 'promo/discount ROI'
                         : tu.name === 'search_qsr_kb'          ? 'QSRSoft docs'
+                        : tu.name === 'search_project_memory'  ? 'project memory'
                         : tu.name.replace(/_/g, ' ');
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ status: `Querying ${label}…` })}\n\n`));
 
             try {
-              const result = await runTool(tu.name, tu.input as Record<string, unknown>, scope.allowed);
+              const result = await runTool(tu.name, tu.input as Record<string, unknown>, scope.allowed, scope.role);
               toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
             } catch (e) {
               toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Error: ${e}`, is_error: true });

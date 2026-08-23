@@ -1,6 +1,7 @@
 ---
 name: design-opportunity-dollars
 description: Design note for the "Opportunity $" layer — converts every performance gap (labor, food/FOB, GC/sales) into recoverable dollars, benchmarked to best-in-class, so operators see "this gap is worth $X/month." Inspired by QSRSoft's Consulting Cashflow-Opportunity widget. All v1 data is already pulled; no new source needed. Flagship "intelligence system, not data viewer" move.
+sensitivity: open
 metadata:
   node_type: memory
   type: design

@@ -1,3 +1,12 @@
+---
+name: finding-padding-and-cash-hunt-2026-08-13
+description: Personnel timeline and count-signature findings from the Holdenville + Ada padding/cash-control investigation, including named GMs and crew tied to termination dates and count-history data. Restricted -- the only finding-* file that shipped with no frontmatter at all, which is why it stayed invisible to fail-closed classification until dispatch #80.
+sensitivity: restricted
+metadata:
+  node_type: memory
+  type: finding
+---
+
 # Padding / cash-control hunt — 2026-08-13
 
 Everything established, refuted, and left open during the Holdenville + Ada investigation.

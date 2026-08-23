@@ -1,6 +1,7 @@
 ---
 name: finding-cfv-2026-drivethru-decline-2026-08-22
 description: The 2026 CFV deterioration (below-80 rate 23% -> 44.7%) decomposes to 81% real performance decline and 19% channel-mix shift. It is almost entirely drive-thru - DT below-80 went 25% -> 54% (p=0.029) while DT also rose from 43% to 60% of visits. Curbside barely moved.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

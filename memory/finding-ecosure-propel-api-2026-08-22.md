@@ -1,6 +1,7 @@
 ---
 name: finding-ecosure-propel-api-2026-08-22
 description: A working EcoSure 3rd-party food safety API on propel.mcd.com — full per-question FS1..FS36 results, scores and cited reasons. Replaces Visit Readiness's waste-based "food safety" proxy with the real thing, and proves that proxy wrong on a live store.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding
