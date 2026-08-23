@@ -87,7 +87,41 @@ login-form-still-present, `localStorage` key NAMES, `role="alert"` text, request
 deliberately preserved through the #593 merge. **Read those from the next Mac-mini run before adding
 any new instrumentation.**
 
-## Second, unrelated finding in the same log: `QSRSOFT_TOKEN` is stale
+## ⚠️ CORRECTED 2026-08-23 — the section below was wrong, keep reading
+
+The section that follows told you to **refresh `QSRSOFT_TOKEN`**. **Do not.** That advice was
+wrong, and #312 had already settled it on 2026-08-15, five days before this file was written —
+the same not-reading-the-corpus failure this session had already committed once tonight.
+
+From `scripts/lib/qsrsoft-auth.mjs`'s own header, verbatim:
+
+> `QSRSOFT_TOKEN` and `QSRSOFT_COGNITO_TOKEN` are the same credential, a Cognito ID token with a
+> **~1h TTL** — so a token STORED as a GitHub secret is expired **~23 of every 24 hours**, and
+> every scheduled pull that reads one has been falling straight through to its Playwright
+> fallback, **by construction, no matter how often the secret is rotated.**
+
+So `[auth] QSRSOFT_TOKEN rejected (401/403)` is the **expected steady state**, not degradation.
+Rotating the secret buys about an hour. There is no "stale token" to fix.
+
+**The actual work item** is the migration that already exists and is half done:
+`scripts/lib/qsrsoft-auth.mjs` mints a token in-process per run (expiry-aware, re-mints when the
+`exp` claim nears, plus a reactive `forceRemint` on a 401). Measured 2026-08-23:
+
+| | count |
+|---|---|
+| scripts using the shared `getFreshToken()` lib | **5** |
+| scripts still reading `process.env.QSRSOFT_TOKEN` | **11** |
+
+Converting the remaining 11 is the fix. `qsrsoft-ops-pull.mjs` is the reference conversion.
+
+⚠️ **CLAUDE.md's QSRSoft token-refresh runbook is stale for the same reason** and should stop
+telling people to rotate this secret. (The **LifeLenz** token runbook next to it is unaffected —
+that one is a genuinely long-lived token and does need manual refresh.)
+
+The one thing the section below got right: the fallback absorbing this silently is the #171 shape.
+But the fix is the migration, not an alarm on an expected condition.
+
+## ~~Second, unrelated finding in the same log: `QSRSOFT_TOKEN` is stale~~ (superseded — see above)
 
 `[auth] QSRSOFT_TOKEN rejected (401/403)` means the direct-token fast path is dead, so **every one of
 the QSRSoft pulls is falling through to a full Playwright launch on every run** — downloading and
