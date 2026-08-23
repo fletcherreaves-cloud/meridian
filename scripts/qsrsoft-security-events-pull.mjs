@@ -187,6 +187,28 @@ export function extractRows(body, unit) {
 export async function fetchOne(storeRef, eventToken, date, token) {
   const url = buildUrl(storeRef);
   const body = buildBody(eventToken, date);
+  // ⚠️ ONE-SHOT WIRE DUMP. Measured 2026-08-23: this exact function returns 200 when called from
+  // scripts/probe-security-token-identity.mjs and 403 when called from this script's own loop --
+  // same machine, same shell, seconds apart, with all three arguments verified identical by
+  // computation. That is impossible unless something differs that reading the source cannot show.
+  // So stop reading and print what actually goes out. Fires once per process; token is a HASH and
+  // a length, never a value.
+  if (!globalThis.__secDumped) {
+    globalThis.__secDumped = true;
+    const tf = createHash('sha256').update(String(token)).digest('hex').slice(0, 12);
+    let age = null, ttl = null;
+    try {
+      const c = JSON.parse(Buffer.from(String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+      age = c.iat ? Math.round(Date.now() / 1000 - c.iat) : null;
+      ttl = c.exp ? Math.round(c.exp - Date.now() / 1000) : null;
+    } catch { /* unparseable -- the hash and length still identify it */ }
+    console.log('[wire] url        :', url);
+    console.log('[wire] storeRef   :', JSON.stringify(storeRef), 'typeof', typeof storeRef);
+    console.log('[wire] eventToken :', JSON.stringify(eventToken), '| date', JSON.stringify(date), 'typeof', typeof date);
+    console.log('[wire] body       :', JSON.stringify(body));
+    console.log('[wire] token      : sha256', tf, '| len', String(token).length, '| age', age + 's', '| ttl', ttl + 's');
+    console.log('[wire] token type :', typeof token, token && typeof token === 'object' ? '❗ NOT A STRING -- would serialise as [object Object]' : '');
+  }
   const r = await fetch(url, {
     method: 'POST',
     headers: {
