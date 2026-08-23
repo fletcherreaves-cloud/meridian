@@ -123,4 +123,44 @@ describe('dedupeByConflictKey (dispatch #71 -- ON CONFLICT batch collision)', ()
     const b = { loc: '3708', form_id: '03b62c8f-709c-4b11-ab90-5ffaa03fa989', occurrence_key: '2026-08-19T11:00:00Z' };
     expect(dedupeByConflictKey([a, b])).toEqual([b]);
   });
+
+  // Dispatch #76 -- measured against a real 27-store/1-day pull (612 colliding groups): most
+  // collisions are byte-identical noise, but 14 sampled groups carried a REAL conflict -- the
+  // SAME scheduled occurrence reported as one or two stale "MISSED" role-group placeholders
+  // ALONGSIDE one genuine completion (completedBy/userId/startedAt/completedOn all populated).
+  // The occurrence key is correct in every case (same loc/formId/scheduledAt); what was wrong is
+  // that dedup picked whichever row the API happened to return LAST, with no guarantee that's
+  // the completed one. These pin the fix: a completion must survive regardless of array order.
+  const missedRow = (over = {}) => ({
+    loc: '0029760', form_id: 'fd2c551a-5859-449a-80c1-5bb980ce7704', occurrence_key: '2026-08-22T11:00:00Z',
+    missed: true, has_response: false, status_state: 'missed', completion_ratio: null,
+    completed_on: null, started_at: null, user_id: null, ...over,
+  });
+  const completedRow = (over = {}) => ({
+    loc: '0029760', form_id: 'fd2c551a-5859-449a-80c1-5bb980ce7704', occurrence_key: '2026-08-22T11:00:00Z',
+    missed: false, has_response: true, status_state: 'completed', completion_ratio: 1,
+    completed_on: '2026-08-22T10:37:01.387Z', started_at: '2026-08-22T10:35:43.085Z',
+    user_id: '7766f56b-5fd4-47cd-bb70-84c8a87a7fce', ...over,
+  });
+
+  it('keeps a real completion when it is LAST among duplicates (the case #71 accidentally got right)', () => {
+    const rows = [missedRow(), missedRow(), completedRow()];
+    expect(dedupeByConflictKey(rows)).toEqual([completedRow()]);
+  });
+
+  it('THE BUG: keeps a real completion even when it is FIRST -- array order must not decide this', () => {
+    const rows = [completedRow(), missedRow(), missedRow()];
+    expect(dedupeByConflictKey(rows)).toEqual([completedRow()]);
+  });
+
+  it('keeps a real completion when it is in the MIDDLE of duplicates', () => {
+    const rows = [missedRow(), completedRow(), missedRow()];
+    expect(dedupeByConflictKey(rows)).toEqual([completedRow()]);
+  });
+
+  it('two stale missed placeholders with no completion anywhere still collapse to one (last wins, unchanged)', () => {
+    const a = missedRow({ assigned_to: ['a'] });
+    const b = missedRow({ assigned_to: ['b'] });
+    expect(dedupeByConflictKey([a, b])).toEqual([b]);
+  });
 });

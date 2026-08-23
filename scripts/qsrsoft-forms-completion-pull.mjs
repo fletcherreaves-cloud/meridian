@@ -151,19 +151,48 @@ function canonicalOccurrenceKey(v) {
   const t = Date.parse(v);
   return Number.isNaN(t) ? String(v) : new Date(t).toISOString();
 }
+
+// Dispatch #76 -- the ~52% collapse rate looked alarming (memory/dispatch-76.md), so before
+// touching anything this was measured against a real pull rather than guessed at: dumped every
+// colliding group in a live 27-store/1-day batch (612 groups) side by side. Two findings, both
+// from data:
+//   1. The noLocation hypothesis (LOCATIONS = [...STORE_NSNS, 'noLocation'] at :74) is REFUTED --
+//      every single colliding pair/triple shares the SAME real store location. Not the cause.
+//   2. 65% of colliding groups (398/612) are byte-identical true duplicates -- collapsing them is
+//      correct and lossless either way they're ordered.
+//   3. But 117 groups sampled differing-but-colliding, and within THOSE, 14 (~12%) carry a REAL
+//      conflict: the SAME scheduled occurrence (same loc/formId/scheduledAt) reported as one or
+//      two stale "MISSED" role-group placeholders (missed:true, no completedBy/userId/startedAt/
+//      completedOn) ALONGSIDE one genuine completion row (missed:false, hasResponse:true, a real
+//      completedBy/userId/startedAt/completedOn/timeToComplete). The occurrence key is CORRECT --
+//      all rows in a group really are the same real-world slot -- so this is not a case for
+//      widening the key. It's a case for picking the right row deterministically. The previous
+//      "last one kept" (plain Map overwrite in API array order) happened to keep the completed
+//      row in every one of the 14 measured cases -- but nothing guarantees that ordering; it was
+//      accidental, not designed. A future response ordering change would silently discard a real
+//      completion in favour of a stale miss with zero error, exactly the failure mode dispatch #71
+//      was about one layer in (a green-looking run that quietly has the wrong data).
+// Fix: rank by outcome, not array position. A genuine completion always outranks a missed/open
+// row for the SAME occurrence; among rows of equal rank (the common case -- true duplicates, or
+// two placeholders), the last one still wins, matching the prior tie-break behaviour exactly (all
+// 4 of #71's original tests pass unchanged under this).
+function _statusPriority(r) {
+  if (r.missed === true) return 0;         // stale/placeholder "still missed" duplicate
+  if (r.has_response === true) return 2;   // real completion -- always the ground truth
+  return 1;                                // 'open' ("--") or unspecified
+}
 export function dedupeByConflictKey(mapped) {
   const byKey = new Map();
   for (const r of mapped) {
-    byKey.set(`${r.loc}|${String(r.form_id).toLowerCase()}|${canonicalOccurrenceKey(r.occurrence_key)}`, r);
+    const k = `${r.loc}|${String(r.form_id).toLowerCase()}|${canonicalOccurrenceKey(r.occurrence_key)}`;
+    const existing = byKey.get(k);
+    if (!existing || _statusPriority(r) >= _statusPriority(existing)) byKey.set(k, r);
   }
   return [...byKey.values()];
 }
 
 async function upsertRows(rawRows) {
-  // Keep raw<->mapped pairs together (not two separately-filtered arrays) so dispatch #76's
-  // dump below can trace a colliding mapped row back to its exact raw payload.
-  const pairs = rawRows.map(raw => ({ raw, mapped: normalizeFormsCompletionRow(raw) })).filter(p => p.mapped);
-  const mapped = pairs.map(({ mapped: r }) => ({
+  const mapped = rawRows.map(normalizeFormsCompletionRow).filter(Boolean).map(r => ({
     loc: r.loc, form_id: r.formId, form_title: r.formTitle, occurrence_key: r.occurrenceKey,
     status_state: r.statusState, completion_ratio: r.completionRatio, missed: r.missed,
     has_response: r.hasResponse, scheduled_at: r.scheduledAt, started_at: r.startedAt,
@@ -174,45 +203,15 @@ async function upsertRows(rawRows) {
   const dropped = rawRows.length - mapped.length;
   if (dropped > 0 && DEBUG) console.log(`[forms-completion] ${dropped} row(s) dropped by the normalizer (unusable/unkeyable)`);
 
-  // Dispatch #76 -- ONE-TIME measurement, DEBUG-gated: check EVERY colliding (loc, formId,
-  // occurrenceKey) group in the batch, not just one sample (the first live run showed one
-  // group byte-identical on every field -- a true duplicate, not the noLocation hypothesis
-  // (LOCATIONS includes 'noLocation' at :74), since both rows carried the SAME real location.
-  // But one anecdote doesn't rule out a different-shaped collision elsewhere in the same
-  // batch, and this thread has already cost several confident-and-wrong diagnoses -- so this
-  // scans the whole batch and reports how many colliding groups are identical vs how many
-  // have real differences, dumping the raw rows only for the differing ones).
-  // Remove once the measurement is written down in memory/dispatch-76.md's Resolution.
-  if (DEBUG && !global.__DISPATCH76_DUMPED) {
-    global.__DISPATCH76_DUMPED = true;
-    const byKey = new Map();
-    for (const p of pairs) {
-      const k = `${p.mapped.loc}|${String(p.mapped.formId).toLowerCase()}|${canonicalOccurrenceKey(p.mapped.occurrenceKey)}`;
-      if (!byKey.has(k)) byKey.set(k, []);
-      byKey.get(k).push(p.raw);
-    }
-    const collidingGroups = [...byKey.entries()].filter(([, rows]) => rows.length > 1);
-    let identicalGroups = 0, differingGroups = 0;
-    for (const [key, rows] of collidingGroups) {
-      const first = JSON.stringify(rows[0]);
-      const allSame = rows.every(r => JSON.stringify(r) === first);
-      if (allSame) { identicalGroups++; continue; }
-      differingGroups++;
-      console.log(`[dispatch-76] DIFFERING group key=${key} -- ${rows.length} raw row(s):`);
-      rows.forEach((r, i) => console.log(`[dispatch-76]   row[${i}] ${JSON.stringify(r)}`));
-    }
-    console.log(`[dispatch-76] ${collidingGroups.length} colliding group(s) this chunk: `
-      + `${identicalGroups} byte-identical (true duplicates), ${differingGroups} with real differences`);
-    if (identicalGroups > 0) {
-      const sample = collidingGroups.find(([, rows]) => rows.every(r => JSON.stringify(r) === JSON.stringify(rows[0])));
-      console.log(`[dispatch-76] sample identical group key=${sample[0]} -- ${sample[1].length} row(s), all equal:`);
-      console.log(`[dispatch-76]   ${JSON.stringify(sample[1][0])}`);
-    }
-  }
-
   const deduped = dedupeByConflictKey(mapped);
   const collapsed = mapped.length - deduped.length;
-  if (collapsed > 0) console.log(`[forms-completion] ${collapsed} row(s) shared a (loc, formId, occurrenceKey) with another row in the same batch -- collapsed, last one kept`);
+  // Dispatch #76 -- reworded, not deleted, per the standing rule this log line is the only
+  // reason the collapse was findable at all. Measured (memory/dispatch-76.md): most of what
+  // collapses here is byte-identical noise, but a real minority is the SAME occurrence carrying
+  // a genuine completed-vs-missed conflict across duplicate copies -- dedupeByConflictKey now
+  // resolves those deterministically (a completion always outranks a stale miss), not by
+  // whichever row the API happened to return last.
+  if (collapsed > 0) console.log(`[forms-completion] ${collapsed} row(s) shared a (loc, formId, occurrenceKey) with another row in the same batch -- collapsed (completed status, when present, always kept over a stale missed/open duplicate)`);
 
   const CHUNK = 500;
   let saved = 0;
