@@ -46,7 +46,13 @@ export const identityFp = token => {
 };
 
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
-const STORE_REF = '35064';                 // the store the working curl used
+// ⚠️ Store is a VARIABLE, not a constant. Every successful measurement in this investigation --
+// the owner's curl, and every probe run -- used 35064 and ONLY 35064. The pull iterates all 27
+// starting at 3708, and 3708 is the store its first failing unit reports. "All 216 failed, so
+// 35064 failed too" was an INFERENCE from the run summary, never a direct observation of 35064
+// under the pull. Test the store the pull actually starts on:
+//     PROBE_STORE=3708 node scripts/probe-security-token-identity.mjs
+const STORE_REF = process.env.PROBE_STORE || '35064';
 const DATE      = process.env.PROBE_DATE || '2026-08-15';
 const URL = `https://api.security.myqsrsoft.com/security/event_details/v1/${ORG_ID}/${STORE_REF}?orgId=${ORG_ID}`;
 
@@ -111,7 +117,7 @@ async function attempt(label, token, body = BODY) {
   console.log(`   cognito:groups: ${d.groups}`);
   console.log(`   age / ttl    : ${d.ageSec}s old, ${d.ttlLeftSec}s left`);
   const r = await fetch(URL, { method: 'POST', headers: headers(token), body: JSON.stringify(body) });
-  console.log(`   body scope   : registers=${JSON.stringify(body.registers)} cashiers=${JSON.stringify(body.cashiers)}`);
+  console.log(`   store / date : ${STORE_REF} / ${DATE}   body registers=${JSON.stringify(body.registers)} cashiers=${JSON.stringify(body.cashiers)}`);
   const text = await r.text();
   console.log(`   HTTP ${r.status}  x-amzn-errortype=${r.headers.get('x-amzn-errortype') || '(none)'}`);
   if (r.ok) {
