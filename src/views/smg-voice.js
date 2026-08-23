@@ -586,15 +586,48 @@ function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
   const { useState, useMemo } = React;
   const scoped = rows.filter(r => (!inScope || inScope(r.loc)) && (!storeSel || storeSel === 'all' || _normLoc(r.loc) === _normLoc(storeSel)));
 
-  // Available periods
-  const periods = useMemo(() => {
-    const seen = new Set();
-    return scoped.map(r => r.period).filter(p => { if (seen.has(p)) return false; seen.add(p); return true; }).sort().reverse();
-  }, [scoped]);
-
   const [selPeriod, setSelPeriod]   = useState('');
   const [selType, setSelType]       = useState('monthly');
   const [sortMetric, setSortMetric] = useState('dt_sat');
+
+  // Available periods FOR THE SELECTED REPORT TYPE.
+  //
+  // This list used to be built from every row regardless of report_type, while the table body
+  // below filters on BOTH `period` and `report_type`. SMG publishes three types from the same
+  // PDFs -- 'monthly', 'trailing90', 'ytd' (src/parsers/index.js:2071) -- and they do not cover
+  // the same periods. So an unfiltered list could offer a period that has no rows at all for the
+  // type currently selected, and picking it rendered an EMPTY TABLE with no explanation. Worse,
+  // `periods[0]` is the default selection, so if the newest period across ALL types belonged to
+  // trailing90/ytd, the Performance tab opened blank even though monthly data was present.
+  //
+  // Owner-reported 2026-08-23 as "guest voice either not populating or not letting me select
+  // past July" -- the not-populating half is this. (The other half is separate and is NOT a bug
+  // in this file: monthly reports are per-CLOSED-month, so on 2026-08-23 July really is the
+  // newest that exists. See the freshness caption below.)
+  //
+  // `period` is 'YYYY-MM' (both parsers pad it), so a plain lexicographic sort is correct here --
+  // checked rather than assumed, since a month-NAME format would have sorted alphabetically.
+  const periods = useMemo(() => {
+    const seen = new Set();
+    return scoped.filter(r => r.report_type === selType).map(r => r.period)
+      .filter(p => p && (seen.has(p) ? false : (seen.add(p), true))).sort().reverse();
+  }, [scoped, selType]);
+
+  // Owner-reported 2026-08-23: "not letting me select past July." The picker was doing the right
+  // thing -- July really was the newest period ingested -- but nothing on screen said so, and a
+  // dropdown whose newest entry is a month or two old looks identical to one that is stale. Same
+  // class as #171's pooled freshness: a user cannot tell "this is all that exists" from "this
+  // stopped updating." States the fact only; deliberately does NOT claim WHY, because whether SMG
+  // has published the month yet vs whether it was ingested is not knowable from this data.
+  const freshness = useMemo(() => {
+    if (!periods.length) return null;
+    const now = new Date();
+    const newest = periods[0];
+    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (newest >= thisMonth) return null;              // current month present -- nothing to say
+    const [y, m] = newest.split('-').map(Number);
+    return { newest, behind: (now.getFullYear() - y) * 12 + (now.getMonth() + 1 - m) };
+  }, [periods]);
 
   const activePeriod = selPeriod && periods.includes(selPeriod) ? selPeriod : (periods[0] || '');
 
@@ -680,6 +713,10 @@ function VoicePerfPanel({ rows, stores, inScope, storeSel }) {
       h('select', { value: activePeriod, onChange: e => setSelPeriod(e.target.value),
           style: { padding: '4px 8px', borderRadius: 6, border: '.5px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', fontSize: 11, cursor: 'pointer', fontWeight: 700 } },
           periods.map(p => h('option', { key: p, value: p }, periodFmt(p)))),
+      freshness ? h('span', {
+        title: 'The newest period ingested for this report type. Monthly VOICE reports cover a closed month, so the current month normally appears after it ends -- but this does not distinguish "not published yet" from "not ingested".',
+        style: { fontSize: 10, color: 'var(--amber,#f59e0b)', fontWeight: 600, marginLeft: 8 },
+      }, `newest available \u00b7 ${periodFmt(freshness.newest)}` + (freshness.behind > 1 ? ` (${freshness.behind} months back)` : '')) : null,
       h('div', { style: { display: 'flex', gap: 2, marginLeft: 8, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)' } },
         Object.entries(TYPE_LABELS).map(([t, label]) =>
           h('button', { key: t, onClick: () => setSelType(t), style: {
