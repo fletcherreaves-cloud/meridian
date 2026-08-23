@@ -47,3 +47,30 @@ describe('qsrsoft-security-events-pull', () => {
     expect(extractRows('a string', 'unit')).toEqual([]);
   });
 });
+
+// ── Date-window guard (added 2026-08-23 after a live silent-zero run) ──────────
+// A workflow_dispatch with `2026/08/22` (slashes) produced an Invalid Date, an empty date
+// list, "0 row(s) parsed, 0 saved", "0/27 stores", and exit 0 — a fully GREEN run that
+// pulled nothing. These assert the run now fails loudly instead.
+describe('qsrsoft-security-events-pull — date window guard', () => {
+  it('rejects slash-formatted dates instead of silently pulling zero days', async () => {
+    const mod = await import('../../scripts/qsrsoft-security-events-pull.mjs');
+    expect(() => mod.dateList('2026/08/22', '2026/08/22')).toThrow(/YYYY-MM-DD/);
+  });
+
+  it('rejects a reversed window', async () => {
+    const mod = await import('../../scripts/qsrsoft-security-events-pull.mjs');
+    expect(() => mod.dateList('2026-08-23', '2026-08-22')).toThrow(/after end date/);
+  });
+
+  it('still returns exactly one date for an inclusive single-day window', async () => {
+    const mod = await import('../../scripts/qsrsoft-security-events-pull.mjs');
+    expect(mod.dateList('2026-08-22', '2026-08-22')).toEqual(['2026-08-22']);
+  });
+
+  it('returns every day of a multi-day window, inclusive of both ends', async () => {
+    const mod = await import('../../scripts/qsrsoft-security-events-pull.mjs');
+    expect(mod.dateList('2026-08-20', '2026-08-23'))
+      .toEqual(['2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23']);
+  });
+});

@@ -83,10 +83,39 @@ const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_
 const fmtDate = d => d.toISOString().slice(0, 10);
 const addDay  = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
 
-function dateList(startDate, endDate) {
+// ⚠️ Validate the inputs and THROW. A silently-empty date list is the worst possible
+// failure here, and it happened live on 2026-08-23: the owner entered the workflow_dispatch
+// window as `2026/08/22` (slashes) instead of `2026-08-22`. `new Date('2026/08/22T12:00:00Z')`
+// is an Invalid Date, every comparison against it is false, the loop body never runs, and the
+// run went on to print:
+//
+//   [secevents-pull] 0 day(s) x 27 store(s) x 8 event token(s)
+//   [secevents-pull] done -- 0 row(s) parsed, 0 saved.
+//   [secevents-pull] per-store: 0/27 store(s) had at least one row upserted.
+//
+// ...and exited 0. GREEN. A scheduled run with a mistyped *_START_DATE secret would report
+// success forever while pulling nothing -- the same "a check that runs, passes, and cannot fail
+// in the case it exists for" shape as #171's pooled freshness Math.max.
+//
+// Fail loudly instead: an operator typo must not be indistinguishable from a quiet day.
+export function dateList(startDate, endDate) {
+  const parse = (v, which) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) {
+      throw new Error(
+        `[secevents-pull] ${which} must be YYYY-MM-DD (dashes), got ${JSON.stringify(v)}. ` +
+        `Slashes parse to an Invalid Date and would silently pull zero days.`);
+    }
+    const d = new Date(v + 'T12:00:00Z');
+    if (Number.isNaN(d.getTime())) throw new Error(`[secevents-pull] ${which} is not a real date: ${JSON.stringify(v)}`);
+    return d;
+  };
+  const cur0 = parse(startDate, 'start date');
+  const end  = parse(endDate,   'end date');
+  if (cur0 > end) {
+    throw new Error(`[secevents-pull] start date ${startDate} is after end date ${endDate} -- window would be empty.`);
+  }
   const out = [];
-  let cur = new Date(startDate + 'T12:00:00Z');
-  const end = new Date(endDate + 'T12:00:00Z');
+  let cur = cur0;
   while (cur <= end) { out.push(fmtDate(cur)); cur = addDay(cur, 1); }
   return out;
 }
