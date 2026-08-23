@@ -174,26 +174,39 @@ async function upsertRows(rawRows) {
   const dropped = rawRows.length - mapped.length;
   if (dropped > 0 && DEBUG) console.log(`[forms-completion] ${dropped} row(s) dropped by the normalizer (unusable/unkeyable)`);
 
-  // Dispatch #76 -- ONE-TIME measurement, DEBUG-gated: dump the full RAW rows of one colliding
-  // (loc, formId, occurrenceKey) group side by side, before anything is dropped, so the actual
-  // question -- true duplicates, distinct occurrences, or the noLocation hypothesis (LOCATIONS
-  // includes 'noLocation' at :74) -- is answered from data, not reasoned about. Per the brief:
-  // "do not rewrite the key on my suspicion." Prints once per run, first colliding group found.
+  // Dispatch #76 -- ONE-TIME measurement, DEBUG-gated: check EVERY colliding (loc, formId,
+  // occurrenceKey) group in the batch, not just one sample (the first live run showed one
+  // group byte-identical on every field -- a true duplicate, not the noLocation hypothesis
+  // (LOCATIONS includes 'noLocation' at :74), since both rows carried the SAME real location.
+  // But one anecdote doesn't rule out a different-shaped collision elsewhere in the same
+  // batch, and this thread has already cost several confident-and-wrong diagnoses -- so this
+  // scans the whole batch and reports how many colliding groups are identical vs how many
+  // have real differences, dumping the raw rows only for the differing ones).
   // Remove once the measurement is written down in memory/dispatch-76.md's Resolution.
   if (DEBUG && !global.__DISPATCH76_DUMPED) {
+    global.__DISPATCH76_DUMPED = true;
     const byKey = new Map();
     for (const p of pairs) {
       const k = `${p.mapped.loc}|${String(p.mapped.formId).toLowerCase()}|${canonicalOccurrenceKey(p.mapped.occurrenceKey)}`;
       if (!byKey.has(k)) byKey.set(k, []);
       byKey.get(k).push(p.raw);
     }
-    const group = [...byKey.entries()].find(([, rows]) => rows.length > 1);
-    if (group) {
-      global.__DISPATCH76_DUMPED = true;
-      console.log(`[dispatch-76] colliding group key=${group[0]} -- ${group[1].length} raw row(s):`);
-      group[1].forEach((r, i) => console.log(`[dispatch-76]   row[${i}] ${JSON.stringify(r)}`));
-    } else if (DEBUG) {
-      console.log('[dispatch-76] no colliding group found in this chunk');
+    const collidingGroups = [...byKey.entries()].filter(([, rows]) => rows.length > 1);
+    let identicalGroups = 0, differingGroups = 0;
+    for (const [key, rows] of collidingGroups) {
+      const first = JSON.stringify(rows[0]);
+      const allSame = rows.every(r => JSON.stringify(r) === first);
+      if (allSame) { identicalGroups++; continue; }
+      differingGroups++;
+      console.log(`[dispatch-76] DIFFERING group key=${key} -- ${rows.length} raw row(s):`);
+      rows.forEach((r, i) => console.log(`[dispatch-76]   row[${i}] ${JSON.stringify(r)}`));
+    }
+    console.log(`[dispatch-76] ${collidingGroups.length} colliding group(s) this chunk: `
+      + `${identicalGroups} byte-identical (true duplicates), ${differingGroups} with real differences`);
+    if (identicalGroups > 0) {
+      const sample = collidingGroups.find(([, rows]) => rows.every(r => JSON.stringify(r) === JSON.stringify(rows[0])));
+      console.log(`[dispatch-76] sample identical group key=${sample[0]} -- ${sample[1].length} row(s), all equal:`);
+      console.log(`[dispatch-76]   ${JSON.stringify(sample[1][0])}`);
     }
   }
 
