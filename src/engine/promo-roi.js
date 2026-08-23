@@ -57,7 +57,12 @@ export function buildDailyRecords(ds) {
 // opts: { intensityField, spendField, marginRate=0.35, minDays=24, minPerCell=2 }
 // Returns { byStore:[…], district:{…}, marginRate }.
 export function matchedLift(records, opts = {}) {
-  const intensityField = opts.intensityField || 'promoPct';
+  // ⚠️ Default is the DOLLAR field, never the percentage. Splitting on promoPct/discPct
+  // (give-away / sales) puts the outcome in the denominator of the splitting variable and
+  // biases every store negative -- see memory/finding-promo-roi-denominator-bias-2026-08-23.md.
+  // A caller that omits intensityField must not silently get the biased behaviour back; that is
+  // exactly how this bug would return.
+  const intensityField = opts.intensityField || 'promoAmt';
   const spendField = opts.spendField || 'promoAmt';
   const marginRate = opts.marginRate != null ? opts.marginRate : 0.35;
   const minDays = opts.minDays != null ? opts.minDays : 24;
