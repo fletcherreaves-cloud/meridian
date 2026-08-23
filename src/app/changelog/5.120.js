@@ -1,0 +1,26 @@
+// @ts-nocheck
+export default {version:'5.120', date:'2026-08-23', changes:[
+  'SMG VOICE Performance: the period dropdown could offer a month with no rows, rendering an '
+  + 'empty table. SMG publishes three report types from the same PDFs -- Monthly, Trailing 90d '
+  + 'and Year-to-Date -- and they do not cover the same periods. The period list was built from '
+  + 'every row regardless of type while the table filters on BOTH period and type, so picking a '
+  + 'period that only existed under a different type showed nothing and said nothing. Worse, the '
+  + 'first period drives the default selection, so if the newest period across all types belonged '
+  + 'to Trailing 90d, the tab could open completely blank with Monthly data sitting right '
+  + 'there.\n\n'
+  + 'Also: the picker now says when its newest period is behind the current month. Reported as '
+  + '"not letting me select past July" -- and the picker was right, July genuinely was the newest '
+  + 'period ingested, but nothing on screen said so. A dropdown whose newest entry is a month old '
+  + 'looks identical to one that has quietly stopped updating. It now reads "newest available · '
+  + 'Jul 2026". Deliberately states the fact and not the cause: whether SMG has published the '
+  + 'month yet versus whether it was ingested is not something this data can distinguish.\n\n'
+  + 'Checked and NOT changed: the period sort. Periods are stored as YYYY-MM by both parsers, so '
+  + 'the plain lexicographic sort is correct -- a month-name format would have sorted '
+  + 'alphabetically, which is why it was worth confirming rather than assuming.\n\n'
+  + 'Revert-sensitive: the tests render the real SMG VOICE panel with a fixture where Trailing 90d '
+  + 'reaches a later period than Monthly -- the exact shape that made the tab open blank -- and '
+  + 'assert the dropdown contents, that store rows actually resolve, and the freshness caption. '
+  + 'Confirmed by reverting the view and watching all three fail, including the panel rendering '
+  + 'with no store rows at all.\n\n'
+  + '3 new tests. 196/196 test files, 2101/2101 tests, build clean, entry-eager payload unchanged.',
+]};
