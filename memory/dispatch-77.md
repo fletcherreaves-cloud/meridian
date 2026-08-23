@@ -57,10 +57,10 @@ resolves every one of these metrics — encodes no direction at all.**
 Per the standing rule that a reviewer's root cause is a hypothesis until reproduced — including
 this PM's — two of the three have a plausible innocent reading:
 
-- **Labor % in `analytics.js:309` may be deliberate.** Its own `action` and `note` fields argue
-  labor is genuinely two-sided: *"too lean hurts service quality; too heavy compresses margin"* and
-  *"Context and trend matter more than the number alone."* That is an editorial stance, not an
-  obvious typo. **This is the owner's call, not the engineer's.**
+- ~~**Labor % in `analytics.js:309` may be deliberate.**~~ ✅ **RESOLVED — see OWNER RULING below.
+  It is wrong.** Kept for the record of what was considered: its `action`/`note` fields argue labor
+  is genuinely two-sided (*"too lean hurts service quality; too heavy compresses margin"*), which
+  read as a plausible editorial stance rather than a typo. The owner overrode that reading.
 - **Discount % is arguable** the same way — discounts drive traffic.
 - **R2P is the hard one to defend.** `store-dash` contradicts *itself*, and the sibling entry's
   own label says *"lower=better"*. Still: reproduce what each site renders before changing either.
@@ -69,13 +69,44 @@ this PM's — two of the three have a plausible innocent reading:
 once. Today two panels can color the same store's Labor % green and red simultaneously. Worth
 checking whether they visibly do — that is a one-screenshot question and it belongs in the report.
 
-## Step 1 — adjudicate (owner input required, do not skip)
+## ✅ OWNER RULING — 2026-08-23 (supersedes the "may be deliberate" caveat above)
+
+**Labor % is lower-better. At/below target is good; over target is bad.** Owner, verbatim:
+
+> *"at the time, and for reasons of context, it may have been thought to be right. Regardless,
+> labor has a target, for simplification, at/below is good and over is bad."*
+
+So `analytics.js:309` (`lowerBetter:false`) **is wrong** and there is **no two-sided third state**
+for labor. The `action`/`note` text there stays — the nuance it describes is real and worth keeping
+as prose — but it does not change the metric's direction.
+
+📌 **The owner's principle generalises: direction is simple and target-relative.** Applying it to
+the other two contradictions (both have targets in `DEFAULT_TARGETS`):
+
+| Metric | Target key | Resolution | Wrong site |
+|---|---|---|---|
+| Labor % | `tLabor` | **lower-better** (owner-ruled) | `analytics.js:309` |
+| R2P | `tR2p` | **lower-better** (proposed) | `store-dash.js:2617` |
+| Discount % | `tDiscCoupPct` | **lower-better** (proposed) | `analytics.js:324` |
+
+⚠️ Only Labor is owner-ruled; the other two are this dispatch applying the same principle. R2P is
+independently corroborated — `metric-source.js:75-77` derives it as
+`(fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt`, i.e. **seconds per transaction**, and the
+sibling entry `store-dash.js:2229` is literally labelled *"R2P (lower=better)"*. Discount % rests
+on the principle alone — **confirm it with the owner in passing, do not treat it as ruled.**
+
+⚠️ **Not every metric is lower-better.** Sales, guest count, TPPH, avg check and KVS-healthy are
+at-or-**above**-target. The ruling settles the cost/speed family; the full step-1 table below is
+still required for the rest.
+
+## Step 1 — adjudicate the remainder
 
 Produce a table of every metric declared in more than one place with each declaration's direction,
-flag name, and file:line. Mark the ones that disagree. **Take the three above to the owner and get
-a ruling per metric** — including whether "two-sided" is a real third state the registry must
-represent (`lowerBetter` / `higherBetter` / `neither`), which is the honest reading of that labor
-note. Do not guess; do not let a leaderboard ship a ranking the owner disagrees with.
+flag name, and file:line. Mark the ones that disagree. **Take any further disagreements to the
+owner** — the three known ones are settled above. ❌ **A two-sided third state is NOT needed:** the
+owner ruled for simple target-relative direction (*"for simplification"*), and the nuance that
+motivated it belongs in tolerance bands (see below), not in the direction field. Do not guess; do
+not let a leaderboard ship a ranking the owner disagrees with.
 
 ## Step 2 — encode it once
 
@@ -137,3 +168,30 @@ window and assert it is excluded or marked, not silently ranked.
 - ⚠️ Do not migrate the four existing tables (see Step 2).
 - ⚠️ Do not build any person-scoped ranking. Attribution-confidence is unbuilt and register logins
   do not reliably match punch times — see `memory/notes-68-entity-explorer.md`.
+
+---
+
+## 📌 Deferred, owner-raised 2026-08-23 — tolerance bands (NOT this dispatch)
+
+Owner, same message:
+
+> *"Now, a different conversation could be had about using tolerance bands around the metrics at
+> some point. Useful overall and plays into performance review system."*
+
+**Filed as its own future item — deliberately kept out of #77** so the direction fix stays small.
+One measurement worth carrying into that conversation, found while scoping this dispatch:
+
+🔴 **A per-metric tolerance already exists and is completely dead.** `src/views/store-dash.js:2614-
+2641` declares `tol:` on **24 of its metrics** (`tol:.02` on Labor, `tol:5` on R2P, `tol:.01`,
+`tol:500`, `tol:.25`, …). `grep -rnE "\.tol\b" src/` finds **zero** reads of it anywhere in the
+app — the only `.tol` hits are unrelated `ctx.params.tol` in `eom-diagnosis.js`.
+
+So someone already authored two dozen tolerance values against real metrics and never wired them
+up. When the tolerance-band conversation happens, **start by reading those**: prior art from
+whoever set the targets, not a blank sheet. ⚠️ And verify them before trusting them — a field
+nothing reads is a field nothing checks, the same rot as the inert `section:` fields (25 of 82
+panels) and #52's 15 schema-drift columns. Dead declarations drift silently.
+
+Natural home: alongside direction in `METRIC_SOURCES`, so target + direction + tolerance sit
+together. That argues for doing tolerance *soon after* #77 while the registry work is fresh — but
+it is still a separate change with its own owner conversation.
