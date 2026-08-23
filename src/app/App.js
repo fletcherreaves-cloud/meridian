@@ -67,7 +67,11 @@ const _panelFallback = () => React.createElement('div', {
   },
 }, 'Loading…');
 
-const lazyPanel = (importFn) => {
+// Named export (App.js otherwise only exports the default App component) purely so
+// src/__tests__/lazy-panel-error-boundary.test.js can exercise the real composition below
+// directly -- rendering the full App component just to trigger one panel's crash would need
+// its entire prop/state surface for no real gain in what the test actually checks.
+export const lazyPanel = (importFn) => {
   const Inner = React.lazy(() => importFn().catch((err) => {
     try {
       const KEY = 'meridian_chunk_reload_at';
@@ -76,9 +80,22 @@ const lazyPanel = (importFn) => {
     } catch {}
     throw err;
   }));
+  // Dispatch #79 -- ErrorBoundary (features/session.js) already exists and already wraps the
+  // WHOLE app in meridian.js. That is the actual bug: with only one boundary, a runtime error
+  // thrown while rendering ANY single panel unmounts nav/shell/AtAGlance along with it and shows
+  // the full-page "Meridian -- Runtime Error" screen -- one panel's crash blanks all 82 panels,
+  // not just the one that broke. Reusing the SAME class here (not a new one) scopes recovery to
+  // the panel's own subtree: everything outside this Wrapped instance -- nav, the content behind
+  // an overlay panel, every OTHER open panel -- stays mounted and usable.
+  // `compact:true` + forwarding the panel's own `onClose` (most panels take one): the full
+  // 100vh "the app crashed" look meridian.js's top-level boundary uses would itself look broken
+  // scoped to one panel's overlay, and "Try to recover" alone just re-renders into the same
+  // crash for a persistent error -- a real "Close panel" way back matters here. See
+  // features/session.js's ErrorBoundary for the compact variant itself.
   const Wrapped = (props) => React.createElement(
-    React.Suspense, { fallback: React.createElement(_panelFallback) },
-    React.createElement(Inner, props));
+    ErrorBoundary, { compact: true, onClose: props?.onClose },
+    React.createElement(React.Suspense, { fallback: React.createElement(_panelFallback) },
+      React.createElement(Inner, props)));
   Wrapped.displayName = 'LazyPanel';
   return Wrapped;
 };
