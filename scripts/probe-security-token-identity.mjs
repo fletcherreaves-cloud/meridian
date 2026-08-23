@@ -26,7 +26,7 @@ import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 // The PULL's own request builders. Importing them (rather than copying) means case D exercises
 // the exact code the failing pull runs -- if D fails where A succeeds, the difference is inside
 // these two functions and nowhere else.
-import { buildUrl, buildBody } from './qsrsoft-security-events-pull.mjs';
+import { buildUrl, buildBody, fetchOne } from './qsrsoft-security-events-pull.mjs';
 
 // Short fingerprint for answering "are these the SAME token?" without printing any part of one.
 // A raw tail (last N chars) would also work as a comparator, but this repo's standing rule is
@@ -176,6 +176,28 @@ if (results.minted === 200) {
   } catch (e) { console.log(`   ✗ ${e.message}`); }
 }
 
+// ── CASE E: the pull's ACTUAL fetchOne(). Not a reconstruction -- the same function, so the same
+// header object, the same fetch options, the same everything. Cases A/C/D all rebuild the request
+// by hand and all return 200; if E returns 403 then the difference lives in code this file has
+// been unable to see by reading, and the header casing ('X-Auth-Token' vs 'x-auth-token') is the
+// last textual difference between them.
+if (results.minted === 200) {
+  console.log('\n── E) the PULL\'s own fetchOne() -- same function, not a copy ──');
+  console.log(`   store / date : ${STORE_REF} / ${DATE}`);
+  try {
+    const tok = await getFreshToken();
+    const r = await fetchOne(STORE_REF, 'all_promo', DATE, tok);
+    console.log(`   HTTP ${r.status}  x-amzn-errortype=${r.diagHdrs?.['x-amzn-errortype'] || '(none)'}`);
+    if (r.ok) {
+      const rows = Array.isArray(r.json) ? r.json.length : (r.json ? 'non-array' : '?');
+      console.log(`   ✓ ${rows} row(s)`);
+    } else {
+      console.log(`   ✗ ${(r.rawText || JSON.stringify(r.json) || '').slice(0, 200)}`);
+    }
+    results.pullFetchOne = r.status;
+  } catch (e) { console.log(`   ✗ threw: ${e.message}`); }
+}
+
 const browserToken = (process.env.BROWSER_TOKEN || '').trim();
 if (browserToken) {
   tokenFps.browser = fp(browserToken);
@@ -194,6 +216,16 @@ if (results.browser !== undefined && tokenFps.minted && tokenFps.browser) {
 }
 
 console.log('\n── VERDICT ──');
+if (results.pullFetchOne === 403 && results.pullBuilders === 200) {
+  console.log('   🎯 The pull\'s fetchOne() is the difference. Its URL and body are provably identical');
+  console.log('   (case D, 200) but calling the function itself fails. The remaining delta is inside');
+  console.log('   fetchOne: header casing (X-Auth-Token vs x-auth-token) is the only textual one left.');
+} else if (results.pullFetchOne === 200) {
+  console.log('   ⚠️ The pull\'s OWN fetchOne() returns 200 from here. The script is not the problem:');
+  console.log('   every component and the whole function work when run from this shell. What differs');
+  console.log('   is the CONTEXT the pull runs in -- sequence, or accumulated state from prior runs.');
+  console.log('   Next: run the pull itself after a long quiet period and see if unit #1 succeeds.');
+}
 if (results.pullBuilders === 403) {
   console.log('   🎯 The PULL\'s buildUrl()/buildBody() are the difference. Same token, same headers,');
   console.log('   same store, same date -- only the URL/body construction changed, and it failed.');
