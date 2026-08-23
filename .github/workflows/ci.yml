@@ -51,6 +51,13 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+      # Dispatch #79 -- setup-node resolves the matrix's floating major (20/22) to a specific
+      # patch version, and that patch/ICU version is exactly what caused dispatch #60's incident
+      # (Intl.DateTimeFormat hourCycle resolution differing between Node versions). Printing it
+      # explicitly means a future divergence is visible in the log itself, not something you have
+      # to dig into the setup-node step's own output to confirm.
+      - name: Node version
+        run: node -v
       - run: npm ci
 
       # Suite first: it is ~11s and its failures are far more legible than a build error.

@@ -1,6 +1,7 @@
 ---
 name: analysis-inventory-variance-baseline-2026-08-20
 description: Evaluation of the security build's first real detection output (10,330 findings, 2026-08-20). The measured median TvA variance is 4-7x the plan's own flag guidance, which reframes threshold calibration as a possible measurement-validity question. Also identifies the plan's own strongest-named signal (unexplained variance vs. waste) as buildable today from columns already in qsr_variance_stat but used by neither shipped rule.
+sensitivity: open
 metadata:
   node_type: memory
   type: analysis

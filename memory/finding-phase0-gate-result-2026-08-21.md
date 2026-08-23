@@ -1,6 +1,7 @@
 ---
 name: finding-phase0-gate-result-2026-08-21
 description: Dispatch #53 Phases A-C, closed. The 403 was session-token expiry, not a rate limit -- the 48-day tail closed in one 3-chunk job (8,507 rows, 27/27 stores) inside the ~5-6 minute working window. Row 5 re-measured to 0, then CORRECTED to 2 the same day -- emp_id='0' is a sentinel, not a null, shared by 8 names of whom 2 have nothing else. G=2 still clears the <=25 gate, so nothing that shipped changes; Phase 2 must treat '0' as null.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

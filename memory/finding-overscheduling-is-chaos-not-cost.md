@@ -1,6 +1,7 @@
 ---
 name: finding-overscheduling-is-chaos-not-cost
 description: Measured 2026-08-11 — stores grossly over-schedule against need, shift managers absorb it in-week, and labor % nets out so the P&L never surfaces it. The owner's long-standing claim, now with numbers. Read before building anything that ranks labor findings by dollars.
+sensitivity: open
 metadata:
   type: finding
   status: measured, owner-confirmed

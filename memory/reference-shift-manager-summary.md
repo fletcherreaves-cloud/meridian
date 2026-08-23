@@ -1,6 +1,7 @@
 ---
 name: reference-shift-manager-summary
 description: QSRSoft Shift Manager Summary report — endpoint, shape, and field map. Attributes operational metrics to the manager-on-duty per daypart (with per-manager Total + geid). The source for isolating an individual DM/shift-manager's performance in reviews (Notes 33 A#3).
+sensitivity: open
 metadata:
   node_type: memory
   type: reference

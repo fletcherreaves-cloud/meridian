@@ -1,6 +1,7 @@
 ---
 name: reference-r2p-formula
 description: R2P (Receipt to Print) exact formula, reverse-engineered from the QSRSoft Daily Activity report + raw DAR JSON and reconciled to the penny. Plus the Avg Win TTL / Avg DT TTL mappings found alongside it.
+sensitivity: open
 metadata:
   node_type: memory
   type: reference

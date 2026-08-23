@@ -84,8 +84,64 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-22): [Dispatch #73 — Visit Patterns' "overdue" amber fired on 87% of normal visits](dispatch-73.md)** —
+  **NEWEST.** A flat `daysSinceLast > 60` never measured against real data: on 190 real CFV
+  inter-visit intervals (all 27 stores, 2023-01→2026-08) it fired on 166/190 (87.4%) — a store
+  perfectly on cadence sat amber permanently, and the panel mixed CFV/EcoSure/RGR's very
+  different program cadences under one number by defaulting its type filter to `'all'`. Fixed
+  with a **per-instrument** threshold (`EXPECTED_CADENCE_DAYS × 1.5`: CFV=182d, EcoSure=273d,
+  RGR=548d, from the owner's stated 3/2/1 visits-per-store-per-year — NOT the measured 138d
+  median, which would have re-encoded today's lateness as the new normal) computed from each
+  store's own last-visit `reportType`, so the mixed-'all' view resolves correctly per row with
+  no separate suppress-when-mixed branch needed. The "don't flag new stores" requirement turned
+  out to need no separate code path either — Ponce de Leon and Tishomingo's real open dates
+  (found via existing code, `backtest.js`/`vs-ly.js`) confirmed the recalibrated threshold alone
+  stops the false flag the owner almost escalated. Revert-sensitive render test (real store
+  fixtures, gap values straddling 182d) — reverting the panel's condition alone (keeping the
+  engine fix) reproduces the exact false positive measured.
+- **✅ SHIPPED (2026-08-22): [Dispatch #72 — no-undef triage, all 25 (+3) sites fixed](dispatch-72-triage.md)**
+  (original brief: [dispatch-72.md](dispatch-72.md)) —
+  Every site from #563's `src/` no-undef sweep, sequenced A (unconditional throw) → B
+  (short-circuit-guarded) → C (needs-caller-read) → widen the guard, exactly as prescribed —
+  **the widened `src-no-undef.test.js` guard (ESLint no-undef over all of `src/**/*.js`) is now
+  permanent CI**, not just this PR's verification. Highlights: `OrgView` (store-dash.js) read a
+  sibling function's local unconditionally — an unconditional ReferenceError on every render of
+  Patch/Org, both nav views' every tab; App.js's "Escape always closes every modal" hatch threw
+  on its SECOND statement, silently aborting ~70 of its own setters on every press; an async
+  `lookupMissEvent` free variable turned into a silently-rejected promise a fire-and-forget
+  `onClick` never observed. **3 more sites surfaced when the widened guard first ran clean** (not
+  part of the original 25 — a sweep-tool coverage gap, not re-litigated further): a "📤 Pack"
+  button calling an unexported function, a stale model-assignment cache never invalidated on
+  "clear override," and `StoreDash`'s auto-calibration silently never persisting an improved
+  MAPE (a #366-shaped engine-vs-wiring gap — `onUpdateSettings` existed as App.js's real
+  `saveSettings` but never crossed the `h(StoreDash,{...})` prop boundary; caught only by a full
+  render test with `calibrateStore` mocked, since a static check can't tell "threaded
+  end-to-end" from "the call site forgot to pass it"). Every one of the 28 fixes carries its own
+  revert-sensitive test (stash → confirm exact original error reproduces → restore). 188 test
+  files / 2064 tests, build clean, no entry-chunk regression.
+- **✅ SHIPPED (2026-08-22): [Dispatch #71 — Form Completions pull silently no-op'd](dispatch-71.md)** —
+  Owner report ("Form Completions not populating") traced through **two genuinely
+  distinct defects** across 8 live `workflow_dispatch` runs, plus one incomplete fix — read the
+  Resolution section for the full honest arc before assuming the first plausible cause was the
+  real one. (1) The structural bug the brief named — the direct path could only escalate to
+  Playwright on a thrown `AUTH_FAILED` (401/403), never on a silent-empty 200 — was real, fixed
+  (`pullWithEscalation()`), and verified live, but **did not fix the outage**. (2) Playwright's own
+  login was ALSO broken (networkidle-race completion signal + header-sniff instead of the
+  localStorage ID token — found by diffing against the already-working sibling
+  `qsrsoft-forms-pull.mjs`), fixed and verified (real token captured) — **still did not fix it**.
+  (3) With a confirmed-valid token, rows were still zero, **refuting** the dispatch's own leading
+  auth-denial hypothesis. (4) The actual root cause, found via raw-response-body logging per the
+  brief's own fallback instruction: `completionDetail` wraps rows under `results` (plural) but the
+  parser read `result` (singular) — every response, on every auth path, silently parsed to an
+  empty array. (5) Fixing that surfaced a second, real, independent bug: a Postgres `ON CONFLICT`
+  batch-uniqueness collision from `scheduledAt`-null ad-hoc rows + Travel Path's 27–45×/store/day
+  scheduling. (6) The first dedup fix (plain string equality) was itself incomplete — timestamp
+  sub-second-precision and UUID-case variants slipped through — fixed by canonicalizing before
+  keying. **Verified live, not a green unit test**: run #8, 2,993 rows upserted across 27/27
+  stores. 2040/2040 tests (10 new), build clean, no entry-chunk change (script isn't in the client
+  bundle).
 - **✅ SHIPPED (2026-08-22): [Dispatch #69 — Visit Readiness overstates its own certainty, in both directions](dispatch-69.md)** —
-  **NEWEST.** Three owner-raised items from `notes-visit-readiness-backlog-2026-08-22.md`, one
+  Three owner-raised items from `notes-visit-readiness-backlog-2026-08-22.md`, one
   theme. (1) The `FOODSAFETY` flag (`statVar`+`raw` waste/variance proxies) has **zero overlap**
   with what an EcoSure Food Safety visit actually assesses (temps/pests/handwashing/shelf-life —
   confirmed against the real PACE guide) and was mislabelled "Food Safety" throughout — renamed to
@@ -96,16 +152,21 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   band verdict always leads; an elevated flag is a secondary note, never the headline. (2) The Model
   Check caption asserted "Weak agreement so far" off a 27-visit sample whose own 95% CI (rank corr
   −0.16 to 0.56) can't distinguish a useless model from a good one — evidence of a small sample, not
-  a weak model. Below a 46-pair power threshold (80% power to detect rank corr ≥0.4, not invented —
-  taken from the backlog's own table) the panel now shows `"27 of ~46 visits needed to tell — next
-  check ~<month>"` using the settled 81/yr cadence (27 stores × 3 CFV visits/yr, from
-  `finding-cfv-2026-visit-rules.md`), instead of a verdict the data can't support. (3) The
+  a weak model. Shipped a power-threshold countdown first (below 46 pairs — 80% power to detect
+  rank corr ≥0.4 — "27 of ~46 visits needed to tell"), then **same-day follow-up**:
+  `finding-cfv-predictability-ceiling-2026-08-22.md` measured (217 real CFV visits) that rank corr
+  ≥0.4 is ABOVE the achievable ceiling for any store-level predictor (ICC=0.087 → ceiling √ICC
+  ≈0.30), so the countdown itself was an unsafe promise, not just a hard-to-reach one — retired the
+  whole mechanism (no re-pointing at a lower threshold) in favor of showing the ceiling beside a
+  **per-instrument** estimate ("Part D0": split pairs by `reportType` first, since CFV/RGR have very
+  different pass rates and pooling them depresses ρ on its own). Also fixed the print/PDF report's
+  own separate, untouched-by-the-first-pass "Weak agreement" text to match. (3) The
   "Report detail" toggle sat among the scope filter pills (which DO change the view) while only
   affecting the print report — moved to a split dropdown on the Report button itself. Revert-
-  sensitive test renders the actual panel (a fixed per-store margin saturates every store's score
-  near the ceiling → zero-variance `r=null`, which would silently mask the caption branch — varying
-  the margin is what makes this test meaningful). 2036/2036 tests (7 new), build clean, no
-  entry-chunk change.
+  sensitive tests render the actual panel and the print HTML (a fixed per-store margin saturates
+  every store's score near the ceiling → zero-variance `r=null`, which would silently mask the
+  caption branch — varying the margin is what makes the test meaningful). 2040/2040 tests
+  (17 new/changed across both passes), build clean, no entry-chunk change.
 - **✅ SHIPPED (2026-08-22): [Dispatch #68 — `LaborAnalyticsPanel` was dropping every store, district-wide, right now](dispatch-68.md)** —
   `data-sourcing-standard.md`'s exclusion list flagged this panel as suspicious after
   #64 proved its sibling entry ("parallel-but-correct") was wrong — checked before writing

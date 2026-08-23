@@ -1,0 +1,25 @@
+// @ts-nocheck
+export default {version:'5.115', date:'2026-08-23', changes:[
+  'Visit Patterns\' Day-of-week block was off by one for every real viewer. A graded visit\'s '
+  + 'dateISO is a bare \'YYYY-MM-DD\', and new Date(\'2026-07-07\') parses a date-only string as '
+  + 'UTC midnight -- .getDay() then reads LOCAL time, so in any negative-offset zone it reports '
+  + 'the PREVIOUS day. Both of this estate\'s markets are negative-offset (Oklahoma Central, '
+  + 'Florida Eastern), and CI runs in UTC, which is why this shipped: the bug is invisible in the '
+  + 'one timezone nobody reads the panel from.\n\n'
+  + 'MEASURED against the real 217-visit dataset under TZ=America/Chicago: every weekday label '
+  + 'shifted back one. The panel reported 53 Monday and 42 Sunday visits when the truth is 53 '
+  + 'Tuesday and 42 Monday -- inventing a 42-visit Sunday bucket PACE never shopped, and dropping '
+  + 'Saturday (n=13) entirely. If you have been reading which day of the week this estate fails '
+  + 'CFV on, that answer was wrong by one day. It is now the calendar day the visit record names.'
+  + '\n\nYear attribution in dispatch #75\'s new channel-by-year table had the same flaw. Today\'s '
+  + 'data contains no Jan-1 visit so nothing is currently misfiled, but the next one would have '
+  + 'landed in the previous year\'s row. Both sites now anchor at local noon (the same idiom as '
+  + 'engine/waste-discipline.js), noon rather than midnight so it stays safe across DST.\n\n'
+  + 'Revert-sensitive per the standing rule: the tests pin TZ=America/Chicago and render the '
+  + 'actual VisitPatterns panel, not analyzeGradedVisits -- confirmed by reverting the engine and '
+  + 'watching all three fail with exactly the predicted shapes (Sun:42/Mon:53 for Tue:53/Mon:42, '
+  + 'Saturday undefined, and the Jan-1 visit filed under 2025). Expected counts are derived from '
+  + 'the ISO strings in the test rather than restated by hand.\n\n'
+  + '3 new tests. 192/192 test files, 2083/2083 tests, build clean, entry-eager payload unchanged '
+  + 'at 1730.86 kB / 515.09 kB gzipped (Visit Readiness is lazy-loaded, not in the eager bundle).',
+]};

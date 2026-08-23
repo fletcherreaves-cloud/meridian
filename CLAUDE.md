@@ -362,10 +362,25 @@ actual code — this note nearly caused a duplicate reimplementation.
     dropdown won it would build **every** main commit including docs-only ones, undoing the
     docs-skip. **Left on "Automatic" deliberately.**
 
-  **So the only real lever on deployment count is workflow: FEWER PUSHES.** Every push to any branch
-  creates a deployment. Batch commits and push once per work chunk rather than per commit — on
-  2026-08-21 roughly 46 commits were pushed largely one at a time, which alone can exhaust a
-  100/day budget.
+  **So the only real lever on deployment count is workflow: FEWER PUSHES.** See the next rule —
+  that is where the actual instruction lives, deliberately lifted out of this platform archaeology.
+- **How to push, so the deploy budget survives the day — `memory/standard-deploy-budget.md`.**
+  Every push to any branch creates a deployment, and the 100/day limiter counts at CREATION,
+  before `ignoreCommand`. **`git commit` is free; `git push` is not.**
+  1. **One push per PR.** Commit locally as often as you like; push once, when the branch is ready
+     to open.
+  2. **Never push WIP.** A debug dump, a widened measurement and the real fix belong in one push.
+  3. **Amend, don't append,** for fixes to your own unmerged branch (typo, changelog reword,
+     comment correction) — `--amend` plus one force-push, never a second commit and second push.
+  4. **Batch docs.** Several memory files in one work chunk = one commit, one push.
+  5. **Never push to trigger CI.** No empty commits, no close-and-reopen.
+  ⚠️ **This never outranks shipping a fix.** If CI is red or `main` is broken, push immediately —
+  a broken `main` costs far more than a deployment. These rules kill *needless* pushes only.
+  **This guidance already existed** (as the tail of the bullet above) and did not change behaviour:
+  measured 2026-08-23, **27 commits landed on `main` in 24 h against 102 live `claude/*` branches**,
+  and each merged PR costs ≥2 deployments (branch push + merge commit) before any intermediate
+  ones. It is a numbered rule of its own now because buried at the end of a "here is why the
+  platform is like this" block, it read as background rather than instruction.
 - **Merge without asking, once verified (owner-stated 2026-08-21: *"You don't have to ask me to
   merge"*).** Do not stop and request permission for each PR. The standing bar is verification, not
   approval: independently check the diff (never a relayed summary), confirm the gating check is

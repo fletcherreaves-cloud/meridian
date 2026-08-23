@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-event-details-endpoint-2026-08-21
 description: Owner-captured QSRSoft security event_details endpoint - event-level controls data with time, register, cashier name+badge, manager, daypart and tender. This is the source for dispatch #56 Part E (register worked / time of event) and it is richer and better-shaped for that ask than the previously-captured transaction_detail. Includes the confirmed response schema and the open questions a pull must settle first.
+sensitivity: restricted
 metadata:
   node_type: memory
   type: finding

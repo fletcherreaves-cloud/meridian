@@ -37,14 +37,20 @@ async function lookupMissEvent(date, affectedStores, wRow, setResult, affectedLo
   const apiKey=(()=>{try{return localStorage.getItem('mf_anthropic_key')||'';}catch{return '';}})();
   const dateStr=date.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const wxNote=wRow?'Weather: '+Math.round(wRow.tmax||0)+'F hi, rain '+((wRow.rain||0).toFixed(2))+'in, wind '+(wRow.wmax||0)+'mph':'No weather data.'
+  // Dispatch #72 C1 -- `loc` was read at three spots below without ever being a parameter of
+  // this function. Its only real call site (store-dash.js:746) passes the caller's own `loc`
+  // positionally as `affectedStores` -- `firstLoc` a few lines down was already deriving the
+  // exact same value from `affectedStores`, just too late to help `thisCoord` above it and
+  // still falling back to the nonexistent `loc`. Computed once, up front, from the one input
+  // that actually carries it.
+  const loc=typeof affectedStores==='string'?affectedStores.split(',')[0]:String(affectedStores||'');
   const thisCoord=STORE_COORDS[loc]||{};
   const thisCity=thisCoord.city||'Oklahoma';
   const affectedCities=affectedLocs&&affectedLocs.length
     ?[...new Set([thisCity,...affectedLocs.map(l=>(STORE_COORDS[l.loc]||{}).city||l.name.split(' ')[0]).filter(Boolean)])].slice(0,8)
     :[thisCity];
   const cityList=affectedCities.join(', ');
-  const firstLoc=typeof affectedStores==='string'?affectedStores.split(',')[0]:String(affectedStores||loc||'');
-  const storeCoords=STORE_COORDS[firstLoc]||STORE_COORDS[loc]||{};
+  const storeCoords=STORE_COORDS[loc]||{};
   const stateStr=storeCoords.state||'Oklahoma';
   const isFL=stateStr==='FL';
   const regionNote=(affectedCities.length>3?'Multiple stores affected.':'Isolated to 1-2 stores — likely local.')
@@ -110,6 +116,11 @@ function diagnoseMiss(loc, ds, userEvents, r) {
   const wRow=(fetchWx(ds,r.date))||getForecastWeather(loc,r.date);
   if(Math.abs(wAdj)>0.015){
     const rain=wRow?wRow.rain||0:0;const tmax=wRow?wRow.tmax||0:0;
+    // Dispatch #72 B3 -- `wind` was a free variable; wRow's wind field is `wmax` (see line 39's
+    // own 'wind '+(wRow.wmax||0)+'mph' a few lines up in this same file). Short-circuit-guarded
+    // by the preceding ternary arms, so this only threw when rain/tmax fell through to the
+    // wind branch.
+    const wind=wRow?wRow.wmax||0:0;
     const wxDesc=rain>1.5?'heavy rain ('+rain.toFixed(1)+'")':rain>0.25?'rain ('+rain.toFixed(1)+'")':tmax>100?'extreme heat ('+tmax+'F)':tmax>95?'very hot ('+tmax+'F)':tmax<28?'freezing ('+tmax+'F)':tmax<35?'very cold ('+tmax+'F)':wind>30?'high winds ('+wind+'mph)':''
     const mismatch=(missDir==='under'&&wAdj<0)||(missDir==='over'&&wAdj>0);
     causes.push({icon:'🌦',color:'#93c5fd',weight:mismatch?'PRIMARY':'CONTRIBUTING',

@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-security-entitlement-request-2026-08-22
 description: SUPERSEDED 2026-08-22. The api.security 403 is a SOURCE-IP restriction, not an entitlement gap -- one Cognito principal, allowed from the owner's network and denied from GitHub Actions. Do not send the entitlement request below; see the correction at the top.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

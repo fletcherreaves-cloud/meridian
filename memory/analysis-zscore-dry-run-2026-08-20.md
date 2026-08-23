@@ -1,6 +1,7 @@
 ---
 name: analysis-zscore-dry-run-2026-08-20
 description: First execution of INV-001/INV-002 as z-score rules. The peer baseline cancelled the estate-wide bias decisively (27 stores flagged per broken item -> max 3), cutting INV-001's flag rate from 50.4% to 4.1%. But the survivors are still not shrink, and a PM hypothesis that item lifecycle explained them was refuted by its own data. Also records INV-002 flagging 224 financially trivial subjects for want of a numerator-level materiality gate.
+sensitivity: open
 metadata:
   node_type: memory
   type: analysis

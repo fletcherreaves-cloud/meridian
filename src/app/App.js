@@ -67,7 +67,11 @@ const _panelFallback = () => React.createElement('div', {
   },
 }, 'Loading…');
 
-const lazyPanel = (importFn) => {
+// Named export (App.js otherwise only exports the default App component) purely so
+// src/__tests__/lazy-panel-error-boundary.test.js can exercise the real composition below
+// directly -- rendering the full App component just to trigger one panel's crash would need
+// its entire prop/state surface for no real gain in what the test actually checks.
+export const lazyPanel = (importFn) => {
   const Inner = React.lazy(() => importFn().catch((err) => {
     try {
       const KEY = 'meridian_chunk_reload_at';
@@ -76,9 +80,22 @@ const lazyPanel = (importFn) => {
     } catch {}
     throw err;
   }));
+  // Dispatch #79 -- ErrorBoundary (features/session.js) already exists and already wraps the
+  // WHOLE app in meridian.js. That is the actual bug: with only one boundary, a runtime error
+  // thrown while rendering ANY single panel unmounts nav/shell/AtAGlance along with it and shows
+  // the full-page "Meridian -- Runtime Error" screen -- one panel's crash blanks all 82 panels,
+  // not just the one that broke. Reusing the SAME class here (not a new one) scopes recovery to
+  // the panel's own subtree: everything outside this Wrapped instance -- nav, the content behind
+  // an overlay panel, every OTHER open panel -- stays mounted and usable.
+  // `compact:true` + forwarding the panel's own `onClose` (most panels take one): the full
+  // 100vh "the app crashed" look meridian.js's top-level boundary uses would itself look broken
+  // scoped to one panel's overlay, and "Try to recover" alone just re-renders into the same
+  // crash for a persistent error -- a real "Close panel" way back matters here. See
+  // features/session.js's ErrorBoundary for the compact variant itself.
   const Wrapped = (props) => React.createElement(
-    React.Suspense, { fallback: React.createElement(_panelFallback) },
-    React.createElement(Inner, props));
+    ErrorBoundary, { compact: true, onClose: props?.onClose },
+    React.createElement(React.Suspense, { fallback: React.createElement(_panelFallback) },
+      React.createElement(Inner, props)));
   Wrapped.displayName = 'LazyPanel';
   return Wrapped;
 };
@@ -125,6 +142,7 @@ const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ defau
 const _analytics = () => import('../views/analytics.js');
 const MetricCorrelationExplorer = lazyPanel(() => _analytics().then(m => ({ default: m.MetricCorrelationExplorer })));
 const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
+const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-performers.js').then(m => ({ default: m.TopBottomPerformers })));
 const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
 const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
 const ForecastAccuracyPanel     = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAccuracyPanel })));
@@ -666,6 +684,7 @@ function App() {
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
+  const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
   // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle' (see routePanel above).
   const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
@@ -2511,7 +2530,7 @@ function App() {
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
-    showRevIntel||showSettings||showSmartTargets||showStoreKB||
+    showRevIntel||showTopBottom||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
@@ -2529,14 +2548,20 @@ function App() {
       setShowAIScan(false);setShowAbout(false);setShowAttention(false);
       setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);
-      setShowDataManager(false);setShowDev(false);setShowDialedIn(false);setShowEvents(false);
+      // Dispatch #72 A3 -- setShowDev/setShowInsights never existed (no matching useState
+      // anywhere in this file): an unconditional ReferenceError on EVERY Escape press, which
+      // aborted every setter after it in this single function call -- so the "Escape always
+      // closes every modal, full stop" contract above was actually broken for nearly all of
+      // the ~70 modals swept below, not just these two. Removed rather than invented, since
+      // there is no real showDev/showInsights state to close.
+      setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
       setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
-      setShowInsights(false);setShowInventory(false);setShowKB(false);setShowLFZGap(false);
+      setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
-      setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowRevIntel(false);setShowTopBottom(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
@@ -2614,6 +2639,7 @@ function App() {
         if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
+        if(modal==='top-bottom')     perm('analytics.district')&&setShowTopBottom(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
         if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
@@ -2763,9 +2789,9 @@ function App() {
           else if(modal==='fcst-accuracy')goRoute('fcst-accuracy');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
-      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents}),
-      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'patch'}),
-      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,settings,onSelectStore:goStore,groupBy:'operator'}),
+      view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings}),
+      view==='patch'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'patch'}),
+      view==='org'&&!anyModalOpen&&!routePanel&&h(OrgView,{stores,ds,settings,onSelectStore:goStore,groupBy:'operator'}),
       // Dispatch27 Workstream E — the four panels the plan flags as misclassified destinations
       // ("would I ever want to send someone a link to this?" — yes). routePanel is URL-synced
       // (src/app/routing.js) and REPLACES whichever view/store was selected, exactly like the
@@ -2858,6 +2884,7 @@ function App() {
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
+    showTopBottom&&h(TopBottomPerformers,{stores,ds,onSelectStore:s=>{goStore(s);setShowTopBottom(false);},onClose:()=>setShowTopBottom(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),

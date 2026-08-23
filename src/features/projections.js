@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS } from '../constants.js';
 import { dKey, sodOf, addD, eodOf, thisWeek } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, fetchLY, getStoreOrg, fetchLYDate, gcCrossCheck } from '../engine/forecast.js';
@@ -613,6 +613,10 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
 
   // ── Group structures ───────────────────────────────────
   const patches    = settings.supervisorGroups||{};
+  // Dispatch #72 B1 -- DEF_SETTINGS was never imported in this file, so the fallback branch
+  // below (settings.operators falsy) threw a ReferenceError instead of falling back to the
+  // real default operator groups. Short-circuit-guarded, so it only fired when a caller
+  // passed settings with no .operators -- silent until that path was actually hit.
   const operators  = settings.operators||DEF_SETTINGS.operators||{};
   const orgs       = {
     'MCDOK':  ALL_LOCS.filter(l=>getStoreOrg(l)==='MCDOK'),
@@ -1812,8 +1816,20 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                               h('tbody',null,deepWeekDays.map((r,i)=>{
                                 // Trading-day-aligned LY (#55) — same resolver as lyAmt() above,
                                 // not a raw calendar 365-day shift + fuzzy window.
+                                // Dispatch #72 B2 -- `loc` here was a free variable: the `loc` in
+                                // scope for the sibling store-row flatMap above (locs.filter(loc=>
+                                // ...).flatMap(loc=>...)) does not extend into this deepStore block,
+                                // a sibling array element, not a nested callback. Short-circuit-
+                                // guarded by `r.loc||`, so it only threw if r.loc were ever falsy.
+                                // Traced every row in weekData back to computeWeek's
+                                // `rows.push({...r,date:d,loc,...})` (line ~663): `loc` there comes
+                                // from `for(const loc of ALL_LOCS)`, and ALL_LOCS is store.loc
+                                // filtered through /^\d+$/ -- never empty. r.loc can't be falsy for
+                                // any row this table actually renders, so the fallback was dead
+                                // code masking the real bug, not a legitimate guard -- removed
+                                // rather than given a second (invented) variable to fall back to.
                                 const _rowLY=(r.lyAdj>0&&r.lyAdj!==r.forecast)?r.lyAdj:
-                                  (fetchLY(ds.laborIdx,ds.laborRows,r.loc||loc,r.date)||0);
+                                  (fetchLY(ds.laborIdx,ds.laborRows,r.loc,r.date)||0);
     const vsLY=_rowLY>0?((r.forecast-_rowLY)/_rowLY*100).toFixed(2):null;
                                 const gc=r.forecast>0&&ds?gcCrossCheck(deepStore,r.date,ds,settings,r.forecast):null;
                                 return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},

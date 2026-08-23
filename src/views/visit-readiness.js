@@ -118,7 +118,11 @@ function printStoreReport(s) {
   setTimeout(() => win.print(), 350);
 }
 
-function Bar({ score, w = 60 }) {
+// Dispatch #77 -- exported so Top/Bottom Performers (top-bottom-performers.js) can reuse the
+// house bar style instead of re-implementing it, per the dispatch's explicit "reuse what
+// exists" instruction. Score is expected 0-100; callers ranking a non-percentage metric (a
+// dollar figure, a seconds figure) must first normalize to that scale themselves.
+export function Bar({ score, w = 60 }) {
   return h('div', { style: { width: w, height: 6, borderRadius: 3, background: 'var(--bdr)', overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' } },
     h('div', { style: { width: (score == null ? 0 : Math.max(2, score)) + '%', height: '100%', background: scoreColor(score) } }));
 }
@@ -236,42 +240,103 @@ function StoreAudit({ s }) {
 
 // Model-check card: does predicted readiness track the ACTUAL graded-visit scores?
 // Builds trust by validating the estimate against real outcomes as they accumulate.
+// Dispatch #69 follow-up ("Part D0" + the ceiling finding, same day): a strength ladder
+// ("Strong/Moderate/Weak agreement") and a countdown toward a power threshold BOTH claim more
+// than this data can support, in different ways. memory/finding-cfv-predictability-ceiling-
+// 2026-08-22.md measured, on 217 real CFV visits, that store identity explains only ICC=0.087
+// of visit-to-visit variance (marginal, p=0.092) -- capping ANY store-level predictor's
+// correlation at sqrt(ICC) ~= 0.30. rank corr >= 0.4 (what the old countdown was powering
+// toward) is ABOVE that ceiling and unreachable at any sample size, so a "you'll know by
+// <month>" promise is unsafe regardless of the threshold chosen -- the fix is not a different
+// countdown, it's showing the ceiling beside the estimate instead of a verdict or a promise.
+// This also only applies to CFV: the pairs mix CFV and RGR (two instruments with very
+// different pass rates -- CFV 55.3% meeting 80% in 2026, RGR ~100%), which depresses a pooled
+// correlation on its own, independent of model quality. Split by type before comparing to a
+// ceiling that is CFV's alone.
+function TypeCalibrationLine({ type, stat }) {
+  if (!stat || stat.n < 3) {
+    return h('div', { style: { fontSize: 9.5, color: 'var(--text3)' } },
+      `${type}: only ${stat ? stat.n : 0} pair${stat && stat.n === 1 ? '' : 's'} — not enough yet.`);
+  }
+  const rC = stat.r == null ? 'var(--text3)' : stat.r >= 0.15 ? '#10b981' : stat.r <= -0.1 ? '#ef4444' : '#f59e0b';
+  const pctOfCeiling = (stat.ceiling && stat.r != null && stat.r > 0) ? Math.round((stat.r / stat.ceiling) * 100) : null;
+  return h('div', { style: { fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
+    h('span', { style: { fontWeight: 700, color: 'var(--text2)' } }, `${type}: `),
+    h('span', { style: { fontFamily: 'var(--mono)', fontWeight: 700, color: rC } }, stat.r == null ? '—' : stat.r.toFixed(2)),
+    ` (n=${stat.n})`,
+    stat.ceiling != null && ` against an estimated ceiling of ~${stat.ceiling.toFixed(2)} (store identity explains only ~9% of visit-to-visit variance, marginally)`,
+    pctOfCeiling != null && ` — ~${pctOfCeiling}% of the achievable maximum, not weak.`);
+}
+
 function CalibrationCard({ cal }) {
   if (!cal) return null;
-  const strengthCol = cal.strength === 'strong' ? '#10b981' : cal.strength === 'moderate' ? '#f59e0b' : '#ef4444';
   if (!cal.n || cal.n < 3) {
     return h('div', { style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.5, margin: '0 0 12px', padding: '9px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
       h('span', { style: { fontWeight: 700, color: 'var(--text2)' } }, 'Model check: '),
       `only ${cal.n || 0} store${cal.n === 1 ? '' : 's'} with a recent graded visit — not enough yet to validate the estimate. It self-checks against actual CFV/RGR/EcoSure scores as they land.`);
   }
   const rC = cal.r == null ? 'var(--text3)' : cal.r >= 0.3 ? '#10b981' : cal.r <= -0.1 ? '#ef4444' : '#f59e0b';
+  const types = Object.keys(cal.byType || {});
   return h('div', { style: { margin: '0 0 12px', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
     h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 6 } },
       h('span', { style: { fontSize: 11, fontWeight: 800, color: 'var(--text)' } }, 'Model check'),
       h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, `predicted readiness vs actual visit score, ${cal.n} stores with a recent visit`)),
-    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' } },
+    h('div', { style: { display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: types.length ? 8 : 0 } },
       h('div', null,
         h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: rC } }, cal.r == null ? '—' : cal.r.toFixed(2)),
-        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr' + (cal.strength ? ' (' + cal.strength + ')' : ''))),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, 'rank corr, pooled (mixed instruments — see below)')),
       cal.hitRate != null && h('div', null,
         h('span', { style: { fontSize: 19, fontWeight: 800, fontFamily: 'var(--mono)', color: cal.hitRate >= 0.6 ? '#10b981' : '#f59e0b' } }, (cal.hitRate * 100).toFixed(2) + '%'),
-        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`)),
-      h('div', { style: { flex: 1, minWidth: 180, fontSize: 9.5, color: 'var(--text3)', lineHeight: 1.5 } },
-        cal.r == null ? 'Correlation needs more visits.'
-          // Dispatch #69 — below cal.pairsForPower, "Strong/Moderate/Weak agreement" claims more
-          // than an n this small can support (memory/notes-visit-readiness-backlog-2026-08-22.md
-          // computed the 95% CI at n=27: rank corr [-0.16, 0.56] — can't distinguish a useless
-          // model from a good one). Report progress toward enough power instead of a verdict.
-          : cal.pairsNeeded > 0 ? `${cal.n} of ~${cal.pairsForPower} visits needed to tell — next check ${cal.etaLabel}.`
-          : cal.r >= 0.6 ? 'Strong agreement — stores rated lower really do score lower on real visits.'
-          : cal.r >= 0.3 ? 'Moderate agreement — the estimate leans the right way; keep validating.'
-          : cal.r >= 0 ? 'Weak agreement — treat as directional only.'
-          : 'Estimate is currently inverted vs actuals — investigate before trusting it.')));
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 5 } }, `direction match (${cal.hits}/${cal.n})`))),
+    types.length > 0 && h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, paddingTop: types.length && cal.r != null ? 8 : 0, borderTop: types.length && cal.r != null ? '.5px solid var(--bdr)' : 'none' } },
+      types.map(type => h(TypeCalibrationLine, { key: type, type, stat: cal.byType[type] }))));
+}
+
+// One channel's row across every year -- title + one cell per year, in the engine's own year
+// order (calendar order, since analyzeGradedVisits already sorts `years`).
+function _channelYearRow(channel, cby, pr, prCol) {
+  return h('div', { key: channel },
+    h('div', { style: { fontSize: 10.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 3 } }, channel),
+    h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      ...cby.years.map(year => {
+        const cell = cby.rows.find(r => r.channel === channel && r.year === year);
+        const yLabel = year + (year === cby.partialYear ? '*' : '');
+        if (!cell) return h('div', { key: year, style: { fontSize: 9.5, color: 'var(--text3)', minWidth: 74 } },
+          h('div', null, yLabel), h('div', { style: { fontFamily: 'var(--mono)' } }, 'no visits'));
+        if (cell.thin) return h('div', { key: year, style: { fontSize: 9.5, color: 'var(--text3)', opacity: .6, minWidth: 74 } },
+          h('div', null, yLabel), h('div', { style: { fontFamily: 'var(--mono)' } }, 'n=' + cell.n + ' (thin)'));
+        const below = 1 - cell.passRate;
+        return h('div', { key: year, style: { fontSize: 9.5, minWidth: 74 } },
+          h('div', { style: { color: 'var(--text3)' } }, yLabel),
+          h('div', { style: { fontFamily: 'var(--mono)', color: prCol(cell.passRate), fontWeight: 700 } }, pr(below) + ' below'),
+          h('div', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)' } }, pr(cell.share) + ' of yr · n=' + cell.n));
+      })));
+}
+
+// Dispatch #75 -- replaces the pooled Channel block. cby = analyzeGradedVisits(...).channelByYear.
+// Shows both share-of-visits and below-80% per (channel, year), n on every cell, thin cells
+// (< CHANNEL_YEAR_MIN_N, measured in the engine) de-emphasised to a count only, and the current
+// calendar year labeled as partial. Deliberately no trend line/arrow (see the engine comment) --
+// this is a table, not a chart, because four annual points with single-digit n do not support a
+// slope.
+function renderChannelByYear(cby, pr, prCol) {
+  if (!cby.rows.length) return null;
+  return h('div', { style: { marginTop: 4 } },
+    h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Channel over time (share of visits · below-80% · n)'),
+    h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 8, fontStyle: 'italic' } },
+      `Cells under n=${cby.minN} are too thin to rate -- shown as a count only, not a percentage.`),
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+      ...[...new Set(cby.rows.map(r => r.channel))].map(channel => _channelYearRow(channel, cby, pr, prCol))),
+    cby.partialYear ? h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginTop: 6 } },
+      '* ' + cby.partialYear + ' is a partial year, not yet complete.') : null);
 }
 
 // CFV / graded-visit statistic tracker (Notes 25 #2): actual outcomes broken down by
 // known variables (day-of-week, daypart, weekpart, channel) + per-store cadence.
-function VisitPatterns({ ds, locs }) {
+// Exported for dispatch #73's test -- VisitPatterns is otherwise module-private, but the
+// amber-threshold fix (per-instrument f.overdueAt) lives entirely inside this component's own
+// render, not in a separately-testable engine function.
+export function VisitPatterns({ ds, locs }) {
   const { useMemo, useState } = React;
   const [type, setType] = useState('all');
   const [open, setOpen] = useState(false);
@@ -290,15 +355,42 @@ function VisitPatterns({ ds, locs }) {
   const bar = (v, col) => h('div', { style: { width: 46, height: 5, borderRadius: 3, background: 'var(--bdr)', display: 'inline-block', verticalAlign: 'middle' } },
     h('div', { style: { width: (v == null ? 0 : Math.max(2, v * 100)) + '%', height: '100%', background: col, borderRadius: 3 } }));
   // A labeled breakdown block: rows of {key, n, passRate, avgScore}.
-  const block = (title, rows) => rows.length ? h('div', { style: { flex: '1 1 220px', minWidth: 200 } },
+  // Dispatch #79 -- Day of week/Daypart/Weekpart were the last 3 groupings still on this pooled
+  // renderer without the thin-cell guard dispatch #75 gave Channel (CHANNEL_YEAR_MIN_N,
+  // engine/visit-readiness.js) after that exact failure shape: a low-n cell -- the owner's own
+  // example, a Dinner daypart cell at n=2 -- rendered a confident-looking "0.00%" indistinguishable
+  // from a real, well-supported reading.
+  //
+  // ⚠️ Do NOT reuse CHANNEL_YEAR_MIN_N here (the dispatch brief is explicit about this): that
+  // constant was measured against the channel x year cell distribution specifically, and this is
+  // a different distribution (Day of week/Daypart/Weekpart pool ALL years, unlike the per-year
+  // channel breakdown it came from). No real graded_visits access via the anon key (RLS-scoped,
+  // confirmed by querying it directly) to measure a fresh break the way #75 did. Per the brief's
+  // own named alternative ("#77's THIN_RELATIVE_FLOOR is a good precedent for the honest-floor
+  // version"), this is a CHOSEN, RELATIVE floor instead: within a given block, a row covering
+  // less than half of that SAME block's own best-covered row is marked thin. Self-contained per
+  // block, not a shared magic number, and documented as a floor, not a finding.
+  const BLOCK_THIN_RELATIVE_FLOOR = 0.5;
+  const block = (title, rows) => {
+    if (!rows.length) return null;
+    const maxN = Math.max(...rows.map(r => r.n));
+    const floor = Math.max(1, maxN * BLOCK_THIN_RELATIVE_FLOOR);
+    return h('div', { style: { flex: '1 1 220px', minWidth: 200 } },
     h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, title),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
-      ...rows.map(r => h('div', { key: r.key, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5 } },
-        h('span', { style: { flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.key),
-        h('span', { style: { color: 'var(--text3)', width: 30, textAlign: 'right', fontFamily: 'var(--mono)' } }, 'n' + r.n),
-        bar(r.passRate, prCol(r.passRate)),
-        h('span', { style: { fontFamily: 'var(--mono)', color: prCol(r.passRate), width: 34, textAlign: 'right' } }, pr(r.passRate)),
-        h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 34, textAlign: 'right' } }, r.avgScore == null ? '—' : r.avgScore))))) : null;
+      ...rows.map(r => {
+        const thin = r.n < floor;
+        return h('div', { key: r.key, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, opacity: thin ? .6 : 1 } },
+          h('span', { style: { flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.key),
+          h('span', { style: { color: 'var(--text3)', width: 30, textAlign: 'right', fontFamily: 'var(--mono)' } }, 'n' + r.n),
+          thin
+            ? h('span', { style: { flex: '0 0 auto', fontSize: 9, color: 'var(--text3)', fontStyle: 'italic' } }, '(thin)')
+            : h(React.Fragment, null,
+                bar(r.passRate, prCol(r.passRate)),
+                h('span', { style: { fontFamily: 'var(--mono)', color: prCol(r.passRate), width: 34, textAlign: 'right' } }, pr(r.passRate)),
+                h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 34, textAlign: 'right' } }, r.avgScore == null ? '—' : r.avgScore)));
+      })));
+  };
   return h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, marginTop: 14, overflow: 'hidden' } },
     h('div', { onClick: () => setOpen(o => !o), style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: 'var(--surf2)' } },
       h('span', { style: { fontSize: 13 } }, '📊'),
@@ -317,15 +409,30 @@ function VisitPatterns({ ds, locs }) {
           t === 'all' ? 'All types' : t))),
       h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 8, fontFamily: 'var(--mono)' } }, 'columns: n · pass-rate · avg-score'),
       h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18 } },
-        block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart), block('Channel', a.channel)),
+        block('Day of week', a.dow), block('Daypart', a.daypart), block('Weekpart', a.weekpart)),
+      // Dispatch #75 -- Channel used to be one of the pooled blocks above (`block('Channel',
+      // a.channel)`), and pooling all 4 years into one pass-rate per channel is exactly what hid
+      // the 2026 drive-thru finding: drive-thru went 43%->60% of visits AND 25%->54% below-80 in
+      // the SAME year, and neither move is visible in an all-time average. Replaced with a
+      // per-year breakdown showing both figures, because either alone tells the wrong story (a
+      // channel getting worse and a channel getting shopped more are different problems).
+      renderChannelByYear(a.channelByYear, pr, prCol),
       a.freq.length ? h('div', { style: { marginTop: 14 } },
         h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
+        // Dispatch #73 -- the amber threshold is now per-instrument (CFV/EcoSure/RGR run on
+        // different program cadences), computed from each store's OWN last-visit type via
+        // f.overdueAt, not a flat 60-day constant that fired on 87% of on-cadence stores.
+        // Labeled here so the colour's meaning isn't left for the reader to guess.
+        h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 4, fontStyle: 'italic' } },
+          'Amber = days since last visit exceeds 2x that store’s own instrument cadence (CFV ~242d, EcoSure ~364d, RGR ~730d) -- roughly the 90th percentile of real gaps, not a fixed schedule, since McDonald’s controls visit timing.'),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
           ...a.freq.map(f => h('div', { key: f.store, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 } },
             h('span', { style: { flex: 1, color: 'var(--text2)' } }, sName(f.store)),
             h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 24, textAlign: 'right' } }, f.n),
             h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 42, textAlign: 'right' } }, f.avgGapDays == null ? '—' : f.avgGapDays + 'd'),
-            h('span', { style: { fontFamily: 'var(--mono)', color: f.daysSinceLast != null && f.daysSinceLast > 60 ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' } }, f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
+            h('span', { style: { fontFamily: 'var(--mono)', color: f.daysSinceLast != null && f.overdueAt != null && f.daysSinceLast > f.overdueAt ? '#f59e0b' : 'var(--text3)', width: 42, textAlign: 'right' },
+              title: f.overdueAt != null ? 'Overdue past ' + f.overdueAt + 'd for ' + (f.lastType || 'CFV') : undefined },
+              f.daysSinceLast == null ? '—' : f.daysSinceLast + 'd'),
             h('span', { style: { fontFamily: 'var(--mono)', color: prCol(f.passRate), width: 40, textAlign: 'right' } }, pr(f.passRate)))))) : null));
 }
 

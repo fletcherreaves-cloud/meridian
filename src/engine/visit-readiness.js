@@ -241,34 +241,28 @@ function _spearman(xs, ys) {
   return (dx && dy) ? +(num / Math.sqrt(dx * dy)).toFixed(2) : null;
 }
 
-// Dispatch #69 — the caption used to assert "Weak agreement" off n=27, which
-// memory/notes-visit-readiness-backlog-2026-08-22.md computed a 95% CI for: direction match
-// [34.0%, 69.3%] (Wilson), rank corr [−0.16, 0.56]. That interval can't distinguish "the
-// model is useless" from "the model is good" — it's evidence of a small sample, not a weak
-// model, and the caption was claiming more than the data supports (the same UI defect as
-// item 1, in the opposite direction). CALIBRATION_PAIRS_FOR_POWER is the n needed for 80%
-// power to detect rank corr >= 0.4 (a Fisher z-transform power calculation), not an invented
-// threshold — same source file's own table. CALIBRATION_PAIRS_PER_YEAR (27 stores × 3 CFV
-// visits/yr) is settled in memory/finding-cfv-2026-visit-rules.md, which also answered the
-// open 2-vs-3 cadence question. Below this n, report progress toward enough power to judge
-// the model at all; only once there's enough data does the strength ladder mean anything.
-export const CALIBRATION_PAIRS_FOR_POWER = 46;
-export const CALIBRATION_PAIRS_PER_YEAR = 81;
-function calibrationProgress(n) {
-  const pairsNeeded = Math.max(0, CALIBRATION_PAIRS_FOR_POWER - n);
-  if (!pairsNeeded) return { pairsNeeded: 0, etaLabel: null };
-  const monthsNeeded = Math.ceil(pairsNeeded / (CALIBRATION_PAIRS_PER_YEAR / 12));
-  const eta = new Date(); eta.setMonth(eta.getMonth() + monthsNeeded);
-  const etaLabel = '~' + eta.toLocaleDateString('en-US', { month: 'short' });
-  return { pairsNeeded, etaLabel };
-}
+// Dispatch #69 first shipped a caption fix ("Weak agreement" off n=27, whose 95% CI
+// [-0.16, 0.56] can't distinguish a useless model from a good one) that reported a countdown
+// toward 46 pairs (80% power to detect rank corr >= 0.4). Follow-up, same day:
+// memory/finding-cfv-predictability-ceiling-2026-08-22.md measured, on 217 real CFV visits,
+// that rank corr >= 0.4 is ABOVE the achievable ceiling for ANY store-level predictor of this
+// outcome — store identity explains only ICC=0.087 of visit-to-visit variance (marginal,
+// permutation p=0.092), capping any predictor's correlation at sqrt(ICC) =~ 0.30. No amount of
+// additional data reaches 0.4, so a "you'll know by <month>" countdown is unsafe at ANY
+// threshold, not just this one (re-pointing the constant at 0.30 would repeat the same error).
+// The honest surface is the ceiling ALONGSIDE the estimate, not a verdict or a promise.
+//
+// This ceiling is CFV-specific (RGR's own test-retest is 0.342 at n=25, CI [-0.06, +0.65] —
+// too imprecise to use as a ceiling of its own, and not interchangeable with CFV's). That
+// matters because calibrateReadiness's pairs come from each store's single most recent graded
+// visit, which mixes CFV and RGR (dispatch #69 "Part D0", flagged the same day as a
+// prerequisite for interpreting either correlation: CFV runs at 55.3% meeting 80% in 2026,
+// RGR at ~100% — pooling two instruments with very different pass rates depresses the pooled
+// rho on its own, independent of model quality). Split by reportType before applying the
+// ceiling to anything.
+export const CFV_CORRELATION_CEILING = 0.30; // sqrt(ICC), see finding file above — approximate
 
-// Validate predicted readiness against the ACTUAL graded-visit scores the engine loads.
-// Trust signal: do stores we rate lower actually score lower on their real visits?
-export function calibrateReadiness(stores) {
-  const rows = stores
-    .filter(s => s.lastVisit && s.lastVisit.score != null)
-    .map(s => ({ loc: s.loc, predicted: s.readiness, band: s.band, actual: +s.lastVisit.score, pass: s.lastVisit.pass, type: s.lastVisit.type, dateISO: s.lastVisit.dateISO }));
+function _calibratePairs(rows) {
   const n = rows.length;
   const r = _spearman(rows.map(x => x.predicted), rows.map(x => x.actual));
   // Direction agreement: a store we did NOT rate "ready" should score below the group's
@@ -279,10 +273,27 @@ export function calibrateReadiness(stores) {
     hits = rows.filter(x => (x.band === 'ready') === (x.actual >= med)).length;
     hitRate = +(hits / n).toFixed(2);
   }
-  const strength = r == null ? null : Math.abs(r) >= 0.6 ? 'strong' : Math.abs(r) >= 0.3 ? 'moderate' : 'weak';
-  const { pairsNeeded, etaLabel } = calibrationProgress(n);
-  return { n, r, strength, hits, hitRate, rows: rows.sort((a, b) => a.predicted - b.predicted),
-    pairsNeeded, etaLabel, pairsForPower: CALIBRATION_PAIRS_FOR_POWER };
+  return { n, r, hits, hitRate };
+}
+
+// Validate predicted readiness against the ACTUAL graded-visit scores the engine loads.
+// Trust signal: do stores we rate lower actually score lower on their real visits?
+export function calibrateReadiness(stores) {
+  const rows = stores
+    .filter(s => s.lastVisit && s.lastVisit.score != null)
+    .map(s => ({ loc: s.loc, predicted: s.readiness, band: s.band, actual: +s.lastVisit.score, pass: s.lastVisit.pass, type: s.lastVisit.type || 'CFV', dateISO: s.lastVisit.dateISO }));
+
+  const pooled = _calibratePairs(rows);
+
+  // Part D0 — per-instrument breakdown, computed unconditionally (no new data required: the
+  // field is already on every row). CFV is the only type with a measured ceiling today.
+  const byType = {};
+  for (const type of [...new Set(rows.map(x => x.type))].sort()) {
+    byType[type] = { ..._calibratePairs(rows.filter(x => x.type === type)),
+      ceiling: type === 'CFV' ? CFV_CORRELATION_CEILING : null };
+  }
+
+  return { ...pooled, rows: rows.sort((a, b) => a.predicted - b.predicted), byType };
 }
 
 const _isoDay = ms => (ms == null || isNaN(ms)) ? null : new Date(ms).toISOString().slice(0, 10);
@@ -473,6 +484,136 @@ function subScore(ds, specs, loc, cache) {
 // patterns in when/where visits go well or poorly surface (e.g. Fridays underperform,
 // or breakfast DT is the weak channel). Pure over ds.gradedVisits; no side effects.
 const _DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Dispatch #73 (2026-08-22) -- the panel's "overdue" amber was a flat 60 days, never measured:
+// on 190 real CFV inter-visit intervals (all 27 stores, 2023-01 -> 2026-08) it fired on 166/190
+// (87.4%) -- a store perfectly on cadence sits amber PERMANENTLY, which carries no information.
+// Fix is per-instrument, not a re-pointed constant: CFV/EcoSure/RGR run on different program
+// cadences (owner-confirmed 3/2/1 visits per store per year), so pooling them under one number
+// was the other half of the defect. Expected gaps below are the CADENCE THE PROGRAM TARGETS
+// (365 / visits-per-year), NOT the measured median (138d) -- that measured figure describes how
+// late visits already run against the target, and using it AS the target would just re-encode
+// today's lateness as normal. See memory/dispatch-73.md for the full interval distribution.
+const EXPECTED_CADENCE_DAYS = { CFV: 121, EcoSure: 182, RGR: 365 }; // 365/3, 365/2, 365/1
+// "Overdue" fires past this multiple of the expected gap. 2x is MEASURED against the 190 real
+// CFV intervals, not reasoned: the share of NORMAL intervals the flag would fire on is
+//
+//     flat 60d (retired)  87.4%      1.5x = 182d  33.7%
+//     1.0x = 121d         58.4%      2.0x = 242d  12.6%
+//
+// and the observed p90 gap is 255d = 2.11x cadence -- so 2x lands essentially ON the 90th
+// percentile, the conventional line for "unusual". 1.5x shipped first and was a large
+// improvement, but left roughly a THIRD of stores amber at any moment, which is close to the
+// noise problem this dispatch exists to remove. Owner chose 2x on these figures (2026-08-22).
+//
+// ⚠️ This is a signal-to-noise choice, not a service standard: it says nothing about when a
+// visit SHOULD happen, only when a gap has become unusual for this estate. Re-measure if the
+// programme cadence changes -- the multiple is anchored to the observed distribution, and a
+// different cadence moves the distribution with it.
+const OVERDUE_MULTIPLIER = 2;
+function _cadenceKey(reportType) {
+  const t = String(reportType || 'CFV');
+  if (/eco|food\s*safety|fs/i.test(t)) return 'EcoSure';
+  if (/rgr/i.test(t)) return 'RGR';
+  if (/cfv/i.test(t)) return 'CFV';
+  return null; // an instrument this file has no owner-confirmed cadence for -- no threshold,
+               // not a guess (same reasoning as the CFV-only correlation ceiling above).
+}
+// Exported so the panel can label what the colour means without re-deriving the number.
+export function overdueThresholdDays(reportType) {
+  const key = _cadenceKey(reportType);
+  return key ? Math.round(EXPECTED_CADENCE_DAYS[key] * OVERDUE_MULTIPLIER) : null;
+}
+
+// A graded visit's dateISO is a bare 'YYYY-MM-DD' (src/parsers/graded-visits.js parseVisitDate),
+// and `new Date('2026-07-07')` parses a date-ONLY string as UTC midnight -- so .getDay() and
+// .getFullYear(), which both read LOCAL time, land on the PREVIOUS calendar day in every
+// negative-offset zone. Both of this estate's markets are negative-offset (Oklahoma Central,
+// Florida Eastern), so this was wrong for every real viewer while passing in UTC-based CI.
+//
+// MEASURED against the real 217-visit dataset (memory/data/cfv-history-2023-2026.json) under
+// TZ=America/Chicago: EVERY day-of-week label shifted back one. The panel reported 53 Monday and
+// 42 Sunday visits when the truth is 53 Tuesday and 42 Monday -- inventing a 42-visit Sunday
+// bucket PACE never shopped, and dropping Saturday (n=13) entirely. Year attribution has the same
+// flaw: today's data happens to contain no Jan-1 visit so nothing is misfiled yet, but the next
+// one would land in the wrong row of dispatch #75's channel-by-year table.
+//
+// Anchoring at local NOON reads back the calendar day the string actually names, and noon rather
+// than midnight keeps it safe across DST transitions. Same idiom as engine/waste-discipline.js:41.
+const _localDay = d => {
+  if (d instanceof Date) return d;
+  const s = String(d);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+};
+
+// Dispatch #75 -- Visit Patterns' Channel block pools all 4 years of CFV history into one
+// pass-rate per channel, which is exactly what hid the 2026 drive-thru finding (43%->60% share,
+// 25%->54% below-80, memory/finding-cfv-2026-drivethru-decline-2026-08-22.md). Splitting by
+// (channel, year) fixes that, but 217 visits / 4 years / 3 channels averages ~18/cell and the
+// real distribution is far worse -- in-restaurant 2023 is n=1.
+//
+// MEASURED against the real 217-visit dataset (all 12 channel x year cells that have any
+// visits at all): sorted n = [1, 3, 5, 7, 14, 20, 23, 28, 28, 29, 29, 30]. The gap between 7
+// and 14 (a jump of 7) is by far the largest in that sorted list -- every other consecutive gap
+// is <=6 -- and it cleanly separates in-restaurant's four cells (1/3/5/7, every year) from every
+// drive-thru/curbside cell (14+). 10 sits in that gap: not a round-number guess, the boundary
+// the data itself draws. A cell below this is THIN and must be suppressed/de-emphasised by the
+// panel, never rendered as a bare percentage -- see memory/dispatch-75.md.
+export const CHANNEL_YEAR_MIN_N = 10;
+
+// Per (channel, year): n, share of that YEAR's total visits (not all-time), and passRate.
+// Deliberately returns passRate, not a "below-80" field -- pass is already the estate's own
+// derived definition (dispatch #74, score>=80) and the panel converts to "below" for display,
+// so there is exactly one place (buildRow's CFV_PASS_THRESHOLD) that encodes what "pass" means.
+// No trend/slope field is computed here on purpose -- 4 annual points with several single-digit
+// n do not support one (dispatch #75's explicit "do not add a trend line").
+function _channelByYear(visits) {
+  const yearOf = v => { const d = _localDay(v.dateISO || v.date); return isNaN(+d) ? null : String(d.getFullYear()); };
+  // Only channel-bearing visits belong in this block AT ALL. RGR visits carry no channel, so
+  // counting them in the denominator dilutes every channel's share while contributing to no
+  // numerator -- the shares then do not sum to 100% and a year that happens to contain RGR looks
+  // like its channels shrank.
+  //
+  // MEASURED from a real screenshot of the shipped panel (2026-08-23, 'All types', 237 visits):
+  // 2023/2024/2025 rendered correct shares purely BY ACCIDENT -- the app holds no RGR rows for
+  // those years YET (RGR runs every year in reality, owner-stated 2026-08-23; 2026-only is an
+  // import gap, not a fact about the programme), so their totals already equalled their
+  // channel-bearing counts (29/0.4915 = 59 = CFV 2023;
+  // 28/0.4308 = 65 = CFV 2025). 2026 contains all 20 RGR visits, so its denominator rendered as
+  // 67 against 47 real channel-bearing visits -- understating every 2026 channel share by ~30%
+  // relative. Drive-thru 2026 showed ~41.8% of yr instead of its true 59.6%, against 43.1% in
+  // 2025 -- i.e. FLAT-to-DOWN on screen when the truth is a 16-point RISE. That is precisely the
+  // trend dispatch #75 was built to surface, hidden one layer down by the denominator.
+  //
+  // ⚠️ This bug gets WORSE and less visible once RGR history is backfilled: since RGR runs every
+  // year, the distortion stops being 2026-only and becomes uniform across every year -- which
+  // reads as the truth. The 2026-only anomaly is the ONLY reason it was catchable from a
+  // screenshot. Fixed before that backfill deliberately.
+  const chVisits = visits.filter(v => v.channel);
+  const years = [...new Set(chVisits.map(yearOf).filter(Boolean))].sort();
+  const yearTotal = {};
+  for (const y of years) yearTotal[y] = chVisits.filter(v => yearOf(v) === y).length;
+  const channels = [...new Set(chVisits.map(v => v.channel).filter(Boolean))];
+  const rows = [];
+  for (const channel of channels) {
+    for (const year of years) {
+      const cell = chVisits.filter(v => v.channel === channel && yearOf(v) === year);
+      const n = cell.length;
+      if (!n) continue; // no visits at all -- nothing to show, not a 0%
+      rows.push({
+        channel, year, n,
+        share: yearTotal[year] ? n / yearTotal[year] : null,
+        passRate: cell.filter(v => v.pass).length / n,
+        thin: n < CHANNEL_YEAR_MIN_N,
+      });
+    }
+  }
+  // The current calendar year is necessarily partial (e.g. 2026 through whenever "now" is) --
+  // the panel must label it, per dispatch #75's explicit "do not present it as completed".
+  const partialYear = String(new Date().getFullYear());
+  return { years, rows, partialYear: years.includes(partialYear) ? partialYear : null, minN: CHANNEL_YEAR_MIN_N };
+}
+
 export function analyzeGradedVisits(gradedVisits, opts = {}) {
   const type = opts.type || 'all';
   const visits = (gradedVisits || []).filter(v =>
@@ -493,20 +634,27 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
       .sort((a, b) => b.n - a.n);
   };
   // DOW keeps calendar order, not count order.
-  const dowRaw = byVar(v => { const d = new Date(v.dateISO || v.date); return isNaN(+d) ? null : _DOW[d.getDay()]; });
+  const dowRaw = byVar(v => { const d = _localDay(v.dateISO || v.date); return isNaN(+d) ? null : _DOW[d.getDay()]; });
   const dow = _DOW.map(d => dowRaw.find(x => x.key === d)).filter(Boolean);
 
   // Per-store frequency / cadence.
   const byStore = {};
   for (const v of visits) { const s = _normLoc(v.store || v.loc); if (!s) continue; (byStore[s] || (byStore[s] = [])).push(v); }
   const freq = Object.entries(byStore).map(([store, vs]) => {
-    const days = vs.map(v => _ms(v.dateISO || v.date)).filter(x => !isNaN(x)).sort((a, b) => a - b);
+    // Sorted by date (not just extracted to a numeric array) so the LAST entry's own
+    // reportType is still attached -- dispatch #73 needs the overdue threshold to key off
+    // the type of the visit actually being waited on, not the panel's (possibly 'all') filter.
+    const dated = vs.map(v => ({ v, ms: _ms(v.dateISO || v.date) })).filter(x => !isNaN(x.ms)).sort((a, b) => a.ms - b.ms);
+    const days = dated.map(x => x.ms);
     const gaps = []; for (let i = 1; i < days.length; i++) gaps.push((days[i] - days[i - 1]) / 864e5);
+    const lastType = dated.length ? (dated[dated.length - 1].v.reportType || 'CFV') : null;
     return {
       store, n: vs.length,
       avgGapDays: gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
       daysSinceLast: days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null,
       passRate: vs.length ? vs.filter(v => v.pass).length / vs.length : null,
+      lastType,
+      overdueAt: overdueThresholdDays(lastType),
     };
   }).sort((a, b) => b.n - a.n);
 
@@ -516,6 +664,7 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
     daypart: byVar(v => v.daypart),
     weekpart: byVar(v => v.weekpart),
     channel: byVar(v => v.channel),
+    channelByYear: _channelByYear(visits),
     byType: byVar(v => v.reportType || 'CFV'),
     freq,
     types: [...new Set((gradedVisits || []).map(v => v && (v.reportType || 'CFV')).filter(Boolean))],

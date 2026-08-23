@@ -1,6 +1,7 @@
 ---
 name: finding-store-13113-packaging-variance-2026-08-21
 description: The first operational finding the security build has produced. Store 0013113 flags TvA variance at 3.5x the estate rate, and the flags are 82% packaging against a 47% baseline - a store-specific packaging counting problem, chronic and improving, not loss. Includes what was ruled out and how, and the reason this should be a process conversation rather than an investigation.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

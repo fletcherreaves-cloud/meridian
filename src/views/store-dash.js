@@ -2032,10 +2032,15 @@ function DistrictGrid({stores, ds, settings, dateRange, userEvents, onSelectStor
 }
 
 // ORG VIEW
-function OrgView({stores, settings, onSelectStore}) {
+function OrgView({stores, ds, settings, onSelectStore}) {
   // #189: same pattern as AtAGlance — one of 4 possible active-panel views.
   const _rt0 = performance.now();
   React.useLayoutEffect(() => { _traceRender('OrgView', 'render+commit', performance.now() - _rt0); });
+  // Dispatch #72 A1 -- priceChanges was read here without ever being declared in this
+  // function (it's DistrictGrid's own local, a sibling function): an unconditional
+  // ReferenceError on every render of Patch/Org, both nav views' every tab. Computed the
+  // same way DistrictGrid does, from the ds this component now also receives.
+  const priceChanges = useMemo(()=>lastPriceChangeByStore(ds&&ds.pmixRows||[]),[ds&&ds.pmixRows]);
   const operators = settings.operators||{};
   const supervisors = settings.supervisorGroups||{};
   const byOp = Object.entries(operators).map(([name,locs])=>({name,stores:stores.filter(s=>locs.includes(s.loc))})).filter(g=>g.stores.length>0);
@@ -2609,7 +2614,10 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
     {id:'oepe',    cat:'svc',   l:'OEPE (seconds)',     offKey:'tOepe',    unit:'s',   lowerBetter:true,  tol:10,  dataFn:(cR,lR,oR)=>avg(oR,'oepe')},
     {id:'park',    cat:'svc',   l:'DT Park %',          offKey:'tPark',    unit:'%',   lowerBetter:true,  tol:.03, dataFn:(cR,lR,oR)=>avg(oR,'park')},
     {id:'kvst',    cat:'svc',   l:'KVS Time (seconds)', offKey:'tKvst',    unit:'s',   lowerBetter:true,  tol:10,  dataFn:(cR,lR,oR)=>avg(oR,'kvst')},
-    {id:'r2p',     cat:'svc',   l:'R2P (seconds)',      offKey:'tR2p',     unit:'s',   lowerBetter:false, tol:5,   dataFn:(cR,lR,oR)=>avg(oR,'r2p')},
+    // Dispatch #77 -- was lowerBetter:false, contradicting every other site including this
+    // table's OWN sibling table at :2229, whose label literally reads "R2P (lower=better)".
+    // Corroborated: metric-source.js derives r2p as seconds/transaction. See memory/dispatch-77.md.
+    {id:'r2p',     cat:'svc',   l:'R2P (seconds)',      offKey:'tR2p',     unit:'s',   lowerBetter:true, tol:5,   dataFn:(cR,lR,oR)=>avg(oR,'r2p')},
     // Labor
     {id:'tpph',    cat:'labor', l:'TPPH',               offKey:'tTpph',    unit:'',    lowerBetter:false, tol:.2,  dataFn:(cR,lR,oR)=>avgN(cR,'tpph')||avgN(lR,'tpph')},
     {id:'labor',   cat:'labor', l:'Labor %',             offKey:'tLabor',   unit:'%',   lowerBetter:true,  tol:.02, dataFn:(cR,lR,oR)=>avgN(cR,'laborPct')||avgN(lR,'laborPct')},

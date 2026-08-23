@@ -1,6 +1,7 @@
 ---
 name: analysis-labor-allocation-2026-08-18
 description: PROVEN — labor hours sit in the wrong dayparts. The two busiest dayparts run UNDER the VLH guide while the three softest run OVER it, and the surplus covers the deficit 1.6x. Includes the schedule-vs-execution split, the overnight reframe, the actions, and every query.
+sensitivity: open
 metadata:
   node_type: memory
   type: analysis
