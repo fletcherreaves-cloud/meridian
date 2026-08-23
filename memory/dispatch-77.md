@@ -361,3 +361,37 @@ entry chunk.
 - No migration of the 4 pre-existing direction tables / ~86 sites.
 - No person-scoped ranking (attribution-confidence is unbuilt, per the dispatch).
 - No tolerance-band work (filed above as a separate future item, untouched).
+
+---
+
+## 📌 DEFERRED from #580, owner-approved 2026-08-23 — ratio metrics are averaged, not Σ/Σ
+
+Owner: *"you're recommended fix is good. We can address the rest later. Just remember please."*
+Recorded here so "later" has something to find.
+
+**What shipped in #580:** `rankPerformers` (`src/engine/top-bottom-performers.js`) computes each
+store's `value` as the plain **mean of its daily values**. For count metrics (sales, gc, OT hours)
+that is correct. For **ratios it is an average-of-averages** — the thing the standing rule forbids.
+
+**10 of the 16 metrics the panel offers are ratios:** `tpph`, `avgCheck`, `laborPct`, `cashOSPct`,
+`tRedAPct`, `tRedBPct`, `discPct`, `compWaste`, `rawWaste`, `statVar`.
+
+🔴 **The gap is already measured in this repo, by someone else, before #580 existed.**
+`src/engine/metric-source.js:309-315`: SPPH on store 5985 for 2026-08 is **$70.18/hr** as
+mean-of-daily versus **$67.04/hr** as Σ/Σ — a **4.5%** gap. That same comment says outright:
+*"a consumer that needs a true weighted rollup should sum the parts itself rather than call
+metricAvg."* The Top/Bottom Performers panel **is** that consumer.
+
+**What #580 fixed (the agreed minimal fix):** the file claimed the rule was *"satisfied BY
+CONSTRUCTION… no aggregate to get wrong"* — true cross-store, false across-days. That claim was
+corrected and scoped, and the displayed figure labelled as a daily average. ⚠️ The comment was the
+more dangerous half: a confident guarantee stops the next reader from checking.
+
+**What is still open:** true Σ/Σ for ratio metrics. Not bolted on because `metricSeries` returns
+the ratio, **not its numerator and denominator** — so this needs either a parts-returning variant
+or per-metric numerator/denominator declarations in `METRIC_SOURCES`. Real work, and it would
+serve every consumer of a ratio rollup, not just this panel. Related and probably the same job:
+`notes-57-metric-registry-plan` §4's numerator/denominator gap.
+
+⚠️ **Until it lands, a leaderboard on any of those 10 metrics can mis-order two close stores**, and
+the number shown is a daily average rather than the period figure a P&L would show.
