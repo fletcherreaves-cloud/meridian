@@ -306,7 +306,12 @@ const CORR_PREDICTORS = [
   {id:'r2p',     l:'Receipt to Print (R2P)',         shortL:'R2P',        src:'ops',   lowerBetter:true,  fn:r=>r.r2p,
    action:'Target faster R2P as a front counter service quality indicator — slow R2P signals assembly or kitchen delays that affect guest experience.',
    note:'R2P measures front counter speed: the time from when the receipt prints (order placed) to when the order appears ready on the export monitor. A lower R2P means guests are being served faster at the counter. Strong links to sales suggest faster counter service drives more throughput on busy days.'},
-  {id:'labor',   l:'Labor Percentage',              shortL:'Labor %',    src:'labor', lowerBetter:false, fn:r=>r.laborPct,
+  {id:'labor',   l:'Labor Percentage',              shortL:'Labor %',    src:'labor', lowerBetter:true, fn:r=>r.laborPct,
+   // Dispatch #77 -- owner-ruled 2026-08-23: labor has a target, at/below is good, over is bad,
+   // no two-sided third state. This entry read lowerBetter:false, disagreeing with every other
+   // declaration site in the app (store-dash.js, one-pager-data.js, analytics.js's own target
+   // table 27 lines later). The action/note prose below stays -- the nuance it describes is real
+   // -- but it does not change the metric's direction. See memory/dispatch-77.md.
    action:'Balance staffing carefully — too lean hurts service quality; too heavy compresses margin.',
    note:'Labor % tends to be high on slow days (fixed cost spread across fewer sales) and can also be high on very busy days with surge staffing. Context and trend matter more than the number alone.'},
   {id:'tpph',    l:'Transactions Per Person Hour',  shortL:'TPPH',       src:'labor', lowerBetter:false, fn:r=>r.tpph,
@@ -321,7 +326,11 @@ const CORR_PREDICTORS = [
   {id:'tRedA',   l:'Voids (T-Red After)',           shortL:'Voids %',    src:'ctrl',  lowerBetter:true,  fn:r=>r.tRedAPct,
    action:'Address order accuracy training — frequent voids slow the line and frustrate guests.',
    note:'High void rates often indicate order errors, which require the cashier to stop and fix the ticket. This slows throughput and can negatively impact service perception.'},
-  {id:'discPct', l:'Discount Rate',                 shortL:'Discount %', src:'ctrl',  lowerBetter:false, fn:r=>r.discPct,
+  {id:'discPct', l:'Discount Rate',                 shortL:'Discount %', src:'ctrl',  lowerBetter:true, fn:r=>r.discPct,
+   // Dispatch #77 -- owner-ruled 2026-08-23: lower-better, same simplification as Labor % above.
+   // This entry read lowerBetter:false, disagreeing with every other declaration site (store-
+   // dash.js's two tables, analytics.js's own target table 27 lines later). Action/note prose
+   // stays. See memory/dispatch-77.md.
    action:'Analyze whether promotions are driving new visits or just discounting customers who would have come anyway.',
    note:'Higher discount days often bring more guest counts but at a lower average check size. Understanding which promotions drive incremental traffic is key.'},
   {id:'fobPct',  l:'Food Cost (FOB %)',             shortL:'FOB %',      src:'ctrl',  lowerBetter:true,  fn:r=>r.fobPct,

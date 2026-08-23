@@ -118,7 +118,11 @@ function printStoreReport(s) {
   setTimeout(() => win.print(), 350);
 }
 
-function Bar({ score, w = 60 }) {
+// Dispatch #77 -- exported so Top/Bottom Performers (top-bottom-performers.js) can reuse the
+// house bar style instead of re-implementing it, per the dispatch's explicit "reuse what
+// exists" instruction. Score is expected 0-100; callers ranking a non-percentage metric (a
+// dollar figure, a seconds figure) must first normalize to that scale themselves.
+export function Bar({ score, w = 60 }) {
   return h('div', { style: { width: w, height: 6, borderRadius: 3, background: 'var(--bdr)', overflow: 'hidden', display: 'inline-block', verticalAlign: 'middle' } },
     h('div', { style: { width: (score == null ? 0 : Math.max(2, score)) + '%', height: '100%', background: scoreColor(score) } }));
 }

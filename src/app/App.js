@@ -125,6 +125,7 @@ const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ defau
 const _analytics = () => import('../views/analytics.js');
 const MetricCorrelationExplorer = lazyPanel(() => _analytics().then(m => ({ default: m.MetricCorrelationExplorer })));
 const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
+const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-performers.js').then(m => ({ default: m.TopBottomPerformers })));
 const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
 const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
 const ForecastAccuracyPanel     = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAccuracyPanel })));
@@ -666,6 +667,7 @@ function App() {
   const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
+  const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
   // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle' (see routePanel above).
   const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
@@ -2511,7 +2513,7 @@ function App() {
     showLifeLenzBridge||showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
-    showRevIntel||showSettings||showSmartTargets||showStoreKB||
+    showRevIntel||showTopBottom||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
@@ -2542,7 +2544,7 @@ function App() {
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
-      setShowRevIntel(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowRevIntel(false);setShowTopBottom(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
@@ -2620,6 +2622,7 @@ function App() {
         if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
+        if(modal==='top-bottom')     perm('analytics.district')&&setShowTopBottom(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
         if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
@@ -2864,6 +2867,7 @@ function App() {
     showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
+    showTopBottom&&h(TopBottomPerformers,{stores,ds,onSelectStore:s=>{goStore(s);setShowTopBottom(false);},onClose:()=>setShowTopBottom(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
