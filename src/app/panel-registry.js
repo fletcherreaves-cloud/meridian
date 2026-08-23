@@ -113,6 +113,11 @@ export const PANELS = [
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily' },
   { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics' },
   { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics' },
+  // Opportunity $ v1 (memory/design-opportunity-dollars.md) -- flagship "every performance gap
+  // becomes recoverable dollars" panel. kind:'test-kitchen' with its real eventual section:
+  // 'analytics' set from day one (promotion is a `kind:` flip only, dispatch #61); it sits next
+  // to the At-A-Glance headline tile that already links here (onOpenModal('opportunity-dollars')).
+  { id:'opportunity-dollars', label:'Opportunity $', icon:'💰', perm:'analytics.district', kind:'test-kitchen', section:'analytics', tkOrder:13 },
   { id:'operator-summary', label:'Org Summary', icon:'📊', perm:'analytics.district', kind:'nav', section:'reports' },
   { id:'pace-target', label:'Pace Target', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'panel-manager', label:'Panel Manager', icon:'🧩', perm:'settings.view', kind:'nav', section:'admin' },

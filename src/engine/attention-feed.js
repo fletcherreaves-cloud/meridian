@@ -184,6 +184,32 @@ export function fobOverTarget(fobByStore = {}, targetsByLoc = {}, storeName = St
   return out;
 }
 
+// Opportunity $ (memory/design-opportunity-dollars.md) — one CROSS-DOMAIN item per store,
+// combining the Labor + Food + GC pillars into a single "here's your biggest $ opportunity"
+// signal. `perStore` is computeOpportunity()'s own per-store array (engine/opportunity.js via
+// engine/opportunity-district.js), already floored at $0 and disjoint by construction.
+// Deliberately separate from fobOutliers/fobOverTarget above (FOB-only, compared against a
+// district multiple or a raw target) rather than a replacement for either -- this is the
+// combined view the design doc calls "makes the $ real and cross-domain," not a re-derivation
+// of the same FOB $ under a new name.
+export function opportunityAlerts(perStore = [], storeName = String, { minTotal = 1500 } = {}) {
+  const out = [];
+  for (const p of (perStore || [])) {
+    if (!p || !(p.total$ > 0) || p.total$ < minTotal) continue;
+    const drivers = [['Labor', p.labor$ || 0], ['Food', p.food$ || 0], ['GC/Sales', p.gc$ || 0]]
+      .sort((a, b) => b[1] - a[1]);
+    const [topName, topAmt] = drivers[0];
+    out.push({
+      id: 'opp-' + p.loc, severity: p.total$ >= minTotal * 3 ? 'warn' : 'info',
+      category: 'Opportunity', icon: '💰',
+      title: `${storeName(p.loc)} — ${money(p.total$)} recoverable`,
+      detail: `Biggest driver: ${topName} (~${money(topAmt)}) · MTD vs target`,
+      dollars: p.total$, loc: p.loc, nav: 'opportunity-dollars',
+    });
+  }
+  return out;
+}
+
 // Integrity — a granted early-count exception (awareness that a store's EOM count was off standard
 // process). `rows` = [{ loc, acceptedDate, approvedBy }].
 export function countExceptions(rows = [], storeName = String) {
@@ -272,11 +298,12 @@ export function groupAttentionByStore(items = [], storesByLoc = new Map(), normL
 // (stores.flatMap(s => s.findings || [])) — adapted via findingsToFeedItems and merged in
 // alongside the other detectors, so one ranked list contains everything either panel used to
 // show separately.
-export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, storeName = String, max = 15, onFireVolume } = {}) {
+export function buildAttentionFeed({ fobByStore, targetsByLoc, salesLY, dtRows, ageDays, visitStores, savedCorrelations, countExceptionRows, integrityItems, briefFindings, coachingItems, opportunityByStore, storeName = String, max = 15, onFireVolume } = {}) {
   const bySource = {
     staleData: staleData(ageDays),
     fobOutliers: fobOutliers(fobByStore || {}, storeName),
     fobOverTarget: fobOverTarget(fobByStore || {}, targetsByLoc || {}, storeName),
+    opportunityAlerts: opportunityAlerts(opportunityByStore || [], storeName),
     salesBehindLY: salesBehindLY(salesLY || [], storeName),
     slowDT: slowDT(dtRows || [], storeName),
     visitRisk: visitRisk(visitStores || [], storeName),
