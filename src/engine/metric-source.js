@@ -27,6 +27,38 @@
 // Adding a metric = add one line to METRIC_SOURCES. `mode`:
 //   'pos' — a real value is > 0 (sales, gc, speed times, %s that are never legitimately 0)
 //   'any' — 0 / negative are legitimate (cash O/S, T-Reds, OT hours, discounts)
+//
+// `direction` (dispatch #77, 2026-08-23) — the ONE place a metric's "which way is good" now
+// lives. Before this, direction was declared independently in at least 8 places across the
+// app (src/views/store-dash.js x2, analytics.js x2, store-analytics.js, one-pager-data.js,
+// at-a-glance.js, bullseye-tile.js) under two flag names (`lowerBetter` and the inverse
+// `higherBetter`), and three metrics contradicted themselves: Labor %, R2P, and Discount %
+// each had at least one site claiming the opposite direction from every other site — R2P's
+// own store-dash.js table even contradicted its OWN sibling table, whose label literally
+// read "R2P (lower=better)". Owner-ruled 2026-08-23, all three: lower-better, no two-sided
+// third state ("labor has a target, for simplification, at/below is good and over is bad").
+// Full adjudication, the cross-reference table, and what was deliberately left unresolved:
+// memory/dispatch-77.md.
+//
+// Two states only — `'lower' | 'higher'`, omitted (undefined) when direction genuinely isn't
+// settled. Two metrics are DELIBERATELY left unset, not overlooked:
+//   - `park` — 2 of the 4 sites that declared it treat it as a fixed lower-better metric, but
+//     2 others already treat it as having NO single direction (`higherBetter:null` /
+//     `'range'`). This isn't a guess call: `engine/pipeline.js` (#181, 2026-08-11) already
+//     REMOVED park from readiness scoring after a real 27-store quadrant measurement (park% x
+//     OEPE) showed the district's heaviest parkers also beat the median on flow, refuting a
+//     single-axis "less parking is always better" read. Diagnosed via
+//     `engine/park-oepe-quadrant.js`, not a direction flag — do not re-add one here without
+//     redoing that measurement.
+//   - `actVsNeed` — a SIGNED hour gap (actual − needed), not a monotone quantity: the file's
+//     own comment above this key says overstaffed and understaffed are both worth seeing, and
+//     "closer to zero" isn't expressible as lower/higher. The one site that declared it
+//     (`store-dash.js`, `lowerBetter:false`) isn't corroborated anywhere else, so it was not
+//     carried forward.
+// Migration is explicitly out of scope for #77: the 4 existing panel-side direction tables
+// (~86 sites) still carry their own flags and were NOT touched except the 3 owner-confirmed-
+// wrong values above. What must not happen is a NINTH declaration site — any new consumer
+// (the Top/Bottom Performers panel, and anything after it) reads `direction` from here.
 
 // Streams POPULATED BY A MANUAL UPLOAD. Each has a Supabase loader and a table, so being
 // cloud-readable is not the test — what feeds it is. These three are written by the parsers
@@ -44,8 +76,8 @@ const _dk = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10
 // srcs are tried in order; first source with a usable value for that day wins.
 export const METRIC_SOURCES = {
   // Sales / guests — sales & gc also flow through vs-ly.js for the matched-day comparison.
-  sales:     { mode: 'pos', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['laborRows', 'sales']] },
-  gc:        { mode: 'pos', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['laborRows', 'gc']] },
+  sales:     { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'sales'], ['qsrActSummaryRows', 'allNetSales'], ['laborRows', 'sales']] },
+  gc:        { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'gc'], ['glimpseRows', 'gc'], ['laborRows', 'gc']] },
   // Projected (plan) guests / sales per day — QSRSoft's own forecast (DAR proj_total_transactions
   // / proj_sales_dollars). The "what the store should deliver" baseline. projSales drives the
   // One-Pager GC/sales-to-plan opportunity ($ shortfall vs plan — bounded + sane).
@@ -56,11 +88,11 @@ export const METRIC_SOURCES = {
   // OEPE = (dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt, excluding parked/held
   // time (#183, reconciled r=0.9958 against a real QSRSoft Service report, 2026-08-11) so
   // current-day / recent windows populate before the Glimpse email lands.
-  oepe:      { mode: 'pos', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']] },
+  oepe:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']] },
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC
   // column). The KVS stations are the MFY make-lines, so the DAR carries it without a new field.
-  kvst:      { mode: 'pos', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']] },
+  kvst:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']] },
   // KVS Healthy Usage (2nd-side) as a 0–1 fraction — manual Ops calls it `kvsu`, the emailed
   // Daily Glimpse calls it `kvsHealthy`, and the auto-pulled DAR derives it from healthy/unhealthy
   // order-health counts (cloud-fresh, so recent windows fill even when the Glimpse email lags/omits
@@ -75,7 +107,7 @@ export const METRIC_SOURCES = {
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
-  r2p:       { mode: 'pos', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']] },
+  r2p:       { mode: 'pos', direction: 'lower', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']] },
   // Labor — PUNCHED Labor % for ALL locations (Notes 35 + 2026-08-03 correction). Glimpse FIRST,
   // then Controls, then manual Labor rows. Controls (ctrlRows.laborPct) was supposed to already
   // be punched, but parseCtrlData had a bug (fixed 2026-08-03) that preferred "Actual Labor %"
@@ -128,9 +160,9 @@ export const METRIC_SOURCES = {
   // glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every render site
   // multiplies by 100 before display (labor-tools.js). A derive returning d/s*100 would have
   // shipped a number 100x too large.
-  laborPct:  { mode: 'pos', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
+  laborPct:  { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
                derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null) } },
-  tpph:      { mode: 'pos', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
+  tpph:      { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
                     derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null) } },
   // TPPH = transactions ÷ actual hours. TRANSACTIONS AND GUEST COUNTS ARE THE SAME THING
   // here (owner-confirmed 2026-08-08) — the DAR calls it `transactions`, Glimpse and the
@@ -144,26 +176,26 @@ export const METRIC_SOURCES = {
   // otHrs) — closes the labor-tools.js Operations Group Stats gap (cleanup-backlog Class 2,
   // 2026-08-06): otHrs read raw ctrlRows/laborRows only, with no auto backstop, unlike
   // laborPct/tpph/oepe/cashOS in the same panel which already route through this resolver.
-  otHrs:     { mode: 'any', srcs: [['opsLaborRows', 'otHrs'], ['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
+  otHrs:     { mode: 'any', direction: 'lower', srcs: [['opsLaborRows', 'otHrs'], ['ctrlRows', 'otHrs'], ['laborRows', 'otHrs']] },
   // OT Dollars — otHrs's dollar sibling, same auto source and same gap: opsLaborRows
   // already aliases over_time_total_dollars -> otDollar (supabase.js loadOpsLaborSummary),
   // it just had no chain yet (#270 phase 1, closing it alongside otHrs for SAGE's labor
   // summary rather than leaving one of the two OT columns manual-only).
   otDollar:  { mode: 'any', srcs: [['opsLaborRows', 'otDollar'], ['ctrlRows', 'otDollar'], ['laborRows', 'otDollar']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
-  cashOSPct: { mode: 'any', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']] },
+  cashOSPct: { mode: 'any', direction: 'lower', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']] },
   // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
   // the auto-pulled Operations Report cash-sheet. Closes EOM Supervisor's Cash +/- gap (#52).
   cashOSAmt: { mode: 'any', srcs: [['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt'], ['ctrlRows', 'cashOSAmt']] },
   // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
   // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
-  tRedAPct:  { mode: 'any', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']] },
-  tRedBPct:  { mode: 'any', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']] },
+  tRedAPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']] },
+  tRedBPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']] },
   // Drawer opens (count) — manual Controls, then the auto-pulled Operations Report cash-sheet.
   drawerOpens: { mode: 'any', srcs: [['opsCashRows', 'drawerOpens'], ['ctrlRows', 'drawerOpens']] },
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
-  discPct:   { mode: 'any', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']] },
+  discPct:   { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']] },
 
   // ── Notes 57 Phase 1 (v4.845) ──────────────────────────────────────────────
   // The inventory (scripts/metric-inventory.mjs) found 29 metrics described in
@@ -203,7 +235,7 @@ export const METRIC_SOURCES = {
 
   // Average check — manual Labor, then emailed Glimpse / Cash Sheet / Sales Ledger.
   // 'pos' because a real avg check is never legitimately 0.
-  avgCheck:       { mode: 'pos', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']] },
+  avgCheck:       { mode: 'pos', direction: 'higher', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']] },
 
   // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
   dtMixPct:       { mode: 'pos', srcs: [['salesLedgerRows', 'dtPctTotal'], ['laborRows', 'dtPctTotal']] },
@@ -244,11 +276,11 @@ export const METRIC_SOURCES = {
   // value to outrank a manual one on a day BOTH exist for (srcs is always checked before
   // derive here) — a smaller, secondary imperfection than the one being closed; flagged
   // rather than silently accepted as correct.
-  compWaste: { mode: 'any', srcs: [['fobRows', 'compWaste']],
+  compWaste: { mode: 'any', direction: 'lower', srcs: [['fobRows', 'compWaste']],
                derive: { inputs: ['compWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
-  rawWaste:  { mode: 'any', srcs: [['fobRows', 'rawWaste']],
+  rawWaste:  { mode: 'any', direction: 'lower', srcs: [['fobRows', 'rawWaste']],
                derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
-  statVar:   { mode: 'any', srcs: [['fobRows', 'statVar']],
+  statVar:   { mode: 'any', direction: 'lower', srcs: [['fobRows', 'statVar']],
                derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
 };
 
@@ -638,4 +670,18 @@ export function metricAvg(ds, locs, range, key) {
     for (const k in s) { sum += s[k]; n++; }
   }
   return n ? sum / n : null;
+}
+
+// Dispatch #77 -- the one place a consumer (e.g. Top/Bottom Performers) asks "which way is
+// good" for a metric. Returns 'lower' | 'higher' | null -- null means genuinely undecided
+// (see METRIC_SOURCES header comment for park/actVsNeed, the two deliberate omissions), not
+// "not yet implemented." A ranking must treat null as NOT rankable, never default to a guess.
+export function metricDirection(key) {
+  return METRIC_SOURCES[key]?.direction ?? null;
+}
+
+// Every METRIC_SOURCES key with a resolved direction -- the set a ranking is allowed to build
+// on. Deliberately excludes anything metricDirection() would return null for.
+export function rankableMetricKeys() {
+  return Object.keys(METRIC_SOURCES).filter(k => METRIC_SOURCES[k].direction != null);
 }

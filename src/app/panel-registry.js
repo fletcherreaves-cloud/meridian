@@ -155,6 +155,10 @@ export const PANELS = [
   { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
+  // Dispatch #77 -- gated on analytics.district (a general leaderboard, not a Security panel;
+  // must NOT inherit security.view), kind:'test-kitchen' with its real eventual section:'analytics'
+  // set from day one, per the standing rule (promotion is a `kind:` flip only, dispatch #61).
+  { id:'top-bottom', label:'Top/Bottom Performers', icon:'🏆', perm:'analytics.district', kind:'test-kitchen', section:'analytics', tkOrder:12 },
   { id:'unified-targets', label:'Unified Targets', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'why-engine', label:'Why Engine', icon:'🔬', perm:'analytics.ai', kind:'optional', section:'analysis' },
