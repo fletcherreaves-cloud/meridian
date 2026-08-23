@@ -33,6 +33,27 @@ day before, and says so explicitly:
 Per-visit EcoSure detail — including `visitDate` and all FS1…FS36 questions — comes from
 `getThirdPartyFoodSafetyVisitReport&visitId=<id>`, documented since 08-22.
 
+⚠️ **SCOPE OF THAT CLOSURE — read before quoting it.** "Closed" means: for each of the three
+instruments we can get **dated, per-store, per-visit SCORES**. It does **NOT** mean everything
+about them is solved. One thing is genuinely open, and this file's own wording caused it to be
+reported as closed:
+
+> **Open question 6 (`finding-ecosure-propel-api-2026-08-22.md:366`) — still open.** The EcoSure
+> visit-list rows **carry no `visitId`**, and `getThirdPartyFoodSafetyVisitReport` requires one.
+> So the per-question **FS1…FS36 detail cannot be enumerated unattended.** The one working call
+> used a `visitId` lifted from the UI by hand. Verbatim: *"Still open, and it is what per-question
+> detail depends on."*
+
+That matters because the per-question detail is the payload that would **replace** Visit
+Readiness's waste/holding food-safety proxy. Scores alone only calibrate it.
+
+📌 **Measured failure of this file's framing.** On 2026-08-23, SAGE — reading this very file —
+answered "is there a per-visit endpoint?" with *"EcoSure ✅ Closed by the addendum"*, citing this
+document. It had read the blunt "do not re-raise as a gap" line and generalised it over an item
+that is not closed. **Suppressing real work is a worse failure than the duplicated hunt this file
+was written to prevent**, so the carve-out above is load-bearing, not a footnote. Quote the closure
+*with* its scope, or not at all.
+
 **The actual open item was never "find the endpoint."** Per `roadmap-2026-08-23.md`'s HELD
 section, it is that **the rows were captured on 08-22 and never committed** — an ingest and
 persistence task, not a discovery task. `dispatch-78.md` describes a *re*-capture for that reason.
@@ -99,6 +120,25 @@ resolution. Its only value is as a reconciliation target for an API-based ingest
 authority; `Completed` varies (1 or 2 per store), so a straight mean weights a 1-visit store equal
 to a 2-visit one. Standing never-average-averages rule.
 
+## ⚠️ Host mapping — PEAK and Propel OVERLAP, they do not partition
+
+**Owner-stated 2026-08-23:** *"cfv and rgr data on both sites. downloadable copies only on peak."*
+
+So the split *"PEAK = CFV/RGR, Propel = EcoSure"* is **wrong**, and SAGE repeated it on 2026-08-23
+after reading these files. Corroborated in the corpus: **`getCfvHistory` is on
+`propel.mcd.com/api/visits`** (`finding-ecosure-propel-api-2026-08-22.md:1072`) — the same host and
+same `/api/visits` entry point as EcoSure, differing only by `action=`.
+
+| | |
+|---|---|
+| CFV, RGR | **both hosts** |
+| EcoSure | Propel (`action=getThirdPartyFoodSafetyVisitReport`) |
+| Downloadable exports | **PEAK only** — and per this file, those exports are rollups |
+
+Practical consequence: **the host does not identify the instrument** — check host *and* `action=`
+together. And since the only downloadable copies live on PEAK, "I can export it from PEAK" is not
+evidence that per-visit data exists there; it is evidence of the rollup path this file documents.
+
 ## PEAK routes captured (recorded so the session isn't a total loss)
 
 From a Comprehensive Visit Report — store 06972 Ada-Country Club, *"Running Great Restaurants Visit
@@ -120,4 +160,11 @@ dates. Logged only so a future session doesn't spend another evening rediscoveri
 
 Not discovery. **Ingest and persistence:** take the already-documented endpoints, re-capture, and
 land the rows in Supabase with `tenant_id` + RLS like every other stream. That is
-`dispatch-78.md`'s job, and it needs rewriting to target the API path rather than an export.
+`dispatch-78.md`'s job. ✏️ **Correction:** an earlier version of this line said dispatch #78 "needs
+rewriting to target the API path rather than an export." That was wrong — #78 already targets
+`getScoredVisitListResults` with `category=visitResult` and `year=`. Its only weakness was a
+count-based verification gate, since 27 is also the store count; that has been amended to assert
+non-null `visitDate` and `visitId` per row.
+
+**Plus one discovery item that is NOT closed:** enumerating EcoSure `visitId`s (open question 6
+above). Until that lands, per-question FS1…FS36 detail stays a manual, one-visit-at-a-time pull.

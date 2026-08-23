@@ -309,7 +309,14 @@ async function viaPlaywright(dates, tracker) {
   const page = await (await browser.newContext()).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
+  // Dispatch #67 -- track EVERY request the listener saw, not just ones carrying x-auth-token.
+  // Zero total requests and zero matching requests are different diagnoses: the first means the
+  // page never made any network calls (unlikely, but distinguishes "nothing loaded" from "things
+  // loaded, none of them authenticated"); the second alone was already logged before and left the
+  // question open.
+  let totalRequestsSeen = 0;
   page.on('request', async req => {
+    totalRequestsSeen++;
     try {
       const all = await req.allHeaders();
       const t = all['x-auth-token'];
@@ -327,6 +334,57 @@ async function viaPlaywright(dates, tracker) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[auth] post-login url:', page.url());
     await snap('secevents-01-post-login.png');
+    // Dispatch #67 Resolution -- the live run got no token from either localStorage or
+    // interception, and the only way to tell "login didn't complete" from "login completed but
+    // mints no token anywhere" was a screenshot this sandbox cannot reach. Assert and log
+    // everything a screenshot would have shown, in text, so this settles from the Actions log
+    // alone next run:
+    const postLoginState = await page.evaluate(() => {
+      const loginFieldPresent = !!document.querySelector(
+        'input[name="username"], input[name="email"], input[type="email"], #username, #email, ' +
+        'input[autocomplete="username"], input[type="password"], input[name="password"]'
+      );
+      const alertEl = document.querySelector('[role="alert"]');
+      const alertText = alertEl ? alertEl.textContent.trim().slice(0, 200) : null;
+      const bodyText = document.body ? document.body.innerText.trim() : '';
+      return {
+        title: document.title,
+        loginFieldPresent,
+        alertText,
+        // Only when the page renders almost nothing (a bare error page, not the real app shell)
+        // is the body text itself informative -- a loaded SPA's body text would be enormous and
+        // useless to log, so cap what's captured to short pages only.
+        shortBodyText: bodyText.length > 0 && bodyText.length <= 300 ? bodyText : null,
+        localStorageKeys: Object.keys(localStorage).sort(),
+      };
+    });
+    console.log('[auth] post-login document.title:', JSON.stringify(postLoginState.title));
+    console.log('[auth] post-login login-form-still-present:', postLoginState.loginFieldPresent);
+    console.log('[auth] post-login localStorage key NAMES:', postLoginState.localStorageKeys.length
+      ? postLoginState.localStorageKeys.join(', ') : '(empty -- no keys of any kind)');
+    if (postLoginState.alertText) console.log('[auth] post-login role="alert" text:', JSON.stringify(postLoginState.alertText));
+    if (postLoginState.shortBodyText) console.log('[auth] post-login short body text:', JSON.stringify(postLoginState.shortBodyText));
+    console.log('[auth] post-login requests seen so far: total', totalRequestsSeen, '| carrying x-auth-token:', token ? 1 : 0);
+    // Dispatch #67 Task 1 -- the owner measured (browser console, exact x-auth-token value from
+    // a working event_details request vs localStorage) that the SPA sends the plain Cognito ID
+    // token straight out of storage: nothing is minted at click time, nothing derived, nothing
+    // wrapped. So read it directly rather than depend on a request happening to carry it -- the
+    // request-interception listener above stays wired as a fallback only (a silent null from
+    // localStorage must not look identical to a failed login).
+    const spaToken = await page.evaluate(() => {
+      const k = Object.keys(localStorage).find(k => k.endsWith('.idToken'));
+      return k ? localStorage.getItem(k) : null;
+    });
+    console.log('[auth] localStorage idToken read:', spaToken ? `true (${spaToken.length} chars)` : 'false');
+    // Dispatch #66: the previous .catch(() => {}) here swallowed the navigation error
+    // AND never logged page.url() afterward, so a failed navigation was indistinguishable
+    // from a successful one that simply saw no token -- the run just printed nothing
+    // (qsrsoft-register-audit-pull.mjs's equivalent DOES log the post-navigation url
+    // unconditionally, which is the only reason its own "navigated but no token" case is
+    // diagnosable at all; that's the "tell" that flagged this bug). Catch and keep the
+    // error message instead of discarding it, and always log the URL + token state
+    // together so the three distinct outcomes (nav failed / navigated, no token / navigated,
+    // token captured) are each unambiguous in the log.
     let navError = null;
     try {
       await page.goto(REPORT_PAGE, { waitUntil: 'networkidle', timeout: 30000 });
@@ -334,15 +392,27 @@ async function viaPlaywright(dates, tracker) {
     await new Promise(r => setTimeout(r, 5000));
     console.log('[auth] report page url:', page.url(),
       '| nav error:', navError || '(none)',
-      '| token captured:', token ? `true (${token.length} chars)` : 'false');
+      '| interception token captured:', token ? `true (${token.length} chars)` : 'false',
+      '| requests seen: total', totalRequestsSeen, 'carrying x-auth-token:', token ? 1 : 0);
     await snap('secevents-02-report-page.png');
-    if (!token) {
-      console.error('[auth] ✗ no x-auth-token seen on any request during SPA login');
+    // Merge of #560 (dispatch #67) into #593 (dispatch #81). #560 MEASURED on the Mac mini
+    // that request interception captured nothing -- zero requests carried x-auth-token -- while
+    // the SPA's plain Cognito ID token sat in localStorage the whole time. So localStorage is
+    // PRIMARY and interception is the fallback; taking #593's interception-only version would
+    // have reintroduced the exact no-token failure #560 diagnosed.
+    // #560's claim-name diff is deliberately NOT carried over: it compared the SPA token against
+    // getFreshToken()'s bare token, and #593 deletes both getFreshToken() and runAll() outright
+    // (the bare-Node path can never reach this host -- see the transport-fingerprint finding), so
+    // there is no longer a second token to diff against.
+    const finalToken = spaToken || token;
+    console.log('[auth] token source:', spaToken ? 'localStorage (primary)' : (token ? 'request-interception (fallback)' : 'none'));
+    if (!finalToken) {
+      console.error('[auth] ✗ no token from localStorage or interception during SPA login');
       tracker.fail('playwright-login', navError ? `navigation failed: ${navError}` : 'no token captured');
       return { collected: [], coveredStores: new Set() };
     }
     console.log(`[auth] ✓ token captured — fetching ${dates.length} day(s) × ${STORE_NSNS.length} store(s) × ${EVENT_TOKENS.length} event token(s) IN-BROWSER (${dates.length * STORE_NSNS.length * EVENT_TOKENS.length} page.evaluate() calls)…`);
-    const result = await runSecurityEvents(page, token, dates, tracker);
+    const result = await runSecurityEvents(page, finalToken, dates, tracker);
     await snap('secevents-final.png');
     return result;
   } catch (e) {
