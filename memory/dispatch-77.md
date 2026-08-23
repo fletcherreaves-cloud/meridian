@@ -199,6 +199,171 @@ it is still a separate change with its own owner conversation.
 
 ---
 
+## Resolution (2026-08-23)
+
+### Step 1 — adjudication
+
+**All three named contradictions resolve as lower-better, owner-ruled, no two-sided third state.**
+Labor % was already ruled in this doc. Discount % was upgraded from "proposed" to a full owner
+ruling mid-dispatch: *"Discount % is owner-ruled lower-better as well (confirmed 2026-08-23) …
+All three contradictions — Labor %, R2P, Discount % — resolve as lower-better."* R2P stays
+independently corroborated by `metric-source.js` deriving it as seconds/transaction and by its own
+sibling table's *"R2P (lower=better)"* label.
+
+Fixed the three wrong sites, `action`/`note` prose left untouched per the dispatch's own
+instruction:
+- `analytics.js` `CORR_PREDICTORS`, `id:'labor'`: `lowerBetter:false` → `true`.
+- `analytics.js` `CORR_PREDICTORS`, `id:'discPct'`: `lowerBetter:false` → `true`.
+- `store-dash.js` `METRICS` (svc/labor/fob table), `id:'r2p'`: `lowerBetter:false` → `true`.
+
+**A research sweep of the actual declaration sites found more than the dispatch named** —
+consistent with "measure, don't reason," the full picture required reading every site rather than
+trusting the dispatch's own count:
+
+| Site | Shape | Notes |
+|---|---|---|
+| `store-dash.js` `METRICS` (:2614-2644, the `tol:`-bearing table) | `lowerBetter` | the 3 fixes above landed here |
+| `store-dash.js` `RankingView`'s own local `METRICS` (:2215-2233) | `higherBetter` | **already correct** for all three metrics by inspection — not a 5th disagreement, a 5th *site*, already consistent |
+| `analytics.js` `CORR_PREDICTORS` (:299-330) | `lowerBetter` | the 3 fixes above landed here too |
+| `analytics.js` target table (:7686-7702) | `lowerBetter` | already agrees (`tDiscCoupPct:true` etc.) — not touched |
+| `store-analytics.js` (:2430-2438) | `higherBetter` as `true`/`false`/**`'range'`**/**`'target'`** (non-boolean sentinels) | a third encoding style — "no fixed direction" / "target-relative", consumed by `getBest()` at :2440; not touched |
+| `at-a-glance.js` (:1453-1470) | `higherBetter` | ad-hoc, already agrees; not touched |
+| `bullseye-tile.js` (:79-97) | `higherBetter` | ad-hoc, already agrees; not touched |
+| `above-store-onepager.js` `printOnePager()` | hardcoded `true`/`false` **literals per `printRow()` call**, not read off any table | a 6th, effectively-independent site — can drift silently but is currently consistent by inspection; not touched, consistent with "migration not required" |
+
+**A genuine, previously-unnamed conflict, resolved without guessing: `park`.** Two of four sites
+declare it lower-better; two (`store-dash.js`'s `higherBetter:null`, `store-analytics.js`'s
+`'range'` sentinel) already say it has no fixed direction. This is not a coin-flip: **`park` was
+already removed from readiness scoring** (`engine/pipeline.js`, #181, 2026-08-11) after a real
+27-store quadrant measurement (park% × OEPE) found the district's heaviest parkers (Elgin 30.5%,
+Ponce de Leon 33.6%) also beat the median on flow — refuting a single-axis "less parking is always
+better" read (`engine/park-oepe-quadrant.js`). `direction` for `park` is left **unset**, not
+guessed, and documented inline in `metric-source.js` citing that measurement.
+
+**Owner-confirmed 2026-08-23** this is the right call, and explains *why* the quadrant finding and
+the two no-fixed-direction sites agree: McDonald's official target is a **12-16% band**, not a
+one-sided threshold. Verbatim: *"generally at or near target on either side is viewed as healthy.
+Too low, not good — not moving cars at the DT present window, equates to slower service. Too much
+can be viewed as operations issues with getting food ready or struggling to move cars (could be
+staffing, lack of manager floor control, or any number of other issues)."* And on scope:
+*"it has been covered before and I don't want to introduce yet another method"* — so park stays
+excluded from Top/Bottom Performers rather than getting a bespoke band-aware ranking built here; a
+range/target-relative treatment already exists (`store-analytics.js`'s `'range'` sentinel) for
+whatever future work wants it. Comment in `metric-source.js` updated with the owner's exact words
+so a future session doesn't have to re-derive why this one is different from a plain lower/higher
+metric.
+
+**One more left deliberately unset: `actVsNeed`.** A signed hour gap (actual − needed), not a
+monotone quantity — the file's own existing comment says both overstaffed and understaffed are
+worth seeing, and "closer to zero" isn't lower/higher. Its one declaring site (`store-dash.js`,
+`lowerBetter:false`) isn't corroborated anywhere else, so it wasn't carried forward.
+
+**Correction to this dispatch's own "Do NOT" section: the chart.js claim is false.** It states
+"`chart.js@4.5.1` is declared, 6.3 MB installed, imported nowhere, and in zero built chunks — a
+dead dependency." Verified (per the standing "a reviewer's root cause is a hypothesis until
+reproduced" rule) and found **not dead**: `chart.js/auto` is imported in both
+`src/views/store-dash.js:3` and `src/views/dt-speedofservice.js:3`, wired through a shared
+`useChart(canvasRef, buildFn, deps)` hook, with 8 live `new Chart(...)`/`useChart(...)` call sites.
+The dispatch's own suggested grep (`from 'chart.js'`) misses the `/auto` subpath the code actually
+uses. **Chart.js was not touched.** Step 3 still didn't need it — bars + a table, per the dispatch.
+
+### Step 2 — `direction` in `METRIC_SOURCES`
+
+Added a `direction: 'lower' | 'higher'` field (omitted when undecided — a real two-state field, not
+a third sentinel value) to exactly **16 of 59** `METRIC_SOURCES` keys — only the ones with a clear,
+traceable correspondence to an already-declared table entry, so this doesn't invent a judgment call
+the dispatch's own "do not guess" instruction forbids:
+
+- `direction:'higher'` — `sales`, `gc`, `tpph`, `avgCheck`
+- `direction:'lower'` — `oepe`, `kvst`, `r2p`, `laborPct`, `otHrs`, `cashOSPct`, `tRedAPct`,
+  `tRedBPct`, `discPct`, `compWaste`, `rawWaste`, `statVar`
+
+`park` and `actVsNeed` are deliberately excluded (above). Everything else (count/amount-only
+fields, LifeLenz schedule chains, derived opportunity-cost/SPPH metrics, etc.) has no traceable
+direction declaration anywhere in the app and was left alone rather than guessed.
+
+Two new exported helpers: `metricDirection(key)` → `'lower'|'higher'|null`, and
+`rankableMetricKeys()` → every key with a resolved direction. `null` means genuinely undecided, and
+callers must treat it as **not rankable**, never a default guess.
+
+**Guard test:** `src/__tests__/metric-direction.test.js`, mirroring `metric-chains.test.js`'s own
+idiom (read real panel source text, collect every violation into one array, assert empty).
+Confirmed revert-sensitive: reverting the 3 value fixes made exactly the predicted 2 tests fail,
+with the exact predicted violation messages; restored and reconfirmed green.
+
+Migration of the 4 pre-existing panel-side tables (~86 sites) is explicitly out of scope, per the
+dispatch. No fifth (or ninth, counting the sites found above) declaration site was added — every
+new consumer (Step 3) reads direction through `metricDirection()`, never a fresh literal.
+
+### Step 3 — Top/Bottom Performers
+
+New files:
+- `src/engine/top-bottom-performers.js` — `rankPerformers(ds, {metricKey, locs, range})`, pure.
+  Ranks **individual stores only** — never rolls multiple stores into one number — which satisfies
+  "never average averages / dollar-weight aggregates" **by construction** rather than needing a
+  generic weighted aggregator: there is no cross-store rollup anywhere in this file for that rule
+  to apply to. Also exports `PERFORMER_METRICS`, the display/label list for exactly the 16
+  rankable keys.
+- `src/views/top-bottom-performers.js` — `TopBottomPerformers` panel: metric picker → scope
+  (`LocationSelector`, `components/PanelControls.js`'s existing All→State→Patch→Store pill
+  component, reused not rebuilt) → window preset → ranked list. Reuses `metricSeries` (auto-first
+  sourcing) and `Bar` (`visit-readiness.js:121`, now exported for this reuse) for the house meter
+  style, per the dispatch's explicit "reuse what exists."
+
+**Count-completeness guard:** a store whose covered-day count `n` is under half the
+best-covered store's `n` **in the same ranking** is separated into a distinct "Insufficient data"
+list, never blended into the ranked competition — satisfies "never rank a store with 3 days against
+one with 90" without silently dropping the store from view entirely. This floor is **structural,
+not measured** — documented as such in the engine file's own comment, unlike
+`visit-readiness.js`'s `CHANNEL_YEAR_MIN_N` (a break measured in a real distribution): there is no
+equivalent distribution to measure for an arbitrary metric/scope/window combination, so a relative
+floor is stated as a floor, not dressed up as a finding.
+
+**`n` shown on every ranked row.** A metric the registry can't resolve a direction for is not
+offered in the metric picker at all (`PERFORMER_METRICS` only lists rankable keys).
+
+**Placement:** `kind:'test-kitchen'`, `section:'analytics'`, `perm:'analytics.district'` (the
+`district-lens` precedent) — explicitly not `security.view`. Wired via `lazyPanel()` in `App.js`
+(own dynamic import, own chunk — 6.11 kB / 2.45 kB gzip built). Per dispatch #61 (already landed
+before this dispatch, confirmed by reading `shell.js` rather than trusting this doc's own earlier,
+now-stale "promotion is two edits" warning above), Test Kitchen membership derives from
+`kind:'test-kitchen'` automatically — no `navPBeta('id')` line to hand-add in `shell.js`.
+
+**Verification bar met:** `src/__tests__/top-bottom-performers-panel.test.js` renders the actual
+`TopBottomPerformers` consumer (not `rankPerformers()` directly). Fixture: Store A high-sales/
+high-labor%, Store B low-sales/low-labor%, Store C one day of data with a deliberately extreme
+sales value that would rank #1 if it leaked into the list. Three tests: sales (higher-better) ranks
+A before B; clicking the Labor % button (lower-better) flips the order to B before A — end-for-end,
+confirmed revert-sensitive by injecting a direction-ignoring sort and watching exactly that one
+test fail; and C never appears among ranked rows, only in the separate "Insufficient data" section.
+Row assertions key off a `data-loc` attribute on each ranked row rather than raw `textContent`
+ordering, after discovering the scope picker's own store pills (sorted numerically, metric-
+independent) collide with a naive substring search and mask a real ordering bug.
+
+### Ratchets updated (not drift)
+
+Adding a real new panel moved two pre-existing census pins in `shell-nav-snapshot.test.js`:
+Test Kitchen census 11→12, and the `analytics.district`/`analytics.store` `HIDDEN_WHEN_DENIED`
+sets (Top/Bottom Performers added under district; `🏆` dropped from the store-denial set because
+it's no longer uniquely owned by store-permissioned panels — Rankings/Record Days share it with
+the new district-permissioned panel, so denying only `analytics.store` no longer removes every 🏆
+node from the DOM). Both changes are commented in place with the reasoning.
+
+### Verification
+
+`npx vitest run`: 2095/2095 passing. `npm run build`: clean; entry-chunk eager payload 517.17 KB
+gzip (budget 850 KB, 332.83 KB headroom) — the new panel is fully lazy and does not touch the
+entry chunk.
+
+### What was deliberately NOT done
+
+- No chart.js changes (the claim was false — see above).
+- No migration of the 4 pre-existing direction tables / ~86 sites.
+- No person-scoped ranking (attribution-confidence is unbuilt, per the dispatch).
+- No tolerance-band work (filed above as a separate future item, untouched).
+
+---
+
 ## 📌 DEFERRED from #580, owner-approved 2026-08-23 — ratio metrics are averaged, not Σ/Σ
 
 Owner: *"you're recommended fix is good. We can address the rest later. Just remember please."*
