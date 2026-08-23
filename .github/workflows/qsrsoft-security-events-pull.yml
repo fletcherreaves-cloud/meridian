@@ -1,10 +1,20 @@
 name: QSRSoft Security Events Pull
 
-# Dispatch #65. api.security.myqsrsoft.com's event_details endpoint refuses GitHub-hosted
-# runners by NETWORK ORIGIN, not credential (memory/dispatch-63.md's CORRECTION, memory/
-# dispatch-65.md) -- so this workflow, uniquely among this repo's scheduled pulls, runs on a
-# SELF-HOSTED runner on a permitted consumer connection at the owner's home/office. Every other
-# scheduled workflow stays on hosted runners, unchanged -- do not migrate them here.
+# Dispatch #81 REBUILD. api.security.myqsrsoft.com's event_details endpoint 403s because it
+# fingerprints the TLS/HTTP-2 CLIENT, not the credential -- memory/finding-api-security-transport-
+# fingerprint-2026-08-23.md proved the owner's own working browser token returns 403 from Node on
+# the owner's own network, with Chrome's full header set. This is NOT a network-origin
+# restriction: that earlier theory (memory/dispatch-63.md's CORRECTION, memory/dispatch-65.md) is
+# refuted -- the confounded test that produced it varied both token-origin AND network at once.
+# The pull script (scripts/qsrsoft-security-events-pull.mjs) now makes its ONLY fetch to this host
+# from inside a real Chromium page (page.evaluate()), never from a Node-side fetch, which is the
+# actual fix -- headers cannot forge a TLS fingerprint, only a real browser can.
+#
+# This workflow still runs on a SELF-HOSTED runner, but that is now a leftover of the refuted
+# network-origin theory, not something this rebuild depends on -- Playwright's Chromium presents
+# the same real fingerprint from a GitHub-hosted runner as from anywhere else. memory/
+# dispatch-81.md scopes testing a hosted `ubuntu-latest` runner as a SEPARATE, later step (prove
+# 200s here first, then change ONLY the runner and re-test) -- do not change both at once.
 #
 # ⚠️ Requires a self-hosted runner registered with the label below, always-on, installed as a
 # service (./svc.sh install), on a machine that will not sleep (see memory/dispatch-65.md's
@@ -13,12 +23,15 @@ name: QSRSoft Security Events Pull
 # src/engine/stream-freshness.js's per-stream freshness check is the thing that actually
 # catches a dead/offline runner here, not this file.
 #
-# NOT live-verified from the session that wrote this pull script -- no self-hosted runner and no
-# QSRSoft network access from that sandboxed session. buildUrl/buildBody/extractRows are unit-
-# tested (src/__tests__/qsrsoft-security-events-pull.test.js); parseSecurityEventRow was already
-# unit-tested before this dispatch (src/__tests__/security-events.test.js). Before trusting the
-# first scheduled run's output, run this once via workflow_dispatch on the actual self-hosted
-# runner and confirm a real 200 + row count, per memory/dispatch-65.md's verification bar.
+# NOT live-verified from the session that wrote this rebuild -- unlike the earlier session (which
+# lacked a self-hosted runner), this one had NO QSRSoft credentials and NO QSRSoft network access
+# at all (sandboxed dev environment). buildUrl/buildBody/extractRows are still unit-tested
+# unmodified (src/__tests__/qsrsoft-security-events-pull.test.js); parseSecurityEventRow was
+# already unit-tested before this dispatch (src/__tests__/security-events.test.js). The live
+# in-browser fetch path itself has NEVER been run against the real API. Before trusting any
+# scheduled run's output, the owner must run this once via workflow_dispatch on the actual
+# self-hosted qsr-security runner and confirm a real 200 + row count -- see memory/dispatch-81.md's
+# Resolution section for the exact steps.
 
 on:
   schedule:
