@@ -1,6 +1,6 @@
 ---
 name: finding-qsrsoft-security-entitlement-request-2026-08-22
-description: SUPERSEDED 2026-08-22. The api.security 403 is a SOURCE-IP restriction, not an entitlement gap -- one Cognito principal, allowed from the owner's network and denied from GitHub Actions. Do not send the entitlement request below; see the correction at the top.
+description: ⚠️ RE-OPENED 2026-08-23. The 08-22 supersede concluded SOURCE-IP after a table that never contained the deciding cell. That cell now exists: our minted token, run from the owner's OWN Mac mini, 403s -- same machine and network where curl with the owner's browser token returns 200. Same network, different token, different answer. The variable looks like the TOKEN after all, so the original entitlement reading may be right. Read the 08-23 block first; send nothing until the one-variable probe has run.
 sensitivity: open
 metadata:
   node_type: memory
@@ -8,6 +8,89 @@ metadata:
 ---
 
 # QSRSoft entitlement request — `api.security` module, automation account
+
+# ⚠️ RE-OPENED 2026-08-23 — the supersede below rests on a missing cell
+
+**Still do not send the request yet.** But the 08-22 correction's conclusion (source IP) is now in
+doubt, and the original reading (entitlement/identity) is back in play.
+
+## What changed
+
+The 08-22 elimination table has four rows. **Every 403 in it came from GitHub Actions, and every
+200 came from the owner's network.** Source IP and token were never varied independently — the one
+cell that would separate them was never captured:
+
+| | owner's network | GitHub Actions |
+|---|---|---|
+| **owner's browser token** | 200 (row 1, row 4) | — |
+| **our minted token** | ⬅ **never tested on 08-22** | 403 (row 2, row 3) |
+
+**2026-08-23 filled that cell.** The security-events workflow ran on `mac-mini-qsr` — the owner's
+own Mac mini, the same machine and network where the row-4 curl returned 200 — using a
+`getFreshToken()`-minted token. **All 216 units returned 403**, with:
+
+```
+{"Message":"User is not authorized to access this resource with an explicit deny in an identity-based policy"}
+x-amzn-errortype=AccessDeniedException
+```
+
+Same machine. Same network. Same header set. **Different token, different answer.** That is the
+opposite of what a source-IP restriction predicts.
+
+## The `sub` objection, and why it is not settled either way
+
+The 08-22 correction's strongest point stands unchallenged: the owner's `sub` hash is **identical**
+to ours, so rows 1 and 2 are nominally the same principal — and a single principal cannot be both
+allowed and denied by IP-independent policy. That is a real tension with the 08-23 result, not
+something to wave away.
+
+Two ways both observations can be true, neither yet tested:
+
+1. **Same `sub`, different authorization context.** IAM policy can key on more than the subject —
+   `cognito:groups`, `amr` (how the user authenticated), `auth_time`, or a scope claim. The
+   dispatch #67 comparison that found "identical claims" compared claim **NAMES**, never
+   **VALUES**. Two tokens for one `sub` can carry different group membership and hit different
+   policy branches.
+2. **The runner's egress differs from the owner's shell.** A VPN or split-tunnel on one and not the
+   other would make "same machine" false at the network layer despite being true physically.
+
+⚠️ **Do not pick one of these from the armchair.** This investigation has now produced four
+confident conclusions — auth-flow, source-IP, transport-fingerprint, and CORS — and the first three
+were each overturned by the next measurement.
+
+## The one-variable probe that settles it
+
+`scripts/probe-security-token-identity.mjs` (added 2026-08-23). Run **from the Mac mini**, it makes
+the identical request twice in one process — same machine, same shell, same headers, same moment —
+varying **only** the token: `getFreshToken()`'s versus one pasted from the owner's browser session.
+
+```
+BROWSER_TOKEN=<paste> node scripts/probe-security-token-identity.mjs
+```
+
+It prints status, `x-amzn-errortype`, claim **names**, `cognito:groups` (group names are not
+credentials, and are the likeliest thing to differ for one `sub`), and token **age/TTL** — the
+variable that has misled this investigation more than once. **No token value is ever logged.**
+
+| outcome | reading |
+|---|---|
+| minted 403, browser 200 | **Token is the variable.** Source-IP refuted; the entitlement ask below is right after all — but ask about the *policy condition*, not a blanket entitlement. |
+| both 200 | Earlier 403s were transient or age-related. Nothing structural. |
+| both 403 | Token is not the variable; the source-IP reading survives — **or the pasted browser token had expired.** Re-capture and re-run before concluding. |
+
+## Also fixed 2026-08-23 — a self-inflicted second failure
+
+The pull re-minted its token on **any** 401 *or* 403 and retried. With all 216 units returning
+403 `AccessDeniedException`, that forced ~216 re-mints in under two minutes and **Cognito began
+refusing `InitiateAuth` with `ForbiddenException`.** The run's tail therefore reported a Cognito
+throttle rather than the AccessDenied that was the actual finding — the retry did not merely waste
+calls, it **buried the diagnosis**. Re-mint is now gated to 401 and to 403s that are *not*
+`AccessDeniedException`.
+
+📌 Worth generalising: **a retry policy that cannot distinguish "your credential expired" from
+"your credential is not allowed" will convert a clear diagnosis into a rate-limit.**
+
+---
 
 > # 🔴 SUPERSEDED — DO NOT SEND THIS REQUEST
 >

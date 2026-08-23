@@ -219,10 +219,24 @@ async function runSecurityEvents(token, dates, tracker) {
         try {
           const tok = await resolveToken(token, false);
           let result = await fetchOne(storeRef, eventToken, date, tok);
-          if (result.status === 401 || result.status === 403) {
-            console.log(`[secevents-pull] ${unit}: token rejected — forcing a re-mint and retrying once`);
+          // ⚠️ Re-mint on 401 ONLY. A 403 carrying AccessDeniedException is a PERMISSIONS
+          // verdict on the identity, not an expiry -- a fresh token has the same `sub` and gets
+          // the same answer, so re-minting cannot help and is not free.
+          //
+          // MEASURED 2026-08-23: the previous version re-minted on 403 too. Every one of 216
+          // units 403'd with `explicit deny in an identity-based policy`, so it forced ~216
+          // re-mints in under two minutes and Cognito began refusing InitiateAuth outright with
+          // ForbiddenException. We throttled ourselves, and the tail of that run reported a
+          // Cognito failure rather than the AccessDenied that was the actual finding -- the retry
+          // did not just waste calls, it BURIED the diagnosis under a second, self-inflicted one.
+          const isExpiryShaped = result.status === 401
+            || (result.status === 403 && !/AccessDenied/i.test(String(result.diagHdrs?.['x-amzn-errortype'] || '')));
+          if (isExpiryShaped) {
+            console.log(`[secevents-pull] ${unit}: token rejected (${result.status}) — forcing a re-mint and retrying once`);
             const freshTok = await resolveToken(token, true);
             result = await fetchOne(storeRef, eventToken, date, freshTok);
+          } else if (result.status === 403) {
+            console.log(`[secevents-pull] ${unit}: 403 AccessDenied — an authorization verdict, NOT expiry; not re-minting`);
           }
           if (result.status === 401 || result.status === 403) {
             // Same diagnostic-before-throw discipline as every other pull here -- an API gateway
