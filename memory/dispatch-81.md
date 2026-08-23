@@ -193,3 +193,36 @@ real API, which only the owner (or the self-hosted runner) can produce.
 - Structural match to `qsrsoft-dar-pull.mjs`'s proven pattern, read carefully: per-unit
   `page.evaluate()`, explicit `X-Auth-Token` header, no `credentials:'include'`, no token ever
   reaching a Node-side `fetch()` — confirmed by inspection, not by a live run.
+
+### Follow-up already exists — read before touching this topic again (2026-08-23)
+
+The Mac-mini live-run failure this Resolution flagged as unverified (step 1 above) has already
+been diagnosed and mostly fixed in two follow-ups. **Do not re-derive either result:**
+
+- **`memory/finding-macmini-login-not-credentials-2026-08-23.md` (#600).** Rules out a stale
+  `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD` credential as the cause, using an existing log from a
+  different workflow that shares the same secrets and succeeded ~90 min before the Mac-mini
+  failure. **Superseded in part — see #602 below**, which corrects #600's own token-rotation
+  advice in place (struck through, not deleted).
+- **PR #602** (`claude/fix-secevents-login-race`, open as of 2026-08-23, not yet merged — check
+  current state before assuming either fix is live). Two findings, from the run's own screenshot
+  artifacts:
+  1. **The login failure is a self-inflicted race, not an auth failure and not Chromium drift.**
+     `waitForLoadState('networkidle')` is the wrong signal for this SPA login — the click fires an
+     XHR, not a navigation, so `networkidle` can return before the auth request even completes,
+     and the script then navigates away and aborts the in-flight login. Fix: wait for a real
+     success signal (the Cognito `idToken` landing in `localStorage`, falling back to "password
+     field is gone"), not a timing proxy. This is *why* the same credentials pass on
+     `ubuntu-latest` (#600) and fail on the self-hosted Mac mini — machine speed, not machine
+     identity. Retires the Chromium-drift and MFA-challenge hypotheses.
+  2. **Do NOT rotate `QSRSOFT_TOKEN`** (correcting #600 and CLAUDE.md's own runbook, which was
+     wrong to suggest it). It's a Cognito ID token with a ~1h TTL stored as a static secret — by
+     construction it reads as expired ~23 of every 24 hours no matter how often it's rotated. The
+     401/403 is the expected steady state. The real fix is converting the 11 scripts still reading
+     the dead secret onto the shared `getFreshToken()` lib (`scripts/lib/qsrsoft-auth.mjs`, already
+     used by 5 scripts; `qsrsoft-ops-pull.mjs` is the reference conversion) — separate work, not
+     part of this dispatch.
+
+  Neither fix in #602 is live-verified yet (same sandbox constraint as this dispatch — CI can't log
+  in to QSRSoft). If picking this thread back up: check whether #602 merged first, and if not,
+  that's the next step, not a fresh investigation.
