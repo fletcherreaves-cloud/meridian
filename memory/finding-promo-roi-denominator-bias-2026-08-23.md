@@ -97,11 +97,25 @@ with the identical structure.
 
 ### Known trade-off, do not treat as a regression
 
-The dollar split scored **16 of 27** stores versus 27 for the percentage split, because a
-median split on lumpier dollar values leaves more day-of-week cells below `minPerCell`. Fewer
-stores with a *trustworthy* number beats 27 stores with a biased one, but the drop is real and
-should be surfaced in the panel ("n stores had insufficient matched days") rather than silently
-shrinking the table.
+⚠️ **CORRECTED 2026-08-23, same day — the "16 of 27" below was a FIXTURE ARTIFACT, not a
+property of the dollar split.** It came from a simulation with **binary** spend ($400 heavy /
+$100 light). Two distinct values give a median split almost no resolution, so day-of-week cells
+fall under `minPerCell`. **Re-measured with spend that varies continuously — which is what real
+promo data looks like — the dollar split scores 27 of 27, no shrink at all.**
+
+The original text, kept so the wrong number stays findable:
+
+> ~~The dollar split scored **16 of 27** stores versus 27 for the percentage split, because a
+> median split on lumpier dollar values leaves more day-of-week cells below `minPerCell`.~~
+
+This mattered: the figure propagated into `src/app/changelog/5.126.js` and into a test that
+asserted `byStore.length < nCandidates` — i.e. it **required** the fix to score fewer stores.
+That assertion would fail the day the fixture got more realistic, which is backwards for a
+regression test. Replaced with a test that asserts 27/27 on continuously-varying spend, plus one
+that just checks `nCandidates` is exposed so the panel can disclose "scored N of M".
+
+**Still worth surfacing `nCandidates` in the UI regardless** — a store *can* fall out for genuine
+lack of matched days, and silently shrinking the table would hide that. The panel does this.
 
 ### What this does NOT establish
 
