@@ -130,3 +130,80 @@ node memory/data/promo-roi-bias-sim-known-effect.mjs
 Both use a seeded PRNG and import the real `matchedLift` from `src/engine/promo-roi.js`, so they
 re-measure the shipped engine rather than a copy of it. If the engine is fixed, measurement 1's
 "27/27 negative" must collapse toward zero — that is the regression bar.
+
+---
+
+## Resolution (2026-08-23)
+
+Fixed at all three named surfaces, exactly the one-field change this finding specified.
+
+### The fix
+
+`src/engine/promo-roi.js`'s `computePromoDiscountRoi()` — the two `intensityField` values changed
+from `'promoPct'`/`'discPct'` to `'promoAmt'`/`'discAmt'`. `src/views/promo-roi.js:77` needed **no
+edit** — it calls `computePromoDiscountRoi()` without overriding `intensityField`, so it inherits
+the fix. `supabase/functions/sage-chat/index.ts`'s hand-ported `matchedLift`/`query_promo_roi` got
+the matching edit at its two `int:` assignments (`r.promo_pct` → `r.promo_amt`, `r.disc_pct` →
+`r.disc_amt`) — this is a genuinely separate implementation (Deno can't import the client engine
+directly), so fixing only the shared engine would have left SAGE giving a different, still-wrong
+answer on the same data.
+
+### Measuring the fix, not assuming it
+
+Ran the finding's own committed regression bar against the ACTUAL production entry point
+(`computePromoDiscountRoi`), not just the raw `matchedLift` calls the two `memory/data/*.mjs`
+scripts make directly — a real gap, since those scripts hardcode `intensityField` and therefore
+never exercise `computePromoDiscountRoi`'s own default:
+
+- **Zero-effect construction** (promo dollars held exactly constant): a dollar-based split cannot
+  score ANY store here — every day ties at the median, so the strict `>` comparison sends every
+  row to "light" and none to "heavy," and the store never reaches `minPerCell`. This is the
+  *correct*, honest outcome for this specific synthetic edge case (no real dollar variation exists
+  to split on) — not a new bug, and not something the finding's "must collapse toward zero" language
+  anticipated, since it was written imagining the percentage split's failure mode, not the dollar
+  split's very different one on a constant-spend input. Real promo spend is never perfectly
+  constant, so this doesn't affect production data — confirmed by the known-effect measurement
+  below, which uses real (coin-flip-assigned) variation and scores real stores.
+- **Known +10% effect construction** (seed 7, promo assigned independently of sales, same as
+  `memory/data/promo-roi-bias-sim-known-effect.mjs`), run through `computePromoDiscountRoi`
+  directly: **mean lift 9.70%** against a true 10.00% (vs the old default's measured 5.86% —
+  reproduced first, to confirm the bias is real before trusting the fix), **0/16 stores negative**,
+  **16 of 27 candidate stores scored** — matching the finding's own Measurement 2 numbers exactly,
+  now reached through the real call site instead of a direct `matchedLift` override.
+
+### The "known trade-off" is now surfaced, not just documented
+
+Added `nCandidates` to `matchedLift()`'s return value (every loc with at least one valid intensity
+record, before the `minDays`/`minPerCell` trim) so a caller can show "scored N of M" instead of a
+table that silently shrinks. `src/views/promo-roi.js` now renders that note per lever when the
+scored count is below the candidate count, and states the dollar-vs-percentage methodology in its
+existing footer — both were explicit "should be surfaced, not hidden" asks in this finding.
+
+### Verification
+
+`src/__tests__/promo-roi.test.js` gained a new `describe` block porting this finding's exact
+regression bar into the suite (seed 7, same construction as `promo-roi-bias-sim-known-effect.mjs`),
+asserted against `computePromoDiscountRoi` — the shipped default — not a direct `matchedLift`
+override:
+1. The percentage split still attenuates the known effect to ~5.9% (proves the mechanism is real
+   and the simulation is faithful).
+2. `computePromoDiscountRoi`'s default recovers ~9.7% essentially unbiased, 0 negative stores.
+3. The store-count trade-off is real (16 of 27 `nCandidates`) but not a collapse (still > 10).
+
+Confirmed revert-sensitive: temporarily reverted the engine's `intensityField` back to
+`'promoPct'` and watched tests 2 and 3 fail with the exact predicted biased numbers (5.86% mean
+lift, 27 of 27 scored), then restored the fix and confirmed all 9 tests in the file pass. Full
+suite 2135/2135, build clean, no entry-chunk impact.
+
+### Explicitly not done this pass (per the finding's own scoping)
+
+- **The empty discount-lever symptom** — unrelated to this bias; `ctrl_rows` is a manual-upload
+  table, a sourcing problem per the standing auto-first rule, not an algorithm fix. Still open.
+- **`minDays=24`/`minPerCell=2` were not re-validated** — the finding explicitly said its
+  measurements don't establish those thresholds are right, only that the split field was wrong.
+- **The `n/a`-verdict-whenever-`extraSpend<=0` behavior** was not investigated — flagged by the
+  finding as a second, independent thing worth checking separately.
+- **No live-data before/after comparison was run** — this session has no way to pull the live
+  `daily_glimpse_daily`/`ctrl_rows` data the real panel and SAGE tool read; the fix is verified
+  against the finding's own seeded simulations (which import and exercise the real, unmodified
+  engine) rather than against production rows.
