@@ -1,6 +1,7 @@
 ---
 name: finding-api-security-transport-fingerprint-2026-08-23
 description: SETTLED. api.security 403s are transport-layer client fingerprinting, not auth. The owner's OWN working browser token returns 403 from Node on the same machine, same network, with Chrome's full header set. Overturns both the source-IP conclusion and the two-different-tokens hypothesis. Token-based Node automation cannot reach this module; Playwright in-browser fetch is the only path.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding
