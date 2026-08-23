@@ -20,7 +20,10 @@
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Auth — same eBOS ladder as scripts/qsrsoft-onhand-pull.mjs, tried in order:
-//   QSRSOFT_EBOS_TOKEN → QSRSOFT_TOKEN (SSO exchange) → QSRSOFT_USERNAME/PASSWORD (Playwright)
+//   QSRSOFT_EBOS_TOKEN → getFreshToken() (SSO exchange) → QSRSOFT_USERNAME/PASSWORD (Playwright)
+//   Dispatch #82 / memory/project-qsrsoft-cognito-auth-312.md: the SSO exchange used to read a
+//   static QSRSOFT_COGNITO_TOKEN/QSRSOFT_TOKEN -- both the same ~1h-TTL Cognito ID token, stale
+//   ~23/24 hours as a stored secret. Now mints one fresh per run instead.
 // Optional:
 //   VARIANCE_PERIOD=YYYY-MM  — override the period (default: current month UTC)
 //   VARIANCE_STORES=3708,... — subset of NSNs (default: all 27)
@@ -33,6 +36,7 @@ import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
   mapWasteEvents, mapTransferLines, mapRawItemHistory,
@@ -173,13 +177,16 @@ async function resolveEbosToken() {
   // Prefer minting a FRESH eBOS token via the SSO exchange — eBOS tokens are
   // very short-lived, so a stored QSRSOFT_EBOS_TOKEN is almost always stale by
   // the time CI runs. The static token is a last-ditch fallback, not the default.
-  // The exchange needs the COGNITO ID token (QSRSOFT_COGNITO_TOKEN, ~1h TTL);
-  // fall back to QSRSOFT_TOKEN only for backward-compat.
-  const cognito = (process.env.QSRSOFT_COGNITO_TOKEN || process.env.QSRSOFT_TOKEN || '').trim();
-  if (cognito) {
+  // The exchange needs the COGNITO ID token; dispatch #82 replaced the static
+  // QSRSOFT_COGNITO_TOKEN/QSRSOFT_TOKEN read (stale ~23/24 hours as a stored
+  // secret, per memory/project-qsrsoft-cognito-auth-312.md) with a fresh mint.
+  try {
+    const cognito = await getFreshToken();
     const t = await getEbosTokenViaSso(cognito);
     if (t) { console.log('[auth] ✓ eBOS token via SSO exchange (fresh)'); return t; }
     console.log('[auth] SSO exchange did not return a token — trying fallbacks');
+  } catch (e) {
+    console.log(`[auth] getFreshToken() failed (${e.message}) — trying fallbacks`);
   }
   const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
   if (envToken) { console.log('[auth] falling back to static QSRSOFT_EBOS_TOKEN (may be stale)'); return envToken; }

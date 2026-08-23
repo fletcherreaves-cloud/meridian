@@ -14,22 +14,34 @@
 // engine the manual xlsx-upload path calls — one source of truth, zero drift).
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth — reporting-API X-Auth-Token, tried in order (mirrors qsrsoft-dar-pull.mjs):
-//   QSRSOFT_TOKEN → QSRSOFT_COGNITO_TOKEN  (direct server-side fetch)
-//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD    (Playwright: log in, open the Roster
+// Auth — tried in order:
+//   getFreshToken()    — mints a Cognito ID token per run (scripts/lib/qsrsoft-auth.mjs)
+//                        instead of reading a static QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN
+//                        secret: that's a ~1h-TTL Cognito token, stale ~23/24 hours by
+//                        construction no matter how often it's rotated, so the direct path
+//                        was falling straight through to Playwright on nearly every run
+//                        (mirrors qsrsoft-dar-pull.mjs). QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN
+//                        are no longer read here.
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD    (Playwright fallback: log in, open the Roster
 //                                           Statistics report, capture the token,
-//                                           fetch in-browser)
+//                                           fetch in-browser — unchanged, still the
+//                                           required env for BOTH paths since
+//                                           getFreshToken() also mints from these same
+//                                           two secrets)
 // Optional:
 //   ROSTER_PERIOD=YYYY-MM   — override the month (default: current month, UTC)
 //   ROSTER_STORES=3708,…    — subset of NSNs (default: all 27)
 //   QSRSOFT_DEBUG=1         — verbose logging
 //
-// Token refresh: v3.myqsrsoft.com → Reports → People → Roster Statistics → DevTools →
-//   Network → the roster-statistics request → copy X-Auth-Token → update QSRSOFT_TOKEN.
+// Token refresh: no longer needed for the direct path (getFreshToken() mints its own).
+//   Still useful for a manual/ad-hoc QSRSOFT_TOKEN probe: v3.myqsrsoft.com → Reports →
+//   People → Roster Statistics → DevTools → Network → the roster-statistics request →
+//   copy X-Auth-Token.
 
 import { createClient } from '@supabase/supabase-js';
 import { parseRosterStatisticsApi } from '../src/engine/people-reports.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const API_BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -125,6 +137,12 @@ async function fetchDirect(token, period) {
   return extractRows(await resp.json());
 }
 
+// Resolves either a plain token string (Playwright mode) or the getFreshToken function itself
+// (direct-API mode) — mirrors qsrsoft-dar-pull.mjs.
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
 // ── Path B: Playwright login → in-browser fetch (captures a fresh token) ──────
 async function fetchViaPlaywright(period) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
@@ -217,23 +235,23 @@ async function main() {
   console.log(`[roster-stats] period ${period} × ${STORE_NSNS.length} stores`);
 
   let rawRows = null;
-  const directTokens = [
-    ['QSRSOFT_TOKEN', (process.env.QSRSOFT_TOKEN || '').trim()],
-    ['QSRSOFT_COGNITO_TOKEN', (process.env.QSRSOFT_COGNITO_TOKEN || '').trim()],
-  ].filter(([, t]) => t);
-  for (const [name, tok] of directTokens) {
+  console.log('[auth] trying direct server-side fetch via getFreshToken()…');
+  try {
+    const tok = await resolveToken(getFreshToken, false);
     try {
-      console.log(`[auth] trying direct fetch with ${name}…`);
       rawRows = await fetchDirect(tok, period);
-      console.log(`[auth] ✓ ${name} accepted`);
-      break;
     } catch (e) {
-      if (e.message.startsWith('AUTH_FAILED')) { console.log(`[auth] ${name} rejected (${e.message}) — next method`); continue; }
-      throw e;
+      if (String(e.message).startsWith('AUTH_FAILED')) {
+        console.log('[auth]   cached token rejected — forcing a re-mint and retrying once');
+        const freshTok = await resolveToken(getFreshToken, true);
+        rawRows = await fetchDirect(freshTok, period);
+      } else throw e;
     }
+    console.log('[auth] ✓ getFreshToken() accepted');
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
   }
   if (rawRows == null) {
-    console.log('[auth] direct token(s) unavailable/rejected — falling back to Playwright');
     rawRows = await fetchViaPlaywright(period);
   }
   if (rawRows == null) { console.error('[roster-stats] ✗ no auth method succeeded'); process.exit(1); }

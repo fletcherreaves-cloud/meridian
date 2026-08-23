@@ -8,21 +8,30 @@
 //   VITE_SUPABASE_URL
 //   SUPABASE_SERVICE_ROLE_KEY  — service role key (bypasses RLS)
 //
-// Auth — provide ONE of:
-//   QSRSOFT_TOKEN              — pre-captured X-Auth-Token (fastest; skips browser)
-//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — login credentials (Playwright fallback)
+// Auth — tried in order:
+//   getFreshToken()    — mints a Cognito ID token per run (scripts/lib/qsrsoft-auth.mjs),
+//                        resolved PER DATE rather than once at the top: a stored
+//                        QSRSOFT_TOKEN is a ~1h-TTL Cognito token, stale ~23/24 hours by
+//                        construction, no matter how often it's rotated -- every run was
+//                        falling straight through to Playwright. QSRSOFT_TOKEN itself is
+//                        no longer read here.
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback (unchanged) -- still the
+//                        required env for BOTH paths, since getFreshToken() also mints
+//                        from these same two secrets.
 //
 // Optional:
 //   QSRSOFT_DAYS_BACK    — max history to pull on first run (default: 900 ≈ 30 months)
 //   QSRSOFT_DAYS_RECENT  — rolling re-pull window for inventory corrections (default: 30)
 //   QSRSOFT_DEBUG        — set to '1' for verbose logging
 //
-// Token refresh: when Playwright fails, go to v3.myqsrsoft.com,
-// DevTools → Network → any request → copy the X-Auth-Token header value →
-// update the QSRSOFT_TOKEN GitHub Secret.
+// Manual override: getFreshToken() mints automatically from QSRSOFT_USERNAME/PASSWORD, so
+// no manual token refresh is normally needed. If Playwright itself is also failing, go to
+// v3.myqsrsoft.com, DevTools → Network → any request → copy the X-Auth-Token header value
+// for a one-off manual debug session (this script no longer reads a stored token).
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const API_BASE    = 'https://api.reports.myqsrsoft.com';
 const ORG_ID      = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -266,6 +275,13 @@ async function datesToFetch() {
   return dates;
 }
 
+// Resolves either a plain token string (Playwright mode) or the getFreshToken function itself
+// (direct-API mode) — per date, so a multi-day backfill re-mints transparently near expiry
+// instead of a single mint sailing past its ~1h TTL mid-run (mirrors qsrsoft-dar-pull.mjs).
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
 async function fetchFOB(token, startDate, endDate) {
   const params = new URLSearchParams({
     catalogType:    'actualFoodOverBase',
@@ -378,28 +394,24 @@ async function upsertRows(rows) {
 }
 
 async function main() {
-  // Auth: try pre-captured token first, then Playwright login
-  let token = process.env.QSRSOFT_TOKEN || null;
-
-  // Quick validation if token provided
-  if (token) {
-    console.log('[auth] validating QSRSOFT_TOKEN…');
+  // ── Path A: direct fetch, token minted fresh per date via getFreshToken() ──
+  console.log('[auth] trying direct server-side fetch via getFreshToken()…');
+  let token = getFreshToken; // function reference — resolved per date below (re-minted on demand if a cached mint gets rejected)
+  try {
+    const testTok = await resolveToken(token, false);
+    console.log('[auth] validating freshly-minted token…');
     const check = await fetch(`${API_BASE}/reporting/v2/food/actual-food-over-base?catalogType=actualFoodOverBase&nsd=d&nsn=${STORE_NSNS[0]}&orgId=${ORG_ID}&enterpriseName=${ENTERPRISE}&startDate=2026-01-01&endDate=2026-01-01&dsd=d&compType=calendar&daysOfWeek=1,2,3,4,5,6,7&weekStart=3`, {
-      headers: { 'X-Auth-Token': token, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/' },
+      headers: { 'X-Auth-Token': testTok, 'Accept': 'application/json', 'Origin': 'https://v3.myqsrsoft.com', 'Referer': 'https://v3.myqsrsoft.com/' },
     }).catch(() => ({ status: 0 }));
     console.log('[auth] token validation →', check.status);
-    if (check.status === 401 || check.status === 403) {
-      console.warn('[auth] QSRSOFT_TOKEN expired — falling back to Playwright login');
-      token = null;
-    }
-  }
-
-  if (!token) {
+    if (check.status === 401 || check.status === 403) throw new Error(`AUTH_FAILED:${check.status}`);
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
     token = await getAuthTokenPlaywright();
   }
 
   if (!token) {
-    console.error('[qsrsoft-pull] ✗ No valid token. Provide QSRSOFT_TOKEN or QSRSOFT_USERNAME + QSRSOFT_PASSWORD.');
+    console.error('[qsrsoft-pull] ✗ No valid token. Provide QSRSOFT_USERNAME + QSRSOFT_PASSWORD (getFreshToken() and the Playwright fallback both mint/log in from these).');
     process.exit(1);
   }
 
@@ -422,7 +434,17 @@ async function main() {
 
   for (const dateStr of dates) {
     try {
-      const items = await fetchFOB(token, dateStr, dateStr);
+      const tok = await resolveToken(token, false);
+      let items;
+      try {
+        items = await fetchFOB(tok, dateStr, dateStr);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+          console.log(`[qsrsoft-pull] ${dateStr}: cached token rejected — forcing a re-mint and retrying once`);
+          const freshTok = await resolveToken(token, true);
+          items = await fetchFOB(freshTok, dateStr, dateStr);
+        } else throw e;
+      }
       if (!items.length) { if (DEBUG) console.log(`  ${dateStr}: no data`); continue; }
       if (DEBUG) items.forEach(r => console.log(`    ${dateStr} ${r.storeNum}: sales $${r.prodSalesAmt?.toLocaleString()} | baseFood $${r.totalBaseFood?.toLocaleString()}`));
       buffer.push(...items.map(item => mapRow(item, dateStr)));
@@ -433,7 +455,7 @@ async function main() {
         console.warn(`\n[qsrsoft-pull] Token expired mid-run — attempting Playwright re-auth…`);
         token = await getAuthTokenPlaywright();
         if (!token) {
-          console.error('[qsrsoft-pull] ✗ Re-auth failed. Manually update QSRSOFT_TOKEN GitHub Secret.');
+          console.error('[qsrsoft-pull] ✗ Re-auth failed. Check QSRSOFT_USERNAME/QSRSOFT_PASSWORD.');
           process.exit(1);
         }
         try {

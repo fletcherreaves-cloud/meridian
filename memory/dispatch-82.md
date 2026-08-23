@@ -179,3 +179,142 @@ describes. **Revert-sensitive**: reverting the rename must fail it.
    is why it follows item 1 rather than preceding it.
 
 Both are Band 3 in `memory/roadmap-2026-08-23.md`.
+
+---
+
+## Resolution (2026-08-23)
+
+Both parts shipped in one PR, per the dispatch's own framing (independent, touch nothing in
+common).
+
+### Part A — converted, with two corrections to the dispatch's own file list
+
+**10 of the dispatch's 11 named scripts converted**: `qsrsoft-dar-pull.mjs`,
+`qsrsoft-digital-app-pull.mjs`, `qsrsoft-ebos-pull.mjs`, `qsrsoft-employee-roster-pull.mjs`,
+`qsrsoft-mcdelivery-pull.mjs`, `qsrsoft-pmix-pull.mjs`, `qsrsoft-pull.mjs`,
+`qsrsoft-roster-stats-pull.mjs`, `qsrsoft-shift-manager-pull.mjs`, `qsrsoft-variance-pull.mjs`.
+**`qsrsoft-explore.mjs` deliberately skipped** — it's a bare manual probe
+(`QSRSOFT_TOKEN=xxx node scripts/qsrsoft-explore.mjs`, hand-run with a DevTools-pasted token),
+top-level code with no `main()`/async wrapper and **no Playwright fallback to fall through to**.
+Converting it would remove its only auth path with nothing to fall back on — not the same shape
+as every other script here, so left untouched per the dispatch's own "don't force it" guidance.
+
+Same mechanical pattern everywhere: `getFreshToken()` (`scripts/lib/qsrsoft-auth.mjs`, already
+built by #312) resolved **per unit of work** — per date, per store, or per report period,
+whichever a script's natural loop already was — via a small `resolveToken(token, forceRemint)`
+helper (`typeof token === 'function' ? await token({forceRemint}) : token`), with exactly one
+forced re-mint-and-retry on an `AUTH_FAILED`-prefixed rejection before the error propagates to
+the script's **existing, completely untouched** Playwright fallback. `qsrsoft-pmix-pull.mjs` and
+`qsrsoft-pull.mjs` had 2-3 distinct call sites each (a district-mode probe, a per-date fetch, a
+per-store fallback loop; an upfront validation ping plus the main per-date loop) — all converted
+consistently, not just the first one found. Requirement 2 (keep Playwright, don't touch
+`qsrsoft-security-events-pull.mjs`) and requirement 4 (`explore.mjs` last-or-skip) both held.
+
+**Correction 1 — the dispatch's own "hits `api.sso`, not `api.reports`" list named the wrong
+third script.** Measured, not assumed: `qsrsoft-onhand-pull.mjs` defines a
+`getEbosTokenViaSso()` function but **never calls it** — `resolveEbosToken()`'s own comment says
+outright *"the SSO /token/ebosByOrg exchange is a confirmed 403 dead end. The ONLY reliable path
+is a fresh Playwright login"* — so onhand-pull never reads a reporting-API token in any live path
+and needed no conversion. It was correctly excluded from the 11-script list already (dispatch
+requirement #3 named it as one of three api.sso scripts, which was itself imprecise — see below);
+leaving it alone here is consistent with that, just for the more precise reason that its SSO path
+is dead code, not merely "worth confirming before touching."
+
+**Correction 2 — a genuinely live, affected script was missing from the dispatch's own
+inventory.** `scripts/lib/ebos-auth.mjs` — the shared eBOS auth ladder extracted 2026-08-14 (PR
+#273) — has its own `resolveEbosToken()` that read
+`process.env.QSRSOFT_COGNITO_TOKEN || process.env.QSRSOFT_TOKEN` directly, and
+`qsrsoft-inventory-history-pull.mjs` already imports and calls it. That script was carrying the
+exact bug this dispatch exists to fix, silently, because a grep for direct
+`process.env.QSRSOFT_TOKEN` reads (how the original 11-script inventory was almost certainly
+built) can't see a script that only reads it *indirectly* through a shared lib —
+`memory/project-qsrsoft-cognito-auth-312.md` itself flagged this exact miss once already, for the
+same file, during #312's own housekeeping pass, and it recurred here. Fixed: `ebos-auth.mjs`'s
+`resolveEbosToken()` now calls `getFreshToken()` for the SSO exchange's cognito value, which
+fixes `qsrsoft-inventory-history-pull.mjs` (and any future script that adopts the shared lib)
+without a direct edit to that file.
+
+**Requirement 3, confirmed by inspection, not by a live probe (which this sandbox cannot run).**
+`scripts/lib/qsrsoft-auth.mjs`'s own header states the minted token *"is the SAME shape
+QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN always were"*, and `#312`'s finding chain (owner-confirmed
+2026-08-15) independently establishes `QSRSOFT_TOKEN`/`QSRSOFT_COGNITO_TOKEN` as literally the
+same Cognito ID token. `qsrsoft-variance-pull.mjs`'s own (pre-existing, unedited-in-substance)
+comment on `getEbosTokenViaSso()` says the exchange host authenticates with exactly that Cognito
+ID token — and its ladder already fell back from `QSRSOFT_COGNITO_TOKEN` to `QSRSOFT_TOKEN`
+interchangeably, i.e. this exact interchangeability was already relied on in shipped code before
+this dispatch. That is code-level evidence the minted token is the right *type* for the
+`api.sso.myqsrsoft.com` exchange, not a guess — but it is still not a live 200, which no sandbox
+here can produce. `qsrsoft-ebos-pull.mjs` and `qsrsoft-variance-pull.mjs` (the two real api.sso
+scripts) were converted on that basis; `qsrsoft-onhand-pull.mjs` needed no conversion per
+Correction 1 above.
+
+**Verification bar** — the dispatch is explicit that a green run proves nothing (the fallback
+already makes every run green) and that this sandbox cannot log in to QSRSoft at all. Met the
+adjusted, sandbox-realistic bar instead: `node --check` clean on all 11 touched files, structural
+match to the proven reference (`qsrsoft-ops-pull.mjs`'s `resolveToken`/re-mint-once/catch-all
+pattern) confirmed by direct reading of every diff, full suite **2143/2143** passing (up from
+2137 pre-dispatch — the 6 new Part B tests, see below), build clean, no bundle impact (none of
+these are client-imported). **Live confirmation — a real `workflow_dispatch` run whose log shows
+no `falling back to Playwright` line, with before/after wall-clock recorded — is outstanding and
+needs the owner or the self-hosted runner**, exactly as dispatch #81's PR handled the same
+sandbox constraint.
+
+### Part B — `gap_vlh` → `gap_vlh_total`, hypothesis confirmed by inspection then fixed
+
+**The hypothesis was correct.** Read `query_lifelenz_labor`'s actual (pre-fix) code directly:
+`gap_vlh: +(s.schVLH - s.needVLH).toFixed(1)` is a straight sum across every row pulled into
+`byStore[loc]`, one row per day in the queried window — a window total with no period in its
+name, exactly as the dispatch described, sitting beside `avg_daily_gap` which divides that same
+numerator by `s.days`. No alternate cause was found; the fix is exactly what the dispatch
+specified (option 1: rename so the name carries the period).
+
+**Fix**: `gap_vlh` → `gap_vlh_total` at the one field definition, the sort key, and the tool's
+`note`, which now states both fields' periods explicitly (*"gap_vlh_total = … SUMMED ACROSS THE
+WHOLE date_range (days field). avg_daily_gap = gap_vlh_total ÷ days, the PER-DAY rate…"*) instead
+of explaining only the sign. Confirmed by repo-wide grep that `gap_vlh` had exactly one consumer
+(this tool) — no other call site needed updating.
+
+**Extracted to a shared, testable module** rather than fixed in place, mirroring dispatch #80's
+`memory-kb.js` precedent (the only existing example of testing SAGE tool logic in this repo, since
+`index.ts` is a Deno edge function with no Deno test runner wired into CI and top-level
+`Deno.env.get(...)!` calls that make it unimportable from Vitest as-is): new
+`supabase/functions/sage-chat/lifelenz-labor-agg.js` (plain JS, no TypeScript) exports
+`aggregateLifelenzLabor(rows, storeNames)` and `LIFELENZ_LABOR_NOTE`, imported by `index.ts`
+verbatim — the exact code that runs in production is what the test exercises, not a
+re-implementation of it.
+
+**Verification**: `src/__tests__/sage-lifelenz-labor-agg.test.js`, 6 tests — a 30-day fixture
+reconciling to the dispatch's own arithmetic (`+4.7 VLH/day × 30 days = 141.0 total`, matching
+SAGE's reported "+141 hours/day" for Ada-Country Club), a second store on an **different**
+day-count (18, not 30) to prove the fix divides by each store's own `days` rather than a borrowed
+constant, an explicit assertion that `gap_vlh_total` exists and the old `gap_vlh` name does not, a
+sort-order test (worst absolute gap first, unchanged behavior), and two assertions on the note
+text itself (`/gap_vlh_total/`, `/summed across/i`, `/date_range/`, `/avg_daily_gap/`,
+`/per-day/i`) — the "note names the period of every field it describes" bar the dispatch asked
+for specifically, not just a passing number. **Confirmed revert-sensitive**: temporarily reverted
+every `gap_vlh_total` occurrence back to `gap_vlh` and re-ran — 4 of 6 tests failed exactly as
+predicted (the field-existence check and all three note-content checks that reference the new
+name), then restored.
+
+### Verification (both parts together)
+
+Full suite **2143/2143** passing (203 files), `npm run build` clean, eager-payload 517.79 KB gzip
+(budget 850 KB) — no client bundle impact from either part (Part A is Node scripts, Part B's new
+module is imported only by the Deno edge function and its own Vitest test, not by any
+client-side panel).
+
+### Explicitly not done this pass
+
+- **Live `workflow_dispatch` confirmation for any of the 11 converted scripts** — this sandbox has
+  no QSRSoft credentials or network access (checked first, consistent with dispatch #81's own
+  session). Needs the owner or the self-hosted runner, per the dispatch's own verification-bar
+  language.
+- **Wall-clock before/after measurement** — same reason; the dispatch explicitly wants this
+  recorded once a live run is possible, to confirm skipping the Playwright browser launch is the
+  actual win it should be.
+- **Deleting the `QSRSOFT_TOKEN`/`QSRSOFT_COGNITO_TOKEN` GitHub secrets** — per #312's Scope 4
+  (already-standing hold), not touched here either; they cost nothing to leave as a last-ditch
+  fallback until the converted scripts have run green on their real schedules for several
+  consecutive days.
+- **`qsrsoft-explore.mjs`** — left on the old static-token pattern, for the structural reason
+  above, not an oversight.

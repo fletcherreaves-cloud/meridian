@@ -31,13 +31,23 @@
 // (the SAME engine the manual xlsx-upload path uses — one source of truth).
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth ladder (mirrors qsrsoft-dar-pull.mjs / qsrsoft-roster-stats-pull.mjs):
-//   QSRSOFT_TOKEN → QSRSOFT_COGNITO_TOKEN  (direct)  →  QSRSOFT_USERNAME/PASSWORD (Playwright)
+//
+// Auth — tried in order:
+//   getFreshToken()    — mints a Cognito ID token per run (scripts/lib/qsrsoft-auth.mjs).
+//                        QSRSOFT_TOKEN and QSRSOFT_COGNITO_TOKEN are the SAME credential
+//                        (a ~1h-TTL Cognito ID token) -- a value stored as a static secret
+//                        is stale ~23/24 hours by construction, no matter how often it's
+//                        rotated, so every run was falling straight through to Playwright.
+//                        Neither env var is read here anymore.
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback (unchanged -- still the
+//                        required env for BOTH paths, since getFreshToken() also mints
+//                        from these same two secrets)
 // Optional: ROSTER_PERIOD=YYYY-MM · ROSTER_STORES=3708,… · QSRSOFT_DEBUG=1
 
 import { createClient } from '@supabase/supabase-js';
 import { parseEmployeeRosterApi, rosterCounts } from '../src/engine/people-reports.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const API_BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -216,6 +226,27 @@ async function fetchDirect(token, period) {
   return extractRows(await resp.json());
 }
 
+// Resolves either a plain token string (Playwright mode) or the getFreshToken function
+// itself (direct-API mode). One forced re-mint-and-retry on an AUTH_FAILED rejection of a
+// nominally-fresh cached token -- mirrors qsrsoft-dar-pull.mjs's resolveToken()/runDirect().
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
+async function fetchDirectWithRetry(token, period) {
+  const tok = await resolveToken(token, false);
+  try {
+    return await fetchDirect(tok, period);
+  } catch (e) {
+    if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+      console.log('[auth]   cached token rejected — forcing a re-mint and retrying once');
+      const freshTok = await resolveToken(token, true);
+      return await fetchDirect(freshTok, period);
+    }
+    throw e;
+  }
+}
+
 async function fetchViaPlaywright(period) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
@@ -304,23 +335,14 @@ async function main() {
   console.log(`[employee-roster] period ${period} × ${STORE_NSNS.length} stores`);
 
   let rawRows = null;
-  const directTokens = [
-    ['QSRSOFT_TOKEN', (process.env.QSRSOFT_TOKEN || '').trim()],
-    ['QSRSOFT_COGNITO_TOKEN', (process.env.QSRSOFT_COGNITO_TOKEN || '').trim()],
-  ].filter(([, t]) => t);
-  for (const [name, tok] of directTokens) {
-    try {
-      console.log(`[auth] trying direct fetch with ${name}…`);
-      rawRows = await fetchDirect(tok, period);
-      console.log(`[auth] ✓ ${name} accepted`);
-      break;
-    } catch (e) {
-      if (e.message.startsWith('AUTH_FAILED')) { console.log(`[auth] ${name} rejected (${e.message}) — next method`); continue; }
-      throw e;
-    }
+  console.log('[auth] trying direct server-side fetch via getFreshToken()…');
+  try {
+    rawRows = await fetchDirectWithRetry(getFreshToken, period);
+    console.log('[auth] ✓ getFreshToken() accepted');
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
   }
   if (rawRows == null) {
-    console.log('[auth] direct token(s) unavailable/rejected — falling back to Playwright');
     rawRows = await fetchViaPlaywright(period);
   }
   if (rawRows == null) { console.error('[employee-roster] ✗ no auth method succeeded'); process.exit(1); }

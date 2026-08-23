@@ -18,7 +18,17 @@
 // the speed metrics + avg check, hour-weights labor%. Speed metrics are already sec.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth ladder: QSRSOFT_TOKEN → QSRSOFT_COGNITO_TOKEN → QSRSOFT_USERNAME/PASSWORD (Playwright)
+// Auth — tried in order:
+//   getFreshToken()    — mints a Cognito ID token per run (scripts/lib/qsrsoft-auth.mjs)
+//                        instead of reading a static QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN
+//                        secret: that's a ~1h-TTL Cognito token, stale ~23/24 hours by
+//                        construction no matter how often it's rotated, so the direct path
+//                        was falling straight through to Playwright on nearly every run
+//                        (mirrors qsrsoft-dar-pull.mjs). QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN
+//                        are no longer read here.
+//   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback (unchanged — still the
+//                        required env for BOTH paths since getFreshToken() also mints
+//                        from these same two secrets)
 // Optional: SHIFTMGR_PERIOD=YYYY-MM · ROSTER_STORES=3708,… · QSRSOFT_DEBUG=1
 //
 // SHIFTMGR_START=YYYY-MM-DD [+ SHIFTMGR_END=YYYY-MM-DD, defaults to SHIFTMGR_START] — explicit
@@ -34,6 +44,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { parseShiftManagerSummary } from '../src/engine/people-reports.js';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const API_BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID     = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -200,6 +211,12 @@ async function fetchDirect(token, window) {
   return extractRows(await resp.json());
 }
 
+// Resolves either a plain token string (Playwright mode) or the getFreshToken function itself
+// (direct-API mode) — mirrors qsrsoft-dar-pull.mjs.
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
 async function fetchViaPlaywright(window) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
   if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD for Playwright fallback'); return null; }
@@ -292,23 +309,23 @@ async function main() {
     : `[shift-mgr] period ${window.period} (${window.first}…${window.last}) → ${table} × ${STORE_NSNS.length} stores`);
 
   let rawRows = null;
-  const directTokens = [
-    ['QSRSOFT_TOKEN', (process.env.QSRSOFT_TOKEN || '').trim()],
-    ['QSRSOFT_COGNITO_TOKEN', (process.env.QSRSOFT_COGNITO_TOKEN || '').trim()],
-  ].filter(([, t]) => t);
-  for (const [name, tok] of directTokens) {
+  console.log('[auth] trying direct server-side fetch via getFreshToken()…');
+  try {
+    const tok = await resolveToken(getFreshToken, false);
     try {
-      console.log(`[auth] trying direct fetch with ${name}…`);
       rawRows = await fetchDirect(tok, window);
-      console.log(`[auth] ✓ ${name} accepted`);
-      break;
     } catch (e) {
-      if (e.message.startsWith('AUTH_FAILED')) { console.log(`[auth] ${name} rejected (${e.message}) — next method`); continue; }
-      throw e;
+      if (String(e.message).startsWith('AUTH_FAILED')) {
+        console.log('[auth]   cached token rejected — forcing a re-mint and retrying once');
+        const freshTok = await resolveToken(getFreshToken, true);
+        rawRows = await fetchDirect(freshTok, window);
+      } else throw e;
     }
+    console.log('[auth] ✓ getFreshToken() accepted');
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
   }
   if (rawRows == null) {
-    console.log('[auth] direct token(s) unavailable/rejected — falling back to Playwright');
     rawRows = await fetchViaPlaywright(window);
   }
   if (rawRows == null) { console.error('[shift-mgr] ✗ no auth method succeeded'); process.exit(1); }

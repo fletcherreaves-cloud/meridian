@@ -10,8 +10,13 @@
 //
 // Auth — tried in order:
 //   QSRSOFT_EBOS_TOKEN   — pre-captured X-Auth-Token from prod.ebos.qsrsoft.com (fastest)
-//   QSRSOFT_TOKEN        — reporting API token; exchanged for eBOS token via SSO endpoint
-//                          (api.sso.myqsrsoft.com/token/ebosByOrg — no Playwright needed)
+//   getFreshToken()      — mints a fresh Cognito ID token (scripts/lib/qsrsoft-auth.mjs),
+//                          exchanged for an eBOS token via SSO endpoint
+//                          (api.sso.myqsrsoft.com/token/ebosByOrg — no Playwright needed).
+//                          Dispatch #82 / memory/project-qsrsoft-cognito-auth-312.md: a
+//                          QSRSOFT_TOKEN stored as a static secret is a ~1h-TTL Cognito
+//                          token, stale ~23/24 hours by construction — QSRSOFT_TOKEN is no
+//                          longer read here, replaced by a per-run fresh mint.
 //   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback: logs in, clicks Ledger tab,
 //                                          fetches all store data from within the live session
 //
@@ -29,6 +34,7 @@ import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_EBOS_DAYS_BACK   || '900', 10);
@@ -55,8 +61,8 @@ const supabase = createClient(
 
 // ── SSO token exchange ────────────────────────────────────────────────────────
 // The purchases page sends the main QSRSoft X-Auth-Token to this SSO endpoint
-// and receives an eBOS-specific X-Auth-Token in return. If QSRSOFT_TOKEN is set
-// we can skip Playwright entirely — just exchange and pull.
+// and receives an eBOS-specific X-Auth-Token in return. Given a fresh Cognito ID
+// token (getFreshToken()) we can skip Playwright entirely — just exchange and pull.
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 
 async function getEbosTokenViaSso(qsrsoftToken) {
@@ -472,15 +478,17 @@ async function main() {
     return runWithToken(envToken, startDate, endDate);
   }
 
-  // ── Path B: SSO token exchange using QSRSOFT_TOKEN (no Playwright needed) ──
-  const reportingToken = (process.env.QSRSOFT_TOKEN || '').trim();
-  if (reportingToken) {
-    const ssoToken = await getEbosTokenViaSso(reportingToken);
+  // ── Path B: SSO token exchange, cognito token minted fresh via getFreshToken() ──
+  try {
+    const cognitoToken = await getFreshToken();
+    const ssoToken = await getEbosTokenViaSso(cognitoToken);
     if (ssoToken) {
       console.log('[auth] ✓ eBOS token obtained via SSO exchange');
       return runWithToken(ssoToken, startDate, endDate);
     }
     console.log('[auth] SSO exchange did not return a usable token — falling back to Playwright');
+  } catch (e) {
+    console.log(`[auth] getFreshToken() failed (${e.message}) — falling back to Playwright`);
   }
 
   // ── Path C: Playwright — login + fetch all data from within the live session ──

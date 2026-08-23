@@ -8,9 +8,16 @@
 //   VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 //
 // Auth — tried in order:
-//   QSRSOFT_TOKEN      — reporting API X-Auth-Token (direct server-side fetch)
+//   getFreshToken()    — mints a Cognito ID token per run (scripts/lib/qsrsoft-auth.mjs),
+//                        resolved PER DATE rather than once at the top (dispatch #82 /
+//                        memory/project-qsrsoft-cognito-auth-312.md): a stored QSRSOFT_TOKEN
+//                        is a ~1h-TTL Cognito token, stale ~23/24 hours by construction, no
+//                        matter how often it's rotated -- every run was falling straight
+//                        through to Playwright. QSRSOFT_TOKEN itself is no longer read here.
 //   QSRSOFT_USERNAME + QSRSOFT_PASSWORD — Playwright fallback: logs in, navigates
 //                        to Daily Activity page, captures token, fetches in-browser
+//                        (unchanged -- still the required env for BOTH paths, since
+//                        getFreshToken() also mints from these same two secrets)
 //
 // Optional:
 //   QSRSOFT_DAR_DAYS_BACK   — max history on first run (default: 90)
@@ -22,6 +29,7 @@ import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const DAR_BASE  = 'https://api.reports.myqsrsoft.com';
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -294,12 +302,29 @@ async function fetchDayDirect(token, date) {
   return Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
 }
 
+// Resolves either a plain token string (Playwright mode) or the getFreshToken function itself
+// (direct-API mode) — per date, so a multi-day backfill re-mints transparently near expiry
+// instead of a single mint sailing past its ~1h TTL mid-run (mirrors qsrsoft-ops-pull.mjs).
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
 async function runDirect(token, dates, tracker, coveredStores) {
   let totalRows = 0;
   for (let i = 0; i < dates.length; i++) {
     const date = dates[i];
     try {
-      const rows = await fetchDayDirect(token, date);
+      const tok = await resolveToken(token, false);
+      let rows;
+      try {
+        rows = await fetchDayDirect(tok, date);
+      } catch (e) {
+        if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+          console.log(`[dar-pull]   ${date}: cached token rejected — forcing a re-mint and retrying once`);
+          const freshTok = await resolveToken(token, true);
+          rows = await fetchDayDirect(freshTok, date);
+        } else throw e;
+      }
       if (!rows.length) { console.log(`[dar-pull]   ${date}: no data`); continue; }
       const records = rows.map(r => mapRow(r, date));
       const n = await upsertBatch(records);
@@ -501,22 +526,17 @@ async function main() {
     if (code) process.exit(code);
   };
 
-  // ── Path A: direct token ──
-  const token = (process.env.QSRSOFT_TOKEN || '').trim();
-  if (token) {
-    console.log('[auth] trying direct server-side fetch with QSRSOFT_TOKEN…');
+  // ── Path A: direct fetch, token minted fresh per date via getFreshToken() ──
+  console.log('[auth] trying direct server-side fetch via getFreshToken()…');
+  {
     const tracker = makeOutcomeTracker('dar-pull');
     try {
-      const total = await runDirect(token, dates, tracker, coveredStores);
+      const total = await runDirect(getFreshToken, dates, tracker, coveredStores);
       console.log(`[dar-pull] done. Total: ${total} rows`);
       finalizeAndExit(total, tracker);
       return;
     } catch (e) {
-      if (e.message.startsWith('AUTH_FAILED')) {
-        console.log('[auth] QSRSOFT_TOKEN rejected (401/403) — falling back to Playwright');
-      } else {
-        throw e;
-      }
+      console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
     }
   }
 
