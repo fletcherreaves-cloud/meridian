@@ -50,6 +50,15 @@
 //     single-axis "less parking is always better" read. Diagnosed via
 //     `engine/park-oepe-quadrant.js`, not a direction flag — do not re-add one here without
 //     redoing that measurement.
+//     Owner-confirmed 2026-08-23, and this is WHY the two are consistent, not a coincidence:
+//     McDonald's official target is a 12-16% BAND. "Generally at or near target on either side
+//     is viewed as healthy. Too low, not good — not moving cars at the DT present window,
+//     equates to slower service. Too much can be viewed as operations issues with getting food
+//     ready or struggling to move cars (could be staffing, lack of manager floor control, or any
+//     number of other issues)." Also: "it has been covered before and I don't want to introduce
+//     yet another method" — so this stays excluded from ranking rather than getting a bespoke
+//     band-aware treatment here; a range/target-relative method already exists elsewhere
+//     (`store-analytics.js`'s `'range'` sentinel) for whoever needs it.
 //   - `actVsNeed` — a SIGNED hour gap (actual − needed), not a monotone quantity: the file's
 //     own comment above this key says overstaffed and understaffed are both worth seeing, and
 //     "closer to zero" isn't expressible as lower/higher. The one site that declared it

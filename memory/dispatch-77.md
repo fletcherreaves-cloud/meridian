@@ -240,6 +240,19 @@ Ponce de Leon 33.6%) also beat the median on flow — refuting a single-axis "le
 better" read (`engine/park-oepe-quadrant.js`). `direction` for `park` is left **unset**, not
 guessed, and documented inline in `metric-source.js` citing that measurement.
 
+**Owner-confirmed 2026-08-23** this is the right call, and explains *why* the quadrant finding and
+the two no-fixed-direction sites agree: McDonald's official target is a **12-16% band**, not a
+one-sided threshold. Verbatim: *"generally at or near target on either side is viewed as healthy.
+Too low, not good — not moving cars at the DT present window, equates to slower service. Too much
+can be viewed as operations issues with getting food ready or struggling to move cars (could be
+staffing, lack of manager floor control, or any number of other issues)."* And on scope:
+*"it has been covered before and I don't want to introduce yet another method"* — so park stays
+excluded from Top/Bottom Performers rather than getting a bespoke band-aware ranking built here; a
+range/target-relative treatment already exists (`store-analytics.js`'s `'range'` sentinel) for
+whatever future work wants it. Comment in `metric-source.js` updated with the owner's exact words
+so a future session doesn't have to re-derive why this one is different from a plain lower/higher
+metric.
+
 **One more left deliberately unset: `actVsNeed`.** A signed hour gap (actual − needed), not a
 monotone quantity — the file's own existing comment says both overstaffed and understaffed are
 worth seeing, and "closer to zero" isn't lower/higher. Its one declaring site (`store-dash.js`,
