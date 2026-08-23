@@ -23,6 +23,10 @@
 //   BROWSER_TOKEN=<paste> node scripts/probe-security-token-identity.mjs   # both, side by side
 import { createHash } from 'node:crypto';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+// The PULL's own request builders. Importing them (rather than copying) means case D exercises
+// the exact code the failing pull runs -- if D fails where A succeeds, the difference is inside
+// these two functions and nowhere else.
+import { buildUrl, buildBody } from './qsrsoft-security-events-pull.mjs';
 
 // Short fingerprint for answering "are these the SAME token?" without printing any part of one.
 // A raw tail (last N chars) would also work as a comparator, but this repo's standing rule is
@@ -141,6 +145,31 @@ if (results.minted === 200) {
   }
 }
 
+// ── CASE D: BISECT. Same token, same headers, same store, same date as case A -- but the URL and
+// body come from the PULL's own buildUrl()/buildBody(). A succeeds and the pull fails, so if D
+// also fails the difference is in those builders; if D succeeds the difference is in the headers
+// or the surrounding fetch, and the builders are exonerated. Either way it halves the search.
+if (results.minted === 200) {
+  const pullUrl  = buildUrl(STORE_REF);
+  const pullBody = buildBody('all_promo', DATE);
+  console.log('\n── D) PULL\'s buildUrl() + buildBody(), probe\'s headers ──');
+  console.log(`   probe URL : ${URL}`);
+  console.log(`   pull  URL : ${pullUrl}`);
+  console.log(`   URL match : ${URL === pullUrl ? 'IDENTICAL' : '❗ DIFFERENT'}`);
+  console.log(`   probe body: ${JSON.stringify(BODY_UNSCOPED)}`);
+  console.log(`   pull  body: ${JSON.stringify(pullBody)}`);
+  console.log(`   body match: ${JSON.stringify(BODY_UNSCOPED) === JSON.stringify(pullBody) ? 'IDENTICAL' : '❗ DIFFERENT'}`);
+  try {
+    const tok = await getFreshToken();
+    const r = await fetch(pullUrl, { method: 'POST', headers: headers(tok), body: JSON.stringify(pullBody) });
+    const t = await r.text();
+    console.log(`   HTTP ${r.status}  x-amzn-errortype=${r.headers.get('x-amzn-errortype') || '(none)'}`);
+    if (!r.ok) console.log(`   ✗ ${t.slice(0, 200)}`);
+    else { let n='?'; try { const j=JSON.parse(t); n=Array.isArray(j)?j.length:'non-array'; } catch {} console.log(`   ✓ ${n} row(s)`); }
+    results.pullBuilders = r.status;
+  } catch (e) { console.log(`   ✗ ${e.message}`); }
+}
+
 const browserToken = (process.env.BROWSER_TOKEN || '').trim();
 if (browserToken) {
   tokenFps.browser = fp(browserToken);
@@ -159,6 +188,15 @@ if (results.browser !== undefined && tokenFps.minted && tokenFps.browser) {
 }
 
 console.log('\n── VERDICT ──');
+if (results.pullBuilders === 403) {
+  console.log('   🎯 The PULL\'s buildUrl()/buildBody() are the difference. Same token, same headers,');
+  console.log('   same store, same date -- only the URL/body construction changed, and it failed.');
+  console.log('   Compare the two URL and body lines printed above; one of them is not what it looks like.');
+} else if (results.pullBuilders === 200) {
+  console.log('   The pull\'s builders are EXONERATED -- they produce a request that works from here.');
+  console.log('   So the difference is in the pull\'s HEADERS or its surrounding fetch, not the URL/body.');
+  console.log('   Next: diff the two header objects at the wire level, not by reading the source.');
+}
 if (results.minted === 200 && results.unscoped === 403) {
   console.log('   🎯 THE BODY IS THE VARIABLE. Same token, same machine, same headers, same date,');
   console.log('   same store -- only registers/cashiers changed. An unscoped sweep (empty arrays)');

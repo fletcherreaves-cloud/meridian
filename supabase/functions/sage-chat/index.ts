@@ -342,7 +342,16 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
 
     let q = sb
       .from('lifelenz_schedule')
-      .select('loc,date,sch_vlh,need_vlh,sch_crew,need_crew')
+      // ⚠️ sch_crew / need_crew DO NOT EXIST on this table. Selecting them makes PostgREST
+      // reject the whole query with `column lifelenz_schedule.sch_crew does not exist`, so the
+      // tool returns a database error and SAGE drops LifeLenz from its answer entirely.
+      //
+      // They were never used either -- the aggregation reads only sch_vlh and need_vlh. The
+      // dead columns rode along invisibly while the table NAME was also wrong (#598): a 404 on
+      // `lifelenz_schedules` masked them, and fixing the name surfaced them as a 400. Verified
+      // against live Supabase 2026-08-23, column by column: sch_vlh 200, need_vlh 200,
+      // sch_crew 400, need_crew 400.
+      .select('loc,date,sch_vlh,need_vlh')
       .gte('date', startDate)
       .lte('date', endDate)
       .limit(50000);
