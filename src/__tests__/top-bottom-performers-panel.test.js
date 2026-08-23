@@ -64,6 +64,19 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
   // search would pass by coincidence on the sales case and never actually detect a flip).
   const rankedLocs = () => [...container.querySelectorAll('[data-testid="performer-row"]')].map(el => el.getAttribute('data-loc'));
 
+  // The ranked figure is the mean of each store's DAILY values, which for a ratio metric is an
+  // average-of-averages rather than the period figure a P&L would show (true Sum/Sum deferred --
+  // see engine/top-bottom-performers.js's header and memory/dispatch-77.md). A bare "Labor %"
+  // label would imply the period value, so the panel must say what the number actually is.
+  // Asserted on the rendered panel, not on a constant, so deleting the caption fails this.
+  it('states on its surface that the figure is a daily average, not the period total', () => {
+    const ds = mkFixture();
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
+    const txt = container.textContent;
+    expect(txt).toContain('daily average over the window');
+    expect(txt).toContain('not the period total');
+  });
+
   it('ranks by the higher-better metric (sales) with the higher store first', () => {
     const ds = mkFixture();
     act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
