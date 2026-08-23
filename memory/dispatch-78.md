@@ -45,9 +45,17 @@ year=2025 yet."* That was written before the capture and is superseded by `:1146
 1. **Commit the rows.** `memory/data/rgr-history-2024-2026.json`, same shape and spirit as
    `cfv-history-2023-2026.json`. **This is the whole point of the dispatch** — a capture that
    isn't committed has already been done once and lost.
-2. **Reconcile before trusting.** The counts must land on 27 / 27 for 2024 / 2025, matching what
-   the finding recorded. A different number means the query differs from the one that produced the
-   analysis, and that needs explaining before import.
+2. **Reconcile before trusting — but do NOT gate on the count alone.** The counts must land on
+   27 / 27 for 2024 / 2025, matching what the finding recorded. A different number means the query
+   differs from the one that produced the analysis, and that needs explaining before import.
+   ⚠️ **27 is also the store count, so a count check is not sufficient evidence.** The Propel
+   *export* path returns exactly one row per store — 27 rows, no dates, no visit IDs — and would
+   sail through a "did we get 27?" gate while containing no per-visit data at all. This has now
+   fooled a gate on this workstream twice
+   (`memory/finding-propel-scored-visits-are-rollups-2026-08-23.md`).
+   **So the gate is: every row must carry a non-null `visitDate` AND a non-null `visitId`.**
+   Assert on field presence first, count second. A rollup fails the field check immediately; it
+   passes the count check every time.
 3. **RGR visits carry no channel.** That is load-bearing: v5.117 fixed the Channel-over-time
    denominator precisely so importing these would not dilute every year's channel shares. Do not
    invent a channel for them.
