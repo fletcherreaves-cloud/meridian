@@ -151,10 +151,42 @@ function canonicalOccurrenceKey(v) {
   const t = Date.parse(v);
   return Number.isNaN(t) ? String(v) : new Date(t).toISOString();
 }
+
+// Dispatch #76 -- the ~52% collapse rate looked alarming (memory/dispatch-76.md), so before
+// touching anything this was measured against a real pull rather than guessed at: dumped every
+// colliding group in a live 27-store/1-day batch (612 groups) side by side. Two findings, both
+// from data:
+//   1. The noLocation hypothesis (LOCATIONS = [...STORE_NSNS, 'noLocation'] at :74) is REFUTED --
+//      every single colliding pair/triple shares the SAME real store location. Not the cause.
+//   2. 65% of colliding groups (398/612) are byte-identical true duplicates -- collapsing them is
+//      correct and lossless either way they're ordered.
+//   3. But 117 groups sampled differing-but-colliding, and within THOSE, 14 (~12%) carry a REAL
+//      conflict: the SAME scheduled occurrence (same loc/formId/scheduledAt) reported as one or
+//      two stale "MISSED" role-group placeholders (missed:true, no completedBy/userId/startedAt/
+//      completedOn) ALONGSIDE one genuine completion row (missed:false, hasResponse:true, a real
+//      completedBy/userId/startedAt/completedOn/timeToComplete). The occurrence key is CORRECT --
+//      all rows in a group really are the same real-world slot -- so this is not a case for
+//      widening the key. It's a case for picking the right row deterministically. The previous
+//      "last one kept" (plain Map overwrite in API array order) happened to keep the completed
+//      row in every one of the 14 measured cases -- but nothing guarantees that ordering; it was
+//      accidental, not designed. A future response ordering change would silently discard a real
+//      completion in favour of a stale miss with zero error, exactly the failure mode dispatch #71
+//      was about one layer in (a green-looking run that quietly has the wrong data).
+// Fix: rank by outcome, not array position. A genuine completion always outranks a missed/open
+// row for the SAME occurrence; among rows of equal rank (the common case -- true duplicates, or
+// two placeholders), the last one still wins, matching the prior tie-break behaviour exactly (all
+// 4 of #71's original tests pass unchanged under this).
+function _statusPriority(r) {
+  if (r.missed === true) return 0;         // stale/placeholder "still missed" duplicate
+  if (r.has_response === true) return 2;   // real completion -- always the ground truth
+  return 1;                                // 'open' ("--") or unspecified
+}
 export function dedupeByConflictKey(mapped) {
   const byKey = new Map();
   for (const r of mapped) {
-    byKey.set(`${r.loc}|${String(r.form_id).toLowerCase()}|${canonicalOccurrenceKey(r.occurrence_key)}`, r);
+    const k = `${r.loc}|${String(r.form_id).toLowerCase()}|${canonicalOccurrenceKey(r.occurrence_key)}`;
+    const existing = byKey.get(k);
+    if (!existing || _statusPriority(r) >= _statusPriority(existing)) byKey.set(k, r);
   }
   return [...byKey.values()];
 }
@@ -173,7 +205,13 @@ async function upsertRows(rawRows) {
 
   const deduped = dedupeByConflictKey(mapped);
   const collapsed = mapped.length - deduped.length;
-  if (collapsed > 0) console.log(`[forms-completion] ${collapsed} row(s) shared a (loc, formId, occurrenceKey) with another row in the same batch -- collapsed, last one kept`);
+  // Dispatch #76 -- reworded, not deleted, per the standing rule this log line is the only
+  // reason the collapse was findable at all. Measured (memory/dispatch-76.md): most of what
+  // collapses here is byte-identical noise, but a real minority is the SAME occurrence carrying
+  // a genuine completed-vs-missed conflict across duplicate copies -- dedupeByConflictKey now
+  // resolves those deterministically (a completion always outranks a stale miss), not by
+  // whichever row the API happened to return last.
+  if (collapsed > 0) console.log(`[forms-completion] ${collapsed} row(s) shared a (loc, formId, occurrenceKey) with another row in the same batch -- collapsed (completed status, when present, always kept over a stale missed/open duplicate)`);
 
   const CHUNK = 500;
   let saved = 0;
