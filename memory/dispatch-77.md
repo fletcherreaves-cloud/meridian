@@ -87,13 +87,14 @@ the other two contradictions (both have targets in `DEFAULT_TARGETS`):
 |---|---|---|---|
 | Labor % | `tLabor` | **lower-better** (owner-ruled) | `analytics.js:309` |
 | R2P | `tR2p` | **lower-better** (proposed) | `store-dash.js:2617` |
-| Discount % | `tDiscCoupPct` | **lower-better** (proposed) | `analytics.js:324` |
+| Discount % | `tDiscCoupPct` | **lower-better** (owner-ruled 2026-08-23) | `analytics.js:324` |
 
-⚠️ Only Labor is owner-ruled; the other two are this dispatch applying the same principle. R2P is
-independently corroborated — `metric-source.js:75-77` derives it as
+✅ **Labor % and Discount % are both owner-ruled** (Discount confirmed 2026-08-23: *"discount -
+lower is better"*). **R2P is this dispatch applying the same principle**, but independently
+corroborated twice over: `metric-source.js:75-77` derives it as
 `(fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt`, i.e. **seconds per transaction**, and the
-sibling entry `store-dash.js:2229` is literally labelled *"R2P (lower=better)"*. Discount % rests
-on the principle alone — **confirm it with the owner in passing, do not treat it as ruled.**
+sibling entry `store-dash.js:2229` is literally labelled *"R2P (lower=better)"*. Treat R2P as
+settled unless the measurement in step 1 contradicts it.
 
 ⚠️ **Not every metric is lower-better.** Sales, guest count, TPPH, avg check and KVS-healthy are
 at-or-**above**-target. The ruling settles the cost/speed family; the full step-1 table below is
