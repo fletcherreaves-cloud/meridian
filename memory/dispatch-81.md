@@ -96,3 +96,100 @@ total for one day in the PR body, since that decides whether a daily schedule is
 - ⚠️ Do not keep the bare-fetch path as a fallback (see above).
 - ⚠️ Do not extract the token from Playwright and fetch from Node. That is the current bug.
 - ⚠️ Do not change the runner and the auth path in the same measurement.
+
+---
+
+## Resolution (2026-08-23)
+
+**Built, from a sandbox with zero QSRSoft credentials and zero QSRSoft network access** (checked
+first — no `QSRSOFT_USERNAME`/`QSRSOFT_PASSWORD`/`QSRSOFT_TOKEN` in env or `.env.local`). What
+follows is exactly what that constraint allowed and exactly what it didn't — no live result is
+fabricated below.
+
+### What shipped (item 1 + the two comment fixes)
+
+`scripts/qsrsoft-security-events-pull.mjs` rewritten so its **only** auth/fetch path is in-browser:
+real Chromium SPA login → capture `X-Auth-Token` from a live request (same capture mechanism the
+old Playwright-fallback already had) → **one `page.evaluate()` per (store, date, event_token)
+unit** (`runSecurityEvents()` → `fetchOneInBrowser()`), the actual `fetch()` running inside the
+page context with an explicit `X-Auth-Token` header and no `credentials:'include'`. The token never
+crosses back into a Node-side `fetch()` — that was the exact bug being fixed. The old bare-Node
+"primary" path (`getFreshToken()` → Node `fetch`) is deleted entirely, not kept as a fallback, per
+the dispatch's explicit instruction — this file now has one path, not two, and says why in its own
+header comment, citing this finding file.
+
+Unchanged: the 27 `STORE_NSNS`, the 8 `EVENT_TOKENS` (imported from `src/engine/security-events.js`,
+untouched), `getDateRange()`/`getLatestDate()` gap detection, `parseSecurityEventRows()` →
+`tokenizeRows()` → `saveSecurityEventRows()` pipeline, and `buildUrl`/`buildBody`/`extractRows` —
+same exported signatures, same behavior, now called from Node to build the URL/body (cheap, no
+network) and then handed into `page.evaluate()` as data rather than used in a Node-side `fetch()`
+directly.
+
+Both stale comments the dispatch named are corrected in place, not just patched around:
+- The script's own header no longer states the network-origin theory as fact, and no longer calls
+  this host "token-only… a plain Node fetch with a minted token is the primary path." It now states
+  the real cause (TLS/HTTP-2 client fingerprinting) and cites
+  `memory/finding-api-security-transport-fingerprint-2026-08-23.md` directly.
+- `.github/workflows/qsrsoft-security-events-pull.yml`'s header comment is corrected the same way,
+  and its "NOT live-verified" note now says why for the *right* reason: not "no self-hosted runner
+  and no QSRSoft network access from that sandboxed session" (the old, now-inapplicable reason —
+  this workflow still targets the self-hosted `qsr-security` runner), but "this rebuild session had
+  no QSRSoft credentials and no QSRSoft network access at all, so the live in-browser fetch path has
+  never actually been run against the real API."
+
+### What was explicitly SKIPPED, and why (dispatch items 2 and 3)
+
+Both require live QSRSoft network access / the actual self-hosted runner, neither of which this
+sandbox has. Skipped cleanly rather than guessed at, matching how other blocked sub-items in this
+repo's dispatches get handled — the rest of the dispatch shipped, only these two did not:
+
+- **Item 2 — hosted `ubuntu-latest` runner test.** Unattempted. The dispatch is explicit this must
+  happen *only after* the self-hosted runner has already produced a real 200+rows run on the
+  rebuilt code, changing **only** the runner label as the next, separate test. Neither half of that
+  sequence is possible without live infrastructure.
+- **Item 3 — probe 2–3 real `api.reports` routes to correct CLAUDE.md's "requires browser session
+  cookies… token alone returns 401" claim** (CLAUDE.md:434-ish, the QSRSoft DAR API auth rule).
+  Unattempted — needs live QSRSoft network access this sandbox does not have. CLAUDE.md is
+  unchanged; that claim stands as-is pending a real probe.
+
+### The core claim is UNVERIFIED — owner action items to close this out
+
+Nothing in this PR proves the in-browser fetch actually reaches `api.security` and gets rows back.
+CI can prove the code parses, the pure helpers still behave, and the full suite/build stay green —
+it cannot prove the fix works, because that requires a real request from a real browser against the
+real API, which only the owner (or the self-hosted runner) can produce.
+
+**To confirm the fix (closes this dispatch):**
+1. On the self-hosted `qsr-security` runner (already registered, always-on per
+   `memory/dispatch-65.md`'s macOS checklist), trigger
+   `.github/workflows/qsrsoft-security-events-pull.yml` via `workflow_dispatch` with a **small**
+   explicit window (`start_date`/`end_date` set to one recent date) — do not let the first real run
+   be a full 14-day backfill at 216 requests/day.
+   - Confirm the SPA login succeeds and a token is captured (`[auth] ✓ token captured` in the log;
+     `screenshots/secevents-01-post-login.png` / `secevents-02-report-page.png` as a visual
+     backstop if it doesn't).
+   - Confirm at least one `[secevents-pull] <unit>: N row(s)` line with a real 200 and rows — not
+     just "no data", which is ambiguous between "worked, zero rows that day" and "never actually
+     fetched."
+   - **Record the wall-clock** — 216 `page.evaluate()` calls/day is real added cost the dispatch
+     flagged as needing measurement; this PR cannot produce that number.
+2. Only *after* step 1 shows real 200s: re-run the same workflow with **only** `runs-on` changed to
+   `ubuntu-latest` (item 2, the dispatch's "second question") and compare. If it also 200s, the
+   self-hosted requirement can be dropped in a follow-up PR; if it 403s, the network *does* still
+   matter alongside the fingerprint — a real, currently-unknown result either way.
+3. Separately (item 3, unrelated to this rebuild): probe 2-3 real `api.reports` routes the DAR/
+   register-audit pulls actually use, and correct CLAUDE.md's blanket "requires browser session
+   cookies" claim to say precisely which routes need what, per the finding file's own caveat that a
+   single data point (the `statistics` route) must not be generalized.
+
+### Verification bar actually met (the adjusted, sandbox-realistic one)
+
+- `node --check scripts/qsrsoft-security-events-pull.mjs` — clean.
+- `src/__tests__/qsrsoft-security-events-pull.test.js` — passes **unmodified** (all 6 tests); no
+  signature change to `buildUrl`/`buildBody`/`extractRows` was needed.
+- Full suite: `npx vitest run` — 2114/2114 passing, 199/199 files.
+- `npm run build` — clean; entry-eager payload 517.40 KB gzip (budget 850 KB) — this script isn't
+  imported by any client-side panel, so it has zero bundle impact regardless.
+- Structural match to `qsrsoft-dar-pull.mjs`'s proven pattern, read carefully: per-unit
+  `page.evaluate()`, explicit `X-Auth-Token` header, no `credentials:'include'`, no token ever
+  reaching a Node-side `fetch()` — confirmed by inspection, not by a live run.

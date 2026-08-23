@@ -1,22 +1,41 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-security-events-pull.mjs
-// Dispatch #65 — the actual daily pull for QSRSoft's event_details endpoint
-// (api.security.myqsrsoft.com), unblocked now that #63 proved the 403 every prior attempt hit
-// was a NETWORK-ORIGIN restriction (denied from GitHub-hosted runners, allowed from a consumer
-// connection), not a credential/entitlement problem — see memory/dispatch-63.md's CORRECTION and
-// memory/dispatch-65.md. This workflow therefore runs on a SELF-HOSTED runner
-// (runs-on: [self-hosted, macOS, qsr-security]) on a permitted network; every other scheduled
-// pull stays on hosted runners, unchanged.
+// Dispatch #81 REBUILD — the daily pull for QSRSoft's event_details endpoint
+// (api.security.myqsrsoft.com). This script had NEVER worked: both of its prior auth paths
+// (a bare Node fetch with a minted token, and a "Playwright fallback" that captured a token in
+// the browser but then handed it BACK to a Node-side fetch) always 403'd, because
+// memory/finding-api-security-transport-fingerprint-2026-08-23.md proved this host fingerprints
+// the TLS/HTTP-2 CLIENT, not the credential — the owner's own working browser token returns 403
+// from Node on the same machine, same network, with Chrome's full header set. Headers cannot
+// forge a TLS ClientHello. See that finding for the full elimination chain (source IP,
+// entitlement, token type, token contents, app client, and headers were all ruled out first).
+//
+// So the file's two previous claims are both WRONG and are corrected here, not just patched
+// around:
+//   - It is NOT a network-origin restriction ("denied from GitHub-hosted runners, allowed from a
+//     consumer connection" — memory/dispatch-63.md's now-superseded CORRECTION). The owner's own
+//     browser token 403'd from Node on the owner's OWN network.
+//   - It is NOT token-only / direct-fetch-first. A plain Node fetch with a minted token can never
+//     succeed against this host, from any network, no matter how fresh or valid the token is.
+//
+// ⚠️ DELIBERATE EXCEPTION to this repo's standing two-path auth rule (CLAUDE.md, "Adding a new
+// automated pull"): there is no viable direct-token path for api.security at all, so there is no
+// second path to keep as a fallback. The ONLY path that works is making the actual event_details
+// request from INSIDE a real browser (page.evaluate()), so the request carries a genuine Chrome
+// TLS/HTTP-2 fingerprint. This script therefore has exactly one auth/fetch path, and it is
+// in-browser end to end — structured on qsrsoft-dar-pull.mjs's pullViaPlaywright() (its own
+// "Path B: Playwright login" section), which already does this correctly for the sibling host
+// api.reports.myqsrsoft.com: real Chromium SPA login, capture the X-Auth-Token from a live
+// request, then run the actual fetch() from inside the page context — never handing the token
+// back out to a Node-side fetch. One page.evaluate() per (store, date, event_token) unit, not one
+// evaluate with an internal loop (CLAUDE.md: the latter hangs with no output).
 //
 // Shape (dispatch #58, settled by live measurement): empty registers/cashiers arrays mean ALL,
 // so this is ONE request per (store, date, event_token) — 27 stores x 8 tokens = 216 requests
-// for a single day, no per-register/per-cashier enumeration.
-//
-// Auth is SIMPLER than the DAR/regAudit pulls: memory/finding-qsrsoft-event-details-endpoint-
-// 2026-08-21.md confirmed this host is token-only (X-Auth-Token), no session cookies -- a plain
-// Node fetch with a minted token is the primary path, mirroring qsrsoft-ops-pull.mjs rather than
-// qsrsoft-register-audit-pull.mjs's cookie/page.request dance. Playwright (real SPA login,
-// USER_SRP_AUTH) is the fallback only, exactly like every other pull's two-path auth rule.
+// for a single day, no per-register/per-cashier enumeration. Every one of those 216 is now its
+// own page.evaluate() call, which is real added cost over the old (never-working) bare-fetch
+// design — see memory/dispatch-81.md's "Resolution" section for what wall-clock measurement this
+// still needs before being trusted on a daily schedule.
 //
 // PII: crew/mgr arrive as plaintext "Name - badge". src/engine/security-events.js's
 // parseSecurityEventRow() extracts them but does NOT tokenize -- that happens here, right before
@@ -24,6 +43,8 @@
 // qsrsoft-register-audit-pull.mjs's saveAuditRows()). No plaintext name is ever logged.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, QSRSOFT_USERNAME, QSRSOFT_PASSWORD.
+// (QSRSOFT_USERNAME/PASSWORD drive the real SPA login — there is no QSRSOFT_TOKEN direct path
+// for this host, unlike the DAR/eBOS pulls.)
 // Optional env:
 //   QSRSOFT_SECEVENTS_DAYS_BACK    — max days of history on initial run (default: 14)
 //   QSRSOFT_SECEVENTS_DAYS_RECENT  — rolling re-pull window (default: 2)
@@ -32,7 +53,6 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
-import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 import { EVENT_TOKENS, storeRefFromLoc, parseSecurityEventRows } from '../src/engine/security-events.js';
@@ -71,15 +91,13 @@ function dateList(startDate, endDate) {
   return out;
 }
 
+// ── Pure helpers -- unchanged signatures, still covered unmodified by
+// src/__tests__/qsrsoft-security-events-pull.test.js. Only their CALLER changed (in-browser
+// fetch instead of a Node-side one); the URL/body/envelope shape did not.
 export const buildUrl = storeRef => `${BASE}/security/event_details/v1/${ORG_ID}/${storeRef}?orgId=${ORG_ID}`;
 export const buildBody = (eventToken, date) => ({
   event_token: eventToken, start_date: date, end_date: date,
   registers: [], time_slices: [], cashiers: [], mgr_code: null,
-});
-const HDRS = token => ({
-  'X-Auth-Token': token, 'Content-Type': 'application/json', 'Accept': '*/*',
-  'Origin': 'https://v3.myqsrsoft.com', 'Referer': REPORT_PAGE,
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
 });
 
 // Envelope shape was never definitively pinned down (memory/dispatch-58.md's own live
@@ -102,28 +120,46 @@ export function extractRows(body, unit) {
   return [];
 }
 
-async function fetchOne(storeRef, eventToken, date, token) {
-  const resp = await fetch(buildUrl(storeRef), {
-    method: 'POST', headers: HDRS(token), body: JSON.stringify(buildBody(eventToken, date)),
-  });
-  const unit = `${storeRef}/${date}/${eventToken}`;
-  if (resp.status === 401 || resp.status === 403) {
-    // Same diagnostic-before-throw discipline as every other pull here -- an API gateway 403
-    // nearly always carries a reason, and reading it is a MEASUREMENT, not a re-guess.
-    const detail = await resp.text().catch(() => '(body unreadable)');
-    const diagHdrs = ['x-amzn-errortype', 'x-amzn-requestid', 'x-amzn-remapped-authorization', 'www-authenticate']
-      .map(h => (resp.headers.get(h) ? `${h}=${resp.headers.get(h)}` : null)).filter(Boolean).join(' · ');
-    console.error(`[secevents-pull] ${unit}: ${resp.status} body: ${detail.slice(0, 400) || '(empty)'}`);
-    if (diagHdrs) console.error(`[secevents-pull] ${unit}: ${resp.status} headers: ${diagHdrs}`);
-    throw new Error(`AUTH_FAILED:${resp.status}`);
+// ── The one fetch path: entirely inside the browser (page.evaluate()) ───────────────────────
+// url/body are built in Node from the pure helpers above (cheap, no network), then handed to the
+// page as data -- the fetch() call itself, and everything about the TLS/HTTP-2 connection it
+// opens, happens inside Chromium. No credentials:'include' (auth is the explicit X-Auth-Token
+// header, same as qsrsoft-dar-pull.mjs's in-browser fetch, not a session cookie).
+async function fetchOneInBrowser(page, storeRef, eventToken, date, token) {
+  const url = buildUrl(storeRef);
+  const body = buildBody(eventToken, date);
+  try {
+    return await page.evaluate(async ({ url, body, token, referer }) => {
+      try {
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'X-Auth-Token': token,
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Origin': 'https://v3.myqsrsoft.com',
+            'Referer': referer,
+          },
+          body: JSON.stringify(body),
+        });
+        const text = await r.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch { /* non-JSON body -- rawText carries it below */ }
+        const diagHdrs = {};
+        for (const h of ['x-amzn-errortype', 'x-amzn-requestid', 'x-amzn-remapped-authorization', 'www-authenticate']) {
+          const v = r.headers.get(h);
+          if (v) diagHdrs[h] = v;
+        }
+        return { status: r.status, ok: r.ok, json, rawText: json ? null : text.slice(0, 400), diagHdrs };
+      } catch (e) {
+        return { error: e.message };
+      }
+    }, { url, body, token, referer: REPORT_PAGE });
+  } catch (e) {
+    // page.evaluate() itself threw (e.g. page navigated away, browser torn down) -- distinct
+    // from the in-page fetch throwing, which is already caught and returned above.
+    return { error: `page.evaluate failed: ${e.message}` };
   }
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-  const body = await resp.json();
-  return extractRows(body, unit);
-}
-
-async function resolveToken(token, forceRemint) {
-  return typeof token === 'function' ? await token({ forceRemint }) : token;
 }
 
 // Accumulates parsed (but still plaintext-crew/mgr) rows in memory across the whole run, rather
@@ -131,7 +167,7 @@ async function resolveToken(token, forceRemint) {
 // calls to one per DISTINCT name; doing that once at the end over the whole run's rows means far
 // fewer round trips than the 216+ units this run makes, at estate-wide volumes the brief itself
 // sized at "low tens of thousands of rows/day" (still trivial to hold in memory for one process).
-async function runAll(token, dates, tracker) {
+async function runSecurityEvents(page, token, dates, tracker) {
   const collected = [];
   const coveredStores = new Set();
   let loggedShapeThisRun = false;
@@ -142,17 +178,24 @@ async function runAll(token, dates, tracker) {
       for (const eventToken of EVENT_TOKENS) {
         const unit = `${date}:${loc}:${eventToken}`;
         try {
-          const tok = await resolveToken(token, false);
-          let rows;
-          try {
-            rows = await fetchOne(storeRef, eventToken, date, tok);
-          } catch (e) {
-            if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
-              console.log(`[secevents-pull] ${unit}: cached token rejected — forcing a re-mint and retrying once`);
-              const freshTok = await resolveToken(token, true);
-              rows = await fetchOne(storeRef, eventToken, date, freshTok);
-            } else throw e;
+          const result = await fetchOneInBrowser(page, storeRef, eventToken, date, token);
+          if (result.error) throw new Error(result.error);
+          if (result.status === 401 || result.status === 403) {
+            // Same diagnostic-before-throw discipline as every other pull here -- an API gateway
+            // 403 nearly always carries a reason, and reading it is a MEASUREMENT, not a re-guess.
+            const bodyPreview = result.rawText || (result.json ? JSON.stringify(result.json) : '') || '(empty)';
+            const diag = Object.entries(result.diagHdrs || {}).map(([k, v]) => `${k}=${v}`).join(' · ');
+            console.error(`[secevents-pull] ${unit}: ${result.status} body: ${bodyPreview.slice(0, 400)}`);
+            if (diag) console.error(`[secevents-pull] ${unit}: ${result.status} headers: ${diag}`);
+            // A 401/403 here means the CAPTURED browser token itself was rejected -- unlike the
+            // old getFreshToken() path, there is no cheap re-mint to retry with; the only way to
+            // get a new token is a fresh SPA login, which this run does not attempt mid-flight.
+            // Bubble up so the caller can stop and report a real auth failure rather than
+            // silently marking 216+ units failed one at a time.
+            throw new Error(`AUTH_FAILED:${result.status}`);
           }
+          if (!result.ok) throw new Error(`HTTP ${result.status}: ${(result.rawText || '').slice(0, 200)}`);
+          const rows = extractRows(result.json, unit);
           if (!rows.length) continue;
           if (DEBUG && !loggedShapeThisRun && rows[0] && typeof rows[0] === 'object') {
             // Key names only -- every row is employee-attributed PII, same discipline the
@@ -250,23 +293,15 @@ async function getDateRange() {
   return { startDate: s, endDate: fmtDate(today), latestForFreshness: latest };
 }
 
-// Dispatch #67 Task 2 -- names only, never a claim value (sub/eID/email/cognito:username/
-// custom:authorName have been the repo's standing privacy bar since dispatch-63.md's own
-// version of this same helper). Used only to diff which claims one token carries that the
-// other doesn't; the diff is itself just claim NAMES, so it stays inside that bar too.
-function claimNames(token) {
-  try {
-    const [, payload] = token.split('.');
-    const claims = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-    return Object.keys(claims).sort();
-  } catch { return null; }
-}
-
-// ── Two-path auth (direct-first, matching qsrsoft-ops-pull.mjs -- this host is token-only, no
-// cookies, per memory/finding-qsrsoft-event-details-endpoint-2026-08-21.md) ─────────────────
+// ── The one auth/fetch path: real Chromium SPA login → capture X-Auth-Token from a live
+// request → in-browser fetch for every unit, never leaving the page. See the file header for
+// why this departs from the repo's normal two-path convention. ─────────────────────────────
 async function viaPlaywright(dates, tracker) {
   const u = process.env.QSRSOFT_USERNAME, pw = process.env.QSRSOFT_PASSWORD;
-  if (!u || !pw) { console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot use Playwright fallback'); return { collected: [], coveredStores: new Set() }; }
+  if (!u || !pw) {
+    console.error('[auth] no QSRSOFT_USERNAME/PASSWORD — cannot run (in-browser fetch is the ONLY auth path for this host, there is no direct-token fallback)');
+    return { collected: [], coveredStores: new Set() };
+  }
   const { chromium } = await import('playwright');
   const { mkdirSync } = await import('fs');
   try { mkdirSync('screenshots', { recursive: true }); } catch {}
@@ -360,34 +395,34 @@ async function viaPlaywright(dates, tracker) {
       '| interception token captured:', token ? `true (${token.length} chars)` : 'false',
       '| requests seen: total', totalRequestsSeen, 'carrying x-auth-token:', token ? 1 : 0);
     await snap('secevents-02-report-page.png');
-    // Dispatch #67 Task 1 -- localStorage read is primary; interception is the fallback only,
-    // exactly the priority the dispatch specified.
+    // Merge of #560 (dispatch #67) into #593 (dispatch #81). #560 MEASURED on the Mac mini
+    // that request interception captured nothing -- zero requests carried x-auth-token -- while
+    // the SPA's plain Cognito ID token sat in localStorage the whole time. So localStorage is
+    // PRIMARY and interception is the fallback; taking #593's interception-only version would
+    // have reintroduced the exact no-token failure #560 diagnosed.
+    // #560's claim-name diff is deliberately NOT carried over: it compared the SPA token against
+    // getFreshToken()'s bare token, and #593 deletes both getFreshToken() and runAll() outright
+    // (the bare-Node path can never reach this host -- see the transport-fingerprint finding), so
+    // there is no longer a second token to diff against.
     const finalToken = spaToken || token;
-    console.log('[auth] token source for retry:', spaToken ? 'localStorage' : (token ? 'request-interception (fallback)' : 'none'));
-    if (!finalToken) { console.error('[auth] ✗ no token from localStorage or interception during SPA login'); tracker.fail('playwright-fallback', navError ? `navigation failed: ${navError}` : 'no token captured'); return { collected: [], coveredStores: new Set() }; }
-    // Dispatch #67 Task 2 -- the claim-name diff, regardless of what the retry below returns.
-    // getFreshToken() is cheap here: runAll(getFreshToken, ...) already minted (and cached) one
-    // earlier in main()'s try block before falling through to this fallback, so this reads that
-    // cached mint rather than minting again.
-    try {
-      const bareToken = await getFreshToken();
-      const bareNames = claimNames(bareToken), spaNames = claimNames(finalToken);
-      if (bareNames && spaNames) {
-        const onlyInSpa = spaNames.filter(c => !bareNames.includes(c));
-        const onlyInBare = bareNames.filter(c => !spaNames.includes(c));
-        console.log('[auth] bare (getFreshToken) claim NAMES:', bareNames.join(', '));
-        console.log('[auth] spa  (localStorage/interception) claim NAMES:', spaNames.join(', '));
-        console.log(onlyInSpa.length || onlyInBare.length
-          ? `[auth] 🔴 claim-name DIFFERENCE -- only in spa: [${onlyInSpa.join(', ')}], only in bare: [${onlyInBare.join(', ')}]`
-          : '[auth] claim NAMES are identical between the bare and spa tokens.');
-      } else {
-        console.log(`[auth] claim-name diff unavailable -- bare ${bareNames ? 'ok' : 'unparseable'}, spa ${spaNames ? 'ok' : 'unparseable'}`);
-      }
-    } catch (e) { console.log('[auth] claim-name diff skipped:', e.message); }
-    return await runAll(finalToken, dates, tracker);
+    console.log('[auth] token source:', spaToken ? 'localStorage (primary)' : (token ? 'request-interception (fallback)' : 'none'));
+    if (!finalToken) {
+      console.error('[auth] ✗ no token from localStorage or interception during SPA login');
+      tracker.fail('playwright-login', navError ? `navigation failed: ${navError}` : 'no token captured');
+      return { collected: [], coveredStores: new Set() };
+    }
+    console.log(`[auth] ✓ token captured — fetching ${dates.length} day(s) × ${STORE_NSNS.length} store(s) × ${EVENT_TOKENS.length} event token(s) IN-BROWSER (${dates.length * STORE_NSNS.length * EVENT_TOKENS.length} page.evaluate() calls)…`);
+    const result = await runSecurityEvents(page, finalToken, dates, tracker);
+    await snap('secevents-final.png');
+    return result;
   } catch (e) {
-    console.error(`[auth] ✗ Playwright fallback failed: ${e.message}`);
-    tracker.fail('playwright-fallback', e.message);
+    if (String(e.message).startsWith('AUTH_FAILED')) {
+      console.error(`[auth] ✗ captured token was rejected mid-run (${e.message}) — this run does not re-login and retry; a subsequent scheduled run will attempt a fresh SPA login`);
+    } else {
+      console.error(`[auth] ✗ Playwright run failed: ${e.message}`);
+    }
+    tracker.fail('playwright-run', e.message);
+    await snap('secevents-error.png');
     return { collected: [], coveredStores: new Set() };
   } finally { await browser.close(); }
 }
@@ -411,13 +446,7 @@ async function main() {
   const tracker = makeOutcomeTracker('secevents-pull');
   const requestedUnits = dates.flatMap(d => STORE_LOCS.flatMap(loc => EVENT_TOKENS.map(t => `${d}:${loc}:${t}`)));
 
-  let result;
-  try {
-    result = await runAll(getFreshToken, dates, tracker);
-  } catch (e) {
-    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
-    result = await viaPlaywright(dates, tracker);
-  }
+  const result = await viaPlaywright(dates, tracker);
 
   const { saved, errors } = await saveSecurityEventRows(result.collected);
   if (errors.length) console.error(`[secevents-pull] ${errors.length} save error(s), first: ${errors[0]}`);
