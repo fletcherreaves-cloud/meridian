@@ -160,7 +160,10 @@ export function dedupeByConflictKey(mapped) {
 }
 
 async function upsertRows(rawRows) {
-  const mapped = rawRows.map(normalizeFormsCompletionRow).filter(Boolean).map(r => ({
+  // Keep raw<->mapped pairs together (not two separately-filtered arrays) so dispatch #76's
+  // dump below can trace a colliding mapped row back to its exact raw payload.
+  const pairs = rawRows.map(raw => ({ raw, mapped: normalizeFormsCompletionRow(raw) })).filter(p => p.mapped);
+  const mapped = pairs.map(({ mapped: r }) => ({
     loc: r.loc, form_id: r.formId, form_title: r.formTitle, occurrence_key: r.occurrenceKey,
     status_state: r.statusState, completion_ratio: r.completionRatio, missed: r.missed,
     has_response: r.hasResponse, scheduled_at: r.scheduledAt, started_at: r.startedAt,
@@ -170,6 +173,29 @@ async function upsertRows(rawRows) {
   }));
   const dropped = rawRows.length - mapped.length;
   if (dropped > 0 && DEBUG) console.log(`[forms-completion] ${dropped} row(s) dropped by the normalizer (unusable/unkeyable)`);
+
+  // Dispatch #76 -- ONE-TIME measurement, DEBUG-gated: dump the full RAW rows of one colliding
+  // (loc, formId, occurrenceKey) group side by side, before anything is dropped, so the actual
+  // question -- true duplicates, distinct occurrences, or the noLocation hypothesis (LOCATIONS
+  // includes 'noLocation' at :74) -- is answered from data, not reasoned about. Per the brief:
+  // "do not rewrite the key on my suspicion." Prints once per run, first colliding group found.
+  // Remove once the measurement is written down in memory/dispatch-76.md's Resolution.
+  if (DEBUG && !global.__DISPATCH76_DUMPED) {
+    const byKey = new Map();
+    for (const p of pairs) {
+      const k = `${p.mapped.loc}|${String(p.mapped.formId).toLowerCase()}|${canonicalOccurrenceKey(p.mapped.occurrenceKey)}`;
+      if (!byKey.has(k)) byKey.set(k, []);
+      byKey.get(k).push(p.raw);
+    }
+    const group = [...byKey.entries()].find(([, rows]) => rows.length > 1);
+    if (group) {
+      global.__DISPATCH76_DUMPED = true;
+      console.log(`[dispatch-76] colliding group key=${group[0]} -- ${group[1].length} raw row(s):`);
+      group[1].forEach((r, i) => console.log(`[dispatch-76]   row[${i}] ${JSON.stringify(r)}`));
+    } else if (DEBUG) {
+      console.log('[dispatch-76] no colliding group found in this chunk');
+    }
+  }
 
   const deduped = dedupeByConflictKey(mapped);
   const collapsed = mapped.length - deduped.length;
