@@ -33,11 +33,17 @@ function LeverSection({ title, icon, data, marginRate }) {
   const th = (t, r) => h('th', { style: { textAlign: r ? 'right' : 'left', padding: '5px 8px', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', position: 'sticky', top: 0, background: 'var(--surf2)' } }, t);
   const td = (c, r, col) => h('td', { style: { textAlign: r ? 'right' : 'left', padding: '5px 8px', fontSize: 11, fontFamily: r ? 'var(--mono)' : 'inherit', color: col || 'var(--text)', whiteSpace: 'nowrap' } }, c);
 
+  const scoredNote = data?.nCandidates > rows.length
+    ? `Scored ${rows.length} of ${data.nCandidates} stores with data — the rest had too few matched days at this split (see below).`
+    : null;
+
   return h('div', { style: { marginBottom: 22 } },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
       h('span', { style: { fontSize: 15 } }, icon),
       h('div', { style: { fontSize: 13, fontWeight: 800 } }, title),
       d && h(VerdictChip, { v: d.verdict })),
+
+    scoredNote && h('div', { style: { fontSize: 10, color: 'var(--text3)', marginBottom: 8 } }, scoredNote),
 
     !rows.length && h('div', { style: { padding: 18, border: '1px dashed var(--bdr)', borderRadius: 8, color: 'var(--text3)', fontSize: 12 } },
       'Not enough daily data with a ' + title.toLowerCase() + ' signal yet (needs ~4+ weeks per store across both heavy and light days).'),
@@ -104,5 +110,5 @@ export function PromoRoiPanel({ ds, onClose }) {
           h(LeverSection, { title: 'Promotions', icon: '🎉', data: roi.promo, marginRate: roi.marginRate }),
           h(LeverSection, { title: 'Discounts', icon: '🏷️', data: roi.discount, marginRate: roi.marginRate }),
           h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 6 } },
-            '⚙ Matched-day design controls for weekday and for promos-run-on-slow-days, but it is association-with-controls, not a randomized experiment — treat verdicts as a screen for where to dig, not proof. Incremental margin is a district assumption you set above; per-store product mix varies.')))));
+            '⚙ Matched-day design controls for weekday and for promos-run-on-slow-days, but it is association-with-controls, not a randomized experiment — treat verdicts as a screen for where to dig, not proof. Incremental margin is a district assumption you set above; per-store product mix varies. Heavy/light days are split on give-away DOLLARS, not give-away as a % of sales — a percentage split would make sales the denominator of its own splitting variable, which biases every store toward a false negative (memory/finding-promo-roi-denominator-bias-2026-08-23.md).')))));
 }

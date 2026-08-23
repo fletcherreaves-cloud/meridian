@@ -77,6 +77,64 @@ describe('promo-roi — matchedLift', () => {
   });
 });
 
+// memory/finding-promo-roi-denominator-bias-2026-08-23.md's own regression bar, ported into the
+// suite so a revert is caught by CI rather than requiring someone to remember to re-run a
+// standalone script under memory/data/. Same seeded construction as
+// memory/data/promo-roi-bias-sim-known-effect.mjs (seed=7, coin-flip promo assignment
+// INDEPENDENT of sales, so the true lift is genuinely +10% and known) -- measured directly
+// against the shipped default (computePromoDiscountRoi), not matchedLift() with an explicit
+// override, so this fails if the default ever regresses back to the percentage field.
+describe('promo-roi — denominator-bias fix (finding-promo-roi-denominator-bias-2026-08-23.md)', () => {
+  function knownEffectRows() {
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const DOW_BASE = [4000, 5200, 5000, 5100, 5600, 7000, 6500];
+    const TRUE_LIFT = 0.10;
+    const HEAVY_SPEND = 400, LIGHT_SPEND = 100;
+    const rows = [];
+    for (let s = 0; s < 27; s++) {
+      const loc = String(3000 + s).padStart(7, '0');
+      for (let i = 0; i < 120; i++) {
+        const date = new Date(2026, 3, 1 + i);
+        const dow = date.getDay();
+        const isPromo = rnd() < 0.5; // promo assigned INDEPENDENTLY of sales -- true lift is known
+        const spend = isPromo ? HEAVY_SPEND : LIGHT_SPEND;
+        const sales = DOW_BASE[dow] * (0.75 + 0.5 * rnd()) * (isPromo ? 1 + TRUE_LIFT : 1);
+        rows.push({ loc, date, allNetSales: sales, gc: Math.round(sales / 9), promoAmt: spend, promoPct: (spend / sales) * 100 });
+      }
+    }
+    return rows;
+  }
+
+  it('the percentage split (the bug) attenuates a known +10% effect to ~+5.9% -- proves the mechanism is real', () => {
+    const records = buildDailyRecords({ glimpseRows: knownEffectRows() });
+    const out = matchedLift(records, { intensityField: 'promoPct', spendField: 'promoAmt', marginRate: 0.35 });
+    const lifts = out.byStore.map(s => s.liftSalesPct).filter(x => x != null);
+    const meanLift = lifts.reduce((a, b) => a + b, 0) / lifts.length;
+    expect(out.byStore.length).toBe(27);
+    expect(meanLift).toBeLessThan(7); // measured 5.86%, true 10% -- loses ~41% of the real effect
+  });
+
+  it('computePromoDiscountRoi (the shipped default) recovers the known +10% effect essentially unbiased', () => {
+    const out = computePromoDiscountRoi({ glimpseRows: knownEffectRows() }, { marginRate: 0.35 });
+    const lifts = out.promo.byStore.map(s => s.liftSalesPct).filter(x => x != null);
+    const meanLift = lifts.reduce((a, b) => a + b, 0) / lifts.length;
+    // Measured 9.70% against a true 10.00% -- essentially unbiased, a world away from the
+    // percentage split's 5.86%. Bound set well clear of both wrong answers (5.86% and 0%).
+    expect(meanLift).toBeGreaterThan(8);
+    expect(lifts.filter(x => x < 0).length).toBe(0); // measured 0/16 negative
+  });
+
+  it('scores fewer stores than the biased split -- the known, disclosed trade-off, not a bug', () => {
+    const out = computePromoDiscountRoi({ glimpseRows: knownEffectRows() }, { marginRate: 0.35 });
+    // Measured 16/27 -- a median split on lumpier dollar values leaves more DOW cells under
+    // minPerCell. nCandidates stays 27 (every store had SOME valid signal); byStore shrinks.
+    expect(out.promo.nCandidates).toBe(27);
+    expect(out.promo.byStore.length).toBeLessThan(out.promo.nCandidates);
+    expect(out.promo.byStore.length).toBeGreaterThan(10); // not a total collapse either
+  });
+});
+
 describe('promo-roi — computePromoDiscountRoi', () => {
   it('returns both promo and discount analyses', () => {
     const rows = makeStore('100', { heavyDows: [1, 3, 5], liftPerHeavyDay: 2000, promoSpendHeavy: 300 });

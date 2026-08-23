@@ -469,13 +469,19 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     for (const r of g.data) {
       const k = normLoc(r.loc) + '|' + r.date;
       salesByKey[k] = { sales: r.all_net_sales || 0, gc: r.gc ?? null, dow: dow(r.date) };
-      promoRecs.push({ loc: normLoc(r.loc), dow: dow(r.date), sales: r.all_net_sales || 0, gc: r.gc ?? null, int: r.promo_pct ?? null, spend: r.promo_amt || 0 });
+      // memory/finding-promo-roi-denominator-bias-2026-08-23.md -- split on absolute give-away
+      // DOLLARS (promo_amt), not the percentage (promo_amt / sales). The percentage makes sales
+      // the denominator of the splitting variable, which sorts the heavy/light buckets by sales
+      // before sales is ever compared -- selection on the outcome, biased negative regardless of
+      // the true effect. This hand-port must match src/engine/promo-roi.js's fix exactly, or
+      // SAGE and the panel disagree on the same data again.
+      promoRecs.push({ loc: normLoc(r.loc), dow: dow(r.date), sales: r.all_net_sales || 0, gc: r.gc ?? null, int: r.promo_amt ?? null, spend: r.promo_amt || 0 });
     }
     const discRecs: PRec[] = [];
     for (const r of c.data || []) {
       const s = salesByKey[normLoc(r.loc) + '|' + r.date];
       if (!s) continue; // discount rows need same-day sales from glimpse
-      discRecs.push({ loc: normLoc(r.loc), dow: s.dow, sales: s.sales, gc: s.gc, int: r.disc_pct ?? null, spend: r.disc_amt || 0 });
+      discRecs.push({ loc: normLoc(r.loc), dow: s.dow, sales: s.sales, gc: s.gc, int: r.disc_amt ?? null, spend: r.disc_amt || 0 });
     }
 
     const promo = matchedLift(promoRecs, marginRate);

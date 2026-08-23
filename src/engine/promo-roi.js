@@ -70,6 +70,12 @@ export function matchedLift(records, opts = {}) {
     if (_num(r[intensityField]) == null) continue;
     (byLoc[r.loc] || (byLoc[r.loc] = [])).push(r);
   }
+  // Every loc with at least one valid intensity record -- the candidate pool before minDays/
+  // minPerCell trim it down further. A dollar-based split scores fewer stores than a percentage
+  // split (lumpier values leave more DOW cells under minPerCell) -- that drop is a real,
+  // disclosed trade-off (finding-promo-roi-denominator-bias-2026-08-23.md), so the caller can
+  // surface "N of M stores scored" instead of silently shrinking the table.
+  const nCandidates = Object.keys(byLoc).length;
 
   const byStore = [];
   for (const loc of Object.keys(byLoc)) {
@@ -132,7 +138,7 @@ export function matchedLift(records, opts = {}) {
   } : null;
 
   byStore.sort((a, b) => (a.grossProfitDelta) - (b.grossProfitDelta)); // worst ROI first (coach these)
-  return { byStore, district, marginRate };
+  return { byStore, district, marginRate, nCandidates };
 }
 
 // Convenience: both levers at once.
@@ -142,7 +148,12 @@ export function computePromoDiscountRoi(ds, opts = {}) {
   return {
     nRecords: records.length,
     marginRate,
-    promo: matchedLift(records, { intensityField: 'promoPct', spendField: 'promoAmt', marginRate }),
-    discount: matchedLift(records, { intensityField: 'discPct', spendField: 'discAmt', marginRate }),
+    // memory/finding-promo-roi-denominator-bias-2026-08-23.md -- splitting on the PERCENTAGE
+    // (give-away / sales) makes sales the denominator of the splitting variable, so the split
+    // sorts on sales before sales is ever compared: selection on the outcome, biased negative
+    // regardless of the true effect. Split on absolute give-away DOLLARS instead -- independent
+    // of sales, so the heavy/light split isn't secretly a low-sales/high-sales split.
+    promo: matchedLift(records, { intensityField: 'promoAmt', spendField: 'promoAmt', marginRate }),
+    discount: matchedLift(records, { intensityField: 'discAmt', spendField: 'discAmt', marginRate }),
   };
 }
