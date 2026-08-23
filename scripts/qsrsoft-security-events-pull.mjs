@@ -331,7 +331,36 @@ async function viaPlaywright(dates, tracker) {
     await page.fill(userSel, u);
     await page.fill('input[type="password"], input[name="password"]', pw);
     await page.click('button[type="submit"], input[type="submit"], .btn-primary, button:has-text("Login"), button:has-text("Sign in")');
-    await page.waitForLoadState('networkidle', { timeout: 30000 });
+    // ⚠️ Do NOT use waitForLoadState('networkidle') as the post-click wait. This is a client-side
+    // SPA login: the click fires an XHR, it does not navigate. networkidle reports the state of
+    // the page load that ALREADY finished, so it can return in milliseconds -- before the auth
+    // request has even been issued -- and the script then races on to page.goto(REPORT_PAGE),
+    // which ABORTS the in-flight login. The session is never established and the app renders a
+    // fresh (blank) login route, which reads like a rejected credential but is not one.
+    //
+    // MEASURED 2026-08-23, from the run's own screenshot artifact: secevents-01-post-login.png --
+    // taken on the line right after the old networkidle wait -- shows the email and password
+    // fields still populated and the submit button still reading "Signing in". The wait had
+    // returned mid-flight. secevents-02-report-page.png, taken after the navigation, shows an
+    // EMPTY form with no [role="alert"] and the email cleared: an unauthenticated redirect, not
+    // a credential error (a rejected password keeps the email and shows a message).
+    //
+    // Wait for a real success SIGNAL instead, so the wait cannot depend on how fast this
+    // particular machine is. Success = the SPA has written its Cognito idToken to localStorage
+    // (the exact key dispatch #67 measured the app reading). Fall back to "the login form is
+    // gone", since a UI that authenticates without that key would otherwise hang the full
+    // timeout for no reason.
+    let loginSignal = null;
+    try {
+      loginSignal = await page.waitForFunction(() => {
+        if (Object.keys(localStorage).some(k => k.endsWith('.idToken'))) return 'idToken';
+        const formGone = !document.querySelector('input[type="password"], input[name="password"]');
+        return formGone ? 'form-gone' : false;
+      }, { timeout: 60000 }).then(h => h.jsonValue());
+    } catch {
+      loginSignal = null; // timed out -- diagnostics below say what the page actually shows
+    }
+    console.log('[auth] login completion signal:', loginSignal || 'NONE (timed out after 60s)');
     console.log('[auth] post-login url:', page.url());
     await snap('secevents-01-post-login.png');
     // Dispatch #67 Resolution -- the live run got no token from either localStorage or

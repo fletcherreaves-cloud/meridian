@@ -87,7 +87,7 @@ scripts/               — lifelenz-pull.mjs, qsrsoft-ebos-pull.mjs, qsrsoft-dar
 
 **LifeLenz token:** `LIFELENZ_TOKEN` GitHub Secret. Expires (roughly monthly). When sync fails with 401/403, refresh manually: DevTools → Network → any `us01-connect.lifelenz.com` request → copy `X-Auth-Token` header → update GitHub Secret. See `memory/lifelenz-session.md` for full runbook.
 
-**QSRSoft token:** `QSRSOFT_TOKEN` GitHub Secret. Same refresh process: DevTools → Network → any `api.reports.myqsrsoft.com` or `v3.myqsrsoft.com` request → copy `X-Auth-Token` header → update GitHub Secret.
+**QSRSoft token:** ⚠️ **Do NOT rotate `QSRSOFT_TOKEN` — it cannot work as a stored secret.** It is a Cognito ID token with a **~1h TTL**, so a value held in a GitHub Secret is expired ~23 of every 24 hours *by construction, no matter how often it is rotated* (#312, 2026-08-15). Every pull reading one falls through to its Playwright fallback every time — expected, not degradation. The fix is `scripts/lib/qsrsoft-auth.mjs`'s `getFreshToken()`, which mints one in-process per run (expiry-aware + reactive re-mint); **5 scripts use it, 11 still read the dead secret** (measured 2026-08-23) — converting those is the open work, with `qsrsoft-ops-pull.mjs` as the reference. The obsolete refresh process, kept only because the value is still occasionally useful for a one-off manual probe within the hour: DevTools → Network → any `api.reports.myqsrsoft.com` or `v3.myqsrsoft.com` request → copy `X-Auth-Token` header → update GitHub Secret.
 
 ---
 
