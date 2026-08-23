@@ -1,7 +1,36 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore } from '../engine/attention-feed.js';
+import { fobOutliers, salesBehindLY, staleData, slowDT, visitRisk, signalDecay, rankAttention, buildAttentionFeed, SEV, fobOverTarget, countExceptions, integrityFlags, mergeWorstSalesLY, findingsToFeedItems, groupAttentionByStore, opportunityAlerts } from '../engine/attention-feed.js';
 
 const nm = (l) => 'Store' + l;
+
+describe('opportunityAlerts — Opportunity $ cross-domain detector', () => {
+  const perStore = [
+    { loc: '1', labor$: 3000, food$: 500, gc$: 200, total$: 3700 },
+    { loc: '2', labor$: 100, food$: 50, gc$: 0, total$: 150 },   // below minTotal — skipped
+    { loc: '3', labor$: 0, food$: 0, gc$: 0, total$: 0 },        // floored at $0 — never flagged
+  ];
+
+  it('flags stores at/above minTotal, naming the biggest driver', () => {
+    const out = opportunityAlerts(perStore, nm, { minTotal: 1500 });
+    expect(out).toHaveLength(1);
+    expect(out[0].loc).toBe('1');
+    expect(out[0].dollars).toBe(3700);
+    expect(out[0].detail).toContain('Labor'); // labor$ is the biggest of the three pillars
+    expect(out[0].nav).toBe('opportunity-dollars');
+  });
+
+  it('never flags a $0 (beat-target) store, even with minTotal at 0', () => {
+    const out = opportunityAlerts(perStore, nm, { minTotal: 0 });
+    expect(out.some(o => o.loc === '3')).toBe(false);
+  });
+
+  it('escalates severity for a much larger gap', () => {
+    const small = opportunityAlerts([{ loc: '1', labor$: 1600, food$: 0, gc$: 0, total$: 1600 }], nm, { minTotal: 1500 });
+    const big = opportunityAlerts([{ loc: '1', labor$: 6000, food$: 0, gc$: 0, total$: 6000 }], nm, { minTotal: 1500 });
+    expect(small[0].severity).toBe('info');
+    expect(big[0].severity).toBe('warn');
+  });
+});
 
 describe('Integrity + over-target detectors', () => {
   it('fobOverTarget flags a store above its OWN FOB target', () => {

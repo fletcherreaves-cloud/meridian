@@ -19,6 +19,7 @@ import { dKey, addD, mwStart } from '../utils/date.js';
 import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
+import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js';
 import { reconcile as _recon } from '../lib/accuracy.js';
 import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
@@ -72,6 +73,33 @@ function SageRunsTile() {
       h('span', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, rel(r.ranAt))),
     h('div', { style: { fontSize: 10, color: 'var(--text3,#9aa0aa)', marginTop: 2, lineHeight: 1.4, maxHeight: 30, overflow: 'hidden' } },
       r.ok ? ((r.resultMd || '').replace(/[#*|`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140) || '—') : ('⚠ ' + (r.error || 'failed')))))));
+}
+
+// Opportunity $ headline tile (memory/design-opportunity-dollars.md) — the flagship "every
+// performance gap becomes recoverable dollars" figure, MTD, all stores. Click opens the
+// by-driver / by-store drill-down (opportunity-dollars.js). Computed once per ds/stores
+// change via districtOpportunity() (engine/opportunity-district.js), the same adapter the
+// drill-down panel and the Attention Now opportunityAlerts detector both reuse.
+function OpportunityTile({ ds, stores, onOpenModal }) {
+  const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const district = React.useMemo(() => {
+    if (!allLocs.length) return null;
+    return districtOpportunity(ds, ds?.qsrFobRows || [], allLocs, mtdRange()).district;
+  }, [ds, allLocs]);
+  const card = (...kids) => h('div', {
+    onClick: () => onOpenModal && onOpenModal('opportunity-dollars'),
+    style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden', cursor: 'pointer' },
+    title: 'Open the Opportunity $ drill-down',
+  }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '💰'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Opportunity $'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'Recoverable this month, vs target')));
+  if (!district) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  return card(head, h('div', { style: { padding: '10px 14px 14px', display: 'flex', alignItems: 'baseline', gap: 8 } },
+    h('span', { style: { fontSize: 24, fontWeight: 800, color: 'var(--gold)', fontFamily: 'var(--mono)' } }, f$(district.total$)),
+    h('span', { style: { fontSize: 10, color: 'var(--text3)' } }, 'Labor ' + f$(district.labor$) + ' · Food ' + f$(district.food$) + ' · GC ' + f$(district.gc$))));
 }
 
 // EOM Count-progress tile — surfaces the EOM Scoreboard front-and-center during the last 3
@@ -1865,6 +1893,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
         // ── SAGE SCHEDULED RUNS TILE (first) ───────────────────
         h(EOMScoreboardTile,{key:'eom-sb',onOpenModal}),
+        h(OpportunityTile,{key:'opportunity',ds,stores,onOpenModal}),
         h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
 

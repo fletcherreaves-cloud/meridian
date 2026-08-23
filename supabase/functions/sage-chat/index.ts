@@ -340,7 +340,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const locs      = input.locs as string[] | undefined;
 
     let q = sb
-      .from('lifelenz_schedules')
+      .from('lifelenz_schedule')
       .select('loc,date,sch_vlh,need_vlh,sch_crew,need_crew')
       .gte('date', startDate)
       .lte('date', endDate)

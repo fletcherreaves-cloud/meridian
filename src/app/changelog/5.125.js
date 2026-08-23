@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.123', date:'2026-08-23', changes:[
+export default {version:'5.125', date:'2026-08-23', changes:[
   'Dispatch #81 -- rebuilt the security-events pull on in-browser fetch; both of its old auth '
   + 'paths could never have worked. memory/finding-api-security-transport-fingerprint-2026-08-23.md '
   + 'proved api.security.myqsrsoft.com 403s on TLS/HTTP-2 client fingerprint, not credential -- '

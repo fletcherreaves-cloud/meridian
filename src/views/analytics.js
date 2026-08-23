@@ -1395,7 +1395,7 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
       supabase.from('qsr_daily_activity').select('*',{count:'exact',head:true}),
       supabase.from('qsr_daily_activity').select('dt').order('dt',{ascending:true}).limit(1).single(),
       supabase.from('qsr_daily_activity').select('dt').order('dt',{ascending:false}).limit(1).single(),
-      supabase.from('lifelenz_schedules').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
+      supabase.from('lifelenz_schedule').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
       supabase.from('qsr_ebos_daily').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
       supabase.from('qsr_daily_activity').select('updated_at').order('updated_at',{ascending:false}).limit(1).single(),
     ]).then(([cnt,mn,mx,darCnt,darMn,darMx,lifeSy,ebosSy,darSy])=>{
