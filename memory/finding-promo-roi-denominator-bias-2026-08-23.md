@@ -1,11 +1,85 @@
 ---
 name: finding-promo-roi-denominator-bias-2026-08-23
-description: The Promo/Discount ROI matched-day engine splits days on promo_pct (promo divided by SALES), so sales is the denominator of the splitting variable. Low-sales days are sorted into "promo-heavy" mechanically, then compared on sales. Proven by simulation to report 27/27 stores negative at ZERO true effect, and to attenuate a known +10% effect to +5.9%. Affects the panel, SAGE's query_promo_roi, and both levers.
+description: ⚠️ THE FIX IN THIS FILE IS ALSO WRONG. Splitting on promo_pct selects LOW-sales days; splitting on promo_amt (the fix shipped in #601) selects HIGH-sales days when spend scales with traffic, which is how real redemptions behave. Measured: at ZERO true effect the dollar split reports +16.5% mean lift and 27/27 stores 'pays'. Both splits are endogenous. The screen needs an EXOGENOUS treatment indicator, not any function of the outcome. Do not trust the panel or SAGE's query_promo_roi until that lands.
 sensitivity: open
 metadata:
   node_type: memory
   type: finding
 ---
+
+# 🔴 THE FIX BELOW IS ALSO WRONG — read this first (2026-08-23, hours later)
+
+This file diagnosed a real bias and prescribed a fix. **The diagnosis holds. The fix does not.**
+Both were mine, and the fix shipped in #601 is live in the panel and in SAGE right now.
+
+## How it surfaced
+
+SAGE, asked which stores to visit, refused to use the screen a third time — for the **opposite**
+reason to before:
+
+> *"`query_promo_roi` — **not credible**. Cottondale shows +$9,624 extra sales/day on a store
+> averaging ~$6.3k/day total. Durant shows +$10,465/day on ~$14.3k/day. 25 of 27 stores 'pay' with
+> 40–97% lift. This is almost certainly reverse causality — busy days generate promo redemptions,
+> not the other way round."*
+
+Extra sales exceeding total sales is arithmetically impossible, so the screen was self-refuting.
+And SAGE's causal reading is exactly right.
+
+## The measurement
+
+`memory/data/promo-roi-bias-sim-spend-scales-with-traffic.mjs`. Same engine, **zero** true promo
+effect, but promo dollars scale with traffic — more customers, more redemptions, which is how real
+promo spend behaves:
+
+| split | mean measured lift | verdicts | true |
+|---|---|---|---|
+| `promo_pct` | **−0.1%** | 5/27 pays | 0% |
+| `promo_amt` (the shipped fix) | **+16.5%** | **27/27 pays** | 0% |
+
+**In the realistic regime the fix is the more wrong of the two.**
+
+## Why both are wrong — the actual principle
+
+The split variable must be **independent of the outcome**. Neither candidate is:
+
+- `promo_pct = spend ÷ sales` — sales is the **denominator**, so for fixed spend the split sorts
+  low-sales days into "heavy". Biases **down**.
+- `promo_amt` — spend is a **function of traffic**, so the split sorts high-sales days into
+  "heavy". Biases **up**.
+
+Two endogenous variables leaning opposite ways. Picking between them is choosing a direction of
+error, not removing it.
+
+⚠️ **My earlier simulations missed this because they held promo spend constant or assigned it by
+coin flip.** Both are unrealistic: they *construct* the independence the estimator needs. A
+simulation that grants the assumption cannot test it — that is the flaw in the evidence, not just
+in the conclusion.
+
+## What would actually work
+
+An **exogenous** treatment indicator — something set before the day happens and not caused by it:
+
+1. **A promo calendar.** Was a national/regional promotion *scheduled* on that date? Independent of
+   how the day went. This is the right answer if the data exists.
+2. **Day-of-week × promo-window matching** against the same weekday in a non-promo week.
+3. Failing both, **report nothing.** A screen that cannot separate cause from correlation should say
+   so rather than produce a verdict.
+
+## Immediate posture
+
+**Do not trust the Promo/Discount ROI panel or SAGE's `query_promo_roi`.** Both currently report
+that nearly every store's promos pay, with lifts of 40–97%, which the simulation shows appearing at
+a true effect of zero. That is worse than the original bug: the old version was visibly broken
+(everything negative, `n/a` verdicts) and got ignored; this one is **plausibly** wrong and invites
+action.
+
+📌 The general lesson, and the one worth keeping: **when a screen's output flips from "obviously
+broken" to "confidently positive" after a one-line change, that is a reason for more suspicion, not
+less.**
+
+---
+
+# ⬇️ ORIGINAL FINDING — the diagnosis is sound, the prescribed fix is not
 
 # Promo/Discount ROI is biased by construction — it selects on the outcome
 
