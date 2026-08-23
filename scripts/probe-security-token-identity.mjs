@@ -46,10 +46,20 @@ const headers = token => ({
   'sec-ch-ua-platform': '"macOS"',
 });
 
-const BODY = {
+// TWO body shapes, identical in every other respect. This is the comparison that matters:
+// the working curl scoped its query to one register and two cashiers; the pull script's
+// buildBody() sends EMPTY arrays for both, which plausibly means "all registers / all
+// cashiers" -- an unscoped sweep the identity may not be entitled to.
+const BODY_SCOPED = {
   event_token: 'all_promo', start_date: DATE, end_date: DATE,
   registers: [13], time_slices: [], cashiers: [2, 0], mgr_code: null,
 };
+// Exactly what scripts/qsrsoft-security-events-pull.mjs's buildBody() produces.
+const BODY_UNSCOPED = {
+  event_token: 'all_promo', start_date: DATE, end_date: DATE,
+  registers: [], time_slices: [], cashiers: [], mgr_code: null,
+};
+const BODY = BODY_SCOPED;
 
 // Claim NAMES always; claim VALUES only for cognito:groups (group names, not credentials).
 function describe(token) {
@@ -68,14 +78,15 @@ function describe(token) {
   } catch { return { len: token.length, claimNames: '(unparseable)', groups: '?', ageSec: null, ttlLeftSec: null }; }
 }
 
-async function attempt(label, token) {
+async function attempt(label, token, body = BODY) {
   const d = describe(token);
   console.log(`\n── ${label} ──`);
   console.log(`   token length : ${d.len}`);
   console.log(`   claim NAMES  : ${d.claimNames}`);
   console.log(`   cognito:groups: ${d.groups}`);
   console.log(`   age / ttl    : ${d.ageSec}s old, ${d.ttlLeftSec}s left`);
-  const r = await fetch(URL, { method: 'POST', headers: headers(token), body: JSON.stringify(BODY) });
+  const r = await fetch(URL, { method: 'POST', headers: headers(token), body: JSON.stringify(body) });
+  console.log(`   body scope   : registers=${JSON.stringify(body.registers)} cashiers=${JSON.stringify(body.cashiers)}`);
   const text = await r.text();
   console.log(`   HTTP ${r.status}  x-amzn-errortype=${r.headers.get('x-amzn-errortype') || '(none)'}`);
   if (r.ok) {
@@ -95,6 +106,18 @@ try {
   results.minted = 'mint-failed';
 }
 
+// ── The body-scope comparison: SAME token, same store, same date, same headers. Only the
+// registers/cashiers arrays change. This is the one-variable test the runner-vs-probe
+// comparison could not be, because that one also varied date and store.
+if (results.minted === 200) {
+  try {
+    const tok = await getFreshToken();
+    results.unscoped = await attempt('C) SAME token, UNSCOPED body (what the pull sends)', tok, BODY_UNSCOPED);
+  } catch (e) {
+    console.log(`\n── C) unscoped body ──\n   ✗ ${e.message}`);
+  }
+}
+
 const browserToken = (process.env.BROWSER_TOKEN || '').trim();
 if (browserToken) {
   results.browser = await attempt('B) your browser session token', browserToken);
@@ -103,6 +126,17 @@ if (browserToken) {
 }
 
 console.log('\n── VERDICT ──');
+if (results.minted === 200 && results.unscoped === 403) {
+  console.log('   🎯 THE BODY IS THE VARIABLE. Same token, same machine, same headers, same date,');
+  console.log('   same store -- only registers/cashiers changed. An unscoped sweep (empty arrays)');
+  console.log('   is denied; a scoped query is allowed. That is the whole six-dispatch 403, and it');
+  console.log('   is a QUERY-SHAPE problem, not auth, not network, not fingerprinting.');
+  console.log('   FIX: buildBody() must enumerate registers/cashiers instead of sending [].');
+} else if (results.minted === 200 && results.unscoped === 200) {
+  console.log('   Body scope is NOT the variable -- both shapes work from here. The runner 403s');
+  console.log('   must come from something else (date? store? concurrency?). Do not guess: the');
+  console.log('   next probe should vary date and store one at a time.');
+}
 if (results.browser === undefined) {
   console.log('   Only the minted token was tested. Re-run with BROWSER_TOKEN set to isolate the variable.');
 } else if (results.minted === 403 && results.browser === 200) {
