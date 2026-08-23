@@ -21,7 +21,14 @@
 // Usage:
 //   node scripts/probe-security-token-identity.mjs                 # minted token only
 //   BROWSER_TOKEN=<paste> node scripts/probe-security-token-identity.mjs   # both, side by side
+import { createHash } from 'node:crypto';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+
+// Short fingerprint for answering "are these the SAME token?" without printing any part of one.
+// A raw tail (last N chars) would also work as a comparator, but this repo's standing rule is
+// hashes and lengths only -- and a hash is strictly better: it cannot be reassembled toward the
+// real value, and it fingerprints the WHOLE token rather than one end of it.
+const fp = t => createHash('sha256').update(t).digest('hex').slice(0, 12);
 
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const STORE_REF = '35064';                 // the store the working curl used
@@ -78,10 +85,12 @@ function describe(token) {
   } catch { return { len: token.length, claimNames: '(unparseable)', groups: '?', ageSec: null, ttlLeftSec: null }; }
 }
 
+const tokenFps = {};
 async function attempt(label, token, body = BODY) {
   const d = describe(token);
   console.log(`\n── ${label} ──`);
   console.log(`   token length : ${d.len}`);
+  console.log(`   sha256[0:12] : ${fp(token)}   <-- same value in two rows = literally the same token`);
   console.log(`   claim NAMES  : ${d.claimNames}`);
   console.log(`   cognito:groups: ${d.groups}`);
   console.log(`   age / ttl    : ${d.ageSec}s old, ${d.ttlLeftSec}s left`);
@@ -100,7 +109,9 @@ async function attempt(label, token, body = BODY) {
 
 const results = {};
 try {
-  results.minted = await attempt('A) getFreshToken() minted token', await getFreshToken());
+  const mintedTok = await getFreshToken();
+  tokenFps.minted = fp(mintedTok);
+  results.minted = await attempt('A) getFreshToken() minted token', mintedTok);
 } catch (e) {
   console.log(`\n── A) getFreshToken() minted token ──\n   ✗ mint failed: ${e.message}`);
   results.minted = 'mint-failed';
@@ -120,9 +131,19 @@ if (results.minted === 200) {
 
 const browserToken = (process.env.BROWSER_TOKEN || '').trim();
 if (browserToken) {
+  tokenFps.browser = fp(browserToken);
   results.browser = await attempt('B) your browser session token', browserToken);
 } else {
   console.log('\n── B) your browser session token ──\n   (skipped -- set BROWSER_TOKEN to compare)');
+}
+
+if (results.browser !== undefined && tokenFps.minted && tokenFps.browser) {
+  console.log('\n── TOKEN IDENTITY ──');
+  console.log(tokenFps.minted === tokenFps.browser
+    ? `   Fingerprints MATCH (${tokenFps.minted}) -- the same token was used for both rows, so the`
+      + '\n   comparison proves nothing about identity. Re-capture the browser token and re-run.'
+    : `   Fingerprints DIFFER (minted ${tokenFps.minted} vs browser ${tokenFps.browser}) -- genuinely`
+      + '\n   two different tokens, so any status difference between them is real.');
 }
 
 console.log('\n── VERDICT ──');
