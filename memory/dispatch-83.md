@@ -137,3 +137,89 @@ it works on a green CI — that is exactly what #81's PR was careful about, and 
 - The Mac-mini login failure was a `waitForLoadState('networkidle')` race, fixed in #602. It is
   moot here since the login is being deleted, but do not go chasing Chromium drift.
 - The date-window silent-zero bug is fixed in #607. Keep that validation.
+
+---
+
+## Resolution (2026-08-23)
+
+Rebuilt exactly as specified: deleted the Chromium launch, the SPA login, the in-browser
+`page.evaluate()`-per-unit fetch, the screenshot artifacts, and the #610 `requestfailed`/console
+diagnostics, replaced with a single Node `fetchOne(storeRef, eventToken, date, token)` carrying
+the full 12-header set the working curl sent. File went from 564 lines to 380.
+
+### What changed
+
+- **Auth**: `getFreshToken()` (`scripts/lib/qsrsoft-auth.mjs`), resolved per unit of work via the
+  same `resolveToken(token, forceRemint)` / one-forced-remint-and-retry-on-401/403 idiom every
+  other converted reporting-API pull in this repo now uses (dispatch #82). No browser fallback
+  exists any more, so a 401/403 that survives the retry is just that unit's failure —
+  `tracker.fail()` + continue, not a bubble-up to a Playwright path that no longer exists. The
+  loud "N/N unit(s) failed" + exit 1 behavior the dispatch called out as having "earned its place"
+  is unchanged and is what makes a total credential/endpoint failure visible.
+- **Headers**: all 12 from the working curl, sent unconditionally (`X-Auth-Token`,
+  `Content-Type`, `Accept`, `Accept-Language`, `Connection`, `Origin`, `Referer`,
+  `Sec-Fetch-Dest/Mode/Site`, `User-Agent`, `sec-ch-ua*`). None trimmed — Q1 is explicitly a
+  live-run follow-up, not something to guess at from a sandbox with no way to test a removal.
+- **Kept unchanged, as instructed**: `dateList()` (+ #607 validation), `extractRows()`,
+  `buildUrl()`, `buildBody()`, `parseSecurityEventRows()`, `tokenizeRows()`,
+  `saveSecurityEventRows()`, `getLatestDate()`, `getDateRange()`, the outcome tracker. All 10
+  existing pure-helper tests (`src/__tests__/qsrsoft-security-events-pull.test.js`) pass
+  unmodified — no signature changed.
+- **Wall-clock now logged**: `main()` times the whole fetch phase and prints
+  `fetch phase: Ns for N unit(s)` — never measured before (both the #81 estimate and this
+  session's own inability to run it live left it unknown), and it gates a daily schedule per the
+  dispatch's own verification bar. The first live run settles it instead of leaving it estimated.
+- **Workflow file**: removed the `Install Playwright browser` step (nothing in this script imports
+  `playwright` any more) and the `Upload debug screenshots` step (nothing writes to `screenshots/`
+  any more — an `if-no-files-found: ignore` step that never finds anything is dead weight, not a
+  safety net). `runs-on: [self-hosted, macOS, qsr-security]` left untouched per Q2 — the working
+  curl was run from that same machine/network, and that combination has never been tested from
+  `ubuntu-latest`; changing the runner is explicitly a later, separate step. Header comment
+  rewritten to state the actual (overturned-fingerprint, CORS-is-the-real-blocker) history instead
+  of the #81 story, so the next reader doesn't inherit a corrected-in-memory-only belief.
+
+### The three open questions — genuinely left open, not guessed at
+
+None of Q1 (minimal header set), Q2 (hosted-runner test), or Q3 (was it always just token expiry)
+were answered here — this sandbox has zero QSRSoft credentials or network access, the same
+constraint every prior session on this script has hit. All three need the owner or the self-hosted
+runner, one variable at a time as the dispatch insists, and are called out below as explicit next
+steps rather than silently dropped.
+
+### Verification actually met
+
+`node --check` clean. Full suite **2141/2141** (this branch predates #82's merge, hence the count
+being 6 lower than #82's PR — not a regression, a different base). `npm run build` clean, no
+bundle impact (Node script, not client-imported). Structural match to the established
+`resolveToken`/retry-once/tracker-per-unit pattern confirmed by direct reading, same bar #81's and
+#82's PRs used.
+
+⚠️ **Live confirmation is outstanding — do not treat a green CI as evidence this works.** The
+verification bar is explicit: a real `workflow_dispatch`, one date, showing real `N row(s)` lines,
+a non-zero saved count with `per-store: N/27`, and the wall-clock now printed at the end of the
+run.
+
+### Owner action items to close this out (in order, one variable at a time)
+
+1. **Confirm the rebuild works at all** — `workflow_dispatch` with `start_date` = `end_date` (one
+   day, dashes), self-hosted runner (unchanged `runs-on`). Read the log for real row counts, the
+   final saved/per-store line, and the new wall-clock line.
+2. **Q3, while doing #1** — on that first successful run, deliberately reuse a token more than ~1h
+   old for one request and confirm it 403s (rather than something else). If it does, the
+   fingerprint theory is retired completely, not just superseded; if it doesn't, that's a real,
+   currently-unknown result worth its own note.
+3. **Q1** — once #1 passes, drop headers in the groups the dispatch specifies (sec-ch-ua*/UA
+   first, then Sec-Fetch-*, then Origin/Referer last) and re-test after each group, recording the
+   minimal working set.
+4. **Q2** — only after #1 passes on self-hosted, change `runs-on` to `ubuntu-latest` and nothing
+   else. If it also 200s, drop the self-hosted requirement in a follow-up PR (removes an
+   operational dependency from the estate). If it 403s, network still matters alongside whatever
+   #1 finds — also a real, useful result.
+
+### Explicitly not done this pass
+
+- All three open questions (by design — they need live QSRSoft access this sandbox doesn't have).
+- Deleting `QSRSOFT_TOKEN`/`QSRSOFT_COGNITO_TOKEN` GitHub secrets — unrelated to this script (it
+  never read them even before this rebuild) and out of scope regardless (#312 Scope 4's own hold).
+- Any change to `sync-failure-watch.yml` — the workflow's `name:` field is unchanged, so its
+  existing watch entry still matches.
