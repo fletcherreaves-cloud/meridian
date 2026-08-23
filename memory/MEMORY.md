@@ -64,6 +64,25 @@ being violated once and the cost landing later. Recover #47's intent from
 **So: `grep -rn "dispatch.\?NN" memory/` — never conclude a dispatch is undocumented, or that the
 index has drifted, from one filename missing.**
 
+### Standing rule, added 2026-08-22 (this was the second same-day add/add collision): only the PM creates `dispatch-NN.md`
+
+Two `dispatch-NN.md` add/add merge conflicts landed the same day (#69, #70) — both sides
+independently writing to the same fresh path, unaware of each other, because a brief and its
+completion record are separate acts by separate roles racing on one filename. Structural fix,
+**not** a new filename pattern (a `dispatch-NN-result.md` split was considered and rejected — it
+just relocates the race to "which file is canonical," and this repo already has a working pattern
+for records that live at their own path: `dispatchNN-topic.md` above):
+
+- **Only the PM creates `dispatch-NN.md`.** It always exists before the engineer's session starts.
+- **The engineer never creates a fresh `dispatch-NN.md`.** Append a `## Resolution` section to the
+  existing brief instead (see `dispatch-71.md` for the pattern this session already used
+  independently, before this rule was written down). If a dispatch number's brief genuinely isn't
+  on `main` yet when picked up, fetch `main` first to check — don't assume absence from a stale
+  local checkout, which is exactly how both same-day collisions happened.
+- A dispatch whose engineer writeup is substantial enough to want its own file still uses
+  `dispatchNN-topic.md` — that convention is unchanged and doesn't collide, since only the engineer
+  ever writes that name.
+
 ## ⭐ READ FIRST — latest handoff & vision
 - **✅ SHIPPED (2026-08-22): [Dispatch #73 — Visit Patterns' "overdue" amber fired on 87% of normal visits](dispatch-73.md)** —
   **NEWEST.** A flat `daysSinceLast > 60` never measured against real data: on 190 real CFV

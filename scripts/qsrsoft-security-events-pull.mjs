@@ -250,6 +250,18 @@ async function getDateRange() {
   return { startDate: s, endDate: fmtDate(today), latestForFreshness: latest };
 }
 
+// Dispatch #67 Task 2 -- names only, never a claim value (sub/eID/email/cognito:username/
+// custom:authorName have been the repo's standing privacy bar since dispatch-63.md's own
+// version of this same helper). Used only to diff which claims one token carries that the
+// other doesn't; the diff is itself just claim NAMES, so it stays inside that bar too.
+function claimNames(token) {
+  try {
+    const [, payload] = token.split('.');
+    const claims = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return Object.keys(claims).sort();
+  } catch { return null; }
+}
+
 // ── Two-path auth (direct-first, matching qsrsoft-ops-pull.mjs -- this host is token-only, no
 // cookies, per memory/finding-qsrsoft-event-details-endpoint-2026-08-21.md) ─────────────────
 async function viaPlaywright(dates, tracker) {
@@ -262,7 +274,14 @@ async function viaPlaywright(dates, tracker) {
   const page = await (await browser.newContext()).newPage();
   page.setDefaultTimeout(180000);
   let token = null;
+  // Dispatch #67 -- track EVERY request the listener saw, not just ones carrying x-auth-token.
+  // Zero total requests and zero matching requests are different diagnoses: the first means the
+  // page never made any network calls (unlikely, but distinguishes "nothing loaded" from "things
+  // loaded, none of them authenticated"); the second alone was already logged before and left the
+  // question open.
+  let totalRequestsSeen = 0;
   page.on('request', async req => {
+    totalRequestsSeen++;
     try {
       const all = await req.allHeaders();
       const t = all['x-auth-token'];
@@ -280,6 +299,48 @@ async function viaPlaywright(dates, tracker) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('[auth] post-login url:', page.url());
     await snap('secevents-01-post-login.png');
+    // Dispatch #67 Resolution -- the live run got no token from either localStorage or
+    // interception, and the only way to tell "login didn't complete" from "login completed but
+    // mints no token anywhere" was a screenshot this sandbox cannot reach. Assert and log
+    // everything a screenshot would have shown, in text, so this settles from the Actions log
+    // alone next run:
+    const postLoginState = await page.evaluate(() => {
+      const loginFieldPresent = !!document.querySelector(
+        'input[name="username"], input[name="email"], input[type="email"], #username, #email, ' +
+        'input[autocomplete="username"], input[type="password"], input[name="password"]'
+      );
+      const alertEl = document.querySelector('[role="alert"]');
+      const alertText = alertEl ? alertEl.textContent.trim().slice(0, 200) : null;
+      const bodyText = document.body ? document.body.innerText.trim() : '';
+      return {
+        title: document.title,
+        loginFieldPresent,
+        alertText,
+        // Only when the page renders almost nothing (a bare error page, not the real app shell)
+        // is the body text itself informative -- a loaded SPA's body text would be enormous and
+        // useless to log, so cap what's captured to short pages only.
+        shortBodyText: bodyText.length > 0 && bodyText.length <= 300 ? bodyText : null,
+        localStorageKeys: Object.keys(localStorage).sort(),
+      };
+    });
+    console.log('[auth] post-login document.title:', JSON.stringify(postLoginState.title));
+    console.log('[auth] post-login login-form-still-present:', postLoginState.loginFieldPresent);
+    console.log('[auth] post-login localStorage key NAMES:', postLoginState.localStorageKeys.length
+      ? postLoginState.localStorageKeys.join(', ') : '(empty -- no keys of any kind)');
+    if (postLoginState.alertText) console.log('[auth] post-login role="alert" text:', JSON.stringify(postLoginState.alertText));
+    if (postLoginState.shortBodyText) console.log('[auth] post-login short body text:', JSON.stringify(postLoginState.shortBodyText));
+    console.log('[auth] post-login requests seen so far: total', totalRequestsSeen, '| carrying x-auth-token:', token ? 1 : 0);
+    // Dispatch #67 Task 1 -- the owner measured (browser console, exact x-auth-token value from
+    // a working event_details request vs localStorage) that the SPA sends the plain Cognito ID
+    // token straight out of storage: nothing is minted at click time, nothing derived, nothing
+    // wrapped. So read it directly rather than depend on a request happening to carry it -- the
+    // request-interception listener above stays wired as a fallback only (a silent null from
+    // localStorage must not look identical to a failed login).
+    const spaToken = await page.evaluate(() => {
+      const k = Object.keys(localStorage).find(k => k.endsWith('.idToken'));
+      return k ? localStorage.getItem(k) : null;
+    });
+    console.log('[auth] localStorage idToken read:', spaToken ? `true (${spaToken.length} chars)` : 'false');
     // Dispatch #66: the previous .catch(() => {}) here swallowed the navigation error
     // AND never logged page.url() afterward, so a failed navigation was indistinguishable
     // from a successful one that simply saw no token -- the run just printed nothing
@@ -296,10 +357,34 @@ async function viaPlaywright(dates, tracker) {
     await new Promise(r => setTimeout(r, 5000));
     console.log('[auth] report page url:', page.url(),
       '| nav error:', navError || '(none)',
-      '| token captured:', token ? `true (${token.length} chars)` : 'false');
+      '| interception token captured:', token ? `true (${token.length} chars)` : 'false',
+      '| requests seen: total', totalRequestsSeen, 'carrying x-auth-token:', token ? 1 : 0);
     await snap('secevents-02-report-page.png');
-    if (!token) { console.error('[auth] ✗ no x-auth-token seen on any request during SPA login'); tracker.fail('playwright-fallback', navError ? `navigation failed: ${navError}` : 'no token captured'); return { collected: [], coveredStores: new Set() }; }
-    return await runAll(token, dates, tracker);
+    // Dispatch #67 Task 1 -- localStorage read is primary; interception is the fallback only,
+    // exactly the priority the dispatch specified.
+    const finalToken = spaToken || token;
+    console.log('[auth] token source for retry:', spaToken ? 'localStorage' : (token ? 'request-interception (fallback)' : 'none'));
+    if (!finalToken) { console.error('[auth] ✗ no token from localStorage or interception during SPA login'); tracker.fail('playwright-fallback', navError ? `navigation failed: ${navError}` : 'no token captured'); return { collected: [], coveredStores: new Set() }; }
+    // Dispatch #67 Task 2 -- the claim-name diff, regardless of what the retry below returns.
+    // getFreshToken() is cheap here: runAll(getFreshToken, ...) already minted (and cached) one
+    // earlier in main()'s try block before falling through to this fallback, so this reads that
+    // cached mint rather than minting again.
+    try {
+      const bareToken = await getFreshToken();
+      const bareNames = claimNames(bareToken), spaNames = claimNames(finalToken);
+      if (bareNames && spaNames) {
+        const onlyInSpa = spaNames.filter(c => !bareNames.includes(c));
+        const onlyInBare = bareNames.filter(c => !spaNames.includes(c));
+        console.log('[auth] bare (getFreshToken) claim NAMES:', bareNames.join(', '));
+        console.log('[auth] spa  (localStorage/interception) claim NAMES:', spaNames.join(', '));
+        console.log(onlyInSpa.length || onlyInBare.length
+          ? `[auth] 🔴 claim-name DIFFERENCE -- only in spa: [${onlyInSpa.join(', ')}], only in bare: [${onlyInBare.join(', ')}]`
+          : '[auth] claim NAMES are identical between the bare and spa tokens.');
+      } else {
+        console.log(`[auth] claim-name diff unavailable -- bare ${bareNames ? 'ok' : 'unparseable'}, spa ${spaNames ? 'ok' : 'unparseable'}`);
+      }
+    } catch (e) { console.log('[auth] claim-name diff skipped:', e.message); }
+    return await runAll(finalToken, dates, tracker);
   } catch (e) {
     console.error(`[auth] ✗ Playwright fallback failed: ${e.message}`);
     tracker.fail('playwright-fallback', e.message);

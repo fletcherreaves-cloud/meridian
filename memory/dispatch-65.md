@@ -333,6 +333,29 @@ finish the `stream-freshness.js` wiring with the role-gating question above actu
 
 ## 🔴 CORRECTION #2 (2026-08-22, first live run) — it is the TOKEN, not the source IP
 
+⚠️ **SUPERSEDED (2026-08-22) — this section's own conclusion ("the discriminator is the token")
+does not hold as stated. See `memory/dispatch-70.md`.** NOT the same untested cell this section
+names — the actual run was a genuine SPA-minted token used from `ubuntu-latest` (a HOSTED runner,
+not the Mac mini): login succeeded, but retrying `event_details` with that same real, claim-
+identical-to-bare token, from that same hosted runner, still got **403**. The Mac-mini cell this
+section names (`SPA/SRP | Mac mini`) is, per dispatch-70.md's own corrected matrix, **still
+untested** — its Playwright login has never yet produced a token to test with.
+
+So this is not a straight refutation with a completed opposite cell — it's a second clean,
+single-variable comparison pointing at a *different* variable than this section's own:
+
+| comparison | held constant | varies | implies |
+|---|---|---|---|
+| this section's: browser token (200, home/tether) vs bare `getFreshToken()` token (403, Mac mini) | network (both "permitted" origins) | token | token matters |
+| dispatch #70's: browser token (200, home/tether) vs genuine SPA token (403, `ubuntu-latest`) | token (both real SRP/SPA-minted) | network | network matters |
+
+Both are individually clean. **CORRECTION #2 over-generalized from the first alone** — the same
+single-variable-comparison error it accused the *original* source-IP conclusion of. The genuinely
+discriminating test — a real SPA token, captured AND used from the Mac mini itself — is still the
+one open cell in both files. Read `dispatch-70.md` for the full measurement and the two candidate
+next-step directions (fix the Mac mini's login directly, or split token-capture and
+`event_details`-fetch across two jobs/runners).
+
 **The first live run from the Mac mini FAILED with the same 403.** Run `32584444370`, job
 `97058595631`, runner `mac-mini-qsr`:
 
