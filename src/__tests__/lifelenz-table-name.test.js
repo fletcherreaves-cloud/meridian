@@ -75,3 +75,33 @@ describe('LifeLenz schedule table name', () => {
     expect(hit).toBe(true);
   });
 });
+
+// ── Phantom columns (added 2026-08-23, one layer below the table-name bug) ─────
+// Fixing the table name surfaced a second defect the 404 had been masking: the query also
+// selected `sch_crew` and `need_crew`, which do not exist on lifelenz_schedule. PostgREST
+// rejects the WHOLE query on an unknown column, so SAGE's labor tool returned
+// `column lifelenz_schedule.sch_crew does not exist` and SAGE dropped LifeLenz from its
+// answer. Verified live, column by column: sch_vlh 200, need_vlh 200, sch_crew 400,
+// need_crew 400. Neither crew column was ever read by the aggregation.
+describe('LifeLenz schedule columns', () => {
+  const NONEXISTENT = ['sch_crew', 'need_crew', 'sch_hours', 'need_hours'];
+
+  it('never selects a column that does not exist on lifelenz_schedule', () => {
+    const files = ['src', 'supabase/functions', 'scripts'].flatMap(d => walk(d));
+    const offenders = [];
+    for (const f of files) {
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        // Only inside a .select(...) — the names appear legitimately in prose and comments.
+        const m = line.match(/\.select\(\s*['"]([^'"]+)['"]/);
+        if (!m) return;
+        for (const col of NONEXISTENT) {
+          if (m[1].split(',').map(x => x.trim()).includes(col)) {
+            offenders.push(`${f}:${i + 1}  selects '${col}'`);
+          }
+        }
+      });
+    }
+    expect(offenders, `These columns do not exist; PostgREST rejects the entire query.\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
