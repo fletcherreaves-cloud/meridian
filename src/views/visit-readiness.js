@@ -355,15 +355,42 @@ export function VisitPatterns({ ds, locs }) {
   const bar = (v, col) => h('div', { style: { width: 46, height: 5, borderRadius: 3, background: 'var(--bdr)', display: 'inline-block', verticalAlign: 'middle' } },
     h('div', { style: { width: (v == null ? 0 : Math.max(2, v * 100)) + '%', height: '100%', background: col, borderRadius: 3 } }));
   // A labeled breakdown block: rows of {key, n, passRate, avgScore}.
-  const block = (title, rows) => rows.length ? h('div', { style: { flex: '1 1 220px', minWidth: 200 } },
+  // Dispatch #79 -- Day of week/Daypart/Weekpart were the last 3 groupings still on this pooled
+  // renderer without the thin-cell guard dispatch #75 gave Channel (CHANNEL_YEAR_MIN_N,
+  // engine/visit-readiness.js) after that exact failure shape: a low-n cell -- the owner's own
+  // example, a Dinner daypart cell at n=2 -- rendered a confident-looking "0.00%" indistinguishable
+  // from a real, well-supported reading.
+  //
+  // ⚠️ Do NOT reuse CHANNEL_YEAR_MIN_N here (the dispatch brief is explicit about this): that
+  // constant was measured against the channel x year cell distribution specifically, and this is
+  // a different distribution (Day of week/Daypart/Weekpart pool ALL years, unlike the per-year
+  // channel breakdown it came from). No real graded_visits access via the anon key (RLS-scoped,
+  // confirmed by querying it directly) to measure a fresh break the way #75 did. Per the brief's
+  // own named alternative ("#77's THIN_RELATIVE_FLOOR is a good precedent for the honest-floor
+  // version"), this is a CHOSEN, RELATIVE floor instead: within a given block, a row covering
+  // less than half of that SAME block's own best-covered row is marked thin. Self-contained per
+  // block, not a shared magic number, and documented as a floor, not a finding.
+  const BLOCK_THIN_RELATIVE_FLOOR = 0.5;
+  const block = (title, rows) => {
+    if (!rows.length) return null;
+    const maxN = Math.max(...rows.map(r => r.n));
+    const floor = Math.max(1, maxN * BLOCK_THIN_RELATIVE_FLOOR);
+    return h('div', { style: { flex: '1 1 220px', minWidth: 200 } },
     h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, title),
     h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
-      ...rows.map(r => h('div', { key: r.key, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5 } },
-        h('span', { style: { flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.key),
-        h('span', { style: { color: 'var(--text3)', width: 30, textAlign: 'right', fontFamily: 'var(--mono)' } }, 'n' + r.n),
-        bar(r.passRate, prCol(r.passRate)),
-        h('span', { style: { fontFamily: 'var(--mono)', color: prCol(r.passRate), width: 34, textAlign: 'right' } }, pr(r.passRate)),
-        h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 34, textAlign: 'right' } }, r.avgScore == null ? '—' : r.avgScore))))) : null;
+      ...rows.map(r => {
+        const thin = r.n < floor;
+        return h('div', { key: r.key, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, opacity: thin ? .6 : 1 } },
+          h('span', { style: { flex: 1, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, r.key),
+          h('span', { style: { color: 'var(--text3)', width: 30, textAlign: 'right', fontFamily: 'var(--mono)' } }, 'n' + r.n),
+          thin
+            ? h('span', { style: { flex: '0 0 auto', fontSize: 9, color: 'var(--text3)', fontStyle: 'italic' } }, '(thin)')
+            : h(React.Fragment, null,
+                bar(r.passRate, prCol(r.passRate)),
+                h('span', { style: { fontFamily: 'var(--mono)', color: prCol(r.passRate), width: 34, textAlign: 'right' } }, pr(r.passRate)),
+                h('span', { style: { fontFamily: 'var(--mono)', color: 'var(--text3)', width: 34, textAlign: 'right' } }, r.avgScore == null ? '—' : r.avgScore)));
+      })));
+  };
   return h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, marginTop: 14, overflow: 'hidden' } },
     h('div', { onClick: () => setOpen(o => !o), style: { display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: 'var(--surf2)' } },
       h('span', { style: { fontSize: 13 } }, '📊'),

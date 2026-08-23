@@ -769,13 +769,25 @@ first below.
   is that specifically asked for. Caught while reconciling this backlog against a concurrent
   session's PR #438, which flagged the same file's staleness independently — cross-checked myself
   rather than taking either side's claim on the other's word.
-- [ ] All 27 stores reading `crit`/`weekly-overdue` on Count Cycle compliance simultaneously,
-  flagged but never chased — corroborated by **two** independent sources: `dispatch-20.md` §3
-  ("Correctly flagged and correctly not chased in #410. Chase it now") and
-  `374-recipe-item-verification-2026-08-18.md` (measured `{stores:27, ok:0, warn:0, crit:27,
-  overdue:27}`). Same finding, two dates — worth chasing precisely because it's reproduced, not a
-  one-off. `dispatch-20.md`'s own advice: check several non-today dates first (every date `crit` →
-  a logic bug; only today → a stale feed), one query either way.
+- [x] ⚠️ **CORRECTED 2026-08-23 (dispatch #79 item 4) — this was already chased and fixed, same
+  day as the evidence this entry cites.** `374-recipe-item-verification-2026-08-18.md`'s
+  `{crit:27}` measurement was taken to verify PR #410 (2026-08-18). PR #411, merged **later that
+  same day** (`1d3b724`, v5.062), ran exactly `dispatch-20.md` §3's prescribed discriminator
+  (non-today dates, real `qsr_onhand` pull) and found a genuine logic bug: a class with zero
+  active items in a store's universe fell through to `(totals[loc][c] || Infinity) * COVER_FRAC`,
+  which no count can ever satisfy — 17/27 stores had `Condiment` universe of exactly 0, making
+  their weekly requirement mathematically impossible regardless of what they actually counted.
+  Fixed (`src/engine/count-cycle.js`'s `detectSessions()` — a zero-universe class is trivially
+  "covered"), measured against the same real 7,347-row pull: crit dropped **27 → 12**, a real
+  varied distribution (10 ok / 5 warn / 12 crit), 4 new tests, full writeup in
+  `memory/count-cycle-condiment-bug-2026-08-18.md`. Re-verified 2026-08-23: the fix is still live
+  on `main` (`if (universe === 0) return true`) and its tests still pass (41/41 in
+  `count-cycle.test.js`). This backlog entry was written 2026-08-19, one day after the fix
+  merged, citing only the pre-fix evidence — the same shape as the `staff_assignments`/
+  `eom_count_progress_log` corrections found in the same sweep this dispatch. Nothing left to
+  chase here; the 12 stores still `crit` post-fix are a real, actionable operational signal, not
+  an artifact (see that file's own "not chased further, correct next thing for whoever owns Count
+  Cycle rollout" note).
 - [ ] Two Supabase tables written by pull scripts but never read anywhere in the app
   (`eom_count_progress_log`, `staff_assignments`), plus 12 loader functions defined but never
   called — dead-write/dead-code surface not previously flagged (`metric-inventory-2026-08-07.md`).
