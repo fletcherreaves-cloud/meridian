@@ -180,7 +180,11 @@ export function extractRows(body, unit) {
 // Dispatch #83: the full header set the owner's working curl sent. No credentials:'include'
 // (auth is the explicit X-Auth-Token header, same as every other reporting-API pull, not a
 // session cookie).
-async function fetchOne(storeRef, eventToken, date, token) {
+// Exported so scripts/probe-security-token-identity.mjs can exercise this EXACT path -- headers
+// included -- rather than a copy of it. Every reproduction of the pull's request built by hand has
+// returned 200 while the pull returns 403, so the remaining difference has to be something a
+// hand-copy does not reproduce. The only way to rule that out is to call this function itself.
+export async function fetchOne(storeRef, eventToken, date, token) {
   const url = buildUrl(storeRef);
   const body = buildBody(eventToken, date);
   const r = await fetch(url, {
