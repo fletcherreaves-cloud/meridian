@@ -47,7 +47,7 @@ export const SOURCE_META = {
   ctrlRows:     { system: 'QSRSoft',    report: 'DAR / Controls (Excel upload)',                 table: 'ctrl_rows',           feed: 'manual'  },
   fobRows:      { system: 'QSRSoft',    report: 'FOB / Food Cost (Excel upload)',                table: 'fob_rows',            feed: 'manual'  },
   smgFullscale: { system: 'SMG VOICE',  report: 'FullScale scorecard (Excel upload, monthly)',   table: 'smg_fullscale',       feed: 'manual'  },
-  schedRows:    { system: 'LifeLenz',   report: 'Schedules (daily API sync)',                    table: 'lifelenz_schedules',  feed: 'auto'    },
+  schedRows:    { system: 'LifeLenz',   report: 'Schedules (daily API sync)',                    table: 'lifelenz_schedule',  feed: 'auto'    },
   // Dispatch #64 — the auto/derived sources metric-source.js's shared chains can now
   // resolve a driver from. Without these, srcMeta()'s unknown-key fallback would report
   // these as "Meridian · feed unknown" — technically harmless (the report still names the
