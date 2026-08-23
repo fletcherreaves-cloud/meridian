@@ -53,17 +53,27 @@
 // — filtered before upsert, not stored.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// Auth ladder: QSRSOFT_TOKEN (direct) → QSRSOFT_COGNITO_TOKEN (direct) →
-//              QSRSOFT_USERNAME/PASSWORD (Playwright, mirrors qsrsoft-ops-pull.mjs exactly:
-//              logs in, navigates to the Product Mix report page to passively capture a
-//              token, in-browser fetch fallback if that alone doesn't fire a token-bearing
-//              request).
+// Auth — tried in order:
+//   getFreshToken()    — mints a Cognito ID token per run (scripts/lib/qsrsoft-auth.mjs),
+//                        resolved PER UNIT OF WORK (per date, or per store request in
+//                        per-store mode) rather than once at the top: a stored
+//                        QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN is a ~1h-TTL Cognito token,
+//                        stale ~23/24 hours by construction, no matter how often it's
+//                        rotated -- every run was falling straight through to Playwright.
+//                        QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN are no longer read here.
+//   QSRSOFT_USERNAME + PASSWORD — Playwright fallback (unchanged, mirrors
+//                        qsrsoft-ops-pull.mjs exactly: logs in, navigates to the Product
+//                        Mix report page to passively capture a token, in-browser fetch
+//                        fallback if that alone doesn't fire a token-bearing request) --
+//                        still the required env for BOTH paths, since getFreshToken() also
+//                        mints from these same two secrets.
 // Optional: PMIX_START_DATE / PMIX_END_DATE (YYYY-MM-DD, backfill range — target 2024-01
 //           per the issue, matching DAR/VOICE depth; probe retention depth first per the
 //           standing rule, same as #257/#259 did — do not assume it reaches that far),
 //           PMIX_STORE (comma-separated NSNs, default all 27).
 
 import { createClient } from '@supabase/supabase-js';
+import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const BASE   = 'https://api.reports.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -287,6 +297,14 @@ function tally(perStoreCounts, kept) {
   for (const r of kept) perStoreCounts.set(r.loc, (perStoreCounts.get(r.loc) || 0) + 1);
 }
 
+// Resolves either a plain token string (Playwright mode) or the getFreshToken function itself
+// (direct-API mode) — per unit of work, so a multi-day/multi-store run re-mints transparently
+// near expiry instead of a single mint sailing past its ~1h TTL mid-run (mirrors
+// qsrsoft-dar-pull.mjs / qsrsoft-ops-pull.mjs).
+async function resolveToken(token, forceRemint) {
+  return typeof token === 'function' ? await token({ forceRemint }) : token;
+}
+
 async function runAll(token, dates, evalPage) {
   let grand = 0;
   let mode = null; // decided once, from the first date's probe, and reused for the rest of this run
@@ -296,7 +314,16 @@ async function runAll(token, dates, evalPage) {
     if (mode === null) {
       let districtRows;
       try {
-        districtRows = await probeDistrictMode(date, token, evalPage);
+        const tok = await resolveToken(token, false);
+        try {
+          districtRows = await probeDistrictMode(date, tok, evalPage);
+        } catch (e) {
+          if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+            console.log(`[pmix] ${date}: cached token rejected during district-mode probe — forcing a re-mint and retrying once`);
+            const freshTok = await resolveToken(token, true);
+            districtRows = await probeDistrictMode(date, freshTok, evalPage);
+          } else throw e;
+        }
       } catch (e) {
         if (String(e.message).startsWith('AUTH_FAILED')) throw e;
         console.error(`[pmix] ${date} ERROR (district-mode probe): ${e.message}`);
@@ -318,7 +345,16 @@ async function runAll(token, dates, evalPage) {
     if (mode === 'district') {
       let rows;
       try {
-        rows = await fetchRows(districtUrl(date), token, evalPage);
+        const tok = await resolveToken(token, false);
+        try {
+          rows = await fetchRows(districtUrl(date), tok, evalPage);
+        } catch (e) {
+          if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+            console.log(`[pmix] ${date}: cached token rejected — forcing a re-mint and retrying once`);
+            const freshTok = await resolveToken(token, true);
+            rows = await fetchRows(districtUrl(date), freshTok, evalPage);
+          } else throw e;
+        }
       } catch (e) {
         if (String(e.message).startsWith('AUTH_FAILED')) throw e;
         console.error(`[pmix] ${date} ERROR: ${e.message}`);
@@ -335,7 +371,16 @@ async function runAll(token, dates, evalPage) {
     for (const nsn of STORE_NSNS) {
       let rows;
       try {
-        rows = await fetchRows(perStoreUrl(date, nsn), token, evalPage);
+        const tok = await resolveToken(token, false);
+        try {
+          rows = await fetchRows(perStoreUrl(date, nsn), tok, evalPage);
+        } catch (e) {
+          if (String(e.message).startsWith('AUTH_FAILED') && typeof token === 'function') {
+            console.log(`[pmix] ${date} store ${nsn}: cached token rejected — forcing a re-mint and retrying once`);
+            const freshTok = await resolveToken(token, true);
+            rows = await fetchRows(perStoreUrl(date, nsn), freshTok, evalPage);
+          } else throw e;
+        }
       } catch (e) {
         if (String(e.message).startsWith('AUTH_FAILED')) throw e;
         console.error(`[pmix] ${date} store ${nsn} ERROR: ${e.message}`);
@@ -409,17 +454,13 @@ async function main() {
   const dates = dateRange(start, end);
   console.log(`[pmix] window: ${start}…${end} (${dates.length} day(s)) — ${STORE_NSNS.length} store(s)`);
 
-  const token = (process.env.QSRSOFT_TOKEN || process.env.QSRSOFT_COGNITO_TOKEN || '').trim();
-  let result = { grand: 0, perStoreCounts: new Map() };
-  if (token) {
-    console.log('[auth] using direct token');
-    try { result = await runAll(token, dates, null); }
-    catch (e) {
-      if (String(e.message).startsWith('AUTH_FAILED')) { console.log('[auth] direct token 401/403 — falling back to Playwright'); result = await viaPlaywright(dates); }
-      else throw e;
-    }
-  } else {
-    console.log('[auth] no direct token — falling back to Playwright');
+  // ── Path A: direct fetch, token minted fresh per unit of work via getFreshToken() ──
+  console.log('[auth] trying direct server-side fetch via getFreshToken()…');
+  let result;
+  try {
+    result = await runAll(getFreshToken, dates, null);
+  } catch (e) {
+    console.log(`[auth] mint-and-fetch failed (${e.message}) — falling back to Playwright`);
     result = await viaPlaywright(dates);
   }
   const { grand: total, perStoreCounts } = result;

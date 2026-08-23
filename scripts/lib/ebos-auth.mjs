@@ -14,15 +14,24 @@
 //
 // eBOS auth is its OWN ladder, distinct from the reporting-API ladder (api.reports.myqsrsoft.com,
 // used by qsrsoft-ops-pull.mjs / qsrsoft-dar-pull.mjs / qsrsoft-shift-manager-pull.mjs, which read
-// QSRSOFT_TOKEN directly with no exchange step). eBOS tokens are short-lived (HS256, minted
+// a fresh-minted token directly with no exchange step). eBOS tokens are short-lived (HS256, minted
 // per-session) and are obtained by EXCHANGING a Cognito ID token for one via SSO, or as a last
-// resort by a fresh Playwright login. QSRSOFT_TOKEN/QSRSOFT_COGNITO_TOKEN feed the exchange;
-// QSRSOFT_EBOS_TOKEN is a static override/fallback. Building a new eBOS pull against the
-// reporting-API ladder (QSRSOFT_TOKEN read directly, no exchange) fails in a way that looks like
-// a permissions problem, not a wrong-ladder problem — this module exists so that mistake can't
-// happen again by construction.
+// resort by a fresh Playwright login. QSRSOFT_EBOS_TOKEN is a static override/fallback. Building a
+// new eBOS pull against the reporting-API ladder (a token read directly, no exchange) fails in a
+// way that looks like a permissions problem, not a wrong-ladder problem — this module exists so
+// that mistake can't happen again by construction.
+//
+// Dispatch #82 / memory/project-qsrsoft-cognito-auth-312.md: resolveEbosToken() used to feed the
+// SSO exchange a static QSRSOFT_COGNITO_TOKEN/QSRSOFT_TOKEN — the same ~1h-TTL Cognito ID token
+// stale ~23/24 hours as a stored secret, no matter how often it's rotated. This was a genuinely
+// live bug: qsrsoft-inventory-history-pull.mjs already imports resolveEbosToken() from here, so it
+// was silently falling through to Playwright on nearly every run despite never appearing in
+// dispatch #82's own file-count (a grep for direct `process.env.QSRSOFT_TOKEN` reads misses a
+// script that only reads it indirectly through a shared lib). Now mints a fresh token per call via
+// getFreshToken() instead.
 
 import { chromium } from 'playwright';
+import { getFreshToken } from './qsrsoft-auth.mjs';
 
 export const EBOS_BASE = 'https://prod.ebos.qsrsoft.com';
 export const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -113,11 +122,13 @@ export async function getEbosTokenViaPlaywright() {
 // Playwright (last resort, mints fresh). Returns the token, or null if every rung failed — the
 // caller decides how to log/exit, since that message is naturally script-specific.
 export async function resolveEbosToken() {
-  const cognito = (process.env.QSRSOFT_COGNITO_TOKEN || process.env.QSRSOFT_TOKEN || '').trim();
-  if (cognito) {
+  try {
+    const cognito = await getFreshToken();
     const t = await getEbosTokenViaSso(cognito);
     if (t) { console.log('[auth] ✓ eBOS token via SSO exchange (fresh)'); return t; }
     console.log('[auth] SSO exchange did not return a token — trying fallbacks');
+  } catch (e) {
+    console.log(`[auth] getFreshToken() failed (${e.message}) — trying fallbacks`);
   }
   const envToken = (process.env.QSRSOFT_EBOS_TOKEN || '').trim();
   if (envToken) { console.log('[auth] falling back to static QSRSOFT_EBOS_TOKEN (may be stale)'); return envToken; }

@@ -6,6 +6,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { qualifiesForRestricted, searchTerms, buildMemorySearchResult } from './memory-kb.js';
+import { aggregateLifelenzLabor, LIFELENZ_LABOR_NOTE } from './lifelenz-labor-agg.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -352,24 +353,9 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     if (error) return `Database error: ${error.message}`;
     if (!data?.length) return `No LifeLenz schedule data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}.`;
 
-    const byStore: Record<string, { schVLH: number; needVLH: number; days: number }> = {};
-    for (const row of data) {
-      if (!byStore[row.loc]) byStore[row.loc] = { schVLH: 0, needVLH: 0, days: 0 };
-      const s = byStore[row.loc];
-      s.schVLH  += row.sch_vlh  || 0;
-      s.needVLH += row.need_vlh || 0;
-      s.days++;
-    }
-
-    const stores = Object.entries(byStore).map(([loc, s]) => ({
-      loc,
-      name:         STORE_NAMES[loc] || `Store ${loc}`,
-      sch_vlh:      +s.schVLH.toFixed(1),
-      need_vlh:     +s.needVLH.toFixed(1),
-      gap_vlh:      +(s.schVLH - s.needVLH).toFixed(1),
-      avg_daily_gap: +(( s.schVLH - s.needVLH) / (s.days || 1)).toFixed(1),
-      days:         s.days,
-    })).sort((a, b) => Math.abs(b.gap_vlh) - Math.abs(a.gap_vlh));
+    // #82 / memory/dispatch-82.md Part B — see lifelenz-labor-agg.js for the bug this fixes
+    // (gap_vlh had no period in its name and SAGE read the window total as a daily rate).
+    const stores = aggregateLifelenzLabor(data, STORE_NAMES);
 
     const sc = applyScope(stores, allowed);
     return JSON.stringify({
@@ -377,7 +363,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       district_store_count: stores.length,
       stores: sc.stores,
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
-      note: 'gap_vlh = sch_vlh - need_vlh. Positive = over-scheduled. Negative = under-staffed.',
+      note: LIFELENZ_LABOR_NOTE,
     });
   }
 
