@@ -184,6 +184,10 @@ never exercise `computePromoDiscountRoi`'s own default:
   reproduced first, to confirm the bias is real before trusting the fix), **0/16 stores negative**,
   **16 of 27 candidate stores scored** — matching the finding's own Measurement 2 numbers exactly,
   now reached through the real call site instead of a direct `matchedLift` override.
+  ⚠️ **That 16/27 is a property of THIS FIXTURE, not of the dollar split** — see the correction
+  above. The construction uses binary spend ($400 heavy / $100 light), and two distinct values
+  give a median split almost no resolution. With continuously varying spend the same call site
+  scores **27 of 27**.
 
 ### The "known trade-off" is now surfaced, not just documented
 
@@ -202,7 +206,13 @@ override:
 1. The percentage split still attenuates the known effect to ~5.9% (proves the mechanism is real
    and the simulation is faithful).
 2. `computePromoDiscountRoi`'s default recovers ~9.7% essentially unbiased, 0 negative stores.
-3. The store-count trade-off is real (16 of 27 `nCandidates`) but not a collapse (still > 10).
+3. ~~The store-count trade-off is real (16 of 27 `nCandidates`) but not a collapse (still > 10).~~
+   ⚠️ **REPLACED.** This test asserted `byStore.length < nCandidates` — it *required* the fix to
+   score fewer stores, locking a fixture artifact in as a design property, so it would fail the
+   day the test data got more realistic. Split into two: one asserting `nCandidates` is exposed
+   (so the panel can disclose "scored N of M"), one asserting **27 of 27** on continuously-varying
+   spend. A third test now pins the default `intensityField` to the dollar field, since it was
+   still `'promoPct'` after the fix and no caller-independent guard existed.
 
 Confirmed revert-sensitive: temporarily reverted the engine's `intensityField` back to
 `'promoPct'` and watched tests 2 and 3 fail with the exact predicted biased numbers (5.86% mean
