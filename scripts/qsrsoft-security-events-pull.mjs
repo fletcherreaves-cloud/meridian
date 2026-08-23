@@ -58,7 +58,27 @@ import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 import { EVENT_TOKENS, storeRefFromLoc, parseSecurityEventRows } from '../src/engine/security-events.js';
+import { createHash } from 'node:crypto';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+
+// Identity fingerprint -- hash of the token's `sub` + `cognito:username`. Logged ONCE per run so a
+// CI run can be compared against a local one for "is this even the same Cognito account?" without
+// printing any identifier. Same construction as scripts/probe-security-token-identity.mjs, so the
+// two lines are directly comparable by eye.
+//
+// Why this exists: on 2026-08-23 the pull 403'd with AccessDenied on all 216 units while the probe,
+// on the SAME MACHINE with the same code path, returned 200. Token, headers, body shape, date,
+// store, network and request rate were each eliminated as the variable. The remaining difference is
+// WHERE the credentials come from -- the runner reads QSRSOFT_USERNAME/PASSWORD from GitHub
+// Secrets, an interactive run reads them from the shell. If those are two different QSRSoft
+// accounts, this line will differ between the two runs and the original entitlement finding
+// (memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md) is correct after all.
+const identityFp = token => {
+  try {
+    const c = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return createHash('sha256').update(`${c.sub || ''}|${c['cognito:username'] || ''}`).digest('hex').slice(0, 12);
+  } catch { return '(unparseable)'; }
+};
 
 const BASE = 'https://api.security.myqsrsoft.com';
 const ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -210,6 +230,15 @@ async function runSecurityEvents(token, dates, tracker) {
   const collected = [];
   const coveredStores = new Set();
   let loggedShapeThisRun = false;
+  try {
+    const idTok = await resolveToken(token, false);
+    console.log(`[secevents-pull] IDENTITY ${identityFp(idTok)} — hash of sub + cognito:username.`
+      + ' Compare with scripts/probe-security-token-identity.mjs run locally; a DIFFERENT value means'
+      + ' the runner and your shell are authenticating as different QSRSoft accounts.');
+  } catch (e) {
+    console.log(`[secevents-pull] IDENTITY unavailable (${e.message})`);
+  }
+
   for (const date of dates) {
     for (const nsn of STORE_NSNS) {
       const storeRef = storeRefFromLoc(String(nsn));

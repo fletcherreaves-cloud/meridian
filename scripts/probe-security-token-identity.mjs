@@ -30,6 +30,17 @@ import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 // real value, and it fingerprints the WHOLE token rather than one end of it.
 const fp = t => createHash('sha256').update(t).digest('hex').slice(0, 12);
 
+// WHO the token belongs to, as a comparable hash. `sub` and `cognito:username` identify the
+// Cognito principal; hashing them lets a local run and a CI run be compared for "same account?"
+// without either printing an identifier. Exported shape is deliberately identical to the one
+// scripts/qsrsoft-security-events-pull.mjs logs, so the two lines can be diffed by eye.
+export const identityFp = token => {
+  try {
+    const c = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return createHash('sha256').update(`${c.sub || ''}|${c['cognito:username'] || ''}`).digest('hex').slice(0, 12);
+  } catch { return '(unparseable)'; }
+};
+
 const ORG_ID    = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const STORE_REF = '35064';                 // the store the working curl used
 const DATE      = process.env.PROBE_DATE || '2026-08-15';
@@ -91,6 +102,7 @@ async function attempt(label, token, body = BODY) {
   console.log(`\n── ${label} ──`);
   console.log(`   token length : ${d.len}`);
   console.log(`   sha256[0:12] : ${fp(token)}   <-- same value in two rows = literally the same token`);
+  console.log(`   IDENTITY     : ${identityFp(token)}   <-- hash of sub + cognito:username; compare against the pull's line`);
   console.log(`   claim NAMES  : ${d.claimNames}`);
   console.log(`   cognito:groups: ${d.groups}`);
   console.log(`   age / ttl    : ${d.ageSec}s old, ${d.ttlLeftSec}s left`);
