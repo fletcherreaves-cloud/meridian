@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-dt-timer-endpoint-2026-08-21
 description: Owner-captured QSRSoft dt-timer endpoint - whole-estate drive-thru timer segments (greet/order/line/window) plus an OEPE DISTRIBUTION (counts under 90/120/150/180/210s), all 27 stores in ONE request, business-day aligned via compType=trading. Logged for a future pull. Includes four measured caveats that would each produce a wrong number if read naively.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

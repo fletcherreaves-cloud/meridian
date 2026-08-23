@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-employee-roster-endpoint-2026-08-21
 description: Owner-captured QSRSoft employee-roster endpoint. ANSWERS dispatch #56 Part B - storeStartDate and orgStartDate are the hire dates, and they are DIFFERENT things. Also resolves the time-punches jobTitleCode mapping. Returns the most sensitive payload in this system - SSN, home address, DOB, race, gender, pay rate - so the selectCols allowlist here is a hard security control, not a preference.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

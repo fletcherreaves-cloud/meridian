@@ -1,6 +1,7 @@
 ---
 name: finding-cfv-predictability-ceiling-2026-08-22
 description: 217 CFV visits (2023-2026) from Propel's getCfvHistory, validated against Propel's own published card. A store's CFV score has essentially NO relationship to its own next CFV score (rho=+0.023, n=190, CI [-0.12,+0.17]) and store identity explains only ~9% of the variance. That caps ANY store-level predictor at rho~0.30 -- so Visit Readiness's 0.23, captioned "weak agreement", is running at roughly 78% of the achievable maximum.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

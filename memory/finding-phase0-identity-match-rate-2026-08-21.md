@@ -1,6 +1,7 @@
 ---
 name: finding-phase0-identity-match-rate-2026-08-21
 description: Dispatch #49's Phase 0 gate, measured. 85.7% of employee names resolve to exactly one empID, row 5 is proven a coverage artifact rather than a real ID-less population, and rows 3-4 quantify a defect nobody had measured - 40 names currently merging distinct humans into one token and 14 IDs split across name variants. Recommendation is proceed, after closing a 48-day backfill tail.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

@@ -1,6 +1,7 @@
 ---
 name: finding-dispatch56-part-e-b-status-2026-08-21
 description: Where dispatch #56 Parts E (register + time of event) and B (employee start date) actually stand after PR #534's storeRef correction. Two of event_details' open questions are resolved (storeRef, auth); three are not, and none of them are answerable from inside this coding session -- they all need a live, authenticated QSRSoft DevTools capture, which this environment has no credentials for. Report before building, same discipline Part B's own brief already called for, extended here to Part E's remaining unknowns. No code shipped this pass.
+sensitivity: restricted
 metadata:
   node_type: memory
   type: finding

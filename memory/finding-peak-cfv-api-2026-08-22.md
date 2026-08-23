@@ -1,6 +1,7 @@
 ---
 name: finding-peak-cfv-api-2026-08-22
 description: peak.mcd.com is a SECOND, separate McD site from propel.mcd.com and it carries CFV and RGR visits. A captured RoipSurvey response gives per-QUESTION scores and TimerData score bands the current PDF parser does not have, plus a cycle handle that may make the owner's prior-year backfill a pull. Includes a correction — daypart/weekpart/channel are NOT new; Meridian already parses and stores all three, so the matched Model Check re-measure needs no new pull at all.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

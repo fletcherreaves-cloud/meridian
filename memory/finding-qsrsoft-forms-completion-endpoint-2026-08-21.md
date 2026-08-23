@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-forms-completion-endpoint-2026-08-21
 description: Owner-captured QSRSoft Forms completionByForm endpoint - shift-checklist / travel-path form submissions per form per store, with an answered-vs-total question count. Logged toward an owner-requested forms dashboard. A NEW third host family (forms.home.myqsrsoft.com). Records the measured gap between what the owner asked for and what this endpoint can answer - it cannot say "missed" and does not name the submitter - plus the store-ref cross-finding that corrects the event_details note.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

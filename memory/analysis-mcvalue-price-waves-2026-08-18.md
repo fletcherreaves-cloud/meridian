@@ -1,3 +1,12 @@
+---
+name: analysis-mcvalue-price-waves-2026-08-18
+description: Locates McValue 2.0 FBP price-round dates from qsr_product_mix tier-set changes and measures per-restaurant traffic difference-in-differences around them. Store- and menu-level only, no personnel content.
+sensitivity: open
+metadata:
+  node_type: memory
+  type: analysis
+---
+
 # McValue 2.0 FBP — price rounds located, and per-restaurant traffic DiD
 **Measured 2026-08-18. Source: `qsr_product_mix` (Queries B/B2) and
 `qsr_daily_activity_rollup` (Query C).** Companion to

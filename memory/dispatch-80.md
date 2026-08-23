@@ -101,3 +101,125 @@ unclassified file is not returned **at all**, to anyone.
 📌 Whoever builds this: the honest measure of success is not "SAGE can quote memory." It is
 "SAGE answers a restaurant question better than it did yesterday." Retrieval that surfaces the
 wrong document is worse than no retrieval, because it is confidently sourced.
+
+---
+
+## Resolution (2026-08-23)
+
+Built in the order the dispatch specifies. Gating and ingestion shipped in the same PR, per the
+"ship together or not at all" instruction.
+
+### 1. Classification
+
+Curated set = exactly the 32 files matching `finding-*`/`reference-*`/`analysis-*`/`design-*` in
+`memory/` (24+2+4+2), confirmed by direct listing rather than the dispatch's "roughly 30." A
+background research agent classified all 32 against a fixed rubric (`open` = general business
+insight; `restricted` = personnel-sensitive or loss-prevention narrative that could let a
+store-level reader identify a specific individual being scrutinized), with verbatim quotes and
+line numbers per file. Per this session's standing "a delegated agent's claim is a hypothesis
+until reproduced" rule -- warranted here given the personnel-sensitivity stakes -- I independently
+`grep`-verified the agent's 3 `restricted` calls and its two most personnel-adjacent `open` calls
+against the source files myself before trusting the classification. All checked out:
+
+- **`finding-padding-and-cash-hunt-2026-08-13.md`** -- restricted. Named GMs (Rachel D Couffer,
+  Lynsey Yahola, Brooklyn Southers, Matthew Timperley) tied to a specific store's termination
+  timeline and cash-control investigation. Also the only file in the curated set with no
+  frontmatter at all before this pass -- a full new block was written for it, not just a key
+  added.
+- **`finding-qsrsoft-event-details-endpoint-2026-08-21.md`** -- restricted. The captured sample
+  payload itself carries real plaintext names+badges (`"Aaden W - 91"`, `"Kristina O - 100"`) tied
+  to a specific register/time/security event; the file's own `## ⚠️ PII` header already flags
+  this.
+- **`finding-dispatch56-part-e-b-status-2026-08-21.md`** -- restricted. Discusses the same
+  `crew`/`mgr` badge fields from `event_details` in the context of a flagged cash finding --
+  cited by reference to the same name/badge exposure, at one store.
+- **`finding-qsrsoft-employee-roster-endpoint-2026-08-21.md`** and
+  `finding-qsrsoft-time-punches-endpoint-2026-08-21.md` -- open, despite titles that lead with
+  "returns SSN/name/DOB/pay." Verified directly: both are field-map warnings about what the
+  *endpoint* returns, with the sample itself redacted or anonymized (`<NAME>`, length-banded IDs
+  only). Describing a PII risk is not the same as containing PII.
+- **`analysis-mcvalue-price-waves-2026-08-18.md`** -- the other file with no frontmatter; open
+  (store/menu-level price analysis, no personnel content). Got a full new frontmatter block.
+
+Final tally: **29 open, 3 restricted**. All 32 files now carry `sensitivity:` frontmatter,
+independently confirmed by a script pass (`{open:29, restricted:3, missing:0}`).
+
+**⚠️ `profiles.role` reality check, and the resulting gating decision (a considered call, not a
+guess -- revisit on an explicit future ruling):** the SAGE-memory design doc
+(`memory/project-sage-knowledge-grounding.md`) specifies restricted content for "DO and above (DO,
+VP, Owner/OO, Admin, Developer)," matching CLAUDE.md's aspirational 8-tier RBAC table. Directly
+verified (`supabase/schema.sql:13`) that `profiles.role` has a DB-level `check (role in ('admin',
+'supervisor', 'manager'))` -- only 3 real values exist anywhere in the system. DO/VP/Owner/Developer
+have no DB value to check against. Resolved by gating `restricted` on **`role === 'admin'` only**
+-- the one real value that can stand in for "DO and above" while still honoring the design's
+explicit "Supervisor, GM and Office Staff do not receive them" instruction. This is stricter than
+`security-panel.js`'s existing `securityPanelAccess()` precedent (which grants both `admin` AND
+`supervisor`) -- a deliberate divergence for this specific, more recent, more sensitive policy, not
+an inconsistency to reconcile.
+
+### 2. Table + ingestion
+
+`supabase/schema-sage-memory-kb.sql` -- `sage_memory_kb`, shaped like `qsrsoft_kb`
+(filename/title/chunk_index/chunk_text), plus `tenant_id` + the same 4-policy tenant-scoped RLS
+pattern as `schema-multitenant-phase2-rls.sql` (this table can carry personnel-adjacent narrative,
+unlike `qsrsoft_kb`'s open vendor docs), and a DB-level `check (sensitivity in ('open',
+'restricted'))` so an `excluded`/unclassified row can never exist in the table at all.
+
+`scripts/sage-memory-ingest.mjs` -- hand-rolled frontmatter parser (no new npm dependency;
+confirmed none of gray-matter/js-yaml/yaml/front-matter are already a dependency). Scans
+`memory/{finding,reference,analysis,design}-*.md`, requires a valid `sensitivity` value, skips
+(fail-closed, logged) anything missing frontmatter or carrying an unrecognized value -- never
+classifies by keyword. Paragraph-aware chunking (~1400 char target, 1800 hard cap). Dry-run against
+the real 32-file corpus (no DB call) reproduced the exact 29 open / 3 restricted / 0 skipped split,
+228 total chunks. **Not run against live Supabase this pass** -- matches this repo's existing
+convention for schema/write scripts (`scripts/backfill-identity-vault.mjs`'s own comment: "the
+owner runs this manually against live Supabase"), and is itself the dispatch's designated review
+gate ("a file becomes visible to SAGE only when someone ships it"). Needs
+`supabase/schema-sage-memory-kb.sql` applied, then `VITE_SUPABASE_URL` +
+`SUPABASE_SERVICE_ROLE_KEY` (present in `.env.local`, not currently exported to this session's
+shell) and `node scripts/sage-memory-ingest.mjs`.
+
+### 3. Retrieval tool
+
+`search_project_memory` added to `supabase/functions/sage-chat/index.ts`'s `TOOLS`, `runTool()`
+extended to take a 4th `role` param (from `scope.role`, threaded from the existing server-derived
+RBAC scope -- never trusted from the client). Filters **in the SQL query itself**: a non-qualifying
+caller gets `.neq('sensitivity', 'restricted')` added to the query builder, so restricted rows are
+never fetched into the function at all for that caller -- not filtered out of an already-fetched
+array. This is measurably *stricter* than the existing `accessible_locs`/`applyScope()` pattern
+those other tools use, which fetches all stores unconditionally and filters in JS afterward; noting
+that explicitly since the dispatch asked to match the `accessible_locs` pattern and this exceeds
+it. Does **not** extend `index.ts:695`'s prompt-only `rbacBlock` guard to this data, per the
+dispatch's explicit instruction.
+
+Result-shaping (scoring, per-file dedup, excerpting, and a **defense-in-depth re-filter** of
+`rawRows` by `rowVisible()`) lives in a new plain-JS module, `supabase/functions/sage-chat/
+memory-kb.js` -- kept out of `index.ts` specifically so the same code that produces the tool's
+literal return value is importable by a Vitest test, since no Deno-edge-function test
+infrastructure exists in this repo.
+
+### 4. Curation
+
+32 files, all `finding-*`/`reference-*`/`analysis-*`/`design-*`. `CLAUDE.md` and all 63
+`dispatch-*.md` files are excluded by construction (the ingest script's prefix filter never
+matches them) -- not a manual exclusion list to maintain.
+
+### Verification
+
+`src/__tests__/sage-memory-kb.test.js`, importing `memory-kb.js` directly (the same module
+`index.ts` calls): a restricted row is withheld from `manager`/`supervisor` roles and returned to
+`admin` (proving the query *did* match it, so the withholding is the gate, not a query miss); an
+unclassified row (`sensitivity: undefined`) is withheld from every role including `admin`. Confirmed
+revert-sensitive: temporarily forcing `qualifiesForRestricted()` to always return `true` failed
+4/5 tests; reverted, all 5 pass again. Full suite 2114/2114 passing, build clean, entry-eager
+payload unaffected (this change is server/Deno-side + a script + a schema file, no client bundle
+impact).
+
+### Explicitly not done this pass (out of scope per the dispatch's own text)
+
+- `project-sage-knowledge-grounding.md`'s broader "write path" (promotion flow), subject-based
+  gating (`subject_locs`/`subject_people`), and mandatory handling-notice templates -- that design
+  doc has more scope than this dispatch asked for; dispatch #80 only requires the minimum-viable
+  `open`/`restricted`/`excluded` classification.
+- The live ingest run itself (see above).
+- Widening the curated set beyond the 32-file first pass.

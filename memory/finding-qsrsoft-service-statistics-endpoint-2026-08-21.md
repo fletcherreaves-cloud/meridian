@@ -1,6 +1,7 @@
 ---
 name: finding-qsrsoft-service-statistics-endpoint-2026-08-21
 description: Owner-captured QSRSoft service/statistics endpoint - the richest of the four service captures and the one that largely SUPERSEDES dt-timer. Every metric ships its own Total/Trans denominator pair plus a Masked count, covers DT/front-counter/kitchen/beverage/kiosk/RTP, and carries ly. twins. Milliseconds, unlike dt-timer. Read before scoping any service-times pull.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

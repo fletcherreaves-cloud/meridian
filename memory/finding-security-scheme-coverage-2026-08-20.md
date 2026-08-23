@@ -1,6 +1,7 @@
 ---
 name: finding-security-scheme-coverage-2026-08-20
 description: Coverage matrix of the ten loss schemes named in plan-security-loss-prevention.md against what the build actually detects. One is built. The most-cited scheme in the plan's own research (post-tender void skimming) is unbuilt and blocked on data plus a stubbed engine type. Two inventory schemes are buildable today with data already pulled, and one already has measured evidence pointing at it.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

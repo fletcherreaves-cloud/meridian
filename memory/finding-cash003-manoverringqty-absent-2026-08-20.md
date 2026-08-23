@@ -1,6 +1,7 @@
 ---
 name: finding-cash003-manoverringqty-absent-2026-08-20
 description: Measured negative result. manOverringQty does not exist in the Register Audit API response - 0 of 19,985 backfilled rows carry a value. CASH-003's count-rule redesign assumed that field name by pattern-matching; the assumption is now disproven and the rule is blocked on finding the real field name or establishing there is none. Also records the lifecycle-enrichment reconciliation, where the PM's own 5x claim was measured down to 1.8x.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding

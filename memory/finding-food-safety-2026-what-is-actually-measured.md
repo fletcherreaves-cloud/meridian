@@ -1,6 +1,7 @@
 ---
 name: finding-food-safety-2026-what-is-actually-measured
 description: What McDonald's Food Safety Verification / EcoSure actually assesses (FS-A through FS10, Jan 2026 guide) — temperatures, pests, handwashing, shelf life, checklist competence. Proves Visit Readiness's "Food Safety" flag, which derives from waste and inventory variance, measures none of it. Names the Daily Food Safety Checklist (DFS app) as the real data source.
+sensitivity: open
 metadata:
   node_type: memory
   type: finding
