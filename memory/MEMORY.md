@@ -84,13 +84,25 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **🔑 NEWEST (2026-08-24): [Supabase key rotation complete](handoff-2026-08-24-key-rotation.md)** —
-  **Start here.** Legacy API keys **disabled at `2026-08-24T14:53:50Z`**; everything is on
+- **📋 NEWEST (2026-08-24): [Dispatch #90 — SAGE's OT window mis-ranks stores; labor-% basis SETTLED](dispatch-90.md)** —
+  **Start here.** SAGE's labor % (crew/punched, excluding salaried managers) is confirmed CORRECT
+  and matches `#327` — do not "fix" it to include managers. The real bug: SAGE's OT figure is a
+  60-day pull halved, which **mis-ranks stores** (Madill is actually #1 in district OT, SAGE showed
+  it 5th at 59% of real value; district total was fine, ranking wasn't). Also: Seminole (10915)
+  missing from the under-staffed list, and a measured (not-a-correction-factor) 2.7× gap between
+  LifeLenz's `need_vlh` and Controls' `Act vs Need` at Ada. Verification bar: assert on OT
+  **ordering**, not just totals.
+- **🔑 (2026-08-24): [Supabase key rotation complete](handoff-2026-08-24-key-rotation.md)** —
+  Legacy API keys **disabled at `2026-08-24T14:53:50Z`**; everything is on
   `sb_publishable_…` / `sb_secret_…`. The variable NAMES were kept (so 36 workflows + 3 edge
   functions needed no edit) and therefore now describe their contents inaccurately. Site, SAGE and
-  the GitHub pulls all verified post-cutover. **Two things that will mislead you if unread:**
-  CLAUDE.md's `*/0` access table was measured with a now-dead key, and **a working SAGE does NOT
-  prove #85's truncation fix shipped** — a single-day question is 648 rows, under the 1000 cap.
+  the GitHub pulls all verified post-cutover. ✅ **UPDATE: the sage-chat deploy is DONE** (was
+  flagged open in this file's first version — do not re-raise). Verified against the actual
+  distinguishing test: a 30-day pre-deploy SAGE question truncated to ~1.5 days/store (matches
+  `1000 ÷ 648` rows exactly), post-deploy it returned full 30-day data for all 27 stores. The
+  earlier caution stands as a general lesson even though this instance is resolved: **a working
+  SAGE answer alone does NOT prove a truncation fix shipped** — a single-day question is only 648
+  rows, under the 1000-row cap either way, so it can't distinguish fixed from broken.
 - **🔑 HANDOFF (2026-08-24): [service-role key installed — two questions unblocked](handoff-2026-08-24-service-role.md)** —
   **NEWEST. Start here if you are a fresh session.** The owner installed
   `SUPABASE_SERVICE_ROLE_KEY`; a running session's environment is fixed at container start, so the
