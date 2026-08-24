@@ -1,0 +1,67 @@
+name: QSRSoft Security Token Identity Probe
+
+# Dispatch #91 -- read-only, workflow_dispatch-only, self-hosted runner ONLY. Runs
+# scripts/probe-security-token-identity.mjs, which isolates whether api.security's persistent
+# 403 (memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md,
+# memory/dispatch-63.md, memory/dispatch-91.md) is about the TOKEN, the request BODY shape, the
+# pull's own request BUILDERS, or -- Case F, added for this dispatch -- the pull's actual LOOP
+# running in a cold process with an already-proven-good token injected instead of self-minted.
+#
+# MUST run on the self-hosted runner (same pin as qsrsoft-security-events-pull.yml): every
+# measurement that has ever returned 200 on this investigation ran from the owner's own Mac
+# mini/network. Running this on a hosted runner would reintroduce the exact variable (network
+# origin) the earlier dispatch-63 correction identified and this probe exists to hold constant.
+#
+# Prints NO token values anywhere -- only sha256 prefixes, lengths, claim NAMES, and
+# cognito:groups (group names, not credentials). See the script's own header comment and
+# memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md's "What is NOT included
+# here" section for the standing privacy bar this must not violate.
+#
+# No Supabase env is passed -- this script makes no writes and Case F's runSecurityEvents() call
+# is scoped to one store/date/event_token, never touching qsr_security_events.
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_store:
+        description: 'NSN for cases A-E (default: 35064, the only store every prior success used)'
+        required: false
+        default: ''
+      probe_date:
+        description: 'YYYY-MM-DD for cases A-E (default: 2026-08-15)'
+        required: false
+        default: ''
+      inject_store:
+        description: 'NSN for case F -- the pull''s own first-failing unit (default: 3708)'
+        required: false
+        default: ''
+      inject_date:
+        description: 'YYYY-MM-DD for case F (default: 2026-08-22, the date #623 measured)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, qsr-security]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Token-identity probe (cases A-F, dispatch #63 + #91)
+        run: node scripts/probe-security-token-identity.mjs
+        env:
+          QSRSOFT_USERNAME:     ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:     ${{ secrets.QSRSOFT_PASSWORD }}
+          PROBE_STORE:          ${{ github.event.inputs.probe_store  || '' }}
+          PROBE_DATE:           ${{ github.event.inputs.probe_date   || '' }}
+          PROBE_INJECT_STORE:   ${{ github.event.inputs.inject_store || '' }}
+          PROBE_INJECT_DATE:    ${{ github.event.inputs.inject_date  || '' }}

@@ -26,7 +26,7 @@ import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 // The PULL's own request builders. Importing them (rather than copying) means case D exercises
 // the exact code the failing pull runs -- if D fails where A succeeds, the difference is inside
 // these two functions and nowhere else.
-import { buildUrl, buildBody, fetchOne } from './qsrsoft-security-events-pull.mjs';
+import { buildUrl, buildBody, fetchOne, runSecurityEvents } from './qsrsoft-security-events-pull.mjs';
 
 // Short fingerprint for answering "are these the SAME token?" without printing any part of one.
 // A raw tail (last N chars) would also work as a comparator, but this repo's standing rule is
@@ -198,6 +198,58 @@ if (results.minted === 200) {
   } catch (e) { console.log(`   ✗ threw: ${e.message}`); }
 }
 
+// ── CASE F: dispatch #91's token-injection test. Case E showed fetchOne() called DIRECTLY
+// returns 200 from this shell. But the pull's own COLD, standalone process (a real scheduled or
+// workflow_dispatch run of qsrsoft-security-events-pull.mjs by itself) 403s on its very first
+// unit. Those are not the same test: Case E calls fetchOne() as one function call; the pull's
+// failure comes from running its actual LOOP (runSecurityEvents()) in a process where nothing
+// else has run first. This case closes that gap -- same process as Case E (so the token this
+// injects is proven-good, per Case A/E's own 200s above), but routed through the pull's REAL
+// loop machinery: module-level IDENTITY logging, resolveToken()'s function/string branch, the
+// per-unit retry-on-401 gate, everything. The one thing forced constant is the CREDENTIAL --
+// runSecurityEvents() normally receives the getFreshToken FUNCTION and mints its own token per
+// unit; here it receives the already-obtained STRING instead, so resolveToken() short-circuits
+// and returns it unchanged (dispatch #91's "inject the token" instruction, made literal).
+//
+// Scoped to ONE store/date/event_token -- the pull's own documented first-failing unit (store
+// 3708, per #623's commit body) -- not the full 216-unit sweep, since this is a one-variable
+// check, not a re-run of the whole pull. tracker is a local stub: runSecurityEvents() only calls
+// .fail(unit, message), never .finalize() internally, so nothing more is needed and nothing here
+// touches Supabase (no VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY required for this case).
+if (results.minted === 200) {
+  console.log('\n── F) dispatch #91: the PULL\'s own runSecurityEvents() loop, SAME already-obtained token ──');
+  const INJECT_STORE = Number(process.env.PROBE_INJECT_STORE || 3708); // the pull's own first unit, #623
+  const INJECT_DATE  = process.env.PROBE_INJECT_DATE || '2026-08-22';  // the exact date #623 measured
+  console.log(`   store / date : ${INJECT_STORE} / ${INJECT_DATE}  (the pull's documented first-failing unit)`);
+  const failures = [];
+  const trackerStub = { fail: (unit, message) => failures.push({ unit, message }) };
+  try {
+    const injectedTok = await getFreshToken(); // proven-good in this SAME process by Case A/E above
+    const { collected, coveredStores } = await runSecurityEvents(
+      injectedTok, [INJECT_DATE], trackerStub,
+      { stores: [INJECT_STORE], eventTokens: ['all_promo'] },
+    );
+    const loc = String(INJECT_STORE).padStart(7, '0');
+    if (failures.length) {
+      results.injectedLoop = 403; // AUTH_FAILED is the only failure shape this loop throws for a 401/403
+      console.log(`   ✗ the loop's own tracker recorded a failure: ${failures[0].message}`);
+    } else if (coveredStores.has(loc) || collected.length) {
+      results.injectedLoop = 200;
+      console.log(`   ✓ succeeded through the loop -- ${collected.length} row(s) collected`);
+    } else {
+      // No failure AND no rows/coverage: a genuine 200-with-zero-rows day. Not the 403 this test
+      // is checking for, but also not evidence of success on THIS unit -- say so plainly rather
+      // than picking a verdict a bare boolean can't actually support.
+      results.injectedLoop = 'empty';
+      console.log('   ⚠ no failure recorded, but no rows/coverage either -- ambiguous (a genuine zero-row');
+      console.log('     day would look identical to this). Re-run with a date more likely to carry events.');
+    }
+  } catch (e) {
+    console.log(`   ✗ threw: ${e.message}`);
+    results.injectedLoop = 'threw';
+  }
+}
+
 const browserToken = (process.env.BROWSER_TOKEN || '').trim();
 if (browserToken) {
   tokenFps.browser = fp(browserToken);
@@ -245,6 +297,21 @@ if (results.minted === 200 && results.unscoped === 403) {
   console.log('   Body scope is NOT the variable -- both shapes work from here. The runner 403s');
   console.log('   must come from something else (date? store? concurrency?). Do not guess: the');
   console.log('   next probe should vary date and store one at a time.');
+}
+if (results.injectedLoop === 200) {
+  console.log('   🎯 dispatch #91: INJECTED TOKEN SUCCEEDED THROUGH THE LOOP. The token itself was fine --');
+  console.log('   something about the pull\'s own request-construction or module state is the variable.');
+  console.log('   Look at what differs between this probe\'s call site and the pull\'s cold-process loop:');
+  console.log('   module-level imports/side effects are the finding file\'s own lead. Do NOT file a');
+  console.log('   QSRSoft support ticket yet -- this points at code/context, not entitlement or network.');
+} else if (results.injectedLoop === 403) {
+  console.log('   🎯 dispatch #91: STILL 403 WITH AN INJECTED, PROVEN-GOOD TOKEN. The token is not the');
+  console.log('   variable -- the difference is below what code-level injection can isolate. Proceed to');
+  console.log('   the packet capture (dispatch-91.md\'s test 2): capture this failing call and a Case E');
+  console.log('   success back to back and diff them byte-for-byte at the wire level.');
+} else if (results.injectedLoop === 'empty' || results.injectedLoop === 'threw') {
+  console.log('   ⚠️ dispatch #91: case F was inconclusive this run (see the F) block above for why).');
+  console.log('   Re-run -- ideally with PROBE_INJECT_DATE set to a day already confirmed to carry rows.');
 }
 if (results.browser === undefined) {
   console.log('   Only the minted token was tested. Re-run with BROWSER_TOKEN set to isolate the variable.');
