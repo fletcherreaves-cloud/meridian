@@ -12,7 +12,7 @@ metadata:
 **Reads first:** CLAUDE.md's *"Supabase egress is now allowlisted"* paragraph, and
 `memory/dispatch-88.md`'s Resolution, item 1.
 
-**Status:** items 1–3 ready, no owner decision. Item 4 is the owner's call, framed.
+**Status:** items 1–3 ready, no owner decision. **Item 4 is DECIDED by the owner (option A) — read it, implement nothing; he installs the key.**
 
 ⚠️ This dispatch is about a claim in **already-merged** code. Nothing needs reverting. What needs
 doing is re-establishing whether one measurement behind it was real.
@@ -100,24 +100,59 @@ about what the table contains.
 Keep it to a few lines inside the existing rule. **Do not** write a new standing rule section —
 this repo's failure mode is rules nobody reads, not rules that don't exist.
 
-## Item 4 — the durable fix (owner decision, do not implement)
+## Item 4 — ✅ DECIDED 2026-08-24 by the owner: **option A, a `service_role` key in the agent environment.** Do not implement; the owner installs it.
 
-Every dispatch requiring a live measurement is blocked until this changes. Present the options and
-stop; do not pick one:
+**The owner chose A over this dispatch's recommendation of C, after the trade-offs were put to him
+and the framing error below was corrected.** That is his call and it is settled — do not re-argue
+it, and do not treat the recommendation history as an open question.
 
-- **A read-only service-role key** in the agent environment. Most capable, and the largest blast
-  radius — a service-role key bypasses RLS entirely, so it is a real secret with real consequences
-  if it leaks into a log, a fixture, or a memory file. Note that the owner already has an
-  **unrotated** service-role key pending from an earlier session; that decision and this one are
-  related and should be made together, not separately.
-- **A scoped read-only policy** for an agent role over the operational tables. Narrower, safer,
-  more setup, and needs a decision about which tables.
-- **Neither — the owner measures.** Costs a round-trip per question, and given how many questions
-  are one query, that may genuinely be right. It is not a non-answer.
+⚠️ **A framing error in the original of this section, corrected — it made the riskiest option look
+like the mildest.** It offered *"a **read-only** service-role key"* as the first option. **There is
+no such thing.** Supabase's `service_role` key bypasses RLS entirely, for **writes as well as
+reads**. Genuinely read-only access is not a weaker service-role key; it is a separate Postgres
+role with SELECT-only grants and a JWT carrying it — which was the *second* option, not a lighter
+version of the first. **A was chosen knowing it is full read/write with RLS bypassed.**
 
-**Recommendation: put it to the owner with the trade-offs, and note that today's de-facto answer
-is already the third option** — every measurement in the last three days that mattered came from
-him. Making that explicit is worth more than pretending the agent has access it does not.
+| | what it is | outcome |
+|---|---|---|
+| **A** | `service_role` key in the agent env — full read **and write**, RLS bypassed | ✅ **CHOSEN by the owner** |
+| **B** | dedicated Postgres role, SELECT-only grants, JWT | not pursued |
+| **C** | the owner runs the query | was this dispatch's recommendation; **overruled** |
+
+### 🔴 The one detail that is dangerous to get wrong
+
+The variable **must** be named `SUPABASE_SERVICE_ROLE_KEY` — **never** with a `VITE_` prefix.
+Vite bundles every `VITE_`-prefixed variable into the **public client JS**, and `vite.config.ts`
+does not override `envPrefix`, so `VITE_SUPABASE_SERVICE_ROLE_KEY` would ship the key to every
+browser that loads the app. The unprefixed name is already the repo's convention
+(`scripts/lifelenz-pull.mjs`, `scripts/qsrsoft-roster-stats-pull.mjs`), so consistency and safety
+point the same way here. `.gitignore` already covers `.env*`.
+
+### Operating rules for the key, binding on every session
+
+1. **Reads only.** No write, update, upsert, or delete with this credential without the owner's
+   explicit approval **for that specific operation**. It bypasses RLS, so a careless write is
+   unbounded — there is no policy underneath to catch it.
+2. **Never echo the value.** Not into a commit, memory file, fixture, log, PR body, test snapshot,
+   or a message to the owner. Report **observations** (`content-range: */27`), never the secret.
+3. **Claims still name credential and observation** — item 3's rule does not relax because access
+   now exists. It gets *more* important: a session with a working key can produce a wrong number
+   as easily as a session without one produced an invented claim.
+4. **RLS is bypassed, so reads are unfiltered by tenant** — including personnel data in the roster
+   and schedule tables. The standing posture holds unchanged: crew and manager names are personnel
+   data, **field names only**, never values into memory files or fixtures.
+
+### Rotation now touches TWO places
+
+`SUPABASE_SERVICE_ROLE_KEY` exists as a **GitHub Secret** (the pull workflows) and now in the
+**agent environment**. A rotation that updates only one breaks the other — scheduled workflows
+start failing, or the agent env goes dark. Update both in the same sitting.
+
+**Still open, and NOT closed by this decision:** the unrotated service-role key pending from an
+earlier session. The owner has deliberately deferred it (*"not worried about rotating key just
+yet… we can work through that and rotate later"*) — that is a conscious deferral, not an oversight,
+and it should not be re-raised as urgent. It is recorded here only so the two-places fact above is
+attached to it when the rotation does happen.
 
 ## Verification bar
 
