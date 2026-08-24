@@ -55,7 +55,14 @@ function renderNavTexts(permFn) {
 // -- owner-confirmed replacing the earlier "Forecast Reconciliation" proposal -- as the tool grew
 // a real date-range control plus a genuine backward-looking accuracy view. Only that one label
 // text changed; position (tkOrder 11, still kind:'test-kitchen') is untouched.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🌉','MBI vs LifeLenz Accuracy','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-08-24 for dispatch #106 Phase B: fcst-accuracy ("Forecast Accuracy")
+// and lifelenz-bridge ("MBI vs LifeLenz Accuracy") merged into one new test-kitchen entry,
+// forecast-reports ("Forecast Reports", tkOrder 5 -- fcst-accuracy's old slot). Both former
+// entries flipped to kind:'hub-tab', which renders NOWHERE in the sidebar (same as
+// sched-summary/labor-analytics), so their old labels/icons ('Forecast Accuracy', 🌉/'MBI vs
+// LifeLenz Accuracy') drop out of this snapshot entirely, replaced by one 'Forecast Reports'
+// entry at Test Kitchen's tkOrder-5 slot.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -110,7 +117,11 @@ const HIDDEN_WHEN_DENIED = {
   'analytics.brief': ['Daily Brief', 'Forecast Brief', '☀️', '🔭'],
   'analytics.dashboard': ['Calendar', 'Event Impact', 'My Reports', '📈'],
   'analytics.district': ['Above-Store One-Pager', 'District View', 'EOM Supervisor', 'Inventory Control', 'Opportunity $', 'Org Summary', 'Top/Bottom Performers', '⊞', '💰'],
-  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', 'MBI vs LifeLenz Accuracy', '▦', '◎', '◑', '🌉', '📐', '🔬'],
+  // dispatch #106 Phase B (2026-08-24): 'Forecast Accuracy' and 'MBI vs LifeLenz Accuracy' no
+  // longer render as their own nav text at all (both are now kind:'hub-tab', which renders
+  // nowhere in the sidebar) -- replaced by the merged 'Forecast Reports' entry. '🌉' had no
+  // other owner so it drops out of this hidden-set entirely, not just off this one label.
+  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Audit', 'Forecast Models', 'Forecast Reports', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', '▦', '◎', '◑', '📐', '🔬'],
   'analytics.labor': [],
   // Dispatch #77 -- '🏆' dropped out of this list: it used to uniquely belong to 'Rankings' and
   // 'Record Days' (both perm analytics.store), so denying analytics.store removed every 🏆 text
@@ -154,17 +165,23 @@ describe('AppSidebar permission gates survive the Job B section-driven render', 
   });
 });
 
-// ── Dispatch #55 Part A ──────────────────────────────────────────────────────
-// Part A is pure metadata (three section: corrections + a section-label rename, all inert
-// while every forecasting-section member stays kind:'test-kitchen') plus one cosmetic rename.
-// Its verification bar is therefore much tighter than Job B's: the nav must be IDENTICAL to
-// the pre-Part-A baseline except for exactly the one renamed label, in either direction.
+// ── Dispatch #55 Part A (SUPERSEDED 2026-08-24 by dispatch #106 Phase B) ─────────────────────
+// Part A was pure metadata (three section: corrections + a section-label rename, all inert
+// while every forecasting-section member stayed kind:'test-kitchen') plus one cosmetic rename,
+// verified below by "the nav moves by exactly one renamed label, in either direction." That
+// bar no longer describes live behavior: dispatch #106 Phase B converted lifelenz-bridge from
+// kind:'test-kitchen' to kind:'hub-tab', which renders in NEITHER the regular sections NOR
+// Test Kitchen (see panelsForSection/testKitchenPanels in panel-registry.js) -- so
+// POST_PART_A_LABEL ('MBI vs LifeLenz Accuracy') no longer renders standalone in ANY
+// dimension, not just under betaMode. The panel itself is unchanged and still reachable, now
+// as one of ForecastReportsPanel's two internal tabs (exercised by App.js-level tests, not
+// this sidebar-only render). Updated to assert the new invariant rather than delete the
+// history -- PRE_PART_A_LABEL and POST_PART_A_LABEL constants are kept for their doc value.
 
-describe('Part A membership diff -- the nav moves by exactly one renamed label', () => {
-  it('loses PRE_PART_A_LABEL and gains POST_PART_A_LABEL, nothing else, across every dimension', () => {
-    // full-access / betaMode-on / betaMode-off / optional-panels-visible, per the dispatch's
-    // own verification bar. betaMode is a prop AppSidebar reads directly (not exercised by
-    // renderNavTexts's fixed props above), so build each dimension's props explicitly here.
+describe('Part A membership diff (superseded) -- neither the old nor the renamed label renders standalone any more', () => {
+  it('PRE_PART_A_LABEL and POST_PART_A_LABEL are both absent, across every dimension', () => {
+    // full-access / betaMode-on / betaMode-off / optional-panels-visible -- same four
+    // dimensions Part A's own verification bar used, kept for continuity.
     const base = {
       view: 'command', setView: () => {}, selStore: 'X', stores: [], ds: {},
       settings: { districtName: 'Test' }, onOpenModal: () => {}, onLoadFiles: () => {},
@@ -181,12 +198,10 @@ describe('Part A membership diff -- the nav moves by exactly one renamed label',
         .map(s => s.trim().replace(/&amp;/g, '&')).filter(Boolean);
       const hasPre = texts.includes(PRE_PART_A_LABEL);
       const hasPost = texts.includes(POST_PART_A_LABEL);
-      expect(hasPre, `[${label}] '${PRE_PART_A_LABEL}' must not survive the rename`).toBe(false);
-      // lifelenz-bridge is kind:'test-kitchen', so under betaMode:true it is beta-hidden like
-      // every other Test Kitchen panel -- the renamed label correctly does NOT render there,
-      // same as it wouldn't have under its old name. Only the non-beta dimensions must gain it.
-      const expectPost = !props.betaMode;
-      expect(hasPost, `[${label}] '${POST_PART_A_LABEL}' visibility`).toBe(expectPost);
+      expect(hasPre, `[${label}] '${PRE_PART_A_LABEL}' must not render standalone`).toBe(false);
+      // dispatch #106 Phase B: kind:'hub-tab' renders nowhere in the sidebar, in every
+      // dimension -- unlike the old kind:'test-kitchen' behavior this block used to assert.
+      expect(hasPost, `[${label}] '${POST_PART_A_LABEL}' must not render standalone (folded into 'Forecast Reports')`).toBe(false);
     }
   });
 
@@ -196,8 +211,12 @@ describe('Part A membership diff -- the nav moves by exactly one renamed label',
     const testKitchenIds = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
     // Dispatch #77 added 'Top/Bottom Performers' as a real new test-kitchen panel (12th) --
     // bumped from 11, a deliberate census change, not drift. Opportunity $ v1 adds a 13th,
-    // same reasoning (memory/design-opportunity-dollars.md).
-    expect(testKitchenIds.length, 'ratchet: Part A must not change the Test Kitchen census').toBe(13);
+    // same reasoning (memory/design-opportunity-dollars.md). Dispatch #106 Phase B (2026-08-24)
+    // then merged fcst-accuracy + lifelenz-bridge into one new test-kitchen entry,
+    // forecast-reports -- 13 - 2 + 1 = 12. This test's own name ("Part A must not change...")
+    // predates that merge; the ratchet still belongs here as the single place the current
+    // census is asserted.
+    expect(testKitchenIds.length, 'ratchet: ids may change (dispatch #106 merged two into one), the CENSUS must not drift silently').toBe(12);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -233,8 +252,10 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all thirteen current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
-    expect(testKitchenPanels.length).toBe(13);
+  it('covers all twelve current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+    // 13 -> 12: dispatch #106 Phase B merged fcst-accuracy + lifelenz-bridge (both
+    // kind:'test-kitchen') into one new kind:'test-kitchen' entry, forecast-reports.
+    expect(testKitchenPanels.length).toBe(12);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {

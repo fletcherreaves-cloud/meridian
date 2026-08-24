@@ -3371,7 +3371,14 @@ function groupForecastDaysByWeek(dailyRows, wsd){
 // Per-store, per-model MAPE backtest over any period.
 // Models: LY Adjusted | AI Forecast | Simple Blend | Dialed-In (if calibrated)
 // Data: ds.laborRows (actuals) × forecastDay() (model outputs)
-function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
+// headerTabs (dispatch #106 Phase B) — optional node rendered in this panel's own title bar,
+// used by the new ForecastReportsPanel tab shell (src/features/forecast-reports.js) to place
+// its "Forecast Accuracy / MBI vs LifeLenz Accuracy" report switcher where this panel's own
+// header already renders, instead of overlaying a second header on top of this panel's
+// existing position:fixed full-screen chrome. Undefined/null for any other caller (there is
+// none after Phase B retires this panel's own standalone panel-registry.js entry, but the prop
+// is additive — this panel's own logic and standalone rendering are otherwise unchanged).
+function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose, headerTabs}) {
   const [selPeriod, setSelPeriod] = React.useState('6wk');
   const [cStart, setCStart] = React.useState('');
   const [cEnd, setCEnd] = React.useState('');
@@ -3746,6 +3753,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
         div({style:{flex:1}},
           div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🎯 Forecast Accuracy Report'),
           div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2}},'Backtest each model against completed actuals. Lower MAPE = more accurate. Green <5% · Yellow 5-8% · Red >8%.')),
+        headerTabs||null,
         results&&btn({className:'btn btn-sm',style:{color:'#10b981',borderColor:'rgba(16,185,129,.3)'},onClick:exportCSV},'⬇ Export CSV'),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),

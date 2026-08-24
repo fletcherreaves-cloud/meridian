@@ -194,19 +194,20 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the eleven panels converted so far (Dispatch27 + Dispatch #55 Part B + #105)', () => {
-    // Ratchet, not a ceiling: adding a twelfth route panel is a real routing change (a new
+  it('is exactly the ten panels converted so far (Dispatch27 + Dispatch #55 Part B + #106)', () => {
+    // Ratchet, not a ceiling: adding an eleventh route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
     // Dispatch #55 Part B (Job C Batch 1) added the other six as the first overlay-to-page
-    // conversion batch. Dispatch #105's correction (2026-08-24) added the eleventh,
-    // lifelenz-bridge ("MBI vs LifeLenz Accuracy") -- owner: "put in a url page while you
-    // are at it" -- now that it has grown a real date-range control plus a genuine backward-
-    // looking accuracy view worth linking to directly.
+    // conversion batch. Dispatch #105's correction (2026-08-24) briefly grew this to eleven by
+    // adding lifelenz-bridge ("MBI vs LifeLenz Accuracy") as its own route:true entry; dispatch
+    // #106 Phase B (same day) merged it AND fcst-accuracy into one new route:true entry,
+    // 'forecast-reports' (ForecastReportsPanel, an internal-tab shell over both), converting
+    // both former entries to kind:'hub-tab' -- net eleven -> ten.
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'count-cycle', 'dicompare', 'eom-dashboard', 'fcst-accuracy', 'fob-analysis',
-      'fob-eom', 'lifelenz-bridge', 'perf-reviews', 'proj', 'report', 'sched-hub',
+      'count-cycle', 'dicompare', 'eom-dashboard', 'fob-analysis', 'fob-eom',
+      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub',
     ]);
   });
 
