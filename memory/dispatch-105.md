@@ -148,3 +148,99 @@ name; flagging "Forecast Reconciliation" as the recommendation, not a final deci
   documented dead ends for other LifeLenz endpoints; check that file before probing anything new.
 - **Do not rename the panel/section without using the recommended or an owner-confirmed name** — a
   rename touches nav/panel-registry labels; don't ship it silently as part of an unrelated commit.
+
+---
+
+## Resolution (2026-08-24)
+
+**Scope actually shipped: Part 1, AND Part 2, plus the correction's three folded-in items.** The
+engineering session's original brief was Part 1 only, with Part 2 explicitly forbidden pending an
+owner decision. That decision landed mid-session as the CORRECTION section above — verified real
+(present in `git log` on the working branch, and independently re-checked against the live
+`scripts/lifelenz-pull.mjs`/`src/lib/supabase.js` code before writing a line of Part 2 code, not
+taken on trust) — so Part 2 was built in the same pass per the correction's explicit direction,
+rather than deferred to a second dispatch.
+
+**Part 1 — date-range control + Wednesday-start weekly grouping.**
+`runLifeLenzBridgeScan(loc, ds, settings, userEvents, range)` takes an optional explicit
+`{start, end}` (inclusive); omitted, it preserves the exact original default (`anchor+1..anchor+14`,
+`anchor = ds.lastActual[loc] || now`) — the owner's existing quick-glance workflow is unchanged.
+`LifeLenzBridgePanel` gained a shared "Custom Date Range" toggle + two date inputs (Single Store and
+District mode both use it) and a "Weekly View (Wed start)" toggle. The Wednesday anchor is **not**
+hardcoded anywhere new: `groupDaysByWeek` reuses the **already-existing**
+`weekStartOf(date, wsd)` in `src/utils/date.js` (it already accepted an explicit week-start day —
+no new date helper was needed, contrary to the dispatch's own guess that one probably would be), and
+the panel reads `settings.weekStartDay` (DEF_SETTINGS default `3`) directly.
+
+**Correction items folded into Part 1, as directed:**
+- **No-guessing sourcing fix.** `computeLifeLenzAdjustment` now checks, in priority order:
+  1. `ds.schedRows` (`fcstSales`, auto-pulled daily, no upload needed) — source `'auto'`.
+  2. `ds.laborRows` (`projSales`, manually-uploaded Labor Analysis file) — source `'manual'`.
+  3. Historical day-of-week bias — source `'pattern'`, the only actual guess, now the true last
+     resort.
+  One correction detail was wrong and caught before shipping: the correction's own text says the
+  auto-pulled data lives at `ds.lifelenzSchedule`. Measured against the real loader
+  (`loadLifeLenzSchedule()` in `src/lib/supabase.js`) and its call site in `App.js`'s `_stLifelenz`:
+  the field it's actually stored under is **`ds.schedRows`**, not `ds.lifelenzSchedule` — that
+  property doesn't exist anywhere in the app. Used the correct name. Row badges are now
+  `AUTO` / `MANUAL` / `PATTERN` (previously a binary `DIRECT`/`PATTERN`).
+- **Rename.** `panel-registry.js`'s `lifelenz-bridge` label is now the owner-confirmed
+  **"MBI vs LifeLenz Accuracy"** (superseding the earlier "Forecast Reconciliation" proposal from
+  this dispatch's first pass — that name is not in use anywhere). `LifeLenzBridgePanel`'s own
+  title/subtitle updated to match.
+- **Route.** `lifelenz-bridge` now carries `route:true`, wired in `App.js` exactly like
+  `fcst-accuracy` — `goRoute('lifelenz-bridge')` on open, a new
+  `routePanel==='lifelenz-bridge'` render gate using `RoutePanelShell`, and the old
+  `showLifeLenzBridge` `useState` removed. Removing it surfaced one real, pre-existing bug this
+  work happened to touch: a stray `setShowLifeLenzBridge(false)` call survived in the Escape-key
+  sweep, which `src/__tests__/src-no-undef.test.js` caught as a live `no-undef` — that call would
+  have thrown a `ReferenceError` on every Escape press, aborting every setter after it in that one
+  sweep function, the exact failure class a comment two lines above it already documents from a
+  past incident. Fixed in the same commit.
+
+**Part 2 — MBI vs LifeLenz historical accuracy.** A new "📈 Accuracy" mode in
+`LifeLenzBridgePanel`, backward-looking, with its own store selector and date-range inputs
+(default: trailing 4 closed weeks). For each date in range:
+- **LifeLenz side** — `ds.schedRows` (`fcstSales`/`sales`), a real recorded number, no recompute.
+- **MBI side** — `forecast_snapshots` via the already-existing `loadForecastSnapshots()`.
+  Deliberately **not** a live `forecastDay` replay over past dates: `forecastDay` reflects today's
+  model/calibration, not what it would have predicted at the time, so replaying it over history
+  would leak information a real forecast never had — `forecast_snapshots` is the leak-free record
+  the correction pointed at, and it's what `analytics.js`'s `ForecastAccuracyPanel` already writes.
+  When a store/date has no recorded snapshot, that side renders `—` rather than a live-computed
+  substitute.
+Rows group into Wednesday-start weeks (same `weekStartOf`), each with a per-week average
+|variance %| for both systems, plus an overall verdict line ("MBI more accurate" /
+"LifeLenz more accurate") when both sides have data. A date with only one side's data still
+renders — never silently dropped.
+
+**What's still exactly as scoped, not expanded further:** the actual visual **merge** of this panel
+into dispatch #106's Phase B (a single combined section/nav entry) was **not** attempted here — the
+correction's own wording ("this tool's own identity in the meantime if it needs one before the
+merge lands") frames that merge as dispatch #106's job, not this one's. This session only renamed
+and routed the existing panel.
+
+**Verification bar — met, against the real consumer, not the engine functions in isolation**
+(`src/__tests__/dispatch-105-lifelenz-bridge-daterange.test.js`):
+- A selected custom date range changes which days are scanned/shown (asserts the old default
+  window's figures are gone and the new range's figures are present).
+- Weekly grouping produces **"Aug 19 – Aug 25"** / **"Aug 26 – Sep 1"** for a range spanning a real
+  2026 Wednesday (Aug 19, 2026 is a Wednesday, checked directly against `Date`) — the exact
+  boundary LifeLenz's own reference screenshot uses, not a Sun- or Mon-start guess.
+- `settings.weekStartDay=0` (Sunday) produces Sunday-start boundaries for the identical date range
+  instead — proving the anchor is read from settings, not hardcoded, per the task brief's explicit
+  requirement.
+- The auto-over-manual sourcing priority is exercised with one date carrying BOTH a `schedRows` and
+  a `laborRows` entry; confirmed the test actually detects a regression (not just a tautology) by
+  temporarily reverting the priority order, watching it fail, then restoring the fix.
+- Accuracy mode's date range re-queries `forecast_snapshots` for the newly selected window.
+
+Two pre-existing tests needed updating to match the deliberate rename/route change, not
+regressions: `shell-nav-snapshot.test.js`'s frozen nav-label snapshot, and
+`panel-registry.test.js`'s route-panel count ratchet (ten → eleven).
+
+**Build/test state:** full suite 2316/2316, 0 regressions. `npm run build` clean. Entry chunk gzip
+519.95 KB → 522.50 KB (+2.55 KB — `LifeLenzBridgePanel` is statically imported by `App.js`, not
+`lazyPanel()`'d; that was already true before this change, not introduced by it). Eager total
+521.81 KB → 524.36 KB gzip (budget 850 KB, headroom 325.64 KB). Full detail in the `v5.146`
+changelog entry (`src/app/changelog/5.146.js`).
