@@ -1,6 +1,6 @@
 ---
 name: finding-pagedparallel-newest-first-note-2026-08-24
-description: _pagedParallel's partial-failure banner hardcodes "newest-first keeps the recent days". True for all ten original callers, which pass ascending:false. loadDtHistory (#633) is the first ascending:true caller, so on a page failure the OLDEST pages survive and the banner tells the user the opposite. Raised on PR #633; not yet fixed.
+description: _pagedParallel's partial-failure banner hardcoded "newest-first keeps the recent days". True for all ten original callers, which pass ascending:false. loadDtHistory (#633) was the first ascending:true caller, so on a page failure the OLDEST pages survived and the banner told the user the opposite. Raised on PR #633; fixed in #639.
 sensitivity: open
 metadata:
   node_type: memory
@@ -9,8 +9,11 @@ metadata:
 
 # `_pagedParallel`'s partial-failure note is backwards for the first ascending caller
 
-**Status: open.** Raised as a comment on PR #633 before it merged; **not fixed there**, and a PR
-comment is not a durable record — hence this file.
+**✅ FIXED — commit `10bca2b` (#639), merged 2026-08-24.** Raised as a comment on PR #633 before it
+merged, not fixed there (a PR comment is not a durable record — hence this file); the message is
+now conditional on `ascending`, with a regression test pinning the corrected wording for
+`loadDtHistory`'s failure path. The description below documents the original defect for context —
+do not re-raise it as open.
 
 ## The defect
 
