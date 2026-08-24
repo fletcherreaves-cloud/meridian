@@ -7,6 +7,12 @@ name: QSRSoft Security Token Identity Probe
 # pull's own request BUILDERS, or -- Case F, added for this dispatch -- the pull's actual LOOP
 # running in a cold process with an already-proven-good token injected instead of self-minted.
 #
+# Case G (dispatch #95): a wire-level trace comparison, repeated trials of the identical
+# request via node:diagnostics_channel (TLS session/cipher/connection-reuse, exact sent-header
+# bytes, response header order/timing) -- diffed automatically between whichever trials succeed
+# and whichever fail, since #91 part 2 already showed the identical unit split 403/200/200
+# across separate runs, not a stable code-level difference. See wire_trials input below.
+#
 # MUST run on the self-hosted runner (same pin as qsrsoft-security-events-pull.yml): every
 # measurement that has ever returned 200 on this investigation ran from the owner's own Mac
 # mini/network. Running this on a hosted runner would reintroduce the exact variable (network
@@ -39,6 +45,14 @@ on:
         description: 'YYYY-MM-DD for case F (default: 2026-08-22, the date #623 measured)'
         required: false
         default: ''
+      wire_trials:
+        description: 'Case G (dispatch #95): repeated wire-traced trials of the case F unit (default: 8, 0 to skip)'
+        required: false
+        default: '8'
+      wire_delay_ms:
+        description: 'Case G: ms between trials (default: 150, matching the real pull -- widen to span more wall-clock time within one process)'
+        required: false
+        default: '150'
 
 jobs:
   probe:
@@ -65,3 +79,5 @@ jobs:
           PROBE_DATE:           ${{ github.event.inputs.probe_date   || '' }}
           PROBE_INJECT_STORE:   ${{ github.event.inputs.inject_store || '' }}
           PROBE_INJECT_DATE:    ${{ github.event.inputs.inject_date  || '' }}
+          PROBE_WIRE_TRIALS:    ${{ github.event.inputs.wire_trials  || '8' }}
+          PROBE_WIRE_DELAY_MS:  ${{ github.event.inputs.wire_delay_ms || '150' }}

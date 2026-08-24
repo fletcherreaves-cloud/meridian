@@ -21,12 +21,65 @@
 // Usage:
 //   node scripts/probe-security-token-identity.mjs                 # minted token only
 //   BROWSER_TOKEN=<paste> node scripts/probe-security-token-identity.mjs   # both, side by side
+//
+// Case G (dispatch #95): PROBE_WIRE_TRIALS=8 (default) repeated trials of the pull's own
+// documented first-failing unit, with a node:diagnostics_channel wire-level trace (TLS
+// session/cipher/connection-reuse, exact sent header bytes, response header order/timing) on
+// every trial -- diffed automatically between whichever trials succeed and whichever fail. Set
+// PROBE_WIRE_TRIALS=0 to skip it.
 import { createHash } from 'node:crypto';
+import diagnostics_channel from 'node:diagnostics_channel';
+import { spawnSync } from 'node:child_process';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 // The PULL's own request builders. Importing them (rather than copying) means case D exercises
 // the exact code the failing pull runs -- if D fails where A succeeds, the difference is inside
 // these two functions and nowhere else.
 import { buildUrl, buildBody, fetchOne, runSecurityEvents } from './qsrsoft-security-events-pull.mjs';
+
+// ── Wire-level capture (Case G, dispatch #95) -- subscribed at MODULE LOAD, before cases A-F run.
+// MEASURED BUG, fixed here: subscribing inside runWireTraceComparison() (i.e. after cases A-F
+// already made several requests to the same origin) misses the 'undici:client:connected' event
+// entirely, because undici's connection pool had already opened and kept alive the socket those
+// earlier cases used -- Case G's own trials then all silently reuse it with no NEW 'connected'
+// event to observe. A real run confirmed this: every trial printed `conn#=undefined tls=undefined`
+// even though the requests plainly succeeded/failed over a real TLS connection. Subscribing here,
+// at import time, means the FIRST connection this whole process ever opens (whichever case makes
+// it) is captured, and every later trial's reuse-vs-new status is measured against a real baseline.
+const __wire = { current: null, connectionSeq: 0, lastConn: null };
+diagnostics_channel.subscribe('undici:client:connected', (msg) => {
+  __wire.connectionSeq += 1;
+  const s = msg.socket;
+  __wire.lastConn = {
+    connectionSeq: __wire.connectionSeq,
+    localPort: s.localPort,
+    protocol: typeof s.getProtocol === 'function' ? s.getProtocol() : null,
+    cipher: typeof s.getCipher === 'function' ? (s.getCipher()?.standardName ?? null) : null,
+    sessionReused: typeof s.isSessionReused === 'function' ? s.isSessionReused() : null,
+    alpnProtocol: s.alpnProtocol ?? null,
+  };
+  if (__wire.current) __wire.current.newConnectionThisTrial = true;
+});
+diagnostics_channel.subscribe('undici:client:sendHeaders', (msg) => {
+  if (!__wire.current) return;
+  __wire.current.sentHeaders = redactAuthHeaderTopLevel(msg.headers);
+  __wire.current.sentAtMs = Date.now();
+});
+diagnostics_channel.subscribe('undici:request:headers', (msg) => {
+  if (!__wire.current) return;
+  __wire.current.receivedAtMs = Date.now();
+  __wire.current.status = msg.response.statusCode;
+  const raw = msg.response.headers; // flat array of Buffers: [name, value, name, value, ...]
+  __wire.current.respHeaderOrder = [];
+  for (let i = 0; i < raw.length; i += 2) __wire.current.respHeaderOrder.push(raw[i].toString('latin1').toLowerCase());
+});
+// Hoisted above its one call site (used by the subscriber immediately above) -- PII discipline:
+// the sent-header dump includes the literal `x-auth-token: <token>` line -- redact the value
+// before it is ever printed or compared, same standard as fetchOne()'s own wire dump and
+// identityFp() below (hash + length only, never the token itself).
+function redactAuthHeaderTopLevel(rawHeaderBlock) {
+  return String(rawHeaderBlock).replace(/(x-auth-token:\s*)(\S+)/i, (_, pre, val) =>
+    `${pre}[sha256:${createHash('sha256').update(val).digest('hex').slice(0, 12)} len:${val.length}]`);
+}
 
 // Short fingerprint for answering "are these the SAME token?" without printing any part of one.
 // A raw tail (last N chars) would also work as a comparator, but this repo's standing rule is
@@ -326,3 +379,167 @@ if (results.browser === undefined) {
 } else {
   console.log(`   Unexpected combination: minted=${results.minted}, browser=${results.browser}. Report both.`);
 }
+
+// ── CASE G: dispatch #95 -- wire-level trace comparison, done properly ──────────────────────
+//
+// Dispatch #91's Case F (above) already showed the SAME unit -- store 3708, 2026-08-22,
+// all_promo, through the pull's real loop, with a freshly-minted token proven good moments
+// earlier -- split 403/200/200 across three separate workflow_dispatch runs a few minutes apart.
+// That is not a stable code-level difference a source-diff can find; it is a request that
+// SOMETIMES succeeds and SOMETIMES fails with everything application-level held constant. The
+// only place left to look is the wire: TLS session state, connection reuse, exact header bytes
+// as sent, and the exact response headers/timing AWS actually returned -- captured on repeated
+// trials of the identical request, in the same process, so a real difference (if one exists)
+// shows up as a field that's constant across all 200s and constant-but-different across all
+// 403s, rather than noise.
+//
+// Step 1 (dispatch #95's own instruction): check what's actually available on this runner
+// BEFORE assuming a tool. True packet capture (tcpdump) needs elevated permissions a CI runner
+// may not have -- checked here, informationally, not required for the rest of this case to run.
+// Step 2+: Node's diagnostics_channel gives everything tcpdump would show for THIS purpose
+// without needing any special permission -- undici (Node's built-in fetch implementation)
+// publishes the exact bytes sent on the wire, the raw response header list in receipt order,
+// and the underlying TLS socket (protocol, cipher, session-ticket reuse, local port) on every
+// request. Verified against a real request before relying on it (see this dispatch's PR body).
+function checkPacketCaptureAvailability() {
+  console.log('\n── G0) packet-capture capability check (dispatch #95 step 1) ──');
+  try {
+    const which = spawnSync('which', ['tcpdump'], { timeout: 3000, encoding: 'utf8' });
+    const hasTcpdump = which.status === 0 && which.stdout.trim();
+    console.log(`   tcpdump binary : ${hasTcpdump ? hasTcpdump.trim() : 'not found on PATH'}`);
+    if (hasTcpdump) {
+      // -n: never prompt for a password. Exits immediately (not hanging) whether or not the
+      // runner's sudoers file grants passwordless tcpdump -- safe to run unconditionally.
+      const sudoCheck = spawnSync('sudo', ['-n', 'tcpdump', '-D'], { timeout: 3000, encoding: 'utf8' });
+      console.log(`   passwordless sudo tcpdump -D : ${sudoCheck.status === 0 ? 'AVAILABLE' : `NOT available (${(sudoCheck.stderr || '').trim().split('\n')[0] || `exit ${sudoCheck.status}`})`}`);
+    }
+  } catch (e) {
+    console.log(`   capability check itself failed: ${e.message}`);
+  }
+  console.log('   Falling back to node:diagnostics_channel (undici wire events) for this case --');
+  console.log('   verified to expose exact sent-header bytes, response header order, and the');
+  console.log('   underlying TLS socket (protocol/cipher/session-reuse) with no special permission.');
+}
+
+async function runWireTraceComparison() {
+  const trials = parseInt(process.env.PROBE_WIRE_TRIALS || '8', 10);
+  const WIRE_DELAY_MS = parseInt(process.env.PROBE_WIRE_DELAY_MS || '150', 10);
+  if (!trials || trials <= 0) {
+    console.log('\n(Case G skipped -- set PROBE_WIRE_TRIALS to a positive number to run it, default 8)');
+    return;
+  }
+  checkPacketCaptureAvailability();
+
+  const G_STORE = process.env.PROBE_INJECT_STORE || '3708'; // same unit as Case F, on purpose
+  const G_DATE  = process.env.PROBE_INJECT_DATE  || '2026-08-22';
+  const G_TOKEN_NAME = 'all_promo';
+  console.log(`\n── G) WIRE-LEVEL TRACE -- ${trials} repeated trials of the IDENTICAL request ──`);
+  console.log(`   store / date / event_token : ${G_STORE} / ${G_DATE} / ${G_TOKEN_NAME}`);
+  console.log('   One variable held at zero: everything (token, headers, body, process) is IDENTICAL');
+  console.log('   across every trial -- any field that still splits along success/failure is real.');
+  if (__wire.lastConn) {
+    console.log(`   Connection already warm from an earlier case (conn#${__wire.lastConn.connectionSeq},`
+      + ` ${__wire.lastConn.protocol}/${__wire.lastConn.cipher}) -- trials that reuse it correctly`
+      + ' show no NEW connect event; that IS the real behavior, not a capture gap.');
+  }
+
+  // Uses the MODULE-LEVEL __wire capture (subscribed at import time, above) -- see that block's
+  // comment for why a per-call subscription here would miss any connection opened by cases A-F.
+  // `current` is keyed to "the trial in flight" via a mutable ref -- safe because trials run
+  // strictly sequentially (each fully awaited before the next starts), never concurrently.
+
+  const token = await getFreshToken(); // one mint, reused across all trials -- matches how a
+                                        // real run uses a single token across many units within
+                                        // its ~55min cached lifetime (scripts/lib/qsrsoft-auth.mjs)
+  const storeRefRaw = G_STORE; // fetchOne() takes the already-computed storeRef; the pull's own
+                                // storeRefFromLoc() equivalent isn't needed here since Case F/E
+                                // above already pass the raw NSN string through unchanged for
+                                // this exact store -- keep it identical to avoid a NEW variable.
+
+  const trialResults = [];
+  for (let i = 1; i <= trials; i++) {
+    const trial = { i, newConnectionThisTrial: false };
+    __wire.current = trial;
+    try {
+      const t0 = Date.now();
+      const r = await fetchOne(storeRefRaw, G_TOKEN_NAME, G_DATE, token);
+      trial.status = r.status; // authoritative -- fetchOne's own return, not just the channel capture
+      trial.diagHdrsFromFetchOne = r.diagHdrs;
+      trial.latencyMs = trial.receivedAtMs ? trial.receivedAtMs - trial.sentAtMs : (Date.now() - t0);
+      trial.connInfo = __wire.lastConn;
+      trial.rowsOrBody = r.ok ? `${Array.isArray(r.json) ? r.json.length : 'non-array'} row(s)` : (r.rawText || JSON.stringify(r.json) || '').slice(0, 120);
+    } catch (e) {
+      trial.error = e.message;
+    }
+    trialResults.push(trial);
+    console.log(`   trial ${i}/${trials}: HTTP ${trial.status ?? 'ERR'}  conn#${trial.connInfo?.connectionSeq ?? '?'}${trial.newConnectionThisTrial ? ' (NEW socket)' : ' (reused)'}  ${trial.latencyMs ?? '?'}ms  ${trial.error || trial.rowsOrBody || ''}`);
+    __wire.current = null;
+    // Default matches the real pull's own per-unit pacing (150ms). Overridable wider --
+    // dispatch-91 part 2's evidence points at a WINDOW-level phenomenon (a whole run lands
+    // "good" or "bad"), so widening the gap between trials increases the odds of a single
+    // process straddling a window boundary, which tight 150ms pacing over a few seconds cannot.
+    await new Promise((res) => setTimeout(res, WIRE_DELAY_MS));
+  }
+
+  // ── The actual diff: does any captured field split cleanly along success (200) vs failure (403)? ──
+  console.log('\n── G) per-trial detail ──');
+  for (const t of trialResults) {
+    console.log(`   [${t.i}] status=${t.status} conn#=${t.connInfo?.connectionSeq} newSocket=${t.newConnectionThisTrial} localPort=${t.connInfo?.localPort} tls=${t.connInfo?.protocol}/${t.connInfo?.cipher} sessionReused=${t.connInfo?.sessionReused} latencyMs=${t.latencyMs} requestId=${t.diagHdrsFromFetchOne?.['x-amzn-requestid'] || '(none)'}`);
+  }
+
+  const ok200 = trialResults.filter((t) => t.status === 200);
+  const bad403 = trialResults.filter((t) => t.status === 403);
+  const other = trialResults.filter((t) => t.status !== 200 && t.status !== 403);
+  console.log(`\n── G) VERDICT -- ${ok200.length} succeeded (200), ${bad403.length} failed (403), ${other.length} other, of ${trials} identical trials ──`);
+
+  if (ok200.length === 0) {
+    console.log('   Every trial 403\'d -- no success in this run to diff against. Re-run at a');
+    console.log('   different time (dispatch #91 part 2 shows outcome varies run-to-run) before concluding.');
+  } else if (bad403.length === 0) {
+    console.log('   Every trial succeeded (200) -- no failure in this run to diff against. Re-run at a');
+    console.log('   different time to try to catch a 403 for comparison.');
+  } else {
+    console.log('   MIXED within one process, one token, one connection pool -- a real split to diff:');
+    const fields = [
+      ['TLS protocol',      (t) => t.connInfo?.protocol],
+      ['TLS cipher',        (t) => t.connInfo?.cipher],
+      ['session reused',    (t) => t.connInfo?.sessionReused],
+      ['ALPN',              (t) => t.connInfo?.alpnProtocol],
+      ['new socket this trial', (t) => t.newConnectionThisTrial],
+      ['sent header bytes', (t) => t.sentHeaders],
+      ['response header order', (t) => JSON.stringify(t.respHeaderOrder)],
+    ];
+    let foundRealDifference = false;
+    for (const [label, get] of fields) {
+      const okVals = new Set(ok200.map(get).map((v) => JSON.stringify(v)));
+      const badVals = new Set(bad403.map(get).map((v) => JSON.stringify(v)));
+      const overlap = [...okVals].some((v) => badVals.has(v));
+      const line = `   ${label.padEnd(24)}: 200s={${[...okVals].join(' | ')}}  403s={${[...badVals].join(' | ')}}`;
+      if (!overlap && okVals.size >= 1 && badVals.size >= 1) {
+        console.log(line + '   🎯 NO OVERLAP -- candidate real difference');
+        foundRealDifference = true;
+      } else {
+        console.log(line + '   (overlaps -- not the variable)');
+      }
+    }
+    const latOk = ok200.map((t) => t.latencyMs).filter((x) => x != null);
+    const latBad = bad403.map((t) => t.latencyMs).filter((x) => x != null);
+    if (latOk.length && latBad.length) {
+      const avg = (arr) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+      console.log(`   latency (ms), avg           : 200s=${avg(latOk)}  403s=${avg(latBad)}  (informational -- not a header/connection field, shown for completeness)`);
+    }
+    console.log(foundRealDifference
+      ? '   🎯 See the NO OVERLAP line(s) above -- that field is a genuine candidate cause, worth'
+        + '\n      re-confirming with more trials before treating it as settled.'
+      : '   No field split cleanly along success/failure across these trials. Every wire-visible');
+    if (!foundRealDifference) {
+      console.log('   property this case captures (TLS session, connection reuse, exact sent bytes, response');
+      console.log('   header order) was IDENTICAL on 200s and 403s alike -- the difference, if any, is not');
+      console.log('   visible at this layer either. Combined with #91\'s already-eliminated 12 application-');
+      console.log('   level hypotheses, that points at something outside this codebase entirely (backend-side');
+      console.log('   IAM policy evaluation, canary/rolling deploy, or similar) -- not fixable from here.');
+    }
+  }
+}
+
+await runWireTraceComparison();

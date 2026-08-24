@@ -25,6 +25,10 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   // count-window / 8a–6p-CT gate the scheduled on-hand pull uses.
   onhand:   { file: 'qsrsoft-onhand-pull.yml',   label: 'On-Hand (EOM count)',  inputs: { force: '1', period: '', debug: '0' } },
   variance: { file: 'qsrsoft-variance-pull.yml', label: 'Variance / Raw Items', inputs: { period: '', stores: '', debug: '0' } },
+  // Dispatch #95 (Track B) -- lets Data Manager's Security Events row dispatch an on-demand
+  // pull, same as every other auto-synced stream. Empty start_date/end_date -> the workflow's
+  // own rolling-window default (DAYS_BACK/DAYS_RECENT), matching a manual click on any other row.
+  secevents: { file: 'qsrsoft-security-events-pull.yml', label: 'Security Events', inputs: { days_back: '14', days_recent: '2', start_date: '', end_date: '', debug: '0' } },
 };
 
 const CORS = {
