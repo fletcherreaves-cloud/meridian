@@ -10,11 +10,19 @@
 //   node scripts/measure-retail-impact.mjs --min-n 3      # require n observations to write (default 2)
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (labor_rows + event_impact are RLS-scoped).
+//
+// GC lift (Dispatch #108, additive): also grades guest-count lift for the same 4 retail types, using
+// the IDENTICAL median/±28-day/K=10-shrink methodology (measureEventLift's opts.valueKey:'gc') over
+// qsr_daily_activity_rollup.transactions. GC's real backfill depth is 2024-01-01+ (measured), ~2.5
+// years shorter than labor_rows' 2022-01-01+ sales floor — so a store can show sales lift with no GC
+// lift for pre-2024 years alone; that's real data-coverage, not a bug (see mergeSalesAndGcWrites' the
+// per-metric minN gate). Sales-lift computation/output below is BYTE-IDENTICAL to before this change.
 
 import { createClient } from '@supabase/supabase-js';
 import { expandRetailEvents, measureEventLift, shrinkLifts, RETAIL_EVENT_TYPES } from '../src/engine/retail-events.js';
 import { INV_ORG_COORDS } from '../src/constants.js';
 import { HOLIDAY_MAP } from '../src/utils/holidays.js';
+import { loadGcRows, upsertEventImpact, mergeSalesAndGcWrites } from './lib/event-impact-write.mjs';
 
 const DRY = process.argv.includes('--dry');
 const MIN_N = (() => { const i = process.argv.indexOf('--min-n'); return i >= 0 && process.argv[i + 1] ? +process.argv[i + 1] : 2; })();
@@ -38,6 +46,13 @@ const minDate = sales.reduce((a, r) => r.date < a ? r.date : a, sales[0].date);
 const maxDate = sales.reduce((a, r) => r.date > a ? r.date : a, sales[0].date);
 console.log(`labor_rows: ${sales.length} day-rows, ${minDate} → ${maxDate}\n`);
 
+// ── GC (guest count) history — Dispatch #108 ───────────────────────────────────────────────────
+const gc = await loadGcRows(sb);
+const gcMinDate = gc.length ? gc.reduce((a, r) => r.date < a ? r.date : a, gc[0].date) : null;
+const gcMaxDate = gc.length ? gc.reduce((a, r) => r.date > a ? r.date : a, gc[0].date) : null;
+console.log(gc.length ? `qsr_daily_activity_rollup (GC): ${gc.length} day-rows, ${gcMinDate} → ${gcMaxDate}\n`
+  : 'qsr_daily_activity_rollup (GC): no rows — GC lift will be skipped this run.\n');
+
 // ── event days (historical only — a day still in the future can't grade anything) ────────────────
 const stores = Object.entries(INV_ORG_COORDS).map(([loc, v]) => ({ loc, state: v.state || 'OK' }));
 const years = []; for (let y = +minDate.slice(0, 4); y <= +maxDate.slice(0, 4); y++) years.push(y);
@@ -56,32 +71,29 @@ for (const type of RETAIL_EVENT_TYPES) {
   }
   const per = measureEventLift(sales, byLoc, { excludeDates });
   const { district, byLoc: shrunk } = shrinkLifts(per);
-  const locs = Object.keys(shrunk);
-  if (!locs.length) { console.log(`${type}: no gradable observations.`); continue; }
-  const pct = v => (v * 100).toFixed(2) + '%';
+  const gcPer = gc.length ? measureEventLift(gc, byLoc, { excludeDates, valueKey: 'gc' }) : {};
+  const { district: gcDistrict, byLoc: gcShrunk } = shrinkLifts(gcPer);
+
+  const locs = new Set([...Object.keys(shrunk), ...Object.keys(gcShrunk)]);
+  if (!locs.size) { console.log(`${type}: no gradable observations.`); continue; }
+  const pct = v => v == null ? '   —   ' : (v * 100).toFixed(2) + '%';
   console.log(`── ${type} ─────────────────────────────────`);
-  console.log(`   district mean lift ${pct(district)} across ${locs.length} stores`);
-  for (const loc of locs.sort()) {
-    const v = shrunk[loc];
-    const ok = v.n >= MIN_N;
-    console.log(`   ${loc.padEnd(7)} n=${String(v.n).padStart(2)}  raw ${pct(v.measured).padStart(8)}  → shrunk ${pct(v.shrunk).padStart(8)}${ok ? '' : '   (skipped: n < ' + MIN_N + ')'}`);
-    if (!ok) continue;
-    writes.push({
-      loc, event_type: type,
-      home_impact: v.shrunk, away_impact: null,
-      measured_home: v.measured, measured_away: null,
-      n_home: v.n, n_away: null,
-      source: 'measured', note: `measured ${new Date().toISOString().slice(0, 10)} · same-DOW ±28d median baseline · K=10 shrink`,
-      updated_at: new Date().toISOString(),
+  console.log(`   district mean sales lift ${pct(district)} across ${Object.keys(shrunk).length} stores` +
+    (gc.length ? ` · GC lift ${pct(gcDistrict)} across ${Object.keys(gcShrunk).length} stores` : ''));
+  for (const loc of [...locs].sort()) {
+    const v = shrunk[loc], g = gcShrunk[loc];
+    const ok = v && v.n >= MIN_N;
+    const gOk = g && g.n >= MIN_N;
+    console.log(`   ${loc.padEnd(7)} sales n=${v ? String(v.n).padStart(2) : ' -'}  raw ${pct(v?.measured).padStart(8)}  → shrunk ${pct(v?.shrunk).padStart(8)}${v && !ok ? '   (skipped: n < ' + MIN_N + ')' : ''}` +
+      (gc.length ? `   |   gc n=${g ? String(g.n).padStart(2) : ' -'}  raw ${pct(g?.measured).padStart(8)}  → shrunk ${pct(g?.shrunk).padStart(8)}${g && !gOk ? '   (skipped: n < ' + MIN_N + ')' : ''}` : ''));
+    const row = mergeSalesAndGcWrites({
+      loc, eventType: type, salesShrunk: shrunk, gcShrunk, minN: MIN_N,
+      note: `measured ${new Date().toISOString().slice(0, 10)} · same-DOW ±28d median baseline · K=10 shrink`,
     });
+    if (row) writes.push(row);
   }
   console.log('');
 }
 
-if (!writes.length) { console.log('Nothing meets the minimum-n bar — nothing to write.'); process.exit(0); }
-if (DRY) { console.log(`[--dry] would upsert ${writes.length} event_impact rows.`); process.exit(0); }
-
-const { error } = await sb.from('event_impact').upsert(writes, { onConflict: 'loc,event_type' });
-if (error) { console.error('event_impact upsert error:', error.message); process.exit(1); }
-console.log(`✓ Upserted ${writes.length} measured event_impact rows. They load into the forecast on next app start`);
-console.log('  (and are editable/overridable in the 📈 Event Impact panel).');
+await upsertEventImpact(sb, writes, { dry: DRY, label: 'event_impact rows (retail/shopping)' });
+if (!DRY) console.log('  They load into the forecast on next app start (and are editable/overridable in the 📈 Event Impact panel).');
