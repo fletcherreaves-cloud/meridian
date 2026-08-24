@@ -11,7 +11,9 @@ import { isRoutePanelId, parseRoute, pushRoute, onRouteChange, currentRoute } fr
 
 describe('isRoutePanelId', () => {
   it('is true for each of the four registered route panels', () => {
-    for (const id of ['dicompare', 'fcst-accuracy', 'proj', 'report']) {
+    // fcst-accuracy replaced by forecast-reports (dispatch #106 Phase B) -- fcst-accuracy
+    // itself is now kind:'hub-tab', not route:true (see panel-registry.js).
+    for (const id of ['dicompare', 'forecast-reports', 'proj', 'report']) {
       expect(isRoutePanelId(id), id).toBe(true);
     }
   });
@@ -77,7 +79,7 @@ describe('pushRoute + onRouteChange (jsdom/happy-dom History API)', () => {
   });
 
   it('onRouteChange re-derives state from location.search on popstate, not from event.state', () => {
-    pushRoute('fcst-accuracy');
+    pushRoute('forecast-reports');
     let seen = null;
     const unsub = onRouteChange(id => { seen = id; });
     // Simulate a real back-navigation: the URL changes first (as the browser would do),

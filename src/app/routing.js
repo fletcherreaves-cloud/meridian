@@ -8,8 +8,10 @@
 // param is all four currently-misclassified panels need — no router library), not a relabeling
 // of an existing mechanism.
 //
-// Scope: ONLY the panels panel-registry.js marks `route:true` (today: dicompare, fcst-accuracy,
-// proj, report — the four the plan specifically flags as misclassified destinations). Every
+// Scope: ONLY the panels panel-registry.js marks `route:true` (originally: dicompare,
+// fcst-accuracy, proj, report — the four the plan specifically flags as misclassified
+// destinations; fcst-accuracy was later folded into forecast-reports by dispatch #106 Phase B,
+// alongside lifelenz-bridge, which had separately grown route:true under dispatch #105). Every
 // other panel stays exactly what it is: a modal, opened by state, with no URL footprint. Most
 // current modals ARE correctly modals (confirm/pick/log/quick-edit) — this is not a mandate to
 // route everything, and adding `route:true` to a panel is a real routing change, not a label.

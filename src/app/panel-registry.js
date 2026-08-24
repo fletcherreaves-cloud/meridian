@@ -71,13 +71,33 @@ export const PANELS = [
   { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
-  { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
+  // fcst-accuracy CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
+  // entry to kind:'hub-tab' -- same "opens a hub and selects a tab, no sidebar entry of its
+  // own" pattern this registry already uses for sched-summary/labor-analysis/skills-matrix
+  // etc (see the `kind` field doc above). Opening 'fcst-accuracy' now selects
+  // ForecastReportsPanel's Forecast Accuracy tab and routes to 'forecast-reports' below, exactly
+  // like 'labor-analytics' selects SchedulingHubPanel's Analytics tab and routes to 'sched-hub'.
+  // Its own panel component (ForecastAccuracyPanel, src/views/analytics.js) is unchanged.
+  { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'hub-tab', section:'forecasting' },
   { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:8 },
   // disabledWhen:'noStore' (dispatch #61) -- the one per-item option in the old hand-built
   // shell.js list (`navPBeta('forecast-audit', { disabled: !selStore })`). Declared here so the
   // derived Test Kitchen loop doesn't need to special-case this id -- shell.js maps the key to
   // the actual `!selStore` predicate (the registry has no access to component-local state).
   { id:'forecast-audit', label:'Forecast Audit', icon:'🔬', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:10, disabledWhen:'noStore' },
+  // NEW 2026-08-24 (dispatch #106 Phase B) — one parent entry, route:true, replacing the two
+  // former standalone route entries above/below (fcst-accuracy, lifelenz-bridge — both now
+  // kind:'hub-tab', see their own comments), each now an internal tab of ForecastReportsPanel
+  // (src/features/forecast-reports.js — a thin shell, reuses ForecastAccuracyPanel/
+  // LifeLenzBridgePanel as-is, no logic duplicated into it). Takes fcst-accuracy's old tkOrder
+  // slot (5) since it's the primary of the two merged reports. kind:'test-kitchen' — same
+  // status either former entry had, not a promotion.
+  // ⚠️ Label is a PROPOSAL, not owner-confirmed. The dispatch names "Forecast Reports" or
+  // "Forecasting Center" as candidates and explicitly asks for owner confirmation before
+  // shipping either — this picks "Forecast Reports" (shorter, matches the existing 'reports'
+  // section id's naming register) but flags it here and in the PR/commit rather than treating
+  // it as decided. See memory/dispatch-106.md's Resolution section.
+  { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
@@ -102,14 +122,12 @@ export const PANELS = [
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
   { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics' },
   { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:6 },
-  // Renamed 2026-08-21 (dispatch #55 Part A, notes-67-queue.md:82 / dispatch-54.md:149) --
-  // the only user-visible change in that dispatch. Still kind:'test-kitchen'; section corrected
-  // from the stale 'scheduling' so a future promotion lands it under Forecasting directly.
-  // dispatch #105 correction (2026-08-24): renamed from "Recommended WFM Forecast Adjustments" to
-  // the owner-confirmed "MBI vs LifeLenz Accuracy" (replacing the earlier "Forecast Reconciliation"
-  // proposal), and given route:true — same pattern as fcst-accuracy — now that it's grown a real
-  // date-range control plus a genuine dual (Meridian/LifeLenz) accuracy view worth linking to.
-  { id:'lifelenz-bridge', label:'MBI vs LifeLenz Accuracy', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:11 },
+  // lifelenz-bridge CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
+  // entry to kind:'hub-tab', same pattern as fcst-accuracy above — opens ForecastReportsPanel's
+  // "MBI vs LifeLenz Accuracy" tab (the name dispatch #105 confirmed with the owner, unchanged
+  // by the merge) and routes to 'forecast-reports'. Its own panel component (LifeLenzBridgePanel,
+  // src/features/lifelenz.js) is unchanged.
+  { id:'lifelenz-bridge', label:'MBI vs LifeLenz Accuracy', icon:'🌉', perm:'analytics.forecasting', kind:'hub-tab', section:'forecasting' },
   { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },

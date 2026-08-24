@@ -118,3 +118,115 @@ Concretely:
   `security-panel.js`).
 - **Do not finalize the merged parent's name or the "Forecast Reconciliation" rename without
   confirming with the owner** — both are proposed, not decided.
+
+## Resolution (2026-08-24, v5.149)
+
+Both phases shipped, in two commits on this branch: Phase A first (`ForecastAccuracyPanel`'s
+weekly-cadence breakdown), then Phase B (the merge), matching the sequencing this dispatch
+specified. dispatch #105's Phase B prerequisite ("MBI vs LifeLenz Accuracy" renamed + given a
+real date-range control) was already live on `main` before this session started, confirmed by
+reading `src/features/lifelenz.js`'s `LifeLenzBridgePanel` directly rather than trusting the
+dispatch text alone.
+
+**Phase A** — added a "Weekly / Daily Breakdown" section to `ForecastAccuracyPanel`
+(`src/views/analytics.js`), collapsed by default, same expand/collapse pattern as the existing
+Day-of-Week Accuracy Breakdown section right above it. It is additive: the existing `PERIODS`
+picker and MAPE-by-model table are untouched — verified by rendering the real panel, running a
+backtest, and asserting both the pre-existing "Best Model (District)"/"AI Forecast MAPE"/"MAPE
+by Store" text AND the new section's content are present simultaneously, not one replacing the
+other.
+
+Implementation: the existing per-row backtest loop already computes `f.forecast` (the AI
+Forecast model) and the row's actual `act` for every day — a small addition (`dailyMap`)
+accumulates both, summed across every selected location for `'All Locations'`, into one entry
+per calendar day (`dailyRows`). A new module-level helper, `groupForecastDaysByWeek()` (mirrors
+`lifelenz.js`'s `groupDaysByWeek`/`groupAccByWeek` — same `weekStartOf` boundary math, different
+per-day shape, so kept local rather than force-fit into an existing helper with the wrong
+fields), groups `dailyRows` into weeks starting on `settings.weekStartDay` at render time. No
+new `forecastDay` calls were added — Phase A is a pure read of numbers the backtest already
+computes.
+
+**Verified against real rendered behavior, not "should work":** a new end-to-end test
+(`src/__tests__/dispatch-106-forecast-reports.test.js`) renders the actual panel, drives it
+through a real Custom-range backtest over a 14-day fixture straddling a real Wednesday (Jul 15
+2026), and asserts the rendered week headers read exactly `"Week of Jul 15–Jul 21"` and `"Week
+of Jul 22–Jul 28"` — NOT a Sunday-start (`"Jul 12–Jul 18"`) or Monday-start (`"Jul 13–Jul 19"`)
+boundary, which is the failure mode a hardcoded-Wednesday or off-by-one implementation would
+have produced. The mock `forecastDay` returns a value that is a pure, deterministic function of
+`date.getDay()`, so the test independently re-derives the expected weekly $ totals from the same
+formula rather than asserting hand-computed magic numbers, and confirms the exact `$350 over`
+weekly variance the fixture implies (every day is forecast exactly $50 over actual, 7 days per
+week).
+
+**Phase B** — merged `ForecastAccuracyPanel` and `LifeLenzBridgePanel` into one new component,
+`ForecastReportsPanel` (`src/features/forecast-reports.js`), following the internal-tab-switcher
+pattern already in production (`eom-dashboard.js`'s Scoreboard/EOM Count/Count Cycle segmented
+control, `security-panel.js`'s domain tabs) — confirmed by reading both files before writing any
+code, not assumed from the dispatch's description. `forecast-reports.js` is a thin shell: it
+does not reimplement or duplicate either panel's logic. Both children reuse the two real,
+existing panel components exactly as they already render (including their own internal
+title-bar chrome), and stay **mounted simultaneously**, switched via CSS `display` rather than
+conditional mount/unmount — deliberately, so a completed backtest or a live LifeLenz scan is not
+thrown away by switching tabs and back. This is verified directly: the test suite runs a real
+backtest, switches to the other tab, switches back, and asserts the backtest results are still
+on screen (not reset to the panel's empty "Select a period and run the backtest" state).
+
+The one code change to either existing panel: both `ForecastAccuracyPanel` and
+`LifeLenzBridgePanel` gained a new, optional, additive `headerTabs` prop (undefined-safe — a
+no-op for any other caller) that lets the new shell render its report-switcher segmented control
+inside each panel's own existing header row, instead of layering a second header on top of their
+own `position:fixed` full-screen chrome. This was a deliberate design choice over the
+alternative (stripping each panel's own chrome into an `embedded` mode, as `SchedulingHubPanel`
+does for its own tabs) — that alternative would have meant editing each panel's layout structure
+non-trivially (their flex layouts depend on owning their own fixed-position sizing), a much
+larger and riskier diff for the same user-visible result.
+
+**Registry (`panel-registry.js`) — a deliberate departure from the dispatch's literal wording.**
+The dispatch said "retire the two standalone entries." Literally deleting them would have broken
+this repo's own registry-integrity tests (`panel-registry.test.js`'s "every onOpenModal handler
+is registered" / "every registered panel has a dispatch handler" invariants, which the dispatch
+itself references as something to check) — a legacy `modal==='fcst-accuracy'` dispatch branch
+with no matching registry entry, or a registry entry with no dispatch branch, is exactly the drift
+those tests exist to catch. Instead, `fcst-accuracy` and `lifelenz-bridge` were converted to
+`kind:'hub-tab'` — the registry's own pre-existing "opens a hub and selects a tab, no sidebar
+entry of its own" pattern, already used for `sched-summary`/`labor-analytics`/`skills-matrix`
+pointing at `SchedulingHubPanel`. This is functionally equivalent to "retired" (neither renders
+standalone anywhere, confirmed by the shell-nav-snapshot test's rewritten assertion that neither
+label appears in ANY sidebar dimension any more) while keeping the registry internally
+consistent using an established pattern rather than a special case. One new entry,
+`forecast-reports`, carries `route:true` (both merged panels had grown a real date/week control
+worth linking to) and `kind:'test-kitchen'` at `tkOrder:5` (`fcst-accuracy`'s old slot — not a
+promotion).
+
+App.js: `fcst-accuracy`/`lifelenz-bridge` dispatch branches now set a new `forecastReportsTab`
+state (same pattern as the pre-existing `schedTab`/`planningTab`) before routing to
+`'forecast-reports'`, so a stale deep link or the At-A-Glance "Forecast Accuracy (MAPE)" tile
+still opens the correct internal tab rather than always defaulting to the first one.
+`LifeLenzBridgePanel`'s import moved from a static `App.js` import to fully lazy (it is now only
+reachable through `forecast-reports.js`'s own dynamic import) — a real entry-chunk win per
+CLAUDE.md's performance-budget rule, not incidental: entry chunk `index.js` dropped from
+1761.65 KB to 1566.23 KB raw (522.90 KB → 456.11 KB gzip, measured on the same rebased tree
+before/after this change).
+
+**⚠️ The merged parent's name/label — "Forecast Reports" — is a PROPOSAL, not owner-confirmed,**
+exactly as this dispatch required. Both candidate names from the dispatch ("Forecast Reports" /
+"Forecasting Center") remain viable; "Forecast Reports" was picked for this PR because it is
+shorter and matches the existing `'reports'` section id's naming register, and is flagged as a
+proposal in the registry comment, the App.js render comment, and the PR/commit body — not
+presented as decided. Changing it later is a one-line edit (`panel-registry.js`'s `label` field)
+plus the `RoutePanelShell` title string in `App.js`.
+
+**Tests updated to match the new registry shape, not left passing by coincidence.**
+`panel-registry.test.js`'s route-panel census (11 → 10) and route-id list, `routing.test.js`'s
+`fcst-accuracy` → `forecast-reports` swap, and `shell-nav-snapshot.test.js`'s Test Kitchen census
+(13 → 12), its full nav-text `EXPECTED` snapshot, its `analytics.forecasting` hidden-set list,
+and its dispatch #55 Part A membership-diff `describe` block (rewritten — that block's own
+assertion is superseded by this merge, since `kind:'hub-tab'` renders nowhere in the sidebar in
+any dimension, unlike the `kind:'test-kitchen'` behavior it used to check) were all updated by
+running the actual test suite against the actual registry change and fixing what broke, not by
+guessing what should change.
+
+**Full verification, on the rebased tree (this branch was rebased onto `origin/main` immediately
+before the final commit, picking up dispatch #107 and #109 which landed mid-session):**
+`npm run build` clean; full `vitest run` — 225/225 test files, 2336/2336 tests passing.
+`node scripts/gen-changelog-latest.mjs --write` run after adding `src/app/changelog/5.149.js`.
