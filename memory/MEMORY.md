@@ -84,6 +84,15 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 NEWEST (2026-08-24): [Dispatch #91 — QSRSoft security-events 403, the token-injection test](dispatch-91.md)** —
+  **Start here.** The investigation has narrowed to one bizarre fact: within one process, on one
+  machine, `fetchOne()` called directly returns 200, but the pull's own loop calling what looks
+  like the identical request returns 403, seconds apart, byte-identical wire dump. Twelve other
+  hypotheses (auth flow, source IP, entitlement, rate limiting, token type, and more) are already
+  eliminated — do not re-test them. Two remaining moves, in order: a token-injection test (run the
+  pull with a token captured from the probe's own successful call), then a packet capture if that
+  doesn't separate it. **Do not file a QSRSoft support ticket** until this dispatch's answer is in
+  — it changes what to even ask for.
 - **✅ SHIPPED & LIVE-VERIFIED (2026-08-24): [Dispatch #90 — SAGE's OT window mis-ranks stores; labor-% basis SETTLED](dispatch-90.md)** —
   **NEWEST, fully closed.** SAGE's labor % (crew/punched, excluding salaried managers) is confirmed
   CORRECT and matches `#327` — do not "fix" it to include managers. The real bug, now fixed: SAGE's
