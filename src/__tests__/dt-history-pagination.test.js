@@ -131,6 +131,12 @@ describe('loadDtHistory pagination (dispatch #88 item 2)', () => {
       const call = errSpy.mock.calls.find(args => String(args[0]).includes('DATA INCOMPLETE'));
       expect(call).toBeTruthy();
       expect(call.join(' ')).toContain('dtHistory');
+      // PR #633 review (post-merge) -- the hint used to hardcode "newest-first keeps the recent
+      // days", true for every pre-existing ascending:false caller but backwards for loadDtHistory
+      // (ascending:true), where the LATER pages -- more exposed to a partial failure -- hold the
+      // NEWEST rows. Pin the corrected, direction-aware wording for this caller.
+      expect(call.join(' ')).toContain('oldest-first');
+      expect(call.join(' ')).not.toContain('newest-first keeps the recent days');
     } finally { errSpy.mockRestore(); }
   });
 

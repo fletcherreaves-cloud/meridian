@@ -131,7 +131,15 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
     else failed++;
   }
-  if (failed) _recordDataError(label || table, failed, pages, 'egress throttle or server error — newest-first keeps the recent days');
+  // The banner hint used to be hardcoded to "newest-first keeps the recent days" — true for
+  // every pre-existing caller (all pass ascending:false) but backwards for loadDtHistory, the
+  // first ascending:true caller: under ascending order the LATER pages (more exposed to
+  // progressive rate-limiting) hold the NEWEST rows, so a partial failure risks recent days,
+  // not preserves them. Caught in PR #633's review after merge (dispatch #88) — fixed here by
+  // making the hint say something true for whichever direction actually shipped.
+  if (failed) _recordDataError(label || table, failed, pages, ascending
+    ? 'egress throttle or server error — oldest-first: recent days are the ones at risk'
+    : 'egress throttle or server error — newest-first keeps the recent days');
   return data;
 }
 
