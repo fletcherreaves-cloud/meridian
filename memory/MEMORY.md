@@ -84,7 +84,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #100 — Security panel: standard location selector + date-range controls](dispatch-100.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #101 — Form Completions: surface the detail already being pulled, add date + location selectors](dispatch-101.md)** —
+  **Independent of the #97-#100 chains** (different file, safe to run in parallel). `qsr_forms_completion`/
+  `loadQsrFormsCompletion()` already carries store/form/date/completion%/time-to-complete/completer-id
+  per occurrence — confirmed by grep, `forms-panel.js` never references `userId`, `completionRatio`,
+  `timeToCompleteMs`, `score`, `reviewedWith`, or `assignedTo` anywhere; the panel only ever renders
+  a form-level rollup (pass rate + store-days), discarding all per-occurrence detail after
+  aggregation. No location selector exists at all (loader already accepts `locs`); the only "date"
+  control is a relative 7/14/30-day window, not a real range. Fix: add a per-occurrence detail view,
+  resolve `userId` to a real name properly (check whether Security panel's `RevealName`/bulk-reveal
+  pattern applies, don't display a raw ID), and add the standard location selector + a real
+  date-range control, additive to what's already there.
+- **📋 (2026-08-24): [Dispatch #100 — Security panel: standard location selector + date-range controls](dispatch-100.md)** —
   **Independent of the #97-#99 Inventory Control chain** (different file, safe to run in parallel).
   `security-panel.js`'s `scopeMatches()` already implements the standard 4-level All→State→Org→
   Store hierarchy (`feedback-selector-ui-standard.md`), but the rendered pill row only ever offers
