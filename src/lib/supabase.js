@@ -3681,6 +3681,12 @@ export async function loadEventImpact() {
     homeImpact: r.home_impact, awayImpact: r.away_impact,
     measuredHome: r.measured_home, measuredAway: r.measured_away,
     nHome: r.n_home, nAway: r.n_away, source: r.source, storeType: r.store_type, note: r.note,
+    // GC lift (Dispatch #108) — additive twin of the sales-lift fields above, same shape. Columns
+    // land via supabase/schema-event-impact-gc.sql; `r.gc_home_impact` etc. read as undefined (→
+    // null here) on any row from before that migration runs, same as a never-measured sales field.
+    gcHomeImpact: r.gc_home_impact ?? null, gcAwayImpact: r.gc_away_impact ?? null,
+    measuredGcHome: r.measured_gc_home ?? null, measuredGcAway: r.measured_gc_away ?? null,
+    nGcHome: r.n_gc_home ?? null, nGcAway: r.n_gc_away ?? null,
     updatedAt: r.updated_at,
   }));
 }
@@ -3692,12 +3698,21 @@ export async function saveEventImpact(rows) {
     home_impact: r.homeImpact ?? null, away_impact: r.awayImpact ?? null,
     measured_home: r.measuredHome ?? null, measured_away: r.measuredAway ?? null,
     n_home: r.nHome ?? null, n_away: r.nAway ?? null,
+    // GC lift (Dispatch #108) — only sent when the caller actually carries a GC field, so a plain
+    // sales-only edit (the pre-existing panel behavior) never round-trips explicit nulls over real
+    // measured GC values it never touched.
+    ...(hasGcField(r) ? {
+      gc_home_impact: r.gcHomeImpact ?? null, gc_away_impact: r.gcAwayImpact ?? null,
+      measured_gc_home: r.measuredGcHome ?? null, measured_gc_away: r.measuredGcAway ?? null,
+      n_gc_home: r.nGcHome ?? null, n_gc_away: r.nGcAway ?? null,
+    } : {}),
     source: r.source || 'override', store_type: r.storeType ?? null, note: r.note ?? null,
     updated_by: uid, updated_at: new Date().toISOString(),
   }));
   const { error } = await supabase.from('event_impact').upsert(up, { onConflict: 'loc,event_type' });
   return { saved: error ? 0 : up.length, errors: error ? [error.message] : [] };
 }
+const hasGcField = r => ['gcHomeImpact', 'gcAwayImpact', 'measuredGcHome', 'measuredGcAway', 'nGcHome', 'nGcAway'].some(k => k in r);
 
 // ── Multi-tenant registry (Track B, read-side scaffolding) ────────────────────
 // Additive + fail-soft. These read the tenant tables created by

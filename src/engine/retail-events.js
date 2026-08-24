@@ -263,19 +263,27 @@ export function defaultRetailYears(now = new Date()) {
 // store's actual sales to the MEDIAN of its own same-day-of-week sales within ±28 days, excluding
 // other days of the same event and any holiday closure. Median baseline + same-DOW is what keeps a
 // single closed Christmas or an adjacent promo from masquerading as a shopping lift.
-//   salesRows       : [{ loc, date:'YYYY-MM-DD', sales }]
+//   salesRows       : [{ loc, date:'YYYY-MM-DD', sales }]  (or any numeric field — see valueKey below)
 //   eventDatesByLoc : { loc: ['YYYY-MM-DD', …] }  — ONE event type at a time
 // → { loc: { measured, n, lifts:[…] } }
+//
+// GC lift (Dispatch #108, additive): pass `opts.valueKey:'gc'` with rows shaped { loc, date, gc }
+// (e.g. qsr_daily_activity_rollup.transactions) to grade guest-count lift with the IDENTICAL
+// median/±28-day/exclusion methodology instead of duplicating this function. `valueKey` defaults to
+// `'sales'`, so every existing call site (measure-retail-impact.mjs's sales-lift pass, the football
+// seed's shape) is byte-for-byte unchanged — this is a generalization, not a behavior change.
 const _median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 export function measureEventLift(salesRows, eventDatesByLoc, opts = {}) {
   const windowDays  = opts.windowDays ?? 28;
   const minBaseline = opts.minBaseline ?? 3;
+  const valueKey    = opts.valueKey ?? 'sales';
   const excludeDates = opts.excludeDates instanceof Set ? opts.excludeDates : new Set(opts.excludeDates || []);
   const byLoc = {};
   for (const r of salesRows || []) {
-    if (!r || !r.loc || !r.date || !(r.sales > 0)) continue;
+    const val = r && r[valueKey];
+    if (!r || !r.loc || !r.date || !(val > 0)) continue;
     const loc = String(r.loc).replace(/^0+/, '');
-    (byLoc[loc] = byLoc[loc] || []).push({ t: fromIso(r.date).getTime(), dow: fromIso(r.date).getDay(), d: String(r.date).slice(0, 10), sales: +r.sales });
+    (byLoc[loc] = byLoc[loc] || []).push({ t: fromIso(r.date).getTime(), dow: fromIso(r.date).getDay(), d: String(r.date).slice(0, 10), v: +val });
   }
   const out = {};
   for (const [rawLoc, dates] of Object.entries(eventDatesByLoc || {})) {
@@ -284,14 +292,14 @@ export function measureEventLift(salesRows, eventDatesByLoc, opts = {}) {
     const evSet = new Set(dates);
     const lifts = [];
     for (const d of dates) {
-      const hit = rows.find(r => r.d === d); if (!hit) continue;         // no sales that day → skip
+      const hit = rows.find(r => r.d === d); if (!hit) continue;         // no value that day → skip
       const lo = hit.t - windowDays * 86400000, hi = hit.t + windowDays * 86400000;
       const base = rows.filter(r => r.dow === hit.dow && r.t >= lo && r.t <= hi && r.d !== d
-        && !evSet.has(r.d) && !excludeDates.has(r.d)).map(r => r.sales);
+        && !evSet.has(r.d) && !excludeDates.has(r.d)).map(r => r.v);
       if (base.length < minBaseline) continue;                           // too thin to grade honestly
       const med = _median(base);
       if (!(med > 0)) continue;
-      lifts.push(hit.sales / med - 1);
+      lifts.push(hit.v / med - 1);
     }
     if (lifts.length) out[loc] = { measured: lifts.reduce((a, b) => a + b, 0) / lifts.length, n: lifts.length, lifts };
   }

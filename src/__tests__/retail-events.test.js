@@ -242,4 +242,33 @@ describe('measureEventLift / shrinkLifts', () => {
   it('returns nothing for an empty registry rather than NaN', () => {
     expect(shrinkLifts({})).toEqual({ district: null, byLoc: {} });
   });
+
+  // Dispatch #108: GC lift is the identical median/±28-day/exclusion methodology over a
+  // different field, selected via opts.valueKey. Same 20-Friday fixture, GC-shaped rows.
+  describe('GC lift (opts.valueKey) — additive, same methodology as sales', () => {
+    const gcRows = [];
+    for (let i = 0; i < 20; i++) {
+      const d = new Date(Date.UTC(2025, 0, 3 + i * 7));
+      gcRows.push({ loc: '1', date: d.toISOString().slice(0, 10), gc: 500 });
+    }
+    const gcEventDay = gcRows[10].date;
+    gcRows[10] = { ...gcRows[10], gc: 550 };
+
+    it('grades an event day against its own same-DOW median GC baseline', () => {
+      const out = measureEventLift(gcRows, { 1: [gcEventDay] }, { valueKey: 'gc' });
+      expect(out['1'].n).toBe(1);
+      expect(out['1'].measured).toBeCloseTo(0.1, 6);
+    });
+    it('defaulting valueKey to "sales" ignores a gc-only row entirely (no silent 0 lift)', () => {
+      // Rows carry ONLY `gc`, no `sales` — the default-valueKey path must find nothing to grade,
+      // not misread `gc` as `sales`=undefined and produce a spurious result.
+      expect(measureEventLift(gcRows, { 1: [gcEventDay] })).toEqual({});
+    });
+    it('sales-lift call sites are byte-identical when valueKey is omitted', () => {
+      // Same fixture/assert as the sales-lift test above, run again to lock in that adding
+      // valueKey did not perturb the default path.
+      const out = measureEventLift(rows, { 1: [eventDay] });
+      expect(out['1'].measured).toBeCloseTo(0.2, 6);
+    });
+  });
 });

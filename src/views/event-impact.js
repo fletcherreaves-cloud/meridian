@@ -3,6 +3,13 @@
 // Per-store × event-type measured sales impact, editable. Seeded from the 2022-2025 football
 // measurement (home/away n-shrunk lifts). Overrides win over the measured seed; reset restores it.
 // Feeds the forecast (setEventImpact refresh on save). Drillable by state/group.
+//
+// GC (guest-count) lift columns (Dispatch #108) — additive twin of the sales columns above, same
+// edit/reset/override pattern, populated by the same measurement scripts
+// (measure-retail-impact.mjs / measure-holiday-impact.mjs / measure-tagged-event-impact.mjs) via
+// src/engine/retail-events.js's measureEventLift(opts.valueKey:'gc'). A store can carry sales lift
+// without GC lift (or vice versa) when the two sources' date coverage differs — GC's source
+// (qsr_daily_activity_rollup) only backfills to 2024-01-01, sales (labor_rows) to 2022-01-01.
 import * as React from 'react';
 import { loadEventImpact, saveEventImpact } from '../lib/supabase.js';
 import { setEventImpact } from '../engine/forecast.js';
@@ -47,7 +54,9 @@ export function EventImpactPanel({ onClose }) {
 
   const resetToMeasured = (loc) => {
     const r = byKey[loc + '|' + evType]; if (!r) return;
-    setCur(loc, 'homeImpact', r.measuredHome); setCur(loc, 'awayImpact', r.measuredAway); setCur(loc, '_reset', true);
+    setCur(loc, 'homeImpact', r.measuredHome); setCur(loc, 'awayImpact', r.measuredAway);
+    setCur(loc, 'gcHomeImpact', r.measuredGcHome); setCur(loc, 'gcAwayImpact', r.measuredGcAway);
+    setCur(loc, '_reset', true);
   };
   const save = async () => {
     setBusy(true); setMsg('');
@@ -59,6 +68,10 @@ export function EventImpactPanel({ onClose }) {
         awayImpact: 'awayImpact' in e ? e.awayImpact : r.awayImpact,
         measuredHome: r.measuredHome ?? null, measuredAway: r.measuredAway ?? null,
         nHome: r.nHome ?? null, nAway: r.nAway ?? null,
+        gcHomeImpact: 'gcHomeImpact' in e ? e.gcHomeImpact : r.gcHomeImpact,
+        gcAwayImpact: 'gcAwayImpact' in e ? e.gcAwayImpact : r.gcAwayImpact,
+        measuredGcHome: r.measuredGcHome ?? null, measuredGcAway: r.measuredGcAway ?? null,
+        nGcHome: r.nGcHome ?? null, nGcAway: r.nGcAway ?? null,
         storeType: 'storeType' in e ? e.storeType : r.storeType,
         source: e._reset ? 'measured' : 'override' };
     });
@@ -97,11 +110,14 @@ export function EventImpactPanel({ onClose }) {
           h('thead', null, h('tr', null,
             th('Store'), th('Type'),
             th(sportsT ? 'Home %' : 'Impact %', true), sportsT ? th('Away %', true) : null,
+            th(sportsT ? 'GC Home %' : 'GC %', true), sportsT ? th('GC Away %', true) : null,
             th('Measured', true), th('n', true), th(''))),
           h('tbody', null, ...LOCS.map(loc => {
             const r = byKey[loc + '|' + evType];
             const overridden = r && r.source === 'override' || (edits[loc + '|' + evType] && !edits[loc + '|' + evType]._reset && Object.keys(edits[loc + '|' + evType]).length);
             const home = cur(loc, 'homeImpact'), away = cur(loc, 'awayImpact');
+            const gcHome = cur(loc, 'gcHomeImpact'), gcAway = cur(loc, 'gcAwayImpact');
+            const hasReset = r && (r.measuredHome != null || r.measuredGcHome != null);
             return h('tr', { key: loc, style: { borderBottom: '1px solid var(--bdr)' } },
               h('td', { style: { padding: '4px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, sName(loc) || STORE_NAMES[loc] || loc,
                 overridden ? span({ style: { marginLeft: 5, fontSize: '8px', color: 'var(--amber)', fontWeight: 700 } }, '✎') : null),
@@ -110,18 +126,23 @@ export function EventImpactPanel({ onClose }) {
                   STYPES.map(t => h('option', { key: t || 'x', value: t }, t || '—')))),
               h('td', { style: { padding: '4px 8px', textAlign: 'right' } }, inp(typeof home === 'string' ? home : pctOf(home), v => setCur(loc, 'homeImpact', toFrac(v)))),
               sportsT ? h('td', { style: { padding: '4px 8px', textAlign: 'right' } }, inp(typeof away === 'string' ? away : pctOf(away), v => setCur(loc, 'awayImpact', toFrac(v)))) : null,
+              h('td', { style: { padding: '4px 8px', textAlign: 'right' } }, inp(typeof gcHome === 'string' ? gcHome : pctOf(gcHome), v => setCur(loc, 'gcHomeImpact', toFrac(v)))),
+              sportsT ? h('td', { style: { padding: '4px 8px', textAlign: 'right' } }, inp(typeof gcAway === 'string' ? gcAway : pctOf(gcAway), v => setCur(loc, 'gcAwayImpact', toFrac(v)))) : null,
               h('td', { style: { padding: '4px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
-                r ? (pctOf(r.measuredHome) + '%' + (sportsT && r.measuredAway != null ? ' / ' + pctOf(r.measuredAway) + '%' : '')) : '—'),
-              h('td', { style: { padding: '4px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, r ? (sportsT ? (r.nHome || 0) + '/' + (r.nAway || 0) : (r.nHome || '')) : ''),
+                r ? (pctOf(r.measuredHome) + '%' + (sportsT && r.measuredAway != null ? ' / ' + pctOf(r.measuredAway) + '%' : '')
+                  + (r.measuredGcHome != null ? '  ·  gc ' + pctOf(r.measuredGcHome) + '%' + (sportsT && r.measuredGcAway != null ? ' / ' + pctOf(r.measuredGcAway) + '%' : '') : '')) : '—'),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', color: 'var(--text3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } },
+                r ? ((sportsT ? (r.nHome || 0) + '/' + (r.nAway || 0) : (r.nHome ?? '—'))
+                  + (r.nGcHome != null || r.nGcAway != null ? '  ·  gc ' + (sportsT ? (r.nGcHome || 0) + '/' + (r.nGcAway || 0) : (r.nGcHome ?? '—')) : '')) : ''),
               h('td', { style: { padding: '4px 8px', textAlign: 'right' } },
-                r && r.measuredHome != null ? btn({ onClick: () => resetToMeasured(loc), title: 'Reset to measured', style: { fontSize: '9px', color: 'var(--text3)', background: 'transparent', border: '1px solid var(--bdr2)', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' } }, '↺') : null));
+                hasReset ? btn({ onClick: () => resetToMeasured(loc), title: 'Reset to measured', style: { fontSize: '9px', color: 'var(--text3)', background: 'transparent', border: '1px solid var(--bdr2)', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' } }, '↺') : null));
           }))),
         LOCS.every(l => !byKey[l + '|' + evType]) ? div({ style: { padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: '11px', lineHeight: 1.6 } },
-          'No measured data for this event type yet. Sports is seeded from the 2022-2025 football measurement; festivals/weather/LTOs populate as we measure them. You can still enter values manually.') : null),
+          'No measured data for this event type yet. Sports/retail/holiday are measured; weather has nothing tagged yet in the calendar to measure against. You can still enter values manually.') : null),
       // footer
       div({ style: { padding: '10px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10 } },
         div({ style: { flex: 1, fontSize: '10px', color: msg.startsWith('✓') ? '#6ee7b7' : msg ? '#fca5a5' : 'var(--text3)' } },
-          msg || (sportsT ? 'Home = sales lift on home-game days; Away = away-game days. Values are % (e.g. 7.5). Edit = override; ↺ = reset to measured.' : 'Impact = sales lift %. Edit to set; ↺ resets to measured.')),
+          msg || (sportsT ? 'Home/Away = sales lift; GC Home/Away = guest-count lift (independent — a store can have one without the other). Values are % (e.g. 7.5). Edit = override; ↺ = reset to measured.' : 'Impact = sales lift %; GC % = guest-count lift %, independently measured. Edit to set; ↺ resets both to measured.')),
         dirtyKeys.length ? span({ style: { fontSize: '10px', color: 'var(--amber)', fontWeight: 700 } }, dirtyKeys.length + ' unsaved') : null,
         btn({ className: 'btn btn-sm btn-a', disabled: busy || !dirtyKeys.length, style: { fontWeight: 700, opacity: (busy || !dirtyKeys.length) ? 0.5 : 1 }, onClick: save }, busy ? 'Saving…' : '✓ Save changes'))));
 }
