@@ -52,20 +52,34 @@ not touch Production. This cost a round trip today: Preview was updated first an
 held the legacy key. If a future rotation happens, update **Production** and **redeploy** — a saved
 variable alone changes nothing.
 
-## 🔴 Still NOT done — and a working SAGE does not prove otherwise
+## ✅ DONE 2026-08-24 — the sage-chat deploy shipped and was verified against the distinguishing test
 
-**`supabase functions deploy sage-chat --no-verify-jwt` has still never been run.** #85's 1000-row
-truncation fix and #626's query-ordering fix have been inert in production since 2026-08-23.
+**`supabase functions deploy sage-chat --no-verify-jwt` has been run.** #85's 1000-row truncation
+fix and #626's query-ordering fix are **live in production.** This section previously read *"has
+still never been run"* — true when written, false within the hour. ⚠️ **Do not re-raise it as an
+open owner action.**
 
-⚠️ **The successful SAGE answer above is NOT evidence the fix shipped.** It was a **single-day**
-question: 27 stores × 24 `hour_slot`s = **648 rows**, which is **under PostgREST's 1000-row cap**.
-A one-day query was always complete, fix or no fix. The bug only appears on **multi-day** windows
-— that is exactly why it went unnoticed for so long.
+**How it was verified — the test that actually distinguishes fixed from broken.** A single-day
+question proves nothing: 27 stores × 24 `hour_slot`s = **648 rows**, under PostgREST's 1000-row
+cap, so a one-day pull was always complete either way. That is precisely why the bug survived so
+long. The distinguishing test is a **multi-day** window:
 
-**The test that actually distinguishes them:** ask SAGE for a **14-day or 30-day** window across
-all stores. Pre-fix it silently truncates (a 14-day pull returns ~1.5 days of data and reports
-confidently on it). Post-fix it returns the full range. **Do not treat any single-day answer as a
-verification.**
+| run | result |
+|---|---|
+| 30-day question, **pre-deploy** | *"the tool returned only 2 days per store"* — matches `1000 ÷ 648 = 1.54 days` exactly |
+| 30-day question, **post-deploy** | no caveat; real 30-day sales per store ($223K–$433K), all 27 stores |
+
+🔴 **The trap that cost two false starts, worth knowing for any future edge-function deploy:**
+`supabase functions deploy` ships **whatever is on the deploying machine's disk**, not what is on
+GitHub. The owner's Mac was **20 commits behind** at `ecb9000`, so the first two deploys succeeded
+— with no error — and shipped the *old* code. The tell was that `paginate.js` and
+`promo-roi-note.js` were absent from `ls supabase/functions/sage-chat/`; `paginate.js` is created
+by #625 and cannot exist in an older checkout. **`git pull` before any function deploy, and check
+the file listing before believing the deploy.**
+
+Note this also means every earlier "sage deployed" in that session shipped from the same stale
+checkout — which is why #619's LifeLenz column fix and #611's `gap_vlh` rename *were* live (they
+predate `ecb9000`) while #625/#626 were not.
 
 ## Doc debt the rotation created — fix opportunistically, do not sweep
 
@@ -100,7 +114,13 @@ verification.**
 - Correct the false service-role claim in `dispatch-88.md` and `changelog/5.133.js`.
 
 **Owner:**
-- Run the deploy, then the multi-day SAGE question.
+- ✅ Deploy done and verified (see the DONE section above) — **do not re-raise.**
+- **Verify the forecast-bias claim before acting on it.** SAGE's post-deploy answer recommends a
+  district-wide downward projection correction on the basis of *"-6.0%, 27 of 27 stores under."*
+  That is the single largest recommendation outstanding and the least verified — it changes every
+  store's schedule. Run **Forecast Accuracy → MAPE by source** over a real 30-day window and
+  confirm the error is genuinely one-directional first. The $42K–$85K/mo attached to it is
+  explicitly an estimate resting on an assumption.
 - **Tolerance bands** — still needs a conversation before it can be a dispatch. Prior art:
   `store-dash.js` declares `tol:` on 24 metrics and **nothing reads any of them.**
 - **LifeLenz "need" model calibration** — all 27 stores positive, district +35.8 h/day. Parked as
