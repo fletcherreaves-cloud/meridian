@@ -1,0 +1,25 @@
+// @ts-nocheck
+export default {version:'5.133', date:'2026-08-24', changes:[
+  'Dispatch #89: the agent environment cannot read live tenant data, and a claim in #633\'s merged '
+  + 'writeup said otherwise. Re-verified rather than re-asserted.\n\n'
+  + 'Root cause, isolated three ways: .env.local\'s VITE_SUPABASE_ANON_KEY is not an anon key -- its '
+  + 'JWT decodes to role:service_role, byte-identical to SUPABASE_SERVICE_ROLE_KEY. A request with '
+  + 'only an apikey header (CLAUDE.md\'s documented recipe) is genuinely anon-scoped and RLS-'
+  + 'enforced -- content-range: */0 on all 10 measured operational tables. Adding an Authorization: '
+  + 'Bearer header with that same value exercises real service_role access and bypasses RLS -- '
+  + 'which is what produced dispatch #88\'s qsr_fob claim, mislabeled as "the anon key."\n\n'
+  + 'CLAUDE.md\'s "Supabase egress is now allowlisted" paragraph corrected to lead with the true '
+  + 'state (10/10 operational tables RLS-blocked to the anon-scoped recipe; qsrsoft_kb is the only '
+  + 'confirmed-readable table) and records the measurement table so it is not re-derived. Egress-'
+  + 'works stays under "do not re-raise" -- only the data-access implication was wrong. Added four '
+  + 'sentences to the "Measure it, don\'t reason about it" standing rule: a live-data claim must '
+  + 'name the credential and the observation.\n\n'
+  + 'memory/dispatch-88.md item 1\'s claim corrected inline (original text kept, followed by a dated '
+  + 'correction, per this repo\'s convention for reversed findings) -- the underlying "does the '
+  + 'stream have August data" question is left open per this dispatch\'s own instruction not to '
+  + 're-assert it from this sandbox; the owner was asked directly in-session to confirm via the '
+  + 'Food Cost panel\'s month selector. Item 4 (a durable read credential) framed for the owner with '
+  + 'trade-offs, not implemented -- no service-role key added, no credential value written to any '
+  + 'file.\n\n'
+  + 'Docs only. Full writeup: memory/dispatch-89.md.',
+]};

@@ -135,6 +135,23 @@ Supabase (`curl` + the anon key, egress already allowlisted per CLAUDE.md) and h
 shape, not a daily one — consistent with FOB/inventory being periodic data). The stream does not
 stop in May.
 
+⚠️ **CORRECTION (dispatch #89, 2026-08-24) — the claim above is wrong about the credential, and the
+underlying data question it was used to settle is NOT closed.** Re-verified per dispatch #89's own
+"name the credential and the observation" bar. **Credential:** `.env.local`'s
+`VITE_SUPABASE_ANON_KEY` is not an anon key — decoding its JWT shows `"role":"service_role"`, and
+its value is byte-identical to `SUPABASE_SERVICE_ROLE_KEY`. **Observation, reproduced fresh:** a
+request using only `-H "apikey: $VITE_SUPABASE_ANON_KEY"` (the genuinely anon-scoped, RLS-enforced
+form — CLAUDE.md's documented recipe, and the form dispatch #89's own 10-table `*/0` measurement
+used) returns `[]`/`content-range: */0` on `qsr_fob`, matching dispatch #89's measurement exactly.
+The real rows above were produced by a request that also sent `-H "Authorization: Bearer
+$VITE_SUPABASE_ANON_KEY"` — which, because that value actually carries `service_role`, bypasses RLS
+entirely. So this claim was never anon-scoped evidence at all; it was an unlabeled service-role
+read, mischaracterized as "the anon key." Per dispatch #89's explicit instruction, that does not
+settle the underlying question either way — **do not re-assert it from this environment.** The
+owner has been asked to confirm directly by opening the Food Cost panel and reading the month
+selector; that answer, not any query from this sandbox, is what closes this item. See
+`memory/dispatch-89.md` and CLAUDE.md's corrected Supabase-egress paragraph for the full mechanism.
+
 The real cause: `FOBAnalysisPanel` (`src/views/analytics.js`) computes `months` from
 `fobRowsEff`, a cloud-first merge of `qsrFobRows` (async — starts `null` while `loadQsrFob()` is in
 flight) and `ds.fobRows` (manual upload, already present synchronously on first render). The
