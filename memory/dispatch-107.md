@@ -152,3 +152,95 @@ metric. Do not re-derive or duplicate the merge chain — it exists and is corre
 - **Do not conflate `ds.targets` (yearly upload, correct today) with the Planning > Yearly panel
   (broken today)** — the parser and the merge chain are not the bug; the display panel and the missing
   persistence are.
+
+## Resolution
+
+All four parts landed together (branch `claude/dispatch-107-yearly-targets`, PR open, not merged —
+per the working instructions for this dispatch a PM verifies and merges independently).
+
+**Part 1 — persistence.** Added `supabase/schema-yearly-targets.sql`: a new `yearly_targets` table,
+PK `(loc, year)`, one column per `parseYearlyTargets()` field (24 target columns), plus `source`
+('upload' | 'override', for Part 3) and `tenant_id uuid not null default
+'00000000-0000-0000-0000-000000000001'` with tenant + per-location RLS mirroring
+`supabase/schema-news-mentions.sql` (the current canonical pattern for a brand-new table — checked
+`monthly_targets` itself predates the multi-tenant migration and only carries `tenant_id` via the
+separate phase1/phase2 ALTER files, so news_mentions's create-time pattern was the one actually worth
+mirroring for a table that doesn't exist yet). Added `saveYearlyTargets(targets, year, source)` /
+`loadYearlyTargets(year)` / `loadAllYearlyTargets()` to `src/lib/supabase.js`, field-mapped 1:1
+against `saveMonthlyTargets`/`loadMonthlyTargets`/`loadAllMonthlyTargets`, including the same
+`_stripNullTargets` null-handling (#166) so a NULL column produces an absent key, not a
+present-but-null one that would beat `DEFAULT_TARGETS` in the merge. Wired `saveYearlyTargets` into
+all three `type==='targets'` branches in `pipeline.js` (`buildDS` x2, `mergeDS` x1) via a shared
+`_saveYearlyTargetsAsync` helper, so a full rebuild and an incremental re-drop persist identically —
+matching the existing comment that already called this out as a requirement. Year is detected from
+the filename (`/\b(20\d{2})\b/`, e.g. `2026_Restaurant_Targets__Updated__OK__FL.xlsx`), falling back
+to the current calendar year rather than silently dropping the save when a filename doesn't carry
+one. Wired the load into `App.js`'s T1 startup tier (same tier as `_stMonthlyTargets`, so Planning >
+Yearly and Performance Review have real data on first paint, not just after T2/T3): `ds.targets` is
+now hydrated from the most recent year in `loadAllYearlyTargets()`'s result on every fresh
+session/device, with `ds.allYearlyTargets` (keyed by year) added alongside for the Part 2 panel.
+Verified against real behavior, not assumed: `src/__tests__/yearly-targets-persistence.test.js`
+exercises the real `saveYearlyTargets`/`loadYearlyTargets`/`loadAllYearlyTargets` functions against a
+mocked `@supabase/supabase-js` client (same technique as `monthly-targets-null-strip.test.js`) and
+asserts the actual upserted row shape (`onConflict:'loc,year'`, every column name) and the
+null-stripping round trip — not a re-derived stand-in.
+
+**Part 2 — panel rebuild.** `src/views/yearly-projections.js` gained a view toggle ("💵 Sales Pace" /
+"🎯 Target Categories") in the header, matching the internal-tab pattern used elsewhere
+(`security-panel.js`'s cash/inventory domain toggle). The existing Sales Pace table is completely
+unchanged — same component tree, same props, same computation — just now one of two views instead of
+the only one. The new Target Categories view (`TargetCategoriesView`) reads
+`ds.allYearlyTargets[year]`, preferring `ds.targets` (the flattened "most recent year" view, which
+may hold a same-session upload not yet round-tripped through Supabase) for the current calendar year
+— the same precedence shape the Sales view already uses for `ds.allMonthlyTargets`/session data. Five
+category sub-tabs (Service & Ops, CSAT, Digital, People, Labor & FOB) reproduce the workbook's own
+grouping from the dispatch's own inspection, each a per-store table with OK/FL/Grand subtotals
+(`agg:'sum'` for headcount-style counts, `agg:'avg'` for rates/times — never an average of an
+average, matching the Sales view's own stated principle). Verified by rendering the actual
+`YearlyProjectionsPanel` (not a data-shaping helper) in
+`src/__tests__/dispatch-107-yearly-projections-panel.test.js`: clicks the real "Target Categories"
+button, switches to the CSAT sub-tab, and asserts real formatted values appear in the DOM (`140s` for
+OEPE, `2.00%` for OSAT B2B) — plus a check that the Sales Pace view and its "Annual Target" column
+still render untouched, and that a year with no upload shows the empty-state message instead of
+crashing.
+
+**Part 3 — retired the dead-end editor.** Deleted `store-dash.js`'s `mf_targets_yearly_*`
+localStorage helpers (`getYearlyStorageKey`/`loadYearlyTargets`/`saveYearlyTargets`/
+`setYearlyTarget`/`getYearlyTarget`/`exportYearlyTargets`) and `MonthlyTargetManager`'s "🏆 Yearly
+Goals" mode (state, mode-toggle UI, year selector, Export/Apply-as-Monthly-Defaults buttons) rather
+than wiring it into the new `yearly_targets` table. Reasoning, since this was a judgment call rather
+than an obvious pick: (1) nothing downstream ever read it — confirmed by the dispatch's own grep, and
+its own "Apply as Monthly Defaults" button only ever copied its bucket into the *separate* legacy
+`mf_targets_v2` localStorage store, never into `ds.targets` or the real `monthly_targets` Supabase
+table; (2) its field set (`TARGET_FIELDS_CATS` — OEPE/TPPH/KVS/Park/R2P/labor/T-Reds/promos/cash
+controls/FOB) is the *monthly* operational-field taxonomy, not the real yearly workbook's categories
+(Voice OSAT/EAD/B2B, 1-800 Contacts, Digital App/McDelivery GC-R-D, staffing/headcount/turnover) — an
+overlapping-but-incomplete vocabulary sitting right next to the real Target Categories view (Part 2)
+would have read as a second, contradictory "yearly targets" system, not a convenience; (3) the
+owner's own repeated re-uploads of the real workbook are themselves the signal that bulk upload is
+the intended source of truth. This also resolves the dispatch's flagged naming collision by
+construction — deleting the dead-end functions frees `loadYearlyTargets`/`saveYearlyTargets` for the
+real Supabase-backed ones in `supabase.js` without ever needing an alternate name for either side. No
+downstream reader lost anything: grepped for every deleted export name across `src/` post-change and
+the only remaining hits are the explanatory comment left in place of the old code.
+
+**Part 4 — verified, not rebuilt.** `mergedTargetsForLoc` (`review-engine.js`) was already correct
+(`DEFAULT_TARGETS < ds.targets < ds.monthlyTargets`) and untouched by this dispatch. Added one test
+case to the existing `review-target-autofill.test.js` (which already covered the `tLabor`
+monthly-wins-over-yearly case) using `tOsatB2B` specifically, per the dispatch's own suggestion,
+because it's checked to have no `monthly_targets` column at all — a genuinely yearly-only field, not
+one that happens to be untested at the monthly tier. Confirms both halves against the real function:
+`ds.targets`-only → the yearly value surfaces; add a `ds.monthlyTargets` entry for the same
+store/field → monthly wins, unchanged. Did not touch `mergedTargetsForLoc` itself.
+
+**Housekeeping.** Regenerated the loader field map (`node scripts/gen-loader-emits.mjs --write`) per
+the standing rule for touching a save path — the resulting diff also picked up unrelated drift in
+`opsCashRows`/`opsLaborRows`/`opsServiceRows` (`dt`/`metrics`/`tenant_id`/`updated_at` columns) that
+predates this dispatch and had just never been regenerated; included as-is since the script is the
+source of truth and the standing rule says regenerate, not hand-edit. `npm run build` clean; full
+`npm test` run is 20622/20625 green — the 3 failures are `src-no-undef.test.js` copies under
+`.claude/worktrees/agent-*` (other agents' sibling worktrees hitting their own unrelated missing-file
+state), not this worktree's own copy, and not touched by this change. Entry chunk: 520.05 KB → 520.77
+KB gzip (eager total 521.91 KB → 522.63 KB, +0.72 KB, budget 850 KB) — the increase is the new T1
+`_stYearlyTargets` startup stage in `App.js`; `store-dash.js`'s own lazy chunk actually shrank (Part
+3's deletions) and `yearly-projections.js`'s chunk is lazy-loaded, not part of the eager entry.
