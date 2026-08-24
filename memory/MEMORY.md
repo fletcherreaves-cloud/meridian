@@ -98,7 +98,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   matches). Fix: point this widget's completion/date logic at the same already-fixed
   `count-cycle.js`/`qsr_onhand` basis Count Cycle uses; keep `weekly-cadence.js`'s
   `itemVarianceWindows` (the between-count drill-down) untouched — different, still-valuable
-  feature.
+  feature. **Scope refined mid-flight** (owner, same day): weekly-count completion should be
+  graded like EOM already is (measured EOM's real thresholds — `CLASS_DONE_PCT=0.98`,
+  `BELIEVES_DONE_PCT=0.90` — both higher than the old `COVER_FRAC=0.75`), plus a specific
+  per-item "still uncounted" list per store (mirrors EOM's existing `diagnoseIncompleteCount()`)
+  so a GM can be told exactly what's left. **Queued follow-ups, same panel, sequenced strictly
+  after #97 (same file):** [Dispatch #98](dispatch-98.md) — the summary tiles (Stores Reporting /
+  Believe Done / Avg Count Complete / By Class) render unconditionally off EOM math no matter
+  which tab is active, so Count Cycle shows frozen EOM zeros instead of its own real data; make
+  them mode-aware. [Dispatch #99](dispatch-99.md) — the date control is a single-month dropdown
+  with no way to view a past day/week; `cycleCompliance`/`analyzeCountCadence` already accept an
+  arbitrary `asOf`, so this is mostly a UI + data-scope gap. **Do not run #98/#99 in parallel with
+  #97 or each other** — same file's date/mode plumbing, guaranteed collision.
 - **📋 (2026-08-24): [Dispatch #94 Phases 2+3 — district `tol` rollup + Coaching findings](dispatch-94.md)** —
   **Start here.** Phase 1's per-metric absolute `tol` comparison (already live) is now rolled up
   district-wide (**🎯 Tolerance Status** tile, At A Glance) and fed into `GMCoachingBrief`'s
