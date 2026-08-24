@@ -46,6 +46,24 @@ function mkFixture() {
 
 const STORES = [{ loc: '90001' }, { loc: '90002' }, { loc: '90003' }];
 
+// Dispatch #77 (numerator/denominator gap, resolved 2026-08-24) -- unlike mkFixture() above,
+// which reads Labor % off a PRECOMPUTED field (glimpseRows.laborPct), these two stores carry the
+// resolvable numerator+denominator legs (opsLaborRows.laborDollar, qsrActSummaryRows.sales) for
+// every day, so rankPerformers can compute the true Sum/Sum rather than falling back to
+// mean-of-daily.
+function mkRatioSumFixture() {
+  const fullWindow = daysBack(28);
+  const rows = { opsLaborRows: [], qsrActSummaryRows: [] };
+  for (const date of fullWindow) {
+    rows.opsLaborRows.push({ loc: '90004', date, laborDollar: 300 });
+    rows.qsrActSummaryRows.push({ loc: '90004', date, sales: 1000 });
+    rows.opsLaborRows.push({ loc: '90005', date, laborDollar: 100 });
+    rows.qsrActSummaryRows.push({ loc: '90005', date, sales: 1000 });
+  }
+  return rows;
+}
+const RATIO_STORES = [{ loc: '90004' }, { loc: '90005' }];
+
 describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
   let container, root;
   beforeEach(() => {
@@ -108,5 +126,19 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
     const thinLine = [...container.querySelectorAll('div')]
       .find(d => d.children.length === 0 && d.textContent && d.textContent.includes('too little data to rank'));
     expect(thinLine).toBeTruthy();
+  });
+
+  // Dispatch #77 -- when the ratio's numerator and denominator both resolve independently (not
+  // just a precomputed ratio field), the panel must show the TRUE period-total disclaimer, not
+  // the daily-average one the mkFixture() cases above correctly show. Reverting rankPerformers to
+  // always use mean-of-daily makes this fail (the sum-basis text would never appear).
+  it('switches to the true period-total (Sum/Sum) disclaimer once the metric\'s numerator and denominator both resolve', () => {
+    const ds = mkRatioSumFixture();
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: RATIO_STORES, ds, onClose: () => {} })); });
+    const laborBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Labor %');
+    act(() => { laborBtn.click(); });
+    const txt = container.textContent;
+    expect(txt).toContain('true period total (Σ ÷ Σ)');
+    expect(txt).not.toContain('daily average over the window');
   });
 });

@@ -395,3 +395,132 @@ serve every consumer of a ratio rollup, not just this panel. Related and probabl
 
 ⚠️ **Until it lands, a leaderboard on any of those 10 metrics can mis-order two close stores**, and
 the number shown is a daily average rather than the period figure a P&L would show.
+
+---
+
+## Resolution (2026-08-24) — the deferred numerator/denominator gap
+
+Picked up from the standing queue (dispatch #85's handoff pointed here). Closes the gap deferred
+above with owner approval 2026-08-23, for exactly the 10 named ratio metrics — migrating every
+other `metricAvg` call site in the app is explicitly NOT part of this pass (see below).
+
+### The mechanism: `derive.kind:'ratio'`, not a new declaration site
+
+`engine/metric-source.js` already had `derive: {inputs:[a,b], fn}` on several metrics for their
+single-day fallback. The insight that made this a small, disciplined change rather than a new
+parallel structure: **5 of the 10 named ratios (tpph, laborPct, compWaste, rawWaste, statVar)
+already had a derive whose two inputs genuinely ARE [numerator, denominator]** — the missing piece
+was never the declaration, it was a rollup function that reads it. Marked those five (plus `spph`,
+the ROLLUP CAVEAT comment's own worked example, and `avgCheck`, which got a brand-new derive
+`sales/gc`) with `kind:'ratio'`. `oppCostPct` is also a literal division (`dollars/sales`) but was
+**deliberately left unmarked** — its own comment flags the sales denominator as an unconfirmed
+assumption, and this fix should not extend trust to a formula that hasn't been confirmed.
+
+`kind:'ratio'` is a curated marker, not "any 2-input derive" — `oppCostDollar`'s `gap*rate` is a
+PRODUCT and `actVsSched`'s `act-sched` is a DIFFERENCE; neither is summable as parts, and the
+guard test (`metric-sum-ratio.test.js`) pins that both are excluded.
+
+### Three chains that did not exist before
+
+The other 5 named ratios (cashOSPct, tRedAPct, tRedBPct, discPct) had no derive at all — only a
+precomputed field. Their real numerator ($ amount) and denominator (net sales) legs exist in the
+data but were never exposed as independent `METRIC_SOURCES` chains:
+
+- **`netSalesAmt`** — opsCashRows-only. This is deliberately **not** the general `sales` key,
+  which resolves DAR product sales — a *different basis*. Conflating the two already cost real
+  debugging time on `laborPct` (this same file's own reconciliation comment, 89.8% match, 10.2%
+  day-specific mismatch pool never fully explained). `netSalesAmt` sums the SAME `net_sales_amt`
+  column `loadOpsCashSheet`'s own inline discPct/tRedAPct/tRedBPct/cashOSPct math already divides
+  by (supabase.js), just camelCase-aliased so `metricSumRatio` can read it like every other chain.
+- **`discAmt`** — opsCashRows (new alias) then ctrlRows (already had it, `parseCtrlData`).
+- **`tRedAAmt` / `tRedBAmt`** — opsCashRows-only. ctrlRows carries T-Red *counts* and the *pct*
+  for this upload but no dollar amount, so there is no manual fallback for these two yet — a real,
+  documented gap, not an oversight.
+- `cashOSAmt` already existed as a chain and needed no change; reused directly.
+
+Each of the four percent metrics (cashOSPct, tRedAPct, tRedBPct, discPct) got a new
+`derive: {inputs:[amtKey, 'netSalesAmt'], fn: (a,s)=>a/s, kind:'ratio'}` — the exact net-sales-
+weighted formula `loadOpsCashSheet` already uses inline, now also available as an independently
+resolvable numerator/denominator pair for the rollup.
+
+### `metricSumRatio(ds, locs, range, key)`
+
+Returns `{value, n}` — the true Σnumerator/Σdenominator — or `null` if the metric isn't
+ratio-capable, or if no day in range resolves both legs. A day counts only when **both** legs
+resolve for it (mirrors `metricSeriesWithSource`'s own derive() contract: a partial input set
+contributes nothing rather than a wrong number), so a day covered only by a manual upload missing
+one leg (e.g. Controls has no net-sales-$ column) is silently excluded from the sum, not guessed.
+
+`rollupCapableMetricKeys()` returns the 11 keys now marked (`avgCheck, cashOSPct, compWaste,
+discPct, laborPct, rawWaste, spph, statVar, tRedAPct, tRedBPct, tpph`) — the panel only offers 10
+of these (spph isn't in `PERFORMER_METRICS`, no ranking direction assigned to it).
+
+### `rankPerformers`: a whole-ranking switch, never per-store
+
+The obvious-looking design — compute Σ/Σ per store, fall back to mean-of-daily for any individual
+store that can't resolve it — was considered and rejected. It would let one store's row show a
+true period total next to another store's row showing a daily average, in the SAME ranked list.
+That is **worse** than being uniformly approximate: the two numbers would no longer even be the
+same kind of thing, and a leaderboard reader has no way to know which basis a given row used.
+
+The actual rule: compute Σ/Σ for every store that has any daily coverage at all. If **all** of them
+resolve, use Σ/Σ for the entire ranking (`rollup:'sum'`). If even one doesn't, the entire ranking
+falls back to mean-of-daily (`rollup:'mean'`) — consistent within one call, never mixed. In
+practice this means: any scope/window where the underlying auto-pulled streams (opsLaborRows,
+opsCashRows) cover every included store gets the correct figure; a scope that includes a store on
+manual-only fallback gets the honest, previously-shipped approximation instead, with the panel's
+disclaimer text saying which one it's showing.
+
+`src/views/top-bottom-performers.js`'s footer disclaimer now reads `result.rollup` and shows
+either *"the true period total (Σ ÷ Σ)"* or the original *"the daily average… not the period
+total"* copy — never a bare number with no stated basis.
+
+### Verification
+
+- `metric-sum-ratio.test.js` (10 tests) — direct `metricSumRatio` tests, including the exact
+  uneven-volume pattern that motivated this work (a light day + a heavy day with different daily
+  ratios): mean-of-daily and Σ/Σ diverge by >0.1 on the fixture, matching the SPPH-style gap this
+  file's own comment already measured. Also covers the `netSalesAmt`-only-from-opsCashRows case
+  (a ctrlRows-only day is correctly excluded, not paired with a wrong denominator) and confirms
+  `rollupCapableMetricKeys()` excludes the product/difference derives.
+- `rank-performers-sum-ratio.test.js` (3 tests) — a fixture where mean-of-daily and Σ/Σ **disagree
+  about which store wins** (Store A: light day 0.10 + heavy day 0.28 → mean 0.19 but Σ/Σ 0.264;
+  Store B: flat 0.20 both ways). `rankPerformers` reports `rollup:'sum'` and ranks B first — the
+  *opposite* of what mean-of-daily said. **Confirmed revert-sensitive**: temporarily disabled the
+  sum-adoption branch and re-ran — both this test and the panel's new disclaimer test failed
+  exactly as predicted, then restored and reconfirmed green.
+- `top-bottom-performers-panel.test.js` — added one render test asserting the disclaimer text
+  actually switches to the Σ/Σ wording when the panel's real consumer resolves both legs, touching
+  the call site per the standing "would this still pass if reverted" bar. The 4 pre-existing tests
+  in this file pass **unmodified** — their fixture only supplies a precomputed `laborPct` field
+  with no `opsLaborRows`/`opsCashRows` legs, so it correctly still falls back to `rollup:'mean'`,
+  proving the new code path is additive rather than a rewrite of the old one.
+- `golden-dataset.test.js`'s `avgCheck` snapshot changed from `null` to a real derived value.
+  Measured before accepting: the fixture's `avg_check` field is `0` for this window (rejected
+  under `mode:'pos'` — a real avg check is never legitimately 0), and `avgCheck` had no derive
+  fallback before this change, so `null` was the previously-correct "nothing resolved" answer.
+  With `derive:{inputs:['sales','gc']}` added, it now correctly fills from two already-resolving
+  legs — the intended improvement, not a regression. Snapshot updated after confirming this.
+- Full suite: 2189/2189. Build clean, eager payload 518.33 KB gzip (850 KB budget) — engine-only
+  change, no new eager imports.
+
+### What was deliberately NOT done
+
+- **No migration of other `metricAvg` call sites.** Every OTHER panel in the app that calls
+  `metricAvg` on one of these 10 metrics (Labor Analytics, EOM Supervisor, At A Glance, etc.)
+  still gets mean-of-daily. `metricSumRatio` exists and is exported for any future consumer that
+  needs it; wiring each one in is real, separate work, one call site at a time — exactly what the
+  dispatch's own deferred note anticipated ("it would serve every consumer of a ratio rollup, not
+  just this panel").
+- **`oppCostPct` not marked ratio-capable**, despite being a literal division — its denominator is
+  flagged elsewhere as an unconfirmed assumption; extending Σ/Σ trust to it would be guessing.
+- **No new manual-upload fallback for T-Red $ amounts.** `tRedAAmt`/`tRedBAmt` are opsCashRows-only
+  because ctrlRows (Controls Excel) has no dollar field for T-Reds in this upload, only counts and
+  the pct. A store on manual-only Controls for T-Reds gets `rollup:'mean'` for the whole ranking
+  when included — the honest, previously-shipped number, not a wrong Σ/Σ.
+- **The notes-57-metric-registry-plan §4 connection is real but this is not that project.** §4
+  envisions numerator/denominator as a first-class registry dimension serving period reports,
+  formatting, and more, app-wide. This dispatch closes the specific, bounded instance dispatch
+  #77/#580 measured and deferred — the leaderboard's own 10 metrics — using the same underlying
+  mechanism (`derive.inputs` as num/den), so a future §4 pass can build on `kind:'ratio'` rather
+  than starting over.

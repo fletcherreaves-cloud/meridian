@@ -170,9 +170,9 @@ export const METRIC_SOURCES = {
   // multiplies by 100 before display (labor-tools.js). A derive returning d/s*100 would have
   // shipped a number 100x too large.
   laborPct:  { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'laborPct'], ['ctrlRows', 'laborPct'], ['laborRows', 'laborPct']],
-               derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null) } },
+               derive: { inputs: ['laborDollar', 'sales'], fn: (d, s) => (s > 0 && d > 0 ? d / s : null), kind: 'ratio' } },
   tpph:      { mode: 'pos', direction: 'higher', srcs: [['qsrActSummaryRows', 'tpph'], ['ctrlRows', 'tpph'], ['laborRows', 'tpph']],
-                    derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null) } },
+                    derive: { inputs: ['gc', 'actHrs'], fn: (gc, hrs) => (hrs > 0 && gc > 0 ? gc / hrs : null), kind: 'ratio' } },
   // TPPH = transactions ÷ actual hours. TRANSACTIONS AND GUEST COUNTS ARE THE SAME THING
   // here (owner-confirmed 2026-08-08) — the DAR calls it `transactions`, Glimpse and the
   // labor report call it `gc`, and metric-source resolves both under the `gc` key. Stated
@@ -192,19 +192,43 @@ export const METRIC_SOURCES = {
   // summary rather than leaving one of the two OT columns manual-only).
   otDollar:  { mode: 'any', srcs: [['opsLaborRows', 'otDollar'], ['ctrlRows', 'otDollar'], ['laborRows', 'otDollar']] },
   // Controls / loss-prevention — signed values (0 / negative are real).
-  cashOSPct: { mode: 'any', direction: 'lower', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']] },
+  //
+  // ── Numerator/denominator legs for the net-sales-weighted % metrics below (dispatch #77's
+  // deferred item, resolved here) ─────────────────────────────────────────────────────────────
+  // Net sales $ — the denominator loadOpsCashSheet's own inline math already divides
+  // discount_amt/treds_before_amt/treds_after_amt/cash_over_or_short by (supabase.js). Exposed
+  // as its own chain so a Sum/Sum rollup (metricSumRatio, below) can sum the SAME denominator the
+  // precomputed %'s already use, instead of the general `sales` key — which resolves DAR product
+  // sales, a DIFFERENT basis (see laborPct's own comment above on the crew_labor_dollars ÷
+  // product_sales reconciliation gap this exact confusion already cost real debugging time on).
+  // opsCashRows-only: it is the sole stream that carries a true net-sales-$ column here; ctrlRows
+  // (Controls Excel) has no equivalent field, so a day covered only by the manual upload cannot
+  // supply this leg and Sum/Sum simply skips that day (metricSumRatio's per-day both-legs rule).
+  netSalesAmt: { mode: 'pos', srcs: [['opsCashRows', 'netSalesAmt']] },
+  // Discount $ — manual Controls (already a real field, parseCtrlData), then the auto-pulled
+  // Operations Report cash-sheet (aliased above from discount_amt).
+  discAmt:   { mode: 'any', srcs: [['opsCashRows', 'discAmt'], ['ctrlRows', 'discAmt']] },
+  // T-Red Before/After $ — opsCashRows only; ctrlRows carries the counts (tRedACnt/tRedBCnt) and
+  // the pct but not a dollar amount for this specific upload, so no manual fallback exists yet.
+  tRedAAmt:  { mode: 'any', srcs: [['opsCashRows', 'tRedAAmt']] },
+  tRedBAmt:  { mode: 'any', srcs: [['opsCashRows', 'tRedBAmt']] },
+  cashOSPct: { mode: 'any', direction: 'lower', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']],
+               derive: { inputs: ['cashOSAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
   // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
   // the auto-pulled Operations Report cash-sheet. Closes EOM Supervisor's Cash +/- gap (#52).
   cashOSAmt: { mode: 'any', srcs: [['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt'], ['ctrlRows', 'cashOSAmt']] },
   // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
   // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
-  tRedAPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']] },
-  tRedBPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']] },
+  tRedAPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']],
+               derive: { inputs: ['tRedAAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
+  tRedBPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedBPct'], ['ctrlRows', 'tRedBPct']],
+               derive: { inputs: ['tRedBAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
   // Drawer opens (count) — manual Controls, then the auto-pulled Operations Report cash-sheet.
   drawerOpens: { mode: 'any', srcs: [['opsCashRows', 'drawerOpens'], ['ctrlRows', 'drawerOpens']] },
   // Discount % — manual Controls, then the cloud-fresh Operations Report cash-sheet (discount $ ÷
   // net sales). Closes the stale-Controls discount gap without the manual upload (#37).
-  discPct:   { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']] },
+  discPct:   { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'discPct'], ['ctrlRows', 'discPct']],
+               derive: { inputs: ['discAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
 
   // ── Notes 57 Phase 1 (v4.845) ──────────────────────────────────────────────
   // The inventory (scripts/metric-inventory.mjs) found 29 metrics described in
@@ -244,7 +268,11 @@ export const METRIC_SOURCES = {
 
   // Average check — manual Labor, then emailed Glimpse / Cash Sheet / Sales Ledger.
   // 'pos' because a real avg check is never legitimately 0.
-  avgCheck:       { mode: 'pos', direction: 'higher', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']] },
+  // derive: sales ÷ gc — added for the Sum/Sum rollup (dispatch #77's numerator/denominator gap);
+  // both inputs already resolve auto-first through their own chains, so this also gives avgCheck
+  // a real fallback for any day covered by neither of the 4 precomputed sources above.
+  avgCheck:       { mode: 'pos', direction: 'higher', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']],
+                    derive: { inputs: ['sales', 'gc'], fn: (s, g) => (g > 0 ? s / g : null), kind: 'ratio' } },
 
   // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
   dtMixPct:       { mode: 'pos', srcs: [['salesLedgerRows', 'dtPctTotal'], ['laborRows', 'dtPctTotal']] },
@@ -286,11 +314,11 @@ export const METRIC_SOURCES = {
   // derive here) — a smaller, secondary imperfection than the one being closed; flagged
   // rather than silently accepted as correct.
   compWaste: { mode: 'any', direction: 'lower', srcs: [['fobRows', 'compWaste']],
-               derive: { inputs: ['compWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
+               derive: { inputs: ['compWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
   rawWaste:  { mode: 'any', direction: 'lower', srcs: [['fobRows', 'rawWaste']],
-               derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
+               derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
   statVar:   { mode: 'any', direction: 'lower', srcs: [['fobRows', 'statVar']],
-               derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null) } },
+               derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
 };
 
 // ── Deliberately manual-only ────────────────────────────────────────────────
@@ -352,8 +380,17 @@ Object.assign(METRIC_SOURCES, {
 // Σsales ÷ Σhours is arguably the more correct district figure — measured on store 5985
 // for 2026-08: mean-of-daily $70.18/hr vs Σ/Σ $67.04/hr, a $3.14 gap. Per-day derivation
 // is still strictly better than the manual precomputed column, but a consumer that needs
-// a true weighted rollup should sum the parts itself rather than call metricAvg. This is
-// the numerator/denominator gap notes-57-metric-registry-plan §4 describes.
+// a true weighted rollup should sum the parts itself rather than call metricAvg.
+//
+// RESOLVED (dispatch #77, 2026-08-24) — this was the numerator/denominator gap
+// notes-57-metric-registry-plan §4 describes and #580/#77 deferred with owner approval
+// 2026-08-23. `derive: {..., kind:'ratio'}` marks exactly the divisions among this file's
+// derived metrics (not every 2-input derive — a product or a difference is not a ratio, see
+// metricSumRatio's own comment), and `metricSumRatio(ds, locs, range, key)` computes the true
+// Σnumerator/Σdenominator for any of them. `rankableMetricKeys()`'s Top/Bottom Performers
+// panel now uses it for all 10 of its ratio metrics (engine/top-bottom-performers.js).
+// Migrating every OTHER metricAvg call site in the app to prefer it is explicitly NOT part of
+// this dispatch — real work, one call site at a time, tracked separately.
 export const DERIVED_METRICS = {
   // Opportunity cost $ = the hours gap vs NEEDED, priced at the labour rate
   // (owner-confirmed: "actual hours +/- needed hours x average rate of pay").
@@ -382,8 +419,13 @@ export const DERIVED_METRICS = {
 
   // Sales per person-hour. No stream carries it; sales and actual hours both resolve, and
   // actHrs now chains to the DAR (v4.889), so this is available wherever the DAR is.
+  // kind:'ratio' (dispatch #77) — this is the exact pair the ROLLUP CAVEAT comment above
+  // measured the mean-of-daily-vs-Sum/Sum gap on ($70.18/hr vs $67.04/hr, store 5985, 2026-08);
+  // metricSumRatio now closes it. oppCostPct just above is deliberately NOT marked — its own
+  // comment flags the sales denominator as an unconfirmed assumption, and this fix should not
+  // extend trust to a formula that hasn't been.
   spph:    { mode: 'pos', derive: { inputs: ['sales', 'actHrs'],
-             fn: (sales, hrs) => (hrs > 0 ? sales / hrs : null) } },
+             fn: (sales, hrs) => (hrs > 0 ? sales / hrs : null), kind: 'ratio' } },
 
   // Average labour rate $/hr = labour dollars ÷ actual hours, and labour dollars =
   // laborPct × sales. NOT avg_check, which is $/transaction — a different metric that an
@@ -679,6 +721,54 @@ export function metricAvg(ds, locs, range, key) {
     for (const k in s) { sum += s[k]; n++; }
   }
   return n ? sum / n : null;
+}
+
+// Dispatch #77's deferred numerator/denominator gap, resolved. A ratio metric's `derive` is
+// marked `kind: 'ratio'` exactly when its two `inputs` genuinely ARE [numerator, denominator]
+// (a plain division) — NOT every 2-input derive (oppCostDollar's gap*rate is a PRODUCT,
+// actVsSched's act-sched is a DIFFERENCE; neither is summable as parts). This is a deliberate,
+// curated marker rather than "any derive with 2 inputs," so this function can never
+// misinterpret a non-ratio formula as one.
+//
+// Returns the TRUE period/scope rollup — Σnumerator ÷ Σdenominator — as opposed to metricAvg's
+// mean-of-daily-ratios. This is the fix for the measured gap that motivated this work: SPPH on
+// store 5985 for 2026-08 was $70.18/hr mean-of-daily vs $67.04/hr Sum/Sum, a 4.5% gap (this
+// file's own ROLLUP CAVEAT comment above DERIVED_METRICS). Every ratio metric with a declared
+// numerator/denominator gets the same fix, not just the one instance that happened to get
+// measured.
+//
+// Each DAY counts only when BOTH legs resolve for it (mirrors metricSeriesWithSource's own
+// derive() contract: a partial input set contributes nothing rather than a wrong number) — so a
+// day covered only by a manual upload that lacks one leg (e.g. Controls has no net-sales-$
+// column) is silently excluded from the sum rather than guessed.
+//
+// Returns null when the metric has no declared ratio parts, or when nothing resolves both legs
+// for any day in range — callers must NOT fall back to metricAvg and present it as the same
+// number; null is a real "cannot compute Sum/Sum here" signal, not "zero."
+export function metricSumRatio(ds, locs, range, key) {
+  const spec = METRIC_SOURCES[key];
+  if (spec?.derive?.kind !== 'ratio') return null;
+  const [numKey, denKey] = spec.derive.inputs;
+  const list = Array.isArray(locs) ? locs : [locs];
+  let numSum = 0, denSum = 0, n = 0;
+  for (const loc of list) {
+    const numSeries = metricSeries(ds, loc, range, numKey);
+    const denSeries = metricSeries(ds, loc, range, denKey);
+    for (const dk in numSeries) {
+      if (denSeries[dk] == null) continue;
+      numSum += numSeries[dk];
+      denSum += denSeries[dk];
+      n++;
+    }
+  }
+  return n && denSum > 0 ? { value: numSum / denSum, n } : null;
+}
+
+// Every METRIC_SOURCES key whose derive declares a real [numerator, denominator] pair — the set
+// metricSumRatio can compute a true Sum/Sum for. Deliberately a curated subset of the metrics
+// with a `derive` at all (see metricSumRatio's own comment on why not every derive qualifies).
+export function rollupCapableMetricKeys() {
+  return Object.keys(METRIC_SOURCES).filter(k => METRIC_SOURCES[k].derive?.kind === 'ratio');
 }
 
 // Dispatch #77 -- the one place a consumer (e.g. Top/Bottom Performers) asks "which way is
