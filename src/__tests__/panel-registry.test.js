@@ -194,16 +194,19 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the ten panels converted so far (Dispatch27 + Dispatch #55 Part B)', () => {
-    // Ratchet, not a ceiling: adding an eleventh route panel is a real routing change (a new
+  it('is exactly the eleven panels converted so far (Dispatch27 + Dispatch #55 Part B + #105)', () => {
+    // Ratchet, not a ceiling: adding a twelfth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
     // Dispatch #55 Part B (Job C Batch 1) added the other six as the first overlay-to-page
-    // conversion batch.
+    // conversion batch. Dispatch #105's correction (2026-08-24) added the eleventh,
+    // lifelenz-bridge ("MBI vs LifeLenz Accuracy") -- owner: "put in a url page while you
+    // are at it" -- now that it has grown a real date-range control plus a genuine backward-
+    // looking accuracy view worth linking to directly.
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'count-cycle', 'dicompare', 'eom-dashboard', 'fcst-accuracy', 'fob-analysis',
-      'fob-eom', 'perf-reviews', 'proj', 'report', 'sched-hub',
+      'fob-eom', 'lifelenz-bridge', 'perf-reviews', 'proj', 'report', 'sched-hub',
     ]);
   });
 

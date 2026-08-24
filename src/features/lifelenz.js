@@ -1,11 +1,12 @@
 // @ts-nocheck
 import * as React from 'react';
-import { addD, dKey, sodOf } from '../utils/date.js';
+import { addD, dKey, sodOf, weekStartOf, lastClosedBusinessDay } from '../utils/date.js';
 import { DEFAULT_MODEL_ASSIGNMENTS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES } from '../constants.js';
 import { forecastDay, getModelAssignment } from '../engine/forecast.js';
 import { runWhyEngineScan, runWhyEngineDistrict, diagnoseMiss } from '../engine/why.js';
 import { grade } from '../utils/fmt.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
+import { loadForecastSnapshots } from '../lib/supabase.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -361,14 +362,27 @@ function computeLifeLenzAdjustment(loc, date, ds, settings, userEvents, biasStat
   const meridianForecast = mFc.forecast||0;
   if(!meridianForecast) return null;
 
-  // Direct mode: this exact future date already has LifeLenz's own
-  // projection in the loaded Labor Analysis file.
+  // "No guessing" (owner, verbatim, dispatch #105 correction 2026-08-24): prefer a REAL LifeLenz
+  // number over an estimated one whenever one exists for this exact date, in priority order —
+  //   1. 'auto'   — ds.schedRows: LifeLenz's OWN forecast, auto-pulled daily by
+  //                 scripts/lifelenz-pull.mjs into lifelenz_schedule (fcstSales), no upload
+  //                 needed. This did not exist when the tool was first built (the auto pull
+  //                 only appeared to capture scheduling/labor, not forecast values) — it was
+  //                 never actually checked, and it does. This is now the primary source.
+  //   2. 'manual' — ds.laborRows: a manually-uploaded Labor Analysis file's Projected Sales
+  //                 column for this exact date. Still a real LifeLenz number, just device/
+  //                 upload-dependent rather than always-on. Kept as the fallback it always was.
+  //   3. 'pattern' — this store's historical day-of-week bias. The only actual guess of the
+  //                 three, and now the last resort rather than the common case.
   const dk=dKey(date);
-  const directRow=(ds.laborRows||[]).find(r=>String(r.loc)===String(loc)&&dKey(r.date)===dk&&r.projSales>100);
+  const autoRow=(ds.schedRows||[]).find(r=>String(r.loc)===String(loc)&&dKey(r.date)===dk&&r.fcstSales>100);
+  const manualRow=(ds.laborRows||[]).find(r=>String(r.loc)===String(loc)&&dKey(r.date)===dk&&r.projSales>100);
 
   let lfzProjection, source, evidenceN;
-  if(directRow){
-    lfzProjection=directRow.projSales; source='direct'; evidenceN=null;
+  if(autoRow){
+    lfzProjection=autoRow.fcstSales; source='auto'; evidenceN=null;
+  } else if(manualRow){
+    lfzProjection=manualRow.projSales; source='manual'; evidenceN=null;
   } else if(biasStats){
     const dowStat=biasStats.dowStats[date.getDay()];
     if(dowStat&&dowStat.n>=2&&dowStat.avgBiasPct!=null){
@@ -389,8 +403,33 @@ function computeLifeLenzAdjustment(loc, date, ds, settings, userEvents, biasStat
     shapeFlag};
 }
 
-// ── Full forward scan for one store ─────────────────────────────────────────
-function runLifeLenzBridgeScan(loc, ds, settings, userEvents, daysForward=14){
+// ── Grouping helper: bucket a scan's days into weeks starting on a given
+// week-start day (0=Sun 1=Mon 3=Wed — see settings.weekStartDay). Used by
+// LifeLenzBridgePanel's "Weekly View" toggle. Kept as a plain function (not
+// inline in the panel) so the boundary math has one place to look, per this
+// repo's "check whether a helper exists" rule — weekStartOf itself already
+// covers the per-date boundary; this just groups a day list by it.
+function groupDaysByWeek(days, wsd){
+  const map = new Map();
+  days.forEach(d=>{
+    const wStart = weekStartOf(d.date, wsd);
+    const key = wStart.getTime();
+    if(!map.has(key)) map.set(key, {weekStart:wStart, weekEnd:addD(wStart,6), days:[]});
+    map.get(key).days.push(d);
+  });
+  return Array.from(map.values()).sort((a,b)=>a.weekStart-b.weekStart).map(g=>({
+    ...g,
+    avgAdjPct: g.days.reduce((a,d)=>a+d.adjustmentPct,0)/g.days.length,
+  }));
+}
+
+// ── Full scan for one store, over a date range ──────────────────────────────
+// `range` is an optional explicit {start:Date, end:Date} (inclusive). When
+// omitted, preserves the original default: the 14 days AFTER this store's
+// last actual date (or today, if no actuals loaded yet) — the owner's
+// existing quick-glance forward workflow, kept as the default rather than
+// replaced (dispatch #105 Part 1).
+function runLifeLenzBridgeScan(loc, ds, settings, userEvents, range){
   const biasStats = computeLifeLenzHistoricalBias(loc, ds, settings, 12);
 
   // ── Why Engine attribution: WHY is LifeLenz biased on each DOW? ───────────
@@ -425,26 +464,34 @@ function runLifeLenzBridgeScan(loc, ds, settings, userEvents, daysForward=14){
   }
 
   const anchor=(ds.lastActual&&ds.lastActual[loc])||new Date();
+  let start, end;
+  if(range&&range.start&&range.end){
+    start=sodOf(range.start); end=sodOf(range.end);
+    if(end<start){ const t=start; start=end; end=t; } // guard an inverted picker selection
+  } else {
+    start=addD(anchor,1); end=addD(anchor,14); // original default: next 14 days from last actual
+  }
   const days=[];
-  for(let i=1;i<=daysForward;i++){
-    const dt=addD(anchor,i);
+  for(let dt=start; dt<=end; dt=addD(dt,1)){
     const adj=computeLifeLenzAdjustment(loc, dt, ds, settings, userEvents, biasStats);
     if(adj) days.push(adj);
   }
-  return {loc, biasStats, dowAttribution, days};
+  return {loc, biasStats, dowAttribution, days, rangeStart:start, rangeEnd:end};
 }
 
 
 // ════════════════════════════════════════════════════════════════════════════════
-// LIFELENZ BRIDGE PANEL  (v4.202)
+// LIFELENZ BRIDGE PANEL — "MBI vs LifeLenz Accuracy"  (v4.202, renamed dispatch #105)
 // ════════════════════════════════════════════════════════════════════════════════
-// Surfaces runLifeLenzBridgeScan. Designed for the actual constraint: no API,
-// manual entry only. Every row reduces to one number a GM can read and type
-// into LifeLenz in a few seconds — not a dashboard to study. "Direct" rows
-// mean LifeLenz's own forward projection was found in the loaded Labor
-// Analysis file; "Pattern" rows mean it wasn't, so the adjustment is
-// estimated from this store's historical day-of-week bias instead — labeled
-// clearly rather than presented with false confidence.
+// Surfaces runLifeLenzBridgeScan (forward, Single Store/District) and runAccuracy
+// (backward, Accuracy — dispatch #105 Part 2). Every forward-mode row reduces to one
+// number a GM can read and type into LifeLenz in a few seconds — not a dashboard to
+// study. Source badges on each row: 'AUTO' means LifeLenz's own forecast was found in
+// the auto-pulled schedule (ds.schedRows, no upload needed — this is now the common
+// case); 'MANUAL' means it came from a manually-uploaded Labor Analysis file instead;
+// 'PATTERN' means neither existed, so the adjustment is estimated from this store's
+// historical day-of-week bias — the only real guess of the three, and now the last
+// resort rather than the default (dispatch #105 correction, "no guessing").
 // ─────────────────────────────────────────────────────────────────────────────
 function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
   const {useState:uSt} = React;
@@ -461,11 +508,107 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
   const [districtRunning, setDistrictRunning] = uSt(false);
   const [districtProg, setDistrictProg] = uSt(null);
 
-  const runSingle = (loc) => {
+  // ── Date-range control (dispatch #105 Part 1) ──────────────────────────
+  // Off by default: both scan paths keep the original anchor-relative
+  // "next 14 days from last actual" behavior. Switching this on hands an
+  // explicit, user-picked {start,end} to runLifeLenzBridgeScan instead.
+  const [useCustomRange, setUseCustomRange] = uSt(false);
+  const [rangeStart, setRangeStart] = uSt(dKey(addD(new Date(),1)));
+  const [rangeEnd, setRangeEnd] = uSt(dKey(addD(new Date(),14)));
+  // Weekly grouping (dispatch #105 Part 1) — Wednesday-start per
+  // settings.weekStartDay, matching LifeLenz's own native week convention.
+  // Not hardcoded here; read from the app setting per the dispatch brief.
+  const [groupByWeek, setGroupByWeek] = uSt(false);
+  const weekStartDay = settings?.weekStartDay;
+
+  const customRangeObj = () => ({
+    start:new Date(rangeStart+'T00:00:00'),
+    end:new Date(rangeEnd+'T00:00:00'),
+  });
+
+  // ── Accuracy mode (dispatch #105 Part 2, unblocked by the 2026-08-24 correction) ───────
+  // Backward-looking: reconciles Meridian's own forecast history against LifeLenz's own
+  // forecast history for the SAME closed days, per store, grouped into Wednesday-start
+  // weeks — modeled on LifeLenz's own native Forecast Accuracy Analysis screen.
+  //   LifeLenz side: ds.schedRows (auto-pulled fcstSales/sales) — a real recorded number,
+  //     no recompute needed.
+  //   Meridian side: forecast_snapshots (loadForecastSnapshots) — Meridian's OWN recorded
+  //     forecast-vs-actual snapshots from backtests already run (see analytics.js's
+  //     ForecastAccuracyPanel, which is what writes them). Deliberately NOT recomputed live
+  //     via forecastDay for past dates here — forecastDay reflects TODAY's model/calibration,
+  //     not what it would have predicted at the time, so replaying it over history would leak
+  //     information a real forecast never had. forecast_snapshots is the leak-free record.
+  //   A date with LifeLenz data but no Meridian snapshot (or vice versa) still shows, with the
+  //   missing side rendered as "—" rather than silently dropping the row.
+  // Default: trailing 4 closed weeks — plain consts, not state, since they only ever seed
+  // accStart/accEnd's initial value once on mount.
+  const defAccEnd = dKey(lastClosedBusinessDay());
+  const defAccStart = dKey(addD(lastClosedBusinessDay(),-27));
+  const [accStart, setAccStart] = uSt(defAccStart);
+  const [accEnd, setAccEnd] = uSt(defAccEnd);
+  const [accLoc, setAccLoc] = uSt(LOCS[0]);
+  const [accResult, setAccResult] = uSt(null);
+  const [accRunning, setAccRunning] = uSt(false);
+
+  // Priority among forecast_snapshots' multiple `source` values (v4.483's validated winner
+  // first) — pick ONE per date rather than averaging sources together, matching how the rest
+  // of the app treats "the model" as a single per-store assignment, not a blend of all of them.
+  const SNAPSHOT_SOURCE_PRIORITY = ['simple','ai','blend','di','ly','qsr'];
+
+  const runAccuracy = async (loc, startStr, endStr) => {
+    setAccRunning(true); setAccResult(null);
+    try{
+      const s=sodOf(new Date(startStr+'T00:00:00'));
+      const e=sodOf(new Date(endStr+'T00:00:00'));
+      const spanDays=Math.max(1, Math.round((e-s)/86400000)+1);
+
+      const lfzByDate={};
+      (ds.schedRows||[]).forEach(r=>{
+        if(String(r.loc)!==String(loc)||!r.date) return;
+        const rd=sodOf(r.date);
+        if(rd<s||rd>e) return;
+        lfzByDate[dKey(r.date)]={forecast:r.fcstSales, actual:r.sales};
+      });
+
+      const daysBack=Math.ceil((Date.now()-s.getTime())/86400000)+2;
+      const snaps=await loadForecastSnapshots([loc], Math.max(daysBack, spanDays));
+      const mbiByDate={};
+      snaps.forEach(r=>{
+        if(String(r.loc)!==String(loc)||!r.dt) return;
+        const rd=sodOf(new Date(r.dt+'T00:00:00'));
+        if(rd<s||rd>e) return;
+        const existing=mbiByDate[r.dt];
+        const rank=SNAPSHOT_SOURCE_PRIORITY.indexOf(r.source);
+        const existingRank=existing?SNAPSHOT_SOURCE_PRIORITY.indexOf(existing.source):999;
+        if(!existing||(rank!==-1&&(existingRank===-1||rank<existingRank))){
+          mbiByDate[r.dt]={source:r.source, forecast:r.forecast_sales, actual:r.actual_sales};
+        }
+      });
+
+      const days=[];
+      for(let dt=new Date(s); dt<=e; dt=addD(dt,1)){
+        const dk=dKey(dt);
+        const lfz=lfzByDate[dk]||null;
+        const mbi=mbiByDate[dk]||null;
+        if(!lfz&&!mbi) continue;
+        const lfzVarPct=(lfz&&lfz.actual>0)?(lfz.forecast-lfz.actual)/lfz.actual*100:null;
+        const mbiVarPct=(mbi&&mbi.actual>0)?(mbi.forecast-mbi.actual)/mbi.actual*100:null;
+        days.push({date:new Date(dt), lfz, mbi, lfzVarPct, mbiVarPct});
+      }
+      setAccResult({loc, start:s, end:e, days});
+    }catch(err){
+      console.error('[MBI vs LifeLenz Accuracy] scan failed:',err);
+      setAccResult({loc, start:sodOf(new Date(startStr+'T00:00:00')), end:sodOf(new Date(endStr+'T00:00:00')), days:[], error:String(err)});
+    }finally{
+      setAccRunning(false);
+    }
+  };
+
+  const runSingle = (loc, range) => {
     setScanning(true); setCopied(false); setScanResult(null);
     setTimeout(()=>{
       try{
-        const result = runLifeLenzBridgeScan(loc, ds, settings, userEvents, 14);
+        const result = runLifeLenzBridgeScan(loc, ds, settings, userEvents, range);
         setScanResult(result);
       }catch(e){
         console.error('[LifeLenz Bridge] scan failed:',e);
@@ -476,16 +619,22 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
     },10);
   };
 
-  // Auto-run on first open
+  // Auto-run on first open — original anchor-relative default.
   React.useEffect(()=>{ if(ds&&ds.loaded&&selLoc&&!scanResult) runSingle(selLoc); },[]);
+
+  // Auto-run Accuracy the first time that mode is opened, same courtesy as single-store.
+  React.useEffect(()=>{
+    if(mode==='accuracy'&&ds&&ds.loaded&&accLoc&&!accResult&&!accRunning) runAccuracy(accLoc, accStart, accEnd);
+  },[mode]);
 
   const runDistrict = async () => {
     setDistrictRunning(true);
     setDistrictResults(null);
+    const range = useCustomRange ? customRangeObj() : undefined;
     const results={};
     for(let i=0;i<LOCS.length;i++){
       setDistrictProg({done:i,total:LOCS.length,storeName:STORE_NAMES[LOCS[i]]});
-      results[LOCS[i]] = runLifeLenzBridgeScan(LOCS[i], ds, settings, userEvents, 14);
+      results[LOCS[i]] = runLifeLenzBridgeScan(LOCS[i], ds, settings, userEvents, range);
       if(i%4===3) await new Promise(r=>setTimeout(r,0));
     }
     setDistrictResults(results);
@@ -503,6 +652,57 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
   const fmtPlain$ = v => '$'+Math.round(Math.abs(v)).toLocaleString();
   const fmtPct = v => (v>=0?'+':'')+v.toFixed(2)+'%';
 
+  // Weekly bucketing for the Accuracy view — separate from groupDaysByWeek (Bridge's forward
+  // day list) because the per-week aggregate here is average |variance %| per system, not
+  // adjustmentPct. Same weekStartOf boundary math, different summary.
+  const groupAccByWeek = (days, wsd) => {
+    const map = new Map();
+    days.forEach(d=>{
+      const wStart = weekStartOf(d.date, wsd);
+      const key = wStart.getTime();
+      if(!map.has(key)) map.set(key, {weekStart:wStart, weekEnd:addD(wStart,6), days:[]});
+      map.get(key).days.push(d);
+    });
+    return Array.from(map.values()).sort((a,b)=>a.weekStart-b.weekStart).map(g=>{
+      const lfzVals=g.days.filter(d=>d.lfzVarPct!=null).map(d=>Math.abs(d.lfzVarPct));
+      const mbiVals=g.days.filter(d=>d.mbiVarPct!=null).map(d=>Math.abs(d.mbiVarPct));
+      return {...g,
+        avgLfzAbsVar: lfzVals.length?lfzVals.reduce((a,b)=>a+b,0)/lfzVals.length:null,
+        avgMbiAbsVar: mbiVals.length?mbiVals.reduce((a,b)=>a+b,0)/mbiVals.length:null,
+      };
+    });
+  };
+
+  // Source badge — three real states now (dispatch #105 correction, "no guessing"):
+  // 'auto' = LifeLenz's own auto-pulled forecast (ds.schedRows), 'manual' = a manually-
+  // uploaded Labor Analysis file's Projected Sales column, 'pattern' = the only actual
+  // estimate, used only when neither real number exists for the date.
+  const SRC_LABEL = {auto:'AUTO', manual:'MANUAL', pattern:'PATTERN'};
+  const SRC_COLOR = {auto:'#10b981', manual:'#3b82f6', pattern:'#f59e0b'};
+
+  // One row of the forward/range day list — factored out so the flat view
+  // and the Weekly View (grouped by groupDaysByWeek) render identically.
+  const bridgeDayRow = (d,key) => {
+    const isUp=d.adjustmentPct>=0;
+    const srcColor=SRC_COLOR[d.source]||'#f59e0b';
+    return div({key,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
+      borderRadius:'var(--r)',border:'.5px solid var(--bdr)',marginBottom:5,background:'var(--surf2)'}},
+      div({style:{width:90,flexShrink:0}},
+        div({style:{fontSize:'9px',fontWeight:700,color:'var(--text)'}},
+          d.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}))),
+      div({style:{flex:1,display:'flex',gap:14,fontSize:'9px',color:'var(--text2)'}},
+        div(null,'Meridian: ',span({style:{fontWeight:700,color:'var(--text)'}},fmtPlain$(d.meridianForecast))),
+        div(null,'LifeLenz: ',span({style:{fontWeight:700,color:'var(--text)'}},fmtPlain$(d.lfzProjection)),
+          span({style:{fontSize:'7px',color:srcColor,marginLeft:4,
+            padding:'1px 5px',borderRadius:99,background:srcColor+'18'}},
+            SRC_LABEL[d.source]||'PATTERN'))
+      ),
+      div({style:{fontSize:'11px',fontWeight:800,color:isUp?'#10b981':'#ef4444',width:64,textAlign:'right'}},
+        fmtPct(d.adjustmentPct)),
+      d.shapeFlag&&span({title:d.shapeFlag.note,style:{fontSize:'13px',cursor:'help'}},'⚠️')
+    );
+  };
+
   const copyTable = () => {
     if(!scanResult) return;
     const storeName=STORE_NAMES[selLoc]||selLoc;
@@ -517,22 +717,22 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
       const mFc=('$'+d.meridianForecast.toLocaleString()).padEnd(11);
       const lfz=('$'+d.lfzProjection.toLocaleString()).padEnd(11);
       const adj=fmtPct(d.adjustmentPct).padEnd(8);
-      const src=(d.source==='direct'?'Direct':'Pattern').padEnd(9);
+      const src=(SRC_LABEL[d.source]||'Pattern').padEnd(9);
       const note=d.shapeFlag?'⚠ '+d.shapeFlag.note:'';
       lines.push(dateStr+mFc+lfz+adj+src+note);
     });
     navigator.clipboard.writeText(lines.join('\n')).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   };
 
-  if(!ds||!ds.loaded) return h(ModalShell,{title:'LifeLenz Bridge',icon:'🌉',onClose,maxWidth:480,zIndex:Z.nested},
+  if(!ds||!ds.loaded) return h(ModalShell,{title:'MBI vs LifeLenz Accuracy',icon:'🌉',onClose,maxWidth:480,zIndex:Z.nested},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-      div({style:{fontSize:'11px',lineHeight:1.6}},'Load a Labor Analysis file (with Projected Sales column) to run the LifeLenz Bridge.')));
+      div({style:{fontSize:'11px',lineHeight:1.6}},'Waiting on data to load.')));
 
   return h(ModalShell,{
-    title:'LifeLenz Bridge',icon:'🌉',onClose,maxWidth:920,zIndex:Z.nested,
-    subtitle:'One number to type into LifeLenz before the schedule locks — no API, this is the manual-entry workflow',
+    title:'MBI vs LifeLenz Accuracy',icon:'🌉',onClose,maxWidth:960,zIndex:Z.nested,
+    subtitle:'A number to type into LifeLenz before the schedule locks, plus a Wednesday-start weekly reconciliation of Meridian vs LifeLenz’s own forecast',
     headerExtra: div({style:{display:'flex',gap:3}},
-      ...[['single','📍 Single Store'],['district','🏙 District']].map(([id,l])=>
+      ...[['single','📍 Single Store'],['district','🏙 District'],['accuracy','📈 Accuracy']].map(([id,l])=>
         btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
           background:mode===id?'var(--adim)':'transparent',
           color:mode===id?'var(--amber)':'var(--text3)',
@@ -540,6 +740,37 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
           onClick:()=>setMode(id)},l))
     ),
   },
+
+      // ── Date-range + weekly-grouping controls (dispatch #105 Part 1) ──────
+      // Shared across the two forward-looking modes: toggling "Custom Date Range" hands an
+      // explicit {start,end} to whichever scan runs next; leaving it off preserves each
+      // mode's original anchor-relative default untouched. Accuracy mode (backward-looking)
+      // has its own range control below — different default semantics (trailing, not forward).
+      mode!=='accuracy'&&div({style:{padding:'8px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
+        display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',background:'var(--surf2)'}},
+        btn({className:'btn btn-sm',style:{fontWeight:700,
+            background:useCustomRange?'var(--adim)':'transparent',
+            color:useCustomRange?'var(--amber)':'var(--text3)',
+            border:'.5px solid '+(useCustomRange?'rgba(245,158,11,.4)':'var(--bdr)')},
+          onClick:()=>setUseCustomRange(c=>!c)},
+          (useCustomRange?'✓ ':'')+'Custom Date Range'),
+        h('input',{type:'date',value:rangeStart,disabled:!useCustomRange,
+          onChange:e=>setRangeStart(e.target.value),
+          style:{fontSize:'10px',padding:'4px 6px',background:'var(--surf)',border:'.5px solid var(--bdr)',
+            borderRadius:'var(--r)',color:'var(--text)',opacity:useCustomRange?1:.5}}),
+        span({style:{color:'var(--text3)',fontSize:'9px'}},'→'),
+        h('input',{type:'date',value:rangeEnd,disabled:!useCustomRange,
+          onChange:e=>setRangeEnd(e.target.value),
+          style:{fontSize:'10px',padding:'4px 6px',background:'var(--surf)',border:'.5px solid var(--bdr)',
+            borderRadius:'var(--r)',color:'var(--text)',opacity:useCustomRange?1:.5}}),
+        div({style:{flex:1}}),
+        btn({className:'btn btn-sm',style:{
+            background:groupByWeek?'var(--adim)':'transparent',
+            color:groupByWeek?'var(--amber)':'var(--text3)',
+            border:'.5px solid '+(groupByWeek?'rgba(245,158,11,.4)':'var(--bdr)')},
+          onClick:()=>setGroupByWeek(g=>!g)},
+          (groupByWeek?'✓ ':'')+'Weekly View (Wed start)')
+      ),
 
       // ════════ SINGLE STORE MODE ════════
       mode==='single'&&React.createElement(React.Fragment,null,
@@ -550,13 +781,14 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
               borderRadius:'var(--r)',color:'var(--text)',flex:1,minWidth:160}},
             LOCS.map(l=>h('option',{key:l,value:l},sName(l)))),
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700},disabled:scanning,
-            onClick:()=>runSingle(selLoc)},scanning?'⏳ Scanning…':'▶ Run 14-Day Scan'),
+            onClick:()=>runSingle(selLoc, useCustomRange?customRangeObj():undefined)},
+            scanning?'⏳ Scanning…':(useCustomRange?'▶ Run Range Scan':'▶ Run 14-Day Scan')),
           scanResult&&btn({className:'btn btn-sm',onClick:copyTable},copied?'✓ Copied':'📋 Copy Table')
         ),
         div({style:{flex:1,overflowY:'auto',padding:'14px 16px'}},
           !scanResult&&!scanning&&div({style:{color:'var(--text3)',textAlign:'center',padding:'40px 20px',fontSize:'11px'}},
             div({style:{fontSize:36,marginBottom:10}},'🌉'),
-            div(null,'Select a store and run the scan. Compares Meridian\'s forecast against LifeLenz\'s own projection for the next 14 days.')),
+            div(null,'Select a store and run the scan. Compares Meridian\'s forecast against LifeLenz\'s own forecast — auto-pulled daily, no upload needed — for the selected window.')),
 
           scanResult&&scanResult.error&&div({style:{padding:'16px',background:'rgba(239,68,68,.08)',
             border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',color:'var(--crit)',fontSize:'10px'}},
@@ -566,7 +798,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
             color:'var(--text3)',textAlign:'center',padding:'30px 20px',fontSize:'10px',lineHeight:1.7}},
             div({style:{fontSize:28,marginBottom:8}},'📊'),
             div({style:{fontWeight:700,color:'var(--text)',marginBottom:4}},'No Adjustment Data Available'),
-            div(null,'The Labor Analysis file must include a "Projected Sales" or "WFM Projected Sales" column to compute LifeLenz adjustments. Load that file first, then re-run.')),
+            div(null,'No LifeLenz forecast found for this store\'s selected dates — from the auto-pulled schedule, a manually-uploaded Labor Analysis file, or enough history to estimate a pattern. Try an earlier/wider range, or load a Labor Analysis file for direct dates.')),
 
           scanResult&&!scanResult.error&&(scanResult.biasStats||scanResult.days?.length>0)&&React.createElement(React.Fragment,null,
             // Evidence summary
@@ -594,29 +826,28 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
                 })
               )
             ),
-            // Forward 14-day list
+            // Day list — flat or grouped into Wednesday-start weeks
             div(null,
               div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',
-                letterSpacing:'.4px',marginBottom:6}},'Next 14 Days'),
-              ...scanResult.days.map((d,i)=>{
-                const isUp=d.adjustmentPct>=0;
-                return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',
-                  borderRadius:'var(--r)',border:'.5px solid var(--bdr)',marginBottom:5,background:'var(--surf2)'}},
-                  div({style:{width:90,flexShrink:0}},
-                    div({style:{fontSize:'9px',fontWeight:700,color:'var(--text)'}},
-                      d.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}))),
-                  div({style:{flex:1,display:'flex',gap:14,fontSize:'9px',color:'var(--text2)'}},
-                    div(null,'Meridian: ',span({style:{fontWeight:700,color:'var(--text)'}},fmtPlain$(d.meridianForecast))),
-                    div(null,'LifeLenz: ',span({style:{fontWeight:700,color:'var(--text)'}},fmtPlain$(d.lfzProjection)),
-                      span({style:{fontSize:'7px',color:d.source==='direct'?'#10b981':'#f59e0b',marginLeft:4,
-                        padding:'1px 5px',borderRadius:99,background:(d.source==='direct'?'#10b981':'#f59e0b')+'18'}},
-                        d.source==='direct'?'DIRECT':'PATTERN'))
-                  ),
-                  div({style:{fontSize:'11px',fontWeight:800,color:isUp?'#10b981':'#ef4444',width:64,textAlign:'right'}},
-                    fmtPct(d.adjustmentPct)),
-                  d.shapeFlag&&span({title:d.shapeFlag.note,style:{fontSize:'13px',cursor:'help'}},'⚠️')
-                );
-              })
+                letterSpacing:'.4px',marginBottom:6}},
+                scanResult.days.length
+                  ? scanResult.days[0].date.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+
+                    scanResult.days[scanResult.days.length-1].date.toLocaleDateString('en-US',{month:'short',day:'numeric'})+
+                    ' ('+scanResult.days.length+' day'+(scanResult.days.length===1?'':'s')+')'
+                  : (useCustomRange?'Selected Range':'Next 14 Days')),
+              groupByWeek
+                ? groupDaysByWeek(scanResult.days, weekStartDay).map((g,gi)=>
+                    div({key:'wk'+gi,style:{marginBottom:10}},
+                      div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+                        padding:'4px 2px',borderBottom:'.5px solid var(--bdr)',marginBottom:5}},
+                        span({style:{fontSize:'9.5px',fontWeight:800,color:'var(--text)'}},
+                          'Week: '+g.weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+
+                          g.weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+                        span({style:{fontSize:'8px',color:'var(--text3)'}},
+                          g.days.length+' day'+(g.days.length===1?'':'s')+' · avg adj '+fmtPct(g.avgAdjPct))),
+                      ...g.days.map((d,i)=>bridgeDayRow(d,gi+'-'+i))
+                    ))
+                : scanResult.days.map((d,i)=>bridgeDayRow(d,i))
             ),
             // Shape flags detail (if any)
             scanResult.days.some(d=>d.shapeFlag)&&div({style:{marginTop:12,padding:'10px 12px',
@@ -639,7 +870,9 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
           div({style:{flex:1,fontSize:'9px',color:'var(--text3)'}},
             districtResults
               ? Object.keys(districtResults).filter(l=>districtResults[l]).length+' stores scanned'
-              : 'Runs the 14-day forward scan across every store.'),
+              : useCustomRange
+                ? 'Runs the selected date range scan across every store.'
+                : 'Runs the 14-day forward scan across every store.'),
           btn({className:'btn btn-sm btn-a',style:{fontWeight:700},disabled:districtRunning,
             onClick:runDistrict},districtRunning?'⏳ Scanning…':'▶ Run District Scan')
         ),
@@ -657,7 +890,7 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
             div(null,'Run the district scan to see every store\'s historical bias and current adjustment opportunity.')),
           districtResults&&h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
             h('thead',null,h('tr',null,
-              ['Store','Hist. Bias','Meridian Win Rate','Tomorrow Adj','Shape Flags'].map((l,i)=>
+              ['Store','Hist. Bias','Meridian Win Rate',(useCustomRange?'First Day Adj':'Tomorrow Adj'),'Shape Flags'].map((l,i)=>
                 h('th',{key:i,style:{padding:'6px 8px',fontSize:'8px',fontWeight:700,color:'var(--text3)',
                   textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'.5px solid var(--bdr)',
                   textAlign:i===0?'left':'center'}},l)))),
@@ -685,6 +918,107 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
             )
           )
         )
+      ),
+
+      // ════════ ACCURACY MODE (dispatch #105 Part 2) ════════
+      // Backward-looking, Wednesday-start weekly reconciliation of Meridian's own forecast
+      // history (forecast_snapshots) against LifeLenz's own forecast history (ds.schedRows) —
+      // modeled on LifeLenz's own native Forecast Accuracy Analysis screen.
+      mode==='accuracy'&&React.createElement(React.Fragment,null,
+        div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
+          display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}},
+          h('select',{value:accLoc,onChange:e=>{setAccLoc(e.target.value);setAccResult(null);},
+            style:{fontSize:'11px',padding:'5px 8px',background:'var(--surf)',border:'.5px solid var(--bdr)',
+              borderRadius:'var(--r)',color:'var(--text)',minWidth:160}},
+            LOCS.map(l=>h('option',{key:l,value:l},sName(l)))),
+          h('input',{type:'date',value:accStart,onChange:e=>setAccStart(e.target.value),
+            style:{fontSize:'10px',padding:'4px 6px',background:'var(--surf)',border:'.5px solid var(--bdr)',
+              borderRadius:'var(--r)',color:'var(--text)'}}),
+          span({style:{color:'var(--text3)',fontSize:'9px'}},'→'),
+          h('input',{type:'date',value:accEnd,onChange:e=>setAccEnd(e.target.value),
+            style:{fontSize:'10px',padding:'4px 6px',background:'var(--surf)',border:'.5px solid var(--bdr)',
+              borderRadius:'var(--r)',color:'var(--text)'}}),
+          btn({className:'btn btn-sm btn-a',style:{fontWeight:700},disabled:accRunning,
+            onClick:()=>runAccuracy(accLoc,accStart,accEnd)},accRunning?'⏳ Loading…':'▶ Run'),
+        ),
+        div({style:{flex:1,overflowY:'auto',padding:'14px 16px'}},
+          !accResult&&!accRunning&&div({style:{color:'var(--text3)',textAlign:'center',padding:'40px 20px',fontSize:'11px'}},
+            div({style:{fontSize:36,marginBottom:10}},'📈'),
+            div(null,'Pick a store and a date range, then Run. Compares Meridian\'s own recorded forecast (forecast_snapshots) against LifeLenz\'s own recorded forecast (auto-pulled schedule) for the SAME closed days — grouped Wednesday-start, matching LifeLenz\'s native weekly view.')),
+
+          accResult&&accResult.error&&div({style:{padding:'16px',background:'rgba(239,68,68,.08)',
+            border:'.5px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',color:'var(--crit)',fontSize:'10px'}},
+            '⚠ Load error: '+accResult.error),
+
+          accResult&&!accResult.error&&!accResult.days.length&&div({style:{
+            color:'var(--text3)',textAlign:'center',padding:'30px 20px',fontSize:'10px',lineHeight:1.7}},
+            div({style:{fontSize:28,marginBottom:8}},'📊'),
+            div({style:{fontWeight:700,color:'var(--text)',marginBottom:4}},'No Data For This Window'),
+            div(null,'Neither the auto-pulled LifeLenz schedule nor a Meridian forecast_snapshots record covers this store\'s selected dates. Try a different range, or run the Forecast Accuracy backtest for this store first to populate Meridian\'s side.')),
+
+          accResult&&!accResult.error&&accResult.days.length>0&&React.createElement(React.Fragment,null,
+            (()=>{
+              const lfzVals=accResult.days.filter(d=>d.lfzVarPct!=null).map(d=>Math.abs(d.lfzVarPct));
+              const mbiVals=accResult.days.filter(d=>d.mbiVarPct!=null).map(d=>Math.abs(d.mbiVarPct));
+              const avgLfz=lfzVals.length?lfzVals.reduce((a,b)=>a+b,0)/lfzVals.length:null;
+              const avgMbi=mbiVals.length?mbiVals.reduce((a,b)=>a+b,0)/mbiVals.length:null;
+              const both=avgLfz!=null&&avgMbi!=null;
+              return div({style:{marginBottom:14,padding:'10px 12px',background:'var(--surf2)',
+                border:'.5px solid var(--bdr)',borderRadius:'var(--r)',display:'flex',gap:16,flexWrap:'wrap'}},
+                div(null,
+                  div({style:{fontSize:'7.5px',textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)'}},'LifeLenz avg |variance|'),
+                  div({style:{fontSize:'15px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},avgLfz!=null?avgLfz.toFixed(2)+'%':'—'),
+                  div({style:{fontSize:'7.5px',color:'var(--text3)'}},lfzVals.length+' day'+(lfzVals.length===1?'':'s'))),
+                div(null,
+                  div({style:{fontSize:'7.5px',textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)'}},'Meridian (MBI) avg |variance|'),
+                  div({style:{fontSize:'15px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--text)'}},avgMbi!=null?avgMbi.toFixed(2)+'%':'—'),
+                  div({style:{fontSize:'7.5px',color:'var(--text3)'}},mbiVals.length+' day'+(mbiVals.length===1?'':'s'))),
+                both&&div(null,
+                  div({style:{fontSize:'7.5px',textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)'}},'Verdict'),
+                  div({style:{fontSize:'11px',fontWeight:700,color:avgMbi<avgLfz?'#10b981':'#ef4444'}},
+                    avgMbi<avgLfz?'MBI more accurate':'LifeLenz more accurate'))
+              );
+            })(),
+            ...groupAccByWeek(accResult.days, weekStartDay).map((g,gi)=>
+              div({key:'accwk'+gi,style:{marginBottom:14}},
+                div({style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',
+                  padding:'4px 2px',borderBottom:'.5px solid var(--bdr)',marginBottom:5}},
+                  span({style:{fontSize:'9.5px',fontWeight:800,color:'var(--text)'}},
+                    'Week: '+g.weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+
+                    g.weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+                  span({style:{fontSize:'8px',color:'var(--text3)'}},
+                    'LFZ avg |var| '+(g.avgLfzAbsVar!=null?g.avgLfzAbsVar.toFixed(2)+'%':'—')+
+                    ' · MBI avg |var| '+(g.avgMbiAbsVar!=null?g.avgMbiAbsVar.toFixed(2)+'%':'—'))),
+                h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'8.5px'}},
+                  h('thead',null,h('tr',null,
+                    ['Date','LFZ Forecast','LFZ Actual','LFZ Var%','MBI Forecast','MBI Actual','MBI Var%'].map((l,i)=>
+                      h('th',{key:i,style:{padding:'4px 6px',fontSize:'7.5px',fontWeight:700,color:'var(--text3)',
+                        textTransform:'uppercase',letterSpacing:'.3px',borderBottom:'.5px solid var(--bdr)',
+                        textAlign:i===0?'left':'right'}},l)))),
+                  h('tbody',null,
+                    ...g.days.map((d,i)=>h('tr',{key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
+                      h('td',{style:{padding:'4px 6px',color:'var(--text)',fontWeight:600}},
+                        d.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+                      h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
+                        d.lfz?fmtPlain$(d.lfz.forecast):'—'),
+                      h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
+                        d.lfz?fmtPlain$(d.lfz.actual):'—'),
+                      h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
+                        color:d.lfzVarPct==null?'var(--text3)':Math.abs(d.lfzVarPct)<5?'#10b981':Math.abs(d.lfzVarPct)<10?'#f59e0b':'#ef4444'}},
+                        d.lfzVarPct!=null?fmtPct(d.lfzVarPct):'—'),
+                      h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
+                        d.mbi?fmtPlain$(d.mbi.forecast):'—'),
+                      h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
+                        d.mbi?fmtPlain$(d.mbi.actual):'—'),
+                      h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
+                        color:d.mbiVarPct==null?'var(--text3)':Math.abs(d.mbiVarPct)<5?'#10b981':Math.abs(d.mbiVarPct)<10?'#f59e0b':'#ef4444'}},
+                        d.mbiVarPct!=null?fmtPct(d.mbiVarPct):'—'),
+                    ))
+                  )
+                )
+              ))
+          )
+        )
       )
     );
 }
@@ -697,5 +1031,6 @@ export {
   getShapeDeviationFlag,
   computeLifeLenzAdjustment,
   runLifeLenzBridgeScan,
+  groupDaysByWeek,
   LifeLenzBridgePanel,
 };

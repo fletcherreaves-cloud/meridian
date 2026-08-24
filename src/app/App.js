@@ -682,7 +682,9 @@ function App() {
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
   const [showChannelIntel, setShowChannelIntel] = useState(false);
-  const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
+  // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge'
+  // (see routePanel above), same pattern as fcst-accuracy/dicompare/proj/report. Now a real
+  // date-range + accuracy tool, not a quick interruption — a URL-addressable destination.
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
@@ -2529,7 +2531,7 @@ function App() {
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
-    showLifeLenzBridge||showLocIntel||showModelAssign||
+    showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
@@ -2559,7 +2561,7 @@ function App() {
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
       setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
-      setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
+      setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
@@ -2666,7 +2668,7 @@ function App() {
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
-        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
+        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&goRoute('lifelenz-bridge');
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
         if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);
         if(modal==='report')         goRoute('report');
@@ -2809,6 +2811,11 @@ function App() {
         title:'🎯 Forecast Accuracy',
         onBack:()=>goRoute(null),
       }, h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      routePanel==='lifelenz-bridge'&&h(RoutePanelShell,{
+        title:'🌉 MBI vs LifeLenz Accuracy',
+        subtitle:'Forward adjustment suggestions, plus a Wednesday-start weekly accuracy reconciliation of Meridian vs LifeLenz’s own forecast',
+        onBack:()=>goRoute(null),
+      }, h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       routePanel==='proj'&&h(RoutePanelShell,{
         title:'📋 Projection Workspace',
         subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
@@ -2884,7 +2891,6 @@ function App() {
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
-    showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showTopBottom&&h(TopBottomPerformers,{stores,ds,onSelectStore:s=>{goStore(s);setShowTopBottom(false);},onClose:()=>setShowTopBottom(false)}),
