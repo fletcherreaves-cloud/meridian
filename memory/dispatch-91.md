@@ -203,3 +203,54 @@ Runs 2 and 3 both returned 87 real rows for store `3708` / `2026-08-22` / `all_p
 every row for this store/date). Worth a follow-up look at the raw response shape for this
 store/date before trusting any `qsr_security_events` row counts from a future successful run — not
 investigated further here, since it's a parsing question, not the 403 this dispatch is about.
+
+## Resolution (2026-08-24), part 3 of 3 — real production evidence: this is NOT a rare blip
+
+Two more pieces of evidence, gathered after part 2's three-trial probe, both from the **real**
+`qsrsoft-security-events-pull.yml` workflow (not the diagnostic probe) — and both point the same
+direction, away from part 2's "probably transient" reading.
+
+**Owner-triggered run today (`workflow_dispatch`, run `32767800984`), cancelled mid-run:** 120 of
+216 units attempted before manual cancellation, **all 120 failed** with the identical
+`403 AccessDeniedException` / *"explicit deny in an identity-based policy"* shape documented
+throughout this investigation. Zero successes, zero rows, in the portion that ran. This is real
+production traffic (the actual daily pull, not a probe), at a **100% failure rate** over 120
+trials — a far stronger and worse signal than part 2's 3-trial sample.
+
+**Run history, `qsrsoft-security-events-pull.yml`, last 10 runs (Aug 22–24):**
+
+| run | when | result |
+|---|---|---|
+| #14 | Aug 24 (today), scheduled | ❌ failed |
+| #13 | Aug 23 5:37 PM | ❌ failed |
+| #12 | Aug 23 5:14 PM | ❌ failed |
+| #11 | Aug 23 4:41 PM | ❌ failed |
+| #10 | Aug 23 4:33 PM | ❌ failed |
+| #9 | Aug 23 4:28 PM | ✅ **succeeded** |
+| #8 | Aug 23 3:49 PM | ❌ failed |
+| #7 | Aug 23 3:48 PM | ⚠️ cancelled/errored |
+| #6 | Aug 23 5:31 AM, scheduled | ❌ failed |
+| #5 | Aug 22 2:46 PM (branch run) | ❌ failed |
+
+**1 success in 10 real runs — roughly a 10% success rate**, not the "mostly fine, occasionally
+denied" picture a 2-of-3 probe sample would suggest. ⚠️ Caveat: not all 10 runs are confirmed to be
+on identical code — some may predate later fixes in this same window (e.g. #616's re-mint-on-403
+throttle fix) — so this table is a real observed pattern, not a controlled A/B comparison the way
+part 2's runs 2–3 were. Still, the direction is unambiguous: **this is failing far more often than
+it succeeds, in real production use, right now.**
+
+### What this changes
+
+Part 2's recommended option 1 ("cheapest first: just re-run the pull, it may simply work today")
+is now answered — **it does not simply work today.** Option 2 ("characterize the failure rate
+properly") is effectively done by the table above: ~10% success over real runs, ~0% over today's
+120-unit sample specifically. That leaves **option 3 — this is a real, recurring, well-evidenced
+`AccessDeniedException` from one stable Cognito identity, worth raising with QSRSoft support** —
+as the best-supported next step, not a fallback. Normal IAM/Cognito authorization for one fixed
+principal should be deterministic; a ~90% failure rate against one's own account is not a "maybe
+transient" curiosity at this point, it's the actual, current, characterized behavior.
+
+**Owner's call whether to file it.** If so: the evidence bar is now much stronger than what was
+available when this dispatch opened — today's run alone provides 120 real, timestamped
+`x-amzn-requestid` values from actual production traffic, not a synthetic probe, plus the
+10-run history table above showing the pattern is persistent, not a one-off.
