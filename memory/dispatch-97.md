@@ -75,6 +75,49 @@ not a plausible theory, it's a reproduction.
    is a fragile threshold at that scale: missing 2 of 29 items (93% real coverage) can still read
    as "not a full count" if those 2 happen to be in the top-$ tracked subset.
 
+## Scope addition (owner, 2026-08-24, after this dispatch was already in progress)
+
+Owner's actual requirement, stated directly: *"The weekly count... needs to be calculated very
+much like the EOM count... For the count requirements, mirror what we do for EOM, which I believe
+is 90 or 95% completion to show counted. The remainder are typically overlooked items and we need
+to identify them and notify locations to go and count those so they reach 100%."*
+
+Measured what EOM actually uses (`src/engine/eom-inventory.js`), since "I believe" deserves a real
+check, not a guess in either direction:
+- `CLASS_DONE_PCT = 0.98` — the per-class completion threshold (a class reads "done" at ≥98%).
+- `BELIEVES_DONE_PCT = 0.90` — the overall store-level "believes done" threshold.
+
+**Both are meaningfully higher than `count-cycle.js`'s `COVER_FRAC = 0.75`** (75%), which the weekly
+engine currently uses for its own "covered" determination. `COVER_FRAC` was deliberately measured
+against real weekly-session data (a bimodal 0-10%/80-100% split, documented in its own comment) —
+it was never chosen to match EOM's threshold, because nobody had yet asked it to. Per the owner's
+direction above, it now should, for the weekly-count completeness question specifically: **replace
+`COVER_FRAC`'s role in the Food/Condiment/Paper "covered" check with `CLASS_DONE_PCT` (0.98)**, so a
+store's weekly count is graded the same way its EOM count already is. Don't just import EOM's
+constant and re-derive the comparison — reuse it (`import { CLASS_DONE_PCT } from './eom-inventory.js'`
+or wherever it's cleanest without creating an import cycle) rather than hand-copying the number,
+so the two never drift apart silently in the future.
+
+**Also add the missing-items list.** EOM already has exactly this feature —
+`diagnoseIncompleteCount()` (`eom-inventory.js`) returns a per-item, `$`-ranked "still uncounted"
+list (`wrin`, `descr`, `cls`, `valueAtRisk`, `lastCounted`, `state: never|early|stale`), grouped
+`byClass`, already surfaced in `eom-dashboard.js` (`incByClass`, ~line 1379-1382, "so a ≥90% class
+can show exactly what's left, hover on the class chip + in the diagnosis/comms report"). The
+weekly-count widget needs the equivalent: for a store below the 98% class threshold, name the
+specific items still uncounted (not just a percentage), so a GM can be told precisely what to go
+count to close the gap. `diagnoseIncompleteCount()` takes `onHandRows`/`period`/`asOf` and doesn't
+appear inherently EOM-window-specific in its uncounted-detection logic (`isCounted`/`countedDate`
+just compare against a `windowStart`) — check whether it can be called directly with the weekly
+window's start date, or whether it needs a small window-parameter generalization, before writing a
+second, parallel version of the same logic.
+
+**This changes the fix's shape, not its direction** — still pointing the weekly-count widget at
+`qsr_onhand`/the `count-cycle.js`-family logic instead of `qsr_raw_item_detail`, now explicitly
+matching EOM's own completion bar and including EOM's already-built "what's left" mechanism rather
+than a bare pass/fail. If threading `CLASS_DONE_PCT` through changes what today's dispatch #96 fix
+already computes for Seminole/OKC/Tecumseh (their status was verified at `COVER_FRAC=0.75`), re-verify
+against the new 0.98 bar and report both numbers — don't assume they hold.
+
 ## The fix
 
 Retire the separate `qsr_raw_item_detail`-based cadence check in `CadenceMonitor` and point it at
