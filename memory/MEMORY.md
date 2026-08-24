@@ -84,7 +84,21 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #106 — Forecast Accuracy weekly-cadence view, then merge with LifeLenz Bridge into one parent](dispatch-106.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #105 — CORRECTED: LifeLenz forecast data IS auto-pulled, Part 2 unblocked, name confirmed](dispatch-105.md)** —
+  ⚠️ **This dispatch's original premise was wrong and has been corrected in-file (owner caught it:
+  "Labor Analysis I thought was on auto pull, please check").** `scripts/lifelenz-pull.mjs` already
+  writes `fcst_sales`/`sales`/etc into `lifelenz_schedule` daily, automatically, 455 days back, and
+  `loadLifeLenzSchedule()` already maps it into the app. **Part 2 (dual MBI+LifeLenz historical
+  accuracy) is NOT blocked — it never was.** The real bug: `computeLifeLenzAdjustment`
+  (`src/features/lifelenz.js`) reads its `'direct'` source from `ds.laborRows` (manual upload) and
+  never from `ds.lifelenzSchedule` (auto-pulled), falling back to a `'pattern'` guess unnecessarily.
+  Fix folded into Part 1 scope: prefer `ds.lifelenzSchedule` first, satisfying owner's verbatim
+  **"No guessing."** **Confirmed final name: "MBI vs LifeLenz Accuracy"** (not the earlier
+  "Forecast Reconciliation" proposal — that's superseded, see dispatch #106 below). Also add
+  `route:true` to `lifelenz-bridge` in `panel-registry.js` (owner: "put in a url page while you
+  are at it"). Engineer (already in flight when the correction landed) has been notified with the
+  revised scope.
+- **📋 (2026-08-24): [Dispatch #106 — Forecast Accuracy weekly-cadence view, then merge with LifeLenz Bridge into one parent](dispatch-106.md)** —
   **Phase A (ready now):** Forecast Accuracy already has a period picker (2wk...Custom) but no
   week-by-week/day-by-day breakdown table like LifeLenz's own native reference screenshot — add
   one, anchored on `settings.weekStartDay` (already `3`=Wednesday, McDonald's standard, already a
@@ -93,20 +107,9 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   with an internal tab switcher — this app already has that pattern in production
   (`eom-dashboard.js`'s mode tabs, `security-panel.js`'s domain tabs), no new registry-level
   parent/child concept needed. Retire the two standalone nav entries in favor of one. Parent-category
-  name and the "Forecast Reconciliation" rename are both proposed, not owner-confirmed yet.
-- **📋 (2026-08-24): [Dispatch #105 — LifeLenz Bridge: date-range selector now; scope the dual-accuracy evolution](dispatch-105.md)** —
-  `LifeLenzBridgePanel` is forward-only today (next 14 days, suggests an adjustment % to type into
-  LifeLenz) — no date-range control, no historical view. **Part 1 (ready now):** add a real
-  date-range selector + Wednesday-start weekly grouping (matching LifeLenz's own native week
-  convention). **Part 2 (needs an owner decision first):** owner wants this to evolve into a dual
-  MBI+LifeLenz historical forecast-accuracy view, modeled on LifeLenz's own native Forecast Accuracy
-  Analysis screen. Meridian's own accuracy is already tracked (`forecast_snapshots`) — not blocked.
-  **LifeLenz's own forecast values are NOT automatically pulled** (confirmed by grep — only
-  scheduling/labor data is) — they only exist in Meridian via manual Labor Analysis uploads, so
-  there's no historical LifeLenz-forecast archive yet. Real next step: check whether LifeLenz's API
-  exposes a forecast-accuracy endpoint (their own UI has one) before assuming this is easy — do not
-  build the dual-accuracy UI on gappy manual-only data presented as if complete. Proposed rename:
-  **"Forecast Reconciliation."**
+  name is still proposed/not owner-confirmed; **the "Forecast Reconciliation" report-name proposal
+  this dispatch references is superseded — use dispatch #105's confirmed "MBI vs LifeLenz Accuracy"
+  for that tab instead.**
 - **📋 (2026-08-24): [Dispatch #104 — Top/Bottom Performers: cleaner selectors, add FOB as a rankable category](dispatch-104.md)** —
   Location selector is **already** the shared `LocationSelector` standard (same component dispatch
   #100 used for Security) — not missing, just rendering All+State+Patch+Store (30+ pills) flat and
