@@ -256,9 +256,15 @@ export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = f
 // `acceptEarly` (owner 2026-07-31, count-date exception): the store's early count was approved as its
 // EOM count (e.g., Ponce counted 07/28 and won't recount), so items counted EARLY this period are
 // treated as counted — dropped from the uncounted/flagged set. See project-eom-count-exceptions.
-export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0, acceptEarly = false } = {}) {
+// `windowStart` (dispatch #97, 2026-08-24): an explicit override for the completion window's
+// start, for callers whose "is this counted yet" window isn't EOM's own last-3-days-of-month
+// close window — e.g. the weekly-count widget's "since the store's current count attempt began."
+// `period` still drives the stale-vs-early split below (which calendar month owns `periodStart`)
+// even when `windowStart` overrides the window itself, so a caller can pass the current month's
+// `period` for correct stale/early attribution while grading completion against its own window.
+export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0, acceptEarly = false, windowStart: windowStartOverride = null } = {}) {
   const rows = Array.isArray(onHandRows) ? onHandRows : [];
-  const windowStart = period ? countWindowStart(period) : new Date(0);
+  const windowStart = windowStartOverride || (period ? countWindowStart(period) : new Date(0));
   // Period start (1st of the count month) so we can tell WHY an item reads "uncounted":
   //   never   — no count on record this period → a true blank (QSRSoft flags this too).
   //   early   — counted THIS period but before the final window → QSRSoft shows it counted;

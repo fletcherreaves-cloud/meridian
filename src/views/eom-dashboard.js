@@ -30,7 +30,7 @@ import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
-  computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT,
+  computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT, CLASS_DONE_PCT,
   buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
@@ -39,7 +39,9 @@ import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
-import { analyzeCountCadence, weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
+import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
+import { detectSessions } from '../engine/count-cycle.js';
+import { dowOf } from '../utils/date.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
@@ -236,6 +238,121 @@ function weeklyByClassFor(cadence) {
   return byClass;
 }
 
+// Dispatch #97 — Weekly Count Cadence's completeness/date determination, adapted onto
+// detectSessions() over qsr_onhand (src/engine/count-cycle.js), the SAME full-item-universe,
+// Condiment-fixed session grouping Count Cycle uses (dispatch #96). The OLD basis here was
+// analyzeCountCadence() (weekly-cadence.js) over qsr_raw_item_detail — a table dollar-filtered to
+// each store's top ~20 variance items, with ZERO Condiment rows district-wide (condiments are
+// cheap, so never selected — count-cycle.js's own header comment already measured this). That
+// silently made the Condiment leg of "full Food + Condiment" never fire, and graded the Food leg
+// against a tiny arbitrary subset where a real, comprehensive count (qsr_onhand's full active-item
+// universe) could read Overdue by missing 1-2 of ~29 tracked items.
+//
+// Scope addition (owner, 2026-08-24, after this fix was already in progress) — grade weekly
+// completion the same way EOM already grades count completion, not at count-cycle.js's own
+// COVER_FRAC=0.75 (that constant is Count Cycle's — this function does NOT call cycleCompliance()
+// or import COVER_FRAC, so the Count Cycle panel's own 0.75 threshold is untouched). Uses
+// detectSessions()'s RAW per-session item counts + per-store active-item classTotals — neither is
+// COVER_FRAC-derived, both are plain tallies — and grades "covered" itself at eom-inventory.js's
+// own CLASS_DONE_PCT (0.98), the same bar a store's EOM count is held to. A class with a zero
+// active universe is vacuously covered (nothing to count), same rule dispatch #96 already applies
+// to Count Cycle's own compliance check.
+//
+// itemVarianceWindows (the click-to-expand FOB variance-trace drill-down, just below in this file)
+// is UNCHANGED — it stays on rawByLoc/qsr_raw_item_detail, the right source for "when did this
+// item's variance happen," a genuinely different question from "did they complete the count."
+const _classDoneAt98 = (counts, totals, cls) => {
+  const total = totals[cls] || 0;
+  if (total === 0) return true;   // nothing to count for this class — vacuously covered (dispatch #96)
+  return (counts[cls] || 0) >= total * CLASS_DONE_PCT;
+};
+export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
+  const rows = onHandRows || [];
+  let sessionsByLoc = {}, classTotalsByLoc = {};
+  try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows)); } catch { /* leave empty */ }
+  const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
+  const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+  const curPeriod = periodKey(asOf);
+
+  const m = {};
+  for (const loc of Object.keys(sessionsByLoc)) {
+    const totals = classTotalsByLoc[loc] || {};
+    // detectSessions returns sessions oldest→newest already. Grade each one against
+    // CLASS_DONE_PCT ourselves — `s.counts`/`totals` are raw tallies, untouched by COVER_FRAC.
+    const graded = sessionsByLoc[loc].map(s => ({
+      date: s.date, counts: s.counts,
+      weeklyDone: _classDoneAt98(s.counts, totals, 'Food') && _classDoneAt98(s.counts, totals, 'Condiment'),
+      touchedWeekly: (s.counts.Food || 0) > 0 || (s.counts.Condiment || 0) > 0,
+    }));
+    const lastWeekly = [...graded].reverse().find(s => s.weeklyDone) || null;
+    // The store's REAL count effort this period to grade a still-missing list against — the
+    // session with the most combined Food+Condiment items touched, not merely the most recent
+    // date with ANY touch. qsr_onhand's last_counted is rolling-latest-state (count-cycle.js's
+    // own documented limitation), so a handful of unrelated items re-touched days after a real
+    // ~150-item count session (a routine spot recount, a late correction) land on their OWN
+    // later date and would otherwise masquerade as "the current attempt" — a 2-item stray touch
+    // outranking the real count by recency alone. Size, not recency, picks the real attempt;
+    // ties break to the more recent date.
+    const attemptSize = s => (s.counts.Food || 0) + (s.counts.Condiment || 0);
+    const lastAttempt = graded.filter(s => s.touchedWeekly)
+      .sort((a, b) => attemptSize(b) - attemptSize(a) || (b.date > a.date ? 1 : -1))[0] || null;
+
+    const weeklyDays = graded.filter(s => s.weeklyDone);
+    const dayFreq = {};
+    for (const s of weeklyDays) {
+      // R3 (ratchet-week-day-arithmetic.test.js) — via the shared dowOf helper (src/utils/date.js),
+      // not a bare getDay call; this is DOW-bucketing an already-resolved count date, not week-
+      // start/business-day boundary math, same category the ratchet's own dispatch #68 note allows.
+      const wd = dowOf(s.date + 'T00:00:00');
+      dayFreq[wd] = (dayFreq[wd] || 0) + 1;
+    }
+    const detectedWeekday = Object.keys(dayFreq).length
+      ? Number(Object.keys(dayFreq).sort((a, b) => dayFreq[b] - dayFreq[a])[0]) : null;
+
+    // Scope addition — the still-uncounted list, so a below-threshold store can be told EXACTLY
+    // what's left, not just a percentage. Reuses EOM's own diagnoseIncompleteCount()
+    // (eom-inventory.js) with the CURRENT attempt's own date as the completion window's start —
+    // qsr_onhand's last_counted is rolling-latest-state (count-cycle.js's own documented
+    // limitation), so an item with an earlier lastCounted genuinely wasn't touched in this
+    // attempt. Gated on `!lastWeekly` (not just `!lastAttempt.weeklyDone`) — if a MORE RECENT,
+    // smaller session already cleared the bar (lastWeekly is set), the store is genuinely
+    // compliant and an older, larger-but-partial attempt has nothing left worth notifying.
+    let missing = null;
+    if (!lastWeekly && lastAttempt && !lastAttempt.weeklyDone) {
+      try {
+        const storeRows = rows.filter(r => unpad(r.loc) === loc);
+        const diag = diagnoseIncompleteCount(storeRows, {
+          period: curPeriod, asOf, windowStart: new Date(lastAttempt.date + 'T00:00:00'),
+        });
+        missing = (diag.byClass || []).filter(b => b.cls === 'food' || b.cls === 'condiment');
+      } catch { missing = null; }
+    }
+
+    m[loc] = {
+      // CadenceMonitor's table + the variance-trace touchpoints (annotateTouchpoints/
+      // lastCountAnchor, src/engine/variance-trace.js) both key on { day, kind }.
+      sessions: graded.map(s => ({ day: s.date, kind: s.weeklyDone ? 'weekly' : 'spot' })),
+      lastWeekly: lastWeekly ? lastWeekly.date : null,
+      daysSinceWeekly: lastWeekly ? daysBetween(lastWeekly.date, asOfStr) : null,
+      detectedWeekday,
+      detectedWeekdayName: detectedWeekday != null ? WEEKDAY_NAMES[detectedWeekday] : null,
+      nWeekly: weeklyDays.length,
+      nSpot: graded.filter(s => !s.weeklyDone).length,
+      lastAttempt: lastAttempt ? lastAttempt.date : null,
+      missing,   // null once fully compliant (or before any attempt); else EOM-shaped byClass rows
+      // weeklyByClassFor's "By class" chip basis (Count Cycle mode) — Food/Condiment only, the
+      // same two classes the old engine's own default `classes` param ever populated — from the
+      // SAME last-qualifying session used above for lastWeekly/daysSinceWeekly.
+      classTotals: { food: totals.Food || 0, condiment: totals.Condiment || 0 },
+      weeklySessions: lastWeekly ? [{
+        day: lastWeekly.date,
+        counts: { food: lastWeekly.counts.Food || 0, condiment: lastWeekly.counts.Condiment || 0 },
+      }] : [],
+    };
+  }
+  return m;
+}
+
 function ClassChips({ byClass, uncounted, npDueToday }) {
   // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow — UNLESS
   // today is the last day of the month, when it's due too (owner Notes 38). Muted "tmrw" tag only when
@@ -367,7 +484,7 @@ function VarianceTraceChart({ trace, jump }) {
 
 // Weekly-count cadence monitor (Count Cycle view) — is each store running its weekly full Food+Condiment
 // count? Detected weekly day, last full count + days-since, weekly-vs-spot session mix. Overdue first.
-function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
+export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
   const [open, setOpen] = useState(null);   // loc expanded to its between-count variance windows
   const data = (rows || []).map(r => ({ loc: r.loc, name: r.name, c: cadenceByLoc[String(r.loc)] })).filter(x => x.c);
   if (!data.length) return null;
@@ -378,6 +495,15 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
   const fmtDay = d => { try { return new Date(d + 'T00:00:00').toLocaleDateString(); } catch { return d; } };
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const th = (t) => h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t);
+  // Scope addition (owner, 2026-08-24) — c.missing is EOM-shaped byClass rows (from
+  // diagnoseIncompleteCount, eom-inventory.js), filtered to Food/Condiment. Roll it up to a
+  // one-line "N items left ($X)" so a below-98% store is actionable at a glance, not just red.
+  const missingSummary = c => {
+    if (!c.missing || !c.missing.length) return null;
+    const n = c.missing.reduce((s, b) => s + b.count, 0);
+    const v = c.missing.reduce((s, b) => s + b.valueAtRisk, 0);
+    return n ? { n, v } : null;
+  };
 
   // Between-count variance windows for a store: per item, the biggest |delta| between consecutive
   // counts — that window localizes WHEN the product moved (Notes: the powerful part of the engine).
@@ -398,6 +524,7 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
         const col = st >= 2 ? 'var(--crit)' : st === 1 ? '#f5bc00' : '#4ade80';
         const label = c.daysSinceWeekly == null ? 'No full weekly' : c.daysSinceWeekly >= 8 ? `Overdue · ${c.daysSinceWeekly}d` : 'On track';
         const isOpen = open === loc;
+        const missSum = missingSummary(c);
         const wins = isOpen ? windowsFor(loc) : [];
         // Notes 58 #2: the loopback starts at the last ACTUAL PHYSICAL COUNT, not the
         // calendar-month boundary. lastCountAnchor walks back until the window is at
@@ -415,7 +542,9 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
             h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } }, c.detectedWeekdayName ? `${c.detectedWeekdayName}s` : '—'),
             h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, c.lastWeekly ? `${fmtDay(c.lastWeekly)}${c.daysSinceWeekly != null ? ` · ${c.daysSinceWeekly}d ago` : ''}` : '—'),
             h('td', { style: { padding: '6px 10px', color: 'var(--text3)' } }, `${c.nWeekly} weekly · ${c.nSpot} spot`),
-            h('td', { style: { padding: '6px 10px' } }, span({ style: { color: col, fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' } }, label))),
+            h('td', { style: { padding: '6px 10px' } },
+              span({ style: { color: col, fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' } }, label),
+              missSum ? span({ style: { display: 'block', fontSize: '10px', color: 'var(--text3)', marginTop: '1px', whiteSpace: 'nowrap' } }, `${missSum.n} item${missSum.n === 1 ? '' : 's'} left · ${$(missSum.v)}`) : null)),
         ];
         if (isOpen) rowEls.push(
           h('tr', { key: loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
@@ -425,6 +554,15 @@ function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) {
                   ? `FOB variance trace — since the last count (${fmtDay(anchor)})`
                   : 'FOB variance trace — this period'),
               h(VarianceTraceChart, { trace, jump }),
+              missSum ? div({ style: { margin: '10px 0' } },
+                div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '0 0 3px' } },
+                  `Still uncounted since ${c.lastAttempt ? fmtDay(c.lastAttempt) : 'the last count attempt'} — notify the store to close these out`),
+                ...c.missing.map((b, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '2px 0' } },
+                  span({ style: { fontWeight: 700, color: 'var(--text)', textTransform: 'capitalize' } }, b.cls),
+                  ` — ${b.count} item${b.count === 1 ? '' : 's'} left (${$(b.valueAtRisk)}): `,
+                  b.items.slice(0, 10).map(u => u.descr || u.wrin).join(', '),
+                  b.items.length > 10 ? ` …+${b.items.length - 10} more` : '')))
+                : null,
               div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '10px 0 3px' } }, 'Biggest between-count variance windows (where the movement happened)'),
               wins.length
                 ? div(null,
@@ -1296,11 +1434,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     const m = {};
     for (const r of (rawDetail || [])) {
       const counts = (r.history || []).filter(h => h.isCount);
-      // cls MUST be carried through — analyzeCountCadence (weekly-cadence.js) filters every item
-      // by normClass(r.cls) to bucket food/condiment; without it every item normClass'd to 'other'
-      // and got filtered out before any session could ever be detected, so weeklySessions stayed
-      // empty for EVERY store regardless of real count data (2026-08-05, found debugging Inventory
-      // Control's "no full weekly on record" false-negative alongside the loc-padding fix, v4.821).
+      // cls is carried through for display (e.g. the raw-item table's Class column) and for any
+      // future per-class variance grouping. It's no longer load-bearing for weekly-cadence
+      // detection — dispatch #97 moved that determination off this table (qsr_raw_item_detail,
+      // dollar-filtered to top variance items) onto cycleCompliance()/qsr_onhand (cadenceFromOnHand,
+      // above); rawByLoc's remaining job here is itemVarianceWindows' between-count drill-down.
       (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, cls: r.itemClass, history: r.history, counts, caseSz: r.caseSz, uom: r.uom });
     }
     return m;
@@ -1316,12 +1454,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
   // Weekly-count cadence per store (Notes 40 #1) — is each store doing its weekly full Food/Condiment
   // count? Detected weekly day, last full count + days-since, weekly vs daily-spot sessions. Overdue
-  // ≥ 8 days. Powers the Count Cycle view's cadence monitor.
-  const cadenceByLoc = useMemo(() => {
-    const m = {};
-    for (const loc in rawByLoc) { try { m[loc] = analyzeCountCadence(rawByLoc[loc], { asOf: new Date() }); } catch { /* skip */ } }
-    return m;
-  }, [rawByLoc]);
+  // ≥ 8 days. Powers the Count Cycle view's cadence monitor. Dispatch #97 — sourced from `onHand`
+  // (qsr_onhand, already loaded above for EOM completion) via cadenceFromOnHand(), not rawByLoc/
+  // qsr_raw_item_detail — see cadenceFromOnHand's own header comment for why.
+  const cadenceByLoc = useMemo(() => cadenceFromOnHand(onHand, { asOf: new Date() }), [onHand]);
 
   // Change Monitor v2 (Notes 41): per-store item variance progressions read straight from the raw ledger
   // — base count → recount steps → improved/hurt/held. No lock needed; works for any period reviewed.
