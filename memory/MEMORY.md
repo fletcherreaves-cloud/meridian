@@ -84,7 +84,17 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #105 — LifeLenz Bridge: date-range selector now; scope the dual-accuracy evolution](dispatch-105.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #106 — Forecast Accuracy weekly-cadence view, then merge with LifeLenz Bridge into one parent](dispatch-106.md)** —
+  **Phase A (ready now):** Forecast Accuracy already has a period picker (2wk...Custom) but no
+  week-by-week/day-by-day breakdown table like LifeLenz's own native reference screenshot — add
+  one, anchored on `settings.weekStartDay` (already `3`=Wednesday, McDonald's standard, already a
+  prop on this panel — not a new setting). **Phase B (sequenced after Phase A AND dispatch #105
+  Part 1 both ship):** merge Forecast Accuracy + the reworked LifeLenz Bridge into one parent panel
+  with an internal tab switcher — this app already has that pattern in production
+  (`eom-dashboard.js`'s mode tabs, `security-panel.js`'s domain tabs), no new registry-level
+  parent/child concept needed. Retire the two standalone nav entries in favor of one. Parent-category
+  name and the "Forecast Reconciliation" rename are both proposed, not owner-confirmed yet.
+- **📋 (2026-08-24): [Dispatch #105 — LifeLenz Bridge: date-range selector now; scope the dual-accuracy evolution](dispatch-105.md)** —
   `LifeLenzBridgePanel` is forward-only today (next 14 days, suggests an adjustment % to type into
   LifeLenz) — no date-range control, no historical view. **Part 1 (ready now):** add a real
   date-range selector + Wednesday-start weekly grouping (matching LifeLenz's own native week
