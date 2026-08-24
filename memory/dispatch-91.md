@@ -244,13 +244,38 @@ it succeeds, in real production use, right now.**
 Part 2's recommended option 1 ("cheapest first: just re-run the pull, it may simply work today")
 is now answered — **it does not simply work today.** Option 2 ("characterize the failure rate
 properly") is effectively done by the table above: ~10% success over real runs, ~0% over today's
-120-unit sample specifically. That leaves **option 3 — this is a real, recurring, well-evidenced
-`AccessDeniedException` from one stable Cognito identity, worth raising with QSRSoft support** —
-as the best-supported next step, not a fallback. Normal IAM/Cognito authorization for one fixed
-principal should be deterministic; a ~90% failure rate against one's own account is not a "maybe
-transient" curiosity at this point, it's the actual, current, characterized behavior.
+120-unit sample specifically.
 
-**Owner's call whether to file it.** If so: the evidence bar is now much stronger than what was
-available when this dispatch opened — today's run alone provides 120 real, timestamped
-`x-amzn-requestid` values from actual production traffic, not a synthetic probe, plus the
-10-run history table above showing the pattern is persistent, not a one-off.
+**Option 3 (file with QSRSoft support) is RULED OUT — owner-stated 2026-08-24: they will not
+assist with data-pulling/automation.** Not a data question, a relationship/policy fact only the
+owner has — recorded here so a future session doesn't re-propose it. **This closes off the
+externally-supported path entirely.** Whatever happens next has to be something achievable from
+this side alone, without vendor cooperation.
+
+### The real remaining options, given no vendor help is coming
+
+1. **Adapt the pull around the failure instead of fixing its cause.** The evidence so far reads as
+   correlated at the **run level**, not independently-random per unit — run `#9` succeeded (or
+   mostly did), today's run failed on all 120 units it attempted. That shape suggests entire
+   time windows are "good" or "bad," not that each request independently has a ~10% chance. If
+   so, **running the pull more often** (e.g. every 1-2 hours instead of once daily) would catch
+   more good windows over a day than one scheduled attempt does, even though each individual run's
+   own outcome is still binary. This doesn't fix anything — it works around an unfixed problem —
+   but it's the most direct lever available without QSRSoft's cooperation. Needs: confirming the
+   run-level-correlation read on more data (the two data points so far are suggestive, not proven)
+   before committing engineering effort to a new schedule.
+2. **Still worth doing the packet capture (test 2 from the original decision table) — for a
+   different reason than originally intended.** It was scoped as evidence to hand QSRSoft; that
+   reason is gone. But it could still reveal something **actionable on our own side** — a header,
+   a timing pattern, a connection-reuse quirk in how this pull's requests are shaped, if the two
+   states (succeeding vs. failing) turn out to differ in some way *we* control. If the capture
+   shows no difference at all between good and bad requests, that's a real answer too: it would
+   mean the cause is entirely on QSRSoft's/AWS's side and out of reach, and this becomes a
+   permanently-degraded data source to design around (option 1) rather than fix.
+3. **Do nothing further and accept ~10% coverage as the ceiling.** Legitimate if the security-
+   events data isn't worth more engineering effort relative to its value — that's a product
+   call, not a technical one.
+
+**Owner's call which of 1-3 (or some combination) to pursue.** Not proposing a default here since
+this is a genuine trade-off between engineering effort and a problem that may not be fully
+fixable regardless of effort spent.

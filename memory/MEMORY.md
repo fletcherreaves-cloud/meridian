@@ -106,15 +106,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   next candidates are per-store volume, other `store_vlh_config` fields, and whether `need_vlh` is
   measuring a genuinely different quantity than the Controls basis rather than a miscalibrated
   version of the same one.
-- **🔴 (2026-08-24): [Dispatch #91 — QSRSoft security-events 403](dispatch-91.md) — real production evidence now says ~10% success, not transient. Owner decision on filing with QSRSoft.**
+- **🔴 (2026-08-24): [Dispatch #91 — QSRSoft security-events 403](dispatch-91.md) — real production evidence: ~10% success. QSRSoft support is RULED OUT (owner-stated); real remaining options need a decision.**
   Part 2: the token-injection probe ran 3 times, split 2 success/1 failure — read alone this
   suggested a transient blip. **Part 3 overturns that reading.** The real `qsrsoft-security-events-pull.yml`
   (not the probe) run today failed **120/120 units** before being cancelled; the last 10 real runs
-  (Aug 22–24) show **1 success**. ~10% real-world success rate, not "probably fine." "Just re-run
-  it" (part 2's cheapest option) is now answered — it does not simply work. **Best-supported next
-  step: file this with QSRSoft support** — a stable Cognito identity failing ~90% of the time is
-  not a transient curiosity, and there's now 120 real `x-amzn-requestid`s plus a 10-run history
-  table as evidence. Owner's call whether to send it.
+  (Aug 22–24) show **1 success**. ~10% real-world success rate, not "probably fine." **Part 4:
+  owner ruled out filing with QSRSoft support** (won't assist with data-pulling/automation) — do
+  not re-propose it. Whatever happens next has to work without vendor cooperation. Three real
+  options remain: (1) run the pull more often to opportunistically catch good windows, if the
+  failure is correlated at the run level rather than per-request-random (suggestive but not yet
+  proven); (2) still do the packet capture, not for a vendor ticket but to check whether
+  good-vs-bad requests differ in anything *we* control; (3) accept ~10% coverage as the ceiling.
+  **Owner's call which to pursue.**
 - **✅ SHIPPED & LIVE-VERIFIED (2026-08-24): [Dispatch #90 — SAGE's OT window mis-ranks stores; labor-% basis SETTLED](dispatch-90.md)** —
   **NEWEST, fully closed.** SAGE's labor % (crew/punched, excluding salaried managers) is confirmed
   CORRECT and matches `#327` — do not "fix" it to include managers. The real bug, now fixed: SAGE's
