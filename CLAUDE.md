@@ -252,19 +252,25 @@ Calibrated three ways, so this is not a broken probe: `qsrsoft_kb` returns real 
 identical call; a deliberately fake column returns `42703` (not `*/0`); `qsr_daily_activity` can
 return a `57014` statement timeout rather than `*/0` — a scan that finds nothing, not a denial.
 
-**Why the old paragraph got this backwards, and the trap to avoid:** `curl -G
-"$VITE_SUPABASE_URL/rest/v1/<table>" -H "apikey: $VITE_SUPABASE_ANON_KEY"` — the recipe below, with
-only an `apikey` header and no `Authorization` header — is genuinely anon-scoped and RLS-enforced;
-it is what produced every `*/0` row above. **Adding `-H "Authorization: Bearer
-$VITE_SUPABASE_ANON_KEY"` changes the outcome**, because in this sandbox's `.env.local` the value
-under `VITE_SUPABASE_ANON_KEY` is **byte-identical to `SUPABASE_SERVICE_ROLE_KEY`** (confirmed by
-decoding both JWTs: both carry `"role":"service_role"`) — so the *name* of the env var, not its
-actual privilege, is the only thing "anon" about it. Sending it as a Bearer token exercises real
-`service_role` access and bypasses RLS, which is what produced dispatch #88's now-corrected
-`qsr_fob` claim (see `memory/dispatch-88.md`'s Resolution, item 1, and `memory/dispatch-89.md`).
-**Never send `VITE_SUPABASE_ANON_KEY` as an `Authorization: Bearer` header** — use the `apikey`-only
-form above, which is genuinely RLS-scoped, or don't claim the result reflects anon/RLS-restricted
-access at all.
+🔴 **SUPERSEDED 2026-08-24 by the key rotation — the whole block above describes DEAD KEYS.**
+The owner migrated to Supabase's new API key format and **disabled the legacy keys at
+`2026-08-24T14:53:50Z`** (confirmed live: the old key now returns `401 "Legacy API keys are
+disabled"`). The `*/0` table above was measured with the legacy anon key and is now history, not a
+current statement of access. **Re-measure before relying on any of it.**
+
+- `VITE_SUPABASE_ANON_KEY` now holds an **`sb_publishable_…`** key (opaque, not a JWT).
+- `SUPABASE_SERVICE_ROLE_KEY` now holds an **`sb_secret_…`** key. ⚠️ **The variable NAMES were
+  kept deliberately** so 36 workflows and 3 edge functions needed no edit — the names are now
+  inaccurate descriptions of their contents. Do not "fix" a name without tracing every consumer.
+
+⚠️ **A claim in the superseded block was WRONG, recorded so it is not repeated:** it stated that
+`VITE_SUPABASE_ANON_KEY` was *"byte-identical to `SUPABASE_SERVICE_ROLE_KEY`… both carry
+`role:service_role`."* **Measured false on 2026-08-24** — that variable decoded to `role: anon`,
+and sending it as `Authorization: Bearer` still returned `content-range: */0` on `qsr_fob`, i.e.
+no elevated privilege by claim *or* by behaviour. The same false claim reached
+`memory/dispatch-88.md` and `src/app/changelog/5.133.js`. It is moot post-rotation but was
+load-bearing when written, and it is a reminder that **decoding a credential is a measurement like
+any other — state the observation, not the conclusion.**
 
 The `curl` recipe stays correct and useful — for confirming egress, reading `qsrsoft_kb`, or once a
 real read-scoped credential exists (see `memory/dispatch-89.md` item 4, an open owner decision).
