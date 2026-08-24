@@ -1,8 +1,8 @@
 // @ts-nocheck
 import * as React from 'react';
 import { sName, STORE_NAMES } from '../constants.js';
-import { dKey } from '../utils/date.js';
-import { f$, fN } from '../utils/fmt.js';
+import { dKey, businessDate } from '../utils/date.js';
+import { fN } from '../utils/fmt.js';
 import { metricSeries, dailyDataFreshness } from '../engine/metric-source.js';
 
 const h        = React.createElement;
@@ -48,6 +48,11 @@ function fMonthLabel(ym) {
 }
 function fSec(v) { return v != null && v > 0 ? fN(v,0) + 's' : '—'; }
 function fGC(v)  { return v > 0 ? Math.round(v).toLocaleString() : '—'; }
+
+// Local 2-decimal dollar formatter, scoped to this file only (dispatch #103: "For Record
+// days, use 2 decimals for all dollar and any percents"). `f$` in utils/fmt.js stays at its
+// global 0-decimal default -- every OTHER panel that imports `f$` is unaffected by this file.
+function f$2(v) { return '$' + (v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 // ── LocalStorage persistence ──────────────────────────────────────────────────
 
@@ -121,6 +126,21 @@ function computeRecords(ds, windowDays) {
   const dataEnd = dailyDataFreshness(ds);
   if (!dataEnd) return null;
   const windowStart = new Date(dataEnd.getTime() - windowDays * 86400000);
+
+  // Same-day completeness gate (dispatch #103). The CURRENT McDonald's business day (4am
+  // cutover -- businessDate() from utils/date.js, the standing shared helper, never
+  // re-derived inline here) is still accumulating: the DAR intraday pull only lands a few
+  // times a day, so a day-level metric computed from whatever rows happen to be loaded right
+  // now can look like a record purely because the rest of the day hasn't landed yet.
+  // Reproduced exactly for Tecumseh's 2026-08-24 "95s OEPE record": correct math over an
+  // incomplete day (real data only through 15:00), and the two later hours the owner's own
+  // export had were both slower -- the true full-day number was very likely worse than 95s.
+  // `todayKey` marks that boundary; any `dk >= todayKey` is the still-open day (or, defensively,
+  // a clock-skewed future one) and is never allowed to become a CONFIRMED all-time record --
+  // it is still computed and shown, but as a visibly separate PROVISIONAL entry (see
+  // `tryRecord`/`flagRecent` below), so a fast-but-partial reading can never get merged into
+  // and permanently saved as the store's real best (mergeStores/saveMerged persist forever).
+  const todayKey = businessDate();
 
   // Auto-first (data-integrity sweep signature #2) — this used to build its daily map
   // ONLY from ds.laborRows (manual-only), and only ADDED opsRows speed data to a day that
@@ -205,11 +225,27 @@ function computeRecords(ds, windowDays) {
   const computed = {}; // loc → record structure
   const recentBreakers = [];
 
-  function flagRecent(loc, dk, type, val, prev, isLow=false) {
+  function flagRecent(loc, dk, type, val, prev, isLow=false, isProvisional=false) {
     const dt = new Date(dk + 'T00:00:00');
     if (dt >= windowStart) {
-      recentBreakers.push({ loc, dk, type, val, prev, isLow });
+      recentBreakers.push({ loc, dk, type, val, prev, isLow, isProvisional });
     }
+  }
+
+  // ONE shared mechanism for every record type (sales/GC/breakfast/avg-check/OEPE/KVS/R2P and
+  // their DOW variants), per dispatch #103 -- not six separate same-day patches. `val` beating
+  // `best` always surfaces in Recent Breaks (flagRecent), but only a CLOSED day is allowed to
+  // commit: the caller only advances its running best-so-far and writes the permanent `rec.*`
+  // entry when `tryRecord` returns true AND `isProvisional` is false. A provisional beat is
+  // still reported (visibly flagged, distinct from a confirmed record) but the tracker/rec are
+  // left exactly as they were, so today's still-accumulating value can never become "the"
+  // all-time record and get baked into localStorage by saveMerged.
+  function tryRecord(loc, dk, type, val, best, isLow, isProvisional) {
+    const beats = isLow ? (val < best) : (val > best);
+    if (!beats) return false;
+    const prev = isLow ? (best < Infinity ? best : null) : (best > 0 ? best : null);
+    flagRecent(loc, dk, type, val, prev, isLow, isProvisional);
+    return true;
   }
 
   for (const [loc, arr] of Object.entries(locDays)) {
@@ -229,28 +265,27 @@ function computeRecords(ds, windowDays) {
 
     for (const d of arr) {
       const { dk, sales, gc, bf, avgChk, oepe, kvs, r2p, dow } = d;
-      const prev_sMax=sMax, prev_gcMax=gcMax, prev_bfMax=bfMax, prev_acMax=acMax;
-      const prev_oepe=oepeBest, prev_kvs=kvsBest, prev_r2p=r2pBest;
-      const prev_dowS=dowSales[dow], prev_dowGC=dowGC[dow];
+      // Still-open McDonald's business day (or, defensively, a future-dated row) -- a beat
+      // here is reported as PROVISIONAL only; the tracker/rec below stay untouched so it can
+      // never become the permanent, localStorage-persisted all-time record.
+      const isProvisional = dk >= todayKey;
 
-      if (sales > sMax)        { sMax=sales;    rec.sales.day={val:sales,dk}; flagRecent(loc,dk,'Sales Day',sales,prev_sMax>0?prev_sMax:null); }
-      if (gc    > gcMax)       { gcMax=gc;       rec.gc.day={val:gc,dk};      flagRecent(loc,dk,'GC Day',gc,prev_gcMax>0?prev_gcMax:null); }
-      if (bf    > bfMax)       { bfMax=bf;       rec.bf.day={val:bf,dk};      flagRecent(loc,dk,'Breakfast Sales',bf,prev_bfMax>0?prev_bfMax:null); }
-      if (avgChk && avgChk>acMax) { acMax=avgChk; rec.avgChk.day={val:avgChk,dk}; flagRecent(loc,dk,'Avg Check',avgChk,prev_acMax>0?prev_acMax:null); }
-      if (oepe  && oepe<oepeBest){ oepeBest=oepe; rec.speed.oepe={val:oepe,dk}; flagRecent(loc,dk,'OEPE',oepe,prev_oepe<Infinity?prev_oepe:null,true); }
-      if (kvs   && kvs<kvsBest)  { kvsBest=kvs;   rec.speed.kvs={val:kvs,dk};   flagRecent(loc,dk,'KVS',kvs,prev_kvs<Infinity?prev_kvs:null,true); }
-      if (r2p   && r2p<r2pBest)  { r2pBest=r2p;   rec.speed.r2p={val:r2p,dk};   flagRecent(loc,dk,'R2P',r2p,prev_r2p<Infinity?prev_r2p:null,true); }
+      if (tryRecord(loc,dk,'Sales Day',sales,sMax,false,isProvisional) && !isProvisional)   { sMax=sales;     rec.sales.day={val:sales,dk}; }
+      if (tryRecord(loc,dk,'GC Day',gc,gcMax,false,isProvisional) && !isProvisional)         { gcMax=gc;       rec.gc.day={val:gc,dk}; }
+      if (tryRecord(loc,dk,'Breakfast Sales',bf,bfMax,false,isProvisional) && !isProvisional) { bfMax=bf;      rec.bf.day={val:bf,dk}; }
+      if (avgChk && tryRecord(loc,dk,'Avg Check',avgChk,acMax,false,isProvisional) && !isProvisional) { acMax=avgChk; rec.avgChk.day={val:avgChk,dk}; }
+      if (oepe && tryRecord(loc,dk,'OEPE',oepe,oepeBest,true,isProvisional) && !isProvisional) { oepeBest=oepe; rec.speed.oepe={val:oepe,dk}; }
+      if (kvs  && tryRecord(loc,dk,'KVS',kvs,kvsBest,true,isProvisional) && !isProvisional)   { kvsBest=kvs;    rec.speed.kvs={val:kvs,dk}; }
+      if (r2p  && tryRecord(loc,dk,'R2P',r2p,r2pBest,true,isProvisional) && !isProvisional)   { r2pBest=r2p;    rec.speed.r2p={val:r2p,dk}; }
 
-      // DOW records
-      if (sales > dowSales[dow]) {
+      // DOW records -- same gate, same shared mechanism.
+      if (tryRecord(loc,dk,`DOW Sales (${DOW_SHORT[dow]})`,sales,dowSales[dow],false,isProvisional) && !isProvisional) {
         dowSales[dow]=sales;
         rec.sales.dow[dow]={val:sales,dk};
-        flagRecent(loc,dk,`DOW Sales (${DOW_SHORT[dow]})`,sales,prev_dowS>0?prev_dowS:null);
       }
-      if (gc > dowGC[dow]) {
+      if (tryRecord(loc,dk,`DOW GC (${DOW_SHORT[dow]})`,gc,dowGC[dow],false,isProvisional) && !isProvisional) {
         dowGC[dow]=gc;
         rec.gc.dow[dow]={val:gc,dk};
-        flagRecent(loc,dk,`DOW GC (${DOW_SHORT[dow]})`,gc,prev_dowGC>0?prev_dowGC:null);
       }
     }
     computed[loc] = rec;
@@ -403,6 +438,11 @@ const BADGE_SPEED  = () => S.badge('#06b6d4','rgba(6,182,212,.1)');
 const BADGE_BF     = () => S.badge('#f59e0b','rgba(245,158,11,.1)');
 const BADGE_ACK    = () => S.badge('#ec4899','rgba(236,72,153,.1)');
 const BADGE_DOW    = () => S.badge('#64748b','rgba(100,116,139,.1)');
+// Provisional == today's still-open McDonald's business day (dispatch #103) -- a beat here
+// is real math but not yet a confirmed all-time record, since the DAR intraday pull hasn't
+// landed the rest of the day. Deliberately a distinct color from every type badge above so it
+// reads as a status, not another record-type tag.
+const BADGE_PROVISIONAL = () => S.badge('#f97316','rgba(249,115,22,.12)');
 
 function badgeForType(type) {
   if (type.startsWith('DOW'))       return BADGE_DOW();
@@ -438,16 +478,16 @@ function HeroGrid({ data }) {
   return div({},
     div({ style:S.sLbl }, 'District All-Time Champions'),
     div({ style:S.heroGrid },
-      h(HeroCard,{ label:'🏆 Best Day Sales',  val:distSalesDay?.val?f$(distSalesDay.val):'—',  sub:distSalesDay?.loc?`${sName(distSalesDay.loc)} · ${fDate(distSalesDay.dk)}`:'' }),
-      h(HeroCard,{ label:'📅 Best Week Sales',  val:distSalesWeek?.val?f$(distSalesWeek.val):'—', sub:distSalesWeek?.loc?`${sName(distSalesWeek.loc)} · ${fWeekLabel(distSalesWeek.wdk)}`:'' }),
-      h(HeroCard,{ label:'📊 Best Month Sales', val:distSalesMo?.val?f$(distSalesMo.val):'—',    sub:distSalesMo?.loc?`${sName(distSalesMo.loc)} · ${fMonthLabel(distSalesMo.ym)}`:'' }),
+      h(HeroCard,{ label:'🏆 Best Day Sales',  val:distSalesDay?.val?f$2(distSalesDay.val):'—',  sub:distSalesDay?.loc?`${sName(distSalesDay.loc)} · ${fDate(distSalesDay.dk)}`:'' }),
+      h(HeroCard,{ label:'📅 Best Week Sales',  val:distSalesWeek?.val?f$2(distSalesWeek.val):'—', sub:distSalesWeek?.loc?`${sName(distSalesWeek.loc)} · ${fWeekLabel(distSalesWeek.wdk)}`:'' }),
+      h(HeroCard,{ label:'📊 Best Month Sales', val:distSalesMo?.val?f$2(distSalesMo.val):'—',    sub:distSalesMo?.loc?`${sName(distSalesMo.loc)} · ${fMonthLabel(distSalesMo.ym)}`:'' }),
       h(HeroCard,{ label:'👥 Best GC Day',      val:distGCDay?.val?fGC(distGCDay.val):'—',       sub:distGCDay?.loc?`${sName(distGCDay.loc)} · ${fDate(distGCDay.dk)}`:'' }),
     ),
     div({ style:{ ...S.heroGrid, marginTop:12 } },
       h(HeroCard,{ label:'⚡ Best OEPE',    val:distOepe?.val<Infinity?fSec(distOepe.val):'—',  sub:distOepe?.loc?`${sName(distOepe.loc)} · ${fDate(distOepe.dk)}`:'' }),
       h(HeroCard,{ label:'🍟 Best KVS',     val:distKvs?.val<Infinity?fSec(distKvs.val):'—',   sub:distKvs?.loc?`${sName(distKvs.loc)} · ${fDate(distKvs.dk)}`:'' }),
       h(HeroCard,{ label:'📦 Best R2P',     val:distR2p?.val<Infinity?fSec(distR2p.val):'—',   sub:distR2p?.loc?`${sName(distR2p.loc)} · ${fDate(distR2p.dk)}`:'' }),
-      h(HeroCard,{ label:'💰 Best Avg Check',val:distAvgChk?.val?f$(distAvgChk.val):'—',       sub:distAvgChk?.loc?`${sName(distAvgChk.loc)} · ${fDate(distAvgChk.dk)}`:'' }),
+      h(HeroCard,{ label:'💰 Best Avg Check',val:distAvgChk?.val?f$2(distAvgChk.val):'—',       sub:distAvgChk?.loc?`${sName(distAvgChk.loc)} · ${fDate(distAvgChk.dk)}`:'' }),
     ),
   );
 }
@@ -499,7 +539,8 @@ function RecentBreakersTab({ data, windowDays, onWindowChange }) {
             thead({},
               tr({},
                 TH({style:S.th},'Store'), TH({style:S.th},'Date'),
-                TH({style:S.th},'Record Type'), TH({style:S.thR},'New Record'),
+                TH({style:S.th},'Record Type'), TH({style:S.th},'Status'),
+                TH({style:S.thR},'New Record'),
                 TH({style:S.thR},'Previous Best'), TH({style:S.thR},'Change'),
               ),
             ),
@@ -510,18 +551,23 @@ function RecentBreakersTab({ data, windowDays, onWindowChange }) {
                   : null;
                 const fVal = b.isLow
                   ? v => fSec(v)
-                  : b.type.includes('GC') ? v=>fGC(v) : b.type.includes('Avg Check') ? v=>f$(v) : v=>f$(v);
-                return tr({ key:i },
+                  : b.type.includes('GC') ? v=>fGC(v) : b.type.includes('Avg Check') ? v=>f$2(v) : v=>f$2(v);
+                return tr({ key:i, style:b.isProvisional?{background:'rgba(249,115,22,.06)'}:null },
                   td({style:S.td}, sName(b.loc)),
                   td({style:S.td},
                     b.type.includes('Week') ? fWeekLabel(b.dk) :
                     b.type.includes('Month') ? fMonthLabel(b.dk) : fDate(b.dk),
                   ),
                   td({style:S.td}, span({style:badgeForType(b.type)}, b.type)),
-                  td({style:{...S.tdR,fontWeight:600,color:'var(--acc)'}}, fVal(b.val)),
+                  td({style:S.td},
+                    b.isProvisional
+                      ? span({ style:BADGE_PROVISIONAL(), title:'Today\'s business day is still in progress -- the DAR intraday pull hasn\'t landed the rest of the day yet, so this number can still change (and may not hold up) once the day closes.' }, '⏳ Provisional — still accumulating')
+                      : span({ style:S.badge('#10b981','rgba(16,185,129,.08)'), title:'Closed business day -- data is final.' }, '✓ Confirmed'),
+                  ),
+                  td({style:{...S.tdR,fontWeight:600,color:b.isProvisional?'#f97316':'var(--acc)'}}, fVal(b.val)),
                   td({style:S.tdMR}, b.prev!=null ? fVal(b.prev) : span({style:{color:'var(--txt3)'}}, 'first record')),
                   td({style:{...S.tdR,color:impr!=null?'#10b981':'var(--txt3)'}},
-                    impr!=null ? `+${impr.toFixed(2)}%` : '—'),
+                    impr!=null ? `+${impr.toFixed(2)}%${b.isProvisional?' so far':''}` : '—'),
                 );
               }),
             ),
@@ -573,14 +619,14 @@ function SalesVolumeTab({ data }) {
               const r=stores[loc];
               return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
                 td({style:{...S.td,fontWeight:500}}, sName(loc)),
-                td({style:{...S.tdR,fontWeight:600,color:sortKey==='salesDay'?'var(--acc)':'var(--txt)'}}, r.sales?.day?.val?f$(r.sales.day.val):'—'),
+                td({style:{...S.tdR,fontWeight:600,color:sortKey==='salesDay'?'var(--acc)':'var(--txt)'}}, r.sales?.day?.val?f$2(r.sales.day.val):'—'),
                 td({style:S.tdM}, fDateShort(r.sales?.day?.dk)),
-                td({style:{...S.tdR,color:sortKey==='salesWeek'?'var(--acc)':'var(--txt)'}}, r.sales?.week?.val?f$(r.sales.week.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='salesWeek'?'var(--acc)':'var(--txt)'}}, r.sales?.week?.val?f$2(r.sales.week.val):'—'),
                 td({style:S.tdM}, r.sales?.week?.wdk?fDateShort(r.sales.week.wdk):'—'),
-                td({style:{...S.tdR,color:sortKey==='salesMonth'?'var(--acc)':'var(--txt)'}}, r.sales?.month?.val?f$(r.sales.month.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='salesMonth'?'var(--acc)':'var(--txt)'}}, r.sales?.month?.val?f$2(r.sales.month.val):'—'),
                 td({style:S.tdM}, fMonthLabel(r.sales?.month?.ym)),
-                td({style:{...S.tdR,color:sortKey==='bf'?'var(--acc)':'var(--txt)'}}, r.bf?.day?.val?f$(r.bf.day.val):'—'),
-                td({style:{...S.tdR,color:sortKey==='avgChk'?'var(--acc)':'var(--txt)'}}, r.avgChk?.day?.val?f$(r.avgChk.day.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='bf'?'var(--acc)':'var(--txt)'}}, r.bf?.day?.val?f$2(r.bf.day.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='avgChk'?'var(--acc)':'var(--txt)'}}, r.avgChk?.day?.val?f$2(r.avgChk.day.val):'—'),
               );
             }),
           ),
@@ -719,7 +765,7 @@ function DOWTab({ data }) {
                   td({style:{...S.td,fontWeight:500}}, sName(r.loc)),
                   td({style:S.tdM}, fDate(r.dk)),
                   td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}},
-                    metric==='sales'?f$(r.val):fGC(r.val)),
+                    metric==='sales'?f$2(r.val):fGC(r.val)),
                 ),
               ),
             ),
@@ -754,7 +800,7 @@ function TopDaysTab({ data }) {
               td({style:{...S.td,color:i<3?'var(--acc)':'var(--txt3)',fontWeight:700}}, i+1),
               td({style:S.td}, sName(d.loc)),
               td({style:S.td}, fDate(d.dk)),
-              td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, f$(d.sales)),
+              td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, f$2(d.sales)),
               td({style:S.tdR}, d.gc?fGC(d.gc):'—'),
             ),
           ),
