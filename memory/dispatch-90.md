@@ -192,8 +192,24 @@ assets, which is the file that only exists as of this dispatch — its presence 
 observation that the deploy shipped current code, not the stale-checkout trap
 `handoff-2026-08-24-key-rotation.md` describes (that trap produced a *silent*, no-error deploy of
 old code twice in a row, so a clean deploy log alone doesn't rule it out — the asset name does).
-**Still unverified: whether `query_labor_summary` is actually being called correctly in a live
-answer.** A deploy with no error is not the same test as a working tool call. The next real
-verification is a live SAGE question — e.g. "how much OT did each store have July 25–Aug 23" —
-and confirming it returns Madill first (not Ardmore-Cooper) and includes Marietta and Chickasha,
-per this dispatch's own ordering-based verification bar. Not yet run.
+**✅ Live verification PASSED, 2026-08-24, owner-run.** Asked SAGE the exact dispatch's test
+question (OT by store, Jul 25–Aug 23) and it returned a full 27-store table via
+`query_labor_summary` — no truncation, no scaled/halved figure. Checked against this dispatch's
+own ordering bar and the numbers independently measured live against Supabase earlier in this
+session:
+
+| check | SAGE's live answer | independently measured |
+|---|---|---|
+| #1 by OT $ | **Madill (13113), $2,711** | $2,711.46 |
+| #2 | Ardmore-Cooper (24471), $2,418 | $2,418.11 |
+| Marietta (33109) present | yes, #5, $1,706 | — was missing entirely before this fix |
+| Chickasha (5183) present | yes, #6, $1,616 | — was missing entirely before this fix |
+| Seminole Act-vs-Need | −58.2 h/day | −58.2 h/day (exact match) |
+| District total OT $ | $23,590 | $23,589.52 |
+
+Every figure matches to the reporting precision. **This closes dispatch #90 end to end** — bug
+found, fixed, code-reviewed, live-measured, deployed, and now confirmed correct in an actual SAGE
+answer, not just a deploy log. SAGE's own analysis on top of the numbers (OT-while-understaffed
+vs. OT-on-an-over-staffed-floor buckets, Tier 1/2/3 actions) is downstream commentary, not part of
+what this dispatch verifies — the data plumbing was the bug; the framing was always SAGE's to do
+once the numbers were right.
