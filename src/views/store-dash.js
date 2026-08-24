@@ -64,24 +64,32 @@ async function fetchForecastWeather(loc) {
   } catch(e) { console.warn('Weather fetch failed for '+loc+':', e.message); }
 }
 
-// ── Yearly targets helpers ──────────────────────────────────────────
-function getYearlyStorageKey(year) { return 'mf_targets_yearly_'+(year||new Date().getFullYear()); }
-function loadYearlyTargets(year) {
-  try { return JSON.parse(localStorage.getItem(getYearlyStorageKey(year))||'{}'); } catch { return {}; }
-}
-function saveYearlyTargets(year, data) {
-  try { localStorage.setItem(getYearlyStorageKey(year), JSON.stringify(data)); return true; } catch { return false; }
-}
-function setYearlyTarget(year, loc, fields) {
-  const data = loadYearlyTargets(year);
-  data[loc] = {...(data[loc]||{}), ...fields};
-  saveYearlyTargets(year, data);
-}
-function getYearlyTarget(year, loc, defaultFallback) {
-  const data = loadYearlyTargets(year);
-  return {...(defaultFallback||{}), ...(data[loc]||{})};
-}
-function exportYearlyTargets(year) { return JSON.stringify(loadYearlyTargets(year), null, 2); }
+// ── Yearly targets ──────────────────────────────────────────────────
+// Dispatch #107 Part 3: this file used to carry its own manual, localStorage-only
+// yearly-target editor here (mf_targets_yearly_* keys — getYearlyStorageKey/
+// loadYearlyTargets/saveYearlyTargets/setYearlyTarget/getYearlyTarget/
+// exportYearlyTargets, plus MonthlyTargetManager's "🏆 Yearly Goals" mode below).
+// RETIRED, not wired in. Two things made it a dead end rather than a second real
+// system worth keeping:
+//   1. Nothing downstream ever read it. mergedTargetsForLoc (review-engine.js) reads
+//      DEFAULT_TARGETS < ds.targets (the real yearly workbook, now Supabase-backed —
+//      Part 1) < ds.monthlyTargets. This editor's only effect was its own "Apply as
+//      Monthly Defaults" button, which copied its localStorage bucket into the
+//      *separate* legacy mf_targets_v2 monthly store — never into ds.targets, never
+//      into the real monthly_targets Supabase table.
+//   2. Its field set (TARGET_FIELDS_CATS — OEPE/TPPH/KVS/Park/R2P/labor/T-Reds/
+//      promos/cash-controls/FOB) is the MONTHLY operational field taxonomy, not the
+//      real yearly workbook's categories (Voice OSAT/EAD/B2B, 1-800 Contacts,
+//      Digital App/McDelivery, staffing/headcount/turnover — see YEARLY_CATS in
+//      yearly-projections.js). Keeping a "Yearly" editor with a different, and
+//      overlapping-but-incomplete, field vocabulary right next to the real one would
+//      have been actively confusing, not just redundant.
+// The owner's own repeated re-uploads of the real workbook are the signal that the
+// bulk upload is the intended source of truth for yearly targets, not per-field
+// manual entry — matching Part 1/2's fix. Retiring this also frees the
+// loadYearlyTargets/saveYearlyTargets names for the real Supabase-backed functions
+// (src/lib/supabase.js) without a collision. Full reasoning in
+// memory/dispatch-107.md's Resolution section.
 
 // MONTHLY TARGETS v2 — Per-month versioned target system (Option C)
 // Storage: localStorage 'mf_targets_v2': { 'YYYY-MM': { loc: {targets} } }
@@ -2822,9 +2830,6 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
   const [activeMonth, setActiveMonth] = React.useState(ymKey(new Date()));
   const [editLoc, setEditLoc] = React.useState(null);
   const [v2, setV2] = React.useState(()=>loadTargetsV2());
-  const [targetMode, setTargetMode] = React.useState('monthly');
-  const [activeYear, setActiveYear] = React.useState(new Date().getFullYear());
-  const [yearlyData, setYearlyData] = React.useState(()=>loadYearlyTargets(new Date().getFullYear()));
   const [showImport, setShowImport] = React.useState(false);
   const [importText, setImportText] = React.useState('');
   const [msg, setMsg] = React.useState(null);
@@ -2932,7 +2937,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
   const TARGET_FIELDS = (TARGET_FIELDS_CATS.find(c=>c.cat===activeCat)||TARGET_FIELDS_CATS[0]).fields;
 
   const getFieldVal = (loc, field) => {
-    const mData = targetMode==='yearly' ? (yearlyData[loc]||{}) : activeMonthData[loc];
+    const mData = activeMonthData[loc];
     if(mData&&mData[field.k]!=null) return field.scale ? (mData[field.k]*field.scale).toFixed(field.k==='tCashOSPct'?2:1) : mData[field.k];
     const merged = mergedTargets[loc]||DEFAULT_TARGETS[loc]||{};
     if(merged[field.k]!=null) return field.scale ? (merged[field.k]*field.scale).toFixed(field.k==='tCashOSPct'?2:1) : merged[field.k];
@@ -2944,13 +2949,8 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
     const num = parseFloat(rawVal);
     if(isNaN(num)) return;
     const stored = field.scale ? num/field.scale : num;
-    if(targetMode==='yearly'){
-      setYearlyTarget(activeYear, loc, {[field.k]: stored});
-      setYearlyData(loadYearlyTargets(activeYear));
-    } else {
-      setMonthTargets(activeMonth, loc, {[field.k]: stored});
-      refresh();
-    }
+    setMonthTargets(activeMonth, loc, {[field.k]: stored});
+    refresh();
     showMsg('Saved ✓');
   };
 
@@ -3016,7 +3016,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
         background:'var(--surf2)'}},
         div(null,
           div({style:{fontSize:'14px',fontWeight:800,color:'var(--amber)',
-            letterSpacing:'-.2px'}},(targetMode==='monthly'?'🎯 Monthly Targets — Versioned by Period':'📅 Yearly Targets — Annual Goals')),
+            letterSpacing:'-.2px'}},'🎯 Monthly Targets — Versioned by Period'),
           div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
             'Targets are stored per month and automatically applied when viewing historical data')
         ),
@@ -3047,54 +3047,6 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
       ),
 
       // Mode toggle: Monthly vs Yearly
-      div({style:{display:'flex',gap:0,borderBottom:'.5px solid var(--bdr)',flexShrink:0}},
-        ...(['monthly','yearly']).map(m=>
-          btn({key:m,onClick:()=>{setTargetMode(m);if(m==='yearly')setYearlyData(loadYearlyTargets(activeYear));},
-            style:{padding:'7px 16px',fontSize:'10px',fontWeight:600,border:'none',
-              borderBottom:targetMode===m?'2px solid var(--amber)':'2px solid transparent',
-              background:'transparent',color:targetMode===m?'var(--amber)':'var(--text3)',
-              cursor:'pointer'}},
-            m==='monthly'?'📅 Monthly Targets':'🏆 Yearly Goals')
-        ),
-        targetMode==='yearly'&&div({style:{marginLeft:'auto',padding:'4px 12px',
-          display:'flex',alignItems:'center',gap:8}},
-          span({style:{fontSize:'9px',color:'var(--text3)'}},'Year:'),
-          h('select',{value:activeYear,
-            onChange:e=>{const y=+e.target.value;setActiveYear(y);setYearlyData(loadYearlyTargets(y));},
-            style:{fontSize:'9px',background:'var(--surf)',border:'.5px solid var(--bdr)',
-              borderRadius:'var(--r)',color:'var(--text)',padding:'2px 6px'}},
-            [2024,2025,2026,2027].map(y=>h('option',{key:y,value:y},y))
-          ),
-          btn({className:'btn btn-sm',style:{fontSize:'9px'},
-            onClick:()=>{
-              const el=document.createElement('a');
-              el.href='data:application/json;charset=utf-8,'+encodeURIComponent(exportYearlyTargets(activeYear));
-              el.download='YearlyTargets_'+activeYear+'.json';el.click();
-            }},'⬇ Export'),
-          btn({className:'btn btn-sm btn-a',style:{fontSize:'9px'},
-            onClick:()=>{
-              // Apply yearly targets as the base monthly targets for all unconfigured months
-              const yData=loadYearlyTargets(activeYear);
-              const v2=loadTargetsV2();
-              let applied=0;
-              locs.forEach(loc=>{
-                if(yData[loc]){
-                  // Set as baseline for all months in this year that don't have overrides
-                  ['01','02','03','04','05','06','07','08','09','10','11','12'].forEach(mo=>{
-                    const ym=activeYear+'-'+mo;
-                    if(!v2[ym]||!v2[ym][loc]) {
-                      setMonthTargets(ym, loc, yData[loc]);
-                      applied++;
-                    }
-                  });
-                }
-              });
-              setV2(loadTargetsV2());
-              showMsg('Applied yearly targets as monthly defaults ('+applied+' slots) ✓');
-            }},'Apply as Monthly Defaults')
-        )
-      ),
-
       // Import panel
       showImport&&div({style:{padding:'12px 20px',borderBottom:'.5px solid var(--bdr)',
         background:'rgba(255,255,255,.02)',flexShrink:0}},
@@ -3230,9 +3182,7 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
                 h('tbody',null,
                   locs.map((loc,ri)=>{
                     const isEditing = editLoc===loc;
-                    const hasOverride = targetMode==='yearly' ?
-      !!(yearlyData[loc]&&Object.keys(yearlyData[loc]).some(k=>k!=='_locked')) :
-      !!(activeMonthData[loc]&&
+                    const hasOverride = !!(activeMonthData[loc]&&
                       Object.keys(activeMonthData[loc]).some(k=>k!=='_locked'));
                     return h('tr',{key:loc,
                       style:{borderBottom:'.5px solid var(--bdr)',
@@ -3593,7 +3543,6 @@ function CompareLineChart({selStores, COLS, ds}) {
 
 export {
   fetchForecastWeather,
-  getYearlyStorageKey, loadYearlyTargets, saveYearlyTargets, setYearlyTarget, getYearlyTarget, exportYearlyTargets,
   getMonthTargets, getTargetsForDate, setMonthTargets,
   copyMonthTargets, toggleMonthLock, exportTargetsV2, getTargetMonths,
   PEAK_SLICES, normSlice, analyzePeaks,

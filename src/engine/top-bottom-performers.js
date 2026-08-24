@@ -66,6 +66,11 @@ export const PERFORMER_METRICS = [
   { key: 'compWaste',  label: 'Comp Waste %',      fmt: v => (v * 100).toFixed(2) + '%' },
   { key: 'rawWaste',   label: 'Raw Waste %',       fmt: v => (v * 100).toFixed(2) + '%' },
   { key: 'statVar',    label: 'Stat Variance %',   fmt: v => (v * 100).toFixed(2) + '%' },
+  // Dispatch #104 -- overall FOB %, the sum of the 6 controllable components (comp/raw/cond/
+  // emp/statv/unex) over sales, built on dispatch #102's fixed latest-snapshot qsr_fob
+  // aggregation (metric-source.js's fobTotalAmt/fobPct chains), not the ~24x-inflated raw-sum
+  // one #102 replaced.
+  { key: 'fobPct',     label: 'FOB %',             fmt: v => (v * 100).toFixed(2) + '%' },
 ];
 
 // Pure ranking. `locs` is the already-scope-resolved store list (caller's job, via

@@ -105,7 +105,11 @@ export const PANELS = [
   // Renamed 2026-08-21 (dispatch #55 Part A, notes-67-queue.md:82 / dispatch-54.md:149) --
   // the only user-visible change in that dispatch. Still kind:'test-kitchen'; section corrected
   // from the stale 'scheduling' so a future promotion lands it under Forecasting directly.
-  { id:'lifelenz-bridge', label:'Recommended WFM Forecast Adjustments', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:11 },
+  // dispatch #105 correction (2026-08-24): renamed from "Recommended WFM Forecast Adjustments" to
+  // the owner-confirmed "MBI vs LifeLenz Accuracy" (replacing the earlier "Forecast Reconciliation"
+  // proposal), and given route:true — same pattern as fcst-accuracy — now that it's grown a real
+  // date-range control plus a genuine dual (Meridian/LifeLenz) accuracy view worth linking to.
+  { id:'lifelenz-bridge', label:'MBI vs LifeLenz Accuracy', icon:'🌉', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:11 },
   { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },

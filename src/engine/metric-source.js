@@ -305,6 +305,15 @@ export const METRIC_SOURCES = {
   rawWasteAmt:     { mode: 'any', srcs: [['qsrFobRows', 'rawWasteAmt']] },
   statVarianceAmt: { mode: 'any', srcs: [['qsrFobRows', 'statVarianceAmt']] },
   prodSalesAmt:    { mode: 'pos', srcs: [['qsrFobRows', 'prodSalesAmt']] },
+  // The remaining 3 of the 6 components fobSnapshotByStore (eom-inventory.js) and
+  // computeFOBMetrics (analytics.js's FOB_COMP) already sum into overall FOB $ — added
+  // for dispatch #104's overall FOB % rankable metric, same qsrFobRows field names
+  // loadQsrFob already aliases (src/lib/supabase.js), same mode:'any' as their 3 siblings
+  // above (a real $0 condiment/meal day is legitimate, and none of these three are ever
+  // negative in the source report, but 'any' costs nothing and matches the sibling pattern).
+  condimentsAmt:   { mode: 'any', srcs: [['qsrFobRows', 'condimentsAmt']] },
+  empMgrMealsAmt:  { mode: 'any', srcs: [['qsrFobRows', 'empMgrMealsAmt']] },
+  unexplainedAmt:  { mode: 'any', srcs: [['qsrFobRows', 'unexplainedAmt']] },
 
   // FOB waste/variance %'s — the manual FOB Excel's own precomputed % stays the first
   // source (unchanged behaviour), with the qsr_fob-derived % (amount ÷ sales, above) as
@@ -319,6 +328,26 @@ export const METRIC_SOURCES = {
                derive: { inputs: ['rawWasteAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
   statVar:   { mode: 'any', direction: 'lower', srcs: [['fobRows', 'statVar']],
                derive: { inputs: ['statVarianceAmt', 'prodSalesAmt'], fn: (c, s) => (s > 0 ? c / s : null), kind: 'ratio' } },
+
+  // ── Overall FOB % (dispatch #104) ───────────────────────────────────────────
+  // "Food Over Base" — sum of the SIX controllable components ÷ sales, the same definition
+  // fobSnapshotByStore's `fob`/`fobPct` (eom-inventory.js) and analytics.js's FOB_COMP-driven
+  // computeFOBMetrics both already use (comp+raw+cond+emp+statv+unex)/sales — built on
+  // dispatch #102's now-merged latest-snapshot fix to that qsr_fob aggregation, not the
+  // ~24x-inflated raw-sum one it replaced (see computeFOBMetrics's own "Dispatch #102" comment).
+  //
+  // Not itself `kind:'ratio'` — it's a pure 6-way SUM (a numerator leg), not a division — so it
+  // is deliberately absent from rollupCapableMetricKeys(). fobPct below is the ratio, with this
+  // as its numerator input, mirroring how compWaste/rawWaste/statVar are built from their own
+  // single-component Amt legs just above.
+  fobTotalAmt: { mode: 'any', derive: {
+    inputs: ['compWasteAmt', 'rawWasteAmt', 'condimentsAmt', 'empMgrMealsAmt', 'statVarianceAmt', 'unexplainedAmt'],
+    fn: (comp, raw, cond, emp, statv, unex) => comp + raw + cond + emp + statv + unex,
+  } },
+  // direction:'lower' — FOB is a cost metric, lower is better, matching every sibling component
+  // above (compWaste/rawWaste/statVar) and FOB_COMP's own `lower:true` for this exact metric.
+  fobPct: { mode: 'any', direction: 'lower', derive: { inputs: ['fobTotalAmt', 'prodSalesAmt'],
+            fn: (f, s) => (s > 0 ? f / s : null), kind: 'ratio' } },
 };
 
 // ── Deliberately manual-only ────────────────────────────────────────────────

@@ -43,20 +43,25 @@ function renderNavTexts(permFn) {
 }
 
 // Captured 2026-08-21, from the section-driven render immediately after Job B landed, then
-// re-captured the same day for dispatch #55 Part A: the ONLY change is the LifeLenz Bridge ->
+// re-captured the same day for dispatch #55 Part A: the ONLY change was the LifeLenz Bridge ->
 // Recommended WFM Forecast Adjustments rename (notes-67-queue.md:82, dispatch-54.md:149).
 // proj/lfz-gap/lifelenz-bridge's section: corrections (planning/scheduling -> forecasting) and
 // the section's own label rename (Forecasting -> Forecasting and Labor Projections) are BOTH
 // inert here -- all ten forecasting-section members stay kind:'test-kitchen', so the section
 // still renders no header, and Test Kitchen (kind-driven, not section-driven) is unaffected by
 // a section: edit. That is Part A's whole point: metadata becomes truthful with zero nav motion.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🌉','Recommended WFM Forecast Adjustments','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-08-24 for dispatch #105's correction: the SAME panel (lifelenz-bridge)
+// renamed a second time, "Recommended WFM Forecast Adjustments" -> "MBI vs LifeLenz Accuracy"
+// -- owner-confirmed replacing the earlier "Forecast Reconciliation" proposal -- as the tool grew
+// a real date-range control plus a genuine backward-looking accuracy view. Only that one label
+// text changed; position (tkOrder 11, still kind:'test-kitchen') is untouched.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Accuracy','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🌉','MBI vs LifeLenz Accuracy','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
 // asserted directly rather than left implicit in EXPECTED's equality above.
 const PRE_PART_A_LABEL = 'LifeLenz Bridge';
-const POST_PART_A_LABEL = 'Recommended WFM Forecast Adjustments';
+const POST_PART_A_LABEL = 'MBI vs LifeLenz Accuracy';
 
 describe('AppSidebar renders the section-driven nav (dispatch #54 Job B)', () => {
   it('produces the exact post-regroup text content, in order', () => {
@@ -105,7 +110,7 @@ const HIDDEN_WHEN_DENIED = {
   'analytics.brief': ['Daily Brief', 'Forecast Brief', '☀️', '🔭'],
   'analytics.dashboard': ['Calendar', 'Event Impact', 'My Reports', '📈'],
   'analytics.district': ['Above-Store One-Pager', 'District View', 'EOM Supervisor', 'Inventory Control', 'Opportunity $', 'Org Summary', 'Top/Bottom Performers', '⊞', '💰'],
-  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', 'Recommended WFM Forecast Adjustments', '▦', '◎', '◑', '🌉', '📐', '🔬'],
+  'analytics.forecasting': ['DI Calibration', 'DI Compare', 'Fcst Reference', 'Forecast Accuracy', 'Forecast Audit', 'Forecast Models', 'LifeLenz Gap', 'Proj vs Actuals', 'Projections', 'MBI vs LifeLenz Accuracy', '▦', '◎', '◑', '🌉', '📐', '🔬'],
   'analytics.labor': [],
   // Dispatch #77 -- '🏆' dropped out of this list: it used to uniquely belong to 'Rankings' and
   // 'Record Days' (both perm analytics.store), so denying analytics.store removed every 🏆 text

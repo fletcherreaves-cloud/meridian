@@ -241,7 +241,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions } from '../lib/supabase.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
@@ -682,7 +682,9 @@ function App() {
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
   const [showChannelIntel, setShowChannelIntel] = useState(false);
-  const [showLifeLenzBridge, setShowLifeLenzBridge] = useState(false);
+  // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge'
+  // (see routePanel above), same pattern as fcst-accuracy/dicompare/proj/report. Now a real
+  // date-range + accuracy tool, not a quick interruption — a URL-addressable destination.
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
@@ -797,7 +799,7 @@ function App() {
           darRows:dar,
           pmixData:pmix||{}, weatherRows:weather||[], trendsRows:[], inventoryRows:[], records:records||{},
           glimpseRows:glimpse||[], cashRows:cash||[], exceptionRows:exceptions||[],
-          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
+          targets:{}, monthlyTargets:_opfsTargets||{}, monthlyTargetsMeta:_opfsTargetsMeta||null, allMonthlyTargets:_opfsAllTargets||{}, allYearlyTargets:{}, smgVoicePerf:_opfsVoicePerf||[], loaded:labor.length>0,
           ...(_traceMark('bIdx+bLocIdx (all streams)', () => ({
             laborIdx:bIdx(labor), opsIdx:bIdx(ops), ctrlIdx:bIdx(ctrl),
             laborByLoc:bLocIdx(labor), opsByLoc:bLocIdx(ops), ctrlByLoc:bLocIdx(ctrl), darByLoc:bLocIdx(dar),
@@ -841,7 +843,7 @@ function App() {
           peaksSvcRows:[], peaksSalesRows:[], darRows:[],
           pmixData:{}, weatherRows:[], trendsRows:[], inventoryRows:[], records:{},
           glimpseRows:[], cashRows:[], exceptionRows:[],
-          targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{},
+          targets:{}, monthlyTargets:{}, monthlyTargetsMeta:null, allMonthlyTargets:{}, allYearlyTargets:{},
           smgVoicePerf:[], loaded:false,
           laborIdx:{}, opsIdx:{}, ctrlIdx:{},
           laborByLoc:{}, opsByLoc:{}, ctrlByLoc:{}, darByLoc:{},
@@ -1233,6 +1235,32 @@ function App() {
           console.log(`[Meridian] ✓ Loaded monthly targets for ${periods.join(', ')} (${Object.values(all[latestKey]||{}).length} stores/period)`);
         }
       }catch(e){console.warn('[Meridian] Monthly targets load failed:',e);} };
+      // Dispatch #107 Part 1: ds.targets (yearly workbook: OEPE/CSAT/Digital/People/Labor-FOB)
+      // was previously rebuilt from scratch every session purely by re-parsing whatever
+      // workbook happened to get uploaded that session -- the actual root cause of the owner
+      // re-uploading "several times". Hydrate it from Supabase here, same shape as monthly
+      // targets above: allYearlyTargets keyed by year for the Planning > Yearly panel, and
+      // ds.targets (flat, no year dimension, matching how the rest of the app already reads
+      // it -- review-engine.js mergedTargetsForLoc, forecast.js, tolerance-status.js, etc.)
+      // hydrated from the most recent year. prev.targets (already-parsed this session, e.g. a
+      // just-uploaded workbook) wins over the cloud value for the same store/field.
+      const _stYearlyTargets = async () => {
+      try{
+        const allY = await loadAllYearlyTargets();
+        const years = Object.keys(allY);
+        if(years.length > 0){
+          const latestYear = years.sort((a,b)=>b-a)[0];
+          setDs(prev => {
+            if(!prev) return prev;
+            return {
+              ...prev,
+              allYearlyTargets: allY,
+              targets: { ...(allY[latestYear]||{}), ...prev.targets },
+            };
+          });
+          console.log(`[Meridian] ✓ Loaded yearly targets for ${years.join(', ')} (${Object.values(allY[latestYear]||{}).length} stores/latest year)`);
+        }
+      }catch(e){console.warn('[Meridian] Yearly targets load failed:',e);} };
       const _stSmgFullscale = async () => {
       try{
         const fsRows = await loadSmgFullscale();
@@ -1677,8 +1705,8 @@ function App() {
       // instead of ~40,000 in ~40 — it was pulled out of T1 in v4.848 purely because
       // of that cost.
       const _t1Start = _t0;
-      await Promise.all([_stMonthlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
-      _flushDs(); // T1: 4 stages → 1 commit
+      await Promise.all([_stMonthlyTargets(), _stYearlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
+      _flushDs(); // T1: 5 stages → 1 commit
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms (tier: ${_tierMs(_t1Start)}ms)`, 'color:#f5bc00;font-weight:700');
       const _t2Start = performance.now();
       const _t2 = Promise.all([
@@ -2529,7 +2557,7 @@ function App() {
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
-    showLifeLenzBridge||showLocIntel||showModelAssign||
+    showLocIntel||showModelAssign||
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
@@ -2559,7 +2587,7 @@ function App() {
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
       setShowDtSoS(false);setShowGradedVisits(false);setShowSecurity(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
-      setShowLaborAnalytics(false);setShowLifeLenzBridge(false);setShowLocIntel(false);
+      setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowMorningBrief(false);setShowEOMSummary(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
@@ -2666,7 +2694,7 @@ function App() {
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
-        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&setShowLifeLenzBridge(true);
+        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&goRoute('lifelenz-bridge');
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
         if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);
         if(modal==='report')         goRoute('report');
@@ -2809,6 +2837,11 @@ function App() {
         title:'🎯 Forecast Accuracy',
         onBack:()=>goRoute(null),
       }, h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      routePanel==='lifelenz-bridge'&&h(RoutePanelShell,{
+        title:'🌉 MBI vs LifeLenz Accuracy',
+        subtitle:'Forward adjustment suggestions, plus a Wednesday-start weekly accuracy reconciliation of Meridian vs LifeLenz’s own forecast',
+        onBack:()=>goRoute(null),
+      }, h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       routePanel==='proj'&&h(RoutePanelShell,{
         title:'📋 Projection Workspace',
         subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',
@@ -2884,7 +2917,6 @@ function App() {
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
-    showLifeLenzBridge&&h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>setShowLifeLenzBridge(false)}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showTopBottom&&h(TopBottomPerformers,{stores,ds,onSelectStore:s=>{goStore(s);setShowTopBottom(false);},onClose:()=>setShowTopBottom(false)}),

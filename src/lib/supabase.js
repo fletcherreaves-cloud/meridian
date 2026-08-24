@@ -349,6 +349,117 @@ export async function listMonthlyTargetPeriods() {
   return data.filter(r => { const k = `${r.year}-${r.month}`; if(seen.has(k)) return false; seen.add(k); return true; });
 }
 
+// ── Yearly Targets (dispatch #107) ────────────────────────────────────────────
+// Persists the annual target workbook parsed by parseYearlyTargets() (ds.targets =
+// { loc: {tOepe, tOsatB2B, ...} }, no year dimension in-memory — one workbook = one
+// year). Mirrors saveMonthlyTargets/loadMonthlyTargets/loadAllMonthlyTargets field-
+// for-field, one tier up (PK loc+year, no month). `source` defaults to 'upload'; the
+// Planning > Yearly manual-override editor (store-dash.js) passes 'override'.
+export async function saveYearlyTargets(targets, year, source = 'upload') {
+  if (!supabase || !year) return { saved: 0, errors: ['Supabase not configured or year missing'] };
+  const rows = Object.entries(targets || {}).map(([loc, t]) => ({
+    loc, year,
+    oepe_pace:                t.tOepe          ?? null,
+    park_pct:                 t.tPark          ?? null,
+    kvs_pace:                 t.tKvst          ?? null,
+    kvs_usage_pct:            t.tKvsu          ?? null,
+    r2p_pace:                 t.tR2p           ?? null,
+    voice_osat_pct:           t.tOsat          ?? null,
+    osat_b2b_pct:             t.tOsatB2B       ?? null,
+    voice_ead_pct:            t.tVoiceEAD      ?? null,
+    contacts_1800:            t.t1800Contacts  ?? null,
+    dig_app_pct:              t.tDigAppPct     ?? null,
+    dig_app_gcrd:             t.tDigAppGCRD    ?? null,
+    mcd_gcrd:                 t.tMcdGCRD       ?? null,
+    mcd_wait_time:            t.tMcdWait       ?? null,
+    mcd_star_rating:          t.tMcdStars      ?? null,
+    crew_staffing_target:     t.tCrewStaffing  ?? null,
+    shift_leader_target:      t.tShiftLeaders  ?? null,
+    manager_target:           t.tManagers      ?? null,
+    headcount_target:         t.tHeadcount     ?? null,
+    turnover_shift_leader_pct:t.tToShiftLeader ?? null,
+    turnover_crew_090_pct:    t.tToCrew090     ?? null,
+    turnover_crew_ytd_pct:    t.tToCrewYTD     ?? null,
+    tpph_target:              t.tTpph          ?? null,
+    labor_pct:                t.tLabor         ?? null,
+    fob_target_pct:           t.tFOBTarget     ?? null,
+    source,
+    updated_at: new Date().toISOString(),
+  }));
+  if (!rows.length) return { saved: 0, errors: [] };
+  const { error } = await supabase
+    .from('yearly_targets')
+    .upsert(rows, { onConflict: 'loc,year' });
+  if (error) {
+    if (error.message?.includes('relation') || error.code === '42P01') {
+      console.error('[yearly_targets] Table does not exist in Supabase. Run supabase/schema-yearly-targets.sql in your Supabase SQL editor.');
+    } else {
+      console.error('[yearly_targets] save error:', error.message, error);
+    }
+    return { saved: 0, errors: [error.message] };
+  }
+  console.log(`[yearly_targets] saved ${rows.length} stores for ${year}`);
+  return { saved: rows.length, errors: [] };
+}
+
+// Load yearly targets for one year. Returns { loc: {tOepe, tOsatB2B, ...} }
+export async function loadYearlyTargets(year) {
+  if (!supabase || !year) return {};
+  const { data, error } = await supabase.from('yearly_targets').select('*').eq('year', year);
+  if (error || !data) { console.warn('[yearly_targets] load error:', error); return {}; }
+  const result = {};
+  for (const r of data) result[r.loc] = _stripNullTargets(_yearlyRowToTargets(r));
+  return result;
+}
+
+// Load ALL yearly targets for all available years.
+// Returns { 2026: { loc: {tOepe, ...} }, 2027: { ... } }
+export async function loadAllYearlyTargets() {
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from('yearly_targets')
+    .select('*')
+    .order('year', { ascending: false });
+  if (error || !data) { console.warn('[yearly_targets] loadAll error:', error); return {}; }
+  const result = {};
+  for (const r of data) {
+    if (!result[r.year]) result[r.year] = {};
+    result[r.year][r.loc] = _stripNullTargets(_yearlyRowToTargets(r));
+  }
+  return result;
+}
+
+function _yearlyRowToTargets(r) {
+  return {
+    tOepe:          r.oepe_pace,
+    tPark:          r.park_pct,
+    tKvst:          r.kvs_pace,
+    tKvsu:          r.kvs_usage_pct,
+    tR2p:           r.r2p_pace,
+    tOsat:          r.voice_osat_pct,
+    tOsatB2B:       r.osat_b2b_pct,
+    tVoiceEAD:      r.voice_ead_pct,
+    t1800Contacts:  r.contacts_1800,
+    tDigAppPct:     r.dig_app_pct,
+    tDigAppGCRD:    r.dig_app_gcrd,
+    tMcdGCRD:       r.mcd_gcrd,
+    tMcdWait:       r.mcd_wait_time,
+    tMcdStars:      r.mcd_star_rating,
+    tCrewStaffing:  r.crew_staffing_target,
+    tShiftLeaders:  r.shift_leader_target,
+    tManagers:      r.manager_target,
+    tHeadcount:     r.headcount_target,
+    tToShiftLeader: r.turnover_shift_leader_pct,
+    tToCrew090:     r.turnover_crew_090_pct,
+    tToCrewYTD:     r.turnover_crew_ytd_pct,
+    tTpph:          r.tpph_target,
+    tLabor:         r.labor_pct,
+    tFOBTarget:     r.fob_target_pct,
+    _year:          r.year,
+    _source:        r.source,
+  };
+}
+
 // ── SMG FullScale persistence ─────────────────────────────────────────────────
 // rows: array of { loc, year, month, reportStart, reportEnd, osatTop2, osat5, osatAvg,
 //                  osatB2B, accuracyB2B, dtProblem, overallProblem }
@@ -3681,6 +3792,12 @@ export async function loadEventImpact() {
     homeImpact: r.home_impact, awayImpact: r.away_impact,
     measuredHome: r.measured_home, measuredAway: r.measured_away,
     nHome: r.n_home, nAway: r.n_away, source: r.source, storeType: r.store_type, note: r.note,
+    // GC lift (Dispatch #108) — additive twin of the sales-lift fields above, same shape. Columns
+    // land via supabase/schema-event-impact-gc.sql; `r.gc_home_impact` etc. read as undefined (→
+    // null here) on any row from before that migration runs, same as a never-measured sales field.
+    gcHomeImpact: r.gc_home_impact ?? null, gcAwayImpact: r.gc_away_impact ?? null,
+    measuredGcHome: r.measured_gc_home ?? null, measuredGcAway: r.measured_gc_away ?? null,
+    nGcHome: r.n_gc_home ?? null, nGcAway: r.n_gc_away ?? null,
     updatedAt: r.updated_at,
   }));
 }
@@ -3692,12 +3809,21 @@ export async function saveEventImpact(rows) {
     home_impact: r.homeImpact ?? null, away_impact: r.awayImpact ?? null,
     measured_home: r.measuredHome ?? null, measured_away: r.measuredAway ?? null,
     n_home: r.nHome ?? null, n_away: r.nAway ?? null,
+    // GC lift (Dispatch #108) — only sent when the caller actually carries a GC field, so a plain
+    // sales-only edit (the pre-existing panel behavior) never round-trips explicit nulls over real
+    // measured GC values it never touched.
+    ...(hasGcField(r) ? {
+      gc_home_impact: r.gcHomeImpact ?? null, gc_away_impact: r.gcAwayImpact ?? null,
+      measured_gc_home: r.measuredGcHome ?? null, measured_gc_away: r.measuredGcAway ?? null,
+      n_gc_home: r.nGcHome ?? null, n_gc_away: r.nGcAway ?? null,
+    } : {}),
     source: r.source || 'override', store_type: r.storeType ?? null, note: r.note ?? null,
     updated_by: uid, updated_at: new Date().toISOString(),
   }));
   const { error } = await supabase.from('event_impact').upsert(up, { onConflict: 'loc,event_type' });
   return { saved: error ? 0 : up.length, errors: error ? [error.message] : [] };
 }
+const hasGcField = r => ['gcHomeImpact', 'gcAwayImpact', 'measuredGcHome', 'measuredGcAway', 'nGcHome', 'nGcAway'].some(k => k in r);
 
 // ── Multi-tenant registry (Track B, read-side scaffolding) ────────────────────
 // Additive + fail-soft. These read the tenant tables created by
