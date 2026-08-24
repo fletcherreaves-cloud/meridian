@@ -2992,8 +2992,17 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     return[...ms].sort().reverse();
   },[fobRowsEff]);
 
-  // Auto-select most recent month
-  React.useEffect(()=>{if(months.length&&!selMonth)setSelMonth(months[0]);},[months]);
+  // Auto-select most recent month. Gated on qsrFobRows!==null (the cloud fetch having settled,
+  // success or caught-error-fallback-to-[]) -- dispatch #88 item 1: on first mount qsrFobRows is
+  // still `null` (loading), so cloudFobRows/fobRowsEff/months are computed from manual ds.fobRows
+  // ALONE for that render. Without this guard, a manual upload whose last real month predates the
+  // cloud stream's coverage (ordinary — manual sourcing is always temporary) gets auto-selected
+  // and then LOCKED IN by the `!selMonth` run-once guard, permanently missing the cloud stream's
+  // newer months once they arrive a moment later. Reproduced against the real component with a
+  // real qsr_fob row shape and confirmed this is the exact owner-reported "defaults to May 2026"
+  // symptom, not a hardcoded literal (none exists) or a genuinely-lapsed stream (measured live:
+  // qsr_fob has real, non-zero prod_sales_amt through the current date).
+  React.useEffect(()=>{if(qsrFobRows!==null&&months.length&&!selMonth)setSelMonth(months[0]);},[months,qsrFobRows]);
 
   // Merge all targets — yearly file (ds.targets) overrides DEFAULT_TARGETS, monthly (ds.monthlyTargets) overrides yearly
   const allTargets=React.useMemo(()=>{

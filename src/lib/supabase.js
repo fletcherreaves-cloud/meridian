@@ -75,11 +75,16 @@ async function _limited(fn) {
   try { return await fn(); } finally { _release(); }
 }
 
-async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
+// extraFilter (dispatch #88 item 2) -- an optional q => q.gt(...)/eq(...)/etc callback applied to
+// BOTH the head-count query and every page query, for a caller with one more filter than the
+// gteCol/inCol shortcuts cover (loadDtHistory's `.gt('dt_trans_cnt', 0)`). Additive-only: every
+// pre-existing caller omits it and is unaffected (defaults to identity).
+async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, extraFilter = q => q, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
   if (!supabase) return [];
   let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
   if (gteCol) head = head.gte(gteCol, gteVal);
   if (inCol) head = head.in(inCol, inVals);
+  head = extraFilter(head);
   const { count, error: headError } = await head;
   // #343 — a failed count (e.g. a statement timeout on an exact count over a big table)
   // used to be silently swallowed here (only `count` was destructured), defaulting
@@ -103,6 +108,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, or
       let q = supabase.from(table).select(select);
       if (gteCol) q = q.gte(gteCol, gteVal);
       if (inCol) q = q.in(inCol, inVals);
+      q = extraFilter(q);
       q = q.order(orderCol, { ascending });
       for (const oc of extraOrder) q = q.order(oc);
       return q.range(from, to);
@@ -114,6 +120,7 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, or
     let q = supabase.from(table).select(select);
     if (gteCol) q = q.gte(gteCol, gteVal);
     if (inCol) q = q.in(inCol, inVals);
+    q = extraFilter(q);
     q = q.order(orderCol, { ascending });
     for (const oc of extraOrder) q = q.order(oc);
     reqs.push(() => q.range(p * pageSize, p * pageSize + pageSize - 1));
@@ -1717,17 +1724,33 @@ export async function loadHourlyProjectionAccuracy(startDate, endDate, loc = nul
 export async function loadDtHistory(days = 90) {
   if (!supabase) return [];
   const startDt = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  // Paginate — .limit(100000) does NOT defeat Supabase's server-side max-rows cap
-  // (~1000), so 90 days × 27 stores was silently truncated to ~1 day. fetchAll pages.
-  return fetchAll((lo, hi) => supabase
-    .from('qsr_daily_activity')
-    .select('loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt')
-    .gte('dt', startDt)
-    .gt('dt_trans_cnt', 0)
-    .order('dt')
-    .order('loc')
-    .order('hour_slot')
-    .range(lo, hi));
+  // PARALLEL pagination (dispatch #88 item 2) — this read is at HOUR-SLOT granularity
+  // (dt-speedofservice.js's hourData/daypartData both aggregate by hour_slot, so the daily
+  // rollup view qsr_daily_activity_daily does NOT apply here — measured by reading what the
+  // panel actually renders, not assumed). 90 days × 27 stores × 24 slots ≈ 58,320 candidate rows
+  // at pageSize 1000 = ~58 pages, and fetchAll's strictly-sequential one-page-then-wait loop
+  // meant ~58 serial round-trips before the panel could render — the owner-reported 15+ second
+  // load. _pagedParallel already exists (qsr_fob/labor_rows/peaks_rows/audit_rows/ops_rows/
+  // ctrl_rows/etc) and fans pages out under the shared _MAX_INFLIGHT=6 cap instead of awaiting
+  // each page serially; this was the one remaining qsr_daily_activity reader still on fetchAll.
+  // qsr_daily_activity is RLS-restricted (confirmed live: the anon key this sandbox can reach
+  // sees 0 rows on it, unlike public-read tables), so — same caveat #191's identical fetchAll ->
+  // _pagedParallel migration for loadQsrFob shipped with — a true production wall-clock trace
+  // isn't obtainable here. src/__tests__/dt-history-pagination.test.js measures the SCHEDULING
+  // change directly at the real ~58-page/6-inflight shape against a controlled-latency mock:
+  // 58 sequential rounds vs 11 (⌈58/6⌉+1 head-count) parallel rounds, ~5.3x fewer round-trip
+  // rounds at a fixed per-request latency — the reproducible claim; real production milliseconds
+  // will differ. Per the same test file, a failed page still surfaces _recordDataError under the
+  // 'dtHistory' label (dispatch's explicit partial-failure ask), and dt_trans_cnt > 0 reaches
+  // both the head-count query and the fetchAll fallback path via the new extraFilter param.
+  return _pagedParallel({
+    table: 'qsr_daily_activity',
+    select: 'loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
+    gteCol: 'dt', gteVal: startDt,
+    extraFilter: q => q.gt('dt_trans_cnt', 0),
+    orderCol: 'dt', ascending: true, extraOrder: ['loc', 'hour_slot'],
+    pageSize: 1000, label: 'dtHistory',
+  });
 }
 
 // ── eBOS monthly op supplies by store ────────────────────────────────────────
