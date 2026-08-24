@@ -135,3 +135,67 @@ him. Making that explicit is worth more than pretending the agent has access it 
 - Do **not** implement item 4, or add any service-role key to this environment.
 - Do **not** put a credential value in a log, fixture, commit, or memory file — credential
   **type** only, per this repo's standing security posture.
+
+## Resolution
+
+### Item 1 — which credential, which observation
+
+**Credential:** `.env.local`'s `VITE_SUPABASE_ANON_KEY` is not an anon key. Decoding its JWT
+payload shows `"role":"service_role"`, and the value is byte-identical (confirmed by string
+comparison) to `SUPABASE_SERVICE_ROLE_KEY` in the same file. There is no distinct, functioning
+anon-scoped credential in this environment — the variable named for one holds the service-role
+secret instead.
+
+**Observation, isolated three ways on `qsr_fob` and `qsr_daily_activity`:**
+- `apikey` header only, no `Authorization` header → genuinely anon-scoped, RLS-enforced →
+  `content-range: */0` / `[]` on both tables. This matches dispatch #89's own 10-table measurement
+  exactly, and matches CLAUDE.md's documented `curl` recipe.
+- `apikey` + `Authorization: Bearer <same value>` → the gateway honors the JWT's actual
+  `service_role` claim, bypassing RLS → real rows (`qsr_fob` rows dated through 2026-08-24;
+  `qsr_daily_activity` returns `content-range: 0-0/45040` for the exact query dispatch #88 item 2's
+  row-count estimate was built on).
+
+**So: possibility 1 from this dispatch (a different credential), refined.** It was not a different
+session or a stray service-role key sitting alongside a working anon key — the value stored under
+the anon-key name *is* the service-role key, and whether a request exercised that privilege
+depended on whether the curl invocation included an `Authorization: Bearer` header. Dispatch #88's
+`qsr_fob` claim came from a request that did; the CLAUDE.md-documented recipe and this dispatch's
+own measurement did not. `memory/dispatch-88.md`'s Resolution, item 1 now carries this correction
+inline, dated and non-destructive (the original wrong claim stays visible, followed by the
+correction, per this repo's convention for reversed findings).
+
+**The underlying question — does the stream have real August data — is left open by design, per
+this dispatch's explicit instruction not to re-assert it from this environment.** The service-role
+read above is technically real evidence (service_role bypasses RLS and sees the table's true
+state, so unlike the original claim it is not mischaracterized), but per item 1's own instruction
+the owner has been asked directly in this session to confirm by opening the Food Cost panel and
+reading the month selector — that answer, not any query from this sandbox, is what closes it.
+
+### Item 2 — CLAUDE.md corrected
+
+The "Supabase egress is now allowlisted" paragraph now leads with the true state (10/10 measured
+operational tables return `*/0` to the anon-scoped recipe; `qsrsoft_kb` is the only confirmed
+readable table), keeps the egress-works fact under "do not re-raise," records the full 10-table
+measurement table so it isn't re-derived, and explains the `Authorization: Bearer` mechanism that
+produced dispatch #88's wrong claim — including the explicit instruction never to send
+`VITE_SUPABASE_ANON_KEY` as a Bearer token in this environment.
+
+### Item 3 — rule addition
+
+Added four sentences inside the existing "Measure it, don't reason about it" standing rule (no new
+section): a live-data claim must name the credential and the observation, with dispatch #88's own
+failure as the concrete cautionary example.
+
+### Item 4 — put to the owner, not implemented
+
+Framed for the owner in this session's reply, with the three options and their trade-offs as
+written above, and the recommendation that the de-facto current answer (the owner measures) is
+already what's happening and may genuinely be the right steady state. No service-role key added to
+this environment; no policy created; no credential value appears in this file, CLAUDE.md, or any
+commit in this PR.
+
+### Files changed
+- `CLAUDE.md` — items 2 and 3.
+- `memory/dispatch-88.md` — item 1 correction, inline.
+- `.env.local` — untouched (gitignored, not part of this PR; the mislabeling is a local sandbox
+  config fact, not a repo defect, and is now documented rather than silently fixed).

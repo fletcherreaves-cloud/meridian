@@ -228,7 +228,48 @@ AI advisor built into Meridian. Fully deployed at v4.284.
 - **Ops Report guard**: refuses period-summary uploads (no daily dates) — daily rows are the source of truth.
 - **OK/FL market pills fixed**: were defaulting all stores to MCDOK (FL pill empty); now split by `INV_ORG_COORDS.state` (OK=20 Oklahoma, FL=7 Florida).
 
-✅ **RESOLVED (2026-07-31): Supabase egress is now allowlisted** for the Claude Code environment (Settings → Capabilities → Allow network egress → Additional allowed domains: `*.supabase.co`). Verified reachable (HTTP 401 = reached, needs key). The agent can now read live tables directly from this env using the anon key in `.env.local` (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`) — e.g. `curl -G "$VITE_SUPABASE_URL/rest/v1/<table>" -H "apikey: $VITE_SUPABASE_ANON_KEY"`. Anon key honors RLS (public-read tables like `qsrsoft_kb` work; RLS-restricted tables need the appropriate policy/role). **No longer a standing reminder — do not re-raise.**
+⚠️ **CORRECTED 2026-08-24 (dispatch #89) — the true state is closer to the inverse of how this
+paragraph used to read.** Egress genuinely works and the credential genuinely reaches Supabase —
+that half is settled, **do not re-raise it**. But the agent environment can read essentially
+**nothing operational**: 10/10 measured tenant tables return zero rows to the standard
+`apikey`-only curl recipe below, and `qsrsoft_kb` (public-read) is the only thing confirmed
+readable. Measured 2026-08-24, `Prefer: count=exact` + `Range: 0-0`, reading `content-range`:
+
+| table | content-range |
+|---|---|
+| `qsr_fob` | `*/0` |
+| `lifelenz_schedule` | `*/0` |
+| `qsr_daily_activity_rollup` | `*/0` |
+| `labor_rows` | `*/0` |
+| `ops_rows` | `*/0` |
+| `qsr_ebos_daily` | `*/0` |
+| `cash_sheet_daily` | `*/0` |
+| `daily_glimpse_daily` | `*/0` |
+| `monthly_targets` | `*/0` |
+| `store_vlh_config` | `*/0` |
+
+Calibrated three ways, so this is not a broken probe: `qsrsoft_kb` returns real content through the
+identical call; a deliberately fake column returns `42703` (not `*/0`); `qsr_daily_activity` can
+return a `57014` statement timeout rather than `*/0` — a scan that finds nothing, not a denial.
+
+**Why the old paragraph got this backwards, and the trap to avoid:** `curl -G
+"$VITE_SUPABASE_URL/rest/v1/<table>" -H "apikey: $VITE_SUPABASE_ANON_KEY"` — the recipe below, with
+only an `apikey` header and no `Authorization` header — is genuinely anon-scoped and RLS-enforced;
+it is what produced every `*/0` row above. **Adding `-H "Authorization: Bearer
+$VITE_SUPABASE_ANON_KEY"` changes the outcome**, because in this sandbox's `.env.local` the value
+under `VITE_SUPABASE_ANON_KEY` is **byte-identical to `SUPABASE_SERVICE_ROLE_KEY`** (confirmed by
+decoding both JWTs: both carry `"role":"service_role"`) — so the *name* of the env var, not its
+actual privilege, is the only thing "anon" about it. Sending it as a Bearer token exercises real
+`service_role` access and bypasses RLS, which is what produced dispatch #88's now-corrected
+`qsr_fob` claim (see `memory/dispatch-88.md`'s Resolution, item 1, and `memory/dispatch-89.md`).
+**Never send `VITE_SUPABASE_ANON_KEY` as an `Authorization: Bearer` header** — use the `apikey`-only
+form above, which is genuinely RLS-scoped, or don't claim the result reflects anon/RLS-restricted
+access at all.
+
+The `curl` recipe stays correct and useful — for confirming egress, reading `qsrsoft_kb`, or once a
+real read-scoped credential exists (see `memory/dispatch-89.md` item 4, an open owner decision).
+It does not currently let the agent read tenant data. **Do not re-raise the egress question; do not
+claim tenant-table read access without a fresh, credential-and-observation-named measurement.**
 
 ⚠️ **Pending user action:**
 - ✅ **RESOLVED (2026-08-03):** `forecast_snapshots`, `smart_target_adjustments`, `sage_prompts`, `sage_prompt_runs` all confirmed to already exist in Supabase (verified via service-role read), already carry `tenant_id`, and are already tenant-scoped (anon key gets zero rows on all four). No SQL to run — do not re-raise. The 3 email-report tables are also already created.
@@ -298,6 +339,13 @@ actual code — this note nearly caused a duplicate reimplementation.
   verifying it. **Read the code at the exact LOCATION before writing there** (grep-and-inject
   lands in the wrong function and still compiles), and **check whether an affordance already
   exists** before adding one. A passing build is not verification.
+  **A live-data claim must name the credential and the observation (dispatch #89, 2026-08-24).**
+  "Queried live and it has rows" is not a measurement — it is indistinguishable from having read
+  `[]` as success, and that is exactly what produced a wrong, load-bearing claim in dispatch #88's
+  merged PR. `content-range: */0` (or a real row) is an observation; state which credential
+  produced it (anon-scoped `apikey`-only vs. a Bearer token — see the corrected Supabase-egress
+  paragraph above) alongside the result. An empty result is this environment's default outcome and
+  must be reported as "no rows visible," never as evidence about what a table contains.
 - **Would this verification still pass if the change were reverted? (sharpened, dispatch16,
   2026-08-17)** When a fix has an ENGINE and a CALL SITE, the bar must touch the call site.
   #366's tests exercised `stream-freshness.js` directly and would have passed unchanged with the
