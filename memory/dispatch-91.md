@@ -83,3 +83,34 @@ real measurement, not a forced resolution.
 - **Do not add more console logging / instrumentation as a first move.** That path is explicitly exhausted per the finding file.
 - **Do not create a new `dispatch-91.md`.** Per this repo's standing convention, append a `## Resolution` section to this file, or update the finding file directly (it already carries a "🔴 APPENDED" pattern for exactly this kind of update-in-place).
 - **Do not include any token value, `sub`, `eID`, `cognito:username`, or employee name in any file, log, or memory doc.** The finding file's PII note is not optional — a prior capture briefly exposed plaintext crew names in a session transcript, and that must not recur. Only sha256 prefixes and claim-**name** lists (never claim values) are safe to record.
+
+## Resolution (2026-08-24), part 1 of 2 — test 1 tooling built, not yet run
+
+`scripts/probe-security-token-identity.mjs` gained **Case F**, exactly the token-injection test
+this dispatch specifies: `runSecurityEvents` (the pull's own loop, previously module-private) is
+now exported with an optional `{ stores, eventTokens }` scope override, and Case F calls it with
+a proven-good token (already minted successfully earlier in the same process by Cases A/E)
+injected in place of the loop's own `getFreshToken`. Scoped to the pull's documented
+first-failing unit (store 3708, 2026-08-22, `all_promo`) rather than the full 216-unit sweep.
+
+**No live result yet, and here is exactly why:** this dispatch has been worked entirely from
+sandboxed sessions with no `QSRSOFT_USERNAME`/`PASSWORD` and no network path to
+`api.security.myqsrsoft.com` — confirmed directly (the agent network proxy itself returns a
+policy-denial 403 on `CONNECT` to that host, a *different* 403 than the one under investigation,
+not a fluke). Every 200 anywhere in this whole investigation's history has come from the owner's
+own Mac mini. Rather than guess or extrapolate a verdict from code inspection, this PR added
+`.github/workflows/qsrsoft-security-token-identity-probe.yml` — `workflow_dispatch`-only, pinned
+to `[self-hosted, macOS, qsr-security]` (the same runner the real daily pull uses) — so the actual
+test runs where it can succeed or fail for real.
+
+**Next step, owner or a follow-up session with Actions access:** trigger
+`qsrsoft-security-token-identity-probe.yml` via `workflow_dispatch` (defaults are pre-filled with
+the first-failing unit above) and read the `── VERDICT ──` block at the end of the run log — no
+token values are ever printed, only hashes/lengths/claim names. That single run answers test 1:
+injected token → 200 means look at module-level/context differences next; still 403 means proceed
+straight to test 2 (packet capture).
+
+Shipped as #652. A parallel, independently-arrived-at duplicate (#653, a separate new script
+rather than extending the existing probe file) was closed in favor of this one — same conclusion,
+this repo's own "check whether a helper exists before writing one" rule favored the one that
+extended `probe-security-token-identity.mjs`'s existing Case A–E convention over a new file.
