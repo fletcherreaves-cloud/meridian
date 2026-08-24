@@ -13,6 +13,48 @@ metadata:
 Part 2 (dual MBI+LifeLenz historical accuracy) has a real, unresolved data-availability question
 that needs an owner decision before implementation — see below. Don't block Part 1 on Part 2.
 
+## ⚠️ CORRECTION (owner, 2026-08-24, after this dispatch was already in progress) — Part 2's
+"blocked on missing data" premise was WRONG
+
+The owner pushed back directly: *"Labor Analysis I though was on auto pull, please check."* Checked,
+and the owner is right — **this dispatch's original data-availability claim below is false.**
+`scripts/lifelenz-pull.mjs` already writes `fcst_sales`, `adj_fcst_sales`, `sales`, `sales_diff`,
+`fcst_tcs`, `tcs`, `tcs_diff` into `lifelenz_schedule` **daily, automatically**, and
+`loadLifeLenzSchedule()` (`src/lib/supabase.js`, ~line 563-592) already maps every one of those
+fields into the app (`fcstSales`, `adjFcstSales`, `sales`, `salesDiff`, `fcstTCs`, `tcs`, `tcsDiff`),
+**455 days back by default.** LifeLenz's own historical forecast-vs-actual data is already fully
+auto-pulled and already loaded — **Part 2 is NOT blocked on a missing pull.**
+
+**The real bug, found by checking why the app doesn't already use this:**
+`computeLifeLenzAdjustment`'s `'direct'` sourcing (`src/features/lifelenz.js`, ~line 367-371) reads
+`ds.laborRows` — the **manually-uploaded** Labor Analysis file — never `ds.lifelenzSchedule`, the
+auto-pulled table sitting right next to it with equivalent (likely more complete/reliable) data. So
+the tool falls back to `'pattern'` (a historical-bias **guess**) whenever nobody happened to manually
+upload a file for that date, even on days where the real, auto-pulled `fcstSales` value already
+exists. This is exactly the owner's separate ask below ("No guessing") — same root cause, same fix.
+
+**Revised Part 1 scope — do this now, in the same pass as the date-range/weekly work:**
+Repoint (or add as the first-priority source before falling back to manual) the `'direct'` sourcing
+to read `fcstSales`/`sales` from `ds.lifelenzSchedule` (auto-pulled) first. Only fall back to
+`ds.laborRows` (manual upload) or `'pattern'` (guess) when the auto-pulled table genuinely has no
+row for that store/date. **"No guessing" (owner, verbatim): require the real auto-pulled number
+when it exists — never silently prefer a guess over real data that's already sitting there.**
+
+**Part 2 is now also unblocked and in scope** — with 455 days of real `fcst_sales`/`sales`/
+`salesDiff` already available, a genuine LifeLenz-side historical accuracy view (paired with
+Meridian's own already-tracked `forecast_snapshots`) can be built now, not deferred pending an API
+investigation. Fold this into the same effort rather than treating it as a separate future dispatch.
+
+**Confirmed name (owner, replacing the earlier "Forecast Reconciliation" proposal): "MBI vs
+LifeLenz Accuracy."** Use this name for the merged section/panel in dispatch #106's Phase B, and for
+this tool's own identity in the meantime if it needs one before the merge lands.
+
+**Also add a real URL route** (owner: *"put in a url page while you are at it"*) — `lifelenz-bridge`
+currently has no `route:true` in `panel-registry.js` (compare `fcst-accuracy`, which already does),
+so it has no direct-linkable URL. Add `route:true` to its registry entry, matching the pattern
+`fcst-accuracy`/`proj` already use, so this panel is directly navigable/bookmarkable like its
+soon-to-be sibling in dispatch #106's merge.
+
 ---
 
 ## What exists today (for context — this is not a bug, it's current scope)
