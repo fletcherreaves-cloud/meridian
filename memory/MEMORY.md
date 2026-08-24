@@ -84,7 +84,20 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **🔴 NEWEST, HIGH PRIORITY (2026-08-24): [Dispatch #102 — FOB Analysis's cloud dollar totals are inflated ~24x](dispatch-102.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #103 — Record Day Intelligence can flag a same-day record before the day is over](dispatch-103.md)** —
+  Tecumseh's 95s OEPE "New Record" (2026-08-24) is real math over incomplete data, not a bug in the
+  formula: reproduced exactly by hand from live `qsr_daily_activity` rows, which only had data
+  through 15:00 (the DAR's last intraday pull) at check time. The owner's own later QSRSoft export
+  has real hours through 17:00 — both slower than 95s — that would very likely push the true
+  full-day OEPE worse once the day closes. **No completeness guard exists anywhere in
+  `record-day.js`** — every record type (sales/GC/breakfast/avg-check/OEPE/KVS/R2P, DOW variants
+  included) can flag a same-day, still-accumulating value as final. Fix: gate same-day records on
+  whether the business day has actually closed (`businessDate()`/`lastClosedBusinessDay()`,
+  `src/utils/date.js` — the existing shared helper, don't re-derive), defaulting to a visibly
+  provisional same-day record rather than silently hiding today's number, pending owner
+  confirmation if genuinely ambiguous. Also: 2-decimal dollar/percent formatting requested for this
+  panel specifically — scope to `record-day.js` only, do not change `f$`'s global default.
+- **🔴 (2026-08-24): [Dispatch #102 — FOB Analysis's cloud dollar totals are inflated ~24x](dispatch-102.md)** —
   **Start here — real money, real decisions riding on wrong numbers.** Every dollar figure on the
   FOB Analysis panel (Net Sales, every waste/condiment/meal/variance $) is inflated by roughly the
   number of days elapsed in the selected month — measured **24.0× exactly, uniformly across every
