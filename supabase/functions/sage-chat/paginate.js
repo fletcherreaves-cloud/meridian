@@ -19,6 +19,16 @@
 
 // `buildQuery` must return a FRESH, un-awaited Supabase query builder on every call (same filters
 // each time, no `.range()`/`.limit()` of its own) -- an already-awaited builder can't be re-ranged.
+//
+// It must ALSO impose a deterministic total order (`.order()` on the table's full primary key).
+// Offset paging over an unordered query is not safe: Postgres leaves row order unspecified without
+// an ORDER BY, so two `.range()` calls in the same read can return overlapping or disjoint slices
+// of the same table -- silently duplicating some rows and dropping others. That failure mode is
+// worse than the truncation this helper exists to fix, because the row COUNT still looks right.
+// It is not hypothetical here: every table these tools read is written by a daily pull, and a
+// concurrent insert or an autovacuum mid-read is exactly what reshuffles a seq scan. The app-side
+// reader of qsr_daily_activity already orders for this reason (src/lib/supabase.js:1706).
+// `src/__tests__/sage-paginate.test.js` asserts every fetchAllRows call site in index.ts orders.
 export async function fetchAllRows(buildQuery, pageSize = 1000) {
   const all = [];
   let offset = 0;

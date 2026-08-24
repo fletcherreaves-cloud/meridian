@@ -285,7 +285,9 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         .from('qsr_daily_activity')
         .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt')
         .gte('dt', startDate)
-        .lte('dt', endDate);
+        .lte('dt', endDate)
+        // Full PK order (loc, dt, hour_slot) -- required for offset paging, see paginate.js.
+        .order('dt').order('loc').order('hour_slot');
       if (locs?.length && !allowed) q = q.in('loc', locs); // restricted users always query all → scoped below
       return q;
     });
@@ -355,7 +357,9 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         // sch_crew 400, need_crew 400.
         .select('loc,date,sch_vlh,need_vlh')
         .gte('date', startDate)
-        .lte('date', endDate);
+        .lte('date', endDate)
+        // Full PK order (loc, date) -- required for offset paging, see paginate.js.
+        .order('date').order('loc');
       if (locs?.length && !allowed) q = q.in('loc', locs);
       return q;
     });
@@ -388,7 +392,10 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         .from('forecast_snapshots')
         .select('loc,dt,source,forecast_sales,actual_sales,mape')
         .gte('dt', startDate)
-        .lte('dt', endDate);
+        .lte('dt', endDate)
+        // PK order (id) -- (loc, dt, source) is not declared unique here, so page on the key
+        // that is. Required for offset paging, see paginate.js.
+        .order('id');
       if (locs?.length && !allowed) q = q.in('loc', locs);
       if (source)        q = q.eq('source', source);
       return q;
@@ -451,8 +458,9 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const marginRate = typeof input.margin_rate === 'number' ? input.margin_rate : 0.35;
 
     const [g, c] = await Promise.all([
-      fetchAllRows(() => sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate)),
-      fetchAllRows(() => sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate)),
+      // .order() on the full PK (loc, date) -- required for offset paging, see paginate.js.
+      fetchAllRows(() => sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate).order('date').order('loc')),
+      fetchAllRows(() => sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate).order('date').order('loc')),
     ]);
     if (g.error) return `Database error: ${g.error.message}`;
     if (!g.data?.length) return `No Daily Glimpse promo data found for ${startDate} to ${endDate}. Promo/discount ROI needs several weeks of daily data.`;

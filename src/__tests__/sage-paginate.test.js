@@ -12,6 +12,7 @@
 // pagination loop (not just its wiring into index.ts) makes these tests fail, since they exercise
 // that exact code.
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { fetchAllRows } from '../../supabase/functions/sage-chat/paginate.js';
 
 // Simulates PostgREST's max-rows behavior: a query builder whose `.range(offset, end)` always
@@ -86,5 +87,48 @@ describe('paginate -- fetchAllRows (dispatch #85)', () => {
     const { data, error } = await fetchAllRows(build, 1000);
     expect(error).toBeNull();
     expect(data).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Call-site contract: every fetchAllRows() query must be deterministically ordered.
+//
+// The pagination loop above is correct in isolation and still wrong at the call site if the
+// query it pages has no ORDER BY: Postgres leaves row order unspecified without one, so two
+// .range() reads of the same table can overlap or skip -- duplicating some rows and dropping
+// others while the total COUNT still looks plausible. A test that only imports paginate.js
+// cannot see that; this one reads index.ts, so deleting an .order() fails the suite.
+describe('sage-chat: fetchAllRows call sites impose a total order', () => {
+  const src = readFileSync(
+    new URL('../../supabase/functions/sage-chat/index.ts', import.meta.url),
+    'utf8',
+  );
+
+  // Each fetchAllRows(...) call, from the opening paren to the balanced closing one.
+  function fetchAllRowsCalls(text) {
+    const calls = [];
+    const NEEDLE = 'fetchAllRows(';
+    let at = text.indexOf(NEEDLE);
+    while (at !== -1) {
+      let depth = 0;
+      let i = at + NEEDLE.length - 1;
+      for (; i < text.length; i++) {
+        if (text[i] === '(') depth++;
+        else if (text[i] === ')' && --depth === 0) break;
+      }
+      calls.push(text.slice(at, i + 1));
+      at = text.indexOf(NEEDLE, i);
+    }
+    return calls;
+  }
+
+  const calls = fetchAllRowsCalls(src);
+
+  it('finds every paginated tool query (guards against the scan silently matching nothing)', () => {
+    expect(calls.length).toBe(5); // daily_activity, lifelenz, forecast_snapshots, glimpse, ctrl_rows
+  });
+
+  it.each(calls.map((c, i) => [i, c]))('call %i orders its query', (_i, call) => {
+    expect(call).toMatch(/\.order\(/);
   });
 });
