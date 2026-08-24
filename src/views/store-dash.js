@@ -17,6 +17,7 @@ import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../utils/fmt.js';
 import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engine/monthly-targets-v2.js';
 import { lastPriceChangeByStore } from '../engine/price-events.js';
+import { TOL_METRICS, TOL_SPEC, tolValuesForLoc, tolFobMonthly, tolMergedTarget, tolStatus, TOL_STATUS_COLOR, TOL_STATUS_ICON } from '../engine/tolerance-status.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -2608,160 +2609,26 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
     {id:'sales',l:'Sales'},
   ];
 
-  // ── Metric definitions — all 39 from Metric Dictionary v2 ───────────
-  const METRICS = [
-    // Service
-    {id:'oepe',    cat:'svc',   l:'OEPE (seconds)',     offKey:'tOepe',    unit:'s',   lowerBetter:true,  tol:10,  dataFn:(cR,lR,oR)=>avg(oR,'oepe')},
-    {id:'park',    cat:'svc',   l:'DT Park %',          offKey:'tPark',    unit:'%',   lowerBetter:true,  tol:.03, dataFn:(cR,lR,oR)=>avg(oR,'park')},
-    {id:'kvst',    cat:'svc',   l:'KVS Time (seconds)', offKey:'tKvst',    unit:'s',   lowerBetter:true,  tol:10,  dataFn:(cR,lR,oR)=>avg(oR,'kvst')},
-    // Dispatch #77 -- was lowerBetter:false, contradicting every other site including this
-    // table's OWN sibling table at :2229, whose label literally reads "R2P (lower=better)".
-    // Corroborated: metric-source.js derives r2p as seconds/transaction. See memory/dispatch-77.md.
-    {id:'r2p',     cat:'svc',   l:'R2P (seconds)',      offKey:'tR2p',     unit:'s',   lowerBetter:true, tol:5,   dataFn:(cR,lR,oR)=>avg(oR,'r2p')},
-    // Labor
-    {id:'tpph',    cat:'labor', l:'TPPH',               offKey:'tTpph',    unit:'',    lowerBetter:false, tol:.2,  dataFn:(cR,lR,oR)=>avgN(cR,'tpph')||avgN(lR,'tpph')},
-    {id:'labor',   cat:'labor', l:'Labor %',             offKey:'tLabor',   unit:'%',   lowerBetter:true,  tol:.02, dataFn:(cR,lR,oR)=>avgN(cR,'laborPct')||avgN(lR,'laborPct')},
-    {id:'crewlbr', cat:'labor', l:'Crew Labor %',        offKey:'tCrewLabor',unit:'%', lowerBetter:true,  tol:.02, dataFn:(cR,lR,oR)=>avgN(lR,'crewLaborPct')},
-    {id:'actvsNd', cat:'labor', l:'Act vs Need (hrs)',   offKey:null,       unit:'hr',  lowerBetter:false, tol:2,   dataFn:(cR,lR,oR)=>avgN(lR,'actVsNeed')},
-    // FOB
-    {id:'baseFd',  cat:'fob',   l:'Base Food %',           offKey:'tFOBBase',  unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'baseFoodPct')},
-    {id:'fob',     cat:'fob',   l:'FOB (Over Base) %',     offKey:'tFOBTarget',unit:'%',  lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'fobPct')},
-    {id:'fobTot',  cat:'fob',   l:'Total Food Cost %',     offKey:'tFOBTotal', unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'pLFoodPct')},
-    {id:'compW',   cat:'fob',   l:'Comp Waste %',          offKey:'tCompWaste',unit:'%',  lowerBetter:true,  tol:.001,dataFn:(cR,lR,oR)=>avgN(cR,'compWastePct')},
-    {id:'rawW',    cat:'fob',   l:'Raw Waste %',            offKey:'tRawWaste', unit:'%',  lowerBetter:true,  tol:.002,dataFn:(cR,lR,oR)=>avgN(cR,'rawWastePct')},
-    {id:'cond',    cat:'fob',   l:'Condiment %',            offKey:'tCondiment',unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'condPct')},
-    {id:'empMl',   cat:'fob',   l:'Emp Meal %',             offKey:'tEmpFood',  unit:'%',  lowerBetter:true,  tol:.002,dataFn:(cR,lR,oR)=>avgN(cR,'empMealPct')},
-    {id:'statV',   cat:'fob',   l:'Stat Var %',             offKey:'tStatLoss', unit:'%',  lowerBetter:true,  tol:.005,dataFn:(cR,lR,oR)=>avgN(cR,'statVarPct')},
-    {id:'disc',    cat:'fob',   l:'Disc/Coupon %',          offKey:null,        unit:'%',  lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'discPct')},
-    // POS Controls
-    {id:'cashOS',  cat:'pos',   l:'Cash O/S %',            offKey:null,       unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'cashOSPct')},
-    {id:'tRedB',   cat:'pos',   l:'T-Red Before %',        offKey:null,       unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'tRedBPct')},
-    {id:'tRedA',   cat:'pos',   l:'T-Red After %',         offKey:null,       unit:'%',   lowerBetter:true,  tol:.01, dataFn:(cR,lR,oR)=>avgN(cR,'tRedAPct')},
-    {id:'discP',   cat:'pos',   l:'Discount %',            offKey:null,       unit:'%',   lowerBetter:true,  tol:.02, dataFn:(cR,lR,oR)=>avgN(cR,'discPct')},
-    // Sales
-    {id:'gc',      cat:'sales', l:'STW Guest Count',       offKey:null,       unit:'',    lowerBetter:false, tol:50,  dataFn:(cR,lR,oR)=>avgN(lR,'gc')},
-    {id:'avgChk',  cat:'sales', l:'Avg Check ($)',          offKey:null,       unit:'$',   lowerBetter:false, tol:.25, dataFn:(cR,lR,oR)=>avgN(lR,'avgCheck')},
-    {id:'sales',   cat:'sales', l:'Daily Sales ($)',        offKey:null,       unit:'$',   lowerBetter:false, tol:500, dataFn:(cR,lR,oR)=>sumN(lR,'sales')/Math.max(lR.length,1)},
-  ];
-
-  const avg  = (rows,f)=>{ const v=rows.map(r=>r[f]).filter(v=>v!=null&&v>0); return v.length?v.reduce((a,b)=>a+b)/v.length:null; };
-  const avgN = (rows,f)=>avg(rows,f);
-  const sumN = (rows,f)=>rows.reduce((a,r)=>a+(r[f]||0),0);
-  const bqAvg = (rows,f,hi)=>{ // best-quartile average (lower=true → bottom 25%, higher=true → top 25%)
-    const v=rows.map(r=>r[f]).filter(v=>v!=null&&v>0).sort((a,b)=>a-b);
-    if(!v.length) return null;
-    const q=Math.max(1,Math.floor(v.length/4));
-    return hi?v.slice(-q).reduce((a,b)=>a+b)/q:v.slice(0,q).reduce((a,b)=>a+b)/q;
-  };
-
-  // Get data rows for selected location, last 4 weeks
-  const cutoff = React.useMemo(()=>addDR(new Date(),-28),[]);
-  const locRows = uM(()=>{
-    if (!ds) return {cR:[], lR:[], oR:[]};
-    const locs = selLoc==='all'?Object.keys(STORE_NAMES):[selLoc];
-    const filt=(arr)=>(arr||[]).filter(r=>locs.includes(String(r.loc))&&r.date>=cutoff);
-    return{cR:filt(ds.ctrlRows), lR:filt(ds.laborRows), oR:filt(ds.opsRows)};
-  },[ds,selLoc,cutoff]);
-
-  // ── Smart Targets Model v2 — source map (auto/emailed-first, freshest-wins) ──
-  // Each metric points at its CORRECT source (the old code read FOB fields off
-  // ctrlRows — always null). Manual rows are primary; cloud streams fill any
-  // loc/date with no manual upload. FOB uses qsr_fob $-amounts so district
-  // roll-ups can be dollar-weighted exactly (Σ$/Σprodsales), never a mean of %s.
-  const SPEC = {
-    oepe:   {man:{src:'opsRows',f:'oepe'},        cloud:{src:'glimpseRows',f:'oepe'}},
-    park:   {man:{src:'opsRows',f:'park'},        cloud:{src:'glimpseRows',f:'parkedPct'}},
-    kvst:   {man:{src:'opsRows',f:'kvst'},        cloud:{src:'glimpseRows',f:'kvst'}},
-    r2p:    {man:{src:'opsRows',f:'r2p'}},
-    tpph:   {man:{src:'ctrlRows',f:'tpph'}, man2:{src:'laborRows',f:'tpph'}, cloud:{src:'qsrActSummaryRows',fn:r=>r.actHrs>0?r.gc/r.actHrs:null}},
-    labor:  {man:{src:'ctrlRows',f:'laborPct'}, man2:{src:'laborRows',f:'laborPct'}, cloud:{src:'glimpseRows',f:'laborPct'}},
-    crewlbr:{man:{src:'laborRows',f:'crewLaborPct'}},
-    actvsNd:{man:{src:'laborRows',f:'actVsNeed'}, cloud:{src:'qsrActSummaryRows',fn:r=>(r.actHrs!=null&&r.needHrs!=null)?r.actHrs-r.needHrs:null}, keepZero:true, signed:true},
-    baseFd: {man:{src:'fobRows',f:'baseFoodPct'}, fob:{num:'totalBaseFood'}},
-    fob:    {man:{src:'fobRows',f:'fobPct'},      fob:{fobSum:true}},
-    fobTot: {man:{src:'fobRows',f:'pLFoodPct'},   fob:{pnl:true}},
-    compW:  {man:{src:'fobRows',f:'compWaste'},   fob:{num:'compWasteAmt'}},
-    rawW:   {man:{src:'fobRows',f:'rawWaste'},    fob:{num:'rawWasteAmt'}},
-    cond:   {man:{src:'fobRows',f:'condiment'},   fob:{num:'condimentsAmt'}},
-    empMl:  {man:{src:'fobRows',f:'empMeal'},     fob:{num:'empMgrMealsAmt'}},
-    statV:  {man:{src:'fobRows',f:'statVar'},     fob:{num:'statVarianceAmt'}},
-    disc:   {man:{src:'fobRows',f:'discCoupon'},  fob:{num:'discountCouponsAmt'}},
-    cashOS: {man:{src:'ctrlRows',f:'cashOSPct'},  cloud:{src:'glimpseRows',f:'cashOSPct'}, signed:true},
-    tRedB:  {man:{src:'ctrlRows',f:'tRedBPct'}},
-    tRedA:  {man:{src:'ctrlRows',f:'tRedAPct'}},
-    discP:  {man:{src:'ctrlRows',f:'discPct'}},
-    gc:     {man:{src:'laborRows',f:'gc'},        cloud:{src:'qsrActSummaryRows',f:'gc'}},
-    avgChk: {man:{src:'laborRows',f:'avgCheck'},  cloud:{src:'qsrActSummaryRows',fn:r=>r.gc>0?r.sales/r.gc:null}},
-    sales:  {man:{src:'laborRows',f:'sales'},     cloud:{src:'qsrActSummaryRows',f:'sales'}},
-  };
-  // Excludes the still-open business day (businessDate(), 4am ABC cutover) — every caller uses
-  // this to build a trailing baseline/current-value window (robustBaseline over histMs/l4wMs
-  // below), so a partial today would otherwise dilute the baseline every time this panel is
-  // opened mid-day, the same distortion already fixed for the Biggest Miss table (v4.917) and
-  // the swing alarm. Unlike those two, this has no explicit test coverage yet — add one if this
-  // scorecard proves to need re-touching.
-  const _openDayMs = new Date(businessDate() + 'T00:00:00').getTime();
-  const _inRangeMs = (r, ms) => { const d = r.date instanceof Date ? r.date : new Date(r.date); const t = d && !isNaN(d) ? d.getTime() : NaN; return !isNaN(t) && t >= ms && t < _openDayMs; };
-  const _keep = (v, spec) => typeof v === 'number' && !isNaN(v) && (spec.keepZero || v !== 0);
-  // qsr_fob is MTD-cumulative → collapse to one value per (loc,month): the final
-  // (max-date) row = that month's actual. Returns [{val, num, den, date}].
-  const _fobMonthly = (loc, sinceMs, spec) => {
-    const byMon = {};
-    for (const r of (ds.qsrFobRows || [])) {
-      if (String(parseInt(r.loc, 10)) !== String(loc) || !_inRangeMs(r, sinceMs)) continue;
-      const d = r.date instanceof Date ? r.date : new Date(String(r.date).slice(0,10) + 'T00:00:00');
-      const key = d.getFullYear() + '-' + d.getMonth();
-      if (!byMon[key] || d > byMon[key]._d) byMon[key] = { ...r, _d: d };
-    }
-    const out = [];
-    for (const r of Object.values(byMon)) {
-      const den = r.prodSalesAmt || 0; if (den <= 0) continue;
-      let num;
-      if (spec.fob.num) num = r[spec.fob.num] || 0;
-      else if (spec.fob.fobSum) num = (r.rawWasteAmt||0)+(r.compWasteAmt||0)+(r.condimentsAmt||0)+(r.empMgrMealsAmt||0)+(r.statVarianceAmt||0)+(r.unexplainedAmt||0);
-      else if (spec.fob.pnl) num = (r.pnlFoodCostBegin||0)+(r.pnlFoodCostPurchases||0)+(r.pnlFoodCostAdjustments||0)+(r.pnlFoodCostTransfers||0)-(r.pnlFoodCostPromotions||0)-(r.pnlFoodCostEnd||0);
-      else continue;
-      out.push({ val: num / den, num, den, date: r._d });
-    }
-    return out;
-  };
-  // Cloud-first daily value series for a metric+store since `sinceMs`.
-  const valuesForLoc = (metricId, loc, sinceMs) => {
-    const spec = SPEC[metricId]; if (!spec) return [];
-    // FOB metrics: manual fobRows.f first, else qsr_fob monthly actuals.
-    if (spec.fob) {
-      const man = (ds.fobRows || []).filter(r => String(r.loc) === String(loc) && _inRangeMs(r, sinceMs))
-        .map(r => r[spec.man.f]).filter(v => _keep(v, spec));
-      if (man.length) return man;
-      return _fobMonthly(loc, sinceMs, spec).map(p => p.val).filter(v => _keep(v, spec));
-    }
-    // Manual (+ optional secondary manual) primary
-    for (const key of ['man', 'man2']) {
-      const s = spec[key]; if (!s) continue;
-      const vals = (ds[s.src] || []).filter(r => String(r.loc) === String(loc) && _inRangeMs(r, sinceMs))
-        .map(r => (s.fn ? s.fn(r) : r[s.f])).filter(v => _keep(v, spec));
-      if (vals.length) return vals;
-    }
-    // Cloud fallback
-    if (spec.cloud) {
-      const s = spec.cloud;
-      const matchLoc = s.src === 'qsrFobRows' ? (r => String(parseInt(r.loc,10)) === String(loc)) : (r => String(r.loc) === String(loc));
-      return (ds[s.src] || []).filter(r => matchLoc(r) && _inRangeMs(r, sinceMs))
-        .map(r => (s.fn ? s.fn(r) : r[s.f])).filter(v => _keep(v, spec));
-    }
-    return [];
-  };
+  // ── Metric definitions + value-sourcing — dispatch #94 Phase 2 moved these into
+  // engine/tolerance-status.js as the single source of truth, so the Analytics/At-A-Glance
+  // out-of-tolerance rollup tile and the Coaching findings pipeline compute "current" and
+  // "official target" the identical way this table does — see that module's header comment
+  // for why (CLAUDE.md's "two panels disagree on one number" rule). This panel now imports
+  // TOL_METRICS/TOL_SPEC/tolValuesForLoc/tolFobMonthly/tolMergedTarget rather than declaring
+  // its own copies.
+  const METRICS = TOL_METRICS;
+  const valuesForLoc = (metricId, loc, sinceMs) => tolValuesForLoc(ds, metricId, loc, sinceMs);
   // Dollar-weighted district value for FOB metrics (Σcomponent$/Σprodsales$).
   const fobDollarPairs = (metricId, locs, sinceMs) => {
-    const spec = SPEC[metricId]; if (!spec || !spec.fob) return null;
+    const spec = TOL_SPEC[metricId]; if (!spec || !spec.fob) return null;
     const pairs = [];
-    for (const loc of locs) for (const p of _fobMonthly(loc, sinceMs, spec)) pairs.push({ num: p.num, den: p.den });
+    for (const loc of locs) for (const p of tolFobMonthly(ds, loc, sinceMs, spec)) pairs.push({ num: p.num, den: p.den });
     return pairs.length ? pairs : null;
   };
   const _mktOf = l => (INV_ORG_COORDS[String(l)] || {}).state;
 
   // Official targets — yearly (ds.targets) then monthly (ds.monthlyTargets) override DEFAULT_TARGETS
-  const mergedT = loc => ({...(DEFAULT_TARGETS[loc]||{}), ...((ds&&ds.targets&&ds.targets[loc])||{}), ...((ds&&ds.monthlyTargets&&ds.monthlyTargets[loc])||{})});
+  const mergedT = loc => tolMergedTarget(ds, loc);
   const officialT = uM(()=>{
     if(selLoc==='all'){
       const locs=Object.keys(DEFAULT_TARGETS);
@@ -2836,18 +2703,12 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
   // dispatch-94.md Resolution for the real-data measurement). Now compares the absolute gap
   // against each metric's own `tol` (declared per-metric above, in the same units as the metric).
   // Multiplier picked by checking real per-store data, not guessed -- see Resolution.
-  const statusCol = (cur,off,m)=>{
-    if(cur==null||off==null||m.tol==null) return null;
-    const diff = Math.abs(cur-off);
-    if(diff <= m.tol) return '#10b981';
-    if(diff <= m.tol*2) return '#f59e0b';
-    return '#ef4444';
-  };
-  const statusIcon = (cur,off,m)=>{
-    const c=statusCol(cur,off,m);
-    if(!c) return null;
-    return c==='#10b981'?'✓':c==='#f59e0b'?'⚠':'✗';
-  };
+  // Phase 2 moved the actual comparison into engine/tolerance-status.js's tolStatus() (single
+  // implementation, shared with the district rollup tile and Coaching findings) -- these two
+  // wrappers just translate its 'green'/'yellow'/'red' string back to the hex color + icon this
+  // table's render code already expects, so nothing downstream of statusCol/statusIcon changed.
+  const statusCol = (cur,off,m)=> TOL_STATUS_COLOR[tolStatus(cur,off,m.tol)] || null;
+  const statusIcon = (cur,off,m)=> TOL_STATUS_ICON[tolStatus(cur,off,m.tol)] || null;
 
   const visMetrics = METRICS.filter(m=>selCat==='all'||m.cat===selCat);
   const thS={padding:'5px 8px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'};
