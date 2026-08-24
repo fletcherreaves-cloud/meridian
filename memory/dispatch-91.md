@@ -203,3 +203,79 @@ Runs 2 and 3 both returned 87 real rows for store `3708` / `2026-08-22` / `all_p
 every row for this store/date). Worth a follow-up look at the raw response shape for this
 store/date before trusting any `qsr_security_events` row counts from a future successful run — not
 investigated further here, since it's a parsing question, not the 403 this dispatch is about.
+
+## Resolution (2026-08-24), part 3 of 3 — real production evidence: this is NOT a rare blip
+
+Two more pieces of evidence, gathered after part 2's three-trial probe, both from the **real**
+`qsrsoft-security-events-pull.yml` workflow (not the diagnostic probe) — and both point the same
+direction, away from part 2's "probably transient" reading.
+
+**Owner-triggered run today (`workflow_dispatch`, run `32767800984`), cancelled mid-run:** 120 of
+216 units attempted before manual cancellation, **all 120 failed** with the identical
+`403 AccessDeniedException` / *"explicit deny in an identity-based policy"* shape documented
+throughout this investigation. Zero successes, zero rows, in the portion that ran. This is real
+production traffic (the actual daily pull, not a probe), at a **100% failure rate** over 120
+trials — a far stronger and worse signal than part 2's 3-trial sample.
+
+**Run history, `qsrsoft-security-events-pull.yml`, last 10 runs (Aug 22–24):**
+
+| run | when | result |
+|---|---|---|
+| #14 | Aug 24 (today), scheduled | ❌ failed |
+| #13 | Aug 23 5:37 PM | ❌ failed |
+| #12 | Aug 23 5:14 PM | ❌ failed |
+| #11 | Aug 23 4:41 PM | ❌ failed |
+| #10 | Aug 23 4:33 PM | ❌ failed |
+| #9 | Aug 23 4:28 PM | ✅ **succeeded** |
+| #8 | Aug 23 3:49 PM | ❌ failed |
+| #7 | Aug 23 3:48 PM | ⚠️ cancelled/errored |
+| #6 | Aug 23 5:31 AM, scheduled | ❌ failed |
+| #5 | Aug 22 2:46 PM (branch run) | ❌ failed |
+
+**1 success in 10 real runs — roughly a 10% success rate**, not the "mostly fine, occasionally
+denied" picture a 2-of-3 probe sample would suggest. ⚠️ Caveat: not all 10 runs are confirmed to be
+on identical code — some may predate later fixes in this same window (e.g. #616's re-mint-on-403
+throttle fix) — so this table is a real observed pattern, not a controlled A/B comparison the way
+part 2's runs 2–3 were. Still, the direction is unambiguous: **this is failing far more often than
+it succeeds, in real production use, right now.**
+
+### What this changes
+
+Part 2's recommended option 1 ("cheapest first: just re-run the pull, it may simply work today")
+is now answered — **it does not simply work today.** Option 2 ("characterize the failure rate
+properly") is effectively done by the table above: ~10% success over real runs, ~0% over today's
+120-unit sample specifically.
+
+**Option 3 (file with QSRSoft support) is RULED OUT — owner-stated 2026-08-24: they will not
+assist with data-pulling/automation.** Not a data question, a relationship/policy fact only the
+owner has — recorded here so a future session doesn't re-propose it. **This closes off the
+externally-supported path entirely.** Whatever happens next has to be something achievable from
+this side alone, without vendor cooperation.
+
+### The real remaining options, given no vendor help is coming
+
+1. **Adapt the pull around the failure instead of fixing its cause.** The evidence so far reads as
+   correlated at the **run level**, not independently-random per unit — run `#9` succeeded (or
+   mostly did), today's run failed on all 120 units it attempted. That shape suggests entire
+   time windows are "good" or "bad," not that each request independently has a ~10% chance. If
+   so, **running the pull more often** (e.g. every 1-2 hours instead of once daily) would catch
+   more good windows over a day than one scheduled attempt does, even though each individual run's
+   own outcome is still binary. This doesn't fix anything — it works around an unfixed problem —
+   but it's the most direct lever available without QSRSoft's cooperation. Needs: confirming the
+   run-level-correlation read on more data (the two data points so far are suggestive, not proven)
+   before committing engineering effort to a new schedule.
+2. **Still worth doing the packet capture (test 2 from the original decision table) — for a
+   different reason than originally intended.** It was scoped as evidence to hand QSRSoft; that
+   reason is gone. But it could still reveal something **actionable on our own side** — a header,
+   a timing pattern, a connection-reuse quirk in how this pull's requests are shaped, if the two
+   states (succeeding vs. failing) turn out to differ in some way *we* control. If the capture
+   shows no difference at all between good and bad requests, that's a real answer too: it would
+   mean the cause is entirely on QSRSoft's/AWS's side and out of reach, and this becomes a
+   permanently-degraded data source to design around (option 1) rather than fix.
+3. **Do nothing further and accept ~10% coverage as the ceiling.** Legitimate if the security-
+   events data isn't worth more engineering effort relative to its value — that's a product
+   call, not a technical one.
+
+**Owner's call which of 1-3 (or some combination) to pursue.** Not proposing a default here since
+this is a genuine trade-off between engineering effort and a problem that may not be fully
+fixable regardless of effort spent.
