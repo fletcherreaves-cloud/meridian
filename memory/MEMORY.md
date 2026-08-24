@@ -84,7 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #94 Phases 2+3 — district `tol` rollup + Coaching findings](dispatch-94.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #97 — Inventory Control's Weekly Count Cadence widget uses a different, Condiment-blind engine than Count Cycle](dispatch-97.md)** —
+  **Start here.** Looks like a repeat of dispatch #96 (Condiment) but isn't — it's a *second*,
+  *separate* bug in a *different* panel. Inventory Control's 🗓 Weekly Count Cadence table
+  (`CadenceMonitor`, `eom-dashboard.js`) reads `qsr_raw_item_detail` (a top-~20-items-by-dollar
+  table) through the older `weekly-cadence.js` engine — not `qsr_onhand` through `count-cycle.js`
+  (which dispatch #96 fixed). Condiment is silently absent district-wide from that table (0 `C`-
+  class rows measured for all 3 flagged stores, matching a prior in-code comment that already
+  measured this district-wide), so the widget's "full Food + Condiment" claim is false in
+  practice — it only ever checks Food, against a narrow top-$ subset where a real, comprehensive
+  count can fall just under the 60% threshold by 1-2 items. **Reproduced live down to the exact
+  on-screen numbers** (Seminole 8/12·12d, OKC 8/13·11d, Tecumseh 8/14·10d — all three exact
+  matches). Fix: point this widget's completion/date logic at the same already-fixed
+  `count-cycle.js`/`qsr_onhand` basis Count Cycle uses; keep `weekly-cadence.js`'s
+  `itemVarianceWindows` (the between-count drill-down) untouched — different, still-valuable
+  feature.
+- **📋 (2026-08-24): [Dispatch #94 Phases 2+3 — district `tol` rollup + Coaching findings](dispatch-94.md)** —
   **Start here.** Phase 1's per-metric absolute `tol` comparison (already live) is now rolled up
   district-wide (**🎯 Tolerance Status** tile, At A Glance) and fed into `GMCoachingBrief`'s
   findings pipeline. All the comparison math (`METRICS`/`SPEC`/`valuesForLoc`/`statusCol`) moved
