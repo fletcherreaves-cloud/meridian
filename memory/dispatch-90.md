@@ -109,3 +109,86 @@ the two baselines may not even be measuring the same thing.
 - Do **not** apply 2.7 as a LifeLenz correction factor.
 - Do **not** widen into the forecast-bias question (SAGE's "-6.0% on 27 of 27"). That needs a real
   30-day Forecast-Accuracy run first and is the owner's to verify.
+
+---
+
+## Resolution (2026-08-24)
+
+Item 0 untouched, as instructed — no code path reads `gross_dollars` or salaried-manager fields for
+SAGE's labor %, and none was added.
+
+### Item 1 — fixed: a new `query_labor_summary` tool queries the exact requested window
+
+Added `supabase/functions/sage-chat/labor-summary-agg.js` (`aggregateLaborSummary`) and a new
+`query_labor_summary(start_date, end_date?, locs?)` tool in `index.ts`, sourced from
+`qsr_labor_summary` (`metrics.over_time_total_dollars`/`over_time_total_hours` — the SAME
+crew/punched OT basis item 0 settled, not `gross_dollars`). **Re-verified live against Supabase
+during this dispatch** (service-role read, 2026-07-25 → 2026-08-23, 810 rows) that summing this
+field per store reproduces the export's own numbers to the cent: Madill $2,711.46, Ardmore-Cooper
+$2,418.11, Mossy Head $2,242.53, Sulphur $1,985.14, Marietta $1,705.71, Chickasha $1,615.58,
+district total $23,589.52. Test (`src/__tests__/sage-labor-summary-agg.test.js`) asserts the
+**ordering** with this exact fixture, per the dispatch's stated verification bar — Madill first,
+Marietta and Chickasha present.
+
+The static 60-day `LABOR & STAFFING` context block (`src/views/sage.js` `buildLaborSummary`) and
+the system prompt's tool docs were both updated to instruct SAGE to call this tool — never
+scale/halve the static block — for any OT question about a different window.
+
+### Item 2 — root cause found, not what the dispatch's own hint guessed: it's neither RBAC nor a
+threshold. **SAGE's only staffing-gap source (LifeLenz) and the Controls basis disagree in
+DIRECTION, not just magnitude, for Seminole specifically.**
+
+Measured live against Supabase (same window): on the LifeLenz basis
+(`sch_vlh − need_vlh`, `query_lifelenz_labor`'s own data), Seminole's avg gap is **+1.3 h/day** —
+essentially on target, ranked dead last (27th of 27) by magnitude. On the Controls/DAR basis
+(`qsr_daily_activity_rollup`'s `actual_punched_hours − total_needed_hours`), it's **−58.2 h/day** —
+the single worst store in the district. SAGE had no code-level bug dropping the row; it had no
+*tool* for the Controls-basis figure at all, only LifeLenz's, and on that basis Seminole genuinely
+doesn't look under-staffed. Bonifay and Sulphur happened to agree in direction across both bases
+(both under-staffed on LifeLenz too, per the live pull), which is why SAGE could name them
+correctly while missing the one store where the two sources disagree on direction.
+
+**Fix:** the same `query_labor_summary` tool also returns `act_vs_need_avg_hrs_per_day` from
+`qsr_daily_activity_rollup` — the Controls-basis figure the owner's own export uses — and the
+system prompt now directs SAGE to it (not `query_lifelenz_labor`) for any "who is under/over
+staffed" question. `query_lifelenz_labor`'s tool description and the static
+`LIFELENZ SCHEDULING` context block were both updated to say explicitly that they're VLH
+scheduling detail, not a staffing-gap answer, and to point at the new tool instead.
+
+**A real, separate bug found and fixed along the way, but NOT the cause of Seminole's omission:**
+`aggregateLifelenzLabor` (the function both `query_lifelenz_labor` and the static schedule summary
+share) never normalized `lifelenz_schedule.loc`, which is *always* a 7-char zero-padded NSN at the
+DB level (verified live: every row reads `"0010915"`, never `"10915"`) — same bug class as the
+already-fixed `qsr_fob` loc-padding bug. Every store's name resolution in that tool was silently
+falling back to `"Store 00XXXXX"` instead of its real name. Fixed (`String(parseInt(row.loc, 10))`,
+matching `supabase.js`'s existing `loadLifeLenzSchedule` normalization) and covered by new test
+cases in `src/__tests__/sage-lifelenz-labor-agg.test.js`. Worth fixing regardless, but ruled out as
+Seminole's specific cause by the direction-disagreement measurement above — a mislabeled store is
+still present and available for an LLM to pattern-match by ID, and reproducing the actual query
+found the real reason instead of stopping at the first plausible-looking bug.
+
+### Item 3 — quantified, recorded, not used as a correction factor
+
+Reproduced the SAGE-quoted Ada figures live (LifeLenz +152.8 h/day vs Controls +56.6 h/day →
+2.70×, consistent with SAGE's own +151.9/+57.2 → 2.66×) and additionally measured that the
+disagreement is **not just a scale factor** — Seminole flips sign entirely between the two bases.
+Recorded in `memory/finding-overscheduling-is-chaos-not-cost.md`, including the Seminole
+counter-example, explicitly NOT as a correction factor. See that file's own "Do NOT" language.
+
+### Files changed
+
+- `supabase/functions/sage-chat/labor-summary-agg.js` (new) — shared aggregation, Deno/Node-agnostic
+- `supabase/functions/sage-chat/index.ts` — new `query_labor_summary` tool + wiring
+- `supabase/functions/sage-chat/lifelenz-labor-agg.js` — loc-padding fix
+- `src/views/sage.js` — system prompt tool docs + static-summary caveats
+- `src/__tests__/sage-labor-summary-agg.test.js` (new), `src/__tests__/sage-lifelenz-labor-agg.test.js`,
+  `src/__tests__/sage-paginate.test.js` (call-site count updated: 5 → 7)
+- `memory/finding-overscheduling-is-chaos-not-cost.md` — item 3's ratio + the Seminole direction-flip
+- `memory/dispatch-88.md`, `src/app/changelog/5.133.js` — unrelated carried correction (see PR body)
+
+**Needs a `sage-chat` redeploy** (`supabase functions deploy sage-chat --no-verify-jwt`) before the
+new tool is live — not run from this session; flagging so it isn't assumed live from the merged
+code alone, per this project's own repeated "measure it, don't reason about it" lesson. (This is a
+separate redeploy from the one `memory/handoff-2026-08-24-key-rotation.md` confirms already
+shipped and verified — that one covered the key-rotation code; this dispatch's new tool is new
+code on top of it, not yet deployed.)

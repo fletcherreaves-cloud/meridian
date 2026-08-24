@@ -127,7 +127,7 @@ export function buildLaborSummary(ds) {
   // corrected alongside it since it directly affects what SAGE tells the owner.
   const stores = perStore.filter(s => s.laborPct != null).sort((a,b) => b.laborPct - a.laborPct);
 
-  let out = `LABOR & STAFFING (${totalDays} store-days, auto-first sourced, last 60 days):
+  let out = `LABOR & STAFFING (${totalDays} store-days, auto-first sourced, last 60 days — FIXED window, do not scale/halve for a different one, call query_labor_summary instead):
   District avg: Labor ${_fmtPct(distAvgLabor)} | TPPH ${_fmt(distAvgTpph)} | Total OT: ${_dollar(totalOtDollar)} (${Math.round(totalOtHrs)}h)
 `;
   if (stores.length) {
@@ -355,7 +355,7 @@ export function buildScheduleSummary(ds) {
 
   if (!stores.length) return null;
 
-  let out = `LIFELENZ SCHEDULING (${working.length} schedule days, last 30 days):
+  let out = `LIFELENZ SCHEDULING (${working.length} schedule days, last 30 days — VLH scheduling detail only; for "which stores are under/over-staffed" use query_labor_summary's Act-vs-Need instead, which is on the Controls/DAR basis and can disagree sharply with this one for the same store):
   District avg Sch vs Need gap: ${distGap != null ? (distGap>=0?'+':'')+_fmt(distGap,1) : '—'}h/day
 `;
   out += '\n  TOP SCHEDULING GAPS BY STORE:\n';
@@ -445,7 +445,7 @@ Today: ${today}
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have five tools — four query live Supabase data (updated daily via automation), one searches the QSRSoft vendor docs:
+You have six tools — five query live Supabase data (updated daily via automation), one searches the QSRSoft vendor docs:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -456,27 +456,33 @@ You have five tools — four query live Supabase data (updated daily via automat
 
 2. query_lifelenz_labor(start_date, end_date?, locs?)
    Returns: sch_vlh (scheduled VLH), need_vlh (needed VLH), gap (positive = over-scheduled, negative = under-staffed).
-   USE FOR: "are stores over/under-staffed?", "scheduling gaps this week", "VLH by store", "labor efficiency"
+   USE FOR: VLH scheduling-specific questions only — "what's [store] scheduled for this week", "sch vs need VLH".
+   CAVEAT: this tool's need_vlh baseline is separately calibrated from the Controls/DAR one and can disagree sharply, in magnitude AND direction, from query_labor_summary's Act-vs-Need for the same store/day. Do NOT use it to answer "which stores are under/over-staffed" or any OT-dollar question — use query_labor_summary (tool 3) for those.
 
-3. query_forecast_snapshots(start_date, end_date?, locs?, source?)
+3. query_labor_summary(start_date, end_date?, locs?)
+   Returns per store, summed/averaged over the EXACT requested window: ot_dollar_total, ot_hrs_total (crew/punched OT, from qsr_labor_summary), and act_vs_need_avg_hrs_per_day (actual punched − needed hours/day, from qsr_daily_activity_rollup — the SAME basis as the owner's own Controls exports; negative = under-staffed, positive = over-staffed).
+   USE FOR: any OT-dollar question, and "are stores over/under-staffed?" / "which stores are understaffed?" / "staffing gaps this week".
+   ALWAYS call this — never scale, halve, or otherwise extrapolate the fixed 60-day LABOR & STAFFING summary below — for any OT or staffing-gap question about a date range different from "the last 60 days". The static summary is a fixed window; it cannot be rescaled to answer a different one, and doing so mis-ranks stores (a 60-day figure halved is not the actual 30-day figure — OT and staffing gaps are not uniform across a window).
+
+4. query_forecast_snapshots(start_date, end_date?, locs?, source?)
    Returns: per-store MAPE by forecast source. Sources: ai (Meridian AI), ly (last-year-adj), blend, di (dialed-in), qsr (QSRSoft scheduled projection).
    USE FOR: "how accurate is my forecast?", "which model is best?", "MAPE by store", "which stores have worst forecast accuracy?", "AI vs LY accuracy comparison"
 
-4. query_promo_roi(start_date?, end_date?, margin_rate?, locs?)
+5. query_promo_roi(start_date?, end_date?, margin_rate?, locs?)
    Returns: per lever (promo, discount) a district verdict + per-store rows (lift %, extra sales/day, extra give-away/day, gross-profit delta/day, verdict pays/costs/neutral). Matched-day method: promo-heavy vs promo-light days within each weekday.
    USE FOR: "are our promos paying off?", "is [store]'s discounting worth it?", "which stores give away margin without a sales lift?", "promo/discount ROI", "should we cut any promotions?"
    CAVEAT: directional screen (association with controls), NOT a randomized experiment — always say so. Defaults to ~90 days if no dates given (needs a multi-week window).
 
-5. search_qsr_kb(query, limit?)
+6. search_qsr_kb(query, limit?)
    Returns: the most relevant QSRSoft Help Center articles (title, section, body excerpt, url) — the vendor's own documentation.
    USE FOR: how QSRSoft works / what a QSRSoft metric, report, or field MEANS / how to do something in QSRSoft — e.g. "how does QSRSoft calculate stat variance?", "what is OEPE / R2P / KVS?", "how do I run the raw item report?", "what does a red model mean?", "how does eBOS handle transfers?"
-   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–4 for those).
+   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–5 for those).
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
-- ALWAYS call query_lifelenz_labor for any scheduling, staffing, or VLH question about the current/recent period
+- ALWAYS call query_labor_summary for any OT-dollar or over/under-staffed question about the current/recent period — see tool 3's caveat on why NOT to answer these from the static 60-day summary or from query_lifelenz_labor
 - For "today" use ${today}; for "yesterday" use the previous calendar day
-- You can call both tools simultaneously if a question spans both domains
+- You can call multiple tools simultaneously if a question spans domains
 - The static OPERATIONAL DATA below is auto-first sourced (cloud/emailed streams preferred, manual upload as last-resort fill only — see DATA COVERAGE below for what actually resolved). For live/current questions, tool data is more authoritative than the static summaries.
 ─────────────────────────────────────────────────────────────────────────────────────────
 
