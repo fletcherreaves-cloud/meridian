@@ -29,6 +29,7 @@ import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { worstStream } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
+import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -73,6 +74,77 @@ function SageRunsTile() {
       h('span', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, rel(r.ranAt))),
     h('div', { style: { fontSize: 10, color: 'var(--text3,#9aa0aa)', marginTop: 2, lineHeight: 1.4, maxHeight: 30, overflow: 'hidden' } },
       r.ok ? ((r.resultMd || '').replace(/[#*|`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 140) || '—') : ('⚠ ' + (r.error || 'failed')))))));
+}
+
+// Dispatch #94 Phase 2 — district-wide out-of-tolerance rollup, built on the SAME tol-based
+// comparison Phase 1 shipped for UnifiedTargetsPanel's KPI table (store-dash.js). The threshold
+// math and the "current vs official target" value sourcing both live in ONE place,
+// engine/tolerance-status.js (tolStatusesDistrict / tolStatus) — this tile imports them rather
+// than recomputing either, so it can never disagree with the Unified Targets table a user just
+// looked at (CLAUDE.md's "two panels disagree on one number" rule). Counts every
+// store×rollup-metric combination that is currently yellow/red against its last-4-weeks
+// trailing value, broken out by metric (which checks miss most often, district-wide) and by
+// store (which stores need attention), following the SageRunsTile card pattern above it.
+function ToleranceRollupTile({ ds, stores }) {
+  const allLocs = React.useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => s.loc), [stores]);
+  const rollup = React.useMemo(() => {
+    if (!ds || !allLocs.length) return null;
+    const byLoc = tolStatusesDistrict(ds, allLocs);
+    const byMetric = {}; // metricId -> {label, cat, red, yellow}
+    const byStore = {};  // loc -> {red, yellow}
+    let totalChecked = 0, totalRed = 0, totalYellow = 0;
+    for (const loc of allLocs) {
+      const entries = byLoc[loc] || [];
+      const st = byStore[loc] || (byStore[loc] = { red: 0, yellow: 0 });
+      for (const e of entries) {
+        totalChecked++;
+        if (e.status === 'green') continue;
+        const bucket = byMetric[e.metricId] || (byMetric[e.metricId] = { label: e.label, cat: e.cat, red: 0, yellow: 0 });
+        if (e.status === 'red') { bucket.red++; st.red++; totalRed++; }
+        else { bucket.yellow++; st.yellow++; totalYellow++; }
+      }
+    }
+    const metricRows = Object.entries(byMetric)
+      .map(([metricId, v]) => ({ metricId, ...v, n: v.red + v.yellow }))
+      .sort((a, b) => (b.red - a.red) || (b.n - a.n));
+    const storeRows = Object.entries(byStore)
+      .map(([loc, v]) => ({ loc, ...v, n: v.red + v.yellow }))
+      .filter(s => s.n > 0)
+      .sort((a, b) => (b.red - a.red) || (b.n - a.n));
+    return { totalChecked, totalRed, totalYellow, metricRows, storeRows, nStores: allLocs.length };
+  }, [ds, allLocs]);
+
+  const card = (...kids) => h('div', { style: { background: 'var(--surf2,#151821)', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 12, overflow: 'hidden' } }, ...kids);
+  const head = h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+    h('span', { style: { fontSize: 15 } }, '🎯'),
+    h('div', { style: { flex: 1 } },
+      h('div', { style: { fontSize: 12, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Tolerance Status'),
+      h('div', { style: { fontSize: 9, color: 'var(--text3,#6b7280)' } }, 'vs official target · last 4 weeks · same check as Store Dash → Unified Targets')));
+  if (!rollup) return card(head, h('div', { style: { padding: 16, fontSize: 11, color: 'var(--text3,#6b7280)', textAlign: 'center' } }, 'Loading…'));
+  if (!rollup.totalRed && !rollup.totalYellow) return card(head, h('div', { style: { padding: '16px 14px', fontSize: 11, color: 'var(--text3,#6b7280)', lineHeight: 1.5 } }, 'Every store is within tolerance on all ' + rollup.totalChecked + ' checked metrics.'));
+
+  const worstMetric = rollup.metricRows[0];
+  const headline = worstMetric
+    ? worstMetric.label + ' is the most common miss — ' + worstMetric.n + ' store' + (worstMetric.n === 1 ? '' : 's') + ' out of tolerance' + (worstMetric.red ? ' (' + worstMetric.red + ' red)' : '') + '.'
+    : null;
+
+  return card(head,
+    div({ style: { padding: '10px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      div({ style: { display: 'flex', alignItems: 'baseline', gap: 10 } },
+        h('span', { style: { fontSize: 20, fontWeight: 800, color: TOL_STATUS_COLOR.red } }, rollup.totalRed),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'red'),
+        h('span', { style: { fontSize: 20, fontWeight: 800, color: TOL_STATUS_COLOR.yellow } }, rollup.totalYellow),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, 'yellow'),
+        h('span', { style: { fontSize: 9, color: 'var(--text3)', marginLeft: 'auto' } }, rollup.storeRows.length + ' of ' + rollup.nStores + ' stores')),
+      headline && div({ style: { fontSize: 10.5, color: 'var(--text2)', marginTop: 4, lineHeight: 1.4 } }, headline)),
+    div(null,
+      ...rollup.metricRows.slice(0, 6).map(m => div({ key: m.metricId, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderBottom: '.5px solid var(--bdr)' } },
+        h('div', { style: { flex: 1, fontSize: 10.5, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, m.label),
+        m.red > 0 && h('span', { style: { fontSize: 9.5, fontWeight: 700, color: TOL_STATUS_COLOR.red } }, m.red + ' red'),
+        m.yellow > 0 && h('span', { style: { fontSize: 9.5, fontWeight: 700, color: TOL_STATUS_COLOR.yellow } }, m.yellow + ' yellow')))),
+    rollup.storeRows.length > 0 && div({ style: { padding: '8px 14px', fontSize: 9, color: 'var(--text3)', borderTop: '.5px solid var(--bdr)' } },
+      'Most out of tolerance: ' + rollup.storeRows.slice(0, 3).map(s => sNameC(s.loc) + ' (' + s.n + ')').join(' · '))
+  );
 }
 
 // Opportunity $ headline tile (memory/design-opportunity-dollars.md) — the flagship "every
@@ -299,6 +371,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // ── Section config ───────────────────────────────────────────
   const DEF_SECS=[
     {id:'sage',label:'SAGE Scheduled Runs',icon:'🧭',on:true},
+    {id:'tolerance',label:'Tolerance Status',icon:'🎯',on:true},
     {id:'intelligence',label:'Intelligence Summary',icon:'🧠',on:true},
     {id:'projections',label:'Projections & Forecasting',icon:'📈',on:true},
     {id:'sales',label:'Sales & Guest Counts',icon:'💰',on:true},
@@ -1896,6 +1969,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
         h(OpportunityTile,{key:'opportunity',ds,stores,onOpenModal}),
         h(ItemsRecountedTile,{key:'eom-recount',onOpenModal}),
         secs.find(s=>s.id==='sage'&&s.on)&&h(SageRunsTile,{key:'sage'}),
+        secs.find(s=>s.id==='tolerance'&&s.on)&&h(ToleranceRollupTile,{key:'tolerance',ds,stores}),
 
         // ── PROJECTIONS SECTION ──
         // ── INTELLIGENCE SUMMARY TILE ──────────────────────────

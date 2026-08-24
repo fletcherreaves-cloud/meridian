@@ -18,6 +18,12 @@ import { METRIC_SOURCES, metricDirection, rankableMetricKeys } from '../engine/m
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const analyticsSrc = readFileSync(path.join(__dirname, '../views/analytics.js'), 'utf8');
 const storeDashSrc = readFileSync(path.join(__dirname, '../views/store-dash.js'), 'utf8');
+// Dispatch #94 Phase 2 moved UnifiedTargetsPanel's inline METRICS array (id/lowerBetter/tol)
+// out of store-dash.js into engine/tolerance-status.js's TOL_METRICS -- the single source of
+// truth the KPI table, the district rollup tile, and Coaching findings all now import instead
+// of each declaring their own copy. The checks below that used to read these ids out of
+// storeDashSrc now read toleranceSrc, since that's where the real declaration lives.
+const toleranceSrc = readFileSync(path.join(__dirname, '../engine/tolerance-status.js'), 'utf8');
 
 // Extracts the lowerBetter boolean for a specific `id:'xxx'` entry from raw source text.
 // Anchoring on the closing quote right after the id (not just a substring match) so 'disc'
@@ -53,12 +59,12 @@ describe('METRIC_SOURCES direction (dispatch #77)', () => {
   it('panel-side lowerBetter tables agree with the registry direction', () => {
     const checks = [
       // [registryKey, expectedDirection, source text, id used in that table, site label]
-      ['oepe',      'lower',  storeDashSrc, 'oepe',    "store-dash.js METRICS (svc)"],
-      ['r2p',       'lower',  storeDashSrc, 'r2p',     "store-dash.js METRICS (svc) -- dispatch #77 fix"],
-      ['laborPct',  'lower',  storeDashSrc, 'labor',   "store-dash.js METRICS (labor)"],
-      ['tpph',      'higher', storeDashSrc, 'tpph',    "store-dash.js METRICS (labor)"],
-      ['discPct',   'lower',  storeDashSrc, 'disc',    "store-dash.js METRICS (fob, id=disc)"],
-      ['cashOSPct', 'lower',  storeDashSrc, 'cashOS',  "store-dash.js METRICS (pos)"],
+      ['oepe',      'lower',  toleranceSrc, 'oepe',    "engine/tolerance-status.js TOL_METRICS (svc) -- moved from store-dash.js, dispatch #94 Phase 2"],
+      ['r2p',       'lower',  toleranceSrc, 'r2p',     "engine/tolerance-status.js TOL_METRICS (svc) -- dispatch #77 fix, moved dispatch #94 Phase 2"],
+      ['laborPct',  'lower',  toleranceSrc, 'labor',   "engine/tolerance-status.js TOL_METRICS (labor) -- moved from store-dash.js, dispatch #94 Phase 2"],
+      ['tpph',      'higher', toleranceSrc, 'tpph',    "engine/tolerance-status.js TOL_METRICS (labor) -- moved from store-dash.js, dispatch #94 Phase 2"],
+      ['discPct',   'lower',  toleranceSrc, 'disc',    "engine/tolerance-status.js TOL_METRICS (fob, id=disc) -- moved from store-dash.js, dispatch #94 Phase 2"],
+      ['cashOSPct', 'lower',  toleranceSrc, 'cashOS',  "engine/tolerance-status.js TOL_METRICS (pos) -- moved from store-dash.js, dispatch #94 Phase 2"],
       ['oepe',      'lower',  analyticsSrc, 'oepe',    "analytics.js CORR_PREDICTORS"],
       ['r2p',       'lower',  analyticsSrc, 'r2p',     "analytics.js CORR_PREDICTORS"],
       ['laborPct',  'lower',  analyticsSrc, 'labor',   "analytics.js CORR_PREDICTORS -- dispatch #77 fix"],
@@ -85,6 +91,6 @@ describe('METRIC_SOURCES direction (dispatch #77)', () => {
     // per the owner ruling in memory/dispatch-77.md. A revert of any one fix must fail here.
     expect(lowerBetterFor(analyticsSrc, 'labor')).toBe(true);   // was false
     expect(lowerBetterFor(analyticsSrc, 'discPct')).toBe(true); // was false
-    expect(lowerBetterFor(storeDashSrc, 'r2p')).toBe(true);     // was false
+    expect(lowerBetterFor(toleranceSrc, 'r2p')).toBe(true);     // was false (store-dash.js before dispatch #94 Phase 2's move)
   });
 });

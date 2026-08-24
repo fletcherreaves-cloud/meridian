@@ -12,6 +12,7 @@ import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
 import { saveMonthlyTargets } from '../lib/supabase.js';
 import { resolveLaborTarget } from './labor-basis.js';
+import { tolStatusesForStore } from './tolerance-status.js';
 
 function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
@@ -269,6 +270,66 @@ function buildBrief(p,t,os,cs,pSales,pLY,ds,loc){
   if((t.tTpph||0)>0&&(p.tpph||0)>0&&(p.tpph||0)<t.tTpph*.9) f.push({rule:'tpph',t:'watch',m:'WATCH — THROUGHPUT: TPPH at '+(p.tpph||0).toFixed(2)+' vs '+t.tTpph.toFixed(1)+' target. Throughput is below standard — crew is not processing transactions efficiently relative to schedule. Review peak staffing alignment and window crew deployment.'});
 
   if((p.posOverCnt||0)>5) f.push({rule:'posOver',t:'watch',m:'WATCH — POS OVERRINGS: Averaging '+(p.posOverCnt||0).toFixed(1)+' overrings/day (target ≤5). Overrings are the operational equivalent of T-Reds — items voided after being added to an order. Pattern warrants manager-level review of POS activity.'});
+
+  // ── DISPATCH #94 PHASE 3 — TOL-BASED FINDINGS ────────────────────────────
+  // Reuses the SAME tol comparison Phase 1 shipped for UnifiedTargetsPanel's KPI table and
+  // Phase 2 shipped for the district rollup tile (engine/tolerance-status.js's
+  // tolStatusesForStore / tolStatus — one implementation, not re-derived here). Only for
+  // metrics with NO existing dedicated finding above (oepe/labor/park/tpph/r2p already have
+  // their own, richer rules with store-specific context) — this closes a real gap: the FOB
+  // waste family (Comp/Raw Waste, Condiment, Emp Meal, Stat Var, Base Food, FOB-Over-Base,
+  // Total Food Cost), Crew Labor %, and KVS Time had NO finding coverage at all before this,
+  // so an out-of-tolerance store on any of them never surfaced in GMCoachingBrief or
+  // AttentionPanel. TOL_FINDING_ACTION's key set IS the exclusion list — a metric absent from
+  // it (oepe/labor/park/tpph/r2p, plus any metric with no offKey) is deliberately skipped here
+  // rather than double-flagged under a second, conflicting threshold.
+  const TOL_FINDING_ACTION = {
+    kvst:    'Review kitchen make-line staffing and build sequencing during peak windows.',
+    crewlbr: 'Review crew scheduling against the posted labor guide before adjusting hours further.',
+    baseFd:  'Review theoretical food cost against actual usage — likely a recipe, waste-logging, or portioning gap.',
+    fob:     'Review the Food-Over-Base build for over-portioning, waste, or unrecorded promo/discount usage.',
+    fobTot:  'Review the full P&L food cost build — base food, waste, condiments, and promos together.',
+    compW:   'Review comp entries for accuracy and manager sign-off before they roll into food cost.',
+    rawW:    'Review raw waste logging and prep-to-order discipline in the kitchen.',
+    cond:    'Review condiment portioning and packet counts against the standard build.',
+    empMl:   'Review employee meal logging against the posted meal policy.',
+    statV:   'Review inventory counts and the count-cycle process for this store.',
+  };
+  const _fmtTol = (v, unit) => v == null ? '—'
+    : unit === 's' ? Math.round(v) + 's'
+    : unit === '%' ? (v * 100).toFixed(2) + '%'
+    : unit === '$' ? '$' + v.toFixed(2)
+    : v.toFixed(2);
+  // The message body is built once per metric via _tolBody, but each push below still writes
+  // its rule id and severity as plain literals rather than assembling them from a template —
+  // finding-rules.test.js statically greps this file for that exact literal shape (the same
+  // shape every other finding in this function already uses), so a templated rule/severity
+  // would be invisible to that guard. Literal pushes keep these new findings covered by the
+  // same "would this verification still pass if reverted" bar the rest of buildBrief is held to.
+  const _tolBody = (e, action) => (e.status === 'red' ? 'CRITICAL' : 'WATCH') + ' — ' + e.label.toUpperCase() + ': ' +
+    _fmtTol(e.cur, e.unit) + ' vs ' + _fmtTol(e.off, e.unit) + ' target (' + (e.cur > e.off ? '+' : '-') +
+    _fmtTol(Math.abs(e.cur - e.off), e.unit) + ', tolerance ' + _fmtTol(e.tol, e.unit) + '). ' + action;
+  const _tol = ds ? Object.fromEntries(tolStatusesForStore(ds, loc).map(e => [e.metricId, e])) : {};
+  if (_tol.kvst && _tol.kvst.status === 'red') f.push({rule:'tolKvst', t:'crit', m:_tolBody(_tol.kvst, TOL_FINDING_ACTION.kvst)});
+  else if (_tol.kvst && _tol.kvst.status === 'yellow') f.push({rule:'tolKvst', t:'watch', m:_tolBody(_tol.kvst, TOL_FINDING_ACTION.kvst)});
+  if (_tol.crewlbr && _tol.crewlbr.status === 'red') f.push({rule:'tolCrewlbr', t:'crit', m:_tolBody(_tol.crewlbr, TOL_FINDING_ACTION.crewlbr)});
+  else if (_tol.crewlbr && _tol.crewlbr.status === 'yellow') f.push({rule:'tolCrewlbr', t:'watch', m:_tolBody(_tol.crewlbr, TOL_FINDING_ACTION.crewlbr)});
+  if (_tol.baseFd && _tol.baseFd.status === 'red') f.push({rule:'tolBaseFd', t:'crit', m:_tolBody(_tol.baseFd, TOL_FINDING_ACTION.baseFd)});
+  else if (_tol.baseFd && _tol.baseFd.status === 'yellow') f.push({rule:'tolBaseFd', t:'watch', m:_tolBody(_tol.baseFd, TOL_FINDING_ACTION.baseFd)});
+  if (_tol.fob && _tol.fob.status === 'red') f.push({rule:'tolFob', t:'crit', m:_tolBody(_tol.fob, TOL_FINDING_ACTION.fob)});
+  else if (_tol.fob && _tol.fob.status === 'yellow') f.push({rule:'tolFob', t:'watch', m:_tolBody(_tol.fob, TOL_FINDING_ACTION.fob)});
+  if (_tol.fobTot && _tol.fobTot.status === 'red') f.push({rule:'tolFobTot', t:'crit', m:_tolBody(_tol.fobTot, TOL_FINDING_ACTION.fobTot)});
+  else if (_tol.fobTot && _tol.fobTot.status === 'yellow') f.push({rule:'tolFobTot', t:'watch', m:_tolBody(_tol.fobTot, TOL_FINDING_ACTION.fobTot)});
+  if (_tol.compW && _tol.compW.status === 'red') f.push({rule:'tolCompW', t:'crit', m:_tolBody(_tol.compW, TOL_FINDING_ACTION.compW)});
+  else if (_tol.compW && _tol.compW.status === 'yellow') f.push({rule:'tolCompW', t:'watch', m:_tolBody(_tol.compW, TOL_FINDING_ACTION.compW)});
+  if (_tol.rawW && _tol.rawW.status === 'red') f.push({rule:'tolRawW', t:'crit', m:_tolBody(_tol.rawW, TOL_FINDING_ACTION.rawW)});
+  else if (_tol.rawW && _tol.rawW.status === 'yellow') f.push({rule:'tolRawW', t:'watch', m:_tolBody(_tol.rawW, TOL_FINDING_ACTION.rawW)});
+  if (_tol.cond && _tol.cond.status === 'red') f.push({rule:'tolCond', t:'crit', m:_tolBody(_tol.cond, TOL_FINDING_ACTION.cond)});
+  else if (_tol.cond && _tol.cond.status === 'yellow') f.push({rule:'tolCond', t:'watch', m:_tolBody(_tol.cond, TOL_FINDING_ACTION.cond)});
+  if (_tol.empMl && _tol.empMl.status === 'red') f.push({rule:'tolEmpMl', t:'crit', m:_tolBody(_tol.empMl, TOL_FINDING_ACTION.empMl)});
+  else if (_tol.empMl && _tol.empMl.status === 'yellow') f.push({rule:'tolEmpMl', t:'watch', m:_tolBody(_tol.empMl, TOL_FINDING_ACTION.empMl)});
+  if (_tol.statV && _tol.statV.status === 'red') f.push({rule:'tolStatV', t:'crit', m:_tolBody(_tol.statV, TOL_FINDING_ACTION.statV)});
+  else if (_tol.statV && _tol.statV.status === 'yellow') f.push({rule:'tolStatV', t:'watch', m:_tolBody(_tol.statV, TOL_FINDING_ACTION.statV)});
 
   // ── SPECIFIC STRENGTHS ────────────────────────
   const critOrWatch = f.some(x=>x.t==='crit'||x.t==='watch');

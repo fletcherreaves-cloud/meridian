@@ -33,7 +33,11 @@ const ROOT = 'src/views';
 // METRIC_SOURCES chain already existed (a stale comment claimed otherwise) and this dropped
 // the raw ds.laborRows read it was routed through instead, switching to metricAvg like its
 // laborPct/tpph/otHrs siblings on the same line.
-const CEILING = 161;
+// Dispatch #94 Phase 2 moved UnifiedTargetsPanel's SPEC/valuesForLoc/_fobMonthly raw-row
+// filtering (ctrlRows/laborRows/opsRows/fobRows) out of src/views/store-dash.js into
+// engine/tolerance-status.js, so 3 fewer raw reads remain in src/views/ -- per this test's own
+// remediation instructions ("lower CEILING... this is not a bug in your change").
+const CEILING = 158;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 
