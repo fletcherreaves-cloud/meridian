@@ -84,6 +84,13 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔑 NEWEST (2026-08-24): [Supabase key rotation complete](handoff-2026-08-24-key-rotation.md)** —
+  **Start here.** Legacy API keys **disabled at `2026-08-24T14:53:50Z`**; everything is on
+  `sb_publishable_…` / `sb_secret_…`. The variable NAMES were kept (so 36 workflows + 3 edge
+  functions needed no edit) and therefore now describe their contents inaccurately. Site, SAGE and
+  the GitHub pulls all verified post-cutover. **Two things that will mislead you if unread:**
+  CLAUDE.md's `*/0` access table was measured with a now-dead key, and **a working SAGE does NOT
+  prove #85's truncation fix shipped** — a single-day question is 648 rows, under the 1000 cap.
 - **🔑 HANDOFF (2026-08-24): [service-role key installed — two questions unblocked](handoff-2026-08-24-service-role.md)** —
   **NEWEST. Start here if you are a fresh session.** The owner installed
   `SUPABASE_SERVICE_ROLE_KEY`; a running session's environment is fixed at container start, so the
