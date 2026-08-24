@@ -127,3 +127,79 @@ their defaults.
   CT) running behind "now" on any given day is expected and already documented elsewhere in this
   repo; the fix here is making the panel behave correctly given that reality, not chasing the sync
   timing itself.
+
+## Resolution (2026-08-24)
+
+**Shipped as option (b)** — today's still-open business day is never silently dropped and never
+silently promoted to a confirmed record; it still computes and displays, visibly marked
+provisional. Nothing on the "Do NOT" list was touched: `f$` (`src/utils/fmt.js`) is unchanged —
+`git diff --stat` on the PR shows only `record-day.js`, `record-day`'s new test file, and the
+changelog; the business-day boundary uses `businessDate()` imported from `src/utils/date.js`,
+never re-derived; and the DAR sync cadence itself was left alone.
+
+### What actually shipped
+
+**Same-day completeness gate.** `computeRecords` now derives `const todayKey = businessDate();`
+once per call, and the per-day scan (`for (const d of arr)`, the loop the dispatch's own anchors —
+`oepeBest`/`rec.speed.oepe`/`flagRecent` — pointed at) routes every one of the nine day-level/DOW
+checks (Sales Day, GC Day, Breakfast Sales, Avg Check, OEPE, KVS, R2P, DOW Sales, DOW GC) through
+one new shared helper, `tryRecord(loc, dk, type, val, best, isLow, isProvisional)`, instead of nine
+separate inline `if` blocks: it always reports a beat to `flagRecent` (now carrying an
+`isProvisional` flag through to each `recentBreakers` entry) but only lets the caller advance the
+per-store running best-so-far (`sMax`/`gcMax`/`oepeBest`/etc.) and write the permanent `rec.*`
+entry when the day is CLOSED (`dk < todayKey`). A provisional beat on today's still-open day is
+therefore visible in Recent Breaks but structurally cannot reach `computed[loc]` — the structure
+`mergeStores`/`saveMerged` merge into and persist to `localStorage` forever — so a fast-but-partial
+reading can never get baked in as "the" all-time record before the day even closes. Weekly/monthly
+aggregate records (a separate loop, not named in the dispatch's own code anchors, and structurally
+different — a week/month total is a sum that a partial today can only ever *understate*, not the
+same failure mode as a day-level rate metric like OEPE) were deliberately left out of scope for
+this pass.
+
+**UI.** `RecentBreakersTab`'s table gets a new **Status** column: a closed day shows a green
+"✓ Confirmed" badge, today's still-open day shows a distinct amber "⏳ Provisional — still
+accumulating" badge (own color, `#f97316`, not reused from any existing record-type badge) plus a
+faint amber row tint and an explanatory `title` tooltip — visible without a hover, per the
+dispatch's explicit "not just a tooltip nobody reads." The permanent all-time tables (Hero Grid,
+Sales & Volume, Speed of Service, Day of Week) are fed only by `computed[loc]`/`merged`, so they
+are structurally unaffected by a provisional day and keep showing the last confirmed record until
+the day actually closes and (if it still holds up) legitimately breaks it.
+
+**2-decimal formatting.** Added a local `f$2()` in `record-day.js`
+(`'$' + (v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})`) and
+replaced all 13 `f$(` call sites in the file with it. `f$` itself is untouched. The file's one
+percent render (Recent Breaks' "Change" column) already used `.toFixed(2)`; no `fPct`/`fP` calls
+existed in this file to audit.
+
+### Verification
+
+Render-based tests through the real `RecordDayPanel`/`RecentBreakersTab` consumer (not an isolated
+helper), per this repo's "would this verification still pass if reverted?" rule —
+`src/__tests__/dispatch-103-record-day-provisional.test.js`, system clock faked via
+`vi.setSystemTime` (matching `di-compare-week-anchor.test.js`'s existing pattern), 4 new tests:
+
+1. A fixture store (Tecumseh, `33704`) with an old best (97s OEPE, outside the 60-day window), a
+   genuinely CLOSED day that legitimately breaks it (90s, 2026-08-19), and TODAY
+   (2026-08-24, system clock fixed at 15:00) at a faster-but-partial 85s renders 90s tagged
+   **Confirmed** and 85s tagged **Provisional** in Recent Breaks — both visible, neither hidden.
+2. The Speed of Service tab's permanent all-time OEPE record shows **90s**, never 85s.
+3. Advancing the clock to 2026-08-25 with 08-24's OEPE settling at a slower 101s (the Tecumseh
+   dispatch's own prediction of what the full day would do) proves 90s stays the permanent record
+   and 101s never displaces it — the once-provisional day is graded normally once closed, with no
+   lasting trace of having been provisional.
+4. Every dollar token rendered in the Sales & Volume tab carries exactly 2 decimal digits.
+
+Full suite **2303/2303** (measured 2265/2265 with this identical fix before rebasing onto
+`origin/main`; the extra 38 tests came from 4 unrelated PRs merged into `main` in the interim —
+#100 Security selectors, #101 Forms per-occurrence detail, #102 FOB inflation fix, #104
+Top/Bottom Performers — rebased onto cleanly, no conflicts, `record-day.js`/`fmt.js`/`date.js`
+untouched by any of the four). `npm run build` clean. Entry chunk 519.66 KB → 519.95 KB gzip
+(+0.29 KB); eager total 521.52 KB → 521.81 KB gzip (+0.29 KB, budget 850 KB, headroom
+328.19 KB). `record-day.js` is statically imported by `App.js` (not `lazyPanel()`'d) — a
+pre-existing condition, not something this fix changed — so its small growth lands in the entry
+chunk rather than a separate lazy one.
+
+**Left for a follow-up, not silently skipped:** Tecumseh's actual 2026-08-24 trading day had not
+yet closed at the time this shipped, so the dispatch's own suggested live re-check — confirming the
+real "record" claim once the day fully closes — could not be run from this session. `v5.144`,
+`src/app/changelog/5.144.js`.
