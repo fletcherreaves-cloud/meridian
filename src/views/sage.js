@@ -8,6 +8,7 @@ import { escapeHtml as esc } from '../utils/fmt.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { metricSeries, metricAvg } from '../engine/metric-source.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
+import { aggregateLifelenzLabor } from '../../supabase/functions/sage-chat/lifelenz-labor-agg.js';
 
 const h = React.createElement;
 const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
@@ -88,17 +89,6 @@ function _recentRows(rows, days) {
     return !isNaN(d.getTime()) && d >= cutoff;
   });
   return recent.length >= Math.min(5, rows.length) ? recent : rows;
-}
-
-function _byLoc(rows, initFn, rowFn) {
-  const map = {};
-  for (const r of rows) {
-    const loc = String(r.loc || '');
-    if (!loc) continue;
-    if (!map[loc]) map[loc] = initFn();
-    rowFn(map[loc], r);
-  }
-  return map;
 }
 
 // #270 phase 1 — was reading ds.laborRows (manual Labor Excel upload) directly: blank on any
@@ -228,7 +218,7 @@ export function buildOpsSummary(ds) {
   return out;
 }
 
-function buildSmgSummary(ds) {
+export function buildSmgSummary(ds) {
   const rows = ds?.smgFullscale || [];
   if (!rows.length) return null;
 
@@ -254,15 +244,23 @@ function buildSmgSummary(ds) {
 
   const distOsat = _avg(stores.map(s => s.osatTop2));
 
+  // #85 #3: osatTop2/dtProblem are parsed as 0-1 FRACTIONS (src/parsers/index.js's `_num01`
+  // guard, `>= 0 && <= 1`), same convention smg-voice.js already renders correctly
+  // (`(p*100).toFixed(2)+'%'`) and morning-brief.js defends against with a `>1` scale guard.
+  // This block was comparing the raw fraction against a PERCENT threshold (`< 90`, always true
+  // for any real value) and printing it bare with a literal '%' appended (e.g. "0.91%" instead
+  // of "91.00%") -- every store read as failing regardless of actual performance. Fixed at this
+  // one render site with the file's own existing _fmtPct helper, not by rescaling the parse
+  // layer (which every other consumer already reads correctly as a fraction).
   let out = `SMG VOICE / CUSTOMER SATISFACTION:
-  District avg OSAT top-2: ${_fmt(distOsat, 2)}% (target ≥90%)
+  District avg OSAT top-2: ${_fmtPct(distOsat, 2)} (target ≥90%)
 `;
   if (stores.length) {
     out += '\n  STORE OSAT RANKING (worst first):\n';
     out += `  | # | Store | OSAT% | DT Problem% | Period |\n  | - | ----- | ----- | ----------- | ------ |\n`;
     stores.forEach((s, i) => {
-      const flag = s.osatTop2 != null && s.osatTop2 < 90 ? ' ⚠' : '';
-      out += `  | ${i+1} | ${s.name} (${s.loc})${flag} | ${_fmt(s.osatTop2, 2)}% | ${s.dtProblem != null ? _fmt(s.dtProblem,2)+'%' : '—'} | ${s.period} |\n`;
+      const flag = s.osatTop2 != null && s.osatTop2 < 0.90 ? ' ⚠' : '';
+      out += `  | ${i+1} | ${s.name} (${s.loc})${flag} | ${_fmtPct(s.osatTop2, 2)} | ${s.dtProblem != null ? _fmtPct(s.dtProblem, 2) : '—'} | ${s.period} |\n`;
     });
   }
   return out;
@@ -328,7 +326,7 @@ export function buildControlsSummary(ds) {
   return out;
 }
 
-function buildScheduleSummary(ds) {
+export function buildScheduleSummary(ds) {
   const rows = ds?.schedRows || [];
   if (rows.length < 5) return null;
   const working = _recentRows(rows, 30);
@@ -339,20 +337,19 @@ function buildScheduleSummary(ds) {
 
   const distGap = _avg(gapped.map(r => r.schVLH - r.needVLH));
 
-  const locMap = _byLoc(gapped,
-    () => ({ gaps: [], schVLH: [], needVLH: [] }),
-    (d, r) => {
-      d.gaps.push(r.schVLH - r.needVLH);
-      d.schVLH.push(r.schVLH);
-      d.needVLH.push(r.needVLH);
-    }
+  // #85: per-store gap now goes through the SAME aggregation query_lifelenz_labor uses
+  // (aggregateLifelenzLabor, #82's fix) instead of a second, independently hand-rolled
+  // average -- two implementations of "average the daily gap" is exactly the kind of
+  // duplication that drifts, which is what let this static summary and the live tool
+  // disagree in the first place (memory/dispatch-85.md #2). Field names adapted (this file's
+  // camelCase rows -> the snake_case shape the shared aggregator expects, built for raw
+  // Supabase rows); avg_daily_gap is genuinely per-day (gap_vlh_total ÷ days), same
+  // guarantee #82 already tested.
+  const perStore = aggregateLifelenzLabor(
+    gapped.map(r => ({ loc: r.loc, sch_vlh: r.schVLH, need_vlh: r.needVLH })),
   );
-
-  const stores = Object.entries(locMap)
-    .map(([loc, d]) => ({
-      loc, name: _storeName(loc),
-      avgGap: _avg(d.gaps),
-    }))
+  const stores = perStore
+    .map(s => ({ loc: s.loc, name: _storeName(s.loc), avgGap: s.avg_daily_gap }))
     .filter(s => s.avgGap != null)
     .sort((a,b) => Math.abs(b.avgGap) - Math.abs(a.avgGap));
 

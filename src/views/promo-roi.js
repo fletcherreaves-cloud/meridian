@@ -101,6 +101,17 @@ export function PromoRoiPanel({ ds, onClose }) {
           h('div', { style: { fontSize: 26, marginBottom: 10 } }, '🎟️'),
           'Not enough daily promo/discount data loaded yet. This reads the auto-synced Daily Glimpse (promo) and Controls (discount) streams — sync or upload a few weeks and it fills in.')
         : h('div', null,
+          // #85 #5: memory/finding-promo-roi-denominator-bias-2026-08-23.md's later measurement
+          // (2026-08-23, hours after the dollar-split "fix" shipped) found BOTH splits endogenous
+          // -- the percentage split biases down (sales is its own denominator), the dollar split
+          // biases up when spend scales with traffic, which is how real redemptions behave.
+          // Measured at a true effect of zero: the shipped split reports +16.5% mean lift and
+          // 27/27 stores "pays". Worse than the original bug -- that one was visibly broken and
+          // got ignored; this one is plausibly wrong and invites action. The real fix needs an
+          // EXOGENOUS treatment indicator (a promo calendar) and is a design task, not a quick
+          // fix -- this banner is the interim mitigation until that lands.
+          h('div', { style: { fontSize: 12, color: '#ef4444', lineHeight: 1.6, marginBottom: 14, padding: '12px 14px', background: 'rgba(239,68,68,.10)', border: '1px solid #ef4444', borderRadius: 8, fontWeight: 600 } },
+            '🔴 Verdicts below are known-unreliable — do not act on them yet. Every split tried so far (percentage-of-sales, absolute give-away dollars) is a function of the outcome it\'s trying to measure: promo spend that scales with traffic sorts busy days into "promo-heavy" before sales is ever compared, which reproduces a large positive lift even when the true effect is zero (measured: +16.5% mean lift, 27/27 stores "pays", at zero true effect). The fix needs a treatment signal set BEFORE the day happens — a promo calendar — not another split of same-day data. Full writeup: memory/finding-promo-roi-denominator-bias-2026-08-23.md.'),
           h('div', { style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
             'How to read this: on ', h('b', null, 'promo-heavy'), ' days a store rings ', h('b', null, 'Sales/day'), ' more than its matched ', h('b', null, 'promo-light'),
             ' days (same weekday), while giving away ', h('b', null, 'Give-away/day'), ' more. ',
@@ -110,5 +121,5 @@ export function PromoRoiPanel({ ds, onClose }) {
           h(LeverSection, { title: 'Promotions', icon: '🎉', data: roi.promo, marginRate: roi.marginRate }),
           h(LeverSection, { title: 'Discounts', icon: '🏷️', data: roi.discount, marginRate: roi.marginRate }),
           h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 6 } },
-            '⚙ Matched-day design controls for weekday and for promos-run-on-slow-days, but it is association-with-controls, not a randomized experiment — treat verdicts as a screen for where to dig, not proof. Incremental margin is a district assumption you set above; per-store product mix varies. Heavy/light days are split on give-away DOLLARS, not give-away as a % of sales — a percentage split would make sales the denominator of its own splitting variable, which biases every store toward a false negative (memory/finding-promo-roi-denominator-bias-2026-08-23.md).')))));
+            '⚙ Matched-day design controls for weekday, but the heavy/light split itself is not yet independent of the outcome it measures (see the warning above) — treat every verdict here as unverified until that\'s fixed, not as a screen for where to dig. Incremental margin is a district assumption you set above; per-store product mix varies.')))));
 }
