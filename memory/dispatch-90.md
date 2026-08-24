@@ -188,4 +188,7 @@ counter-example, explicitly NOT as a correction factor. See that file's own "Do 
 
 **Needs a `sage-chat` redeploy** (`supabase functions deploy sage-chat --no-verify-jwt`) before the
 new tool is live — not run from this session; flagging so it isn't assumed live from the merged
-code alone, per this project's own repeated "measure it, don't reason about it" lesson.
+code alone, per this project's own repeated "measure it, don't reason about it" lesson. (This is a
+separate redeploy from the one `memory/handoff-2026-08-24-key-rotation.md` confirms already
+shipped and verified — that one covered the key-rotation code; this dispatch's new tool is new
+code on top of it, not yet deployed.)
