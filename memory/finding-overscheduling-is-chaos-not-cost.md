@@ -112,6 +112,40 @@ report.
   largest planning gaps also churn hardest, that converts this from a qualitative argument into
   a measured one — and it is the strongest available test of the claim.
 
+## LifeLenz vs Controls need baseline — measured ratio (dispatch #90, 2026-08-24)
+
+Partially answers the open question above ("worth one validation against LifeLenz for a single
+store-week") — a real number now exists, though it raises the stakes on the question rather than
+closing it.
+
+**SAGE was asked about staffing gaps and answered from two different sources on two different
+occasions, for the same store (Ada-Country Club) and roughly the same window:** the LifeLenz
+`sch_vlh − need_vlh` gap (SAGE's `query_lifelenz_labor` tool) said **+151.9 h/day** over-staffed;
+the owner's Controls export's `Act vs Need` figure for the same store/window said **+57.2 h/day**.
+Ratio ≈ **2.7×**.
+
+Independently reproduced live against Supabase during this dispatch, 2026-07-25 → 2026-08-23 (the
+export's own window): Ada's LifeLenz-basis avg gap = **+152.8 h/day**; the Controls/DAR-basis
+`actual_punched_hours − total_needed_hours` (`qsr_daily_activity_rollup`) = **+56.6 h/day**. Ratio
+= **2.70**. Consistent with the SAGE-quoted figures above — this is not a one-off measurement
+artifact.
+
+**The disagreement is not uniform across stores, and is not even consistently a *scaling*
+disagreement.** Seminole-Milt Phillips, checked the same way over the same window: LifeLenz says
+**+1.3 h/day** (essentially on target); the Controls/DAR basis says **−58.2 h/day** — the single
+most under-staffed store in the district. LifeLenz and Controls disagree in **direction**, not
+just magnitude, for this store. (This is why SAGE's under-staffed answer named Bonifay and Sulphur
+but missed Seminole entirely — its only staffing-gap tool was the LifeLenz-basis one, on which
+Seminole doesn't read as understaffed at all. See `memory/dispatch-90.md` item 2.)
+
+**Do NOT use 2.7 as a correction factor anywhere.** One store, one window, and per the Seminole
+counter-example the two baselines are not even reliably measuring the same shape of thing — a
+fixed multiplier would be actively wrong on a store like Seminole where the direction itself
+flips. What this closes: the open question is no longer "unknown, worth checking" — it's
+"confirmed materially different, on both axes, needs its own investigation into WHY (a stale
+LifeLenz labor guide, a different needed-hours methodology entirely, or something else)." That
+investigation is not done here.
+
 ## Related
 
 - #210 — the split that produced this

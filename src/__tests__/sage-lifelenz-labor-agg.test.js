@@ -91,4 +91,25 @@ describe('lifelenz-labor-agg -- gap_vlh_total vs avg_daily_gap (dispatch #82 Par
     const out = aggregateLifelenzLabor(rows, {});
     expect(out[0].name).toBe('Store 99999');
   });
+
+  // Dispatch #90, item 2 -- lifelenz_schedule.loc is ALWAYS the 7-char zero-padded NSN at the DB
+  // level (verified live against Supabase: every row in the table reads "0010915", never
+  // "10915"). Without normalizing, every store's name lookup misses storeNames (keyed unpadded)
+  // and falls back to "Store 00XXXXX" -- an unresolvable label that is effectively invisible to
+  // SAGE even though the row is present in the tool's JSON. Same bug class as the qsr_fob
+  // loc-padding fix and the 2026-08-04 schedRows fix in supabase.js (loadLifeLenzSchedule).
+  it('strips zero-padding on the real 7-char NSN format, so the name resolves', () => {
+    const rows = makeRows('0010915', 30, 141, 140); // Seminole, real padded format
+    const out = aggregateLifelenzLabor(rows, { '10915': 'Seminole-Milt Phillips' });
+    expect(out[0].loc).toBe('10915');
+    expect(out[0].name).toBe('Seminole-Milt Phillips');
+    expect(out[0].name).not.toMatch(/^Store 00/);
+  });
+
+  it('merges padded and unpadded rows for the same store into one entry', () => {
+    const rows = [...makeRows('0006972', 15, 110, 100), ...makeRows('6972', 15, 110, 100)];
+    const out = aggregateLifelenzLabor(rows, { '6972': 'Ada-Country Club' });
+    expect(out.length).toBe(1);
+    expect(out[0].days).toBe(30);
+  });
 });

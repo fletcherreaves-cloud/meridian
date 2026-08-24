@@ -7,6 +7,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { qualifiesForRestricted, searchTerms, buildMemorySearchResult } from './memory-kb.js';
 import { aggregateLifelenzLabor, LIFELENZ_LABOR_NOTE } from './lifelenz-labor-agg.js';
+import { aggregateLaborSummary, LABOR_SUMMARY_NOTE } from './labor-summary-agg.js';
 import { fetchAllRows } from './paginate.js';
 import { PROMO_ROI_UNRELIABLE_NOTE } from './promo-roi-note.js';
 
@@ -84,6 +85,32 @@ DT speed is reported in seconds (avg service time per car). Target: <200s green,
     description: `Query LifeLenz scheduling data — scheduled vs needed labor hours by store and date.
 Use for questions about: staffing gaps, over/under-scheduling, VLH (variable labor hours).
 Returns per-store scheduled vs needed hours summary.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        start_date: {
+          type: 'string',
+          description: 'Start date YYYY-MM-DD (inclusive). Required.',
+        },
+        end_date: {
+          type: 'string',
+          description: 'End date YYYY-MM-DD (inclusive). Defaults to start_date.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for all stores.',
+        },
+      },
+      required: ['start_date'],
+    },
+  },
+  {
+    name: 'query_labor_summary',
+    description: `Query exact-window OT dollars/hours and the Controls-basis staffing gap ("Act vs Need") by store, from the SAME authoritative auto QSRSoft streams the owner's own Controls exports read (qsr_labor_summary, qsr_daily_activity_rollup) -- NOT LifeLenz.
+ALWAYS use this (never the fixed 60-day LABOR & STAFFING summary above, and never scale/halve it) for any OT-dollar or under/over-staffed question about a SPECIFIC date range -- the 60-day summary is a fixed window and cannot be rescaled to answer a different one.
+Prefer this over query_lifelenz_labor for "which stores are under/over-staffed" and "how much OT" questions: LifeLenz's own need baseline is separately calibrated from the Controls basis and can disagree sharply, in magnitude AND direction, for the same store on the same day.
+Returns per-store: OT $ total, OT hours total, and Act-vs-Need hours/day (negative = under-staffed, positive = over-staffed), each summed/averaged over the EXACT requested window.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -377,6 +404,55 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       stores: sc.stores,
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: LIFELENZ_LABOR_NOTE,
+    });
+  }
+
+  if (name === 'query_labor_summary') {
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = (input.start_date as string) || today;
+    const endDate   = (input.end_date   as string) || startDate;
+    const locs      = input.locs as string[] | undefined;
+
+    const [ot, rollup] = await Promise.all([
+      fetchAllRows(() => {
+        let q = sb
+          .from('qsr_labor_summary')
+          .select('loc,dt,metrics')
+          .gte('dt', startDate)
+          .lte('dt', endDate)
+          // Full PK order (loc, dt) -- required for offset paging, see paginate.js.
+          .order('dt').order('loc');
+        if (locs?.length && !allowed) q = q.in('loc', locs);
+        return q;
+      }),
+      fetchAllRows(() => {
+        let q = sb
+          .from('qsr_daily_activity_rollup')
+          .select('loc,dt,actual_punched_hours,total_needed_hours')
+          .gte('dt', startDate)
+          .lte('dt', endDate)
+          .order('dt').order('loc');
+        if (locs?.length && !allowed) q = q.in('loc', locs);
+        return q;
+      }),
+    ]);
+    if (ot.error)     return `Database error: ${ot.error.message}`;
+    if (rollup.error) return `Database error: ${rollup.error.message}`;
+    if (!ot.data?.length && !rollup.data?.length) {
+      return `No labor summary data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}.`;
+    }
+
+    const stores = aggregateLaborSummary(ot.data || [], rollup.data || [], STORE_NAMES);
+    const districtOtDollar = stores.reduce((s, r) => s + r.ot_dollar_total, 0);
+
+    const sc = applyScope(stores, allowed);
+    return JSON.stringify({
+      date_range: startDate === endDate ? startDate : `${startDate} to ${endDate}`,
+      district_total_ot_dollar: Math.round(districtOtDollar),
+      district_store_count: stores.length,
+      stores: sc.stores,
+      ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
+      note: LABOR_SUMMARY_NOTE,
     });
   }
 
@@ -786,6 +862,7 @@ Deno.serve(async (req: Request) => {
           for (const tu of toolUses) {
             const label = tu.name === 'query_daily_activity'    ? 'sales & DT data'
                         : tu.name === 'query_lifelenz_labor'   ? 'labor schedules'
+                        : tu.name === 'query_labor_summary'    ? 'OT & staffing gap'
                         : tu.name === 'query_forecast_snapshots' ? 'forecast accuracy'
                         : tu.name === 'query_promo_roi'         ? 'promo/discount ROI'
                         : tu.name === 'search_qsr_kb'          ? 'QSRSoft docs'

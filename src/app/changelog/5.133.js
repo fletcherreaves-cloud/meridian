@@ -22,4 +22,10 @@ export default {version:'5.133', date:'2026-08-24', changes:[
   + 'trade-offs, not implemented -- no service-role key added, no credential value written to any '
   + 'file.\n\n'
   + 'Docs only. Full writeup: memory/dispatch-89.md.',
+  'Correction (dispatch #90): the paragraph above claiming VITE_SUPABASE_ANON_KEY\'s JWT decoded '
+  + 'to role:service_role, byte-identical to SUPABASE_SERVICE_ROLE_KEY, was measured false -- it '
+  + 'decoded to role:anon, and using it as an Authorization: Bearer header still returned '
+  + 'content-range: */0 on qsr_fob. No elevated privilege, by claim or by behaviour. Moot after '
+  + 'the same-day key rotation retired the legacy anon key this concerned, but recorded so the '
+  + 'underlying error -- asserting a decoded JWT role without checking it -- isn\'t repeated.',
 ]};

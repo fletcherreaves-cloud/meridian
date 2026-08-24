@@ -152,6 +152,17 @@ owner has been asked to confirm directly by opening the Food Cost panel and read
 selector; that answer, not any query from this sandbox, is what closes this item. See
 `memory/dispatch-89.md` and CLAUDE.md's corrected Supabase-egress paragraph for the full mechanism.
 
+⚠️ **SECOND CORRECTION (dispatch #90, 2026-08-24) — the credential claim directly above is itself
+wrong, carried over from the same error in `src/app/changelog/5.133.js`.** *"Decoding its JWT
+shows `role:service_role`, byte-identical to `SUPABASE_SERVICE_ROLE_KEY`"* is false. Measured:
+`VITE_SUPABASE_ANON_KEY`'s JWT decodes to `role: anon`, and sending it as `Authorization: Bearer`
+still returned `content-range: */0` on `qsr_fob` — no elevated privilege by claim or by behaviour.
+Already recorded in CLAUDE.md's corrected Supabase-egress paragraph; repeated here only because
+this file carried the same false claim forward. **Moot as of the same day's key rotation** (the
+legacy anon key this claim was about is now disabled entirely — `VITE_SUPABASE_ANON_KEY` holds an
+opaque `sb_publishable_…` key post-rotation, not a JWT), so there is nothing left to re-verify —
+recorded so the reasoning error (asserting a decoded role without checking it) isn't repeated.
+
 The real cause: `FOBAnalysisPanel` (`src/views/analytics.js`) computes `months` from
 `fobRowsEff`, a cloud-first merge of `qsrFobRows` (async — starts `null` while `loadQsrFob()` is in
 flight) and `ds.fobRows` (manual upload, already present synchronously on first render). The

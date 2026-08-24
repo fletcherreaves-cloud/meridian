@@ -18,8 +18,21 @@
 export function aggregateLifelenzLabor(rows, storeNames = {}) {
   const byStore = {};
   for (const row of rows) {
-    if (!byStore[row.loc]) byStore[row.loc] = { schVLH: 0, needVLH: 0, days: 0 };
-    const s = byStore[row.loc];
+    // lifelenz_schedule.loc is ALWAYS a 7-char zero-padded NSN at the DB level
+    // (scripts/lifelenz-pull.mjs pads on write, same as qsr_fob) -- storeNames/STORE_NAMES use
+    // the unpadded convention. Without normalizing here, EVERY store's per-store row falls back
+    // to the generated "Store 00XXXXX" label instead of its real name, since the raw padded
+    // string never matches a storeNames key. The client-side static schedule summary
+    // (src/views/sage.js buildScheduleSummary) never hit this because its data comes through
+    // supabase.js's loadLifeLenzSchedule, which already strips the padding on load -- this tool
+    // reads lifelenz_schedule directly and had no equivalent normalization. Same bug class as
+    // the qsr_fob loc-padding fix (src/views/sage.js buildFobSummary) and the 2026-08-04
+    // schedRows fix in supabase.js (loadLifeLenzSchedule). Found while investigating dispatch
+    // #90's "Seminole missing from SAGE's under-staffed list" -- an unresolvable store label is
+    // effectively invisible to the model, even though its row is present in the JSON.
+    const loc = String(parseInt(row.loc, 10));
+    if (!byStore[loc]) byStore[loc] = { schVLH: 0, needVLH: 0, days: 0 };
+    const s = byStore[loc];
     s.schVLH += row.sch_vlh || 0;
     s.needVLH += row.need_vlh || 0;
     s.days++;
