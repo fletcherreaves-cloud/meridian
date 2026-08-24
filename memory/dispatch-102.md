@@ -130,3 +130,74 @@ source actually has, not assumed uniform. Verify against real data, don't guess.
   days have elapsed in the selected month (23 today, will be different next week and for prior
   months) — the fix is taking the correct single snapshot, not scaling a wrong sum by a guessed
   constant.
+
+## Resolution (2026-08-24)
+
+**Fixed exactly as scoped.** `computeFOBMetrics` (`src/views/analytics.js`) now collapses to the
+latest-dated row per `loc`, within the already-applied `selMonth` filter, before any aggregation —
+mirroring `fobSnapshotByStore`'s latest-snapshot-per-loc selection rule (same "keep the row with
+the max date key" pattern), not imported directly since `fobSnapshotByStore`'s own signature reads
+raw qsr_fob `$` field names (`compWasteAmt`, `prodSalesAmt`, …) while `computeFOBMetrics`'s rows are
+this panel's already-normalized ratio shape (`compWaste` as a %, cloud and manual sources merged by
+`fobRowsEff`). `scripts/qsrsoft-pull.mjs` and `fobSnapshotByStore` itself: untouched, as instructed.
+
+### The manual/cloud nuance, checked rather than assumed
+
+Read `parseFOBData` (`src/parsers/index.js`) and the `dedup()` step in `pipeline.js`: manual
+`ds.fobRows` is **not** guaranteed one-row-per-(loc,month) — a real "Business Date" column can
+carry multiple distinct dates for one store within a month, and `dedup()` only collapses exact
+`(loc, date)` duplicates, not same-month ones. So a uniform "always collapse to latest" was the
+right call for both sources, not just cloud. Confirmed safe by reading `fobRowsEff`'s merge
+(`FOBAnalysisPanel`, ~"cloudFobRows.map"): for any given `(loc, month)`, the merged array is
+**either** entirely cloud's daily snapshots **or**, only when cloud has no row for that
+`(loc, month)` at all, entirely manual rows — never a mix. So grouping strictly by `loc` within the
+month-filtered set is equivalent to grouping by `(loc, month)` for either source, and a source that
+already had a single row per `(loc, month)` (e.g. a period-summary manual upload with no per-row
+date column) collapses to itself as a no-op.
+
+### Verified against the owner's real export — matched to the cent
+
+Pulled `qsr_fob` live (`SUPABASE_SERVICE_ROLE_KEY`, August 2026, all 27 locations) — 648 rows,
+27 unique locs, 24 rows per loc (2026-08-01 → 2026-08-24). Computed both the pre-fix sum and the
+post-fix latest-per-loc aggregation directly against this pull:
+
+| | pre-fix (sum all rows) | post-fix (latest per loc) | owner's export |
+|---|---:|---:|---:|
+| Net Sales | $157,871,522.22 | **$6,578,038.11** | $6,578,038.11 |
+| Completed Waste | $290,384.64 | **$12,099.36** | $12,099.36 |
+| Raw Waste | $852,842.64 | **$35,535.11** | $35,535.11 |
+| Condiments | $3,081,419.28 | **$128,392.47** | $128,392.47 |
+| Emp/Mgr Meals | $500,618.16 | **$20,859.09** | $20,859.09 |
+| Variance Stat | $2,417,806.32 | **$100,741.93** | $100,741.93 |
+
+Pre-fix figures match the dispatch's originally-reported panel numbers exactly; post-fix figures
+match the owner's real QSRSoft export exactly, to the cent, across every category — a uniform
+24.0x correction, confirming the row-counting diagnosis and the fix in one pass.
+
+### `eom-dashboard.js` — confirmed unaffected
+
+Read `eom-dashboard.js`: it never calls `computeFOBMetrics`. Its day-by-day FOB trend chart uses
+`fobDailyTrace`/`annotateTouchpoints` (`engine/variance-trace.js`) directly on raw `fobRows`, a
+completely separate consumer of the same table — untouched by this fix, as required.
+
+### Test — renders the actual consumer, confirmed load-bearing
+
+New file `src/__tests__/fob-analysis-dollar-inflation.test.js` renders the real `FOBAnalysisPanel`
+(not an isolated `computeFOBMetrics` unit test) against a fixture shaped exactly like the live
+duplicate-row pull (23 byte-identical daily snapshots per store, real per-store dollar figures) and
+asserts the on-screen Net Sales total and record count are a single month's worth. Per this repo's
+"would this verification still pass if reverted" rule: temporarily reverted `computeFOBMetrics` to
+the pre-fix sum and re-ran — both assertions failed, reproducing the exact pre-fix numbers on
+screen ($9,614K / "46 records" instead of $418K / "2 records") — then restored the fix. A second
+case covers out-of-order dates and cross-month exclusion (a July row's $999,999 must never leak
+into an August total).
+
+### Test/build results
+
+- `npm test`: **2263/2263 passing, 219/219 files** (2 new, 0 regressions).
+- `npm run build`: clean. Entry eager payload **effectively unchanged** (519.65 → 519.63 KB gzip,
+  sub-KB hash-reference noise) — `analytics.js` is a lazy chunk (`lazyPanel()`), never in the eager
+  entry bundle; budget 850 KB, headroom 328.49–328.51 KB. `analytics` chunk itself (lazy):
+  91.76 → 91.83 KB gzip (+0.07 KB).
+
+**Version:** v5.141 (`src/app/changelog/5.141.js`).
