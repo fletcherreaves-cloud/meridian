@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 
 import { TopBottomPerformers } from '../views/top-bottom-performers.js';
+import { INV_ORG_COORDS } from '../constants.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -102,12 +103,19 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
     expect(rankedLocs()).toEqual(['90001', '90002']);
   });
 
-  it('flips the ranking end-for-end when switching to a lower-better metric (Labor %)', () => {
+  // Dispatch #104 -- the 16-metric pill row became a <select>. Same metricKey state, same
+  // selection semantics; only the picker's DOM shape changed.
+  it('flips the ranking end-for-end when switching to a lower-better metric (Labor %) via the metric dropdown', () => {
     const ds = mkFixture();
     act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
-    const laborBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Labor %');
-    expect(laborBtn).toBeTruthy();
-    act(() => { laborBtn.click(); });
+    const select = container.querySelector('select');
+    expect(select).toBeTruthy();
+    const opt = [...select.options].find(o => o.textContent === 'Labor %');
+    expect(opt).toBeTruthy();
+    act(() => {
+      select.value = opt.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     // Labor % is lower-better: B (10%) now outranks A (30%) -- the exact reverse of the sales case.
     expect(rankedLocs()).toEqual(['90002', '90001']);
   });
@@ -135,10 +143,157 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
   it('switches to the true period-total (Sum/Sum) disclaimer once the metric\'s numerator and denominator both resolve', () => {
     const ds = mkRatioSumFixture();
     act(() => { root.render(React.createElement(TopBottomPerformers, { stores: RATIO_STORES, ds, onClose: () => {} })); });
-    const laborBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Labor %');
-    act(() => { laborBtn.click(); });
+    const select = container.querySelector('select');
+    const opt = [...select.options].find(o => o.textContent === 'Labor %');
+    act(() => {
+      select.value = opt.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     const txt = container.textContent;
     expect(txt).toContain('true period total (Σ ÷ Σ)');
     expect(txt).not.toContain('daily average over the window');
   });
 });
+
+// ── Dispatch #104, Part 3 -- FOB % as a rankable category ──────────────────────
+// Built on the 6-controllable-component / sales definition fobSnapshotByStore (eom-inventory.js)
+// and analytics.js's dispatch-#102-fixed computeFOBMetrics already use (see metric-source.js's
+// fobTotalAmt/fobPct chains). One qsr_fob row per day per store here -- unlike the real table
+// (a period-to-date snapshot re-published daily), so this fixture is intentionally simple: same
+// $ values every day, which keeps the Σ/Σ rollup exactly equal to the single-day ratio and lets
+// the test assert a known number rather than only a direction.
+function mkFobFixture() {
+  const fullWindow = daysBack(28);
+  const rows = { qsrFobRows: [] };
+  // Store A: FOB% = 215/10000 = 2.15% (better -- FOB is lower-better).
+  // Store B: FOB% = 645/10000 = 6.45% (worse).
+  for (const date of fullWindow) {
+    rows.qsrFobRows.push({
+      loc: '90006', date, prodSalesAmt: 10000,
+      compWasteAmt: 100, rawWasteAmt: 50, condimentsAmt: 30, empMgrMealsAmt: 20, statVarianceAmt: 10, unexplainedAmt: 5,
+    });
+    rows.qsrFobRows.push({
+      loc: '90007', date, prodSalesAmt: 10000,
+      compWasteAmt: 300, rawWasteAmt: 150, condimentsAmt: 90, empMgrMealsAmt: 60, statVarianceAmt: 30, unexplainedAmt: 15,
+    });
+  }
+  return rows;
+}
+const FOB_STORES = [{ loc: '90006' }, { loc: '90007' }];
+
+describe('Top/Bottom Performers -- FOB % (dispatch #104)', () => {
+  let container, root;
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const rankedLocs = () => [...container.querySelectorAll('[data-testid="performer-row"]')].map(el => el.getAttribute('data-loc'));
+
+  it('offers FOB % as a selectable metric and ranks the lower (better) store first', () => {
+    const ds = mkFobFixture();
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: FOB_STORES, ds, onClose: () => {} })); });
+    const select = container.querySelector('select');
+    const opt = [...select.options].find(o => o.textContent === 'FOB %');
+    expect(opt).toBeTruthy();
+    act(() => {
+      select.value = opt.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // FOB % is lower-better: A (2.15%) outranks B (6.45%).
+    expect(rankedLocs()).toEqual(['90006', '90007']);
+  });
+
+  it('ranks FOB % on the true Σnumerator/Σdenominator period basis, not mean-of-daily', () => {
+    const ds = mkFobFixture();
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: FOB_STORES, ds, onClose: () => {} })); });
+    const select = container.querySelector('select');
+    const opt = [...select.options].find(o => o.textContent === 'FOB %');
+    act(() => {
+      select.value = opt.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const txt = container.textContent;
+    expect(txt).toContain('true period total (Σ ÷ Σ)');
+    // The rendered figure is the exact Σ/Σ ratio (215/10000 = 2.15%), not diluted or inflated by
+    // the 28-day window -- the exact class of bug dispatch #102 fixed elsewhere on this same
+    // qsr_fob table (summing snapshot $ across days would have produced a wildly different number).
+    expect(txt).toContain('2.15%');
+    expect(txt).toContain('6.45%');
+  });
+});
+
+// ── Dispatch #104, Part 1 -- location selector, progressive reveal ─────────────
+// Fallback resolution (no live owner confirmation reachable): keep the existing pill-style
+// standard, but reveal one tier at a time instead of all 30+ pills flat/simultaneous. Uses REAL
+// INV_ORG_COORDS store ids (unlike the synthetic 900xx fixtures above) because the hierarchy is
+// built from that map -- a synthetic loc has no state/patch and would trivially pass.
+describe('Top/Bottom Performers -- location selector progressive reveal (dispatch #104)', () => {
+  let container, root;
+  const okLoc1 = '3708', okLoc2 = '5183', flLoc = '6178';
+  const REAL_STORES = [{ loc: okLoc1 }, { loc: okLoc2 }, { loc: flLoc }];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const pillButtons = () => [...container.querySelectorAll('button')];
+
+  it('shows only All + State pills by default -- no Patch or Store pills yet', () => {
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: REAL_STORES, ds: {}, onClose: () => {} })); });
+    const labels = pillButtons().map(b => b.textContent);
+    expect(labels).toContain('All Locations');
+    expect(labels).toContain('OK');
+    expect(labels).toContain('FL');
+    // Neither store's own patch (sup) name, nor any bare store loc/name pill, is present yet.
+    expect(labels).not.toContain(INV_ORG_COORDS[okLoc1].sup);
+    expect(labels.some(l => l && l.startsWith(okLoc1))).toBe(false);
+  });
+
+  it('clicking a State pill reveals that state\'s Patch pills, still no Store pills', () => {
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: REAL_STORES, ds: {}, onClose: () => {} })); });
+    const okBtn = pillButtons().find(b => b.textContent === 'OK');
+    act(() => { okBtn.click(); });
+    const labels = pillButtons().map(b => b.textContent);
+    expect(labels).toContain(INV_ORG_COORDS[okLoc1].sup);
+    expect(labels).toContain(INV_ORG_COORDS[okLoc2].sup);
+    // FL's own patch must not leak in just because a State was picked.
+    expect(labels).not.toContain(INV_ORG_COORDS[flLoc].sup);
+    expect(labels.some(l => l && l.startsWith(okLoc1))).toBe(false);
+  });
+
+  it('clicking a Patch pill reveals that patch\'s Store pills, and selecting one scopes the ranking to it', () => {
+    const ds = mkFixtureForLoc(okLoc1);
+    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: REAL_STORES, ds, onClose: () => {} })); });
+    act(() => { pillButtons().find(b => b.textContent === 'OK').click(); });
+    const patchBtn = pillButtons().find(b => b.textContent === INV_ORG_COORDS[okLoc1].sup);
+    act(() => { patchBtn.click(); });
+    const storeBtn = pillButtons().find(b => b.textContent && b.textContent.startsWith(okLoc1));
+    expect(storeBtn).toBeTruthy();
+    act(() => { storeBtn.click(); });
+    // scope.level:'store' narrows locationSelectorLocs (unchanged logic) to exactly this one loc
+    // -- same substance as the pre-existing 'full' mode, just revealed progressively.
+    const rows = [...container.querySelectorAll('[data-testid="performer-row"]')].map(el => el.getAttribute('data-loc'));
+    expect(rows).toEqual([okLoc1]);
+  });
+});
+
+// Minimal 28-day sales fixture for a single real loc, so the "select a store" test above has a
+// real ranked row to assert on instead of an empty list.
+function mkFixtureForLoc(loc) {
+  const fullWindow = daysBack(28);
+  const rows = { qsrActSummaryRows: [] };
+  for (const date of fullWindow) rows.qsrActSummaryRows.push({ loc, date, sales: 1000 });
+  return rows;
+}

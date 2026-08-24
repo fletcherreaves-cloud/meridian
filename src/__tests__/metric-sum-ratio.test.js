@@ -12,10 +12,10 @@ import { describe, it, expect } from 'vitest';
 import { metricSumRatio, metricAvg, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
-  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph (the motivating example)', () => {
+  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph and fobPct (dispatch #104)', () => {
     const keys = rollupCapableMetricKeys().sort();
     expect(keys).toEqual([
-      'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'laborPct',
+      'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'fobPct', 'laborPct',
       'rawWaste', 'spph', 'statVar', 'tRedAPct', 'tRedBPct', 'tpph',
     ].sort());
   });
@@ -133,6 +133,57 @@ describe('metricSumRatio -- discPct (discAmt / netSalesAmt, opsCashRows-only leg
   });
 });
 
+// ── Dispatch #104 -- fobPct (fobTotalAmt / prodSalesAmt, a 6-way-summed numerator) ─────────────
+// Not table-driven like RATIO_METRIC_ROWS above: fobPct's numerator (fobTotalAmt) is itself a
+// derived 6-way sum, not a single raw field on one row, so it doesn't fit that table's
+// one-src/two-field shape -- same reason laborPct/discPct get their own describe blocks instead
+// of a row.
+describe('metricSumRatio -- fobPct (fobTotalAmt / prodSalesAmt, dispatch #104)', () => {
+  function fixture() {
+    return {
+      qsrFobRows: [
+        // Day 1: small $ over small sales.
+        { loc: '1', date: new Date('2026-08-01'), prodSalesAmt: 1000,
+          compWasteAmt: 10, rawWasteAmt: 5, condimentsAmt: 3, empMgrMealsAmt: 2, statVarianceAmt: 1, unexplainedAmt: 1 }, // total 22, 2.2%
+        // Day 2: much larger $ over much larger sales, a DIFFERENT ratio.
+        { loc: '1', date: new Date('2026-08-02'), prodSalesAmt: 10000,
+          compWasteAmt: 300, rawWasteAmt: 150, condimentsAmt: 90, empMgrMealsAmt: 60, statVarianceAmt: 30, unexplainedAmt: 15 }, // total 645, 6.45%
+      ],
+    };
+  }
+  const range = { s: new Date('2026-08-01'), e: new Date('2026-08-02') };
+
+  it('sums all 6 controllable components across both legs, not just the first', () => {
+    const ds = fixture();
+    const sum = metricSumRatio(ds, '1', range, 'fobPct');
+    // (22+645) / (1000+10000) = 667/11000
+    expect(sum.value).toBeCloseTo(667 / 11000, 6);
+    expect(sum.n).toBe(2);
+  });
+
+  it('Sum/Sum diverges from mean-of-daily on an uneven-volume fixture', () => {
+    const ds = fixture();
+    const mean = metricAvg(ds, '1', range, 'fobPct');
+    const sum = metricSumRatio(ds, '1', range, 'fobPct');
+    // mean-of-daily: (0.022 + 0.0645) / 2 = 0.04325 -- the tiny day counts equally.
+    expect(mean).toBeCloseTo((0.022 + 0.0645) / 2, 5);
+    expect(sum.value).toBeCloseTo(667 / 11000, 6);
+    expect(Math.abs(mean - sum.value)).toBeGreaterThan(0.005);
+  });
+
+  it('does NOT reproduce the dispatch #102 inflation bug -- a Sum/Sum over N snapshot-like days stays a real ratio, never an N-multiple of the true value', () => {
+    // Model qsr_fob's actual shape: every day's $ fields are the SAME period-to-date snapshot
+    // (dispatch #102's finding), not a daily increment. Sum/Sum on 3 identical-snapshot days
+    // must still land near the single day's own ratio -- nowhere close to inflated ~3x.
+    const snapshotDay = { prodSalesAmt: 10000, compWasteAmt: 300, rawWasteAmt: 150, condimentsAmt: 90, empMgrMealsAmt: 60, statVarianceAmt: 30, unexplainedAmt: 15 };
+    const ds = { qsrFobRows: ['2026-08-01', '2026-08-02', '2026-08-03'].map(d => ({ loc: '1', date: new Date(d), ...snapshotDay })) };
+    const range3 = { s: new Date('2026-08-01'), e: new Date('2026-08-03') };
+    const sum = metricSumRatio(ds, '1', range3, 'fobPct');
+    const singleDayRatio = 645 / 10000;
+    expect(sum.value).toBeCloseTo(singleDayRatio, 6); // ratio of sums of identical days == that day's own ratio
+  });
+});
+
 // ── Dispatch #87 item 1 -- pin metricAvg against silent absorption ─────────────────────────────
 // #86's verification bar asked for this, #628 (the fix this file tests) correctly left metricAvg
 // untouched but shipped without a regression pin. Nothing stops a future refactor from quietly
@@ -187,7 +238,7 @@ const RATIO_METRIC_ROWS = {
 
 describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {
   it('RATIO_METRIC_ROWS covers every rollup-capable metric not already tested above', () => {
-    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct']);
+    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct']);
     for (const k of rollupCapableMetricKeys()) expect(covered.has(k), k).toBe(true);
   });
 
