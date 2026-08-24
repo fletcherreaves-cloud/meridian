@@ -84,18 +84,6 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #108 — Event Impact Registry: measure the remaining event types, add GC lift](dispatch-108.md)** —
-  Only Sports (Home/Away) has real measured data; Festival/Fair, Weather, LTO/Promo, Holiday all show
-  "no measured data yet." The measurement engine (`measureEventLift`/`shrinkLifts`,
-  `src/engine/retail-events.js`) and a proven runner (`scripts/measure-retail-impact.mjs`) already
-  exist and already power Sports + 4 retail types — but whether those retail types are actually
-  measured in production is unverified (run `--dry` first, don't assume either way). `holiday` is
-  trivially rule-derivable from `HOLIDAY_MAP`, same pattern as retail. `event`/`promo` are NOT
-  rule-derivable — only measurable against whatever's already tagged in `org_events`, honestly
-  reporting sparse coverage. `weather` needs an owner decision (measure against existing human-tagged
-  `org_events` weather subtypes, do not invent a new threshold rule). New: GC lift alongside the
-  existing sales-only lift — `labor_rows` has no GC column (checked), `qsr_sales_mix` is the candidate
-  source but its real backfill depth needs confirming, and `event_impact`'s schema needs new columns.
 - **✅ RESOLVED (2026-08-24): [Dispatch #107 — Yearly Targets: persisted to Supabase, Planning > Yearly
   panel rebuilt, dead-end editor retired](dispatch-107.md)** — Added a `yearly_targets` Supabase table
   (`tenant_id` + RLS, mirrors `monthly_targets`'s shape one tier up) and
@@ -109,6 +97,23 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   untouched; verified with a new `tOsatB2B` test case (a genuinely yearly-only field, no
   `monthly_targets` column). Full detail, file list, and test/build numbers: the dispatch file's own
   Resolution section.
+- **✅ SHIPPED (2026-08-24, v5.147 — sales lift; GC lift pending one owner SQL step): [Dispatch #108
+  — Event Impact Registry: measure the remaining event types, add GC lift](dispatch-108.md)** —
+  `event_impact` went from 26 rows (Sports only) to **189 rows** across sports/tax_free/
+  black_friday/small_biz_sat/cyber_monday/holiday/event/promo — the 4 retail types genuinely had
+  never been written (measured via `--dry` first, not assumed) despite the script existing; new
+  `scripts/measure-holiday-impact.mjs` (rule-derived from `HOLIDAY_MAP`) and
+  `scripts/measure-tagged-event-impact.mjs` (`event`/`promo`/`weather`, measured only against
+  whatever's already tagged in `org_events` — `weather` correctly wrote 0 rows, production has zero
+  tagged weather events, an honest result not a bug). GC lift: source confirmed
+  (`qsr_daily_activity_rollup.transactions`, backfilled 2024-01-01+, cross-validated against
+  `qsr_sales_mix`), `measureEventLift` generalized via `opts.valueKey` (byte-identical default
+  behavior), `EventImpactPanel` wired with GC columns — but the new `gc_*` columns
+  (`supabase/schema-event-impact-gc.sql`) could not be applied by this session (no DDL path — no
+  direct Postgres connection, no `exec_sql` RPC, both confirmed absent) so GC rows are computed,
+  spot-checked, and ready but not yet persisted. **Owner: run that SQL file once, then re-run the 3
+  scripts (no code change) to land GC lift.** Full Resolution + both hand-verified spot-checks in
+  `dispatch-108.md`.
 - **📋 (2026-08-24): [Dispatch #105 — CORRECTED: LifeLenz forecast data IS auto-pulled, Part 2 unblocked, name confirmed](dispatch-105.md)** —
   ⚠️ **This dispatch's original premise was wrong and has been corrected in-file (owner caught it:
   "Labor Analysis I thought was on auto pull, please check").** `scripts/lifelenz-pull.mjs` already

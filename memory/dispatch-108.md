@@ -143,3 +143,166 @@ follow the existing column layout/edit/reset pattern (~line 96-120), don't redes
   backfill depth before building on it.
 - **Do not change `measureEventLift`'s existing sales-lift behavior** for Sports/retail types while
   adding GC — this is additive, not a rewrite of what's already proven and shipped.
+
+## Resolution (2026-08-24)
+
+Worked in an isolated git worktree (`.claude/worktrees/agent-dispatch108`, branch
+`claude/dispatch-108-event-impact`) after finding the shared main checkout held another session's
+uncommitted dispatch-107 WIP and its branch pointer was being switched by a third actor mid-task —
+moved there to avoid stepping on concurrent work, per no explicit instruction otherwise. All
+numbers below are measured against production Supabase with `SUPABASE_SERVICE_ROLE_KEY`.
+
+**Step 1 — retail-type dry run, actual output (not assumed either direction):**
+```
+labor_rows: 42156 day-rows, 2022-01-01 → 2026-07-23
+── tax_free ── district mean lift 2.69% across 26 stores (n=12 per store, mostly)
+── black_friday ── district mean lift -3.14% across 26 stores (n=4)
+── small_biz_sat ── district mean lift -0.76% across 26 stores (n=4)
+── cyber_monday ── district mean lift 0.66% across 26 stores (n=4)
+[--dry] would upsert 101 event_impact rows.
+```
+Cross-checked against the table directly: `event_impact` held **26 rows, all `event_type='sports'`**
+before this dispatch — the 4 retail types had genuinely never been written, despite the script
+existing and being proven. Not "already measured," not "needs a new script" — needed a real run,
+which step 8 did.
+
+**Step 2 — GC source confirmed and its real backfill depth measured (not the schema-comment
+assumption):**
+- `qsr_daily_activity_rollup`: **2024-01-01 → 2026-08-24, 24,982 rows**, 25 distinct stores on
+  2024-01-05 growing to 27 by 2026-08-20.
+- `qsr_sales_mix` (the dispatch's suggested candidate): same range, 24,962 rows. Its `metrics` JSONB
+  has no field literally named `gc`; the closest is `gross_sales_qty`.
+- `daily_glimpse_daily` (emailed stream, for comparison): confirmed the CLAUDE.md-documented
+  2026-07-01 floor exactly — 2026-07-01 → 2026-08-23.
+- Cross-validated the two candidates against each other on a real row (loc 3708, 2026-08-01):
+  `qsr_daily_activity_rollup.transactions` = 979, `qsr_sales_mix.metrics.gross_sales_qty` = 979 —
+  exact match. `product_sales` / `product_sales_amt` also matched exactly (11431.31).
+- **Chose `qsr_daily_activity_rollup.transactions`**, not `qsr_sales_mix`: it's the app's
+  already-established canonical `gc` source (`src/engine/metric-source.js`'s `gc` chain leads with
+  `qsrActSummaryRows`, which reads this exact table) and carries an unambiguous `gc` semantic,
+  whereas `qsr_sales_mix` is a channel-mix table whose closest field is named for something else.
+  Both would answer the same number (proven above) — this just avoids introducing a second, oddly-
+  named GC source into the codebase.
+- **Real implication, stated plainly per the dispatch's instruction**: GC lift only reaches back to
+  2024-01-01, sales lift to 2022-01-01 — about 2.5 fewer years of baseline for GC. A store can
+  legitimately show sales lift with no GC lift for an event whose only historical occurrences predate
+  2024; that is real data-coverage difference, not a bug, and `mergeSalesAndGcWrites` gates each
+  metric's minimum-n independently rather than requiring both to qualify together.
+
+**Step 3 — schema + engine, additive, sales-lift byte-identical:**
+- `supabase/schema-event-impact-gc.sql` (new): 6 nullable columns
+  (`gc_home_impact`/`gc_away_impact`/`measured_gc_home`/`measured_gc_away`/`n_gc_home`/`n_gc_away`),
+  inherits the table's existing RLS.
+- `measureEventLift` (`src/engine/retail-events.js`) gained `opts.valueKey` (default `'sales'`) —
+  every existing call site is unchanged output-for-output; confirmed by re-running
+  `measure-retail-impact.mjs --dry` after the change and diffing against the pre-change capture —
+  identical district means, n counts, and shrunk % for all 4 retail types.
+- New `scripts/lib/event-impact-write.mjs`: `loadGcRows` (paginated `qsr_daily_activity_rollup`
+  read), `mergeSalesAndGcWrites` (per-metric independent minN gate), `upsertEventImpact` (the
+  pre-migration fallback below).
+
+**⚠️ Could not run the schema migration myself — genuine, measured blocker, not a shortcut taken.**
+This session has no path to run DDL against production: no `DATABASE_URL`/direct Postgres
+connection in the environment (checked `env`), and no `exec_sql`-style RPC exists on the project
+(probed 5 candidate function names via `sb.rpc(...)`, all returned "Could not find the function…").
+Confirmed the columns are genuinely absent by attempting a real upsert with `gc_home_impact` before
+writing any fallback code: `PGRST204 — Could not find the 'gc_home_impact' column of 'event_impact'
+in the schema cache`. This is the same situation every other `supabase/schema-*.sql` file in this
+repo is already in (**"Run once in the Supabase SQL editor"**) — not new, just newly relevant.
+**Owner action needed:** paste `supabase/schema-event-impact-gc.sql` into the Supabase SQL editor
+once (idempotent, ~2 minutes), then re-run the same 3 scripts (`measure-retail-impact.mjs`,
+`measure-holiday-impact.mjs`, `measure-tagged-event-impact.mjs`, no `--dry`) to land GC lift — no
+code change needed. Until then, `upsertEventImpact()` catches the `PGRST204`, strips the `gc_*`
+keys, and retries — so this did NOT block landing real sales-lift data today (see step 8 below).
+
+**Step 4 — holiday, built and measured:** `scripts/measure-holiday-impact.mjs` (new). 15 open-holiday
+labels from `HOLIDAY_MAP` (excludes Christmas Day [fullClosure], Christmas Eve/New Year's Eve/
+Thanksgiving [partialClosure] — same exclusion test `measure-retail-impact.mjs` already used for its
+baseline, reused here to build the event-day list instead of to exclude it), all pooled into ONE
+`holiday` event_type matching the panel's single 🎉 row (Black Friday's dates land in both the
+`holiday` bucket and its own dedicated `black_friday` retail type — different DB keys, no collision,
+deliberate: one answers "how do holidays move this store," the other "how does Black Friday
+specifically"). Dry run: 115 open-holiday dates in range (excluding 40 closure dates), 27/27 stores
+gradable, district mean sales lift -2.10% / GC lift -8.88%.
+
+**Manual spot-check, reproduced by hand against live production data (verification bar's explicit
+"holiday at minimum" requirement):** MLK Day, 2025-01-20, store 3708. Queried `labor_rows` directly:
+event-day sales $8851.09; baseline = median of the 8 other Mondays within ±28 days
+(`[8247.48, 8529.62, 8833.87, 8986.14, 8994.96, 9153.61, 11172.29, 11654.96]`, excluding the closure
+dates in that window) = $8990.55. Lift = 8851.09/8990.55 − 1 = **−1.55%**, one of the 70 observations
+the script averaged into store 3708's reported holiday-bucket sales lift. Confirms the pipeline
+executes the documented methodology against real data, not just against its own test fixtures.
+
+Also spot-checked a GC observation the same way for step 2/3's new `valueKey:'gc'` path: store
+10034, OK tax-free Friday 2024-08-02. `qsr_daily_activity_rollup` event-day transactions = 1210;
+baseline = median of 8 other Fridays within ±28 days
+(`[1134,1177,1184,1200,1209,1220,1237,1251]`) = 1204.5. Lift = 1210/1204.5 − 1 = **+0.46%**, one of
+9 observations averaged into that store's tax-free GC lift.
+
+**Step 5 — event/promo, measured against what's already tagged (not invented):**
+`scripts/measure-tagged-event-impact.mjs` (new), reading `org_events` directly.
+- `event` (Festival/Fair): **16 tagged rows, 11 distinct stores**, only 16 gradable (date_end ≤ today)
+  — genuinely sparse, as the dispatch predicted. 9 of 11 stores clear `n≥2`; 2 (n=1 each) are
+  correctly skipped by the minN gate and contribute no row.
+- `promo` (LTO/Promo): **756 tagged rows across all 27 stores**, all gradable (2025-01-07 →
+  2025-12-02) — solid coverage, not sparse. 26/27 stores measured (n≈28 each); one store's data
+  didn't reach a gradable pair.
+
+**Step 6 — weather, scoped and flagged, not built as a new rule:** same script pools the 10
+`EVENT_TYPES` weather subtypes (`winter_storm`/`snow`/`ice`/`tornado`/`t_storm`/`sev_weather`/
+`high_winds`/`flood`/`hurricane`/generic `weather`) into the panel's single 🌧 row — a *pooling*
+choice on top of only-ever-tagged data, not an invented threshold rule.
+**Measured: production currently has ZERO `org_events` rows of ANY weather subtype** (paginated the
+full 2,708-row table and filtered — confirmed, not assumed). So this run correctly wrote **0**
+weather rows and printed an honest "no tagged weather events found" rather than fabricating
+anything. **This pooling choice (one bucket vs. per-subtype rows) is the piece flagged for owner
+confirmation** the dispatch asked for — it does not block anything else in this dispatch, and
+nothing here invents a rain-inches/wind-speed threshold.
+
+**Step 7 — UI wiring:** `EventImpactPanel` (`src/views/event-impact.js`) gained GC Home %/GC Away %
+(or GC % for non-sports types) columns beside the existing sales columns, same
+input/measured/n/reset pattern; reset restores both sales and GC to their measured seed; a store can
+carry one lift without the other and the row still renders correctly (no fabricated "gc null" text).
+`loadEventImpact`/`saveEventImpact` (`src/lib/supabase.js`) extended additively —
+`saveEventImpact` only sends `gc_*` keys when the payload actually carries a gc field, so an
+ordinary sales-only edit never round-trips an explicit null over a real measured GC value it never
+touched.
+
+**Step 8 — actually run against production (not just `--dry`), confirmed real rows landed:**
+```
+event_impact total rows now: 189
+{ sports: 26, tax_free: 26, black_friday: 25, small_biz_sat: 25,
+  cyber_monday: 25, holiday: 27, event: 9, promo: 26 }
+```
+(up from 26, all `sports`, before this dispatch). Weather correctly contributed 0 — see step 6. GC
+columns did not persist this run — see step 3's blocker; sales-lift-only rows landed via the
+documented fallback, and GC will land with the same command once the owner applies the migration.
+Spot-checked one written row directly (`loc=3708, event_type=holiday`): `home_impact=-6.08%`,
+`measured_home=-6.65%`, `n_home=70` — matches the dry-run console output exactly, and the
+`measured_home` figure is consistent with (not identical to, since it's an average of 70 days) the
+hand-verified MLK-Day single-observation lift of -1.55% above.
+
+**Verification bar — status:**
+- ✅ Retail dry run read before assuming either direction; retail types actually run (not just dry).
+- ✅ GC source confirmed + real depth measured (2024-01-01+), not assumed from schema comments.
+- ✅ Holiday spot-checked by hand against live data (MLK Day 2025, store 3708) — plus a second
+  hand-check on the new GC path (OK tax-free Friday 2024, store 10034).
+- ✅ `EventImpactPanel` renders GC columns (verified via 4 new render tests exercising the actual
+  component, not just the engine — matches this repo's "would this verification still pass if the
+  change were reverted" standard) and independent sales/GC coverage renders correctly.
+- ✅ Sports (Home/Away) confirmed unchanged: still exactly 26 rows post-dispatch, and no script this
+  dispatch wrote ever targets `event_type='sports'` — logically guaranteed untouched, not just
+  observed.
+- ✅ `npm run build` clean; full suite **2310/2310** green (36 new/extended cases in
+  `retail-events.test.js`, 4 new render tests in `event-impact-panel.test.js`).
+- ⚠️ GC lift is measured, spot-checked, and wired everywhere it needs to be, but **not yet visible
+  live in the panel** — it needs the one owner SQL-editor step named in step 3, after which the
+  exact same 3 scripts (no code change) land it.
+
+**Pending owner action:**
+1. Run `supabase/schema-event-impact-gc.sql` in the Supabase SQL editor (idempotent, ~2 minutes).
+2. Re-run `node scripts/measure-retail-impact.mjs && node scripts/measure-holiday-impact.mjs && node
+   scripts/measure-tagged-event-impact.mjs` (no `--dry`) to land GC lift for all measured types.
+3. Confirm (or redirect) the weather-pooling choice from step 6 — one 🌧 bucket across all 10 tagged
+   subtypes vs. a per-subtype breakdown. Not blocking; either answer is a small follow-up once
+   weather events actually get tagged (there are none in production today).
