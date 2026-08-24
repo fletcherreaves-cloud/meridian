@@ -80,6 +80,24 @@ export const FINDING_RULES = {
   salesRecord: { category: 'Sales',      icon: '🏆', dollars: () => 0 },
   forecast:    { category: 'Forecast',   icon: '🔮', dollars: () => 0 },
 
+  // ── Dispatch #94 Phase 3 — tol-based findings (engine/pipeline.js's TOL_FINDING_ACTION) ──
+  // dollars:()=>0 throughout: these are graded against tolStatusesForStore's own {cur,off}
+  // pair (engine/tolerance-status.js), which is NOT on the p/t objects this fn receives — the
+  // same "no dollar basis available from p/t" situation r2p/posOver/parking already document
+  // above. Wiring a real dollar figure through would mean threading tolStatusesForStore's
+  // result into attachFindingMeta's call site, which is real follow-on work, not a guess to
+  // paper over here.
+  tolKvst:    { category: 'Speed',     icon: '🚗', dollars: () => 0 },
+  tolCrewlbr: { category: 'Labor',     icon: '👥', dollars: () => 0 },
+  tolBaseFd:  { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolFob:     { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolFobTot:  { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolCompW:   { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolRawW:    { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolCond:    { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolEmpMl:   { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+  tolStatV:   { category: 'Food Cost', icon: '🍟', dollars: () => 0 },
+
   // ── Sales decline (Needs Attention fix) ──
   // dollars() takes only (p,t), and the trailing-28-day gap buildBrief computes for these two
   // is local to its own closure (via matchedVsLY, not derivable from p/t alone) — so it can't

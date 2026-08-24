@@ -172,3 +172,146 @@ unaffected (no new imports).
 
 **Phase 2 (district-wide rollup) and Phase 3 (Coaching-engine findings) are unstarted** — separate
 follow-on dispatches, per the sequencing above.
+
+## Resolution (Phase 2 + Phase 3, shipped together, one PR)
+
+**Shared prerequisite, done first:** Phase 1's `statusCol` and its supporting `METRICS`/`SPEC`/
+`valuesForLoc`/`_fobMonthly`/`mergedT` were entirely local to `UnifiedTargetsPanel`'s function
+body in `store-dash.js`. Phase 2 needed the same "current vs official target" values Phase 1's
+table shows (or the rollup could disagree with the KPI table a user just looked at — the exact
+"two panels disagree on one number" class CLAUDE.md's Dev Rules calls out), so rather than
+re-deriving a second value-sourcing path, all of it moved verbatim into a new
+`src/engine/tolerance-status.js`: `TOL_METRICS` (the 24-metric declarations), `TOL_SPEC` (the
+per-metric auto/emailed-first source map), `tolValuesForLoc`/`tolFobMonthly`/`tolMergedTarget`
+(the value/target resolvers), and `tolStatus` (Phase 1's exact `tol`/`tol*2` comparison, now the
+one implementation). `UnifiedTargetsPanel` imports all of it instead of declaring its own copies
+— `statusCol`/`statusIcon` are now two-line wrappers that call `tolStatus` and translate its
+`'green'|'yellow'|'red'` back to the hex color + icon the render code already expected, so
+nothing downstream of them changed. `dispatch-94-statuscol-tol.test.js` (Phase 1's own render
+test) still passes unchanged after the move.
+
+### Phase 2 — `ToleranceRollupTile`, At A Glance
+
+New tile in `src/views/at-a-glance.js` (🎯, added to `DEF_SECS` right after `sage`, same
+toggleable-section / card pattern as `SageRunsTile`, which the dispatch pointed at as the
+model). Computes `tolStatusesDistrict(ds, allLocs)` once per `ds`/`stores` change (memoized),
+buckets the non-green results by metric and by store, and shows: a red/yellow headline count,
+a plain-language "worst miss" line (CLAUDE.md's "say the number and the decision" voice rule —
+e.g. *"Comp Waste % is the most common miss — 3 stores out of tolerance (1 red)."*), a per-metric
+breakdown (top 6), and the 3 stores with the most misses. `TOL_ROLLUP_METRICS` (the subset of
+`TOL_METRICS` with both a real `offKey` and a `tol`, 15 of the 24) is what the rollup — and the
+KPI table's actual coloring — iterates; the other 9 have no official-target field and were never
+colored by Phase 1 either.
+
+**Verified against real district data** (service-role read, `ctrl_rows`/`labor_rows`/`ops_rows`/
+`fob_rows`/`daily_glimpse_daily`/`qsr_fob`, all 27 stores, last 60 days, run through the actual
+`tolStatusesDistrict` — not a hand reasoned-through estimate): **270 of 405 possible store×metric
+checks resolved** (both a current value and an official target present) — **190 green (70%) /
+41 yellow (15%) / 39 red (14%)**. Non-degenerate on every metric that had real data:
+
+| metric | green | yellow | red |
+|---|---|---|---|
+| Base Food % | 0 | 0 | **27** (see caveat below) |
+| OEPE | 5 | 14 | 8 |
+| Total Food Cost % | 17 | 7 | 3 |
+| Stat Var % | 21 | 5 | 1 |
+| Labor % | 22 | 5 | 0 |
+| FOB (Over Base) % | 25 | 2 | 0 |
+| Comp Waste % | 25 | 2 | 0 |
+| Raw Waste % | 21 | 6 | 0 |
+| Condiment % / Emp Meal % | 27 | 0 | 0 |
+
+(`park`, `kvst`, `r2p`, `tpph`, `crewlbr` resolved 0 checks in this pull — sparse/no recent data
+in the manual-only sources those chains prefer, a real data-coverage gap, not a rollup bug.)
+
+27 of 27 stores had at least one non-green metric (driven almost entirely by the Base Food %
+caveat below); worst individual stores by red count: `35064` (4 red, 2 yellow), `43701` (3 red,
+2 yellow).
+
+**Tests** (`src/__tests__/dispatch-94-phase2-rollup.test.js`, renders the real `AtAGlance`
+consumer, not `tolStatusesDistrict` in isolation): a real Comp Waste % target from
+`DEFAULT_TARGETS`, pushed 3×tol past it, produces exactly "1 red / 0 yellow" in the tile's
+Comp Waste % row — **and** `UnifiedTargetsPanel` rendered against the identical `ds`, switched to
+the same store via its own store selector, shows "Off Track" (red) for the same row, i.e. the two
+panels are asserted to agree on the same data in one test, not just each individually plausible.
+A second test confirms the tile's all-clear message when the same metric is exactly on target.
+
+### Phase 3 — tol-based Coaching findings
+
+`engine/pipeline.js`'s `buildBrief(p,t,os,cs,pSales,pLY,ds,loc)` already had `ds`/`loc` in scope
+(it just wasn't using them for this), so the new block calls `tolStatusesForStore(ds, loc)` and
+pushes one `f.push({rule:'tolX', t:'crit'|'watch', m:'...'})` per out-of-tolerance metric —
+**same shape, same push idiom, same `crit`/`watch`/`ok` vocabulary every other finding in this
+function already uses** (no new severity scheme). Deliberately **only** for metrics with no
+existing dedicated finding above it in `buildBrief` — `oepe`/`labor`/`park`/`tpph`/`r2p` keep
+their own richer, store-specific-context rules; a metric absent from the new block's
+`TOL_FINDING_ACTION` map is excluded on purpose, not an oversight, so nothing gets double-flagged
+under two different thresholds. That leaves 10 real, previously-uncovered metrics gaining
+findings for the first time: `kvst`, `crewlbr`, `baseFd`, `fob`, `fobTot`, `compW`, `rawW`,
+`cond`, `empMl`, `statV` — the entire FOB waste family had **zero** finding coverage before this,
+meaning an out-of-tolerance store on Comp Waste or Stat Var could never surface in
+`GMCoachingBrief` or `AttentionPanel`, however far out of range it was.
+
+Ten new rule ids registered in `finding-rules.js`'s `FINDING_RULES` (category `'Food Cost'` for
+the 8 FOB metrics, `'Labor'` for `crewlbr`, `'Speed'` for `kvst`) so `attachFindingMeta` gives
+them real categorization instead of falling back to `'Other'`. `dollars:()=>0` on all ten,
+same-precedent as `r2p`/`posOver`/`parking` already in that file — a real dollar figure would
+need `tolStatusesForStore`'s `{cur,off}` pair threaded into `attachFindingMeta`'s call site,
+which the `p`/`t` objects it receives don't carry; flagged as real follow-on work, not guessed.
+
+Each push writes its rule id and `t` as a plain literal (not built from a template) specifically
+so `finding-rules.test.js`'s static source-text scan — which every pre-existing finding in this
+function is already held to — can see these ten the same way; a templated/interpolated rule id
+would be invisible to that guard and defeat its purpose.
+
+**Verified end-to-end against real district data through the actual `buildStore`/`buildBrief`
+consumer** (not `tolStatusesForStore` called in isolation — per this repo's "would this
+verification still pass if reverted" rule, the bar has to touch the call site): fed the same
+27-store live pull Phase 2 measured against into `buildStore(loc, ds, settings)` for the 3
+worst-red stores it found. All three produced real new findings, correctly severity-graded and
+categorized:
+
+- `35064`: `tolBaseFd`(crit), `tolFob`(watch), `tolFobTot`(crit), `tolCompW`(watch),
+  `tolStatV`(crit) — 5 of 7 total findings for this store were previously invisible.
+- `43701`: `tolBaseFd`(crit), `tolFobTot`(crit), `tolRawW`(watch) — 3 of 5.
+- `5183`: `tolBaseFd`(crit), `tolStatV`(watch) — 2 of 3.
+
+**Tests** (`src/__tests__/dispatch-94-phase3-findings.test.js`, calls the real `buildStore`, which
+internally calls `buildBrief` + `attachFindingMeta` — the exact path `store.findings` reaches
+`GMCoachingBrief` through): a red Comp Waste % produces a `tolCompW` finding with `t:'crit'`,
+`severity:'crit'`, `category:'Food Cost'`, and the expected prose; a yellow one produces `watch`
+not `crit`; an on-target one produces no `tolCompW` finding at all; and a fourth test asserts
+`tolOepe`/`tolLabor`/`tolPark`/`tolTpph`/`tolR2p` never appear (the five deliberately-excluded,
+already-covered metrics).
+
+### ⚠️ Caveat surfaced by this verification, not fixed here
+
+**Base Food % reads red on literally every store measured (27/27, 0 green, 0 yellow).** This is
+not a Phase 2/3 bug — it's Phase 1's existing `baseFd` wiring (verbatim-moved, not touched) hitting
+real data for the first time at scale. The qsr_fob-derived current value
+(`totalBaseFood / prodSalesAmt`, ~23–24% on every store checked) does not appear to be the same
+quantity as the official target field `tFOBBase` (~4.0–4.6% on every store checked) — a ~5x gap,
+consistent and directional on every single store, which looks like a metric-definition mismatch
+(target field measuring a FOB subcomponent vs. computed value measuring full theoretical food
+cost) rather than genuine operational underperformance. **Not fixed here** — correcting it needs
+someone who knows which of the two sides (the `qsr_fob.total_base_food` mapping, or what
+`tFOBBase` in the targets file is actually supposed to represent) is wrong, which is outside this
+dispatch's scope (wire `tol`, roll it up, feed Coaching — not audit metric definitions). Flagged
+prominently, including in the tile's own real-data rollup and the Phase 3 findings it produces
+(`tolBaseFd` fires CRITICAL on every store with FOB data), so it's visible rather than silently
+producing noise that trains the recipient to ignore it.
+
+### Verification summary
+
+`npm test`: **2258/2258** (2252 baseline + 6 new: 2 Phase 2, 4 Phase 3), `npm run build` clean.
+Two pre-existing tests updated for the `tolerance-status.js` move (both legitimate maintenance of
+the move itself, not scope creep): `metric-direction.test.js`'s panel-source-sniffing checks now
+read `tolerance-status.js` instead of `store-dash.js` for the ids that moved; `ratchet-raw-metric-
+rows.test.js`'s `CEILING` lowered 161→158 per its own documented remediation (3 raw-row reads
+left `src/views/` when the value-sourcing code moved into `src/engine/`).
+
+Entry chunk: **519.46 KB gzip** (baseline 516.38 KB, **+3.08 KB**) — `engine/pipeline.js` is
+eager-imported by `App.js`, and Phase 3's `tolStatusesForStore` call pulls `tolerance-status.js`
+into that same eager path. Headroom **328.68 KB of the 850 KB budget** (was 331.76 KB). Well
+within budget; noted per CLAUDE.md's "measure before/after, report both numbers" rule rather than
+left unmeasured.
