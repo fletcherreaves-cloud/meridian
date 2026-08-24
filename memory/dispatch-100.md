@@ -68,6 +68,30 @@ query param (better if the unbounded load is itself a performance concern — ch
 live Supabase pull before deciding this is necessary; don't add server-side date filtering
 speculatively if the table is small enough that a client-side filter is simpler and sufficient).
 
+## Gap 3 — rule-filter pills carry no short descriptor (owner, added 2026-08-24, after this
+dispatch was already in progress)
+
+*"In the pills that label the policy (Cash-001, cash-002, etc.) Add a small brief descriptor to
+the pill such as Cash +/-, Overring, Refund, Promo, etc. Do this for Cash and Inv pills."*
+
+The rule-filter pill row (`SecurityPanel`, search `pill('All', !ruleFilter` — a different pill row
+than Gap 1's location selector) currently renders each pill as just the bare rule ID
+(`r.ruleId + (r.active ? '' : ' ⏸')`, e.g. "CASH-001"). The fuller plain-language `description`
+(from `security_rules.description`, dispatch #46's rewrite) only shows separately, below the row,
+for whichever single rule is currently selected/first. The owner wants a short (1-3 word) descriptor
+visible on every pill, for both Cash (`CASH-001/002/003/004`) and Inventory (`INV-001/002`) rules —
+the full rule set, named in `RULE_UNITS` (~line 175).
+
+**Derive each tag from the rule's own already-loaded `description`, don't guess a mapping.** The
+owner's examples ("Cash +/-", "Overring", "Refund", "Promo") illustrate the desired *style* — short,
+plain, scannable — not a confirmed rule-ID-to-label mapping. Every rule already has a real
+plain-language description in the database; summarize that accurately into 1-3 words per rule
+rather than assigning one of the owner's example labels to whichever rule ID seems closest.
+
+Keep this additive to the existing description line below the row (which still shows the fuller
+text for the selected rule) — the inline pill tag is a shorter, always-visible summary, not a
+replacement.
+
 ## Verification bar
 
 - Render the actual `SecurityPanel` consumer (not an isolated `scopeMatches`/loader unit test) and
