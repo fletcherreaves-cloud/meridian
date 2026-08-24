@@ -88,7 +88,10 @@ const REPORT_PAGE = 'https://v3.myqsrsoft.com/reports/mcd/controlsCash/registerA
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 const SEC_CH_UA = '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"';
 
-const STORE_NSNS = [
+// Exported alongside runSecurityEvents so scripts/probe-security-token-injection.mjs can compute
+// the loop's true total unit count instead of hardcoding a store count that would silently drift
+// from this list.
+export const STORE_NSNS = [
   3708, 5183, 5985, 6178, 6838, 6972, 10034, 10422, 10915, 11657, 13113, 18213,
   20475, 24471, 29760, 31357, 32525, 33109, 33222, 33704, 34222, 35064, 35242,
   37566, 38609, 43380, 43701,
@@ -252,7 +255,12 @@ async function resolveToken(token, forceRemint) {
 // calls to one per DISTINCT name; doing that once at the end over the whole run's rows means far
 // fewer round trips than the 216+ units this run makes, at estate-wide volumes the brief itself
 // sized at "low tens of thousands of rows/day" (still trivial to hold in memory for one process).
-async function runSecurityEvents(token, dates, tracker) {
+// Exported so scripts/probe-security-token-injection.mjs (dispatch #91) can drive this EXACT
+// loop -- the same per-unit fetchOne() calls, the same resolveToken()/re-mint-on-401 ladder, the
+// same identityFp() log line -- with a pre-minted token string injected in place of the
+// getFreshToken function, instead of a hand-rolled replica of the loop that could quietly drift
+// from what production actually does.
+export async function runSecurityEvents(token, dates, tracker) {
   const collected = [];
   const coveredStores = new Set();
   let loggedShapeThisRun = false;

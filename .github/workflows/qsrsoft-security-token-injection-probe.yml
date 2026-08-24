@@ -1,0 +1,57 @@
+name: QSRSoft Security Token-Injection Probe
+
+# Dispatch #91, test 1 of 2. Read-only, workflow_dispatch-only, no Supabase writes.
+#
+# Runs on the SAME self-hosted runner as qsrsoft-security-events-pull.yml (the only network
+# context that has ever returned 200 from api.security.myqsrsoft.com's event_details route --
+# see memory/finding-qsrsoft-security-entitlement-request-2026-08-22.md). A hosted runner would
+# not test anything: every hosted-runner call to this route has already 403'd regardless of
+# token, so running this probe on ubuntu-latest would just reproduce that, not answer the
+# token-vs-context question dispatch #91 asks.
+#
+# scripts/probe-security-token-injection.mjs: mints a token, proves it works with one direct
+# fetchOne() call (reproducing "case E"), then hands that SAME token string to
+# runSecurityEvents() -- the pull's own unmodified loop -- in place of getFreshToken. Read-only:
+# never calls saveSecurityEventRows()/Supabase. Never logs a token value, sub, eID,
+# cognito:username, or employee name -- only unit labels (date:loc:eventToken) and row counts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'YYYY-MM-DD for the loop run (default: today, UTC)'
+        required: false
+        default: ''
+      store:
+        description: 'Unpadded NSN for the step-1 baseline call (default: 3708, the pull''s own first store)'
+        required: false
+        default: ''
+      event_token:
+        description: 'event_token for the step-1 baseline call (default: all_promo)'
+        required: false
+        default: ''
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, qsr-security]
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Token-injection probe (dispatch #91, test 1)
+        run: node scripts/probe-security-token-injection.mjs
+        env:
+          QSRSOFT_USERNAME:      ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:      ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_INJECT_DATE:   ${{ github.event.inputs.date        || '' }}
+          QSRSOFT_INJECT_STORE:  ${{ github.event.inputs.store       || '' }}
+          QSRSOFT_INJECT_TOKEN:  ${{ github.event.inputs.event_token || '' }}
