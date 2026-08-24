@@ -270,6 +270,14 @@ actual code — this note nearly caused a duplicate reimplementation.
   actually emits — it caught a real error on every round of the 2026-08-08 data-contract work
   (four chains would otherwise have shipped as silent zeros). Its field list used to be typed by
   hand and went stale four times in that one day.
+- **An agent session's environment is fixed at container start (measured 2026-08-24).** A variable
+  added to the environment config *while a session is running* never reaches that session — the
+  container was provisioned before it existed. Checked directly: after the owner saved
+  `SUPABASE_SERVICE_ROLE_KEY`, `env` in the running session still showed only
+  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`, twice, minutes apart, and nothing had been written
+  to disk either. **A new session picks it up; the current one never will** — so do not re-check,
+  re-save, or debug it. Hand off instead (`memory/handoff-2026-08-24-service-role.md` is the
+  template: what is blocked, the exact queries, and the traps that would break them).
 - **Cite anchors, not line numbers (standing rule, five incidents in two days ending 2026-08-24).**
   A `file.js:NNN` citation is a claim that rots the moment anyone edits above it, and this repo
   carries **589 of them** (522 in `memory/`, 67 in `src/` comments). Measured: #627 corrected a

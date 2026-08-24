@@ -195,9 +195,49 @@ lists, per the standing privacy bar. Whoever files the QSRSoft ticket already ha
 `QSRSOFT_USERNAME` account and org membership to reference; it does not need to be written down
 here.
 
+## 🔴 APPENDED 2026-08-24 — the last measurement, which lived only in a commit body
+
+The probe work that followed this file (#616–#623) ended somewhere stranger than "entitlement,"
+and the result was recorded **only in the `#623` commit body**. Anyone reading *this* file — the
+one a future session would actually open — would not have found it. Captured here now.
+
+**The final state: `fetchOne()` returns 200 from the probe and 403 from the pull's own loop.**
+Same machine, same shell, seconds apart, on a byte-identical request. From `#623`'s commit body,
+verified by computation rather than inspection:
+
+- `storeRefFromLoc(String(3708))` is `'3708'` — identical in both paths.
+- `EVENT_TOKENS[0]` is `'all_promo'` — identical.
+- `dateList('2026-08-22','2026-08-22')` is `['2026-08-22']` — identical.
+- `main()`'s preamble touches only Supabase before the first fetch.
+- The probe **imports the pull module**, so it shares every module-level import and any side
+  effect they carry — which is what makes the difference so hard to localize.
+
+Case E — the probe calling the pull's *actual* `fetchOne`, not a reconstruction (`#622`) —
+returned **200 with 87 rows**. The pull returned 403 seconds later with a wire dump showing the
+same URL, the same body, the same token hash, age and TTL.
+
+**Twelve hypotheses eliminated** across #616–#623, including: the `Origin`/`Referer` headers (the
+DAR pull sets them too and works), body scope, rate limiting, the store, the date, token expiry,
+`[object Object]` token stringification, and re-mint-on-403 (which was itself a real bug —
+`#616` — that throttled Cognito with ~216 re-mints in under two minutes).
+
+**Recommended next steps, in order, neither of which is more instrumentation:**
+1. **A token-injection test** — run the pull with a token captured from the probe's own successful
+   call, to establish whether the credential or the caller is the variable.
+2. **A packet capture** — if injection does not separate them, the difference is below the code
+   and only the wire will show it.
+
+⚠️ **Do not add another round of logging.** Reading the source has been exhausted; `#623` was
+already the "stop reading, dump the wire" step and it showed the two requests as identical.
+
 ## Next step
 
 Send this to QSRSoft support (or whatever the account's usual support channel is) as an
 entitlement request for the automation account, referencing the org id and route above. No further
 code investigation in this repo will resolve it — see `memory/dispatch-63.md`'s resolution section
 for the full measurement trail if support asks for more detail.
+
+⚠️ **That recommendation predates the appended block above and is now in tension with it.** If
+`fetchOne` can return 200 at all from this account, on this machine, with a minted token, then a
+blanket entitlement gap is not the whole story. **Run the token-injection test before filing the
+support ticket** — the answer changes what to ask them for.
