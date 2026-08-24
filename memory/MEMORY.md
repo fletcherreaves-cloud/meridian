@@ -131,14 +131,6 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   the key). Two standing rules were added to CLAUDE.md across these: **cite anchors, not line
   numbers** (589 `file:NNN` cites in this repo; correcting one mints another the next PR breaks)
   and **an agent session's environment is fixed at container start**.
-- **🔴 Open, unfixed, and easy to lose:**
-  [`finding-pagedparallel-newest-first-note`](finding-pagedparallel-newest-first-note-2026-08-24.md)
-  — `_pagedParallel`'s partial-failure banner says "newest-first keeps the recent days", which is
-  backwards for `loadDtHistory`, the first `ascending:true` caller. Raised on PR #633, not fixed
-  there. Also: the security-events 403's **real** final state is now appended to
-  [`finding-qsrsoft-security-entitlement-request`](finding-qsrsoft-security-entitlement-request-2026-08-22.md)
-  — it had lived only in the `#623` commit body, and it puts that file's own "file a support
-  ticket" recommendation in tension. Run the token-injection test first.
 - **✅ SHIPPED (2026-08-22): [Dispatch #73 — Visit Patterns' "overdue" amber fired on 87% of normal visits](dispatch-73.md)** —
   **NEWEST.** A flat `daysSinceLast > 60` never measured against real data: on 190 real CFV
   inter-visit intervals (all 27 stores, 2023-01→2026-08) it fired on 166/190 (87.4%) — a store
