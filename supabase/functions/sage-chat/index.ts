@@ -7,6 +7,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { qualifiesForRestricted, searchTerms, buildMemorySearchResult } from './memory-kb.js';
 import { aggregateLifelenzLabor, LIFELENZ_LABOR_NOTE } from './lifelenz-labor-agg.js';
+import { fetchAllRows } from './paginate.js';
+import { PROMO_ROI_UNRELIABLE_NOTE } from './promo-roi-note.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -278,16 +280,15 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const endDate   = (input.end_date   as string) || startDate;
     const locs      = input.locs as string[] | undefined;
 
-    let q = sb
-      .from('qsr_daily_activity')
-      .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt')
-      .gte('dt', startDate)
-      .lte('dt', endDate)
-      .limit(100000);
-
-    if (locs?.length && !allowed) q = q.in('loc', locs); // restricted users always query all → scoped below
-
-    const { data, error } = await q;
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('qsr_daily_activity')
+        .select('loc,dt,product_sales,proj_sales_dollars,dt_untilserve,dt_trans_cnt')
+        .gte('dt', startDate)
+        .lte('dt', endDate);
+      if (locs?.length && !allowed) q = q.in('loc', locs); // restricted users always query all → scoped below
+      return q;
+    });
     if (error) return `Database error: ${error.message}`;
     if (!data?.length) return `No sales data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}. The data may not be available yet for this date range.`;
 
@@ -340,25 +341,24 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const endDate   = (input.end_date   as string) || startDate;
     const locs      = input.locs as string[] | undefined;
 
-    let q = sb
-      .from('lifelenz_schedule')
-      // ⚠️ sch_crew / need_crew DO NOT EXIST on this table. Selecting them makes PostgREST
-      // reject the whole query with `column lifelenz_schedule.sch_crew does not exist`, so the
-      // tool returns a database error and SAGE drops LifeLenz from its answer entirely.
-      //
-      // They were never used either -- the aggregation reads only sch_vlh and need_vlh. The
-      // dead columns rode along invisibly while the table NAME was also wrong (#598): a 404 on
-      // `lifelenz_schedules` masked them, and fixing the name surfaced them as a 400. Verified
-      // against live Supabase 2026-08-23, column by column: sch_vlh 200, need_vlh 200,
-      // sch_crew 400, need_crew 400.
-      .select('loc,date,sch_vlh,need_vlh')
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .limit(50000);
-
-    if (locs?.length && !allowed) q = q.in('loc', locs);
-
-    const { data, error } = await q;
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('lifelenz_schedule')
+        // ⚠️ sch_crew / need_crew DO NOT EXIST on this table. Selecting them makes PostgREST
+        // reject the whole query with `column lifelenz_schedule.sch_crew does not exist`, so the
+        // tool returns a database error and SAGE drops LifeLenz from its answer entirely.
+        //
+        // They were never used either -- the aggregation reads only sch_vlh and need_vlh. The
+        // dead columns rode along invisibly while the table NAME was also wrong (#598): a 404 on
+        // `lifelenz_schedules` masked them, and fixing the name surfaced them as a 400. Verified
+        // against live Supabase 2026-08-23, column by column: sch_vlh 200, need_vlh 200,
+        // sch_crew 400, need_crew 400.
+        .select('loc,date,sch_vlh,need_vlh')
+        .gte('date', startDate)
+        .lte('date', endDate);
+      if (locs?.length && !allowed) q = q.in('loc', locs);
+      return q;
+    });
     if (error) return `Database error: ${error.message}`;
     if (!data?.length) return `No LifeLenz schedule data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}.`;
 
@@ -383,17 +383,16 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const locs      = input.locs   as string[] | undefined;
     const source    = input.source as string   | undefined;
 
-    let q = sb
-      .from('forecast_snapshots')
-      .select('loc,dt,source,forecast_sales,actual_sales,mape')
-      .gte('dt', startDate)
-      .lte('dt', endDate)
-      .limit(100000);
-
-    if (locs?.length && !allowed) q = q.in('loc', locs);
-    if (source)        q = q.eq('source', source);
-
-    const { data, error } = await q;
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('forecast_snapshots')
+        .select('loc,dt,source,forecast_sales,actual_sales,mape')
+        .gte('dt', startDate)
+        .lte('dt', endDate);
+      if (locs?.length && !allowed) q = q.in('loc', locs);
+      if (source)        q = q.eq('source', source);
+      return q;
+    });
     if (error) {
       // Table may not exist yet
       if (error.message?.includes('does not exist') || error.code === '42P01') {
@@ -452,8 +451,8 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const marginRate = typeof input.margin_rate === 'number' ? input.margin_rate : 0.35;
 
     const [g, c] = await Promise.all([
-      sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate).limit(100000),
-      sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate).limit(100000),
+      fetchAllRows(() => sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate)),
+      fetchAllRows(() => sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate)),
     ]);
     if (g.error) return `Database error: ${g.error.message}`;
     if (!g.data?.length) return `No Daily Glimpse promo data found for ${startDate} to ${endDate}. Promo/discount ROI needs several weeks of daily data.`;
@@ -489,7 +488,13 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       promo: { district: promo.district, stores: scP.stores },
       discount: { district: discount.district, stores: scD.stores },
       ...(scP.restricted ? { access: 'restricted', scope_note: SCOPE_NOTE } : {}),
-      note: 'Matched-day lift — promo-heavy vs promo-light days within each weekday. verdict: pays=sales lift covers the give-away, costs=it does not, neutral=~break-even, n/a=no extra give-away. extra_sales/giveaway/gross_profit are per heavy day, $. This is a directional screen, NOT a randomized experiment — state that caveat when answering.',
+      // #85 #5: memory/finding-promo-roi-denominator-bias-2026-08-23.md's later measurement found
+      // the shipped split (promo_amt) is ALSO endogenous -- spend scaling with traffic sorts busy
+      // days into "heavy" before sales is compared, reproducing +16.5% mean lift / 27 of 27
+      // stores "pays" at a TRUE effect of zero. Every verdict this tool returns is currently
+      // unverified; the note says so up front so SAGE doesn't repeat the mistake of trusting a
+      // confidently-positive-looking number.
+      note: PROMO_ROI_UNRELIABLE_NOTE,
     });
   }
 
