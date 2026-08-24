@@ -1,6 +1,6 @@
 ---
 name: dispatch-86
-description: True Sum/Sum for ratio metrics. rankPerformers averages daily ratios -- average-of-averages, the thing the standing rule forbids -- and 10 of its 16 metrics are ratios. Deferred from #580 with the owner's "just remember please." Half the work is already done: 5 of the 10 already declare their numerator and denominator in METRIC_SOURCES.derive.inputs. Additive API only; do NOT change metricAvg, it has 70 call sites.
+description: ✅ SHIPPED 2026-08-24 as PR #628 — do NOT re-dispatch. Resolution is written into memory/dispatch-77.md, not this file. Original brief: True Sum/Sum for ratio metrics. rankPerformers averages daily ratios -- average-of-averages, the thing the standing rule forbids -- and 10 of its 16 metrics are ratios. Deferred from #580 with the owner's "just remember please." Half the work is already done: 5 of the 10 already declare their numerator and denominator in METRIC_SOURCES.derive.inputs. Additive API only; do NOT change metricAvg, it has 70 call sites.
 sensitivity: open
 metadata:
   node_type: memory
@@ -8,6 +8,29 @@ metadata:
 ---
 
 # Dispatch #86 — ratio metrics are averaged, not Σ/Σ
+
+> ## ✅ SHIPPED — do not re-dispatch this file
+>
+> Delivered 2026-08-24 as **PR #628** (`8582659` on `main`), and the engineer wrote the
+> **Resolution into `memory/dispatch-77.md`**, not here — #86 was merged (#627) after the work
+> had already started off #77's deferred section. Read #77's Resolution for what actually
+> shipped; everything below this banner is the original brief, kept for the measurements and the
+> reasoning, not as open work.
+>
+> What landed: `derive.kind:'ratio'` as a curated marker, `metricSumRatio()`, `rankPerformers`
+> adopting Σ/Σ as a whole-ranking switch, and three new numerator/denominator chains
+> (`netSalesAmt`, `discAmt`, `tRedAAmt`/`tRedBAmt`). `metricAvg` untouched, as instructed.
+>
+> **Step 3's escalation was not needed.** The three "unknown denominators" turned out to be
+> knowable without a guess: `loadOpsCashSheet` already divided `discount_amt`,
+> `treds_before_amt`, `treds_after_amt` and `cash_over_or_short` by `net_sales_amt` inline, so
+> the new derives reuse the *identical* numerator and denominator and are equal to the stored
+> percentages by construction — a stronger result than the "reproduce the stored %" bar this
+> dispatch set.
+>
+> **One thing this dispatch did NOT anticipate, still open — see `## PM verification` at the
+> bottom of this file: `avgCheck`'s new derive uses a different sales basis than the sources it
+> backs up.**
 
 **Reads first:** `memory/dispatch-77.md`'s two deferred sections (the `📌 DEFERRED from #580`
 block at the end, and the tolerance-bands block — **that second one is NOT this dispatch**, it is
@@ -173,3 +196,78 @@ Revert-sensitive, and it must touch the **call site**:
   nothing checks — the same rot as the inert `section:` fields (25 of 82 panels), the 24 dead
   `tol:` values in `store-dash.js`, and #52's 15 schema-drift columns. Every `parts:` entry needs
   a test that exercises it.
+
+---
+
+## PM verification (2026-08-24, post-merge of #628)
+
+Verified against the merged tree at `8582659`, not the summary: suite **2189/2189**, build clean
+(518.32 KB gzip eager, 850 KB budget). `metricAvg`'s body is byte-identical — the DO NOT held.
+`rankPerformers`'s whole-ranking switch is implemented as specified: Σ/Σ is adopted only when
+`sumRows.every(r => r != null)`, so a ranking never mixes bases.
+
+**The three unknown denominators were resolved correctly, and better than this dispatch asked
+for.** `supabase.js:2373-2384` already computed `discPct`/`tRedAPct`/`tRedBPct`/`cashOSPct` as
+`<amt> ÷ net_sales_amt` inline; the new chains alias those exact raw columns, so the derives are
+identical to the stored percentages by construction rather than merely reproducing them. No guess
+was made and no escalation was needed.
+
+### 🔎 A false alarm worth recording, because the instrument lied convincingly
+
+Probing live Supabase with the anon key, `select=net_sales_amt` on `qsr_cash_sheet` returned
+**`42703 column does not exist`** — which reads as "the entire Σ/Σ fix is built on a column that
+isn't there." It is not. `qsr_cash_sheet` is `(loc, dt, metrics jsonb, updated_at)`
+(`schema.sql:1536`) and `_loadOpsTable` spreads `...(r.metrics || {})` onto every row, so the
+dollar fields are **JSONB keys**, not SQL columns. The probe was calibrated first (a real column
+times out under RLS, a fake one returns 42703), which is what made the false reading credible.
+**Calibrating the instrument is not the same as pointing it at the right layer** — worth
+remembering the next time a live probe contradicts working code.
+
+### ⚠️ Open finding: `avgCheck`'s derive mixes sales bases
+
+`avgCheck` gained `derive: { inputs: ['sales','gc'], kind:'ratio' }`. The `sales` key resolves
+`qsrActSummaryRows.sales`, which is **`product_sales`** (`supabase.js:2025`). The four precomputed
+sources it backs up (`glimpseRows`/`cashRows`/`salesLedgerRows`/`laborRows`) carry an avg check
+computed on **all-net-sales** (`glimpseRows.avgCheck` ← `daily_glimpse_daily.avg_check`, alongside
+`all_net_sales`). Product sales and all-net-sales are different bases.
+
+Derives are gap-fill only (`if (into[dk] != null) continue`), so no single day is wrong — but
+**across a period the series can mix the two bases**, day by day, depending on which days a
+precomputed source covers. That is a smaller version of exactly the trap the same PR carefully
+avoided for the controls metrics, where it declined to use `sales` on the stated grounds that it
+is "DAR product sales, a DIFFERENT basis." The reasoning was right there and was not applied here.
+
+Two things make it worth attention rather than a shrug:
+
+1. **It is already live everywhere**, not just on the leaderboard. `golden-dataset.test.js`'s
+   `metricAvg` snapshot moved `avgCheck` from `null` to `10.7456`, so every one of the ~70
+   `metricAvg` call sites that reads `avgCheck` now gets a value where it previously got nothing.
+2. **A basis wobble of a few percent on a ~$10.75 check is ~$0.30**, which is the order of
+   magnitude that flips two close stores in a leaderboard — the precise failure this whole
+   workstream exists to remove.
+
+**Not fixed here, deliberately.** The clean fix is a net-sales numerator, which means widening
+`netSalesAmt`'s chain beyond `opsCashRows` (`glimpseRows.allNetSales` is the obvious candidate) —
+and that also changes the denominator coverage of the four controls derives. That is a design
+call with a blast radius, not a 1am edit. **Options:** widen `netSalesAmt` and repoint
+`avgCheck`; or leave the derive and document the basis mix in the code the way `compWaste`'s
+secondary imperfection already is. Owner/engineer's call.
+
+⚠️ Unmeasured: I could not size the actual product-sales-vs-net-sales gap from this environment
+(anon key gets zero rows under RLS). The $0.30 figure above is an order-of-magnitude estimate from
+a few-percent basis difference, **not a measurement** — measure it before deciding how urgent this
+is.
+
+### Fourth stale reference in two days
+
+This dispatch asked the engineer to flag a fourth rather than silently fix it. Here it is:
+`loadOpsCashSheet`'s header comment said *"T-Red % denominators are left for a reconciliation
+pass"* — true when written, false since #37 added them on the same `net_sales_amt` denominator as
+`discPct`. Corrected in the same commit as this note.
+
+**That is four in two days** (two CLAUDE.md rules in #626, the `:309-315` caveat cite in #627,
+this one). They share one shape: a comment that was accurate when written, describing code a
+later change moved, with nothing tying the two together. **This is now a pattern, and the next
+move is an audit rather than a fifth one-off correction** — a sweep of the repo's confident,
+measured-sounding claims (file:line cites, "N of M" counts, "X is not yet done") against current
+code. Worth its own dispatch; not started.

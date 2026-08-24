@@ -2354,8 +2354,11 @@ async function _loadOpsTable(table, daysBack, extra) {
   } catch (e) { console.warn(`[${table}] load skipped:`, e?.message || e); return []; }
 }
 // Controls — also derives discPct = discount $ ÷ net sales (reconciled to the report:
-// 174.15/10076.96 = 1.73% for 3708 2026-07-29). T-Red % denominators are left for a
-// reconciliation pass (qty/amt are exact and already flat on the row).
+// 174.15/10076.96 = 1.73% for 3708 2026-07-29).
+// ⚠️ This comment used to end "T-Red % denominators are left for a reconciliation pass" — that
+// was true when written and stopped being true under #37, which added tRedBPct/tRedAPct below on
+// the SAME net_sales_amt denominator as discPct. Left stale, it reads as an open caveat on
+// numbers that are in fact settled, and #628 built four Sum/Sum derives on exactly these legs.
 export const loadOpsCashSheet = async (d = 45) => {
   const rows = await _loadOpsTable('qsr_cash_sheet', d);
   return rows.map(r => ({
