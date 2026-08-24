@@ -13,29 +13,33 @@
 //    DIMENSION ONLY, by construction: no cross-store rollup happens anywhere in this file, so
 //    there is no district aggregate to get wrong. Each store is compared against other stores
 //    on its own values.
-//    ⚠️ IT IS NOT SATISFIED ACROSS DAYS, and that half of the rule really does bite here.
-//    `value` below is the plain MEAN OF DAILY VALUES. For a count metric (sales, gc, otHrs)
-//    that is correct. For a RATIO it is an average-of-averages -- and 10 of the 16 metrics in
-//    PERFORMER_METRICS are ratios: tpph, avgCheck, laborPct, cashOSPct, tRedAPct, tRedBPct,
-//    discPct, compWaste, rawWaste, statVar. A low-volume day weighs the same as a high-volume
-//    one, so this is NOT the period figure a P&L would show.
-//    The size of the gap is already MEASURED in this repo, independently of this panel --
-//    metric-source.js's ROLLUP CAVEAT: SPPH on store 5985 for 2026-08 is $70.18/hr as
-//    mean-of-daily vs $67.04/hr as the true Sum/Sum, a 4.5% gap. That same comment says a
-//    consumer needing a true weighted rollup must sum the parts itself. This panel IS that
-//    consumer and does not yet do it.
-//    Consequence to keep in mind: on those 10 metrics a leaderboard can mis-order two close
-//    stores. The UI therefore labels the figure as a daily average rather than implying the
-//    period value. Real Sum/Sum needs metricSeries to return numerator and denominator rather
-//    than the finished ratio -- deferred with the owner's approval 2026-08-23, recorded in
-//    memory/dispatch-77.md, and probably the same job as notes-57-metric-registry-plan section 4.
+//    ACROSS DAYS (dispatch #77, resolved 2026-08-24): for the 10 of 16 PERFORMER_METRICS that
+//    are ratios (tpph, avgCheck, laborPct, cashOSPct, tRedAPct, tRedBPct, discPct, compWaste,
+//    rawWaste, statVar), `value` is now the TRUE Σnumerator/Σdenominator period figure
+//    (`metricSumRatio`, engine/metric-source.js) whenever every included store's window
+//    resolves both legs -- not the mean-of-daily-ratios average-of-averages this panel shipped
+//    with. The gap that motivated fixing it was measured independently of this panel: SPPH on
+//    store 5985 for 2026-08 was $70.18/hr mean-of-daily vs $67.04/hr Sum/Sum, a 4.5% gap
+//    (metric-source.js's ROLLUP CAVEAT comment).
+//    ⚠️ It is a WHOLE-RANKING switch, never per-store: if even one included store's window can't
+//    resolve both legs (e.g. it has no auto-pulled coverage for the underlying numerator/
+//    denominator streams, only a precomputed manual ratio), the ENTIRE ranking falls back to
+//    mean-of-daily uniformly, rather than comparing one store's period total against another
+//    store's daily average -- mixing bases within one ranking would be WORSE than being
+//    uniformly approximate, since the two numbers would no longer even be the same kind of
+//    thing. `rollup: 'sum'|'mean'` on the return value says which basis this call actually used.
+//    Non-ratio metrics (sales, gc, oepe, kvst, r2p, otHrs) always return rollup:'mean' -- summing
+//    a plain count/rate metric's daily values across the window is what a period figure already
+//    IS for sales/gc/otHrs, and oepe/kvst/r2p are ratios computed upstream (by the DAR loader,
+//    supabase.js) with no numerator/denominator exposed as separate metric-source chains yet --
+//    real, larger follow-on work, not part of this dispatch. See memory/dispatch-77.md.
 //  - count-completeness: "never rank a store with 3 days of data against one with 90." Thin
 //    rows are separated out (`thinRows`), not blended into the ranked list. The floor here is a
 //    STRUCTURAL, scope-relative rule (half of the best-covered store's day-count in THIS
 //    ranking) -- unlike visit-readiness.js's CHANNEL_YEAR_MIN_N, which is a break measured in a
 //    real distribution, there is no equivalent distribution to measure for an arbitrary
 //    metric/window/scope combination, so this is documented as a floor, not a finding.
-import { metricSeries, metricDirection, rankableMetricKeys } from './metric-source.js';
+import { metricSeries, metricDirection, rankableMetricKeys, metricSumRatio, rollupCapableMetricKeys } from './metric-source.js';
 
 export const THIN_RELATIVE_FLOOR = 0.5;
 
@@ -67,20 +71,38 @@ export const PERFORMER_METRICS = [
 // Pure ranking. `locs` is the already-scope-resolved store list (caller's job, via
 // locationSelectorLocs); `range` is {s,e}. Returns:
 //   { direction: 'lower'|'higher'|null, rows: [{loc,n,value,thin}] sorted best-first,
-//     thinRows: same shape, unsorted, held out of the ranked competition }
-// A metric with no resolved direction returns direction:null and empty rows/thinRows --
-// the caller must not fall back to a guessed order.
+//     thinRows: same shape, unsorted, held out of the ranked competition,
+//     rollup: 'sum'|'mean'|null }
+// A metric with no resolved direction returns direction:null, rollup:null and empty
+// rows/thinRows -- the caller must not fall back to a guessed order.
 export function rankPerformers(ds, { metricKey, locs, range }) {
   const direction = metricDirection(metricKey);
-  if (!direction) return { direction: null, rows: [], thinRows: [] };
+  if (!direction) return { direction: null, rows: [], thinRows: [], rollup: null };
 
-  const all = (locs || []).map(loc => {
+  // Mean-of-daily is computed for every metric regardless -- it is both the value basis for
+  // non-ratio metrics (sales, gc, otHrs, oepe, kvst, r2p) and the fallback for a ratio metric
+  // when the true Sum/Sum can't be computed for every included store (see below).
+  const meanRows = (locs || []).map(loc => {
     const series = metricSeries(ds, loc, range, metricKey);
     const vals = Object.values(series).filter(v => v != null);
     const n = vals.length;
     const value = n ? vals.reduce((a, b) => a + b, 0) / n : null;
     return { loc: String(loc), n, value };
   }).filter(r => r.value != null && r.n > 0);
+
+  let all = meanRows, rollup = 'mean';
+
+  if (rollupCapableMetricKeys().includes(metricKey) && meanRows.length) {
+    const sumRows = meanRows.map(r => {
+      const sum = metricSumRatio(ds, r.loc, range, metricKey);
+      return sum ? { loc: r.loc, n: sum.n, value: sum.value } : null;
+    });
+    // Whole-ranking switch, never per-store -- see the header comment. Only adopt Sum/Sum when
+    // it resolved for EVERY store that has any daily coverage at all; otherwise this ranking
+    // would compare one store's true period total against another store's daily average, which
+    // is a worse error than being uniformly approximate.
+    if (sumRows.every(r => r != null)) { all = sumRows; rollup = 'sum'; }
+  }
 
   const maxN = all.reduce((m, r) => Math.max(m, r.n), 0);
   const floor = Math.max(1, maxN * THIN_RELATIVE_FLOOR);
@@ -94,5 +116,5 @@ export function rankPerformers(ds, { metricKey, locs, range }) {
   rows.sort((a, b) => direction === 'lower' ? a.value - b.value : b.value - a.value);
   thinRows.sort((a, b) => b.n - a.n);
 
-  return { direction, rows, thinRows, maxN };
+  return { direction, rows, thinRows, maxN, rollup };
 }

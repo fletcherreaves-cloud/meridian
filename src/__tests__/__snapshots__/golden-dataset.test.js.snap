@@ -6,7 +6,7 @@ exports[`computed metrics are stable (pin the numbers) > district sales total fr
 
 exports[`computed metrics are stable (pin the numbers) > metricAvg over the window, per metric 1`] = `
 {
-  "avgCheck": null,
+  "avgCheck": 10.7456,
   "cashOSPct": 0,
   "gc": 1407.9524,
   "laborPct": 0.2207,

@@ -100,14 +100,19 @@ export function TopBottomPerformers({ stores, ds, onClose, onSelectStore }) {
         },
         onClick: () => setWindowId(w.id),
       }, w.label))),
-    // The figure in each row is the MEAN OF THAT STORE'S DAILY VALUES over the window, which for
-    // a ratio metric is an average-of-averages, NOT the period figure a P&L would show (the true
-    // Sum/Sum is deferred -- see engine/top-bottom-performers.js's header and
-    // memory/dispatch-77.md). Say so on the surface rather than letting a bare "Labor %" imply
-    // the period value: the standing rule is that a panel states its metric's window and basis.
+    // The figure's basis depends on result.rollup (dispatch #77, resolved 2026-08-24): 'sum'
+    // means the TRUE Σnumerator/Σdenominator period figure a P&L would show (engine/metric-
+    // source.js's metricSumRatio); 'mean' means the mean of that store's daily values, which for
+    // a ratio metric is an average-of-averages, not the period total (used for every non-ratio
+    // metric, and as the whole-ranking fallback when Sum/Sum can't resolve for every included
+    // store -- see engine/top-bottom-performers.js's header). Say so on the surface rather than
+    // letting a bare "Labor %" imply a basis it isn't: the standing rule is that a panel states
+    // its metric's window and basis.
     div({ style: { padding: '2px 14px 8px', fontSize: 9, color: 'var(--text3)', fontStyle: 'italic' } },
-      'Figures are the daily average over the window, not the period total — ratios are not '
-      + 'volume-weighted. n = days of data.'),
+      result.rollup === 'sum'
+        ? 'Figures are the true period total (Σ ÷ Σ) over the window, not a daily average. n = days used.'
+        : 'Figures are the daily average over the window, not the period total — ratios are not '
+          + 'volume-weighted. n = days of data.'),
     div({ style: { overflowY: 'auto', flex: 1 } },
       !direction ? div({ style: { padding: 20, fontSize: 12, color: 'var(--text3)' } },
         'This metric has no ruled direction yet — not rankable.') :

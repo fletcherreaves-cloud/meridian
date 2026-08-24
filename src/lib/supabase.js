@@ -2360,6 +2360,16 @@ export const loadOpsCashSheet = async (d = 45) => {
   const rows = await _loadOpsTable('qsr_cash_sheet', d);
   return rows.map(r => ({
     ...r,
+    // Net sales $ + the T-Red/discount $ legs, camelCase-aliased (dispatch #77 numerator/
+    // denominator gap) — the raw snake_case columns are already on the row via the ...r spread
+    // above (same values loadOpsCashSheet's own discPct/tRedAPct/tRedBPct/cashOSPct math below
+    // already divides by), but every OTHER metric-source.js chain reads camelCase, so these
+    // give the true Sum/Sum rollup (engine/metric-source.js's metricSumRatio) an independently
+    // resolvable numerator and denominator instead of only the pre-divided percentage.
+    netSalesAmt: r.net_sales_amt != null ? Number(r.net_sales_amt) : null,
+    discAmt:     r.discount_amt != null ? Number(r.discount_amt) : null,
+    tRedAAmt:    r.treds_after_amt != null ? Number(r.treds_after_amt) : null,
+    tRedBAmt:    r.treds_before_amt != null ? Number(r.treds_before_amt) : null,
     discPct: (r.net_sales_amt > 0 && r.discount_amt != null) ? r.discount_amt / r.net_sales_amt : null,
     mealDiscAmt: (r.emp_meal_discount_amt || 0) + (r.mgr_meal_discount_amt || 0),
     // T-Reds Before/After % + drawer opens (#37) — closes the stale-Controls gap for these
