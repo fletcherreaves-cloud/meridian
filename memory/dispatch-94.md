@@ -111,3 +111,64 @@ scope block or delay shipping phase 1's fix.
 - Do not invent a new finding-severity scheme for Phase 3 — match `buildBrief`'s existing
   crit/watch/ok convention.
 - Do not guess the yellow-band multiplier without checking it against real per-store data first.
+
+## Resolution (Phase 1, shipped)
+
+**Shipped:** `statusCol` in `UnifiedTargetsPanel` (`src/views/store-dash.js`) now compares
+`Math.abs(cur-off)` against `m.tol`: green if `<= tol`, yellow if `<= tol*2`, red beyond.
+`statusIcon` needed no change (derives from `statusCol`'s return value already, as expected).
+`metCol` was not touched. `tol` was not added as a second/parallel indicator — it replaced the
+old relative-band comparison at the same call site.
+
+### Multiplier chosen: **2×**, picked from real data, not guessed
+
+Pulled live district data via `SUPABASE_SERVICE_ROLE_KEY` (the 2026-08-24 key rotation is
+resolved — service-role reads worked cleanly against `daily_glimpse_daily`, `sales_ledger_daily`,
+and `qsr_fob`; see the corrected "true state" paragraph elsewhere in this file). Computed
+last-28-day store averages for OEPE, Labor %, Avg Check, and five tight-tolerance FOB metrics
+(Comp Waste %, Raw Waste %, Condiment %, Emp Meal %, Stat Var %) across all 27 stores, compared
+each against its real `DEFAULT_TARGETS` official target, and tabulated the green/yellow/red split
+the *old* 5%/15%-relative scheme produced vs. what a `tol`-based scheme produces at multipliers
+2×/3×/4×/5× (n=216 metric/store pairs across the 8 metrics):
+
+| scheme | Green | Yellow | Red |
+|---|---|---|---|
+| old (5%/15% relative) | 105 (49%) | 45 (21%) | **66 (31%)** |
+| new, mult=2 | 163 (75%) | 38 (18%) | 15 (7%) |
+| new, mult=3 | 163 (75%) | 47 (22%) | 6 (3%) |
+| new, mult=4 or 5 | 163 (75%) | 52 (24%) | 1 (0.5%) |
+
+The old scheme's 31%-red is the bug made visible: the four tight-tolerance FOB metrics alone
+carried 54 of its 66 reds (Comp Waste 14/27, Raw Waste 15/27, Emp Meal 12/27, Stat Var 13/27 —
+ordinary noise around a target measured in tenths of a percentage point, reading as "off track"),
+while $-scale Avg Check never went red even once (0/27) because $0.25 is a small relative
+fraction of a ~$11 check. That's exactly the cross-scale miscalibration the dispatch describes.
+
+Multiplier 2× was chosen because it's the only candidate that keeps a real, non-degenerate red
+band: 3×/4×/5× collapse red to near-zero (3–6 stores total, one metric — OEPE — carrying almost
+all of it), which stops the color from communicating anything actionable. 2× keeps meaningful
+separation on every metric tested (e.g. OEPE 6G/10Y/11R, Comp Waste 24G/2Y/1R, Stat Var
+21G/5Y/1R) without ever going degenerate in either direction (never all-green, never all-red).
+
+### Verification bar — a concrete disagreement, confirmed more sensible
+
+Comp Waste %, store `10915`: real last-28-day current **0.281%** vs. real official target
+**0.200%** (`tCompWaste`). Old scheme: relative gap `(0.00281-0.002)/0.002 = 40.5%` → past the
+15% band → **red ("Off Track")**. New scheme: absolute gap `0.081` percentage points, tol is `0.1`
+percentage points (`tol:.001`) → within tol → **green ("On Target")**. The new read is the
+sensible one: a store missing a target that's itself only ~0.2% of sales by eight-hundredths of a
+percentage point is noise, not a red flag — the old scheme was flagging normal day-to-day
+variance as "off track" purely because the target itself is small.
+
+This case (same shape, self-computed against the real `DEFAULT_TARGETS` so it can't drift stale)
+is asserted in `src/__tests__/dispatch-94-statuscol-tol.test.js`, which renders the actual
+`UnifiedTargetsPanel` consumer (not `statusCol` in isolation) and checks the rendered "Comp Waste
+%" row reads "On Target" — satisfying this repo's "would this verification still pass if
+reverted" bar, since reverting either the threshold math or the table's wiring to it fails the
+render assertion.
+
+`npm test` (2236 tests, 214 files) and `npm run build` both pass clean; entry-chunk size
+unaffected (no new imports).
+
+**Phase 2 (district-wide rollup) and Phase 3 (Coaching-engine findings) are unstarted** — separate
+follow-on dispatches, per the sequencing above.
