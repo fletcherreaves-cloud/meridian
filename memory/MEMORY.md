@@ -84,7 +84,21 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #96 — Condiment class isn't recipe-bound at McDonald's; stop gating it on `active_in_recipe`](dispatch-96.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #95 — security-events pull: wire-trace found nothing fixable, resilience shipped anyway](dispatch-95.md)** —
+  **Start here.** Track A: a wire-level trace (TLS session/cipher/connection-reuse/exact header
+  bytes, via `node:diagnostics_channel` — `tcpdump` isn't usable on the runner, no passwordless
+  `sudo`) across 3 live runs / 45 trials found **zero successes and no field that correlates with
+  the 403s** — a real, stronger negative result than dispatch #91's own mixed 403/200/200 split,
+  pointing at a backend-side cause outside this repo's reach. Track B shipped regardless: pull
+  frequency 1×/day → every 2 hours (run-level correlation confirmed first, no per-request retry
+  added), idempotency verified live against the real table before the frequency change, and a
+  **materially worse true picture surfaced**: `qsr_security_events` has **zero rows, right now**
+  — the one prior "success" in dispatch #91's history was re-examined via its job log and was the
+  pre-rebuild code's silent-zero-day bug (slash-dated `2026/08/22`, 0 rows, exit 0 green), not a
+  real pull. Real historical success rate is **0%, not ~10%**. Rolling per-day coverage
+  (`coveredDays/windowDays`, not min/max) is now visible in Data Manager. **Follow-up needed after
+  a few days on the new cadence:** confirm `coveredDays` has moved off 0.
+- **📋 (2026-08-24): [Dispatch #96 — Condiment class isn't recipe-bound at McDonald's; stop gating it on `active_in_recipe`](dispatch-96.md)** —
   **Start here.** `active_in_recipe`/`recipe_item` read false for 986/996 Condiment rows
   district-wide, with **zero exceptions ever true** — not a QSRSoft data bug, owner-confirmed
   structural: condiments are never recipe-bound at McDonald's (costed by usage-per-1000, not a
