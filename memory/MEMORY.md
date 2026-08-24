@@ -84,6 +84,29 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔑 HANDOFF (2026-08-24): [service-role key installed — two questions unblocked](handoff-2026-08-24-service-role.md)** —
+  **NEWEST. Start here if you are a fresh session.** The owner installed
+  `SUPABASE_SERVICE_ROLE_KEY`; a running session's environment is fixed at container start, so the
+  session that asked for it could never see it. Carries the two threads that were blocked on live
+  data, **with the SQL and the two traps that would silently break it** (loc zero-padding, hourly
+  grain): does `qsr_fob` reach August (decides whether #633 fixed the Food Cost bug or a backfill
+  is needed), and how big is the `avgCheck` product-sales-vs-net-sales basis gap. **Read its
+  operating rules before using the key — reads only, never echo the value.**
+- **📋 The 2026-08-23/24 arc, in order** — `dispatch-85` (SAGE 1000-row truncation) →
+  `dispatch-86` (Σ/Σ ratio rollups; **shipped as #628 under the #77 label**, banner at its top) →
+  `dispatch-87` (residual test gaps + the cite-anchors rule) → `dispatch-88` (three notes-67 bugs)
+  → `dispatch-89` (**the agent env cannot read live data**, and item 4's owner decision to install
+  the key). Two standing rules were added to CLAUDE.md across these: **cite anchors, not line
+  numbers** (589 `file:NNN` cites in this repo; correcting one mints another the next PR breaks)
+  and **an agent session's environment is fixed at container start**.
+- **🔴 Open, unfixed, and easy to lose:**
+  [`finding-pagedparallel-newest-first-note`](finding-pagedparallel-newest-first-note-2026-08-24.md)
+  — `_pagedParallel`'s partial-failure banner says "newest-first keeps the recent days", which is
+  backwards for `loadDtHistory`, the first `ascending:true` caller. Raised on PR #633, not fixed
+  there. Also: the security-events 403's **real** final state is now appended to
+  [`finding-qsrsoft-security-entitlement-request`](finding-qsrsoft-security-entitlement-request-2026-08-22.md)
+  — it had lived only in the `#623` commit body, and it puts that file's own "file a support
+  ticket" recommendation in tension. Run the token-injection test first.
 - **✅ SHIPPED (2026-08-22): [Dispatch #73 — Visit Patterns' "overdue" amber fired on 87% of normal visits](dispatch-73.md)** —
   **NEWEST.** A flat `daysSinceLast > 60` never measured against real data: on 190 real CFV
   inter-visit intervals (all 27 stores, 2023-01→2026-08) it fired on 166/190 (87.4%) — a store
