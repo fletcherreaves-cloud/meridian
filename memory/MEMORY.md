@@ -84,15 +84,36 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #91 — QSRSoft security-events 403, the token-injection test](dispatch-91.md)** —
-  **Start here.** The investigation has narrowed to one bizarre fact: within one process, on one
-  machine, `fetchOne()` called directly returns 200, but the pull's own loop calling what looks
-  like the identical request returns 403, seconds apart, byte-identical wire dump. Twelve other
-  hypotheses (auth flow, source IP, entitlement, rate limiting, token type, and more) are already
-  eliminated — do not re-test them. Two remaining moves, in order: a token-injection test (run the
-  pull with a token captured from the probe's own successful call), then a packet capture if that
-  doesn't separate it. **Do not file a QSRSoft support ticket** until this dispatch's answer is in
-  — it changes what to even ask for.
+- **📋 NEWEST (2026-08-24): [Dispatch #94 — wire up `tol:`, then roll it up district-wide and into Coaching](dispatch-94.md)** —
+  **Start here.** `store-dash.js` declares `tol:` on 24 metrics and nothing reads it — the KPI
+  table actually colors rows via a hardcoded 5%/15%-relative-to-target band (`statusCol`), which
+  treats every metric's scale the same regardless of what it measures. Owner-decided scope:
+  **Phase 1** replaces the relative band with `tol` as an absolute per-metric threshold (ship this
+  alone first); **Phase 2** rolls up a district-wide out-of-tolerance summary; **Phase 3** feeds it
+  into the Coaching engine's findings pipeline. Phase 1 must be correct and merged before 2/3 start.
+- **📋 (2026-08-24): [Dispatch #92 — SAGE's forecast-bias claim was unsupportable by its own tool](dispatch-92.md)** —
+  **Start here.** SAGE told the owner "-6.0%, 27 of 27 stores under" and recommended a
+  $42K–$85K/mo district-wide schedule correction on that basis. Measured false on both counts
+  (24/27, -2.50%, not 27/27 and -6.0%) — and the root cause is structural: `query_forecast_snapshots`
+  fetches `forecast_sales`/`actual_sales` and then discards them, aggregating only the unsigned
+  `mape` field. SAGE has never had signed-bias data available to answer a directional question
+  correctly. Fix: add signed bias + over/under counts to the tool, not just correct the number.
+- **📋 (2026-08-24): [Dispatch #93 — LifeLenz vs Controls need-model disagreement, full district](dispatch-93.md)** —
+  Extends dispatch #90's two-store spot check to all 27: district avg +2.9 h/day (Controls) vs
+  +43.7 h/day (LifeLenz), **8 of 27 stores flip direction entirely**, and where they agree the
+  ratio ranges 0.02×–12.6× (not fixed — rules out a correction factor for good). `vlh_guide` config
+  and OK/FL market both checked and ruled out as explanations. Investigation, not a scoped fix —
+  next candidates are per-store volume, other `store_vlh_config` fields, and whether `need_vlh` is
+  measuring a genuinely different quantity than the Controls basis rather than a miscalibrated
+  version of the same one.
+- **⚠️ (2026-08-24): [Dispatch #91 — QSRSoft security-events 403](dispatch-91.md) — UPDATED, premise overturned, owner decision needed.**
+  The token-injection test (#652) ran live three times on the self-hosted runner. Run 1 (403)
+  conflated two variables (different store/date for baseline vs injection); runs 2–3, controlled
+  on the identical unit, **both succeeded (200)**. **The failure is not reliably reproducible** —
+  1 failure / 2 successes on one exact request, ~5 minutes apart, same identity. This overturns the
+  dispatch's original "token vs. context" decision table; **do not proceed to a packet capture** on
+  the strength of run 1 alone. Three next-step options recommended, cheapest first (just re-run the
+  real production pull and see if it's simply working now) — **owner's call which to take.**
 - **✅ SHIPPED & LIVE-VERIFIED (2026-08-24): [Dispatch #90 — SAGE's OT window mis-ranks stores; labor-% basis SETTLED](dispatch-90.md)** —
   **NEWEST, fully closed.** SAGE's labor % (crew/punched, excluding salaried managers) is confirmed
   CORRECT and matches `#327` — do not "fix" it to include managers. The real bug, now fixed: SAGE's
