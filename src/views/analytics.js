@@ -227,13 +227,39 @@ const FOB_COMP=[
 ];
 
 function computeFOBMetrics(fobRows, allTargets, selLoc, selMonth){
-  const rows=(fobRows||[]).filter(r=>{
+  const monthRows=(fobRows||[]).filter(r=>{
     if(r.sales<=0) return false;
     if(selLoc!=='all'&&r.loc!==selLoc) return false;
     if(selMonth&&r.date){const ym=r.date.toISOString().slice(0,7);if(ym!==selMonth)return false;}
     return true;
   });
-  if(!rows.length) return null;
+  if(!monthRows.length) return null;
+  // Dispatch #102 — qsr_fob (and a manual Ops-Report FOB sheet with a real per-row Business Date
+  // column, per parseFOBData) both carry ONE ROW PER (loc, date), but the dollar fields on that
+  // row are a PERIOD-TO-DATE snapshot as of that date, not a daily increment — the same QSRSoft
+  // FOB report re-published under every date already pulled/uploaded this month. Summing every
+  // row therefore adds the same monthly total to itself once per row (measured 24x for a
+  // 23-elapsed-day month). fobSnapshotByStore (engine/eom-inventory.js) already established the
+  // fix for this exact row shape elsewhere in the codebase — keep only the LATEST-dated row per
+  // loc before aggregating. Mirrored here rather than imported: fobSnapshotByStore's own
+  // signature works off the raw qsr_fob $ field names (compWasteAmt, prodSalesAmt, …), while
+  // `monthRows` here is this panel's already-normalized ratio shape (compWaste as a %, cloud AND
+  // manual sources merged by fobRowsEff) — the reusable part is the SELECTION rule (latest date
+  // wins, one row survives per loc), which is what's duplicated below.
+  // Safe for BOTH sources without telling them apart: fobRowsEff (its construction, ~"cloudFobRows.map")
+  // never mixes cloud and manual rows for the same (loc, month) — a month is either fully covered by
+  // cloud's daily snapshots or, when the cloud has no row for it at all, filled entirely by manual
+  // rows — so grouping by loc alone within this already-month-filtered set is equivalent to grouping
+  // by (loc, month) for either source. And where a source genuinely already had one row per (loc,
+  // month) (e.g. a period-summary manual upload with no Business Date column), collapsing to "latest"
+  // is a no-op — there's only one row to pick.
+  const latestByLoc={};
+  monthRows.forEach(r=>{
+    const k=r.date?r.date.toISOString().slice(0,10):'';
+    const cur=latestByLoc[r.loc];
+    if(!cur||k>cur.key) latestByLoc[r.loc]={row:r,key:k};
+  });
+  const rows=Object.values(latestByLoc).map(v=>v.row);
   const totalSales=rows.reduce((a,r)=>a+r.sales,0);
   const locTotals={}; // for per-location breakdown
   rows.forEach(r=>{if(!locTotals[r.loc])locTotals[r.loc]={sales:0,rows:[]};locTotals[r.loc].sales+=r.sales;locTotals[r.loc].rows.push(r);});
