@@ -126,3 +126,66 @@ shipping" lesson).
   close.** 24/27 is not 27/27, and a claim's direction/scope being wrong is not rescued by its
   magnitude being coincidentally close — that coincidence is exactly what made this convincing
   enough to almost trigger a real district-wide schedule change.
+
+## Resolution
+
+**Fixed at the tool/data layer, per the dispatch's own bar — not a system-prompt patch.**
+`query_forecast_snapshots` now computes and returns signed bias alongside the existing mape.
+The aggregation was pulled into a new shared module,
+`supabase/functions/sage-chat/forecast-snapshots-agg.js` (same pattern dispatch #90 used for
+`labor-summary-agg.js` — plain JS, imported by both `index.ts` and its Vitest test, so the test
+exercises the exact code the tool runs, not a re-implementation of it):
+
+- `aggregateForecastSnapshots(rows, storeNames)` — per store/source, keeps the existing `mape`
+  field untouched and adds `{source}_signed_pct_error` = mean of `(actual_sales - forecast_sales)
+  / forecast_sales` per row (same per-row basis as the mape aggregation), *100, rounded to 2dp.
+  A row with `forecast_sales` null/0 still counts toward `mape` but is excluded from the signed
+  average rather than corrupting it; a store with zero usable rows gets no signed field at all
+  (not a false 0).
+- `districtForecastStats(stores)` — per source: `distAvgMape` (unchanged, now numeric not
+  string), `distAvgSigned` (mean of each store's own signed average — store-then-district, same
+  basis as the existing mape district average, never a flat row average), and `storesUnderOver`
+  (`{under, over}` counts).
+- `index.ts`'s `query_forecast_snapshots` now returns `district_avg_signed_pct_error` and
+  `district_stores_under_over` alongside the existing `district_avg_mape`, and the tool's `note`
+  field states the sign convention explicitly (negative = actual under forecast) so a future
+  reader can't reinvent this confusion in reverse.
+- Tool `description` and `src/views/sage.js`'s system-prompt tool docs (item 4) were updated:
+  SAGE is now told this tool is the source for directional questions, and explicitly told it must
+  never infer direction or a store count from `mape` alone, no matter how close the magnitude
+  looks to a suspected bias.
+- `mape` itself is untouched — same field, same value, same shape.
+
+**Independent re-verification (this session had `SUPABASE_SERVICE_ROLE_KEY` +
+`VITE_SUPABASE_URL`, no live edge-function access — same constraint as #90/#91).** Pulled
+`forecast_snapshots` directly via REST (`source=eq.ai`, `dt=gte.2026-07-25&dt=lte.2026-08-18`,
+paginated): **674 rows, 27 stores, 25 days** (one row short of a full 27×25 grid). Computing
+`(actual_sales - forecast_sales) / forecast_sales` per row, averaged per store then per district
+(same store-then-district basis `districtForecastStats` uses):
+
+| | this session's re-measurement | dispatch's original measurement |
+|---|---|---|
+| District avg signed bias | **-2.66%** | -2.50% |
+| Stores under-forecast | **24 of 27** | 24 of 27 |
+| Stores over-forecast | **3 of 27** (11657 +1.67%, 43380 +4.95%, 6972 +0.34%) | 3 of 27 (Purcell +2.04%, Atoka-Mississippi +5.09%, Ada-Country Club +0.59%) |
+
+Both inside the dispatch's -2%..-3% / 24-of-27 verification bar. The small numeric drift (row
+count 674 vs the dispatch's 809, -2.66% vs -2.50%) is exactly the expected drift from a few more
+days of snapshots accumulating between the two measurements on the same day — not a
+discrepancy, and consistent with the dispatch's own "do not hardcode -2.50%, it will drift" rule.
+This re-measurement is recorded as fixture data in
+`src/__tests__/sage-forecast-snapshots-agg.test.js`, which asserts the module reproduces it
+(district bias in -2%..-3%, exactly 24 under / 3 over, the same three stores named), plus unit
+coverage for the sign convention, the "mape alone can't distinguish two opposite-direction stores
+with identical mape" case (the actual root cause, demonstrated directly), missing-`forecast_sales`
+handling, and the note's field-naming discipline.
+
+**`npm test` (2246 tests, 214 files) and `npm run build` both pass clean.**
+
+**Still needed post-merge (owner action, cannot be done from this session):**
+`supabase functions deploy sage-chat --no-verify-jwt` to make this live, then a live SAGE
+forecast-bias question over the same window should report a signed bias in the -2%..-3% range and
+~24 of 27 stores under — the dispatch's actual verification bar. This session could not run that
+call (no network access to the live edge function, same as #90/#91's `query_labor_summary`
+verification) — a working answer is not the same as the fix shipping (#90/#647's own lesson),
+so treat this as open until someone runs that live check post-deploy.

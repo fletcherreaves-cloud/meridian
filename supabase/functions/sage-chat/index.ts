@@ -8,6 +8,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { qualifiesForRestricted, searchTerms, buildMemorySearchResult } from './memory-kb.js';
 import { aggregateLifelenzLabor, LIFELENZ_LABOR_NOTE } from './lifelenz-labor-agg.js';
 import { aggregateLaborSummary, LABOR_SUMMARY_NOTE } from './labor-summary-agg.js';
+import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_NOTE } from './forecast-snapshots-agg.js';
 import { fetchAllRows } from './paginate.js';
 import { PROMO_ROI_UNRELIABLE_NOTE } from './promo-roi-note.js';
 
@@ -133,10 +134,11 @@ Returns per-store: OT $ total, OT hours total, and Act-vs-Need hours/day (negati
   },
   {
     name: 'query_forecast_snapshots',
-    description: `Query forecast accuracy history — MAPE (mean absolute percentage error) by store, date, and forecast source.
+    description: `Query forecast accuracy history — MAPE (mean absolute percentage error) AND signed bias by store, date, and forecast source.
 Use for questions about: forecast accuracy, which forecast model is best, how accurate predictions have been, MAPE trends.
+This is also the ONLY source for DIRECTIONAL questions — "is the forecast running high or low", "how many stores are under-forecast", "should we correct schedules up or down". MAPE is unsigned by definition (it is an absolute value) and can NEVER answer a directional question, no matter how close its magnitude looks to a suspected bias — do not infer direction, a sign, or an over/under store count from mape alone. Use this tool's avg_signed_pct_error / stores_under / stores_over / district_avg_signed_pct_error fields instead.
 Sources: 'ai' = Meridian AI model, 'ly' = last-year-adjusted, 'blend' = average of ai+ly, 'di' = dialed-in manual, 'qsr' = QSRSoft projection.
-Returns per-store MAPE averages for each source over the date range.`,
+Returns per-store MAPE and signed-bias averages for each source over the date range.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -485,45 +487,19 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     }
     if (!data?.length) return `No forecast snapshot data found for ${startDate}${endDate !== startDate ? ` to ${endDate}` : ''}. Run the Forecast Accuracy backtest in Analytics to generate snapshots.`;
 
-    // Aggregate by store+source
-    const byStoreSrc: Record<string, { mapeSum: number; days: number }> = {};
-    for (const row of data) {
-      const key = `${row.loc}|${row.source}`;
-      if (!byStoreSrc[key]) byStoreSrc[key] = { mapeSum: 0, days: 0 };
-      byStoreSrc[key].mapeSum += row.mape || 0;
-      byStoreSrc[key].days++;
-    }
-
-    // Reshape to per-store, per-source summary
-    const storeMap: Record<string, Record<string, number>> = {};
-    for (const [key, v] of Object.entries(byStoreSrc)) {
-      const [loc, src] = key.split('|');
-      if (!storeMap[loc]) storeMap[loc] = {};
-      storeMap[loc][src] = +((v.mapeSum / v.days)).toFixed(2);
-    }
-
-    const stores = Object.entries(storeMap).map(([loc, srcs]) => ({
-      loc,
-      name: STORE_NAMES[loc] || `Store ${loc}`,
-      ...srcs,
-    })).sort((a, b) => (a.ai ?? a.ly ?? 99) - (b.ai ?? b.ly ?? 99));
-
-    // District averages
-    const srcNames = ['ai', 'ly', 'blend', 'di', 'qsr'];
-    const distAvg: Record<string, string | null> = {};
-    for (const src of srcNames) {
-      const vals = stores.map(s => (s as Record<string, unknown>)[src] as number).filter(v => v != null);
-      distAvg[src] = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : null;
-    }
+    const stores = aggregateForecastSnapshots(data, STORE_NAMES);
+    const { distAvgMape, distAvgSigned, storesUnderOver } = districtForecastStats(stores);
 
     const sc = applyScope(stores, allowed);
     return JSON.stringify({
       date_range: startDate === endDate ? startDate : `${startDate} to ${endDate}`,
-      district_avg_mape: distAvg,
+      district_avg_mape: distAvgMape,
+      district_avg_signed_pct_error: distAvgSigned,
+      district_stores_under_over: storesUnderOver,
       district_store_count: stores.length,
       stores: sc.stores,
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
-      note: 'mape = mean absolute % error. Lower = better. Sources: ai=Meridian AI, ly=last-year-adj, blend=(ai+ly)/2, di=dialed-in, qsr=QSRSoft scheduled projection.',
+      note: FORECAST_SNAPSHOTS_NOTE,
     });
   }
 
