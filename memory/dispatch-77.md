@@ -26,15 +26,17 @@ answer does not exist in one place, and where it does exist it disagrees.
 
 | Where | Shape | Metrics |
 |---|---|---|
-| `src/views/store-dash.js:2614-2641` | `lowerBetter` | ~23 |
-| `src/views/analytics.js:300-327` | `lowerBetter` | ~10 |
-| `src/views/analytics.js:7687-7702` | `lowerBetter` | ~16 target keys |
-| `src/engine/one-pager-data.js:404-409` | `lowerBetter` | 4 |
-| `src/views/store-dash.js:2223-2230` | ⚠️ **`higherBetter`** (the inverse flag) | several |
+| `src/views/store-dash.js`'s `UnifiedTargetsPanel` `METRICS` (the `tol:`-bearing table) | `lowerBetter` | ~23 |
+| `src/views/analytics.js`'s `CORR_PREDICTORS` array | `lowerBetter` | ~10 |
+| `src/views/analytics.js`'s target-definitions array (`tProdSales`…`tOpSupply` keys) | `lowerBetter` | ~16 target keys |
+| `src/engine/one-pager-data.js`'s `buildCurrentState` KPI array | `lowerBetter` | 4 |
+| `src/views/store-dash.js`'s `RankingView`'s local `METRICS` | ⚠️ **`higherBetter`** (the inverse flag) | several |
 
 Consumed in more places again: `above-store-onepager.js` (`printBadge`/`badge`),
-`analytics.js:1090/2297/7476`, `store-dash.js:1756/2832/2907`, `one-pager.js:346/390`,
-`engine/smart-targets-model.js`, `utils/stats.js:53` (`bestQuartile`).
+`analytics.js`'s `kpiRow`/`metLbl`/`deltaColor` functions, `store-dash.js`'s `StoreCard`'s `metCol`
+helper / `UnifiedTargetsPanel`'s gap-color and status-icon renders, `one-pager.js`'s `StateGrid` /
+`PerLocationTable`'s `cell` function, `engine/smart-targets-model.js`, `utils/stats.js`'s
+`bestQuartile`.
 
 **Meanwhile `METRIC_SOURCES` (59 keys, `src/engine/metric-source.js`) — the registry that already
 resolves every one of these metrics — encodes no direction at all.**
@@ -43,21 +45,21 @@ resolves every one of these metrics — encodes no direction at all.**
 
 | Metric | Declaration | Says |
 |---|---|---|
-| **Labor %** | `store-dash.js:2620` `lowerBetter:true` | lower is better |
-| | `store-dash.js:2223` `higherBetter:false` | lower is better (agrees) |
-| | `analytics.js:309` `lowerBetter:false` | **higher is better** |
-| **R2P** | `analytics.js:306` `lowerBetter:true` | faster is better |
-| | `store-dash.js:2229` label *"R2P (lower=better)"*, `higherBetter:false` | faster is better |
-| | `store-dash.js:2617` `lowerBetter:false` | **slower is better** |
-| **Discount %** | `store-dash.js:2632` `lowerBetter:true` | lower is better |
-| | `store-dash.js:2230` `higherBetter:false` | lower is better (agrees) |
-| | `analytics.js:324` `lowerBetter:false` | **higher is better** |
+| **Labor %** | `store-dash.js`'s `UnifiedTargetsPanel` `METRICS`, `id:'labor'` entry, `lowerBetter:true` | lower is better |
+| | `store-dash.js`'s `RankingView`'s local `METRICS`, `id:'labor'` entry, `higherBetter:false` | lower is better (agrees) |
+| | `analytics.js`'s `CORR_PREDICTORS`, `id:'labor'` entry `lowerBetter:false` | **higher is better** |
+| **R2P** | `analytics.js`'s `CORR_PREDICTORS`, `id:'r2p'` entry, `lowerBetter:true` | faster is better |
+| | `store-dash.js`'s `RankingView`'s local `METRICS`, `id:'r2p'` entry (labeled "R2P (lower=better)"), `higherBetter:false` | faster is better |
+| | `store-dash.js`'s `UnifiedTargetsPanel` `METRICS`, `id:'r2p'` entry `lowerBetter:false` | **slower is better** |
+| **Discount %** | `store-dash.js`'s `UnifiedTargetsPanel` `METRICS`, `id:'discP'` entry (labeled "Discount %"), `lowerBetter:true` | lower is better |
+| | `store-dash.js`'s `RankingView`'s local `METRICS`, `id:'disc'` entry, `higherBetter:false` | lower is better (agrees) |
+| | `analytics.js`'s `CORR_PREDICTORS`, `id:'discPct'` entry `lowerBetter:false` | **higher is better** |
 
 ⚠️ **These are contradictions, NOT confirmed bugs. Do not "fix" them on this dispatch's say-so.**
 Per the standing rule that a reviewer's root cause is a hypothesis until reproduced — including
 this PM's — two of the three have a plausible innocent reading:
 
-- ~~**Labor % in `analytics.js:309` may be deliberate.**~~ ✅ **RESOLVED — see OWNER RULING below.
+- ~~**Labor % in `analytics.js`'s `CORR_PREDICTORS`, `id:'labor'` entry may be deliberate.**~~ ✅ **RESOLVED — see OWNER RULING below.
   It is wrong.** Kept for the record of what was considered: its `action`/`note` fields argue labor
   is genuinely two-sided (*"too lean hurts service quality; too heavy compresses margin"*), which
   read as a plausible editorial stance rather than a typo. The owner overrode that reading.
@@ -76,7 +78,7 @@ checking whether they visibly do — that is a one-screenshot question and it be
 > *"at the time, and for reasons of context, it may have been thought to be right. Regardless,
 > labor has a target, for simplification, at/below is good and over is bad."*
 
-So `analytics.js:309` (`lowerBetter:false`) **is wrong** and there is **no two-sided third state**
+So `analytics.js`'s `CORR_PREDICTORS`, `id:'labor'` entry (`lowerBetter:false`) **is wrong** and there is **no two-sided third state**
 for labor. The `action`/`note` text there stays — the nuance it describes is real and worth keeping
 as prose — but it does not change the metric's direction.
 
@@ -85,16 +87,17 @@ the other two contradictions (both have targets in `DEFAULT_TARGETS`):
 
 | Metric | Target key | Resolution | Wrong site |
 |---|---|---|---|
-| Labor % | `tLabor` | **lower-better** (owner-ruled) | `analytics.js:309` |
-| R2P | `tR2p` | **lower-better** (proposed) | `store-dash.js:2617` |
-| Discount % | `tDiscCoupPct` | **lower-better** (owner-ruled 2026-08-23) | `analytics.js:324` |
+| Labor % | `tLabor` | **lower-better** (owner-ruled) | `analytics.js`'s `CORR_PREDICTORS`, `id:'labor'` entry |
+| R2P | `tR2p` | **lower-better** (proposed) | `store-dash.js`'s `UnifiedTargetsPanel` `METRICS`, `id:'r2p'` entry |
+| Discount % | `tDiscCoupPct` | **lower-better** (owner-ruled 2026-08-23) | `analytics.js`'s `CORR_PREDICTORS`, `id:'discPct'` entry |
 
 ✅ **Labor % and Discount % are both owner-ruled** (Discount confirmed 2026-08-23: *"discount -
 lower is better"*). **R2P is this dispatch applying the same principle**, but independently
-corroborated twice over: `metric-source.js:75-77` derives it as
+corroborated twice over: `metric-source.js`'s `r2p` chain comment derives it as
 `(fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt`, i.e. **seconds per transaction**, and the
-sibling entry `store-dash.js:2229` is literally labelled *"R2P (lower=better)"*. Treat R2P as
-settled unless the measurement in step 1 contradicts it.
+sibling entry `store-dash.js`'s `RankingView`'s local `METRICS`, `id:'r2p'` entry is literally
+labelled *"R2P (lower=better)"*. Treat R2P as settled unless the measurement in step 1 contradicts
+it.
 
 ⚠️ **Not every metric is lower-better.** Sales, guest count, TPPH, avg check and KVS-healthy are
 at-or-**above**-target. The ruling settles the cost/speed family; the full step-1 table below is
@@ -132,8 +135,8 @@ Only now. Pick metric → scope (All / State / Org / Patch / Store, the standing
 window → ranked list, best and worst ends.
 
 Reuses what exists — do not rebuild: `metricDaily`/`metricSeries`/`metricAvg` for auto-first
-sourcing, `vs-ly.js` for comparison basis, `Bar` (`src/views/visit-readiness.js:121`) for the house
-bar style.
+sourcing, `vs-ly.js` for comparison basis, the `Bar` component (`src/views/visit-readiness.js`) for
+the house bar style.
 
 🔴 **The hard part is honesty, not ranking.** Every one of these is already a standing rule and each
 one silently corrupts a leaderboard:
@@ -148,10 +151,10 @@ one silently corrupts a leaderboard:
 ## Placement
 
 New panel, `kind:'test-kitchen'`, and **give it its real `section:` from day one** per the standing
-rule. Do NOT put it inside the Security panel: that is `perm:'security.view'`
-(`src/app/panel-registry.js:148`), and a general analytics leaderboard must not inherit a
-loss-prevention permission. The owner's "extend" answer is read as *reuse the SubjectRow pattern*,
-not *live in that panel* — confirmed with him 2026-08-23.
+rule. Do NOT put it inside the Security panel: that is `panel-registry.js`'s `id:'security'` entry
+(`perm:'security.view'`), and a general analytics leaderboard must not inherit a loss-prevention
+permission. The owner's "extend" answer is read as *reuse the SubjectRow pattern*, not *live in
+that panel* — confirmed with him 2026-08-23.
 
 ## Verification bar
 
@@ -182,10 +185,11 @@ Owner, same message:
 **Filed as its own future item — deliberately kept out of #77** so the direction fix stays small.
 One measurement worth carrying into that conversation, found while scoping this dispatch:
 
-🔴 **A per-metric tolerance already exists and is completely dead.** `src/views/store-dash.js:2614-
-2641` declares `tol:` on **24 of its metrics** (`tol:.02` on Labor, `tol:5` on R2P, `tol:.01`,
-`tol:500`, `tol:.25`, …). `grep -rnE "\.tol\b" src/` finds **zero** reads of it anywhere in the
-app — the only `.tol` hits are unrelated `ctx.params.tol` in `eom-diagnosis.js`.
+🔴 **A per-metric tolerance already exists and is completely dead.** `src/views/store-dash.js`'s
+`UnifiedTargetsPanel` `METRICS` array declares `tol:` on **24 of its metrics** (`tol:.02` on
+Labor, `tol:5` on R2P, `tol:.01`, `tol:500`, `tol:.25`, …). `grep -rnE "\.tol\b" src/` finds
+**zero** reads of it anywhere in the app — the only `.tol` hits are unrelated `ctx.params.tol` in
+`eom-diagnosis.js`.
 
 So someone already authored two dozen tolerance values against real metrics and never wired them
 up. When the tolerance-band conversation happens, **start by reading those**: prior art from
@@ -214,7 +218,7 @@ Fixed the three wrong sites, `action`/`note` prose left untouched per the dispat
 instruction:
 - `analytics.js` `CORR_PREDICTORS`, `id:'labor'`: `lowerBetter:false` → `true`.
 - `analytics.js` `CORR_PREDICTORS`, `id:'discPct'`: `lowerBetter:false` → `true`.
-- `store-dash.js` `METRICS` (svc/labor/fob table), `id:'r2p'`: `lowerBetter:false` → `true`.
+- `store-dash.js`'s `UnifiedTargetsPanel` `METRICS` (svc/labor/fob table), `id:'r2p'`: `lowerBetter:false` → `true`.
 
 **A research sweep of the actual declaration sites found more than the dispatch named** —
 consistent with "measure, don't reason," the full picture required reading every site rather than
@@ -222,13 +226,13 @@ trusting the dispatch's own count:
 
 | Site | Shape | Notes |
 |---|---|---|
-| `store-dash.js` `METRICS` (:2614-2644, the `tol:`-bearing table) | `lowerBetter` | the 3 fixes above landed here |
-| `store-dash.js` `RankingView`'s own local `METRICS` (:2215-2233) | `higherBetter` | **already correct** for all three metrics by inspection — not a 5th disagreement, a 5th *site*, already consistent |
-| `analytics.js` `CORR_PREDICTORS` (:299-330) | `lowerBetter` | the 3 fixes above landed here too |
-| `analytics.js` target table (:7686-7702) | `lowerBetter` | already agrees (`tDiscCoupPct:true` etc.) — not touched |
-| `store-analytics.js` (:2430-2438) | `higherBetter` as `true`/`false`/**`'range'`**/**`'target'`** (non-boolean sentinels) | a third encoding style — "no fixed direction" / "target-relative", consumed by `getBest()` at :2440; not touched |
-| `at-a-glance.js` (:1453-1470) | `higherBetter` | ad-hoc, already agrees; not touched |
-| `bullseye-tile.js` (:79-97) | `higherBetter` | ad-hoc, already agrees; not touched |
+| `store-dash.js`'s `UnifiedTargetsPanel` `METRICS` (the `tol:`-bearing table) | `lowerBetter` | the 3 fixes above landed here |
+| `store-dash.js`'s `RankingView`'s own local `METRICS` | `higherBetter` | **already correct** for all three metrics by inspection — not a 5th disagreement, a 5th *site*, already consistent |
+| `analytics.js`'s `CORR_PREDICTORS` | `lowerBetter` | the 3 fixes above landed here too |
+| `analytics.js`'s target-definitions array | `lowerBetter` | already agrees (`tDiscCoupPct:true` etc.) — not touched |
+| `store-analytics.js`'s `MultiStoreComparison`'s local `METRICS` | `higherBetter` as `true`/`false`/**`'range'`**/**`'target'`** (non-boolean sentinels) | a third encoding style — "no fixed direction" / "target-relative", consumed by that same function's `getBest()` helper; not touched |
+| `at-a-glance.js`'s `lbData` leaderboard `META` object | `higherBetter` | ad-hoc, already agrees; not touched |
+| `bullseye-tile.js`'s `METRICS` object | `higherBetter` | ad-hoc, already agrees; not touched |
 | `above-store-onepager.js` `printOnePager()` | hardcoded `true`/`false` **literals per `printRow()` call**, not read off any table | a 6th, effectively-independent site — can drift silently but is currently consistent by inspection; not touched, consistent with "migration not required" |
 
 **A genuine, previously-unnamed conflict, resolved without guessing: `park`.** Two of four sites
@@ -261,9 +265,10 @@ worth seeing, and "closer to zero" isn't lower/higher. Its one declaring site (`
 **Correction to this dispatch's own "Do NOT" section: the chart.js claim is false.** It states
 "`chart.js@4.5.1` is declared, 6.3 MB installed, imported nowhere, and in zero built chunks — a
 dead dependency." Verified (per the standing "a reviewer's root cause is a hypothesis until
-reproduced" rule) and found **not dead**: `chart.js/auto` is imported in both
-`src/views/store-dash.js:3` and `src/views/dt-speedofservice.js:3`, wired through a shared
+reproduced" rule) and found **not dead**: `chart.js/auto` is imported in both `store-dash.js`'s
+and `dt-speedofservice.js`'s opening `import` blocks, wired through a shared
 `useChart(canvasRef, buildFn, deps)` hook, with 8 live `new Chart(...)`/`useChart(...)` call sites.
+
 The dispatch's own suggested grep (`from 'chart.js'`) misses the `/auto` subpath the code actually
 uses. **Chart.js was not touched.** Step 3 still didn't need it — bars + a table, per the dispatch.
 
@@ -307,8 +312,8 @@ New files:
 - `src/views/top-bottom-performers.js` — `TopBottomPerformers` panel: metric picker → scope
   (`LocationSelector`, `components/PanelControls.js`'s existing All→State→Patch→Store pill
   component, reused not rebuilt) → window preset → ranked list. Reuses `metricSeries` (auto-first
-  sourcing) and `Bar` (`visit-readiness.js:121`, now exported for this reuse) for the house meter
-  style, per the dispatch's explicit "reuse what exists."
+  sourcing) and the `Bar` component (`visit-readiness.js`, now exported for this reuse) for the
+  house meter style, per the dispatch's explicit "reuse what exists."
 
 **Count-completeness guard:** a store whose covered-day count `n` is under half the
 best-covered store's `n` **in the same ranking** is separated into a distinct "Insufficient data"

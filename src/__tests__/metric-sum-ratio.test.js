@@ -132,3 +132,89 @@ describe('metricSumRatio -- discPct (discAmt / netSalesAmt, opsCashRows-only leg
     expect(sum.value).toBeCloseTo(10 / 500, 5);
   });
 });
+
+// ── Dispatch #87 item 1 -- pin metricAvg against silent absorption ─────────────────────────────
+// #86's verification bar asked for this, #628 (the fix this file tests) correctly left metricAvg
+// untouched but shipped without a regression pin. Nothing stops a future refactor from quietly
+// redirecting metricAvg to metricSumRatio and moving numbers on metricAvg's ~70 other call sites.
+// Reuses the laborPct fixture above (dispatch #87's own instruction: one number, not a new
+// harness) rather than building a second fixture for the same disagreement.
+describe('metricAvg is pinned to mean-of-daily (dispatch #87 item 1)', () => {
+  it('returns the MEAN-of-daily answer on a fixture where mean and Sum/Sum genuinely disagree', () => {
+    const ds = {
+      opsLaborRows: [
+        { loc: '1', date: new Date('2026-08-01'), laborDollar: 50 },
+        { loc: '1', date: new Date('2026-08-02'), laborDollar: 400 },
+      ],
+      qsrActSummaryRows: [
+        { loc: '1', date: new Date('2026-08-01'), sales: 100 },
+        { loc: '1', date: new Date('2026-08-02'), sales: 2000 },
+      ],
+    };
+    const range = { s: new Date('2026-08-01'), e: new Date('2026-08-02') };
+    // mean-of-daily: (0.50 + 0.20) / 2 = 0.35 -- NOT the Sum/Sum answer, 450/2100 = 0.2142857.
+    // If a future refactor redirects metricAvg to call metricSumRatio internally, this pin fails.
+    expect(metricAvg(ds, '1', range, 'laborPct')).toBeCloseTo(0.35, 5);
+  });
+});
+
+// ── Dispatch #87 item 2 -- per-metric num/den assertions for the other 9 ratio metrics ─────────
+// Table-driven over rollupCapableMetricKeys() so a newly-marked ratio metric is covered the day
+// it's added. The risk isn't the summation (metricSumRatio is generic) -- it's a REVERSED or
+// WRONG pair in the declaration, which produces a plausible-looking number and a silently wrong
+// ranking (e.g. tpph as actHrs/gc instead of gc/actHrs). Two checks per metric:
+//   1. derive.fn(a,b) === a/b for sample values -- pins that `inputs` really is [num,den] in that
+//      order and fn is a plain division, not something with a guard that reorders it.
+//   2. A fixture where Sum/Sum != mean-of-daily, asserting the hand-computed, SEMANTICALLY
+//      correct Sum/Sum (i.e. built from what the numerator and denominator actually MEAN --
+//      gc/actHrs for TPPH, not just "whichever order derive.inputs happens to list them").
+//
+// laborPct and discPct already have dedicated arithmetic tests above; not repeated here.
+//
+// Row shape per metric: which METRIC_SOURCES chain field pair, on which raw stream, supplies both
+// legs from a single row (traced from each metric's derive.inputs against their own chains).
+const RATIO_METRIC_ROWS = {
+  tpph:      { src: 'qsrActSummaryRows', numField: 'gc',              denField: 'actHrs' },
+  avgCheck:  { src: 'qsrActSummaryRows', numField: 'sales',           denField: 'gc' },
+  cashOSPct: { src: 'opsCashRows',       numField: 'cashOSAmt',       denField: 'netSalesAmt' },
+  tRedAPct:  { src: 'opsCashRows',       numField: 'tRedAAmt',        denField: 'netSalesAmt' },
+  tRedBPct:  { src: 'opsCashRows',       numField: 'tRedBAmt',        denField: 'netSalesAmt' },
+  compWaste: { src: 'qsrFobRows',        numField: 'compWasteAmt',    denField: 'prodSalesAmt' },
+  rawWaste:  { src: 'qsrFobRows',        numField: 'rawWasteAmt',     denField: 'prodSalesAmt' },
+  statVar:   { src: 'qsrFobRows',        numField: 'statVarianceAmt', denField: 'prodSalesAmt' },
+  spph:      { src: 'qsrActSummaryRows', numField: 'sales',           denField: 'actHrs' },
+};
+
+describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {
+  it('RATIO_METRIC_ROWS covers every rollup-capable metric not already tested above', () => {
+    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct']);
+    for (const k of rollupCapableMetricKeys()) expect(covered.has(k), k).toBe(true);
+  });
+
+  for (const [key, { src, numField, denField }] of Object.entries(RATIO_METRIC_ROWS)) {
+    describe(key, () => {
+      it('derive.fn(a, b) === a / b -- pins input order and a plain division', () => {
+        const fn = METRIC_SOURCES[key].derive.fn;
+        expect(fn(7, 3)).toBeCloseTo(7 / 3, 5);
+      });
+
+      it('Sum/Sum on an uneven-volume fixture matches the semantically correct numerator/denominator, not a reversed one', () => {
+        const ds = {
+          [src]: [
+            { loc: '1', date: new Date('2026-08-01'), [numField]: 10, [denField]: 100 },
+            { loc: '1', date: new Date('2026-08-02'), [numField]: 400, [denField]: 1000 },
+          ],
+        };
+        const range = { s: new Date('2026-08-01'), e: new Date('2026-08-02') };
+        const sum = metricSumRatio(ds, '1', range, key);
+        const mean = metricAvg(ds, '1', range, key);
+        const expected = (10 + 400) / (100 + 1000); // true Sum/Sum, numField over denField
+        expect(sum.value).toBeCloseTo(expected, 5);
+        expect(sum.n).toBe(2);
+        // Also confirms this fixture actually disagrees with mean-of-daily -- a flat-volume
+        // fixture would pass under a reversed pair too and prove nothing (dispatch's own warning).
+        expect(Math.abs(mean - sum.value)).toBeGreaterThan(0.01);
+      });
+    });
+  }
+});
