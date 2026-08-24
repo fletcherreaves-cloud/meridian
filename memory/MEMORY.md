@@ -84,7 +84,20 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #104 — Top/Bottom Performers: cleaner selectors, add FOB as a rankable category](dispatch-104.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #105 — LifeLenz Bridge: date-range selector now; scope the dual-accuracy evolution](dispatch-105.md)** —
+  `LifeLenzBridgePanel` is forward-only today (next 14 days, suggests an adjustment % to type into
+  LifeLenz) — no date-range control, no historical view. **Part 1 (ready now):** add a real
+  date-range selector + Wednesday-start weekly grouping (matching LifeLenz's own native week
+  convention). **Part 2 (needs an owner decision first):** owner wants this to evolve into a dual
+  MBI+LifeLenz historical forecast-accuracy view, modeled on LifeLenz's own native Forecast Accuracy
+  Analysis screen. Meridian's own accuracy is already tracked (`forecast_snapshots`) — not blocked.
+  **LifeLenz's own forecast values are NOT automatically pulled** (confirmed by grep — only
+  scheduling/labor data is) — they only exist in Meridian via manual Labor Analysis uploads, so
+  there's no historical LifeLenz-forecast archive yet. Real next step: check whether LifeLenz's API
+  exposes a forecast-accuracy endpoint (their own UI has one) before assuming this is easy — do not
+  build the dual-accuracy UI on gappy manual-only data presented as if complete. Proposed rename:
+  **"Forecast Reconciliation."**
+- **📋 (2026-08-24): [Dispatch #104 — Top/Bottom Performers: cleaner selectors, add FOB as a rankable category](dispatch-104.md)** —
   Location selector is **already** the shared `LocationSelector` standard (same component dispatch
   #100 used for Security) — not missing, just rendering All+State+Patch+Store (30+ pills) flat and
   simultaneously; open question on whether "cleaner" means a progressive/hierarchical pill reveal
