@@ -186,3 +186,109 @@ applied, `asOf` set at or after 2026-08-21:
 - **Do not apply the class-bypass to any class other than Condiment** without the same kind of
   100%-false-forever measurement this dispatch ran — the fix is justified here because the flag
   *never* fires true, at any store, ever; that's not established for any other class.
+
+---
+
+## Resolution (2026-08-24)
+
+**Shipped exactly the suggested shape.** `src/engine/count-cycle.js`'s `isActive()`:
+
+```js
+const isActive = (r) => r.cls === 'Condiment' ? true : (r.active !== false || r.recipeItem === true);
+```
+
+Condiment bypasses the `active`/`recipe_item` check unconditionally, every other class's gating
+(including the Topic 6 `recipeItem === true` rescue) is byte-for-byte unchanged. Nothing else in
+`detectSessions`/`cycleCompliance` was touched.
+
+### The "(Deactivated)" check, measured before shipping
+
+Pulled the live `qsr_onhand` Condiment rows for `period=2026-08` (996 rows, all 27 stores,
+`SUPABASE_SERVICE_ROLE_KEY`) and searched `descr` for a "(Deactivated)"/"deactivat*" marker:
+
+- **14 of 996 rows (1.41%)** carry the marker — a real, identifiable pattern, not noise.
+- Of the dispatch's 10 stray `(null,null)` rows, **9 of 10** carry the marker (the 10th,
+  Marietta/33109's "Big Mac Sauce Cup", does not).
+- **Tecumseh's own phantom row carries the marker** (`Purple Cajun Sauce Cups (Deactivated)`,
+  `active:null`, `last_counted:2026-07-31`, `on_hand_amt:0`) — confirming it really is a retired
+  SKU, not a data glitch.
+
+Decision: **shipped the unconditional bypass as-is, no text-based exclusion added.** At 1.41% of
+rows, excluding the marker would not change any store's compliance outcome — Tecumseh's universe
+is 39 either way (38 real + 1 phantom vs. 39 real alone), and 38/39 (97.4%) or 39/39 (100%) both
+clear `COVER_FRAC` (0.75) by a wide margin. `COVER_FRAC`'s own stated purpose — tolerating a store
+not counting every last SKU — already absorbs a stray retired row at this rate. Adding a second
+filter for a change that alters zero outcomes was not worth the complexity.
+
+### Verification against the live 2026-08 `qsr_onhand` pull
+
+Pulled all 4 classes for `period=2026-08` (7,539 rows, all 27 stores) directly via Supabase REST
+with the service-role key, paginated, and ran `detectSessions`/`cycleCompliance` from both the
+pre-fix and post-fix `src/engine/count-cycle.js` against the identical row set, `asOf: '2026-08-24'`
+(current dispatch date, satisfying "on or after 2026-08-21").
+
+**1. Tecumseh (33704):**
+
+| | before | after |
+|---|---|---|
+| Condiment universe (`classTotals.Condiment`) | 1 | **39** |
+| best Condiment coverage | n/a (0%, phantom row never counted) | **38/39 = 97.4%** on the real 2026-08-21 session |
+| `lastWeekly` | none | **2026-08-21**, covers Food + Condiment + Non-Product |
+| `status` | crit | **ok** |
+| `overdue` | true | **false** |
+
+The 2026-08-21 session is a genuinely separate session from the phantom row's own 2026-07-31
+date — `detectSessions` correctly buckets the stale phantom into its own low-count spot-check
+session and grades the real 08-21 count on its own merits, at a real percentage, not a trivial
+pass.
+
+**2. The 17 previously-vacuous stores (universe was 0):** confirmed by loc —
+10034, 10422, 10915, 11657, 13113, 18213, 20475, 29760, 32525, 34222, 37566, 38609, 3708, 43380,
+5183, 6838, 6972. Post-fix universes range **34–40** items (7 distinct values across the district,
+not a repeated constant), and their best-session Condiment coverage ranges **94.6%–100%** — real,
+varied numbers, not a uniform always-covered bypass reappearing under a new name.
+
+**3. Zero regressions on Food/Paper/Non-Product, all 27 stores:**
+- `classTotals` for Food/Paper/Non-Product: **0 mismatches** before vs. after, any store.
+- `perClass` (counted/active/date) for Food/Paper/Non-Product: **0 mismatches**.
+- `paperMissing` flag: **0 mismatches**.
+- Every exception rule other than `weekly-overdue` (i.e. `mid-month-paper`, `weekly-incomplete`):
+  **0 mismatches**, any store.
+
+**4. Real before/after status movement, all 27 stores (loc: before → after):**
+10034 crit→ok, 31357 crit→ok, 33109 crit→ok, 33222 crit→ok, 33704 crit→ok, 35064 crit→ok,
+5985 crit→ok, 24471 crit→ok, 35242 crit→warn, 43701 crit→warn, 6178 crit→warn — **10 stores flip,
+all improvements**, none regress. 5183 stays crit both before and after (its issue is a real,
+separate partial Food count — 58/118 — unrelated to Condiment, same store used as the incomplete-
+count example fixture in `src/__tests__/count-cycle.test.js`). All other stores (already `ok`/`warn`
+pre-fix) are unchanged.
+
+**5. Consumer-level test coverage** (`src/__tests__/count-cycle.test.js`, new describe block
+`dispatch #96 — Condiment bypasses active/recipe_item entirely`): fixtures model Tecumseh's exact
+production shape (38 real active:false Condiment rows + the one stale active:null phantom row,
+mirroring the real `on_hand_amt`/`last_counted` values) and a 17-store-pattern fixture, both run
+through the real `detectSessions`/`cycleCompliance` consumers — not an isolated `isActive()` unit
+test — per this repo's "would this verification still pass if reverted" standing rule. A fifth
+test asserts Food/Paper still exclude an inactive, non-Topic-6 item exactly as before.
+
+The pre-existing `zero-active-item class cannot permanently block compliance` describe block used
+Condiment/Bonifay(10034) as its real-world example of the generic `universe === 0 → trivially
+covered` mechanism; since Condiment can no longer reach zero-universe post-fix, that block's
+fixture was switched to a synthetic all-inactive-Food case to keep exercising the same code path
+for the classes it still applies to (Food/Paper/Non-Product) — the mechanism itself was not
+touched, only which class demonstrates it in the test.
+
+### Test/build results
+
+- `npm test`: **2252/2252 passing, 215/215 files** (baseline before this change: also all-green;
+  no test count regression, count grew by 5 new + 0 net removed).
+- `npm run build`: clean. Eager payload **518.23 KB gzip** (budget 850 KB, 331.77 KB headroom) —
+  no new eager import, `count-cycle-panel` chunk unaffected (8.94 kB, unchanged shape).
+
+### Not touched, per the dispatch's "Do NOT" list
+
+Food/Paper/Non-Product gating, the Topic 6 rescue mechanism, Seminole/OKC's stale display-date
+issue (separate, still pending the owner's hard-refresh confirmation), and no upstream QSRSoft
+claim was made or filed — the flag is structurally inapplicable to Condiment, not broken.
+
+**Version:** v5.137 (`src/app/changelog/5.137.js`).

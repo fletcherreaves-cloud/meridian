@@ -405,17 +405,28 @@ describe('row-shape compatibility', () => {
 // undefined for 17/27 stores. The old `(totals[loc][c] || Infinity) * COVER_FRAC` threshold
 // made a 0-item class permanently uncoverable: no session, however complete, could ever
 // satisfy `has('Condiment')`, so satisfiesWeekly was mathematically impossible regardless of
-// what the store actually counted. Bonifay (10034, real store) is the fixture below.
+// what the store actually counted.
+//
+// SUPERSEDED CLASS CHOICE, 2026-08-24 (dispatch #96): this describe block originally used
+// Condiment (Bonifay, 10034) as its real-world example, because Condiment was measured to be
+// the class that actually hits zero-universe in production. Dispatch #96 fixed Condiment by a
+// different, more specific mechanism -- it now bypasses the active/recipe_item check entirely
+// (see the "dispatch #96" describe block below), so Condiment can no longer reach zero-universe
+// at all and is no longer a valid example of THIS generic mechanism. The `universe === 0 →
+// trivially covered` line in detectSessions() is still real code, still guarding Food/Paper/
+// Non-Product against the same trap should any of them ever go fully inactive district-wide, so
+// this block now demonstrates it synthetically with Food instead of retiring the coverage.
 describe('zero-active-item class cannot permanently block compliance', () => {
-  const bonifayNoActiveCondiment = (sessions = []) => {
+  const noActiveFood = (sessions = []) => {
     const rows = [
-      ...mk('10034', 'Food', 119, null),
+      // Food rows exist in the RAW data (119 of them) but every single one reads
+      // active:false, recipeItem:false -- so NONE contribute to totals['10034'].Food, which
+      // the fix must not choke on. (Synthetic: real Food data does not do this -- see the
+      // note above on why Condiment, the class that really does, moved to its own block.)
+      ...Array.from({ length: 119 }, (_, i) => ({ loc: '10034', cls: 'Food', wrin: `F${i}`, active: false, recipeItem: false, last_counted: null })),
+      ...mk('10034', 'Condiment', 36, null),
       ...mk('10034', 'Paper', 74, null),
       ...mk('10034', 'Non-Product', 5, null),
-      // Condiment rows exist in the RAW data (36 of them, matching the real district-wide
-      // pattern) but every single one reads active:false, recipeItem:false -- so NONE
-      // contribute to totals['10034'].Condiment, which the fix must not choke on.
-      ...Array.from({ length: 36 }, (_, i) => ({ loc: '10034', cls: 'Condiment', wrin: `C${i}`, active: false, recipeItem: false, last_counted: null })),
     ];
     for (const s of sessions) {
       for (const [cls, n] of Object.entries(s.counts)) {
@@ -428,48 +439,147 @@ describe('zero-active-item class cannot permanently block compliance', () => {
     return rows;
   };
 
-  it('totals.Condiment is 0/undefined when every Condiment row reads inactive', () => {
-    const { classTotals } = detectSessions(bonifayNoActiveCondiment());
-    expect(classTotals['10034'].Condiment).toBeUndefined();
-    expect(classTotals['10034'].Food).toBe(119);
+  it('totals.Food is 0/undefined when every Food row reads inactive', () => {
+    const { classTotals } = detectSessions(noActiveFood());
+    expect(classTotals['10034'].Food).toBeUndefined();
+    expect(classTotals['10034'].Condiment).toBe(36);
   });
 
-  it('a complete Food count alone now satisfies weekly -- Condiment is trivially covered, ' +
+  it('a complete Condiment count alone now satisfies weekly -- Food is trivially covered, ' +
      'not permanently blocking (the bug: this used to be impossible no matter what)', () => {
-    const rows = bonifayNoActiveCondiment([{ date: '2026-08-12', counts: { Food: 119 } }]);
+    const rows = noActiveFood([{ date: '2026-08-12', counts: { Condiment: 36 } }]);
     const { sessions } = detectSessions(rows);
     const s = sessions['10034'][0];
-    expect(s.covered).toContain('Condiment'); // trivially covered -- nothing active to count
-    expect(s.covered).toContain('Food');
+    expect(s.covered).toContain('Food'); // trivially covered -- nothing active to count
+    expect(s.covered).toContain('Condiment');
     expect(s.satisfiesWeekly).toBe(true);
     expect(s.kind).toBe('Weekly');
   });
 
-  it('cycleCompliance no longer grades this store permanently crit -- a complete Food count ' +
-     'satisfies the weekly-overdue check (Paper is a separate, correctly-still-required rule, ' +
-     'not touched by this fix -- it fires "warn" here because no Paper session happened, which ' +
-     'is real and correct, not the bug)', () => {
-    const rows = bonifayNoActiveCondiment([{ date: '2026-08-12', counts: { Food: 119 } }]);
+  it('cycleCompliance no longer grades this store permanently crit -- a complete Condiment ' +
+     'count satisfies the weekly-overdue check (Paper is a separate, correctly-still-required ' +
+     'rule, not touched by this fix -- it fires "warn" here because no Paper session happened, ' +
+     'which is real and correct, not the bug)', () => {
+    const rows = noActiveFood([{ date: '2026-08-12', counts: { Condiment: 36 } }]);
     const c = cycleCompliance(rows, { asOf: '2026-08-14' });
     expect(c[0].status).toBe('warn'); // NOT 'crit' -- weekly-overdue no longer fires
     expect(c[0].exceptions.map(e => e.rule)).toEqual(['mid-month-paper']);
     expect(c[0].lastWeekly).not.toBeNull();
   });
 
-  it('a store WITH real active Condiment items still requires counting them -- the fix only ' +
+  it('a store WITH real active Food items still requires counting them -- the fix only ' +
      'exempts a class with ZERO active items, it does not weaken the rule generally', () => {
-    // Same store shape, but this time 2 Condiment items are genuinely active (matches real
-    // stores like 24471/33222/43701 which had 1-2 active Condiment rows in the live pull).
     const rows = [
-      ...mk('X', 'Food', 119, null),
-      { loc: 'X', cls: 'Condiment', wrin: 'C1', active: true, last_counted: null },
-      { loc: 'X', cls: 'Condiment', wrin: 'C2', active: true, last_counted: null },
+      { loc: 'X', cls: 'Food', wrin: 'F1', active: true, last_counted: null },
+      { loc: 'X', cls: 'Food', wrin: 'F2', active: true, last_counted: null },
+      ...mk('X', 'Condiment', 36, '2026-08-12'),
     ];
-    // Count Food fully, but never touch the 2 active Condiment items.
-    for (const r of rows) if (r.cls === 'Food') r.last_counted = '2026-08-12';
+    // Count Condiment fully, but never touch the 2 active Food items.
     const { sessions } = detectSessions(rows);
     const s = sessions['X'][0];
-    expect(s.covered).not.toContain('Condiment'); // 2 active items exist and were never counted
+    expect(s.covered).not.toContain('Food'); // 2 active items exist and were never counted
     expect(s.satisfiesWeekly).toBe(false);
+  });
+});
+
+// Dispatch #96 (2026-08-24) — Condiment is a STRUCTURAL exception, not a further instance of
+// the zero-active-universe bug above. Live pull (qsr_onhand, period=2026-08, all 27 stores,
+// 996 Condiment rows): active/recipe_item are (false,false) for 986 rows and (null,null) for
+// the other 10 -- TRUE occurs zero times, for either flag, on any Condiment row, ever. That
+// left two broken outcomes: 17/27 stores hit the zero-universe bypass above (vacuously "always
+// covered," measuring nothing), and 10/27 stores had exactly one stray active:null row become
+// their ENTIRE Condiment universe -- for Tecumseh (33704) that lone row was a stale, $0,
+// pre-period phantom (last_counted 2026-07-31, before August's count cycle even started),
+// making Condiment permanently uncoverable despite ~39 real items counted 2026-08-21/22. This
+// fixture mirrors that exact production shape: a Tecumseh-like store with a 39-item real
+// Condiment universe (all active:false, matching the measured 986-row population) PLUS the one
+// stale active:null phantom row, then a real 2026-08-21 session counting the 38 non-phantom
+// items -- run through the actual cycleCompliance()/detectSessions() consumer, per this repo's
+// "would this verification still pass if reverted" standing rule.
+describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (structural, not a data gap)', () => {
+  const tecumsehLike = (sessions = []) => {
+    const rows = [
+      ...mk('33704', 'Food', 117, null),
+      ...mk('33704', 'Paper', 107, null),
+      ...mk('33704', 'Non-Product', 12, null),
+      // 38 real Condiment items, all active:false (matches the measured 986-row population --
+      // McDonald's condiments are never recipe-bound, so this flag is never true for this class).
+      ...mk('33704', 'Condiment', 38, null).map(r => ({ ...r, active: false, recipeItem: false })),
+      // The one stray phantom row that, pre-fix, WAS the entire universe: active:null,
+      // last_counted before the current count period even opened.
+      { loc: '33704', cls: 'Condiment', wrin: 'phantom-1', active: null, recipeItem: null,
+        last_counted: '2026-07-31', on_hand_amt: 0 },
+    ];
+    for (const s of sessions) {
+      for (const [cls, n] of Object.entries(s.counts)) {
+        let done = 0;
+        for (const r of rows) {
+          if (r.cls === cls && r.wrin !== 'phantom-1' && done < n) { r.last_counted = s.date; done++; }
+        }
+      }
+    }
+    return rows;
+  };
+
+  it('the Condiment universe is the real ~39-item count, not the 1 stale phantom row', () => {
+    const { classTotals } = detectSessions(tecumsehLike());
+    expect(classTotals['33704'].Condiment).toBe(39); // 38 real + 1 phantom, both count now
+    expect(classTotals['33704'].Food).toBe(117); // other classes' universes are untouched
+  });
+
+  it('a real Food+Condiment count satisfies weekly coverage on a genuine percentage basis, ' +
+     'not via the zero-universe vacuous bypass', () => {
+    const rows = tecumsehLike([
+      { date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }, // the 38 real items
+    ]);
+    const { sessions } = detectSessions(rows);
+    // Two sessions exist: the phantom row's own stale 2026-07-31 date, and the real 08-21
+    // count -- find the real one by date rather than assuming index 0 (sessions sort by date).
+    const s = sessions['33704'].find(x => x.date === '2026-08-21');
+    // 38 of 39 = 97.4%, well over COVER_FRAC (0.75) -- a real percentage, not a trivial pass.
+    expect(s.covered).toContain('Condiment');
+    expect(s.satisfiesWeekly).toBe(true);
+    expect(s.kind).toContain('Weekly');
+  });
+
+  it('cycleCompliance no longer reads Overdue for this mechanism -- Tecumseh\'s 08-21 count ' +
+     'clears weekly-overdue', () => {
+    const rows = tecumsehLike([{ date: '2026-08-21', counts: { Food: 117, Condiment: 38 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-24' });
+    expect(c[0].overdue).toBe(false);
+    expect(c[0].exceptions.find(e => e.rule === 'weekly-overdue')).toBeFalsy();
+    expect(c[0].lastWeekly.date).toBe('2026-08-21');
+  });
+
+  it('a store with an all-false Condiment population (the 17-store vacuous-bypass case) now ' +
+     'gets a REAL, varied coverage percentage instead of an always-true bypass', () => {
+    // 36 Condiment rows, all active:false, recipeItem:false (no stray null row at all -- the
+    // 17-store shape). Pre-fix this store's Condiment universe was 0 (vacuously covered no
+    // matter what). Post-fix it's a real 36-item universe that a partial count genuinely fails.
+    const rows = [
+      ...mk('Y', 'Food', 118, '2026-08-06'),
+      ...mk('Y', 'Condiment', 36, null).map(r => ({ ...r, active: false, recipeItem: false })),
+    ];
+    let done = 0;
+    for (const r of rows) {
+      if (r.cls === 'Condiment' && done < 20) { r.last_counted = '2026-08-06'; done++; } // 20/36 = 55.6%
+    }
+    const { sessions, classTotals } = detectSessions(rows);
+    expect(classTotals['Y'].Condiment).toBe(36); // not 0 -- no more vacuous bypass
+    const s = sessions['Y'][0];
+    expect(s.covered).not.toContain('Condiment'); // 55.6% < COVER_FRAC -- a real, failing check
+    expect(s.satisfiesWeekly).toBe(false);
+  });
+
+  it('does NOT touch Food/Paper/Non-Product -- an inactive, non-Topic-6 item in those classes ' +
+     'is still excluded from the universe exactly as before', () => {
+    const rows = [
+      ...mk('Z', 'Food', 100, null).map(r => ({ ...r, active: true })),
+      ...mk('Z', 'Food', 5, null, 100).map(r => ({ ...r, active: false, recipeItem: false })), // still excluded
+      ...mk('Z', 'Paper', 50, null).map(r => ({ ...r, active: false, recipeItem: false })),    // still excluded
+    ];
+    const { classTotals } = detectSessions(rows);
+    expect(classTotals['Z'].Food).toBe(100); // the 5 inactive Food items are NOT rescued
+    expect(classTotals['Z'].Paper).toBeUndefined(); // Paper still hits the zero-universe path, unrelated to this fix
   });
 });
