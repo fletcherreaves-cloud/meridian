@@ -252,7 +252,13 @@ async function resolveToken(token, forceRemint) {
 // calls to one per DISTINCT name; doing that once at the end over the whole run's rows means far
 // fewer round trips than the 216+ units this run makes, at estate-wide volumes the brief itself
 // sized at "low tens of thousands of rows/day" (still trivial to hold in memory for one process).
-async function runSecurityEvents(token, dates, tracker) {
+// `stores`/`eventTokens` default to the full production sweep (main()'s call is unaffected) --
+// overridable so dispatch #91's token-injection test (scripts/probe-security-token-identity.mjs
+// Case F) can scope this to the ONE unit that has already failed (store 3708, one event_token)
+// instead of re-running all 216 for a one-variable check. Exported so that test can call the
+// pull's ACTUAL loop -- module-level state, sequencing, everything -- rather than a
+// reconstruction of it (same reasoning as fetchOne()'s own export, see that function's comment).
+export async function runSecurityEvents(token, dates, tracker, { stores = STORE_NSNS, eventTokens = EVENT_TOKENS } = {}) {
   const collected = [];
   const coveredStores = new Set();
   let loggedShapeThisRun = false;
@@ -266,10 +272,10 @@ async function runSecurityEvents(token, dates, tracker) {
   }
 
   for (const date of dates) {
-    for (const nsn of STORE_NSNS) {
+    for (const nsn of stores) {
       const storeRef = storeRefFromLoc(String(nsn));
       const loc = String(nsn).padStart(7, '0');
-      for (const eventToken of EVENT_TOKENS) {
+      for (const eventToken of eventTokens) {
         const unit = `${date}:${loc}:${eventToken}`;
         try {
           const tok = await resolveToken(token, false);
