@@ -2830,11 +2830,17 @@ function UnifiedTargetsPanel({stores, ds, settings, onClose, embedded}) {
     if(m.unit==='$') return '$'+v.toFixed(2);
     return v.toFixed(1);
   };
+  // Dispatch #94 Phase 1 -- was a uniform 5%/15%-relative-to-target band, which is the wrong
+  // comparison unit across metrics of very different scale (5% of a $30K sales target vs 5% of
+  // a tiny FOB-waste % target are not comparable signals -- the latter turned red on noise; see
+  // dispatch-94.md Resolution for the real-data measurement). Now compares the absolute gap
+  // against each metric's own `tol` (declared per-metric above, in the same units as the metric).
+  // Multiplier picked by checking real per-store data, not guessed -- see Resolution.
   const statusCol = (cur,off,m)=>{
-    if(cur==null||off==null) return null;
-    const gap = m.lowerBetter ? (cur-off)/off : (off-cur)/off;
-    if(gap <= 0.05) return '#10b981';
-    if(gap <= 0.15) return '#f59e0b';
+    if(cur==null||off==null||m.tol==null) return null;
+    const diff = Math.abs(cur-off);
+    if(diff <= m.tol) return '#10b981';
+    if(diff <= m.tol*2) return '#f59e0b';
     return '#ef4444';
   };
   const statusIcon = (cur,off,m)=>{
