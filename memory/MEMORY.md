@@ -84,7 +84,20 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #101 — Form Completions: surface the detail already being pulled, add date + location selectors](dispatch-101.md)** —
+- **🔴 NEWEST, HIGH PRIORITY (2026-08-24): [Dispatch #102 — FOB Analysis's cloud dollar totals are inflated ~24x](dispatch-102.md)** —
+  **Start here — real money, real decisions riding on wrong numbers.** Every dollar figure on the
+  FOB Analysis panel (Net Sales, every waste/condiment/meal/variance $) is inflated by roughly the
+  number of days elapsed in the selected month — measured **24.0× exactly, uniformly across every
+  category**, by direct comparison against the owner's own QSRSoft export (Aug 2026 MTD). Root
+  cause confirmed against live data: `qsr_fob` rows are correct, deliberate daily MTD-to-date
+  snapshots (same value re-published under every date pulled so far this month — verified live,
+  23 identical rows for one store in August); `computeFOBMetrics` (`src/views/analytics.js`) sums
+  `r.sales`/every dollar-weighted component **across every day's duplicate row** instead of taking
+  only the latest snapshot per store per month. `fobSnapshotByStore` (`eom-inventory.js`) already
+  does this correctly elsewhere in the same codebase — reuse that pattern. **Do not touch the pull
+  script** (correct by design, other consumers need the daily series) — the fix is entirely in the
+  panel's aggregation.
+- **📋 (2026-08-24): [Dispatch #101 — Form Completions: surface the detail already being pulled, add date + location selectors](dispatch-101.md)** —
   **Independent of the #97-#100 chains** (different file, safe to run in parallel). `qsr_forms_completion`/
   `loadQsrFormsCompletion()` already carries store/form/date/completion%/time-to-complete/completer-id
   per occurrence — confirmed by grep, `forms-panel.js` never references `userId`, `completionRatio`,
