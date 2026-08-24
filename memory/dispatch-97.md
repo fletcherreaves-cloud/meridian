@@ -179,3 +179,117 @@ Re-run the fixed `CadenceMonitor` (or its underlying data-building logic) agains
 - **Do not guess `count-cycle.js`'s exact return-shape field names** — read the actual code
   (`cycleCompliance`'s return object, already read once during dispatch #96's investigation) before
   wiring the mapping.
+
+---
+
+## Resolution (2026-08-24)
+
+**Shipped, including the owner's mid-fix scope addition above.** `count-cycle.js` and the Count
+Cycle panel were not touched, `weekly-cadence.js`'s `itemVarianceWindows`/`windowsFor` mechanism is
+byte-for-byte unchanged, and `qsr_raw_item_detail` was not widened — matching every item on the
+"Do NOT" list.
+
+### What actually shipped
+
+`cadenceFromOnHand()` (new, `src/views/eom-dashboard.js`) replaces `cadenceByLoc`'s old
+`analyzeCountCadence(rawByLoc[loc], …)` build. It calls `detectSessions()` — imported from
+`count-cycle.js`, **not** `cycleCompliance()` — over `onHand` (`qsr_onhand`, already loaded in this
+file for EOM completion; no new fetch). `detectSessions()` returns raw, un-thresholded per-session
+item counts and per-store active-item `classTotals` (Condiment-fixed by dispatch #96); this
+function does not touch or import `COVER_FRAC`, so Count Cycle's own 0.75 threshold is completely
+untouched by this change, as the scope addition required.
+
+The scope addition changed the fix's shape mid-flight, so the shipped mapping is not the one
+originally sketched under "The fix" above:
+- **Threshold:** each session is graded against `eom-inventory.js`'s own `CLASS_DONE_PCT` (0.98,
+  imported, not hand-copied) on Food and Condiment independently — the same bar a store's EOM count
+  is held to, per the owner's direction. A class with a zero active universe is vacuously covered
+  (nothing to count), the same rule dispatch #96 already established for Count Cycle's own zero-
+  universe case.
+- **`lastWeekly`/`daysSinceWeekly`:** the most recent session (if any) that clears `CLASS_DONE_PCT`
+  on both Food and Condiment. `null` when no session this period does.
+- **The "current attempt" for the missing-item list is the store's BIGGEST Food+Condiment session
+  this period, not merely its most-recently-touched date.** This needed a real fix mid-implementation:
+  `qsr_onhand`'s `last_counted` is rolling-latest-state (`count-cycle.js`'s own documented
+  limitation), so a store that ran a genuine ~150-item count on day D and then had 1-2 unrelated
+  items re-touched (a routine spot recount, a late correction) on a LATER day would otherwise have
+  that later day's 1-2-item non-event picked as "the current attempt" by pure recency — collapsing
+  the missing-item list to "everything except those 1-2 items." Picking by session SIZE (ties to
+  the more recent date), scoped to the current period, fixed this; live-verified against Seminole's
+  real data below. Gated on `!lastWeekly` — a store with a more recent qualifying session has
+  nothing left to notify regardless of what an earlier partial attempt looked like.
+- **Missing-item list:** `diagnoseIncompleteCount()` (`eom-inventory.js`) generalized with a new
+  optional `windowStart` override (2-line change: `windowStart` defaults to the EOM-period-derived
+  value when omitted, exactly preserving every existing caller's behavior) so it can grade
+  completion against the current attempt's own date instead of only EOM's last-3-days-of-month
+  window. Called with `period` still set to the current calendar month (for the existing
+  stale-vs-early item classification) and `windowStart` set to the attempt's date. Result filtered
+  to `food`/`condiment` and surfaced in `CadenceMonitor`: an inline "N items left · $X" badge next
+  to the status label, and the full $-ranked item list (per class) in the store's expanded row.
+
+### Verified against a live `qsr_onhand` pull
+
+Pulled all classes for `period=2026-08` (7,539 rows, all 27 stores) via Supabase REST with
+`SUPABASE_SERVICE_ROLE_KEY` as a `Bearer` token, paginated, mapped through the identical row shape
+`loadQsrOnHand` produces, and ran the actual shipped `detectSessions`/`CLASS_DONE_PCT`/
+`diagnoseIncompleteCount` call chain against it, `asOf: 2026-08-24`.
+
+**Seminole / OKC-I240 / Tecumseh — before (dispatch's own reproduction) vs. after:**
+
+| store | before (on screen) | after — best session this period | after — status |
+|---|---|---|---|
+| Seminole (10915) | 8/12 · 12d ago · **Overdue**, graded against 29 Food items (0 Condiment) | **08-18: 116/122 Food (95.1%), 37/37 Condiment (100%)** | No full weekly yet — **3 Food items left** (Fried Apple Pie + 2 "(Deactivated)" SKUs, $0 on-hand) |
+| OKC-I240/Sooner (20475) | 8/13 · 11d ago · **Overdue**, graded against 29 Food items (0 Condiment) | **08-20: 115/122 Food (94.3%), 37/37 Condiment (100%)** | No full weekly yet — **3 Food items left** ($31, two "(New)" milk SKUs + 1 "(Deactivated)") |
+| Tecumseh (33704) | 8/14 · 10d ago · **Overdue**, graded against 34 Food items (0 Condiment) | **08-21: 117/119 Food (98.3%), 38/39 Condiment (97.4%)** | No full weekly yet — **2 Food + 1 Condiment item left** (the Condiment one is dispatch #96's own known "(Deactivated)" phantom, `last_counted` 2026-07-31) |
+
+All three now grade against their REAL, comprehensive count instead of a fabricated narrow-subset
+date — the original bug (a false 10-12-day-Overdue alarm) is gone. **None of the three clear the
+new 98% bar outright**, so none read "On track" either; each reads "no full weekly yet" with a
+small (2-3 item), specific, named remainder instead of either a false alarm or a false all-clear.
+This is a genuine, measured result at the owner's requested threshold, not a shortfall in the fix —
+see the district-wide number below and the follow-up note after it.
+
+**District-wide, all 27 stores, same pull/asOf:** only **3 of 27 stores (10422, 11657, 13113)**
+clear `CLASS_DONE_PCT` outright on their best session this period (2-4 days ago, correctly "On
+track"). The other 24 — including the three named above — are typically **1-9 items short** of a
+~155-160-item Food+Condiment universe (roughly 94-98% real coverage), each with its own specific
+missing-item list now surfaced instead of a uniform status. This is exactly the pattern the owner
+described — *"the remainder are typically overlooked items"* — now measured, not assumed: at 0.75
+(Count Cycle's own threshold, untouched by this fix) most of these same 27 stores would read
+comfortably compliant; at EOM's real 0.98 bar, real-world count sessions routinely fall a handful
+of items short.
+
+**Follow-up finding, not fixed here (no code change made, out of this dispatch's scope):** several
+of the "missing" items across multiple stores — including Tecumseh's blocking Condiment item above
+— are QSRSoft-marked `"(Deactivated)"` SKUs that dispatch #96 already measured at ~1.41% of
+Condiment rows district-wide and deliberately left in the active universe (at `COVER_FRAC=0.75`,
+that tail never changed a single store's outcome). At the new, much tighter 0.98 bar, a single such
+stale/retired item CAN make a class permanently uncoverable for a store — Tecumseh's Condiment
+(38/39) is a live example: the 39th item is a $0 phantom last touched 2026-07-31, before August's
+count cycle even opened, and will presumably never be recounted. Flagging this for a possible
+follow-up (e.g., excluding a `"(Deactivated)"`-marked, never-this-period item from the CLASS_DONE_PCT
+denominator specifically) rather than acting on it unasked — this dispatch's scope was the
+threshold + the missing-item mechanism, not re-opening `count-cycle.js`'s universe-membership rules
+a second time in one day.
+
+### `itemVarianceWindows` / drill-down — unchanged, verified
+
+Rendered the actual `CadenceMonitor` component with a `rawByLoc` fixture carrying `qsr_raw_item_detail`-
+shaped history and confirmed the click-to-expand "Biggest between-count variance windows" section
+still names the item and its $ delta between count points, unaffected by the `cadenceByLoc` source
+swap — this is a completeness/date logic swap only, not a touch to the variance-trace feature.
+
+### Test/build results
+
+- New file `src/__tests__/dispatch-97-cadence-onhand.test.js` — 3 tests, all rendering the actual
+  `CadenceMonitor` consumer fed by the actual `cadenceFromOnHand()` builder (not an isolated engine
+  function), per this repo's "would this verification still pass if reverted" standing rule.
+  Confirmed load-bearing directly: temporarily reverted the threshold line to `0.75` and watched
+  the below-98% fixture's assertions fail, then restored it.
+- `npm test`: **2261/2261 passing, 218/218 files** (baseline before this change: 2258/2258 — net
+  +3, all new, 0 regressions).
+- `npm run build`: clean. Entry eager payload **521.51 KB gzip** (was 521.48 KB — +0.03 KB;
+  budget 850 KB, headroom 328.49 KB). `eom-dashboard` chunk (lazy, not in the eager budget):
+  64.14 → 64.48 KB gzip (+0.34 KB).
+
+**Version:** v5.140 (`src/app/changelog/5.140.js`).
