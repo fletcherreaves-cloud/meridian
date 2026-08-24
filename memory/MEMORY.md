@@ -84,6 +84,25 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 NEWEST (2026-08-24): [Dispatch #109 — Performance Review: wire the gaps, fix the stale ones, confirm what already works](dispatch-109.md)** —
+  Owner's Performance Review metric batch, checked against real code before scoping. **Mixed
+  findings, corrected the owner's premise on two items:** Digital App GC/Rest/Day, Delivery
+  GC/Rest/Day, Shift Cert Managers, Headcount, and 0-90 Crew Turnover **actuals already flow** into
+  `autoPopulateKPIs()` (do not rebuild) — but none of the 6 newer metrics have a
+  `REVIEW_METRIC_TARGET_FIELD` mapping to the yearly-workbook targets dispatch #107 just landed
+  (`tMcdWait`/`tDigAppGCRD`/`tMcdGCRD`/`tShiftLeaders`/`tHeadcount`/`tToCrew090`), so targets are
+  the real gap there. Delivery Wait Time is a genuine gap on both sides (data exists in
+  `mcdelivery_monthly`, never read). Labor%/OEPE/R2P/KVS bypass the app's own auto-first
+  `metric-source.js` standard, reading raw `ds.laborRows`/`ds.opsRows` directly instead —
+  `review-engine.js` never imports `metric-source.js` at all. Total Profit's derivation function
+  (`deriveTotalProfitVsTarget`) is fully built and unit-tested but never called — pure wiring task.
+  Pre-April targets need a month-aware lookup fix (clear) plus an owner decision on the actual
+  blending rule (not clear, don't invent it). Shift Verifications/Retention Prg. confirmed
+  deliberately deferred already (`notes-32-queue.md`) — do nothing, matches owner's own
+  deprioritization. **⚠️ Structural gate on everything: no ingestion path (upload UI or automated
+  pull) exists anywhere for `digital_app_monthly`/`mcdelivery_monthly`/`roster_statistics`/
+  `roster_role_counts`/`turnover_monthly` — verify live row counts before reporting any of this as
+  showing real data**, not just code-correct.
 - **✅ RESOLVED (2026-08-24): [Dispatch #107 — Yearly Targets: persisted to Supabase, Planning > Yearly
   panel rebuilt, dead-end editor retired](dispatch-107.md)** — Added a `yearly_targets` Supabase table
   (`tenant_id` + RLS, mirrors `monthly_targets`'s shape one tier up) and
