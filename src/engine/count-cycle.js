@@ -97,7 +97,28 @@ export function inCloseWindow(dateStr, closeDays = 4) {
 // (2,316 / 144 / 6.2% / 23 stores), which ran before `recipe_item` existed as a real column.
 // Full acceptance-criteria verification (Tecumseh Paper before/after, per-store active-vs-full
 // table, 27-store re-grade diff) in memory/374-recipe-item-verification-2026-08-18.md.
-const isActive = (r) => r.active !== false || r.recipeItem === true;
+//
+// Dispatch #96 (2026-08-24) — Condiment is a STRUCTURAL exception to all of the above, not an
+// extension of it. `active_in_recipe`/`recipe_item` both ask "is this item bound to a recipe,"
+// and McDonald's owner-confirmed Condiment items are never recipe-bound at all — they're costed
+// by usage-per-1000. Measured live (qsr_onhand, period=2026-08, cls=Condiment, all 27 stores,
+// 996 rows): active is (false,false) for 986 rows and (null,null) for the remaining 10; TRUE
+// occurs zero times, for either flag, on any Condiment row, anywhere. So for this one class the
+// flag can never carry a real signal — gating on it isn't cautious, it's asking the data a
+// question it structurally cannot answer. That interacts badly with the Food/Paper/Non-Product
+// dispatch20 zero-universe bypass immediately below: 17/27 stores get a vacuous always-covered
+// Condiment class (inert, not broken), while 10/27 stores have exactly one stray active:null row
+// that becomes their ENTIRE Condiment universe — for Tecumseh (33704) that lone row is a stale,
+// $0, pre-period phantom, making Condiment weekly compliance permanently impossible despite ~39
+// real, currently-counted items. Condiment therefore bypasses the flag check entirely; every
+// other class is untouched. (Checked before shipping: a "(Deactivated)" text marker in `descr`
+// does exist and is a real signal — 14/996 Condiment rows, 1.41% — but it's rare enough that
+// COVER_FRAC=0.75's tolerance for not counting every last SKU already covers it, and it doesn't
+// change any store's compliance outcome (Tecumseh's own phantom row carries that marker, but
+// once Condiment is unconditional its universe is ~40 either way, comfortably clearing 0.75×40
+// off the 39 genuinely-counted items) — so no text-based exclusion was added on top. Full
+// measurement in memory/dispatch-96.md's Resolution section.
+const isActive = (r) => r.cls === 'Condiment' ? true : (r.active !== false || r.recipeItem === true);
 
 /**
  * Group on-hand rows into count SESSIONS — one per (store, last_counted date) — with a
