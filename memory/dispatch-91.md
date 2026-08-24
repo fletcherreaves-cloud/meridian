@@ -1,6 +1,6 @@
 ---
 name: dispatch-91
-description: The QSRSoft security-events 403 investigation has narrowed to one bizarre, unexplained fact -- within the SAME process, calling fetchOne() directly returns 200, but the pull's own loop calling what should be the identical request returns 403, seconds apart, byte-identical wire dump. Twelve other hypotheses are already eliminated. Run the token-injection test, then a packet capture if that doesn't separate it. Do NOT file a QSRSoft support ticket yet -- the answer changes what to ask for.
+description: The QSRSoft security-events 403 investigation ran the token-injection test three times live (workflow_dispatch, self-hosted runner) on the pull's own documented first-failing unit -- 403 once, 200 twice, same identity, same code, ~5 minutes apart. The failure is NOT reliably reproducible, which overturns the assumption (a clean, stable token-vs-context split) the original two-test plan was built on. See part 2 of the Resolution for the live evidence and the recommended next step -- do NOT jump straight to a packet capture against a failure that may not currently be reproducible.
 sensitivity: open
 metadata:
   node_type: memory
@@ -14,8 +14,10 @@ history and current state — read it top to bottom, including the superseded/re
 they're in the file on purpose, not stale) and `memory/dispatch-63.md`'s resolution section (the
 earlier source-IP measurement, itself later complicated by the finding file's 2026-08-24 appendix).
 
-**Status:** ready, no owner decision needed. This is a debugging task, not a fix — the deliverable
-is an answer, and possibly a follow-up dispatch once the answer is known.
+**Status:** ⚠️ UPDATE 2026-08-24 — test 1 has now been run live, three times (see "Resolution, part
+2 of 2" at the bottom). The result was NOT a clean, reproducible split, which changes what the
+right next step is. **Owner decision needed** on which of part 2's three recommended next steps to
+take — read that section before doing anything else here, including before running test 2.
 
 ---
 
@@ -114,3 +116,90 @@ Shipped as #652. A parallel, independently-arrived-at duplicate (#653, a separat
 rather than extending the existing probe file) was closed in favor of this one — same conclusion,
 this repo's own "check whether a helper exists before writing one" rule favored the one that
 extended `probe-security-token-identity.mjs`'s existing Case A–E convention over a new file.
+
+## Resolution (2026-08-24), part 2 of 2 — test 1 RUN, three times: the result is NOT reproducible
+
+Triggered `qsrsoft-security-token-identity-probe.yml` on `main` via `workflow_dispatch`, three
+times, on the self-hosted `mac-mini-qsr` runner (the only place this has ever worked). All three
+runs used the same Cognito identity — `IDENTITY 3f73c22fba95` (hash of `sub` + `cognito:username`),
+identical across all three, confirming one principal throughout, not a credential mix-up.
+
+**Run 1** (workflow run `32765946685`) — default inputs: Cases A–E ran against store `35064` /
+`2026-08-15` (the historical baseline store) and all four returned 200 (23/59/59/59 rows). **Case
+F** — the pull's real `runSecurityEvents()` loop, the SAME token those four calls had just proven
+good, injected in place of `getFreshToken` — targeted the pull's own documented first-failing unit
+(store `3708`, `2026-08-22`, `all_promo`) and got **403**:
+```
+AccessDeniedException — "User is not authorized to access this resource with an explicit deny in
+an identity-based policy" — x-amzn-requestid=62d9459b-edcf-457f-9f1b-95686daf3a87
+```
+Read naively against the dispatch's decision table, this says "the token is not the variable,
+proceed to the packet capture." **But this run conflated two variables**: Cases A–E proved the
+token good at store `35064`; Case F then tested a *different* store (`3708`). A clean one-variable
+test needs the baseline and the injection on the *same* unit — this run didn't have that, so
+before trusting the verdict, that gap needed closing.
+
+**Run 2** (workflow run `32766142857`) — re-triggered with `probe_store=3708 probe_date=2026-08-22`,
+so Cases A–E now test the *exact same unit* Case F does. Cases C/D/E all returned 200 with 87 rows
+(Case A's scoped registers/cashiers filter legitimately matched 0 of them — not a failure, a narrow
+query). **Case F, same store/date/event_token, a freshly-minted token from the same identity,
+through the real loop — returned 200.** The HTTP call succeeded; all 87 rows were then dropped by
+`parseSecurityEventRows` as "unkeyable" (a separate, unrelated data-shape issue — see the aside
+below — not an auth failure, and the loop's own tracker recorded zero failures).
+
+**Run 3** (workflow run `32766432766`) — identical inputs to run 2, immediately after. **Case F
+succeeded again** — 200, same 87-rows-then-dropped shape, zero tracker failures.
+
+### The actual finding
+
+**The exact same request — store `3708`, date `2026-08-22`, `all_promo`, through the pull's real,
+unmodified loop, with a token proven good moments earlier from the same identity — failed once and
+succeeded twice, across three trials within about five minutes.** That is not the clean,
+deterministic "token vs. context" split the dispatch's decision table assumes. Neither "injected
+token succeeded → look at code/context" nor "still 403 → the token isn't the variable, do the
+packet capture" honestly describes three trials that split 2-1.
+
+**This most plausibly explains the puzzle that opened this dispatch** — Case E succeeding
+in-process while the pull's own cold run failed on all 216 units (`#622`/`#623`). If the true
+condition is a *transient* one on QSRSoft/AWS's side (IAM policy propagation lag, a canary or
+rolling backend deploy serving a stale/negative-cached policy decision to some fraction of
+requests, or something similar) rather than a stable structural difference between "called from a
+probe" and "called from the pull's loop," then a historical run that happened to land inside a bad
+window could 403 on every one of its 216 units without any code-level difference existing at all —
+and a probe run moments earlier or later, hitting a different window, would cleanly succeed. This
+is a hypothesis, not a new eliminated/confirmed item — flagged as the most parsimonious account of
+*all* the evidence gathered across this dispatch and #616–#623, not asserted as settled.
+
+### What this changes for the "Do NOT" list above
+
+Proceeding straight to a packet capture (test 2) on the strength of run 1 alone, per the original
+decision table, would have compared one real 403 against a Case E success from a *different* run —
+exactly the kind of not-actually-one-variable comparison run 1 itself turned out to be. A packet
+capture is still valuable, but only once there is a *reliably reproducible* failure to capture
+against a reliably reproducible success on the identical unit — which this dispatch's three runs
+show is not currently guaranteed on any single trigger.
+
+### Recommended next step (not yet done — the owner's call)
+
+1. **Cheapest first: just re-run the real production pull** (`qsrsoft-security-events-pull.yml`,
+   not the probe) now. Two of three recent trials on its own first-failing unit succeeded: it may
+   simply work today, in which case the practical problem is solved without a code change, pending
+   confirmation the daily scheduled run is now clean too.
+2. **If it's still failing at meaningful volume**, characterize the actual failure rate with a
+   proper sample (10–20+ repeated probe triggers, not three) before spending effort on a packet
+   capture that may just show "sometimes denied, sometimes not" with no stable pair to diff.
+3. **If a real, recurring, unexplained intermittent `AccessDeniedException` from one stable
+   identity persists** at a measurable rate, that — not a blanket entitlement gap — is a
+   legitimate, well-evidenced thing to raise with QSRSoft support: normal IAM/Cognito
+   authorization for fixed claims should be deterministic, and recurring non-determinism on their
+   side is exactly the kind of thing worth their engineering attention. Give them the
+   `x-amzn-requestid` above plus this dispatch's timestamps if it comes to that.
+
+### Aside — a separate, minor finding noticed along the way (not this dispatch's scope)
+
+Runs 2 and 3 both returned 87 real rows for store `3708` / `2026-08-22` / `all_promo`, and **all
+87 were dropped** by `parseSecurityEventRows` as "unkeyable" (`isUsableRow` requires
+`event_token`/`event_dt`/`event_tm`; at least one was evidently missing or shaped unexpectedly on
+every row for this store/date). Worth a follow-up look at the raw response shape for this
+store/date before trusting any `qsr_security_events` row counts from a future successful run — not
+investigated further here, since it's a parsing question, not the 403 this dispatch is about.
