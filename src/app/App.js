@@ -2915,7 +2915,7 @@ function App() {
       title:'✅ Form Completions',
       onClose:()=>setShowFormsCompletion(false),maxWidth:1400,zIndex:Z.nested,bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'}
     },
-      h(FormsCompletionPanel,{onClose:()=>setShowFormsCompletion(false)})
+      h(FormsCompletionPanel,{stores,userRole,onClose:()=>setShowFormsCompletion(false)})
     ),
     // SAGE stays MOUNTED while minimized (display toggled) so the session keeps
     // running in the background and you can look at other Meridian data at the
