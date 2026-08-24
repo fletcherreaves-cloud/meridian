@@ -270,6 +270,21 @@ actual code — this note nearly caused a duplicate reimplementation.
   actually emits — it caught a real error on every round of the 2026-08-08 data-contract work
   (four chains would otherwise have shipped as silent zeros). Its field list used to be typed by
   hand and went stale four times in that one day.
+- **Cite anchors, not line numbers (standing rule, five incidents in two days ending 2026-08-24).**
+  A `file.js:NNN` citation is a claim that rots the moment anyone edits above it, and this repo
+  carries **589 of them** (522 in `memory/`, 67 in `src/` comments). Measured: #627 corrected a
+  stale `:309-315` cite to `:349-355`, and **#628 invalidated the replacement within hours** by
+  adding ten lines above it. Correcting a line number produces a new number that the next PR
+  breaks — the sweep is the trap, not the cure.
+  **So cite something stable and greppable instead:** a symbol name (`rankPerformers`,
+  `METRIC_SOURCES`), or a quoted unique phrase from the comment itself (`metric-source.js`'s
+  `⚠️ ROLLUP CAVEAT`). Both survive edits, and a reader can `grep` straight to them.
+  A line number is acceptable only as a *transient* pointer inside a single session's working
+  notes — never in a `memory/` file, a code comment, a commit body, or a dispatch, all of which
+  are read later by someone who cannot tell a drifted cite from a correct one.
+  ⚠️ **Do not launch a sweep of the existing 589.** They are archive; fix one opportunistically
+  when you are already editing that line, and leave the rest. The rule earns its keep on new
+  writing, not on retrofitting.
 - **Measure it, don't reason about it (standing rule).** Reproduce a failure against the real
   system *before* forming a theory, and read a command's OUTPUT before reporting what it did.
   Be most suspicious when a cause feels obvious because it matches a past incident in this repo
