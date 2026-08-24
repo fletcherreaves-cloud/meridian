@@ -186,9 +186,14 @@ counter-example, explicitly NOT as a correction factor. See that file's own "Do 
 - `memory/finding-overscheduling-is-chaos-not-cost.md` — item 3's ratio + the Seminole direction-flip
 - `memory/dispatch-88.md`, `src/app/changelog/5.133.js` — unrelated carried correction (see PR body)
 
-**Needs a `sage-chat` redeploy** (`supabase functions deploy sage-chat --no-verify-jwt`) before the
-new tool is live — not run from this session; flagging so it isn't assumed live from the merged
-code alone, per this project's own repeated "measure it, don't reason about it" lesson. (This is a
-separate redeploy from the one `memory/handoff-2026-08-24-key-rotation.md` confirms already
-shipped and verified — that one covered the key-rotation code; this dispatch's new tool is new
-code on top of it, not yet deployed.)
+**✅ Redeployed 2026-08-24, owner-run.** `supabase functions deploy sage-chat --no-verify-jwt`
+completed with no error; the upload log named `labor-summary-agg.js` explicitly among the shipped
+assets, which is the file that only exists as of this dispatch — its presence in that list is the
+observation that the deploy shipped current code, not the stale-checkout trap
+`handoff-2026-08-24-key-rotation.md` describes (that trap produced a *silent*, no-error deploy of
+old code twice in a row, so a clean deploy log alone doesn't rule it out — the asset name does).
+**Still unverified: whether `query_labor_summary` is actually being called correctly in a live
+answer.** A deploy with no error is not the same test as a working tool call. The next real
+verification is a live SAGE question — e.g. "how much OT did each store have July 25–Aug 23" —
+and confirming it returns Madill first (not Ardmore-Cooper) and includes Marietta and Chickasha,
+per this dispatch's own ordering-based verification bar. Not yet run.
