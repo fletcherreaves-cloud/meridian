@@ -709,6 +709,10 @@ export const REVIEW_METRIC_TARGET_FIELD = {
   // Altametrics' "Cert. Swing Mgr" label as a third name for the same role level). Flagged
   // here rather than silently assumed identical — revisit if the owner corrects it.
   shiftCert: 'tShiftLeaders', headcount: 'tHeadcount', turnover90: 'tToCrew090',
+  // Dispatch #109 item #8 — target mapping for the 4 new EXTRA_KPIS candidates
+  // (kpi-registry.js), matching the existing tpph precedent: the target auto-fills here
+  // even though autoPopulateKPIs has not been taught to read the ACTUAL side for these yet.
+  avgCheck: 'tAvgCheck', tRedBPct: 'tRedBPct', posOverAmt: 'tPosOverAmt', cashOSAmt: 'tCashOSAmt',
 };
 
 // Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly

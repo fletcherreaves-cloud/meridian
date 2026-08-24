@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   KPI_REGISTRY, kpiByKey, kpisByCategory, explainThreshold, makeMetricFromKpi,
 } from '../engine/kpi-registry.js';
-import { DEFAULT_REVIEW_CONFIG } from '../engine/review-engine.js';
+import { DEFAULT_REVIEW_CONFIG, REVIEW_METRIC_TARGET_FIELD } from '../engine/review-engine.js';
 
 describe('KPI_REGISTRY', () => {
   it('flattens every default-review metric, de-duped by key', () => {
@@ -24,6 +24,31 @@ describe('KPI_REGISTRY', () => {
       expect(k, `missing extra ${key}`).toBeTruthy();
       expect(k.inReview).toBe(false); // not a default review metric
       expect(k.src).toBe('auto');
+    }
+  });
+
+  // Dispatch #109 item #8 — audit-added candidates with a real metric-source.js chain
+  // AND a real DEFAULT_TARGETS field.
+  it('includes the dispatch #109 item #8 candidates, each with a resolvable target', () => {
+    for (const [key, tf] of Object.entries({
+      avgCheck: 'tAvgCheck', tRedBPct: 'tRedBPct', posOverAmt: 'tPosOverAmt', cashOSAmt: 'tCashOSAmt',
+    })) {
+      const k = kpiByKey(key);
+      expect(k, `missing extra ${key}`).toBeTruthy();
+      expect(k.inReview).toBe(false);
+      expect(k.src).toBe('auto');
+      expect(REVIEW_METRIC_TARGET_FIELD[key]).toBe(tf);
+    }
+  });
+
+  // The audit's OTHER finding (dispatch #109 item #8): tVoiceEAD/t1800Contacts/tMcdStars
+  // have a real TARGET (dispatch #107's yearly workbook) but no actual-data source anywhere
+  // in the codebase (parseTargets is the only place those column headers appear) — the
+  // dispatch explicitly says a metric with only one side wired is worse than a documented
+  // gap, so these must NOT be in the picker.
+  it('deliberately excludes the yearly-workbook-only fields with no actual source', () => {
+    for (const key of ['voiceEAD', 'contacts1800', 'mcdStars']) {
+      expect(kpiByKey(key)).toBeNull();
     }
   });
 

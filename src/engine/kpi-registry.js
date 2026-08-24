@@ -19,6 +19,22 @@ const EXTRA_KPIS = [
   { key: 'parkPct',    label: 'DT Park %',                   cat: 'rgr',    unit: 'abs', better: 'lower',  t: [-0.02, 0.02, 0.04], src: 'auto', field: 'park',      note: 'Lower parked % = better DT flow' },
   // Note: Digital App GC/R/D (digitalGC) + Delivery GC/R/D (delivGC) are already default
   // review metrics in the Sales Drivers category — auto-sourced + provenance-tagged there.
+
+  // ── Dispatch #109 item #8 — audit of metric-source.js's METRIC_SOURCES for
+  // review-relevant metrics with BOTH a real auto-first actual chain AND a real target
+  // (DEFAULT_TARGETS, constants.js) that weren't yet in this catalog. This is a curated
+  // subset, not an exhaustive port (per the dispatch's own instruction) — picked for a
+  // direct field-name match on the target side and an unambiguous better-direction.
+  // ⚠️ Same as tpph/cashOSPct/tRedAPct above: `src:'auto'` describes the underlying DATA
+  // (a real metric-source.js chain exists), not that review-engine.js's autoPopulateKPIs
+  // has been taught to read it yet — it hasn't, for any of these 4, same as those 3. A
+  // review that adds one of these today enters the actual manually; wiring autoPopulateKPIs
+  // to metric-source.js generically (so every 'auto' KPI here actually auto-fills) is
+  // explicitly deferred, named as its own follow-up rather than attempted in this dispatch.
+  { key: 'avgCheck',   label: 'Average Check ($)',           cat: 'sales',  unit: 'pct', better: 'higher', t: [0.05, 0, -0.05],      src: 'auto', field: 'avgCheck',   dollar: true,  note: 'Higher avg check = stronger per-guest revenue' },
+  { key: 'tRedBPct',   label: 'T-Reds Before %',             cat: 'profit', unit: 'pct', better: 'lower',  t: [-0.05, 0.05, 0.10],   src: 'auto', field: 'tRedBPct',   pctInput: true, note: 'Transaction reductions before — lower is better' },
+  { key: 'posOverAmt', label: 'POS Over $',                  cat: 'profit', unit: 'pct', better: 'lower',  t: [-0.05, 0.05, 0.10],   src: 'auto', field: 'posOverAmt', dollar: true,  note: 'Loss-prevention — lower over-ring $ is better' },
+  { key: 'cashOSAmt',  label: 'Cash Over/Short $',           cat: 'profit', unit: 'pct', better: 'lower',  t: [-0.05, 0.05, 0.10],   src: 'auto', field: 'cashOSAmt',  dollar: true,  note: 'Loss-prevention — closer to $0 is better' },
 ];
 
 // Build a normalized registry entry from a review metric def or an extra KPI.
