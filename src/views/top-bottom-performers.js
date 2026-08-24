@@ -82,13 +82,21 @@ export function TopBottomPerformers({ stores, ds, onClose, onSelectStore }) {
     title: '🏆 Top/Bottom Performers', onClose, maxWidth: 720,
     subtitle: 'Ranked at the individual store — never a cross-store average',
   },
-    div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 4, flexWrap: 'wrap' } },
-      PERFORMER_METRICS.map(m => btn({
-        key: m.key, className: 'sbtn' + (metricKey === m.key ? ' on' : ''), style: { fontSize: 10 },
-        onClick: () => setMetricKey(m.key),
-      }, m.label))),
+    // Dispatch #104 -- 16 metrics as a flat pill row read as two wrapped rows in the owner's
+    // screenshot ("cleaner look"). A <select> keeps identical semantics (one metricKey, one
+    // active choice) in one line.
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
-      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
+      h('select', {
+        value: metricKey, onChange: e => setMetricKey(e.target.value),
+        style: { fontSize: 12, padding: '5px 8px', borderRadius: 'var(--rs)', border: '.5px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+      }, PERFORMER_METRICS.map(m => h('option', { key: m.key, value: m.key }, m.label)))),
+    // Dispatch #104 -- LocationSelector already IS the shared pill-style standard; the "not
+    // clean" complaint was 30+ pills (All/State/Patch/Store) rendered flat and simultaneously
+    // (mode:'full'). 'progressive' keeps the same component/pill styling, revealed one tier at
+    // a time (see memory/dispatch-104.md's "Resolution" for why this was the fallback taken
+    // without a live owner confirmation, not a guessed dropdown).
+    div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, mode: 'progressive' })),
     div({ style: { padding: '6px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 5, alignItems: 'center', background: 'var(--surf2)' } },
       span({ style: { fontSize: 8, color: 'var(--text3)', marginRight: 2 } }, 'Window:'),
       WINDOW_PRESETS.map(w => btn({

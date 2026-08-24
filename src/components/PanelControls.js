@@ -145,10 +145,13 @@ export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
 
 // value: {level:'all'|'state'|'patch'|'store', id} — id is null for 'all', else the state/patch/
 // store id. onChange receives the same shape.
-// mode: 'full' (All → State → Patch → Store, per feedback-selector-ui-standard.md) or
-// 'store' (a simple store-only picker — "genuinely single-store panels get a simple store
-// picker," issue #126) so a control that never does anything doesn't get shown where it can't
-// change what's on screen.
+// mode: 'full' (All → State → Patch → Store, per feedback-selector-ui-standard.md), 'store'
+// (a simple store-only picker — "genuinely single-store panels get a simple store picker,"
+// issue #126) so a control that never does anything doesn't get shown where it can't change
+// what's on screen, or 'progressive' (dispatch #104 — same All→State→Patch→Store hierarchy and
+// pill styling as 'full', staying inside the documented pill-style standard, but revealed one
+// tier at a time instead of all 30+ pills flat/simultaneous: States show first, picking a State
+// reveals its Patches, picking a Patch reveals its Stores).
 export function LocationSelector({ stores, invOrgCoords, storeNames, value, onChange, mode = 'full' }) {
   const tree = React.useMemo(
     () => buildLocationHierarchy(stores, invOrgCoords, storeNames),
@@ -162,6 +165,46 @@ export function LocationSelector({ stores, invOrgCoords, storeNames, value, onCh
       ...tree.locs.map((l) => btn({
         key: l, style: _pillStyle(value?.level === 'store' && value?.id === l), onClick: () => pick('store', l),
       }, tree.storeLabel(l))),
+    );
+  }
+
+  if (mode === 'progressive') {
+    // Which State/Patch tier is "open" right now, derived from the current value so a store or
+    // patch selection still shows its own ancestors expanded (a breadcrumb, not a vanishing
+    // trail) rather than only ever showing the tier matching value.level exactly.
+    const activeStateId = value?.level === 'state' ? value.id
+      : value?.level === 'patch' ? (invOrgCoords?.[(tree.patches.find((p) => p.id === value.id)?.locs || [])[0]]?.state ?? null)
+      : value?.level === 'store' ? (invOrgCoords?.[value.id]?.state ?? null)
+      : null;
+    const activePatchId = value?.level === 'patch' ? value.id
+      : value?.level === 'store' ? (invOrgCoords?.[value.id]?.sup ?? null)
+      : null;
+    const statePatches = activeStateId
+      ? tree.patches.filter((p) => invOrgCoords?.[p.locs[0]]?.state === activeStateId) : [];
+    // Stores show once a Patch is picked. If the selected State has no patch data at all (a
+    // gap in invOrgCoords, not the common case), there's no Patch tier to wait on, so its
+    // Stores show directly rather than becoming unreachable.
+    const scopedLocs = activePatchId
+      ? (tree.patches.find((p) => p.id === activePatchId)?.locs || [])
+      : (activeStateId && !statePatches.length) ? (tree.states.find((s) => s.id === activeStateId)?.locs || [])
+      : [];
+    return div({ style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+      div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        btn({ style: _pillStyle(value?.level === 'all'), onClick: () => pick('all', null) }, 'All Locations'),
+        ...tree.states.map((s) => btn({
+          key: 'st-' + s.id, style: _pillStyle(activeStateId === s.id), onClick: () => pick('state', s.id),
+        }, s.label)),
+      ),
+      statePatches.length ? div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        ...statePatches.map((p) => btn({
+          key: 'pt-' + p.id, style: _pillStyle(activePatchId === p.id), onClick: () => pick('patch', p.id),
+        }, p.label)),
+      ) : null,
+      scopedLocs.length ? div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        ...scopedLocs.map((l) => btn({
+          key: 'lc-' + l, style: _pillStyle(value?.level === 'store' && value?.id === l), onClick: () => pick('store', l),
+        }, tree.storeLabel(l))),
+      ) : null,
     );
   }
 
