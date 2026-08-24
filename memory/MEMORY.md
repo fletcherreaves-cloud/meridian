@@ -84,7 +84,16 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #103 — Record Day Intelligence can flag a same-day record before the day is over](dispatch-103.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #104 — Top/Bottom Performers: cleaner selectors, add FOB as a rankable category](dispatch-104.md)** —
+  Location selector is **already** the shared `LocationSelector` standard (same component dispatch
+  #100 used for Security) — not missing, just rendering All+State+Patch+Store (30+ pills) flat and
+  simultaneously; open question on whether "cleaner" means a progressive/hierarchical pill reveal
+  (stays inside CLAUDE.md's documented pill-style standard) or an actual dropdown (would deviate
+  from it) — confirm before implementing, don't guess. Metric-category picker → dropdown is
+  unambiguous. **FOB isn't rankable at all today** (only its sub-components are) — adding it needs
+  a new `metric-source.js` entry, and **must build on dispatch #102's fixed `qsr_fob` aggregation**
+  (or `fobSnapshotByStore`'s already-correct pattern), never the ~24×-inflated one #102 is fixing.
+- **📋 (2026-08-24): [Dispatch #103 — Record Day Intelligence can flag a same-day record before the day is over](dispatch-103.md)** —
   Tecumseh's 95s OEPE "New Record" (2026-08-24) is real math over incomplete data, not a bug in the
   formula: reproduced exactly by hand from live `qsr_daily_activity` rows, which only had data
   through 15:00 (the DAR's last intraday pull) at check time. The owner's own later QSRSoft export
