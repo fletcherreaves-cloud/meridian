@@ -84,7 +84,23 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #95 — security-events pull: wire-trace found nothing fixable, resilience shipped anyway](dispatch-95.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #94 Phases 2+3 — district `tol` rollup + Coaching findings](dispatch-94.md)** —
+  **Start here.** Phase 1's per-metric absolute `tol` comparison (already live) is now rolled up
+  district-wide (**🎯 Tolerance Status** tile, At A Glance) and fed into `GMCoachingBrief`'s
+  findings pipeline. All the comparison math (`METRICS`/`SPEC`/`valuesForLoc`/`statusCol`) moved
+  verbatim into a new single source of truth, `src/engine/tolerance-status.js` — Store Dash, At A
+  Glance, and the Coaching pipeline all read from there now, nothing re-derived. Verified against
+  live district data: Phase 2's rollup is **190 green / 41 yellow / 39 red** across 270 resolved
+  store×metric checks, non-degenerate on every metric measured; Phase 3 verified end-to-end
+  through the real `buildStore`/`buildBrief` consumer (not the finding-generator in isolation) —
+  10 metrics that had **zero** finding coverage before this now do.
+  **⚠️ Caveat surfaced, not fixed, out of scope for this dispatch:** Base Food % reads red on
+  **27/27 stores** — its current value (`totalBaseFood/prodSalesAmt`, ~23–24%) and its official
+  target (`tFOBBase`, ~4.0–4.6%) look like they're not the same quantity (~5x gap), a pre-existing
+  Phase-1 wiring issue hitting real data for the first time, not something Phase 2/3 introduced.
+  Needs a metric-definition audit, not a tolerance-logic fix — flagged prominently rather than
+  silently patched without knowing which side is wrong.
+- **📋 (2026-08-24): [Dispatch #95 — security-events pull: wire-trace found nothing fixable, resilience shipped anyway](dispatch-95.md)** —
   **Start here.** Track A: a wire-level trace (TLS session/cipher/connection-reuse/exact header
   bytes, via `node:diagnostics_channel` — `tcpdump` isn't usable on the runner, no passwordless
   `sudo`) across 3 live runs / 45 trials found **zero successes and no field that correlates with
