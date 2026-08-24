@@ -4,7 +4,10 @@
 // not raw API payloads -- no PII surface at all, since completedBy/plaintext names never survive
 // normalization in the first place (see forms-completion.test.js for that guarantee).
 import { describe, it, expect } from 'vitest';
-import { computeFormStoreDayRollup, computeFormSummary, apiWindowForDays } from '../engine/forms-completion.js';
+import {
+  computeFormStoreDayRollup, computeFormSummary, apiWindowForDays,
+  formatDuration, sortOccurrencesForDisplay, localDayKey,
+} from '../engine/forms-completion.js';
 
 const FORM_A = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FORM_B = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -179,5 +182,72 @@ describe('apiWindowForDays — the request window the pull script sends, on the 
     ];
     const out = computeFormStoreDayRollup(rows);
     expect(out.map(g => g.day).sort()).toEqual(['2026-08-19', '2026-08-21']);
+  });
+});
+
+// Slice 4 (dispatch #101) -- the per-occurrence detail view's own pure helpers.
+describe('formatDuration -- timeToCompleteMs as a human duration, not raw milliseconds', () => {
+  it('null/undefined/non-numeric -> em dash, never NaN or a crash', () => {
+    expect(formatDuration(null)).toBe('—');
+    expect(formatDuration(undefined)).toBe('—');
+    expect(formatDuration('120000')).toBe('—');
+    expect(formatDuration(-5)).toBe('—');
+  });
+
+  it('under a minute -> seconds only', () => {
+    expect(formatDuration(24000)).toBe('24s');
+  });
+
+  it('minutes and seconds', () => {
+    // 109940ms, a real value from the finding file's capture (Travel Path submission)
+    expect(formatDuration(109940)).toBe('1m 50s');
+  });
+
+  it('an hour or more -> hours and minutes, seconds dropped', () => {
+    expect(formatDuration(2 * 3600000 + 15 * 60000 + 40000)).toBe('2h 15m');
+  });
+
+  it('the finding file\'s own measured max (6,878s) formats sanely', () => {
+    expect(formatDuration(6878000)).toBe('1h 54m');
+  });
+});
+
+describe('sortOccurrencesForDisplay -- newest occurrence first, then store, then form title', () => {
+  it('orders by occurrenceKey descending', () => {
+    const rows = [
+      { loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: '2026-08-19T11:00:00Z' },
+      { loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: '2026-08-21T11:00:00Z' },
+      { loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: '2026-08-20T11:00:00Z' },
+    ];
+    expect(sortOccurrencesForDisplay(rows).map(r => r.occurrenceKey)).toEqual([
+      '2026-08-21T11:00:00Z', '2026-08-20T11:00:00Z', '2026-08-19T11:00:00Z',
+    ]);
+  });
+
+  it('does not drop "open" rows the way computeFormStoreDayRollup does -- a reader should still see what is scheduled', () => {
+    const rows = [
+      { loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: '2026-08-19T11:00:00Z', statusState: 'open' },
+    ];
+    expect(sortOccurrencesForDisplay(rows)).toHaveLength(1);
+  });
+
+  it('is a pure passthrough -- adds no fields, drops none', () => {
+    const rows = [{ loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey: '2026-08-19T11:00:00Z', userId: 'u1' }];
+    expect(sortOccurrencesForDisplay(rows)[0]).toEqual(rows[0]);
+  });
+
+  it('empty/missing input -> empty array, not a crash', () => {
+    expect(sortOccurrencesForDisplay([])).toEqual([]);
+    expect(sortOccurrencesForDisplay(null)).toEqual([]);
+    expect(sortOccurrencesForDisplay(undefined)).toEqual([]);
+  });
+});
+
+describe('localDayKey -- exported for the detail view to show the SAME date the rollup bucketed the row into', () => {
+  it('matches the day computeFormStoreDayRollup buckets the identical occurrenceKey into', () => {
+    const occurrenceKey = '2026-08-19T11:00:00Z';
+    const day = localDayKey(occurrenceKey);
+    const [rolled] = computeFormStoreDayRollup([{ loc: '0006178', formId: 'f1', formTitle: 'X', occurrenceKey, statusState: 'completed' }]);
+    expect(day).toBe(rolled.day);
   });
 });

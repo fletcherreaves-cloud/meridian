@@ -131,7 +131,10 @@ const TIME_FMT = new Intl.DateTimeFormat('en-US', {
   timeZone: ESTATE_TZ, hourCycle: 'h23', hour: '2-digit', minute: '2-digit',
 });
 
-function localDayKey(isoString) {
+// Exported (Slice 4, dispatch #101) so the panel's per-occurrence detail view can show "the" date
+// for a row on the SAME boundary computeFormStoreDayRollup buckets it into -- an occurrence shown
+// as Aug 20 in the detail list must be the same Aug 20 its store-day rollup counted it toward.
+export function localDayKey(isoString) {
   return DAY_FMT.format(new Date(isoString)); // 'YYYY-MM-DD' in the estate's real local time, DST-aware
 }
 
@@ -236,4 +239,44 @@ export function computeFormSummary(rollupRows) {
     passRate: f.resolvedCount ? f.completedCount / f.resolvedCount : null,
     storeDaysPassRate: f.storeDaysTotal ? f.storeDaysPassed / f.storeDaysTotal : null,
   })).sort((a, b) => (a.passRate ?? 1) - (b.passRate ?? 1)); // worst-performing form first -- the one that names a decision
+}
+
+// ── Slice 4 (dispatch #101) — per-occurrence detail, sort + format helpers ─────────────────────
+// Same discipline as Slices 1-2: pure, no Supabase, no wall-clock read. The panel already owns a
+// filtered `rows` array (loadQsrFormsCompletion's own output, scope/window already applied
+// server-side) -- these two functions are the "light transformation" the dispatch anticipated
+// belonging here rather than inline in forms-panel.js, exactly like computeFormStoreDayRollup
+// already does for the rollup view.
+
+/**
+ * `timeToCompleteMs` (ACTIVE time -- see normalizeFormsCompletionRow's own comment on why this is
+ * never derived from completedOn-startedAt) as a human duration, not raw milliseconds. Measured
+ * range in the capture is p10 24s to max 6,878s (~115min) -- h/m/s covers the whole spread.
+ */
+export function formatDuration(ms) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return '—';
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+/**
+ * Per-occurrence rows ordered for the detail view: newest occurrence first (by `occurrenceKey`,
+ * the SAME field computeFormStoreDayRollup buckets days on -- see localDayKey above), then store,
+ * then form title, so a reader scanning top-to-bottom sees "what happened most recently" first.
+ * A passthrough shape (adds nothing to each row) -- sorting is the only transformation, kept here
+ * rather than inline in the panel per this file's own header comment ("panels don't reimplement
+ * math the engine already owns"). Deliberately does NOT drop 'open' rows the way
+ * computeFormStoreDayRollup does for pass-rate math -- a reader looking at individual occurrences
+ * should still see what is currently scheduled/not-yet-due, just not counted against anyone.
+ */
+export function sortOccurrencesForDisplay(rows) {
+  return [...(rows || [])].filter(Boolean).sort((a, b) =>
+    (b.occurrenceKey || '').localeCompare(a.occurrenceKey || '') ||
+    (a.loc || '').localeCompare(b.loc || '') ||
+    (a.formTitle || '').localeCompare(b.formTitle || ''));
 }

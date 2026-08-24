@@ -133,3 +133,140 @@ describe('FormsCompletionPanel — renders the real panel, not just the engine i
     expect(loadQsrFormsCompletionMock).toHaveBeenCalledTimes(2);
   });
 });
+
+// ── Dispatch #101 — per-occurrence detail, location selector, real date range, "completed by" ───
+// Real store/patch fixtures, matching the shape INV_ORG_COORDS/STORE_NAMES actually use (unpadded
+// loc keys) -- see the panel's own comment on why loadQsrFormsCompletion's `.loc` is already
+// unpadded ("NaN" for the NOLOC no-store sentinel) by the time the panel ever sees it.
+const STORE_A = '6178';  // FL, per constants.js INV_ORG_COORDS/STORE_NAMES
+const STORE_B = '3708';  // OK
+const STORES_PROP = [{ loc: STORE_A }, { loc: STORE_B }];
+
+describe('FormsCompletionPanel — dispatch #101: per-occurrence detail, location + date-range controls', () => {
+  let container, root;
+  beforeEach(() => {
+    loadQsrFormsCompletionMock.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('expanding a form shows real store/form/date/completion%/time-to-complete/status for its occurrences, and the existing rollup row is untouched', async () => {
+    loadQsrFormsCompletionMock.mockResolvedValue([
+      {
+        loc: STORE_A, formId: FORM_A, formTitle: 'Breakfast Pre-Shift',
+        occurrenceKey: '2026-08-19T11:00:00Z', statusState: 'completed', missed: false, hasResponse: true,
+        completionRatio: 93 / 94, timeToCompleteMs: 109940, userId: null,
+      },
+    ]);
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn(), stores: STORES_PROP, userRole: 'manager' })); });
+    await flush(container);
+    // Rollup row unchanged (existing behavior, re-asserted here so a revert of the detail view
+    // would be caught if it also broke the rollup).
+    expect(container.textContent).toMatch(/100\.0%/);
+    expect(container.textContent).toMatch(/1 of 1 resolved occurrences completed/);
+    // Detail hidden until expanded.
+    expect(container.textContent).not.toMatch(/98\.9%/);
+    const toggle = [...container.querySelectorAll('button')].find(b => /Occurrences/.test(b.textContent));
+    expect(toggle).toBeTruthy();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    // Store resolved via sName/STORE_NAMES -- not a bare loc code.
+    expect(container.textContent).toMatch(/6178 — Chipley-St Rd 77/);
+    expect(container.textContent).toMatch(/Breakfast Pre-Shift/);
+    expect(container.textContent).toMatch(/2026-08-19/); // localDayKey, America/Chicago
+    expect(container.textContent).toMatch(/98\.9%/); // fPct(93/94)
+    expect(container.textContent).toMatch(/1m 50s/); // formatDuration(109940)
+    expect(container.textContent).toMatch(/Completed/);
+  });
+
+  it('a missed occurrence with no userId shows an em dash for "completed by", never a fabricated name', async () => {
+    loadQsrFormsCompletionMock.mockResolvedValue([
+      { loc: STORE_A, formId: FORM_A, formTitle: 'Breakfast Pre-Shift', occurrenceKey: '2026-08-19T11:00:00Z', statusState: 'missed', missed: true, hasResponse: false, completionRatio: null, timeToCompleteMs: null, userId: null },
+    ]);
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn(), stores: STORES_PROP, userRole: 'admin' })); });
+    await flush(container);
+    const toggle = [...container.querySelectorAll('button')].find(b => /Occurrences/.test(b.textContent));
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const row = [...container.querySelectorAll('tbody tr')][0];
+    expect(row.textContent).toMatch(/—/);
+    expect(row.textContent).not.toMatch(/ID /); // no diagnostic ID shown when there is no userId
+  });
+
+  it('"completed by" — a real userId is a UUID (never a name), shown ONLY to the privileged role tier', async () => {
+    const REAL_SHAPE_ID = '848854c8-30f1-7076-c6f7-dcf35091bd06'; // shape only, matches the measured live sample
+    loadQsrFormsCompletionMock.mockResolvedValue([
+      { loc: STORE_A, formId: FORM_A, formTitle: 'Breakfast Pre-Shift', occurrenceKey: '2026-08-19T11:00:00Z', statusState: 'completed', missed: false, hasResponse: true, completionRatio: 1, timeToCompleteMs: 5000, userId: REAL_SHAPE_ID },
+    ]);
+    // Non-privileged role: never sees the raw ID.
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn(), stores: STORES_PROP, userRole: 'manager' })); });
+    await flush(container);
+    let toggle = [...container.querySelectorAll('button')].find(b => /Occurrences/.test(b.textContent));
+    await act(async () => { toggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.textContent).not.toMatch(new RegExp(REAL_SHAPE_ID));
+
+    // Privileged role: sees a short, explicitly-labeled diagnostic fragment -- never the bare
+    // full UUID printed as if it were a name. Same component instance, so `expanded` state
+    // survives this re-render (already expanded above) -- do NOT click the toggle again, that
+    // would collapse it back.
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn(), stores: STORES_PROP, userRole: 'admin' })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/ID 848854c8…/);
+    expect(container.textContent).not.toMatch(new RegExp(REAL_SHAPE_ID)); // full UUID never printed in text
+  });
+
+  it('selecting a store in the location selector re-fetches with that store as the locs filter', async () => {
+    loadQsrFormsCompletionMock.mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn(), stores: STORES_PROP, userRole: 'admin' })); });
+    await flush(container);
+    expect(loadQsrFormsCompletionMock).toHaveBeenCalledTimes(1);
+    // 'all' scope resolves to every store in the passed `stores` prop (sorted numerically) --
+    // matches locationSelectorLocs's own contract, same as every other LocationSelector consumer.
+    expect(loadQsrFormsCompletionMock.mock.calls[0][0].locs).toEqual([STORE_B, STORE_A]);
+
+    const storeBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes(STORE_B) && b.textContent.includes('Ardmore'));
+    expect(storeBtn).toBeTruthy();
+    await act(async () => { storeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadQsrFormsCompletionMock).toHaveBeenCalledTimes(2);
+    expect(loadQsrFormsCompletionMock.mock.calls[1][0].locs).toEqual([STORE_B]);
+  });
+
+  it('a custom date range re-fetches with the apiWindowForDays-derived window, and clearing it returns to the window pill', async () => {
+    loadQsrFormsCompletionMock.mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(FormsCompletionPanel, { onClose: vi.fn(), stores: STORES_PROP, userRole: 'admin' })); });
+    await flush(container);
+    expect(loadQsrFormsCompletionMock).toHaveBeenCalledTimes(1);
+
+    const customToggle = [...container.querySelectorAll('button')].find(b => b.textContent === 'Custom…');
+    await act(async () => { customToggle.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const dateInputs = [...container.querySelectorAll('input[type="date"]')];
+    expect(dateInputs).toHaveLength(2);
+    const setVal = (el, v) => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    await act(async () => { setVal(dateInputs[0], '2026-08-19'); setVal(dateInputs[1], '2026-08-19'); });
+    const applyBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Apply');
+    await act(async () => { applyBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadQsrFormsCompletionMock).toHaveBeenCalledTimes(2);
+    expect(loadQsrFormsCompletionMock.mock.calls[1][0]).toMatchObject({
+      start: '2026-08-19T05:00:00.000Z', end: '2026-08-20T04:59:59.999Z',
+    });
+    expect(container.textContent).toMatch(/Using 2026-08-19 → 2026-08-19/);
+
+    const clearBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Clear'));
+    await act(async () => { clearBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadQsrFormsCompletionMock).toHaveBeenCalledTimes(3);
+  });
+});
