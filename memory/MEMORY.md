@@ -84,14 +84,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #90 — SAGE's OT window mis-ranks stores; labor-% basis SETTLED](dispatch-90.md)** —
-  **Start here.** SAGE's labor % (crew/punched, excluding salaried managers) is confirmed CORRECT
-  and matches `#327` — do not "fix" it to include managers. The real bug: SAGE's OT figure is a
-  60-day pull halved, which **mis-ranks stores** (Madill is actually #1 in district OT, SAGE showed
-  it 5th at 59% of real value; district total was fine, ranking wasn't). Also: Seminole (10915)
-  missing from the under-staffed list, and a measured (not-a-correction-factor) 2.7× gap between
-  LifeLenz's `need_vlh` and Controls' `Act vs Need` at Ada. Verification bar: assert on OT
-  **ordering**, not just totals.
+- **✅ SHIPPED & LIVE-VERIFIED (2026-08-24): [Dispatch #90 — SAGE's OT window mis-ranks stores; labor-% basis SETTLED](dispatch-90.md)** —
+  **NEWEST, fully closed.** SAGE's labor % (crew/punched, excluding salaried managers) is confirmed
+  CORRECT and matches `#327` — do not "fix" it to include managers. The real bug, now fixed: SAGE's
+  OT figure was a 60-day pull halved, which **mis-ranked stores** (Madill is actually #1 in
+  district OT, SAGE showed it 5th at 59% of real value; district total was fine, ranking wasn't).
+  New `query_labor_summary` tool (#647) queries the exact requested window instead; also fixed
+  Seminole (10915) missing from the under-staffed list (LifeLenz and Controls disagree in
+  *direction*, not just magnitude, for that store) and a `lifelenz_schedule.loc` padding bug.
+  Deployed and **live-verified against a real SAGE answer**: Madill #1 at $2,711, Marietta/Chickasha
+  present, district total $23,590 — all match the independently-measured Supabase figures exactly.
+  Also recorded: a measured (not-a-correction-factor) 2.7× gap between LifeLenz's `need_vlh` and
+  Controls' `Act vs Need` at Ada, with a full sign-flip at Seminole.
 - **🔑 (2026-08-24): [Supabase key rotation complete](handoff-2026-08-24-key-rotation.md)** —
   Legacy API keys **disabled at `2026-08-24T14:53:50Z`**; everything is on
   `sb_publishable_…` / `sb_secret_…`. The variable NAMES were kept (so 36 workflows + 3 edge
