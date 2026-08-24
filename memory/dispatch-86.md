@@ -34,14 +34,15 @@ metadata:
 
 **Reads first:** `memory/dispatch-77.md`'s two deferred sections (the `📌 DEFERRED from #580`
 block at the end, and the tolerance-bands block — **that second one is NOT this dispatch**, it is
-noted only so you don't fold it in). Then `src/engine/metric-source.js`'s ROLLUP CAVEAT comment at
-**`:349-355`**, and the `⚠️ IT IS NOT SATISFIED ACROSS DAYS` block in
-`src/engine/top-bottom-performers.js`.
+noted only so you don't fold it in). Then `src/engine/metric-source.js`'s **`⚠️ ROLLUP CAVEAT`**
+comment (sits directly above `DERIVED_METRICS` — grep the phrase, do not trust a line number), and
+the `⚠️ IT IS NOT SATISFIED ACROSS DAYS` block in `src/engine/top-bottom-performers.js`.
 
-⚠️ Both `dispatch-77.md` and `top-bottom-performers.js` cite that caveat as `:309-315`. **It is at
-`:349-355`** — the file grew and the citations didn't. Fix both in this PR. That is the third
-stale-reference find in two days (two CLAUDE.md rules on 2026-08-24); if you hit a fourth, say so
-rather than just fixing it, because at that point it is a pattern worth a process change.
+⚠️ **This paragraph originally chased that caveat's line number and lost.** It said the cite in
+`dispatch-77.md` and `top-bottom-performers.js` was wrong at `:309-315` and the truth was
+`:349-355`. Then #628 added ~10 lines above it and `:349-355` was wrong too, within hours of being
+written. The lesson is not "fix the number again" — it is **cite an anchor, never a line number**
+(see the rule now in CLAUDE.md). Both original cites are converted to the anchor form.
 
 **Status:** ready to start. **No owner decision blocks Step 1 or 2.** Step 3 has three metrics
 whose denominator is genuinely unknown — those are answered by MEASUREMENT, and only escalated if
@@ -66,7 +67,7 @@ metrics in `PERFORMER_METRICS` are ratios** — `tpph`, `avgCheck`, `laborPct`, 
 `tRedAPct`, `tRedBPct`, `discPct`, `compWaste`, `rawWaste`, `statVar`.
 
 🔴 **The size of the gap was measured in this repo before the panel existed.**
-`metric-source.js:349-355`: SPPH on store 5985 for 2026-08 is **$70.18/hr** as mean-of-daily
+`metric-source.js`'s `⚠️ ROLLUP CAVEAT`: SPPH on store 5985 for 2026-08 is **$70.18/hr** as mean-of-daily
 versus **$67.04/hr** as true Σ/Σ — a **4.5% gap**. That same comment already says the remedy out
 loud: *"a consumer that needs a true weighted rollup should sum the parts itself rather than call
 `metricAvg`."* The leaderboard **is** that consumer and does not do it.
@@ -265,9 +266,16 @@ This dispatch asked the engineer to flag a fourth rather than silently fix it. H
 pass"* — true when written, false since #37 added them on the same `net_sales_amt` denominator as
 `discPct`. Corrected in the same commit as this note.
 
-**That is four in two days** (two CLAUDE.md rules in #626, the `:309-315` caveat cite in #627,
-this one). They share one shape: a comment that was accurate when written, describing code a
-later change moved, with nothing tying the two together. **This is now a pattern, and the next
-move is an audit rather than a fifth one-off correction** — a sweep of the repo's confident,
-measured-sounding claims (file:line cites, "N of M" counts, "X is not yet done") against current
-code. Worth its own dispatch; not started.
+**That is five in two days** (two CLAUDE.md rules in #626; the `:309-315` caveat cite in #627;
+`loadOpsCashSheet`'s T-Red header in #629; and then #627's own replacement cite `:349-355`, which
+#628 invalidated within hours by adding ~10 lines above it). They share one shape: a claim that
+was accurate when written, describing code a later change moved, with nothing tying the two
+together.
+
+**The fifth settles what the fix is, and it is not an audit.** A sweep would re-rot: there are
+**589 `file:NNN` citations** in this repo (522 in `memory/`, 67 in `src/` comments), and correcting
+them by hand produces new numbers that the next PR invalidates — exactly what happened between
+#627 and #628. The answer is to stop citing line numbers at all: **cite an anchor** (a symbol name,
+or a quoted unique phrase from the comment) which survives edits and is greppable. Rule added to
+CLAUDE.md, and the active dispatch files converted, in dispatch #87. The ~500 historical cites are
+left alone as archive.

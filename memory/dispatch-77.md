@@ -377,7 +377,7 @@ that is correct. For **ratios it is an average-of-averages** — the thing the s
 `tRedAPct`, `tRedBPct`, `discPct`, `compWaste`, `rawWaste`, `statVar`.
 
 🔴 **The gap is already measured in this repo, by someone else, before #580 existed.**
-`src/engine/metric-source.js:309-315`: SPPH on store 5985 for 2026-08 is **$70.18/hr** as
+`src/engine/metric-source.js`'s **`⚠️ ROLLUP CAVEAT`** comment (above `DERIVED_METRICS`): SPPH on store 5985 for 2026-08 is **$70.18/hr** as
 mean-of-daily versus **$67.04/hr** as Σ/Σ — a **4.5%** gap. That same comment says outright:
 *"a consumer that needs a true weighted rollup should sum the parts itself rather than call
 metricAvg."* The Top/Bottom Performers panel **is** that consumer.
