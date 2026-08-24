@@ -224,7 +224,51 @@ times out under RLS, a fake one returns 42703), which is what made the false rea
 **Calibrating the instrument is not the same as pointing it at the right layer** — worth
 remembering the next time a live probe contradicts working code.
 
-### ⚠️ Open finding: `avgCheck`'s derive mixes sales bases
+### ✅ CLOSED 2026-08-24 by measurement — not material. (Original finding below, kept for the reasoning.)
+
+**Resolution first, so nobody re-opens it from the analysis that follows.** Measured with the
+service-role key, owner-run: over a 60-day window, `avgCheck`'s precomputed sources cover **every**
+store-day, so #628's derive is a true last-resort that **effectively never fires in production**.
+No derive, no basis mixing, no ranking risk.
+
+| source (chain order) | store-days with a non-zero `avg_check` |
+|---|---|
+| `daily_glimpse_daily` | **0** of 1,431 ⬅ dead column, see below |
+| `cash_sheet_daily` | 1,350 |
+| `sales_ledger_daily` | **1,431 of 1,431** |
+
+The chain is `glimpse → cash → salesLedger → labor`, all `mode:'pos'`, so glimpse's zeros are
+rejected and `cash`/`salesLedger` answer every day between them. **The `$0.3154` gap measured
+below is real but irrelevant to `avgCheck` as displayed**, because the value shown never comes from
+the product-sales-based derive.
+
+**What I got wrong, and how:** the finding below is structurally correct — the two bases genuinely
+differ, and the same PR did decline to use `sales` elsewhere on those grounds. But it rested on an
+unstated premise: *that the derive fills real days.* I never checked coverage, because I could not
+— the anon key returned zero rows. The structural argument was sound and the conclusion was still
+wrong, which is the exact shape CLAUDE.md's *measure it, don't reason about it* rule warns about.
+**Do not act on the finding below.**
+
+### 🟡 Low-severity, genuinely open: `daily_glimpse_daily.avg_check` is a dead column
+
+Zero — not null, zero — across every store-day measured, confirmed two independent ways (an inner
+join against the DAR averaged `0.00` over 1,350 store-days; the coverage count above found 0
+non-zero of 1,431). Most likely the parser maps a field the emailed report does not actually carry.
+
+**Impact is a dead column, not a wrong number.** `mode:'pos'` rejects the zeros correctly, and
+**no consumer reads `glimpseRows.avgCheck` directly** — grepped; the only reference outside tests
+and changelogs is `METRIC_SOURCES` itself. Downstream panels read `p.avgCheck` off computed period
+objects and all guard with `> 0`.
+
+**Leave the chain entry in place** — it costs nothing and picks the source up automatically if the
+report ever starts carrying it. Worth one look at the parser mapping if anyone is in that file
+anyway; not worth a dispatch on its own.
+
+⚠️ Unrelated but noticed while grepping: `store-analytics.js` falls back to **hardcoded `9.50` /
+`8.50`** when `avgCheck` is 0. Pre-existing, unrelated to any of this, and not touched — recorded
+only so the next person to find those magic numbers knows they were seen and deliberately left.
+
+### Original finding (superseded by the measurement above)
 
 `avgCheck` gained `derive: { inputs: ['sales','gc'], kind:'ratio' }`. The `sales` key resolves
 `qsrActSummaryRows.sales`, which is **`product_sales`** (`supabase.js:2025`). The four precomputed

@@ -237,3 +237,31 @@ hides it (`mode:'pos'` falls through), but **anything reading that column direct
 through `metric-source.js` is showing 0 today.** Grep for direct `avgCheck` reads off
 `glimpseRows` before assuming the chain protects every consumer. This was not on anyone's list —
 it surfaced only because the Q2 query happened to select `avg_check` as a sanity column.
+
+### ✅ FOLLOW-UP RUN 2026-08-24 — the deciding query came back, and it closed Q2
+
+Credential: **service-role key, owner-run.** Observation:
+
+| | non-zero `avg_check` store-days |
+|---|---|
+| `daily_glimpse_daily` | **0** |
+| `cash_sheet_daily` | 1,350 |
+| `sales_ledger_daily` | **1,431 of 1,431** |
+
+**Neither branch this file predicted.** It framed the outcome as *"all three ~zero → uniform basis"*
+versus *"any populated → mixing is real."* The truth is the third case: the precomputed sources
+cover **every** store-day between them, so #628's derive is a genuine last-resort that **never
+fires in production**. No derive → no mixing → the `$0.3154` gap does not reach the displayed
+number at all.
+
+**Q2 is closed as not-material.** Full write-up, including what the earlier reasoning got wrong and
+why, is in `memory/dispatch-86.md`'s PM-verification section — read the ✅ CLOSED block, and do
+**not** act on the superseded finding kept beneath it.
+
+Residue: `daily_glimpse_daily.avg_check` is a **dead column** (0 across every store-day, confirmed
+two independent ways). `mode:'pos'` handles it correctly and no consumer reads it directly, so the
+impact is a dead column rather than a wrong number. Recorded in `dispatch-86.md`; not worth a
+dispatch on its own.
+
+**Both questions this handoff was written to carry are now answered.** What remains for a new
+session is `dispatch-89` items 1–3 and the standing owner list below.
