@@ -84,6 +84,19 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ RESOLVED (2026-08-24): [Dispatch #107 — Yearly Targets: persisted to Supabase, Planning > Yearly
+  panel rebuilt, dead-end editor retired](dispatch-107.md)** — Added a `yearly_targets` Supabase table
+  (`tenant_id` + RLS, mirrors `monthly_targets`'s shape one tier up) and
+  `saveYearlyTargets`/`loadYearlyTargets`/`loadAllYearlyTargets` in `supabase.js`, wired into every
+  `pipeline.js` upload branch and `App.js`'s T1 startup tier — `ds.targets` (OEPE/CSAT/Digital/People/
+  Labor-FOB) now survives a fresh session/device instead of requiring re-upload. Planning > Yearly
+  (`yearly-projections.js`) gained a "🎯 Target Categories" view (5 sub-tabs, per store, OK/FL/Grand
+  subtotals) alongside the unchanged Sales Pace view. Retired `store-dash.js`'s disconnected
+  `mf_targets_yearly_*` localStorage editor rather than wiring it in — reasoning in the dispatch file's
+  Resolution section. `mergedTargetsForLoc` (monthly-supersedes-yearly) was already correct and is
+  untouched; verified with a new `tOsatB2B` test case (a genuinely yearly-only field, no
+  `monthly_targets` column). Full detail, file list, and test/build numbers: the dispatch file's own
+  Resolution section.
 - **✅ SHIPPED (2026-08-24, v5.147 — sales lift; GC lift pending one owner SQL step): [Dispatch #108
   — Event Impact Registry: measure the remaining event types, add GC lift](dispatch-108.md)** —
   `event_impact` went from 26 rows (Sports only) to **189 rows** across sports/tax_free/
@@ -101,18 +114,6 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   spot-checked, and ready but not yet persisted. **Owner: run that SQL file once, then re-run the 3
   scripts (no code change) to land GC lift.** Full Resolution + both hand-verified spot-checks in
   `dispatch-108.md`.
-- **📋 (2026-08-24): [Dispatch #107 — Yearly Targets: persist to Supabase, rebuild the Planning > Yearly panel, retire the dead-end editor](dispatch-107.md)** —
-  The Planning > Yearly panel is Sales-only (Σ monthly targets vs actual), never touching the real
-  yearly-upload data. The uploaded workbook (inspected directly) has NO Sales column at all — it's
-  OEPE/CSAT/Digital/People/Labor/FOB, ~22 fields, already correctly parsed into `ds.targets` by
-  `parseYearlyTargets()` and already correctly wired as the yearly tier under monthly in every real
-  consumer (Performance Review, forecast, tolerance-status, etc. — monthly-supersedes-yearly is
-  already correct, do not re-implement it). **The real bug: `ds.targets` has zero Supabase
-  persistence** (confirmed by grep — no "yearly" anywhere in `src/lib/supabase.js`, no
-  `yearly_targets` table) — it's rebuilt from scratch each session by re-parsing the workbook, which
-  is why repeated uploads have been necessary. A third, disconnected localStorage-only manual yearly
-  editor also exists in `store-dash.js` (`mf_targets_yearly_*`) that nothing downstream reads — needs
-  an explicit keep-or-retire decision, not a silent leave-alone.
 - **📋 (2026-08-24): [Dispatch #105 — CORRECTED: LifeLenz forecast data IS auto-pulled, Part 2 unblocked, name confirmed](dispatch-105.md)** —
   ⚠️ **This dispatch's original premise was wrong and has been corrected in-file (owner caught it:
   "Labor Analysis I thought was on auto pull, please check").** `scripts/lifelenz-pull.mjs` already

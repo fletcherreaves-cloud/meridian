@@ -1,11 +1,21 @@
 // @ts-nocheck
 // ── Yearly Projections panel ─────────────────────────────────────────────────
-// Annual rollup of the official monthly sales targets (monthly_targets.sales_proj
-// = tProdSales) vs actual product sales: Annual Target, YTD Actual, YTD-vs-plan
-// (to-date, current month prorated), Projected Full Year (actual banked + remaining
-// plan), and FY-vs-Target. Dollar-weighted OK/FL/grand subtotals (never average of
-// %s). Actuals summed by month from loadDailySales (product sales, same basis as
-// tProdSales). Complements the monthly "Pace to Target" view.
+// Two views on the selected year, toggled by pill:
+//   Sales Pace  — annual rollup of the official monthly sales targets
+//     (monthly_targets.sales_proj = tProdSales) vs actual product sales: Annual
+//     Target, YTD Actual, YTD-vs-plan (to-date, current month prorated), Projected
+//     Full Year (actual banked + remaining plan), and FY-vs-Target. Dollar-weighted
+//     OK/FL/grand subtotals (never average of %s). Actuals summed by month from
+//     loadDailySales (product sales, same basis as tProdSales).
+//   Target Categories (dispatch #107 Part 2) — the actual uploaded yearly-targets
+//     workbook (OEPE/Park/KVS/R2P, Voice OSAT/EAD/B2B/1-800, Digital App/McDelivery,
+//     People staffing+turnover, Labor/FOB), per store, for the selected year. Source:
+//     ds.allYearlyTargets[year] (Supabase yearly_targets table, dispatch #107 Part 1)
+//     with ds.targets (the flattened "most recent year" view, may include a workbook
+//     uploaded this session before it round-trips through Supabase) preferred for the
+//     current calendar year. This is the data parseYearlyTargets() already parses and
+//     review-engine.js's mergedTargetsForLoc() already merges into Performance Review
+//     — this panel previously never displayed it at all (owner-reported gap).
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import { loadDailySales } from '../lib/supabase.js';
@@ -21,6 +31,54 @@ const storeNm = l => STORE_NAMES[locNum(l)] || locNum(l);
 const money = v => v == null || Number.isNaN(v) ? '—' : '$' + Math.round(v).toLocaleString();
 const pctFmt = v => v == null || Number.isNaN(v) ? '—' : (v >= 0 ? '' : '') + v.toFixed(2) + '%';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// ── Target-category field config (Part 2) ────────────────────────────────────
+// Values are stored on ds.targets exactly as parseYearlyTargets() (src/parsers/index.js)
+// and yearly_targets (Supabase) round-trip them: percentages as fractions (parsePct,
+// same convention as monthly_targets — e.g. tLabor 0.28 = 28%), OEPE/KVS/R2P as raw
+// seconds, everything else as raw counts/ratings. agg:'sum' totals a headcount-style
+// target across stores in a subtotal row; agg:'avg' averages a rate/time target —
+// never averaged into a %-of-% (these are target VALUES, not measured performance, so
+// there is no sales-weighting basis the way there is for actuals elsewhere).
+const secFmt = v => v == null ? '—' : Math.round(v) + 's';
+const pct2Fmt = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
+const numFmt = (d) => v => v == null ? '—' : v.toFixed(d);
+const YEARLY_CATS = [
+  { key: 'ops', label: 'Service & Ops', icon: '⚡', fields: [
+    { k: 'tOepe', l: 'OEPE PACE', fmt: secFmt, agg: 'avg' },
+    { k: 'tPark', l: 'Park %', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tKvst', l: 'KVS PACE', fmt: secFmt, agg: 'avg' },
+    { k: 'tKvsu', l: 'KVS Usage', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tR2p', l: 'R2P PACE', fmt: secFmt, agg: 'avg' },
+  ]},
+  { key: 'csat', label: 'CSAT', icon: '⭐', fields: [
+    { k: 'tOsat', l: 'Voice OSAT', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tOsatB2B', l: 'OSAT B2B', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tVoiceEAD', l: 'Execute As Designed', fmt: pct2Fmt, agg: 'avg' },
+    { k: 't1800Contacts', l: '1-800 Contacts', fmt: numFmt(0), agg: 'avg' },
+  ]},
+  { key: 'digital', label: 'Digital', icon: '📱', fields: [
+    { k: 'tDigAppPct', l: 'App % of Sales', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tDigAppGCRD', l: 'App GC/R/D', fmt: numFmt(2), agg: 'avg' },
+    { k: 'tMcdGCRD', l: 'McDelivery GC/R/D', fmt: numFmt(2), agg: 'avg' },
+    { k: 'tMcdWait', l: 'McDelivery Wait', fmt: numFmt(1), agg: 'avg' },
+    { k: 'tMcdStars', l: 'McDelivery Stars', fmt: numFmt(2), agg: 'avg' },
+  ]},
+  { key: 'people', label: 'People', icon: '👥', fields: [
+    { k: 'tCrewStaffing', l: 'Crew Staffing', fmt: numFmt(0), agg: 'sum' },
+    { k: 'tShiftLeaders', l: 'Shift Leaders', fmt: numFmt(0), agg: 'sum' },
+    { k: 'tManagers', l: 'GM/DM/Swing Mgr', fmt: numFmt(0), agg: 'sum' },
+    { k: 'tHeadcount', l: 'Total Headcount', fmt: numFmt(0), agg: 'sum' },
+    { k: 'tToShiftLeader', l: 'Shift Leader T/O (TTM)', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tToCrew090', l: '0-90 Crew T/O', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tToCrewYTD', l: 'YTD Crew T/O', fmt: pct2Fmt, agg: 'avg' },
+  ]},
+  { key: 'labor', label: 'Labor & FOB', icon: '💰', fields: [
+    { k: 'tTpph', l: 'TPPH', fmt: numFmt(2), agg: 'avg' },
+    { k: 'tLabor', l: 'Labor %', fmt: pct2Fmt, agg: 'avg' },
+    { k: 'tFOBTarget', l: 'FOB Target', fmt: pct2Fmt, agg: 'avg' },
+  ]},
+];
 
 // One store's annual figures. curMonth/dayFrac describe "today" within `year`.
 function computeStoreYear(tgtByMonth, actByMonth, year, thisYear, curMonth, dayFrac) {
@@ -58,11 +116,79 @@ function aggregate(rows) {
   };
 }
 
+// ── Target Categories view (Part 2) ──────────────────────────────────────────
+// Per-store table of the real uploaded yearly-targets workbook fields, tabbed by
+// category (eom-dashboard.js's internal-tab pattern). Source precedence matches the
+// Sales view's data model: ds.allYearlyTargets[year] (Supabase-persisted, Part 1),
+// with ds.targets (flattened "most recent year", may include a same-session upload
+// not yet round-tripped through Supabase) preferred for the current calendar year.
+function TargetCategoriesView({ ds, year, thisYear }) {
+  const { useState, useMemo } = React;
+  const [cat, setCat] = useState(YEARLY_CATS[0].key);
+
+  const byLoc = useMemo(() => {
+    const fromCloud = (ds && ds.allYearlyTargets && ds.allYearlyTargets[year]) || {};
+    const fromSession = (year === thisYear && ds && ds.targets) || {};
+    const merged = {};
+    for (const loc of new Set([...Object.keys(fromCloud), ...Object.keys(fromSession)])) {
+      merged[loc] = { ...(fromCloud[loc] || {}), ...(fromSession[loc] || {}) };
+    }
+    return merged;
+  }, [ds, year, thisYear]);
+
+  const rows = useMemo(() => ALL_LOCS.map(locNum).filter(loc => byLoc[loc] && Object.keys(byLoc[loc]).length > 0)
+    .sort((a, b) => storeNm(a).localeCompare(storeNm(b))), [byLoc]);
+  const ok = rows.filter(l => !FL_LOCS.has(l));
+  const fl = rows.filter(l => FL_LOCS.has(l));
+
+  const active = YEARLY_CATS.find(c => c.key === cat) || YEARLY_CATS[0];
+  const catAgg = (locs, field) => {
+    const vals = locs.map(l => byLoc[l] && byLoc[l][field.k]).filter(v => v != null && !Number.isNaN(v));
+    if (!vals.length) return null;
+    return field.agg === 'sum' ? vals.reduce((a, b) => a + b, 0) : vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+
+  const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
+  const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
+
+  if (!rows.length) {
+    return div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } },
+      'No yearly targets uploaded for ' + year + '. Upload the yearly targets workbook (Data Manager → Targets) to populate OEPE/CSAT/Digital/People/Labor-FOB goals here.');
+  }
+
+  return div(null,
+    // Category sub-tabs
+    div({ style: { display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' } },
+      YEARLY_CATS.map(c => h('button', {
+        key: c.key, onClick: () => setCat(c.key),
+        style: { padding: '5px 12px', borderRadius: 99, border: '1px solid ' + (cat === c.key ? 'var(--amber)' : 'var(--bdr)'),
+          background: cat === c.key ? 'rgba(245,188,0,.15)' : 'var(--surf)', color: cat === c.key ? 'var(--amber)' : 'var(--text2)',
+          fontSize: 10.5, fontWeight: 700, cursor: 'pointer' } },
+        c.icon + ' ' + c.label)
+      )),
+    div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
+      h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+        h('thead', null, h('tr', null,
+          h('th', { style: { ...th, textAlign: 'left' } }, 'Store'),
+          ...active.fields.map(f => h('th', { key: f.k, style: th, title: f.agg === 'sum' ? 'District subtotal = sum' : 'District subtotal = average' }, f.l)))),
+        h('tbody', null,
+          ...rows.map(loc => h('tr', { key: loc },
+            h('td', { style: { ...td, textAlign: 'left', fontWeight: 600, fontFamily: 'inherit' } }, storeNm(loc) + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '#' + loc)),
+            ...active.fields.map(f => h('td', { key: f.k, style: td }, f.fmt((byLoc[loc] || {})[f.k]))))),
+          [['Oklahoma', ok], ['Florida', fl], ['Grand Total', rows]].map(([label, locs]) => locs.length ? h('tr', { key: label, style: { background: 'rgba(245,188,0,.06)' } },
+            h('td', { style: { ...td, textAlign: 'left', fontWeight: 800, fontFamily: 'inherit', color: 'var(--amber)' } }, label + ' ', span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9 } }, '(' + locs.length + ')')),
+            ...active.fields.map(f => h('td', { key: f.k, style: { ...td, fontWeight: 800 } }, f.fmt(catAgg(locs, f))))) : null)))),
+    div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
+      'Values are the per-store annual targets from the uploaded yearly targets workbook for ' + year + ' (parseYearlyTargets, persisted to the yearly_targets Supabase table). District subtotals sum headcount-style targets and average rate/time targets — never an average of an average. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere (mergedTargetsForLoc).')
+  );
+}
+
 export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded }) {
   const { useState, useMemo, useEffect } = React;
   const now = new Date();
   const thisYear = now.getFullYear();
   const [year, setYear] = useState(thisYear);
+  const [view, setView] = useState('sales');    // 'sales' | 'targets'
   const [actuals, setActuals] = useState({});   // {loc: {month: sales}}
   const [loading, setLoading] = useState(true);
 
@@ -140,15 +266,28 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
             stepBtn('‹', -1),
             span({ style: { fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 99, background: 'rgba(245,188,0,.15)', color: 'var(--amber)' } }, year),
             stepBtn('›', 1)),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Annual official target (Σ monthly_targets) vs actual product sales · YTD-to-date (current month prorated) · Projected FY = actual banked + remaining plan.')),
+          div({ style: { fontSize: 9, color: 'var(--text3)' } }, view === 'sales'
+            ? 'Annual official target (Σ monthly_targets) vs actual product sales · YTD-to-date (current month prorated) · Projected FY = actual banked + remaining plan.'
+            : 'Real yearly-targets workbook categories (OEPE/CSAT/Digital/People/Labor-FOB), per store, for ' + year + '.')),
         !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+      // View toggle: Sales Pace vs Target Categories
+      div({ style: { display: 'flex', gap: 0, borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf)' } },
+        [['sales', '💵 Sales Pace'], ['targets', '🎯 Target Categories']].map(([k, label]) =>
+          h('button', { key: k, onClick: () => setView(k),
+            style: { padding: '8px 16px', fontSize: 11, fontWeight: 700, border: 'none',
+              borderBottom: view === k ? '2px solid var(--amber)' : '2px solid transparent',
+              background: 'transparent', color: view === k ? 'var(--amber)' : 'var(--text3)', cursor: 'pointer' } },
+            label))),
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
+        view === 'targets'
+          ? h(TargetCategoriesView, { ds, year, thisYear })
+          : [
         loading
-          ? div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'Loading ' + year + ' actuals…')
+          ? div({ key: 'load', style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'Loading ' + year + ' actuals…')
           : !model.rows.length
-          ? div({ style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'No targets or actuals for ' + year + '. Set monthly targets (Smart Targets → Apply as Official, or the Monthly Projections upload).')
-          : div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
+          ? div({ key: 'empty', style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'No targets or actuals for ' + year + '. Set monthly targets (Smart Targets → Apply as Official, or the Monthly Projections upload).')
+          : div({ key: 'table', style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
               h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
                 h('thead', null, h('tr', null,
                   h('th', { style: { ...th, textAlign: 'left' } }, 'Store'),
@@ -162,7 +301,8 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
                   subRow('Oklahoma', model.sub.ok),
                   subRow('Florida', model.sub.fl),
                   subRow('Grand Total', model.sub.grand)))),
-        div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
-          'Annual Target = Σ of the 12 official monthly sales targets (monthly_targets.sales_proj) for ' + year + '. YTD Actual = Σ actual product sales through today. YTD vs Plan compares YTD actual against the plan for the SAME elapsed period (the current month’s target is prorated by day-of-month), so it’s apples-to-apples. Proj Full Year = actual banked so far + the remaining months’ plan (current month’s unspent portion + future months). Subtotals are dollar-weighted (never an average of %s). Hover a store for the month-by-month plan/actual.'))
+        div({ key: 'note', style: { fontSize: 8, color: 'var(--text3)', marginTop: 8, lineHeight: 1.5 } },
+          'Annual Target = Σ of the 12 official monthly sales targets (monthly_targets.sales_proj) for ' + year + '. YTD Actual = Σ actual product sales through today. YTD vs Plan compares YTD actual against the plan for the SAME elapsed period (the current month’s target is prorated by day-of-month), so it’s apples-to-apples. Proj Full Year = actual banked so far + the remaining months’ plan (current month’s unspent portion + future months). Subtotals are dollar-weighted (never an average of %s). Hover a store for the month-by-month plan/actual.')
+      ])
     ));
 }

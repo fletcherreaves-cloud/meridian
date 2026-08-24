@@ -10,9 +10,29 @@ import { parseInventoryData } from '../parsers/inventory-parse.js';
 import { STORE_STAFF, CONTACTS } from '../features/morning-brief.js';
 import { fPct, f$ } from '../utils/fmt.js';
 import { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor } from '../parsers/index.js';
-import { saveMonthlyTargets } from '../lib/supabase.js';
+import { saveMonthlyTargets, saveYearlyTargets } from '../lib/supabase.js';
 import { resolveLaborTarget } from './labor-basis.js';
 import { tolStatusesForStore } from './tolerance-status.js';
+
+// Detect a 4-digit year from a yearly-targets workbook filename (e.g.
+// "2026_Restaurant_Targets__Updated__OK__FL.xlsx"). Falls back to the current calendar
+// year when the filename doesn't carry one -- still lets the Supabase save happen
+// rather than silently dropping the upload (dispatch #107 Part 1).
+function _yearlyTargetsYear(filename){
+  const m=(filename||'').match(/\b(20\d{2})\b/);
+  return m?parseInt(m[1],10):new Date().getFullYear();
+}
+// Fire-and-forget Supabase save for a parsed yearly-targets batch, shared by all three
+// 'targets'-type branches below so a full rebuild (buildDS) and an incremental re-drop
+// (mergeDS) persist identically.
+function _saveYearlyTargetsAsync(yearly,filename){
+  if(!yearly||!Object.keys(yearly).length) return;
+  const ty=_yearlyTargetsYear(filename);
+  saveYearlyTargets(yearly,ty).then(r=>{
+    if(r&&r.errors&&r.errors.length) console.error('[pipeline] yearly targets Supabase save failed:',r.errors);
+    else console.log(`[pipeline] yearly targets: saved ${r?.saved||0} stores for ${ty}`);
+  }).catch(e=>console.error('[pipeline] yearly targets save exception:',e));
+}
 
 function buildDS(workbooks){
   const ds={laborRows:[],opsRows:[],ctrlRows:[],weatherRows:[],inventoryRows:[],
@@ -65,6 +85,7 @@ function buildDS(workbooks){
         // incremental re-drop behave identically (else yearly targets land on one path but not the other).
         const yearly=parseYearlyTargets(wb);
         Object.assign(ds.targets, Object.keys(yearly).length>0 ? yearly : parseTargets(wb));
+        _saveYearlyTargetsAsync(yearly,filename);
       }
       else if(type==='peaks'){
         const _pkSvc=parse3PeaksService(wb);
@@ -101,7 +122,7 @@ function buildDS(workbooks){
         if(sh.ops)    ds.opsRows.push(...parseOpsData(wb,sh.ops));
         if(sh.ctrl)   ds.ctrlRows.push(...parseCtrlData(wb,sh.ctrl));
         if(sh.weather)ds.weatherRows.push(...parseWeatherData(wb,sh.weather));
-        if(sh.targets){const yy=parseYearlyTargets(wb);Object.assign(ds.targets,Object.keys(yy).length>0?yy:parseTargets(wb,sh.targets));}
+        if(sh.targets){const yy=parseYearlyTargets(wb);Object.assign(ds.targets,Object.keys(yy).length>0?yy:parseTargets(wb,sh.targets));_saveYearlyTargetsAsync(yy,filename);}
       }
     }catch(e){console.warn('Parse error:',type,e);}
   }
@@ -584,6 +605,7 @@ function mergeDS(existing, wb, type, filename) {
       const yearly=parseYearlyTargets(wb);
       if(Object.keys(yearly).length>0) Object.assign(ds.targets,yearly);
       else Object.assign(ds.targets,parseTargets(wb));
+      _saveYearlyTargetsAsync(yearly,filename);
     }
     else if(type==='peaks'){ds.peaksSvcRows.push(...parse3PeaksService(wb));ds.peaksSalesRows.push(...parse3PeaksSales(wb));}
     else if(type==='register')ds.auditRows.push(...parseRegisterAudit(wb));

@@ -23,6 +23,23 @@ describe('mergedTargetsForLoc — monthly wins over yearly wins over default', (
     expect(t.tLabor).toBe(0.215);          // monthly wins
     expect(t.tOepe).toBe(140);             // falls through to DEFAULT_TARGETS
   });
+
+  // Dispatch #107 Part 4 verification: tOsatB2B has NO monthly_targets column (checked —
+  // it isn't one of that table's fields), so it's a yearly-only field with no tier above it
+  // to test the "monthly wins" half against for free. This confirms both halves explicitly:
+  // the yearly (ds.targets) value surfaces with no monthly override present, and a monthly
+  // override for the SAME field still supersedes it once one exists — without touching
+  // mergedTargetsForLoc's own logic, per the dispatch's "verify, don't rebuild" instruction.
+  it('surfaces a yearly-only field (tOsatB2B) with no monthly tier, then lets a monthly override win once set', () => {
+    const dsYearlyOnly = { targets: { '3708': { tOsatB2B: 0.02 } } };
+    expect(mergedTargetsForLoc(dsYearlyOnly, '3708').tOsatB2B).toBe(0.02);
+
+    const dsWithMonthlyOverride = {
+      targets:        { '3708': { tOsatB2B: 0.02 } },
+      monthlyTargets: { '3708': { tOsatB2B: 0.015 } },
+    };
+    expect(mergedTargetsForLoc(dsWithMonthlyOverride, '3708').tOsatB2B).toBe(0.015);
+  });
 });
 
 describe('autoPopulateKPIs target auto-fill (Notes 32 A)', () => {
