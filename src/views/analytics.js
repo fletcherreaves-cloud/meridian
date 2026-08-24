@@ -3125,7 +3125,22 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     ].filter(Boolean);
   };
 
-  if(!ds||!(fobRowsEff||[]).length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
+  // dispatch #88 item 1, follow-up (owner-reported 2026-08-24): the qsrFobRows!==null guard on
+  // the auto-select effect fixed the race's END state (selMonth now always lands on the cloud
+  // stream's real newest month), but this loading gate only fired on TRULY empty data --
+  // `!(fobRowsEff||[]).length`. While the cloud fetch is still in flight, fobRowsEff already
+  // falls back to manual-only rows (non-empty, per fobRowsEff's own cloudFobRows.length check),
+  // so this gate let the full panel render immediately on manual data alone: selMonth was still
+  // '' at that point, computeFOBMetrics's `if(selMonth&&...)` filter is a no-op on an empty
+  // string so it silently aggregated EVERY manual month instead of just the latest one, and the
+  // native <select> (value=selMonth='' matches no <option>) fell back to displaying its first
+  // DOM option -- the manual stream's month -- as a visual artifact, not a real selection. Owner
+  // confirmed exactly this: "shows May, then flips to August once cloud data loads." Gating on
+  // qsrFobRows===null too closes the window entirely -- the panel now waits for the cloud fetch
+  // to settle (success or caught-error-fallback-to-[]) before rendering anything, so it never
+  // shows a transient, wrongly-scoped state. qsrFobRows always resolves (loadQsrFob's .then/.catch
+  // both call setQsrFobRows), so this cannot get stuck loading forever under normal conditions.
+  if(!ds||qsrFobRows===null||!(fobRowsEff||[]).length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:40,marginBottom:12}},'🥗'),
       div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},qsrFobRows===null?'Loading FOB data…':'No FOB Data Yet'),

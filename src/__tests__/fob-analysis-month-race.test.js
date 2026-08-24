@@ -116,4 +116,42 @@ describe('FOBAnalysisPanel -- default month survives the cloud-fetch race (dispa
     const selectedOption = [...select.options].find(o => o.selected);
     expect(selectedOption.value).toBe('2026-05');
   });
+
+  // Follow-up (owner-reported 2026-08-24, after the race fix above shipped): "Once the cloud
+  // data loads it shows August. Just a delay between the two." The race fix corrected the END
+  // state, but the panel's top-level loading gate only fired on genuinely EMPTY data
+  // (!fobRowsEff.length) -- while the cloud fetch is in flight, fobRowsEff already falls back to
+  // non-empty manual rows, so the full panel rendered immediately with selMonth still '' (unset):
+  // the native <select> fell back to displaying its first DOM option (the manual month) as a
+  // visual artifact, and computeFOBMetrics's month filter is a no-op on an empty selMonth, so it
+  // silently aggregated every manual month instead of scoping to one. Gating the same loading
+  // screen on qsrFobRows===null too closes that window -- the panel now waits for the cloud
+  // fetch to settle before rendering anything at all.
+  it('shows the loading state (not stale manual data) while the cloud fetch is still in flight, even when manual rows already exist', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root.render(h(FOBAnalysisPanel, { stores: STORES, ds: mkDs('2026-05'), settings: {}, onClose: () => {} }));
+    });
+
+    // Cloud fetch still unresolved -- qsrFobRows is still null -- even though manual rows exist.
+    expect(container.textContent).toContain('Loading FOB data');
+    expect(container.querySelector('select')).toBeFalsy();
+
+    await act(async () => {
+      resolveLoadQsrFob(cloudRows('2026-08'));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    // Once settled, the loading screen is gone and the real panel (with the correct month
+    // already selected -- no intermediate May flash to assert against, since it never rendered)
+    // is up.
+    expect(container.textContent).not.toContain('Loading FOB data');
+    const select = container.querySelector('select');
+    expect(select).toBeTruthy();
+    const selectedOption = [...select.options].find(o => o.selected);
+    expect(selectedOption.value).toBe('2026-08');
+  });
 });
