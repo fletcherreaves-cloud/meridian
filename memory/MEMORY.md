@@ -84,7 +84,19 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #95 — resolve the security-events pull without QSRSoft's help](dispatch-95.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #96 — Condiment class isn't recipe-bound at McDonald's; stop gating it on `active_in_recipe`](dispatch-96.md)** —
+  **Start here.** `active_in_recipe`/`recipe_item` read false for 986/996 Condiment rows
+  district-wide, with **zero exceptions ever true** — not a QSRSoft data bug, owner-confirmed
+  structural: condiments are never recipe-bound at McDonald's (costed by usage-per-1000, not a
+  recipe). The existing vacuous-coverage bypass (dispatch20) silently no-ops Condiment compliance
+  for 17/27 stores; 10/27 stores have exactly one stray `active:null` row that becomes their
+  *entire* Condiment universe — for Tecumseh that row is a stale $0 phantom last touched
+  2026-07-31, making Condiment weekly compliance permanently impossible for August despite 39 real
+  items counted 2026-08-21 (owner screenshot confirms). Fix: Condiment-class rows bypass the
+  `active`/`recipe_item` filter entirely — every other class (and the Topic 6 rescue) untouched.
+  Seminole/OKC's stale display dates are a **separate**, likely client-cache issue, not this bug —
+  still pending the owner's hard-refresh confirmation.
+- **📋 (2026-08-24): [Dispatch #95 — resolve the security-events pull without QSRSoft's help](dispatch-95.md)** —
   **Start here.** Owner wants an actual resolution to the ~10%-success security-events pull, not
   "accept the ceiling" — and QSRSoft support is ruled out (won't assist with automation). Two
   tracks, run in parallel: **Track A** — a real controlled wire-level diff between succeeding and
