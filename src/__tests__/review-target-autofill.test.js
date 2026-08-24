@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
 import {
-  autoPopulateKPIs, mergedTargetsForLoc, missingReviewTargets,
+  autoPopulateKPIs, mergedTargetsForLoc, mergedTargetsForLocMonth, missingReviewTargets,
   REVIEW_METRIC_TARGET_FIELD, DEFAULT_REVIEW_CONFIG,
 } from '../engine/review-engine.js';
 
@@ -39,6 +39,63 @@ describe('mergedTargetsForLoc — monthly wins over yearly wins over default', (
       monthlyTargets: { '3708': { tOsatB2B: 0.015 } },
     };
     expect(mergedTargetsForLoc(dsWithMonthlyOverride, '3708').tOsatB2B).toBe(0.015);
+  });
+});
+
+// Dispatch #109 item #4 — the pre-April-targets fix. mergedTargetsForLoc (above) is a
+// single review-wide snapshot; mergedTargetsForLocMonth resolves PER (year, month) from
+// ds.allMonthlyTargets, so a target uploaded for one month can never silently apply to
+// another month in the same review.
+describe('mergedTargetsForLocMonth — per-period lookup, no cross-month leakage', () => {
+  const ds = {
+    targets: { '3708': { tLabor: 0.23 } }, // yearly floor under every month
+    allMonthlyTargets: {
+      '2026-4': { '3708': { tLabor: 0.21, _year: 2026, _month: 4 } }, // April only
+      '2026-6': { '3708': { tLabor: 0.19, _year: 2026, _month: 6 } }, // June only
+    },
+  };
+
+  it("resolves each month's OWN target, not a neighboring month's", () => {
+    expect(mergedTargetsForLocMonth(ds, '3708', 2026, 4).tLabor).toBe(0.21);
+    expect(mergedTargetsForLocMonth(ds, '3708', 2026, 6).tLabor).toBe(0.19);
+  });
+
+  it('falls through to the yearly target for a month with no allMonthlyTargets entry at all (the pre-April case)', () => {
+    // No 2026-1 entry in allMonthlyTargets → falls to ds.targets, not April's or June's value.
+    expect(mergedTargetsForLocMonth(ds, '3708', 2026, 1).tLabor).toBe(0.23);
+  });
+
+  it('falls through to DEFAULT_TARGETS when neither yearly nor monthly has the field', () => {
+    expect(mergedTargetsForLocMonth(ds, '3708', 2026, 1).tOepe).toBe(140);
+  });
+
+  it('does not let an un-stamped/different-period ds.monthlyTargets snapshot leak into a month it does not belong to', () => {
+    const dsWithStaleSnap = {
+      ...ds,
+      monthlyTargets: { '3708': { tLabor: 0.99, _year: 2026, _month: 4 } }, // stamped for April
+    };
+    // Requesting June: the April-stamped snapshot must NOT apply; June's own allMonthlyTargets wins.
+    expect(mergedTargetsForLocMonth(dsWithStaleSnap, '3708', 2026, 6).tLabor).toBe(0.19);
+    // Requesting April: the (matching) snapshot DOES win, same as the old single-snapshot behavior.
+    expect(mergedTargetsForLocMonth(dsWithStaleSnap, '3708', 2026, 4).tLabor).toBe(0.99);
+  });
+});
+
+describe('autoPopulateKPIs — per-month targets do not leak across months (dispatch #109 item #4)', () => {
+  it("fills each month's laborTgt from that SAME month's allMonthlyTargets entry", () => {
+    const ds = {
+      loaded: true,
+      allMonthlyTargets: {
+        '2026-4': { '3708': { tLabor: 0.21, _year: 2026, _month: 4 } },
+        '2026-6': { '3708': { tLabor: 0.19, _year: 2026, _month: 6 } },
+        // 2026-5 deliberately absent — must fall through to DEFAULT_TARGETS.tLabor (0.22),
+        // NOT to April's 0.21 or June's 0.19.
+      },
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[4].laborTgt).toBe(0.21);
+    expect(r.kpis.months[5].laborTgt).toBe(0.22); // DEFAULT_TARGETS fallback, not a neighbor's value
+    expect(r.kpis.months[6].laborTgt).toBe(0.19);
   });
 });
 

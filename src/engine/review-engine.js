@@ -726,6 +726,33 @@ export function mergedTargetsForLoc(ds, loc) {
   };
 }
 
+// Month-aware official targets for a loc (dispatch #109 item #4). mergedTargetsForLoc above
+// is a SINGLE snapshot — its monthly tier is `ds.monthlyTargets`, which App.js derives from
+// whichever period was uploaded/loaded MOST RECENTLY (the "current" snapshot), not the
+// review's own month. autoPopulateKPIs used to compute that snapshot ONCE, outside its
+// per-month loop, and apply it to every month in the review's half — so a store's April
+// target could silently apply to January too. This version keys the monthly tier by the
+// SPECIFIC year+month requested, from `ds.allMonthlyTargets` (the full per-period index
+// App.js already loads — 'YYYY-M', non-padded month, same convention as pipeline.js's own
+// key construction and Planning > Yearly's `all[year + '-' + m]` lookup, yearly-projections.js).
+// `ds.monthlyTargets` is layered ONLY on top of a matching period (guarded by its own
+// _year/_month stamp, mirroring eom-supervisor.js's `mtOK` check) so a locally-parsed upload
+// not yet round-tripped through allMonthlyTargets still wins for ITS OWN month, but can never
+// leak into a different one — the exact cross-month contamination this fix exists to close.
+export function mergedTargetsForLocMonth(ds, loc, year, month) {
+  const L = String(loc);
+  const periodKey = `${year}-${month}`;
+  const fromAll = (ds && ds.allMonthlyTargets && ds.allMonthlyTargets[periodKey] && ds.allMonthlyTargets[periodKey][L]) || null;
+  const snap = (ds && ds.monthlyTargets && ds.monthlyTargets[L]) || null;
+  const snapOK = snap && (snap._year == null || (snap._year === year && snap._month === month));
+  return {
+    ...(DEFAULT_TARGETS[L] || {}),
+    ...((ds && ds.targets && ds.targets[L]) || {}),
+    ...(fromAll || {}),
+    ...(snapOK ? snap : {}),
+  };
+}
+
 // Scored metrics (across the review's config categories) that have NO resolvable target —
 // neither already entered on any month nor available from the official-targets namespace.
 // Feeds a UI prompt: "set a target for X" (and a Smart-Targets seed where one exists).
@@ -750,7 +777,10 @@ export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;
   const loc = review.loc;
   const months = JSON.parse(JSON.stringify(review.kpis.months));
-  const officialTgts = mergedTargetsForLoc(ds, loc); // DEFAULT < yearly < monthly (monthly wins)
+  // Dispatch #109 item #4 — targets are resolved PER MONTH below (mergedTargetsForLocMonth),
+  // not once here for the whole review period. See that function's own comment for why: the
+  // old single mergedTargetsForLoc() snapshot let one month's uploaded target silently apply
+  // to every other month in the review's half.
 
   const byMonth = (rows, locF='loc') => {
     const map={};
@@ -836,6 +866,10 @@ export function autoPopulateKPIs(review, ds) {
     const fr = fobM[m]||[];
     const er = ebosM[m]||[];
     const sr = smgFSByMonth[m];
+    // Dispatch #109 item #4 — resolved for THIS month specifically (DEFAULT < yearly <
+    // this month's allMonthlyTargets entry), not the single review-wide snapshot the old
+    // code used. See mergedTargetsForLocMonth's own comment for the full rationale.
+    const officialTgts = mergedTargetsForLocMonth(ds, loc, _ry, m);
 
     if (lr.length) {
       const s  = sum(lr,'sales');
