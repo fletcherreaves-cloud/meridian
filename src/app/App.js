@@ -27,7 +27,11 @@ import { _masgnInvalidate, getModelAssignment, saveModelOverride, computeMAPEDri
 import { idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta, idbClearAll, coverageFromLoadedRows, withTimeout, idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear } from '../db/index.js';
 import { crossStoreCheck, lookupMissEvent, diagnoseMiss, computeForecastComposition, classifyMissCauses, runWhyEngineScan, runWhyEngineDistrict } from '../engine/why.js';
 import { GMCoachingBrief } from '../engine/coaching.js';
-import { LifelenzGapPanel, LifeLenzBridgePanel } from '../features/lifelenz.js';
+// LifeLenzBridgePanel — dispatch #106 Phase B: no longer imported statically here. It's still
+// used, but only inside ForecastReportsPanel (src/features/forecast-reports.js), which is now
+// lazy-loaded below (lazyPanel) rather than eagerly bundled into App.js's entry chunk — a real
+// entry-chunk win (CLAUDE.md's performance-budget rule), not just a refactor.
+import { LifelenzGapPanel } from '../features/lifelenz.js';
 import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
 import { EventImpactPanel } from '../views/event-impact.js';
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
@@ -146,7 +150,10 @@ const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-pe
 const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
 const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
 const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
-const ForecastAccuracyPanel     = lazyPanel(() => _analytics().then(m => ({ default: m.ForecastAccuracyPanel })));
+// ForecastAccuracyPanel — dispatch #106 Phase B: no longer given its own lazyPanel entry here.
+// It's still used, but only inside ForecastReportsPanel below, which lazy-loads it itself
+// (src/features/forecast-reports.js imports it directly from analytics.js).
+const ForecastReportsPanel      = lazyPanel(() => import('../features/forecast-reports.js').then(m => ({ default: m.ForecastReportsPanel })));
 const AIBacktestScanner         = lazyPanel(() => _analytics().then(m => ({ default: m.AIBacktestScanner })));
 const DialedInPanel             = lazyPanel(() => _analytics().then(m => ({ default: m.DialedInPanel })));
 const DateRangeReport           = lazyPanel(() => _analytics().then(m => ({ default: m.DateRangeReport })));
@@ -598,8 +605,10 @@ function App() {
   // without a static top-level fetch (entry-chunk budget — CLAUDE.md).
   React.useEffect(() => { configureLazyFill({ setDs, loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows } }); }, []);
   const [view, setView]           = useState('command'); // command | district | store | org
-  // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/fcst-accuracy/
-  // proj/report, per panel-registry.js's route:true). Layered ABOVE `view`, not merged into it:
+  // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/
+  // forecast-reports/proj/report, per panel-registry.js's route:true — forecast-reports
+  // replaced the original fcst-accuracy/lifelenz-bridge pair, dispatch #106 Phase B). Layered
+  // ABOVE `view`, not merged into it:
   // opening a route panel replaces the content area exactly like a view change, but leaves
   // view/selStore untouched underneath, so closing it reveals whatever was already selected —
   // see the render gates below (`view==='command'&&!anyModalOpen&&!routePanel&&...`).
@@ -657,6 +666,11 @@ function App() {
   const [planningTab, setPlanningTab] = useState('targets');
   // showSchedHub — Dispatch #55 Part B: replaced by routePanel==='sched-hub' (see routePanel above).
   const [schedTab, setSchedTab] = useState('scheduling');
+  // forecastReportsTab (dispatch #106 Phase B) — which of ForecastReportsPanel's two internal
+  // tabs to open, same pattern as schedTab/planningTab above. The 'fcst-accuracy'/
+  // 'lifelenz-bridge' hub-tab dispatch branches below set this before routing to
+  // 'forecast-reports'; opening 'forecast-reports' directly (nav) leaves it as whatever it last was.
+  const [forecastReportsTab, setForecastReportsTab] = useState('fcst-accuracy');
   const [showPanelManager, setShowPanelManager] = useState(false); // Notes 24 Panel Manager
   const [panelVis, setPanelVis] = useState(loadPanelVis);          // {id:bool} optional-panel visibility
   const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
@@ -682,9 +696,9 @@ function App() {
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
   const [showChannelIntel, setShowChannelIntel] = useState(false);
-  // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge'
-  // (see routePanel above), same pattern as fcst-accuracy/dicompare/proj/report. Now a real
-  // date-range + accuracy tool, not a quick interruption — a URL-addressable destination.
+  // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge',
+  // then dispatch #106 Phase B folded that route into routePanel==='forecast-reports' (see
+  // routePanel above) as one of ForecastReportsPanel's two internal tabs.
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
@@ -761,7 +775,8 @@ function App() {
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   const [showFcstRef,         setShowFcstRef]         = useState(false);
-  // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy' (see routePanel above).
+  // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy', then dispatch #106
+  // Phase B folded that route into routePanel==='forecast-reports' (see routePanel above).
   const [showDtSoS,       setShowDtSoS]       = useState(false);
   const [showGradedVisits, setShowGradedVisits] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
@@ -2542,7 +2557,7 @@ function App() {
   // by v4.855 fifteen panels had drifted out of this list, so panel-registry.test.js
   // now FAILS the build if any openable panel is missing from it or from the
   // Escape handler below. Keep the list hand-written; the test keeps it honest.
-  // Dispatch27 Workstream E: dicompare/fcst-accuracy/proj/report are deliberately NOT here
+  // Dispatch27 Workstream E: dicompare/forecast-reports/proj/report are deliberately NOT here
   // any more — they're routePanel now, not showX. A route panel replaces AtAGlance/StoreDash/etc
   // in the render gates below (view==='command'&&!anyModalOpen&&!routePanel&&...) rather than
   // overlaying them, so there's nothing left running behind it that anyModalOpen would need to
@@ -2686,7 +2701,12 @@ function App() {
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
         if(modal==='dicompare')      perm('analytics.forecasting')&&goRoute('dicompare');
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
-        if(modal==='fcst-accuracy')  perm('analytics.forecasting')&&goRoute('fcst-accuracy');
+        // fcst-accuracy / lifelenz-bridge CONVERTED to hub-tab (dispatch #106 Phase B) -- same
+        // "select a tab, route to the hub" shape as sched-summary/labor-analytics above, now
+        // pointing at ForecastReportsPanel's two internal tabs instead of a standalone route.
+        if(modal==='forecast-reports')perm('analytics.forecasting')&&goRoute('forecast-reports');
+        if(modal==='fcst-accuracy')   perm('analytics.forecasting')&&(setForecastReportsTab('fcst-accuracy'),goRoute('forecast-reports'));
+        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&(setForecastReportsTab('lifelenz-bridge'),goRoute('forecast-reports'));
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='security')       perm('security.view')&&setShowSecurity(true);
@@ -2694,7 +2714,6 @@ function App() {
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
-        if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&goRoute('lifelenz-bridge');
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
         if(modal==='compare')        perm('analytics.store')&&setShowCompare(true);
         if(modal==='report')         goRoute('report');
@@ -2817,7 +2836,8 @@ function App() {
           else if(modal==='eom-dashboard')perm('analytics.district')&&goRoute('eom-dashboard');
           else if(modal==='fob-analysis')goRoute('fob-analysis');
           else if(modal==='labor-analytics'){setSchedTab&&setSchedTab('analytics');goRoute('sched-hub');}
-          else if(modal==='fcst-accuracy')goRoute('fcst-accuracy');
+          else if(modal==='fcst-accuracy'){setForecastReportsTab('fcst-accuracy');goRoute('forecast-reports');} // dispatch #106 Phase B merge
+          else if(modal==='forecast-reports')goRoute('forecast-reports');
         }}),
       view==='district'&&!selStore&&!routePanel&&h(DistrictGrid,{stores,ds,settings,dateRange,userEvents,onSelectStore:goStore}),
       view==='store'&&selStore&&!anyModalOpen&&!routePanel&&h(StoreDash,{store:stores.find(s=>s.loc===selStore)||stores[0],ds,settings,allStores:stores,onBack:()=>{setView('district');setSelStore(null);},onNav:goStore,dateRange,userEvents,onUpdateSettings:saveSettings}),
@@ -2833,15 +2853,16 @@ function App() {
         subtitle:'Compare forecast accuracy with Dialed-In calibration vs without — see the exact dollar difference and MAPE improvement',
         onBack:()=>goRoute(null),
       }, h(DialedInComparisonReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
-      routePanel==='fcst-accuracy'&&h(RoutePanelShell,{
-        title:'🎯 Forecast Accuracy',
+      // fcst-accuracy / lifelenz-bridge merged into forecast-reports (dispatch #106 Phase B,
+      // both now kind:'hub-tab' in panel-registry.js) — ForecastReportsPanel renders whichever
+      // of its two internal tabs is active (forecastReportsTab), each reusing
+      // ForecastAccuracyPanel/LifeLenzBridgePanel as-is (own header/chrome intact, matching how
+      // they rendered here individually before the merge).
+      routePanel==='forecast-reports'&&h(RoutePanelShell,{
+        title:'🎯 Forecast Reports',
+        subtitle:'Forecast Accuracy backtest + MBI vs LifeLenz Accuracy — parent name is a proposal, not yet owner-confirmed (memory/dispatch-106.md)',
         onBack:()=>goRoute(null),
-      }, h(ForecastAccuracyPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
-      routePanel==='lifelenz-bridge'&&h(RoutePanelShell,{
-        title:'🌉 MBI vs LifeLenz Accuracy',
-        subtitle:'Forward adjustment suggestions, plus a Wednesday-start weekly accuracy reconciliation of Meridian vs LifeLenz’s own forecast',
-        onBack:()=>goRoute(null),
-      }, h(LifeLenzBridgePanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      }, h(ForecastReportsPanel,{stores,ds,settings,userEvents,onClose:()=>goRoute(null),initialTab:forecastReportsTab})),
       routePanel==='proj'&&h(RoutePanelShell,{
         title:'📋 Projection Workspace',
         subtitle:'Double-click any cell to override · 🔒 Lock rows · ✅ Approve · Drill down with ▶',

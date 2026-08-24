@@ -493,7 +493,13 @@ function runLifeLenzBridgeScan(loc, ds, settings, userEvents, range){
 // historical day-of-week bias — the only real guess of the three, and now the last
 // resort rather than the default (dispatch #105 correction, "no guessing").
 // ─────────────────────────────────────────────────────────────────────────────
-function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
+// headerTabs (dispatch #106 Phase B) — optional node rendered alongside this panel's own
+// Single Store/District/Accuracy mode switcher, used by the new ForecastReportsPanel tab shell
+// (src/features/forecast-reports.js) to place its "Forecast Accuracy / MBI vs LifeLenz
+// Accuracy" report switcher where this panel's own header already renders (ModalShell's
+// headerExtra), instead of overlaying a second header on top of this panel's own chrome.
+// Undefined/null for any other caller — additive, this panel's own logic is unchanged.
+function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerTabs}) {
   const {useState:uSt} = React;
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
   const DOW_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -724,20 +730,24 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose}) {
     navigator.clipboard.writeText(lines.join('\n')).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   };
 
-  if(!ds||!ds.loaded) return h(ModalShell,{title:'MBI vs LifeLenz Accuracy',icon:'🌉',onClose,maxWidth:480,zIndex:Z.nested},
+  if(!ds||!ds.loaded) return h(ModalShell,{title:'MBI vs LifeLenz Accuracy',icon:'🌉',onClose,maxWidth:480,zIndex:Z.nested,
+    headerExtra:headerTabs||null},
     div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
       div({style:{fontSize:'11px',lineHeight:1.6}},'Waiting on data to load.')));
 
   return h(ModalShell,{
     title:'MBI vs LifeLenz Accuracy',icon:'🌉',onClose,maxWidth:960,zIndex:Z.nested,
     subtitle:'A number to type into LifeLenz before the schedule locks, plus a Wednesday-start weekly reconciliation of Meridian vs LifeLenz’s own forecast',
-    headerExtra: div({style:{display:'flex',gap:3}},
-      ...[['single','📍 Single Store'],['district','🏙 District'],['accuracy','📈 Accuracy']].map(([id,l])=>
-        btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
-          background:mode===id?'var(--adim)':'transparent',
-          color:mode===id?'var(--amber)':'var(--text3)',
-          border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
-          onClick:()=>setMode(id)},l))
+    headerExtra: div({style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}},
+      headerTabs||null,
+      div({style:{display:'flex',gap:3}},
+        ...[['single','📍 Single Store'],['district','🏙 District'],['accuracy','📈 Accuracy']].map(([id,l])=>
+          btn({key:id,style:{fontSize:'9px',padding:'4px 10px',borderRadius:'var(--r)',
+            background:mode===id?'var(--adim)':'transparent',
+            color:mode===id?'var(--amber)':'var(--text3)',
+            border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
+            onClick:()=>setMode(id)},l))
+      )
     ),
   },
 

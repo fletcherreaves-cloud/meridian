@@ -2036,7 +2036,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
              sub:mape!=null?(projSec.locked||0)+'/'+allLocs.length+' locked · '+(projSec.locked===allLocs.length?'All projections locked':'Locks pending')+'  · Model health: 🟢'+projSec.health.green+' 🟡'+projSec.health.yellow+' 🔴'+projSec.health.red:'Run Dialed-In calibration to compute MAPE',
              col:mape==null?'var(--text3)':mape<5?'#10b981':mape<8?'#f59e0b':'#ef4444',
              dot:mape==null?'—':mape<5?'🟢':mape<8?'🟡':'🔴',
-             nav:()=>onOpenModal&&onOpenModal('fcst-accuracy')},
+             nav:()=>onOpenModal&&onOpenModal('forecast-reports')}, // dispatch #106 Phase B: fcst-accuracy merged into forecast-reports
             oepe!=null&&{icon:'⚡',label:'OEPE / Drive-Thru Speed',
              val:Math.round(oepe)+'s',
              sub:it?'Target '+Math.round(it.oepeTgt||140)+'s · DT Parked: '+((park||0)*100).toFixed(2)+'%'+(park>(it.parkTgt||0.12)?' ⚠ Over target':''):'No service data',
