@@ -84,7 +84,14 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #92 — SAGE's forecast-bias claim was unsupportable by its own tool](dispatch-92.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #94 — wire up `tol:`, then roll it up district-wide and into Coaching](dispatch-94.md)** —
+  **Start here.** `store-dash.js` declares `tol:` on 24 metrics and nothing reads it — the KPI
+  table actually colors rows via a hardcoded 5%/15%-relative-to-target band (`statusCol`), which
+  treats every metric's scale the same regardless of what it measures. Owner-decided scope:
+  **Phase 1** replaces the relative band with `tol` as an absolute per-metric threshold (ship this
+  alone first); **Phase 2** rolls up a district-wide out-of-tolerance summary; **Phase 3** feeds it
+  into the Coaching engine's findings pipeline. Phase 1 must be correct and merged before 2/3 start.
+- **📋 (2026-08-24): [Dispatch #92 — SAGE's forecast-bias claim was unsupportable by its own tool](dispatch-92.md)** —
   **Start here.** SAGE told the owner "-6.0%, 27 of 27 stores under" and recommended a
   $42K–$85K/mo district-wide schedule correction on that basis. Measured false on both counts
   (24/27, -2.50%, not 27/27 and -6.0%) — and the root cause is structural: `query_forecast_snapshots`
