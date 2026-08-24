@@ -3344,6 +3344,29 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   );
 }
 
+// Groups ForecastAccuracyPanel's dailyRows into weeks starting on the configured week-start
+// day (0=Sun 1=Mon 3=Wed — settings.weekStartDay, McDonald's standard). Phase A, dispatch
+// #106 — mirrors src/features/lifelenz.js's groupDaysByWeek/groupAccByWeek (same weekStartOf
+// boundary math, different per-day shape), kept local since dailyRows' fields (forecast/
+// actual/variance$) don't match either of those. Weekly totals are dollar-weighted (sum $
+// then take variance from the sums), never an average of per-day percentages.
+function groupForecastDaysByWeek(dailyRows, wsd){
+  const map=new Map();
+  (dailyRows||[]).forEach(d=>{
+    const wStart=weekStartOf(d.date,wsd);
+    const key=wStart.getTime();
+    if(!map.has(key)) map.set(key,{weekStart:wStart,weekEnd:addD(wStart,6),days:[]});
+    map.get(key).days.push(d);
+  });
+  return Array.from(map.values()).sort((a,b)=>a.weekStart-b.weekStart).map(g=>{
+    const wkForecast=g.days.reduce((s,d)=>s+d.forecast,0);
+    const wkActual=g.days.reduce((s,d)=>s+d.actual,0);
+    return{...g,
+      wkForecast,wkActual,wkVariance:wkForecast-wkActual,
+      wkVariancePct:wkActual>0?(wkForecast-wkActual)/wkActual*100:null};
+  });
+}
+
 // FORECAST ACCURACY REPORT — Session 3
 // Per-store, per-model MAPE backtest over any period.
 // Models: LY Adjusted | AI Forecast | Simple Blend | Dialed-In (if calibrated)
@@ -3358,6 +3381,7 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
   const [tot, setTot] = React.useState(0);
   const [results, setResults] = React.useState(null);
   const [expandDow, setExpandDow] = React.useState(false);
+  const [expandWeekly, setExpandWeekly] = React.useState(false); // Phase A, dispatch #106
   const [sortCol, setSortCol] = React.useState('ai');
   const cancelRef = React.useRef(false);
 
@@ -3445,6 +3469,14 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     // backtest-window even though that's rare in practice.
     locs.forEach(loc=>{acc[String(loc)]={ly:[],ai:[],blend:[],simple:[],di:[],qsr:[]};aiModelTally[String(loc)]={};});
     const snapshots=[];
+    // Phase A (dispatch #106) — daily rollup for the weekly-cadence breakdown table below,
+    // matching LifeLenz's own native Forecast Accuracy Analysis screen (Forecast/Actual/
+    // Variance, one row per day, grouped into a Wed-start week per settings.weekStartDay).
+    // Keyed by calendar day, summed across every selected location — dollar-weighted (sum of
+    // $ then take variance from the sums), never an average of per-store percentages, per
+    // CLAUDE.md's "never average averages, dollar-weight aggregates" rule. Uses the SAME
+    // f.forecast (AI Forecast model) already computed per row below — no extra forecastDay calls.
+    const dailyMap={};
 
     // Pre-fetch QSRSoft daily projections from qsr_daily_activity for the selected window.
     // Sum proj_sales_dollars across all hour slots per loc+dt to get a daily total,
@@ -3479,6 +3511,15 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
           const dow=r.date.getDay();
           if(!acc[ls]) return;
           const dk=dateKey(r.date);
+          // Daily rollup for the weekly-cadence breakdown (Phase A, dispatch #106) — same
+          // per-row f.forecast/act already computed above, summed across every selected
+          // location for this calendar day.
+          if(f.forecast>0&&act>0){
+            if(!dailyMap[dk]) dailyMap[dk]={forecast:0,actual:0,dow,n:0};
+            dailyMap[dk].forecast+=f.forecast;
+            dailyMap[dk].actual+=act;
+            dailyMap[dk].n+=1;
+          }
           if(lyE!=null&&lyE<150){acc[ls].ly.push({v:lyE,dow});snapshots.push({loc:ls,dt:dk,source:'ly',forecast_sales:+f.lyAdj.toFixed(2),actual_sales:+act.toFixed(2),mape:+lyE.toFixed(4)});}
           if(aiE!=null&&aiE<150){acc[ls].ai.push({v:aiE,dow});snapshots.push({loc:ls,dt:dk,source:'ai',forecast_sales:+f.forecast.toFixed(2),actual_sales:+act.toFixed(2),mape:+aiE.toFixed(4)});}
           if(blE!=null&&blE<150){acc[ls].blend.push({v:blE,dow});snapshots.push({loc:ls,dt:dk,source:'blend',forecast_sales:+((f.lyAdj+f.forecast)/2).toFixed(2),actual_sales:+act.toFixed(2),mape:+blE.toFixed(4)});}
@@ -3591,8 +3632,21 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
     });
 
     const rl=range.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'\u2013'+range.e.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+
+    // Daily rows for the weekly-cadence breakdown (Phase A, dispatch #106) \u2014 one row per
+    // calendar day covered by this backtest, forecast/actual summed across every selected
+    // location, sorted chronologically. Grouped into Wed-start weeks at render time via
+    // groupForecastDaysByWeek (settings.weekStartDay), matching LifeLenz's own native
+    // Forecast Accuracy Analysis screen (Forecast/Actual/Variance per day, per week).
+    const dailyRows=Object.keys(dailyMap).sort().map(dk=>{
+      const v=dailyMap[dk];
+      const variance=v.forecast-v.actual;
+      const variancePct=v.actual>0?variance/v.actual*100:null;
+      return{date:new Date(dk+'T00:00:00'),dow:v.dow,forecast:v.forecast,actual:v.actual,variance,variancePct,n:v.n};
+    });
+
     setResults({byStore,dist:{ly:distLY,ai:distAI,blend:distBL,simple:distSP,di:distDI,qsr:distQSR,best:distBest},
-      dowBest,totalDays:rows.length,locCount:locs.length,periodLabel:curP.l,rangeLabel:rl});
+      dowBest,totalDays:rows.length,locCount:locs.length,periodLabel:curP.l,rangeLabel:rl,dailyRows});
     }finally{
       // #dispatch11 — this is the actual fix's safety net: whatever throws inside the try
       // above (the TDZ bug this closes, or any future one), `running` still clears here
@@ -3862,6 +3916,64 @@ function ForecastAccuracyPanel({stores, ds, settings, userEvents, onClose}) {
               }))
             )
           )
+        ),
+
+        // ── Weekly / Daily Breakdown (Phase A, dispatch #106) ─────────
+        // Additive to the period-aggregate MAPE view above — a week-by-week, day-by-day
+        // Forecast/Actual/Variance table anchored on settings.weekStartDay (3=Wed, McDonald's
+        // standard), matching LifeLenz's own native Forecast Accuracy Analysis screen shape.
+        // "Forecast" here is the AI Forecast model (the panel's flagship column above), summed
+        // across every selected location for 'All Locations' — dollar-weighted, not an average
+        // of per-day percentages.
+        div({style:{borderTop:'.5px solid var(--bdr)'}},
+          div({style:{padding:'8px 16px',display:'flex',alignItems:'center',gap:8,cursor:'pointer',background:'var(--surf2)'},
+            onClick:()=>setExpandWeekly(v=>!v)},
+            span({style:{fontSize:'9px',fontWeight:700,color:'var(--text)'}},(expandWeekly?'▲':'▶')+' Weekly / Daily Breakdown'),
+            span({style:{fontSize:'8px',color:'var(--text3)'}},
+              'Forecast vs Actual, day by day, grouped into '+DOW_NAMES[settings.weekStartDay??3]+'-start weeks — AI Forecast model')),
+          expandWeekly&&(()=>{
+            const weeklyGroups=groupForecastDaysByWeek(results.dailyRows,settings.weekStartDay??3);
+            if(!weeklyGroups.length) return div({style:{padding:'10px 16px',fontSize:'9px',color:'var(--text3)'}},
+              'No completed days with both a forecast and an actual in this period.');
+            return div({style:{overflowX:'auto'}},
+              h('table',{style:{width:'max-content',minWidth:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+                h('thead',null,h('tr',null,
+                  th({style:{...thS,textAlign:'left',paddingLeft:16}},'Date'),
+                  th({style:{...thS,textAlign:'left'}},'Day'),
+                  th({style:{...thS}},'Forecast'),
+                  th({style:{...thS}},'Actual'),
+                  th({style:{...thS}},'Variance $'),
+                  th({style:{...thS}},'Variance %'),
+                  th({style:{...thS,textAlign:'center'}},'Locs')
+                )),
+                h('tbody',null, weeklyGroups.flatMap((g,gi)=>[
+                  tr({key:'wk'+gi,style:{background:'var(--surf3)'}},
+                    td({colSpan:2,style:{padding:'5px 8px 5px 16px',fontWeight:700,color:'var(--text)'}},
+                      'Week of '+g.weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'–'+g.weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+                    td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text)'}},f$(g.wkForecast)),
+                    td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:'var(--text)'}},f$(g.wkActual)),
+                    td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:mapeCol(g.wkVariancePct!=null?Math.abs(g.wkVariancePct):null)}},f$(Math.abs(g.wkVariance))+(g.wkVariance>=0?' over':' under')),
+                    td({style:{padding:'5px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:mapeCol(g.wkVariancePct!=null?Math.abs(g.wkVariancePct):null)}},g.wkVariancePct!=null?(g.wkVariancePct>=0?'+':'')+g.wkVariancePct.toFixed(1)+'%':'—'),
+                    td({style:{padding:'5px 8px',textAlign:'center',color:'var(--text3)',fontSize:'8px'}},'')
+                  ),
+                  // No zebra background here (unlike sibling tables above) — CLAUDE.md's rule
+                  // against a new hardcoded white-alpha background + #296's ratcheting ceiling
+                  // test (light-mode-white-alpha.test.js) block a fresh literal site, and no
+                  // token-based zebra alternative exists yet in this codebase; the borderBottom
+                  // already separates rows without it.
+                  ...g.days.map((d,di)=>tr({key:'d'+gi+'_'+di,style:{borderBottom:'.5px solid var(--bdr)'}},
+                    td({style:{padding:'4px 8px 4px 16px',color:'var(--text2)'}},d.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+                    td({style:{padding:'4px 8px',color:'var(--text3)'}},DOW_NAMES[d.dow]),
+                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},f$(d.forecast)),
+                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},f$(d.actual)),
+                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeCol(d.variancePct!=null?Math.abs(d.variancePct):null)}},f$(Math.abs(d.variance))+(d.variance>=0?' over':' under')),
+                    td({style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:mapeCol(d.variancePct!=null?Math.abs(d.variancePct):null)}},d.variancePct!=null?(d.variancePct>=0?'+':'')+d.variancePct.toFixed(1)+'%':'—'),
+                    td({style:{padding:'4px 8px',textAlign:'center',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},''+d.n)
+                  ))
+                ]))
+              )
+            );
+          })()
         )
       )
     )
