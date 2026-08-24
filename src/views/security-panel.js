@@ -22,13 +22,18 @@ import {
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
   loadQsrSecurityEventsForSubject,
 } from '../lib/supabase.js';
-import { INV_ORG_COORDS } from '../constants.js';
+import { INV_ORG_COORDS, STORE_NAMES } from '../constants.js';
 import { RevealName } from './store-analytics.js';
 import { addD, fmtDI } from '../utils/date.js';
 import {
   monthsBack, assembleInventoryDrilldown, assembleCashDrilldown,
   classifySubjectShape, buildSubjectTimeline, corroboratingFlags,
 } from '../engine/security-drilldown.js';
+// dispatch #100 -- the Org/Store pills below extend scopeMatches' own All->State->Org->Store
+// hierarchy (feedback-selector-ui-standard.md); the date-range control reuses the shared
+// DateRangeControl (issue #126 Spine 1) rather than a bespoke date-input pair, matching this
+// repo's "don't invent a new pattern" standing rule.
+import { DateRangeControl, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -166,6 +171,24 @@ export function scopeMatches(loc, scope) {
   return true;
 }
 
+// dispatch #100 -- the date-range control's own filtering basis. windowEnd (the security rule's
+// OWN evaluation-window end date), NOT computedAt (when the batch job happened to run): this
+// panel's existing subject-timeline/trend features already key off windowEnd exclusively --
+// groupFindingsBySubject sorts each rule's own window history by windowEnd (computedAt is only
+// the tiebreaker), and buildSubjectTimeline()/security-drilldown.js's period/trend math does the
+// same -- so the new control follows the basis this file already established rather than picking
+// a fresh one. range: {s,e} ISO 'YYYY-MM-DD' strings, DateRangeControl's own shape
+// (src/components/PanelControls.js) -- null, or either side blank, means unbounded on that side.
+// A finding with no windowEnd at all is excluded once ANY bound is set (an honest "can't place
+// this on the timeline you asked for"), never silently kept.
+export function windowEndInRange(windowEnd, range) {
+  if (!range || (!range.s && !range.e)) return true;
+  if (!windowEnd) return false;
+  if (range.s && windowEnd < range.s) return false;
+  if (range.e && windowEnd > range.e) return false;
+  return true;
+}
+
 // dispatch #46 §A point 3 -- "units on every number." Five live rules, five units -- a hardcoded
 // map, not a derivation from logic_expression (which the panel doesn't load; deriving it would
 // mean loading and re-parsing jsonb the loader already has no other reason to fetch, for a lookup
@@ -180,6 +203,30 @@ const RULE_UNITS = {
   'INV-001':  '% variance vs. expected usage',
   'INV-002':  'per $1,000 store sales',
 };
+
+// dispatch #100 follow-up (owner, same-day) -- "a small brief descriptor to the pill... Cash +/-,
+// Overring, Refund, Promo." A 1-3-word tag, derived MECHANICALLY from the rule's own already-
+// loaded `method` (security_rules.method -- the same short plain-English name buildDecisionSentence
+// and SubjectDetail already render), never a hardcoded ruleId->tag lookup -- matching this file's
+// own RuleDirectory anti-hardcode discipline (a rule renamed/added in security_rules must pick up
+// a correct tag with no code change). Real seeded methods (supabase/schema-security-rules*.sql):
+// "Cash drawer over/short rate", "POS over-ring rate", "Manual refund / self-authorized refund
+// rate", "Promo/discount rate", "Item TvA variance rate vs. expected usage", "Dollar-variance rate
+// vs. store sales". Two mechanical trims, both at real word/clause boundaries (never mid-word):
+//   1. cut everything from the word "rate" onward -- every current method's qualifying clause
+//      ("... vs. expected usage", "... vs. store sales") lives after it and a short tag doesn't
+//      need it.
+//   2. if what's left is phrased "X / Y" (the same concept stated two ways, e.g. "Manual refund /
+//      self-authorized refund"), keep only the first clause.
+export function ruleShortTag(rule) {
+  const method = (rule?.method || '').trim();
+  if (!method) return null;
+  let tag = method.replace(/\brate\b.*$/i, '').trim();
+  const slashClause = tag.indexOf(' / ');
+  if (slashClause > 0) tag = tag.slice(0, slashClause).trim();
+  tag = tag.replace(/[\s/-]+$/, '').trim();
+  return tag || method;
+}
 
 function fmtValue(ruleId, v) {
   if (v == null) return '—';
@@ -643,6 +690,9 @@ export function SecurityPanel({ userRole, onClose }) {
   const [scope, setScope] = React.useState({ level: 'all' });
   const [ruleFilter, setRuleFilter] = React.useState(null);
   const [minSignals, setMinSignals] = React.useState(1);
+  // dispatch #100 -- date-range filter, on windowEnd (see windowEndInRange's own comment for why).
+  // null = unbounded (the pre-#100 behavior, unchanged) -- {s,e} is DateRangeControl's own shape.
+  const [dateRange, setDateRange] = React.useState(null);
   const [expanded, setExpanded] = React.useState(null);
   const [revealed, setRevealed] = React.useState({});
   const [showLegend, setShowLegend] = React.useState(() => {
@@ -734,9 +784,14 @@ export function SecurityPanel({ userRole, onClose }) {
       .filter(g => scopeMatches(g.loc, scope))
       .filter(g => !ruleFilter || g.verdicts.some(v => v.ruleId === ruleFilter))
       .filter(g => g.flaggedCount >= minSignals)
-      .map(g => ({ ...g, verdicts: g.verdicts.filter(v => domainRuleIds.has(v.ruleId)) }))
+      // dispatch #100 -- windowEndInRange added alongside the pre-existing domainRuleIds check,
+      // same placement/shape as that check: a subject with NO verdict inside the selected range
+      // (in the current domain) drops out via the .filter below, exactly how a subject with no
+      // verdict in the current domain already drops out today. dateRange===null is unbounded, so
+      // this is a no-op until a range is actually picked.
+      .map(g => ({ ...g, verdicts: g.verdicts.filter(v => domainRuleIds.has(v.ruleId) && windowEndInRange(v.windowEnd, dateRange)) }))
       .filter(g => g.verdicts.length > 0);
-  }, [findings, domain, scope, ruleFilter, minSignals, domainRuleIds]);
+  }, [findings, domain, scope, ruleFilter, minSignals, domainRuleIds, dateRange]);
 
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
@@ -775,6 +830,16 @@ export function SecurityPanel({ userRole, onClose }) {
 
   const domainRules = rules.filter(r => r.domain === domain);
   const states = React.useMemo(() => [...new Set(Object.values(INV_ORG_COORDS).map(o => o.state).filter(Boolean))], []);
+  // dispatch #100 -- Org and Store tiers for the same All->State->Org->Store row. `orgs` derived
+  // the same way `states` already is (from the live INV_ORG_COORDS data, not a hardcoded list) and
+  // through the EXACT mapping scopeMatches itself uses (org.state==='FL' ? 'emerald' : 'mcdok'),
+  // so a future third org/state added to INV_ORG_COORDS is picked up with no code change here.
+  // `storeLocs` is every loc INV_ORG_COORDS knows about, numeric-sorted -- the same store-universe
+  // source opportunity-dollars.js's LocationSelector already draws its own flat store-pill row
+  // from, so a 27-store wrapped pill row is a proven, shipped pattern here, not a new risk.
+  const orgs = React.useMemo(() => [...new Set(Object.values(INV_ORG_COORDS).map(o => (o.state === 'FL' ? 'emerald' : 'mcdok')))].sort(), []);
+  const storeLocs = React.useMemo(() => Object.keys(INV_ORG_COORDS).sort((a, b) => Number(a) - Number(b)), []);
+  const ORG_LABELS = { emerald: 'Emerald Arches', mcdok: 'MCDOK' };
 
   // Dispatch #50 Part A -- owner: "scroll not working in the modal." Root cause: a flex item's
   // default min-height is 'auto' (content-based), not 0, so a flex column refuses to shrink below
@@ -800,6 +865,18 @@ export function SecurityPanel({ userRole, onClose }) {
       span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
       pill('All', scope.level === 'all', () => setScope({ level: 'all' })),
       states.map(st => pill(st, scope.level === 'state' && scope.value === st, () => setScope({ level: 'state', value: st }))),
+      // dispatch #100 -- Org and Store pills, extending the SAME row (same pill() helper, same
+      // scope shape scopeMatches already consumes) rather than a new control. A thin divider
+      // separates each tier, reusing the exact divider style already used above (domain tabs ->
+      // location pills) so Org/Store read as a new group, not a continuation of State.
+      span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
+      orgs.map(org => pill(ORG_LABELS[org] || org, scope.level === 'org' && scope.value === org, () => setScope({ level: 'org', value: org }))),
+      span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
+      storeLocs.map(loc => pill(
+        STORE_NAMES[loc] ? `${loc} — ${STORE_NAMES[loc]}` : loc,
+        scope.level === 'store' && scope.value === loc,
+        () => setScope({ level: 'store', value: loc }),
+      )),
       btn({
         onClick: () => setShowLegend(s => !s),
         style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
@@ -813,9 +890,28 @@ export function SecurityPanel({ userRole, onClose }) {
       div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11 } },
         span({ style: { color: 'var(--text3)' } }, 'Rule:'),
         pill('All', !ruleFilter, () => setRuleFilter(null)),
-        domainRules.map(r => pill(r.ruleId + (r.active ? '' : ' ⏸'), ruleFilter === r.ruleId, () => setRuleFilter(r.ruleId))),
+        // dispatch #100 follow-up -- each pill now carries a short descriptor (ruleShortTag,
+        // derived from the rule's own security_rules.method) alongside the bare ruleId, so the
+        // policy a pill stands for is readable without first clicking it. The ⏸ inactive marker
+        // stays exactly where it already was, appended last.
+        domainRules.map(r => {
+          const tag = ruleShortTag(r);
+          const label = r.ruleId + (tag ? ` · ${tag}` : '') + (r.active ? '' : ' ⏸');
+          return pill(label, ruleFilter === r.ruleId, () => setRuleFilter(r.ruleId));
+        }),
         span({ style: { color: 'var(--text3)', marginLeft: 12 } }, 'Min signals:'),
         [1, 2, 3].map(n => pill(String(n) + '+', minSignals === n, () => setMinSignals(n))),
+      ),
+      // dispatch #100 -- date-range control, filtering on windowEnd (the rule's own evaluation-
+      // window end date -- see windowEndInRange's own comment for why that basis, not computedAt).
+      // Named explicitly in the label itself, per this repo's "name the basis" habit, rather than
+      // an ambiguous "Date range." Reuses the shared DateRangeControl (PanelControls.js) with an
+      // "All dates" reset pill alongside it -- the shared component has no built-in "no filter"
+      // state, and this stays additive rather than editing that shared file.
+      div({ style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 11, marginTop: 8 } },
+        span({ style: { color: 'var(--text3)' } }, 'Findings with a window ending:'),
+        pill('All dates', !dateRange, () => setDateRange(null)),
+        h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),
       ),
       // dispatch #46 §A point 1 -- "a small detail under each policy." Shown for the currently
       // selected rule (or the first domain rule when 'All' is selected, so there is always

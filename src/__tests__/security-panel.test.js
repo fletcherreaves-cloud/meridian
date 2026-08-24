@@ -36,8 +36,12 @@ vi.mock('../lib/supabase.js', () => ({
 
 import {
   securityPanelAccess, verdictState, groupFindingsBySubject, scopeMatches, SecurityPanel,
-  classifySubjectTrend, buildDecisionSentence,
+  classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
 } from '../views/security-panel.js';
+// dispatch #100 -- resolveDatePreset lets the render tests below compute a REAL, wall-clock-
+// anchored {s,e} the same way the panel's own DateRangeControl preset buttons do, instead of
+// hardcoding dates that would drift stale against "today."
+import { resolveDatePreset } from '../components/PanelControls.js';
 
 // ── Pure logic ────────────────────────────────────────────────────────────────────────────────
 
@@ -239,6 +243,58 @@ describe('scopeMatches() — All -> State -> Org -> Store hierarchy', () => {
   it('"store" matches only the exact loc', () => {
     expect(scopeMatches('0000001', { level: 'store', value: '0000001' })).toBe(true);
     expect(scopeMatches('0000002', { level: 'store', value: '0000001' })).toBe(false);
+  });
+
+  // dispatch #100 -- 'org' and 'store' were already implemented in scopeMatches (the gap was the
+  // pill UI never offering them), so these two assertions were already true before this dispatch.
+  // Kept here anyway so scopeMatches' own full 4-level contract is asserted in one place.
+  it('"org" matches every store in the same org (real INV_ORG_COORDS mapping: FL -> emerald, OK -> mcdok)', () => {
+    expect(scopeMatches('6178', { level: 'org', value: 'emerald' })).toBe(true); // Chipley, FL
+    expect(scopeMatches('3708', { level: 'org', value: 'emerald' })).toBe(false); // Ardmore, OK
+    expect(scopeMatches('3708', { level: 'org', value: 'mcdok' })).toBe(true);
+  });
+});
+
+describe('windowEndInRange() — the date-range control\'s filtering basis (dispatch #100)', () => {
+  it('no range (null, or both sides blank) matches everything -- the pre-#100 unfiltered default', () => {
+    expect(windowEndInRange('2026-08-28', null)).toBe(true);
+    expect(windowEndInRange('2026-08-28', { s: null, e: null })).toBe(true);
+    expect(windowEndInRange(null, null)).toBe(true);
+  });
+  it('a finding with no windowEnd at all is excluded once ANY bound is set -- an honest non-placement, not a silent keep', () => {
+    expect(windowEndInRange(null, { s: '2026-08-01', e: null })).toBe(false);
+    expect(windowEndInRange(undefined, { s: null, e: '2026-08-31' })).toBe(false);
+  });
+  it('respects a start-only bound', () => {
+    expect(windowEndInRange('2026-08-01', { s: '2026-08-02', e: null })).toBe(false);
+    expect(windowEndInRange('2026-08-02', { s: '2026-08-02', e: null })).toBe(true); // inclusive
+  });
+  it('respects an end-only bound', () => {
+    expect(windowEndInRange('2026-09-01', { s: null, e: '2026-08-31' })).toBe(false);
+    expect(windowEndInRange('2026-08-31', { s: null, e: '2026-08-31' })).toBe(true); // inclusive
+  });
+  it('respects a full [s,e] range', () => {
+    expect(windowEndInRange('2026-08-15', { s: '2026-08-01', e: '2026-08-31' })).toBe(true);
+    expect(windowEndInRange('2026-07-31', { s: '2026-08-01', e: '2026-08-31' })).toBe(false);
+    expect(windowEndInRange('2026-09-01', { s: '2026-08-01', e: '2026-08-31' })).toBe(false);
+  });
+});
+
+describe('ruleShortTag() — the rule-pill short descriptor, derived from method (dispatch #100 follow-up)', () => {
+  it('compresses the real seeded methods (supabase/schema-security-rules*.sql) to short, readable tags', () => {
+    expect(ruleShortTag({ method: 'Cash drawer over/short rate' })).toBe('Cash drawer over/short');
+    expect(ruleShortTag({ method: 'POS over-ring rate' })).toBe('POS over-ring');
+    expect(ruleShortTag({ method: 'Manual refund / self-authorized refund rate' })).toBe('Manual refund');
+    expect(ruleShortTag({ method: 'Promo/discount rate' })).toBe('Promo/discount');
+    expect(ruleShortTag({ method: 'Item TvA variance rate vs. expected usage' })).toBe('Item TvA variance');
+    expect(ruleShortTag({ method: 'Dollar-variance rate vs. store sales' })).toBe('Dollar-variance');
+  });
+  it('never fabricates a tag for a rule with no method -- an honest null, not an invented label', () => {
+    expect(ruleShortTag({})).toBeNull();
+    expect(ruleShortTag(null)).toBeNull();
+  });
+  it('a method with no trailing "rate" clause is returned as-is rather than mangled', () => {
+    expect(ruleShortTag({ method: 'Count-cycle gap' })).toBe('Count-cycle gap');
   });
 });
 
@@ -921,5 +977,217 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
     loadSecurityFindingsMock.mockReset().mockResolvedValue(staleCorrobFindings);
     await expandAliceRow();
     expect(container.textContent).not.toMatch(/Corroborated by/);
+  });
+});
+
+// dispatch #100 -- Org and Store pills render through the real SecurityPanel and actually change
+// what's visible, not just "the pill renders" (standing rule: a test exercising only scopeMatches
+// in isolation can't tell a real fix from one whose pill row was never wired up -- exactly the gap
+// this dispatch closes). Real loc numbers from constants.js' own INV_ORG_COORDS, not synthetic
+// '0000001'-style fixture locs, so the org split is checked against the actual live mapping.
+describe('SecurityPanel — dispatch #100: Org and Store pills reach scopeMatches through the real UI', () => {
+  let container, root;
+  const RULES = [{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' }];
+  // 3708 = Ardmore-Broadway, OK -> MCDOK. 5183 = Chickasha, OK -> MCDOK. 6178 = Chipley, FL -> Emerald Arches.
+  const FINDINGS = [
+    { empToken: 'tok-ardmore', wrin: null, loc: '3708', ruleId: 'CASH-001', pass: true, value: 10, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-chickasha', wrin: null, loc: '5183', ruleId: 'CASH-001', pass: true, value: 8, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-chipley', wrin: null, loc: '6178', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('before selecting any pill, all three real stores render unfiltered (baseline for the assertions below)', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 5183/);
+    expect(container.textContent).toMatch(/Store 6178/);
+  });
+
+  it('the MCDOK Org pill filters to exactly the OK stores (3708, 5183), excluding the FL store (6178)', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const mcdokBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'MCDOK');
+    expect(mcdokBtn).toBeTruthy();
+    await act(async () => { mcdokBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 5183/);
+    expect(container.textContent).not.toMatch(/Store 6178/);
+  });
+
+  it('the Emerald Arches Org pill filters to exactly the FL store (6178), excluding both OK stores', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const emeraldBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Emerald Arches');
+    expect(emeraldBtn).toBeTruthy();
+    await act(async () => { emeraldBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 6178/);
+    expect(container.textContent).not.toMatch(/Store 3708/);
+    expect(container.textContent).not.toMatch(/Store 5183/);
+  });
+
+  it('a Store pill filters to EXACTLY that store, excluding a sibling in the same org', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    // Store pills carry the store name too (matching the shared LocationSelector's own label
+    // convention, PanelControls.js's storeLabel) -- click on the real label, not the bare loc.
+    const storeBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '3708 — Ardmore-Broadway');
+    expect(storeBtn).toBeTruthy();
+    await act(async () => { storeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).not.toMatch(/Store 5183/); // same org (MCDOK), still excluded
+    expect(container.textContent).not.toMatch(/Store 6178/);
+  });
+
+  it('"All" and per-State pills still behave exactly as before -- additive, not a rewrite', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const okBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'OK');
+    expect(okBtn).toBeTruthy();
+    await act(async () => { okBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 5183/);
+    expect(container.textContent).not.toMatch(/Store 6178/);
+    const allBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'All');
+    await act(async () => { allBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 5183/);
+    expect(container.textContent).toMatch(/Store 6178/);
+  });
+});
+
+// dispatch #100 -- the date-range control renders through the real panel and actually changes
+// which findings are visible, filtered on windowEnd (see windowEndInRange's own header comment
+// for why that basis). Uses resolveDatePreset() to compute a REAL, wall-clock-anchored {s,e} the
+// same way the panel's own preset buttons do, rather than a hardcoded date that would go stale.
+describe('SecurityPanel — dispatch #100: date-range control filters on windowEnd through the real UI', () => {
+  let container, root;
+  const RULES = [{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' }];
+  // recentEnd: today's real last-closed-business-day (per resolveDatePreset/lastClosedBusinessDay)
+  // -- guaranteed inside every preset window, including 7D. distantEnd: 400 real days before that
+  // -- guaranteed outside every preset window (the widest is 180D).
+  const recentEnd = resolveDatePreset('7d').e;
+  const distant = new Date(recentEnd + 'T00:00:00');
+  distant.setDate(distant.getDate() - 400);
+  const distantEnd = distant.toISOString().slice(0, 10);
+  const FINDINGS = [
+    { empToken: 'tok-recent', wrin: null, loc: '3708', ruleId: 'CASH-001', pass: true, value: 10, thresholdUsed: 5, windowStart: recentEnd, windowEnd: recentEnd, computedAt: recentEnd + 'T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: 'tok-distant', wrin: null, loc: '5183', ruleId: 'CASH-001', pass: true, value: 8, thresholdUsed: 5, windowStart: distantEnd, windowEnd: distantEnd, computedAt: distantEnd + 'T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('defaults to "All dates" -- both the recent and the distant subject render unfiltered', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 5183/);
+    const allDatesBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'All dates');
+    expect(allDatesBtn).toBeTruthy();
+  });
+
+  it('the 90D preset excludes the distant (400-day-old) subject and keeps the recent one', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const preset90 = [...container.querySelectorAll('button')].find(b => b.textContent === '90D');
+    expect(preset90).toBeTruthy();
+    await act(async () => { preset90.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).not.toMatch(/Store 5183/);
+  });
+
+  it('clicking "All dates" after a preset resets back to unbounded -- both subjects return', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const preset90 = [...container.querySelectorAll('button')].find(b => b.textContent === '90D');
+    await act(async () => { preset90.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).not.toMatch(/Store 5183/);
+    const allDatesBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'All dates');
+    await act(async () => { allDatesBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/Store 3708/);
+    expect(container.textContent).toMatch(/Store 5183/);
+  });
+
+  it('the control names its own filtering basis explicitly (windowEnd, not an ambiguous "date range")', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Findings with a window ending:/);
+  });
+});
+
+// dispatch #100 follow-up -- the rule-filter pill row shows a short descriptor on EVERY rule pill
+// (not just the currently-selected one's long description underneath), for both Cash and
+// Inventory domains, through the real panel.
+describe('SecurityPanel — dispatch #100 follow-up: rule pills carry a short descriptor for every rule, both domains', () => {
+  let container, root;
+  const RULES = [
+    { ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'd1', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'a1' },
+    { ruleId: 'CASH-002', domain: 'cash', method: 'POS over-ring rate', description: 'd2', baselineType: 'peer', logicType: 'ratio', active: true, investigationAction: 'a2' },
+    { ruleId: 'CASH-003', domain: 'cash', method: 'Manual refund / self-authorized refund rate', description: 'd3', baselineType: 'personal', logicType: 'ratio', active: false, investigationAction: 'a3' },
+    { ruleId: 'CASH-004', domain: 'cash', method: 'Promo/discount rate', description: 'd4', baselineType: 'peer', logicType: 'ratio', active: true, investigationAction: 'a4' },
+    { ruleId: 'INV-001', domain: 'inventory', method: 'Item TvA variance rate vs. expected usage', description: 'd5', baselineType: 'store', logicType: 'z-score', active: true, investigationAction: 'a5' },
+    { ruleId: 'INV-002', domain: 'inventory', method: 'Dollar-variance rate vs. store sales', description: 'd6', baselineType: 'store', logicType: 'ratio', active: true, investigationAction: 'a6' },
+  ];
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(CASH_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('every Cash rule pill shows both its ruleId and a short descriptor, and inactive CASH-003 still carries its ⏸ marker', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const pillText = id => [...container.querySelectorAll('button')].find(b => b.textContent.startsWith(id))?.textContent;
+    expect(pillText('CASH-001')).toBe('CASH-001 · Cash drawer over/short');
+    expect(pillText('CASH-002')).toBe('CASH-002 · POS over-ring');
+    expect(pillText('CASH-003')).toBe('CASH-003 · Manual refund ⏸'); // inactive marker preserved
+    expect(pillText('CASH-004')).toBe('CASH-004 · Promo/discount');
+  });
+
+  it('every Inventory rule pill shows both its ruleId and a short descriptor', async () => {
+    loadSecurityFindingsMock.mockReset().mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const pillText = id => [...container.querySelectorAll('button')].find(b => b.textContent.startsWith(id))?.textContent;
+    expect(pillText('INV-001')).toBe('INV-001 · Item TvA variance');
+    expect(pillText('INV-002')).toBe('INV-002 · Dollar-variance');
+  });
+
+  it('the fuller description line below still renders for the selected rule -- the tag is additive, not a replacement', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const ruleBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'CASH-001 · Cash drawer over/short');
+    await act(async () => { ruleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container.textContent).toMatch(/d1/); // the full description fixture text
   });
 });
