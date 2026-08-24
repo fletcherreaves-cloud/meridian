@@ -84,7 +84,16 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #97 — Inventory Control's Weekly Count Cadence widget uses a different, Condiment-blind engine than Count Cycle](dispatch-97.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #100 — Security panel: standard location selector + date-range controls](dispatch-100.md)** —
+  **Independent of the #97-#99 Inventory Control chain** (different file, safe to run in parallel).
+  `security-panel.js`'s `scopeMatches()` already implements the standard 4-level All→State→Org→
+  Store hierarchy (`feedback-selector-ui-standard.md`), but the rendered pill row only ever offers
+  All + State — Org and Store are silently unreachable despite the filter logic already supporting
+  them. Separately, `loadSecurityFindings()` takes no date parameter at all — loads every row,
+  unbounded — and the panel has no date-range control. Fix: add the missing Org/Store pills
+  (match an existing panel's pattern, don't invent a new one) and a date-range filter (resolve
+  which date field — `windowStart`/`windowEnd` vs `computedAt` — makes sense before implementing).
+- **📋 (2026-08-24): [Dispatch #97 — Inventory Control's Weekly Count Cadence widget uses a different, Condiment-blind engine than Count Cycle](dispatch-97.md)** —
   **Start here.** Looks like a repeat of dispatch #96 (Condiment) but isn't — it's a *second*,
   *separate* bug in a *different* panel. Inventory Control's 🗓 Weekly Count Cadence table
   (`CadenceMonitor`, `eom-dashboard.js`) reads `qsr_raw_item_detail` (a top-~20-items-by-dollar
