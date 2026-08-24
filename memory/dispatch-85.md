@@ -255,3 +255,68 @@ what's actually in `shell.js` today; the comment in `panel-registry.js` is accur
 code. No change made. (Whether CLAUDE.md's own promotion-warning section needs an update to reflect
 that `shell.js` no longer has a hand-maintained list is a separate, larger question — this dispatch
 didn't touch CLAUDE.md, since the dispatch scoped this item narrowly to the one comment.)
+
+---
+
+## PM verification (2026-08-24, post-merge of #625)
+
+Verified independently against the merged tree, not against the PR summary: suite 2169/2169 and
+build clean on `a16c0ba`, CI green on **both** Node 20 and 22 before the merge (00:17:11 vs
+00:18:41 — the merge was not ahead of its checks). All four code changes read correctly; the
+`buildScheduleSummary` consolidation is faithful (`aggregateLifelenzLabor` counts `days` as ROWS,
+not distinct dates, so dropping `date` from the mapped rows changes nothing — the old `_avg` was
+a mean over the same rows).
+
+Both "false premise" calls (#4 Opportunity $ nav, #6 registry comment) **confirmed correct**, and
+the fault was mine: `shell.js:234`'s `renderTestKitchen()` has derived its items from
+`testKitchenPanels(can)` since dispatch #61, so promotion genuinely is a one-field `kind:` flip.
+CLAUDE.md still described the pre-#61 hand-maintained `navPBeta` list and the double-render trap,
+and I wrote two dispatch items straight off that paragraph without re-reading the code. **Fixed
+in the same commit as this note** — the doc now records what it used to say and why it cost work.
+
+### Two follow-ups this verification found
+
+1. **Pagination had no `ORDER BY` — fixed here.** `fetchAllRows` is correct in isolation, but all
+   five call sites paged unordered queries. Postgres leaves row order unspecified without an
+   ORDER BY, so successive `.range()` reads of one table can overlap or skip: some rows
+   duplicated, others dropped, **with the total count still looking plausible** — a worse failure
+   than the truncation the helper exists to fix, because nothing about the output looks wrong.
+   Not hypothetical: every one of these tables is written by a daily pull, and the app-side reader
+   of the same `qsr_daily_activity` already orders for exactly this reason
+   (`src/lib/supabase.js:1706`). Each query now orders on its full PK — `qsr_daily_activity`
+   (loc, dt, hour_slot), `lifelenz_schedule` / `daily_glimpse_daily` / `ctrl_rows` (loc, date),
+   `forecast_snapshots` (`id`, since (loc, dt, source) is not declared unique there).
+   Guarded at the **call site**, per the revert-sensitivity rule: `sage-paginate.test.js` now
+   parses `index.ts`, asserts it finds exactly 5 `fetchAllRows(` calls (so the scan can't silently
+   match nothing) and that each orders. Verified by deleting one `.order()` — the suite fails.
+
+2. **⚠️ None of dispatch #85's headline fix is live yet.** `sage-chat/index.ts` changed and there
+   is **no automated edge-function deploy** — `grep -rl "functions deploy" .github/workflows/`
+   returns nothing. The truncation fix, the LifeLenz column fix, and the promo-ROI tool note are
+   all inert in production until someone runs
+   `supabase functions deploy sage-chat --no-verify-jwt`. Worth doing after this branch lands, so
+   one deploy carries both.
+
+### Still open, unchanged by this
+
+- The SAGE-observed `+141h/day` vs `+13.9h/day` staffing discrepancy — #2 was a defensive
+  consolidation, not a confirmed root cause. The original arithmetic checked out numerically.
+- Promo ROI's real fix: an exogenous treatment indicator (a promo calendar). Design task, not a
+  ticket. The panel and the tool both carry warnings in the meantime.
+
+### A second stale CLAUDE.md claim, found the same night
+
+Folded into the same PR (#626). CLAUDE.md's QSRSoft-token paragraph still said *"5 scripts use
+`getFreshToken()`, 11 still read the dead secret — converting those is the open work."* True on
+2026-08-23; dispatch #82 closed it on 08-24. Re-measured: **19 scripts call `getFreshToken()`**
+and exactly **one** live `process.env.QSRSOFT_TOKEN` read remains (`qsrsoft-explore.mjs`, an
+ad-hoc probe in no workflow). Left as-is, that line would have sent someone to re-do #82.
+
+Worth noting the measurement trap `ebos-auth.mjs:29` already records: a grep for
+`process.env.QSRSOFT_TOKEN` **undercounts**, because `qsrsoft-inventory-history-pull.mjs` was
+affected only indirectly via `resolveEbosToken()` and never showed up in #82's own file count.
+
+**Two stale rules in one night, both of the same shape** — a paragraph that was accurate when
+written, describing code a later dispatch changed, with nothing tying the doc to the change. Both
+cost real work (#85's items #4/#6; a near re-dispatch of #82). No process change proposed yet, but
+if a third turns up, an audit of CLAUDE.md's measured claims against current code is the move.

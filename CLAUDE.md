@@ -87,7 +87,7 @@ scripts/               — lifelenz-pull.mjs, qsrsoft-ebos-pull.mjs, qsrsoft-dar
 
 **LifeLenz token:** `LIFELENZ_TOKEN` GitHub Secret. Expires (roughly monthly). When sync fails with 401/403, refresh manually: DevTools → Network → any `us01-connect.lifelenz.com` request → copy `X-Auth-Token` header → update GitHub Secret. See `memory/lifelenz-session.md` for full runbook.
 
-**QSRSoft token:** ⚠️ **Do NOT rotate `QSRSOFT_TOKEN` — it cannot work as a stored secret.** It is a Cognito ID token with a **~1h TTL**, so a value held in a GitHub Secret is expired ~23 of every 24 hours *by construction, no matter how often it is rotated* (#312, 2026-08-15). Every pull reading one falls through to its Playwright fallback every time — expected, not degradation. The fix is `scripts/lib/qsrsoft-auth.mjs`'s `getFreshToken()`, which mints one in-process per run (expiry-aware + reactive re-mint); **5 scripts use it, 11 still read the dead secret** (measured 2026-08-23) — converting those is the open work, with `qsrsoft-ops-pull.mjs` as the reference. The obsolete refresh process, kept only because the value is still occasionally useful for a one-off manual probe within the hour: DevTools → Network → any `api.reports.myqsrsoft.com` or `v3.myqsrsoft.com` request → copy `X-Auth-Token` header → update GitHub Secret.
+**QSRSoft token:** ⚠️ **Do NOT rotate `QSRSOFT_TOKEN` — it cannot work as a stored secret.** It is a Cognito ID token with a **~1h TTL**, so a value held in a GitHub Secret is expired ~23 of every 24 hours *by construction, no matter how often it is rotated* (#312, 2026-08-15). Every pull reading one falls through to its Playwright fallback every time — expected, not degradation. The fix is `scripts/lib/qsrsoft-auth.mjs`'s `getFreshToken()`, which mints one in-process per run (expiry-aware + reactive re-mint). ✅ **The migration is DONE — do not re-dispatch it** (dispatch #82; re-measured 2026-08-24: **19 scripts call `getFreshToken()`, and exactly one live `process.env.QSRSOFT_TOKEN` read remains**, in `scripts/qsrsoft-explore.mjs`, an ad-hoc probe that is in no workflow). This line previously read "5 scripts use it, 11 still read the dead secret — converting those is the open work"; that was true on 2026-08-23 and #82 closed it the next day. Note when re-measuring that a plain grep for `process.env.QSRSOFT_TOKEN` **undercounts** — `qsrsoft-inventory-history-pull.mjs` was affected only indirectly, through `scripts/lib/ebos-auth.mjs`'s `resolveEbosToken()`, and never appeared in #82's own file count. The obsolete refresh process, kept only because the value is still occasionally useful for a one-off manual probe within the hour: DevTools → Network → any `api.reports.myqsrsoft.com` or `v3.myqsrsoft.com` request → copy `X-Auth-Token` header → update GitHub Secret.
 
 ---
 
@@ -150,15 +150,17 @@ Roles enforced via Supabase RLS on `accessible_locs` profile field. Nav items an
   promote them, they'll naturally fall into the right section."* So **every new panel gets its real
   section from day one**, including Test Kitchen experiments, so the section half of promotion is
   already decided when the moment comes.
-  **⚠️ Promotion is NOT yet a one-field flip — it is two edits, and getting it wrong duplicates the
-  panel.** `⚗ TEST KITCHEN` in `shell.js` is a hand-maintained list of literal `navPBeta('id')`
-  calls, **not** derived from `panel.kind`. Measured 2026-08-21: flipping `fcst-accuracy` to
-  `kind:'nav'` renders it **twice** — once under its own section, once still under Test Kitchen,
-  header and all. So promoting a panel means flip `kind:` in the registry **and** delete its
-  `navPBeta('id')` line in `shell.js`. Making that block derive from `panel.kind` would collapse it
-  to the one-field flip the rule wants; it was deliberately deferred from dispatch #55 Part A, whose
-  bar was that nothing about today's nav may move, and because deriving it could reorder Test
-  Kitchen's items.
+  **✅ Promotion IS a one-field flip — flip `kind:` in the registry, change nothing else (dispatch
+  #61, verified on `main` 2026-08-24).** `renderTestKitchen()` in `shell.js:234` derives its items
+  from `testKitchenPanels(can)` (i.e. `panel.kind === 'test-kitchen'` + the registry's `tkOrder`),
+  so a promoted panel leaves Test Kitchen automatically. **This paragraph used to say the opposite**
+  — that `⚗ TEST KITCHEN` was a hand-maintained list of literal `navPBeta('id')` calls and that
+  promotion took two edits or the panel double-rendered. That was true on 2026-08-21 and was fixed
+  by #61 days later; the doc was not updated, and on 2026-08-23 it sent dispatch #85 chasing two
+  non-existent bugs (a missing `navPBeta` line, a stale registry comment) that the engineer had to
+  measure false before writing any code. **A rule that describes code which no longer exists costs
+  more than no rule** — when a dispatch item turns out to rest on a CLAUDE.md claim, re-read the
+  code before writing the item, and fix the doc in the same pass.
   **The catch: 25 of 82 panels have an inert `section:`, and a field nothing renders is a field
   nothing checks.** `proj` claimed `section:'planning'` for months — false, and invisible because
   it never rendered. Same rot as Job A's stale `'Proj Workflow'` label and #52's 15 schema-drift
