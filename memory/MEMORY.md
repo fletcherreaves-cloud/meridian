@@ -84,7 +84,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-24): [Dispatch #94 — wire up `tol:`, then roll it up district-wide and into Coaching](dispatch-94.md)** —
+- **📋 NEWEST (2026-08-24): [Dispatch #95 — resolve the security-events pull without QSRSoft's help](dispatch-95.md)** —
+  **Start here.** Owner wants an actual resolution to the ~10%-success security-events pull, not
+  "accept the ceiling" — and QSRSoft support is ruled out (won't assist with automation). Two
+  tracks, run in parallel: **Track A** — a real controlled wire-level diff between succeeding and
+  failing requests (first check what tracing is actually feasible on the self-hosted runner —
+  true packet capture may need permissions CI doesn't have; `NODE_DEBUG=http,tls` or a logging
+  fetch wrapper is the realistic fallback) — looking for anything *we control* that differs.
+  **Track B** — resilience regardless of Track A's outcome: confirm whether failure is correlated
+  at the run level (today's evidence: 120/120 failed uniformly in one run) vs. per-request-random,
+  then adjust pull frequency accordingly, make real coverage visible (not just per-run pass/fail),
+  and confirm upserts are idempotent before increasing frequency.
+- **📋 (2026-08-24): [Dispatch #94 — wire up `tol:`, then roll it up district-wide and into Coaching](dispatch-94.md)** —
   **Start here.** `store-dash.js` declares `tol:` on 24 metrics and nothing reads it — the KPI
   table actually colors rows via a hardcoded 5%/15%-relative-to-target band (`statusCol`), which
   treats every metric's scale the same regardless of what it measures. Owner-decided scope:
