@@ -18,7 +18,7 @@ import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
 import { useAttentionFeed, unpad } from './attention-now.js';
 import { audit as _audit, check as _chk, checkInRange as _chkRange, weightedMean as _wmean, reconcile as _recon } from '../lib/accuracy.js';
-import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections } from '../lib/supabase.js';
+import { listMonthlyTargetPeriods, loadMonthlyTargets, supabase, saveForecastSnapshots, triggerSync, loadQsrFob, saveUserSetting, loadUserSetting, loadQsrProjections, loadQsrSecurityEventsCoverage } from '../lib/supabase.js';
 import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -1330,6 +1330,10 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   const [qsrFiles, setQsrFiles] = uSt([]);
   const [ebosCov,  setEbosCov]  = uSt({count:0});
   const [darCov,   setDarCov]   = uSt({count:0});
+  // Dispatch #95 (Track B): rolling per-day coverage, not just count/min/max -- see
+  // loadQsrSecurityEventsCoverage()'s own comment for why min/max alone hides a stream that
+  // "succeeds" while covering almost none of its own claimed date span.
+  const [secEventsCov, setSecEventsCov] = uSt({count:0, coveredDays:0, windowDays:14});
   const [syncTimes, setSyncTimes] = uSt({life:null, ebos:null, dar:null});
   // #191: auditRows is lazy-loaded on demand, not eager at startup — this panel's own job is
   // reporting row COUNTS per stream (the "coverage tiles" the fix's own design doc calls out as
@@ -1351,8 +1355,8 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
   // confirmation must contain. If you click one stream but the server's message names a
   // DIFFERENT stream, the trigger-dar-sync Edge Function is stale/misrouted — flag it
   // loudly instead of silently trusting it (it once always fired DAR regardless of key).
-  const SYNC_LABEL = { dar:'QSRSoft Daily Activity', ebos:'eBOS Purchases', fob:'FOB / P&L Cost', lifelenz:'LifeLenz Schedule' };
-  const SYNC_KW    = { dar:'daily activity', ebos:'ebos', fob:'fob', lifelenz:'lifelenz' };
+  const SYNC_LABEL = { dar:'QSRSoft Daily Activity', ebos:'eBOS Purchases', fob:'FOB / P&L Cost', lifelenz:'LifeLenz Schedule', secevents:'Security Events' };
+  const SYNC_KW    = { dar:'daily activity', ebos:'ebos', fob:'fob', lifelenz:'lifelenz', secevents:'security' };
   const doSync = async (wf) => {
     setSyncBusy(wf); setSyncNote(null);
     const r = await triggerSync(wf, {});
@@ -1407,6 +1411,13 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
         dar:  darSy.data?.updated_at||null,
       });
     });
+  },[]);
+
+  // Separate effect (not folded into the Promise.all above) so an RLS-gated or slow
+  // security-events read never blocks the other auto-synced tiles from rendering.
+  uE(()=>{
+    if(!supabase) return;
+    loadQsrSecurityEventsCoverage({windowDays:14}).then(setSecEventsCov);
   },[]);
 
   const IDB_LABELS = {
@@ -1813,6 +1824,28 @@ function DataManagerPanel({ds, idbCoverage, onClose, onLoad, onOpenStoreConfig})
           hasData?c.count.toLocaleString()+' hour-slots':'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
         h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:hasData?'#10b981':'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
+      );
+    })(),
+    // Dispatch #95 (Track B) -- rolling coverage, deliberately NOT count/min/max like the rows
+    // above. A ~10% real-world run success rate means min/max would read "fresh" (spans up to
+    // today) while covering almost none of the days inside that span -- the same pooled-max blind
+    // spot #171 already fixed for At-A-Glance. coveredDays/windowDays is the number an operator
+    // should actually watch here; count/from/to are shown too, but as secondary context.
+    (()=>{const c=secEventsCov;const hasData=c.count>0;
+      const covRatio = c.windowDays ? c.coveredDays / c.windowDays : 0;
+      const covColor = c.coveredDays===0 ? '#ef4444' : covRatio>=0.7 ? '#10b981' : covRatio>=0.3 ? '#f59e0b' : '#ef4444';
+      return h('tr',{key:'auto-secevents',style:{borderBottom:'.5px solid var(--bdr)'}},
+        h('td',{style:{padding:'6px 10px',fontWeight:600,color:hasData?'var(--text)':'var(--text3)',display:'flex',alignItems:'center',gap:4}},
+          span({style:{display:'inline-block',width:6,height:6,borderRadius:'50%',background:covColor,marginRight:4,flexShrink:0}}),
+          span({style:{display:'flex',flexDirection:'column'}},
+            'QSRSoft Security Events',
+            h('span',{style:{fontSize:'7.5px',fontWeight:400,color:'var(--text3)',lineHeight:1.3}},`event_details · self-hosted runner, unreliable upstream (dispatch #95) -- ${c.coveredDays}/${c.windowDays}d covered in the rolling window, not just latest-run pass/fail`),
+            syncLabel(c.latestSync)),
+          autoTag,syncBtn('secevents')),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:covColor,fontWeight:700}},
+          `${c.coveredDays}/${c.windowDays}d`),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.from:'—'),
+        h('td',{style:{padding:'6px 10px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)',fontSize:'8px'}},hasData?c.to:'—')
       );
     })(),
   ];

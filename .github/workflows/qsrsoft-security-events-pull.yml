@@ -33,8 +33,18 @@ name: QSRSoft Security Events Pull
 
 on:
   schedule:
-    # Once daily, matching the existing pulls' cadence -- 10:00 UTC alongside the DAR/eBOS pulls.
-    - cron: '0 10 * * *'
+    # Dispatch #95 (Track B): every 2 hours, not once daily. Evidence this is run-level-
+    # correlated failure, not per-request-random: dispatch-91's run history never shows a MIXED
+    # outcome within one run (every real run this session inspected -- #14 today's scheduled run,
+    # #15's owner-cancelled run -- was ~0% or 100% failed uniformly across all units attempted,
+    # never a partial split), and dispatch-91 part 2's separate 3-trial probe series split
+    # 403/200/200 across THREE SEPARATE PROCESSES minutes apart, not within one. So a whole run
+    # tends to land in a "good" or "bad" window, and the lever that helps is more windows per
+    # day, not retrying inside one -- see dispatch-95.md's Resolution for the full evidence this
+    # schedule change rests on. Deliberately NOT adding per-request retry-on-403 alongside this:
+    # that already caused a Cognito self-throttle once (#616) and dispatch #95 explicitly rules
+    # it out until run-level correlation was confirmed, which is what this comment records.
+    - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       days_back:

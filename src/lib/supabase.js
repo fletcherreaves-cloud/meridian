@@ -1045,6 +1045,43 @@ export async function loadQsrSecurityEventsForSubject({ empToken, loc, start, en
   }));
 }
 
+// Dispatch #95 (Track B) -- rolling COVERAGE for qsr_security_events, not just count/min/max.
+// The standing "make staleness visible per-stream, not pooled" rule (CLAUDE.md's "adding a new
+// automated pull" checklist, #171) means a count+latest-date tile is not enough here: the whole
+// problem this dispatch exists to make visible is a stream that runs and REPORTS success while
+// covering almost none of the days it claims to -- min/max span looks "fresh" even when nearly
+// every day inside that span is empty, exactly the gap a pooled Math.max hides. So this counts
+// DISTINCT event_dt values with at least one real row in the trailing window, out of the number
+// of days actually elapsed -- the same "N/27 stores had a row" shape logPartitionCoverage()
+// already applies to the PULL SCRIPT's own per-run log, surfaced here as a per-DAY rollup an
+// operator can see without opening a workflow run.
+// RLS on this table is role-gated (schema-qsr-security-events.sql) -- an unauthorized caller
+// gets an empty read here too, same "empty is not evidence of an empty table" caveat as
+// loadQsrSecurityEventsForSubject() above.
+export async function loadQsrSecurityEventsCoverage({ windowDays = 14 } = {}) {
+  if (!supabase) return { count: 0, from: null, to: null, latestSync: null, coveredDays: 0, windowDays };
+  const cutoff = (() => { const c = new Date(); c.setDate(c.getDate() - windowDays); return c.toISOString().slice(0, 10); })();
+  const [totalRes, minRes, maxRes, syncRes, windowRes] = await Promise.all([
+    supabase.from('qsr_security_events').select('*', { count: 'exact', head: true }),
+    supabase.from('qsr_security_events').select('event_dt').order('event_dt', { ascending: true }).limit(1).single(),
+    supabase.from('qsr_security_events').select('event_dt').order('event_dt', { ascending: false }).limit(1).single(),
+    supabase.from('qsr_security_events').select('updated_at').order('updated_at', { ascending: false }).limit(1).single(),
+    // One column, trailing window only -- cheap even at the "low tens of thousands of rows/day"
+    // volume this stream was sized for (see the pull script's own header comment); deduped
+    // client-side into distinct days rather than requiring a Postgres RPC for one small tile.
+    supabase.from('qsr_security_events').select('event_dt').gte('event_dt', cutoff).limit(20000),
+  ]);
+  const coveredDays = new Set((windowRes.data || []).map(r => r.event_dt).filter(Boolean)).size;
+  return {
+    count: totalRes.count || 0,
+    from: minRes.data?.event_dt || null,
+    to: maxRes.data?.event_dt || null,
+    latestSync: syncRes.data?.updated_at || null,
+    coveredDays,
+    windowDays,
+  };
+}
+
 // ── QSRSoft FOB daily rows (automated pull) ──────────────────────────────────
 export async function loadQsrFob({ dates, daysBack = 500 } = {}) {
   if (!supabase) return [];
