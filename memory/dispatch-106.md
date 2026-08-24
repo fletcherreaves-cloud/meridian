@@ -16,6 +16,16 @@ Part 1 of which this dispatch's Phase B depends on).
 (the merge) should not start until both panels have shipped their own date/week work — see
 sequencing below.
 
+**⚠️ UPDATE (2026-08-24) — dispatch #105 Part 1 has shipped; Phase B's sequencing dependency is
+now satisfied.** `lifelenz-bridge` was renamed to the owner-confirmed **"MBI vs LifeLenz Accuracy"**
+(not the "Forecast Reconciliation" name this dispatch's Phase B step 4 below still references —
+that proposal is superseded, use "MBI vs LifeLenz Accuracy" instead), given a real date-range
+control + Wednesday-start weekly grouping (reusing the pre-existing `weekStartOf()` helper in
+`src/utils/date.js`, reading `settings.weekStartDay` — same pattern this dispatch's Phase A should
+use), and a `route:true` entry in `panel-registry.js`. Both Phase A and Phase B can now proceed in
+the same effort — Phase A first (this panel's own weekly view, independent work), then Phase B (the
+merge) once Phase A is done, per the sequencing already described below.
+
 ---
 
 ## Owner's ask, in full
