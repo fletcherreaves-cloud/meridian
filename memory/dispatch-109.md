@@ -25,23 +25,57 @@ code before this dispatch was written** — several are already built, several a
 is a structural issue this dispatch's fixes all run into. Read this whole dispatch before assuming
 any item is a straightforward "wire it up."
 
-## ⚠️ Structural finding that gates everything below — verify live before trusting any of it
+## ⚠️ CORRECTION (PM, 2026-08-24, after this dispatch was already in progress) — the "no ingestion
+path" claim below was WRONG. Real automated pulls exist and are populating these tables TODAY.
+
+The original structural finding (kept below, struck through in spirit not in markdown, for the
+record) claimed no ingestion path exists for `digital_app_monthly`/`mcdelivery_monthly`/
+`roster_statistics`/`roster_role_counts`/`turnover_monthly`. **That was based on an incomplete
+grep** (searched `src/views` and general `.mjs` script content, but missed the actual pull
+scripts' filenames). Directly queried production with the service-role credential
+(`content-range` header, not a guess) and found:
+
+| table | row count | most recent `updated_at` |
+|---|---|---|
+| `digital_app_monthly` | 214 | 2026-08-24, real varied values |
+| `mcdelivery_monthly` | 214 | 2026-08-24 |
+| `roster_statistics` | 214 | 2026-08-24 |
+| `roster_role_counts` | 214 | 2026-08-24 |
+| `turnover_monthly` | 370 | 2026-08-24, multi-month history back to April |
+
+Real, varied, current numbers — not placeholders, not a single test row repeated. The actual
+ingestion scripts are `scripts/qsrsoft-digital-app-pull.mjs`, `scripts/qsrsoft-mcdelivery-pull.mjs`,
+`scripts/qsrsoft-roster-stats-pull.mjs`, `scripts/qsrsoft-employee-roster-pull.mjs`,
+`scripts/qsrsoft-turnover-pull.mjs` — each with its own scheduled GitHub Actions workflow (e.g.
+`qsrsoft-mcdelivery-pull.yml` runs daily at 12:00 UTC / ~7am CDT). **These are real, live,
+already-automated pulls, already watched per CLAUDE.md's sync-failure-watch checklist** (verify
+that specifically if scoping any further work here, but do not re-raise "does an ingestion path
+exist" — it does).
+
+**Revised implication for this dispatch:** items #2 and #6's "actuals already flow" claim is now
+CONFIRMED, not merely plausible-pending-verification — the data is real and current. The remaining
+work for those items is exactly what the dispatch already scoped: the missing
+`REVIEW_METRIC_TARGET_FIELD` mappings and the stale `src:'manual'` config metadata, nothing more.
+**Do not spend further effort re-checking whether these 5 tables have data — they do.** If you
+already verified this independently before reading this correction, good — this just confirms it
+in the written record for whoever reads this file next.
+
+## Original structural finding (superseded by the correction above — kept for the record)
 
 `review-engine.js` never imports `metric-source.js`. Its `autoPopulateKPIs()` is a separate,
 hand-rolled sourcing mechanism (`byMonth`/`byLocMonth` closures reading raw `ds.<rows>` arrays)
 that predates the app's own standing auto-first rule (CLAUDE.md: *"Source data through the shared
 helpers — never filter raw rows for a metric... Use `metric-source.js`'s
-`metricDaily`/`metricSeries`/`metricAvg`"*). Several of the metrics below already read from real
-Supabase tables (`digital_app_monthly`, `mcdelivery_monthly`, `roster_statistics`,
-`roster_role_counts`, `turnover_monthly`) via loaders already wired in `App.js` — **but no
-ingestion path (upload UI or automated pull) exists anywhere in the codebase that writes to any of
-these five tables.** Grepped the full `src/views` tree and every `.mjs` script; found none. This
-means the read-side code is real and correct, but these tables may hold **zero rows in
-production** — the auto-populate could be silently doing nothing today, not because of a bug, but
-because there's no data to read. **Before treating any item below as "already works," check the
-actual row counts in production** (the standard `curl`/service-role pattern this session already
-uses elsewhere, or ask the owner directly which of these reports they're currently pulling into
-Meridian by hand, if any). Do not report a metric as fixed on code inspection alone.
+`metricDaily`/`metricSeries`/`metricAvg`"*). This part of the finding still stands — it's the
+ingestion-path claim right below it that was wrong.
+
+~~Several of the metrics below already read from real Supabase tables (`digital_app_monthly`,
+`mcdelivery_monthly`, `roster_statistics`, `roster_role_counts`, `turnover_monthly`) via loaders
+already wired in `App.js` — but no ingestion path (upload UI or automated pull) exists anywhere in
+the codebase that writes to any of these five tables. Grepped the full `src/views` tree and every
+`.mjs` script; found none. This means the read-side code is real and correct, but these tables may
+hold zero rows in production — the auto-populate could be silently doing nothing today, not
+because of a bug, but because there's no data to read.~~ **See the correction above — wrong.**
 
 ## Per-item findings and scope
 
