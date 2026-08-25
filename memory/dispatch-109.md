@@ -250,3 +250,131 @@ promising candidates.
   above have real rows** — measure before reporting any of #1/#2/#6 as displaying genuine data.
 - **Do not do a blanket, unscoped port of every `metric-source.js` metric into the review picker
   for #8** — prioritize as instructed, and leave a documented remainder rather than over-building.
+
+## Resolution (engineer, 2026-08-25, v5.150)
+
+Worked all 8 items in order. Independently re-measured the structural finding LIVE (service-role
+credential, `content-range` header, `apikey`+`Authorization: Bearer` against the current
+`sb_secret_…` key) **before reading the PM's correction** and reached the identical conclusion —
+all 5 tables hold real, current, non-null 2026-08 data (214 rows each for
+`digital_app_monthly`/`mcdelivery_monthly`/`roster_statistics`/`roster_role_counts`, 370 for
+`turnover_monthly`), and the "no ingestion path" claim was wrong because the grep that produced it
+missed `scripts/qsrsoft-digital-app-pull.mjs`/`qsrsoft-mcdelivery-pull.mjs`/
+`qsrsoft-roster-stats-pull.mjs`/`qsrsoft-employee-roster-pull.mjs`/`qsrsoft-turnover-pull.mjs` —
+each on its own scheduled GitHub Actions workflow, each writing via an inline
+`supabase.from(...).upsert(...)` rather than the named `save*Monthly` helper the original grep
+searched for. Sampled actual field values, not just row counts: `app_gc_rd`/`delivery_gc_rd`/
+`restaurant_time_sec`/`roster_active`/`shift_mgr`/`turnover_090_pct` all non-null with plausible
+per-store values (e.g. `restaurant_time_sec` 178-230, consistent with the review's existing
+"Target = 240 sec" note). So items #2 and #6's actuals are **confirmed showing real data**, not
+merely code-correct.
+
+**Item 1 (Delivery Wait Time) — done.** `autoPopulateKPIs` now reads
+`mcdeliveryRows.restaurantTimeSec` (confirmed the right leg against `people-reports.js`'s own field
+comments and the yearly workbook's "McDelivery Restaurant Wait Time" column header — NOT
+`mcDeliveryTimeSec`, the courier/total leg). Target mapped `delivWait: 'tMcdWait'`. Config flipped
+`manual` → `auto`.
+
+**Item 2 (Digital App / Delivery GC-R-D) — target-mapping + doc fix done; actuals untouched
+(already worked).** Added `digitalGC: 'tDigAppGCRD'` / `delivGC: 'tMcdGCRD'` to
+`REVIEW_METRIC_TARGET_FIELD`. Fixed `performance-reviews.js`'s methodology modal, which still
+listed both under "Manual Entry Required" despite the code already auto-filling them — moved to
+"Auto-Populated", along with the metrics fixed by items #1/#5/#6.
+
+**Item 3 (Labor % / OEPE / R2P / KVS) — done.** Repointed all four in `autoPopulateKPIs` from
+hand-filtered `ds.opsRows`/`ds.laborRows` reads to `metric-source.js`'s `metricAvg(ds, loc, range,
+key)`, built a per-month `{s,e}` range matching the shape `metricSeries` expects (confirmed
+compatible, no adaptation needed beyond building the range object). This is a strict superset of
+the old behavior — the resolver's own chains still include `opsRows`/`laborRows` as the manual
+last-resort — verified with a regression test asserting a stale manual value does NOT win once an
+auto/emailed stream covers the same day, and a second test confirming the manual fallback still
+fires when no auto stream covers a day.
+
+**Item 4 (pre-April targets) — month-aware lookup built; blending rule left open, as instructed.**
+Added `mergedTargetsForLocMonth(ds, loc, year, month)`: DEFAULT_TARGETS < yearly (`ds.targets`) <
+that specific month's entry in `ds.allMonthlyTargets` (keyed `'YYYY-M'`, non-padded month — same
+convention `pipeline.js`'s own key construction and Planning > Yearly's (`yearly-projections.js`)
+`all[year + '-' + m]` lookup already use). `ds.monthlyTargets` layers on top only when its own
+`_year`/`_month` stamp matches the requested period (mirrors `eom-supervisor.js`'s `mtOK` guard),
+so a not-yet-synced local upload still wins for its own month without leaking into a different one.
+`autoPopulateKPIs` now calls this once PER MONTH inside its loop instead of computing one snapshot
+outside it. Regression-tested for the exact failure mode described: a month with no
+`allMonthlyTargets` entry falls through to yearly/DEFAULT, never a sibling month's value, and a
+month that DOES have a real monthly target still resolves it unchanged (existing tests pass
+unmodified except one that had baked in the old single-snapshot assumption — see below). **Did NOT
+build the "combination of manual targets + actuals" blending rule** the owner proposed for months
+with no target at all — that's a genuine operational-mechanics decision (what should a partial/
+manual target become for a specific missing month — a flat number, an estimate from nearby actuals,
+something else) that the dispatch explicitly says not to guess. The code fix in this dispatch makes
+the LOOKUP correct once a target exists for some months and not others; it does not invent a value
+for months with none. **Open question for the owner:** what should "a combination of those and
+actuals" mean operationally for the pre-April months with no uploaded target?
+
+**Item 5 (Total Profit) — done, pure wiring as scoped.** `deriveTotalProfitVsTarget` (already
+built, already tested, zero call sites) is now called inside `autoPopulateKPIs`, after the
+target-fill loop so `mo.laborTgt`/`mo.opSuppliesTgt` are already resolved for that month. One
+real wiring decision: `deriveTotalProfitVsTarget` needs FOB *percentage* actual/target, but the
+review's own `foodOB` metric scores in DOLLARS (`fobDollar`) — so the FOB% legs are read directly
+off the same `fr` (FOB rows) array's `fobPct` field and `officialTgts.tFOBTarget`, both already in
+scope for that month, rather than from `mo.foodOB`/`mo.foodOBTgt` (wrong units) or a new pull.
+`netSales`/`prodSales` both use `mo.salesVsTgt` (no separate net/prod-sales split available in this
+context — the same single sales figure feeds both legs, which the function's own test already
+exercises as a valid shape). Config flipped `manual` → `auto`; modal updated. **Known limitation,
+not introduced by this dispatch:** `mo.salesVsTgt` is still sourced only from `ds.laborRows`
+(unchanged by item #3, which was scoped to labor/oepe/r2p/kvs only) — so Total Profit is null for
+any month without a Labor Excel upload, inheriting that pre-existing bypass rather than fixing it.
+Flagging it here since it directly affects this newly-wired metric, not filing it as a surprise.
+
+**Item 6 (Shift Cert Managers / Headcount / 0-90 Turnover) — target-mapping + config-metadata
+fix done; actuals untouched (already worked, now confirmed live).** Added
+`shiftCert: 'tShiftLeaders'`, `headcount: 'tHeadcount'`, `turnover90: 'tToCrew090'`. Flipped all
+three `manual` → `auto` in `DEFAULT_REVIEW_CONFIG` to match what the code already does. **Naming
+caveat flagged, not silently assumed:** "Shift Certified Managers" and "Shift Leader Target" (the
+yearly workbook's actual column header) are not a verbatim match. Wired it anyway as the closest
+real target — the org's own source docs (`performance-reviews.js`'s existing SRC line for this
+metric) already use "Shift Leader"/"Shift Manager"/Altametrics' "Cert. Swing Mgr" interchangeably
+for the same role level — but documented inline in `REVIEW_METRIC_TARGET_FIELD` so the owner can
+correct it if that assumption is wrong.
+
+**Item 7 — untouched, as instructed.** No code changes. Confirmed still correctly deferred per
+`notes-32-queue.md` and the owner's own "can wire up later."
+
+**Item 8 (pre-wire the picker) — 4 candidates added; 3 candidates explicitly excluded with
+reasoning.** Audited `metric-source.js`'s `METRIC_SOURCES` for review-relevant metrics with BOTH a
+real auto-first actual chain AND a real `DEFAULT_TARGETS` field, not yet in `KPI_REGISTRY`. Added:
+`avgCheck` (→ `tAvgCheck`), `tRedBPct` (T-Reds Before %, → `tRedBPct`), `posOverAmt` (→
+`tPosOverAmt`), `cashOSAmt` (→ `tCashOSAmt`) — each a direct target-field-name match with an
+unambiguous better-direction. Matches the existing `tpph`/`cashOSPct`/`tRedAPct`/`parkPct`
+precedent exactly: `src:'auto'` in this registry describes the underlying DATA (a real
+`metric-source.js` chain exists — confirmed this is the registry's actual established convention,
+since even the 4 pre-existing extras are not read by `autoPopulateKPIs`'s hand-rolled function
+either, e.g. `tpph` has a target mapping today but no actual-side wiring). None of the 4 new
+candidates' ACTUAL side is wired into `autoPopulateKPIs` — named explicitly here as follow-up work,
+not silently implied by the `auto` label. Target-side auto-fill IS wired (cheap, mechanical,
+matches the `tpph` precedent) via 4 new `REVIEW_METRIC_TARGET_FIELD` entries.
+
+Also explicitly checked the dispatch's own suggestion that `tVoiceEAD`/`t1800Contacts`/`tMcdStars`
+(dispatch #107's newer yearly-workbook fields) "may qualify" — **they do not.** Grepped the whole
+codebase: `src/parsers/index.js`'s `parseTargets` (the yearly-workbook parser) is the ONLY place
+those three column headers ("VOICE Execute As Designed", "1-800 Contacts", "McDelivery Star
+Rating") appear anywhere. There is a real target for each but no actual-data source at all — not a
+manual-only gap, a genuinely nonexistent one. Per the dispatch's own instruction ("a metric with
+only one side wired is a worse addition... than a documented gap"), deliberately excluded from the
+picker. Test asserts they stay excluded (`kpi-registry.test.js`).
+
+**Verification performed:** live production data measurement (above) with the credential and
+observation named, per CLAUDE.md's standing rule. Could not click through the actual rendered
+Performance Review UI in this environment (headless, no browser/login session available) — instead
+verified via targeted unit tests that exercise `autoPopulateKPIs` with row shapes matching the REAL
+loader field names exactly (`app_gc_rd`→`appGcRd`, `restaurant_time_sec`→`restaurantTimeSec`,
+`roster_active`→`rosterActive`, `shift_mgr`→`shiftMgr`, `turnover_090_pct`→`turnover090Pct`, per
+`src/lib/supabase.js`'s own aliasing), plus a hand-computed check of the Total Profit math against
+the derive function's own documented formula. 12 new/rewritten test cases across
+`review-target-autofill.test.js` and `kpi-registry.test.js` — one pre-existing test needed rewriting
+(it asserted every `REVIEW_METRIC_TARGET_FIELD` value exists in `DEFAULT_TARGETS`, which the 6 new
+yearly-workbook-only fields never will by design; split into a `NATIVE`-fields check plus a new
+yearly-only-fields check). Full suite green (2349/2349 at merge time). `npm run build` clean.
+Entry-chunk impact measured in isolation against the pre-dispatch commit (`cb95687`, before any
+code changes here): 1765.05 KB / 523.59 KB gzip → 1766.72 KB / 524.24 KB gzip (+1.67 KB / +0.65 KB
+gzip) — no new `App.js`-level static import, everything routes through the already-lazy
+`performance-reviews` chunk.
