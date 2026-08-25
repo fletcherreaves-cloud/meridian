@@ -10,6 +10,7 @@
 // not reinvented — that's the entire point of a shared control.
 import * as React from 'react';
 import { lastClosedBusinessDay } from '../utils/date.js';
+import { supervisorOf } from '../constants.js';
 import { Z } from './ModalShell.js';
 
 const h = React.createElement;
@@ -119,9 +120,16 @@ export function DateRangeControl({ presets = DATE_RANGE_PRESETS, value, onChange
 
 // Pure: {stores, storeNames} -> {states:[{id,label,locs}], patches:[{id,label,locs}]}, both
 // sorted, locs sorted numerically within each group. `stores` items need only a `loc`; state
-// and patch come from INV_ORG_COORDS (same source AtAGlance/analytics.js already use for the
-// OK/FL split), so a store missing from that map is simply excluded from the State/Patch tiers
-// (still reachable via "All" and the flat store list) rather than crashing the selector.
+// comes from INV_ORG_COORDS (same source AtAGlance/analytics.js already use for the OK/FL
+// split), so a store missing from that map is simply excluded from the State/Patch tiers (still
+// reachable via "All" and the flat store list) rather than crashing the selector.
+// Patch (dispatch #139 — "Mary missing in Crew Schedule"): resolved LIVE via constants.js's
+// supervisorOf() (whoRan(), the same effective-dated, Settings-editable source every
+// already-correct panel reads), falling back to invOrgCoords[loc].sup only for a loc the live
+// timeline doesn't cover — NOT read straight off invOrgCoords[loc].sup, which is a static seed
+// that never moves when Settings reassigns a store. This is the single shared entry point every
+// LocationSelector consumer (Crew Schedule Lookup and 8+ other panels) builds its Patch tier
+// from, so fixing it here reaches all of them at once.
 export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
   const locs = (stores || [])
     .map((s) => String(s.loc))
@@ -134,7 +142,8 @@ export function buildLocationHierarchy(stores, invOrgCoords, storeNames) {
     const meta = invOrgCoords?.[l];
     if (!meta) return;
     (byState[meta.state] ||= []).push(l);
-    if (meta.sup) (byPatch[meta.sup] ||= []).push(l);
+    const sup = supervisorOf(l, meta.sup);
+    if (sup) (byPatch[sup] ||= []).push(l);
   });
 
   const states = Object.keys(byState).sort().map((id) => ({ id, label: id, locs: byState[id] }));
@@ -176,8 +185,12 @@ export function LocationSelector({ stores, invOrgCoords, storeNames, value, onCh
       : value?.level === 'patch' ? (invOrgCoords?.[(tree.patches.find((p) => p.id === value.id)?.locs || [])[0]]?.state ?? null)
       : value?.level === 'store' ? (invOrgCoords?.[value.id]?.state ?? null)
       : null;
+    // Resolved from `tree.patches` (not a direct invOrgCoords[loc].sup read) so this always
+    // agrees with the Patch tier actually rendered above it — single source of truth, dispatch
+    // #139 (a raw static read here would silently disagree with tree.patches once that tier
+    // went live).
     const activePatchId = value?.level === 'patch' ? value.id
-      : value?.level === 'store' ? (invOrgCoords?.[value.id]?.sup ?? null)
+      : value?.level === 'store' ? (tree.patches.find((p) => p.locs.includes(value.id))?.id ?? null)
       : null;
     const statePatches = activeStateId
       ? tree.patches.filter((p) => invOrgCoords?.[p.locs[0]]?.state === activeStateId) : [];

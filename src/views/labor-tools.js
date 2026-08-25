@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, getKB, getKBEdits, saveKBEdits, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, DEFAULT_TARGETS, MODEL_ASSIGNMENT_KEY, STORE_KB, supervisorGroups } from '../constants.js';
 import { avg6, forecastDay, getModelAssignment, saveModelOverride, _masgnInvalidate } from '../engine/forecast.js';
 import { addD, sodOf } from '../utils/date.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
@@ -1467,9 +1467,13 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     for(const loc of Object.keys(INV_ORG_COORDS)) if(!m[loc]) m[loc]=INV_ORG_COORDS[loc]?.op||'Unknown';
     return m;
   },[settings]);
+  // dispatch #139 — settings.supervisorGroups is a snapshot the Settings editor recomputes only
+  // AT SAVE TIME (management.js's SupervisorAssignmentsEditor); the live, always-current source
+  // is supervisorGroups() (constants.js, effective-dated via whoRan/orgAssignments), the same
+  // function every already-correct panel (one-pager.js, smart-targets.js, etc.) calls directly.
   const locToSup = uM(()=>{
     const m={};
-    const sups=(settings&&settings.supervisorGroups)||{};
+    const sups=supervisorGroups()||{};
     for(const [name,locs] of Object.entries(sups)) for(const l of locs) m[String(l)]=name;
     for(const loc of Object.keys(INV_ORG_COORDS)) if(!m[loc]) m[loc]=INV_ORG_COORDS[loc]?.sup||'Unknown';
     return m;

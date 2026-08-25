@@ -620,6 +620,19 @@ function groupsAt(date, list) {
 // CURRENT org (as-of today) — what all the panels read.
 function supervisorGroups() { return groupsAt(_dstr(new Date()), orgAssignments()); }
 
+// Live-first supervisor-of-ONE-store lookup (dispatch #139 — "Mary missing in Crew Schedule").
+// Every patch-scoped filter/grouping/picker should resolve a store's current supervisor through
+// whoRan() (this function's basis), never through the static INV_ORG_COORDS[loc].sup seed, which
+// never moves when Settings reassigns a store. Falls back to `fallback` (or, if not given, the
+// INV_ORG_COORDS seed) only for a loc the live assignment timeline doesn't cover at all — e.g. a
+// store added to INV_ORG_COORDS but never seeded into DEF_SETTINGS.supervisorGroups/orgAssignments.
+function supervisorOf(loc, fallback) {
+  const live = whoRan(loc, _dstr(new Date()));
+  if (live) return live;
+  if (fallback !== undefined) return fallback || null;
+  return INV_ORG_COORDS[_unpadLoc(loc)]?.sup || null;
+}
+
 // ── Store registry: Supabase-with-constants-fallback (Track-B onboarding plumbing) ──
 // STORE_NAMES/DEFAULT_TARGETS below are the seed (this owner's known-good values, and the
 // zero-Supabase-row fallback). A future tenant's registry lives in org_config key
@@ -638,4 +651,4 @@ function setLiveDefaultTargets(targets) {
   }
 }
 
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

@@ -3,7 +3,7 @@
 // Data source: ds.smgRows[] — parsed from SMG VOICE PDF comment reports
 // Row shape: { loc, storeName, reportStart, reportEnd, commentDate, visitDate, nsn, text, satisfactionLabel, score }
 import * as React from 'react';
-import { INV_ORG_COORDS } from '../constants';
+import { INV_ORG_COORDS, supervisorOf } from '../constants';
 import { escapeHtml as esc } from '../utils/fmt';
 import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 
@@ -26,6 +26,9 @@ function useIsMobile(bp = 700) {
 // VOICE rows carry zero-padded NSNs, so normalize both to the integer form.
 const _normLoc = loc => String(parseInt(loc, 10) || loc);
 const _orgOf   = loc => INV_ORG_COORDS[_normLoc(loc)] || {};
+// dispatch #139 — patch resolves LIVE (supervisorOf/whoRan), falling back to the static
+// INV_ORG_COORDS.sup seed only for a loc the live assignment timeline doesn't cover.
+const _supOf   = loc => supervisorOf(_normLoc(loc), _orgOf(loc).sup);
 
 // orgFilter: 'all' | 'ok' | 'fl' | <supervisor patch name>
 function orgMatch(orgFilter, loc) {
@@ -33,7 +36,7 @@ function orgMatch(orgFilter, loc) {
   const o = _orgOf(loc);
   if (orgFilter === 'ok') return o.state === 'OK';
   if (orgFilter === 'fl') return o.state === 'FL';
-  return (o.sup || '') === orgFilter; // supervisor patch
+  return (_supOf(loc) || '') === orgFilter; // supervisor patch
 }
 function orgDesc(orgFilter, storeSel, nameOf) {
   if (storeSel && storeSel !== 'all') return (nameOf && nameOf(storeSel)) || ('Store ' + storeSel);
@@ -50,7 +53,7 @@ function VoiceFilterBar({ locs, orgFilter, setOrgFilter, storeSel, setStoreSel, 
   if (present.length <= 1) return null;
   const hasOK = present.some(l => _orgOf(l).state === 'OK');
   const hasFL = present.some(l => _orgOf(l).state === 'FL');
-  const patches = [...new Set(present.map(l => _orgOf(l).sup).filter(Boolean))].sort();
+  const patches = [...new Set(present.map(l => _supOf(l)).filter(Boolean))].sort();
   const filters = ['all', ...(hasOK ? ['ok'] : []), ...(hasFL ? ['fl'] : []), ...patches];
   const storeOpts = present.filter(l => orgMatch(orgFilter, l)).sort((a, b) => +a - +b);
 
