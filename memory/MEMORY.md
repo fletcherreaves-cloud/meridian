@@ -84,6 +84,17 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #120 — Security panel: mobile-unusable location pills, findings readability](dispatch-120.md)** —
+  Owner: *"Security > unusable on mobile with all the pulls for locations. Needs to be changed to
+  location selector and add date selector while in there as well... prior events selectable to go
+  to actual event or maybe... present findings in a table."* Confirmed: `security-panel.js` hand-
+  rolls its location scope as one flat ~30-pill row instead of using the shared `LocationSelector`
+  (`mode:'progressive'` already exists for exactly this, dispatch #104) — real panel-contract
+  violation. **The date-range control the owner asked for already exists and is already correct**
+  (`DateRangeControl`/`windowEndInRange`, dispatch #100 — filters only the already-loaded findings
+  for display, never re-scopes the underlying scan) — it's just buried below the pill sprawl and
+  easy to miss; do not duplicate it. Findings-readability (click-through to source vs. a table
+  layout) is left as a real open investigation, not prescribed.
 - **📋 (2026-08-25): [Dispatch #119 — Mobile: wide tables clipped with no horizontal scroll (Promo/Discount ROI + a ratchet)](dispatch-119.md)** —
   Owner: *"Throughout environment > need to add side scroll to be able to see all data on mobile.
   Reference Promo Discount ROI."* Confirmed real: `promo-roi.js`'s results table container leaves
