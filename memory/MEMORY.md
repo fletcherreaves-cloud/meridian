@@ -84,6 +84,24 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ RESOLVED (2026-08-25): Dispatch #133 merged** — Labor Analysis in-progress-week fix, PR
+  #739. See below for the original entry.
+- **📋 (2026-08-25): [Dispatch #134 — Schedule Summary: per-store training-retention report
+  (period, side-by-side weeks) + print/export](dispatch-134.md).** Owner wants a permanent,
+  per-location report to check whether stores retained training from a schedule workshop: pick a
+  period, see every week in it side by side, using the SAME metrics `Schedule Summary` already
+  computes (`src/engine/schedule-summary.js`'s `rollup()` — Labor %, Sched vs Fcst hours, TPMH,
+  Fixed/Floor %, per-station breakdown). The "bonus" ask (actual labor results once a week
+  completes) is **already in that same rollup** — `sales`/`laborPct` are actual-weighted once a
+  week posts real data, forecast-only before — no new pull needed, just call the existing
+  function once per week in the selected period instead of re-deriving anything. Period
+  selection is manual (owner will pick "4 weeks before + all weeks since" themselves) — no new
+  class-date data pipeline needed. Print/export + `route:true` from day one, reusing this
+  session's established patterns. **Companion, already-delivered spreadsheet**: an updated copy
+  of the owner's Organization Structure workbook with a live "1st Schedule Week" column added to
+  the Locations sheet (formula-sourced from the existing "Scheduling Setup" sheet, which already
+  had this exact data — not a new field) — delivered directly to the owner outside this repo, not
+  part of the dispatch.
 - **📋 (2026-08-25): [Dispatch #133 — Labor Analysis: absurd Labor % on the in-progress current
   week](dispatch-133.md).** Owner: *"any chance we can work out the calculations to account for
   an in-progress week."* Screenshot shows most stores at 200-1900% Labor % on the current
