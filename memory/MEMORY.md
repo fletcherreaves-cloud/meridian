@@ -96,6 +96,19 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   bias-2026-08-23.md` is the authoritative writeup — already self-corrected once after an earlier
   "fix" made the bias worse, not better, in a realistic simulation. Regression bar: must not
   regress on that same realistic (spend-scales-with-traffic) simulation.
+- **📋 (2026-08-25): [Dispatch #117 — MBI vs LifeLenz Accuracy: guard against implausible LifeLenz actuals](dispatch-117.md)** —
+  Owner's live ask (mobile screenshot): a week showed LFZ variance **+3665.94%** on one day and
+  **"—"** on two others, with the week's `LFZ avg |var|` reading a nonsensical **734.38%**. Root
+  cause measured directly against production Supabase: `lifelenz_schedule.sales` for Aug 5 is
+  ~4% of forecast (partial capture) and `NULL` for Aug 6–7 (fully missed) across all 27 stores —
+  caused by a real 4-day pull outage (`lifelenz-pull.yml` runs Aug 7–10 all `conclusion:"failure"`,
+  matching the documented monthly-token-expiry pattern), whose Aug 11 manual recovery run's
+  default 3-day `LIFELENZ_SAFETY_DAYS` window never reached back far enough to re-pull Aug 5–7.
+  **Already backfilled as a data fix** (triggered `workflow_dispatch` with
+  `start_date=2026-08-05` directly, 2026-08-25 — do not redo). This dispatch is the remaining
+  CODE gap: `runAccuracy`/`groupAccByWeek` (`lifelenz.js`) treat any nonzero LifeLenz actual as
+  ground truth with no plausibility guard, so the next multi-day outage (this isn't the first —
+  CLAUDE.md already documents an earlier 6-day one) will reproduce the same misleading UI.
 - **📋 (2026-08-25): [Dispatch #116 — FOB Analysis: mobile users can't see the Contributors table below the fold](dispatch-116.md)** —
   `FOBAnalysisPanel` (`analytics.js`) stacks the title bar + KPI cards + Root-Cause Priority Matrix
   (up to 8 rows) + Waste-Entry Discipline (up to 8 rows) as fixed-height (`flexShrink:0`) blocks
