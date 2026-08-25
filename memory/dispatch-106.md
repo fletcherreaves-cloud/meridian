@@ -208,13 +208,10 @@ CLAUDE.md's performance-budget rule, not incidental: entry chunk `index.js` drop
 1761.65 KB to 1566.23 KB raw (522.90 KB → 456.11 KB gzip, measured on the same rebased tree
 before/after this change).
 
-**⚠️ The merged parent's name/label — "Forecast Reports" — is a PROPOSAL, not owner-confirmed,**
-exactly as this dispatch required. Both candidate names from the dispatch ("Forecast Reports" /
-"Forecasting Center") remain viable; "Forecast Reports" was picked for this PR because it is
-shorter and matches the existing `'reports'` section id's naming register, and is flagged as a
-proposal in the registry comment, the App.js render comment, and the PR/commit body — not
-presented as decided. Changing it later is a one-line edit (`panel-registry.js`'s `label` field)
-plus the `RoutePanelShell` title string in `App.js`.
+**✅ The merged parent's name/label — "Forecast Reports" — is owner-confirmed (2026-08-24,
+"Forecast Reports > approved"),** over the dispatch's other candidate, "Forecasting Center". The
+registry comment and `forecast-reports.js`'s own header comment have been updated to reflect this
+— no longer flagged as a proposal.
 
 **Tests updated to match the new registry shape, not left passing by coincidence.**
 `panel-registry.test.js`'s route-panel census (11 → 10) and route-id list, `routing.test.js`'s
