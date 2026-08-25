@@ -84,9 +84,44 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **⚠️ POLICY REVERSAL (2026-08-25): [Dispatch #125 — un-tokenize Crew Schedule names, rework
-  PR #725 before merge](dispatch-125.md) + [Dispatch #126 — un-tokenize Punch Times names,
-  follow-up to merged PR #724](dispatch-126.md).** Owner, directly, after #123/#124 shipped built
+- **📋 (2026-08-25): [Dispatch #130 — Record Day Intelligence: add reporting/print/export
+  (+ panel-contract sweep)](dispatch-130.md).** Owner: *"Record days needs reporting abilities and
+  print/export/pdf > all formatted per our schema."* Confirmed a real gap, not a broken feature:
+  `RecordDayPanel` (`record-day.js`) has zero print/export today and hand-rolls its own overlay +
+  close button instead of `ModalShell` — not `route:true` either. Scoped as print/export (reuse
+  `ExportDropdown`, follow the `StoreOnePager`/#122/#129 printable-view pattern) plus an
+  opportunistic panel-contract conformance pass, with a real design question left to the engineer
+  (per-tab print vs. one full multi-tab report) and a `route:true` conversion left as their call.
+- **📋 (2026-08-25): [Dispatch #129 — FOB Analysis: fix print output
+  (+ panel-contract check)](dispatch-129.md).** Owner: *"Food Cost (FOB Analysis) needs print
+  formatting appplied."* Root cause: NOT a missing feature — `FOBAnalysisPanel` already has a
+  print button, but dispatch #116 (this session) wrapped its content in one scrolled region for
+  mobile, so bare `window.print()` now only captures whatever happened to be scrolled into view —
+  the exact "print only grabs the visible viewport" trap dispatch #122 already diagnosed and fixed
+  for Events & Tags. Fix: build a real full-content printable view following the #122/`StoreOnePager`
+  pattern, not native `window.print()` against the scrolled container.
+- **📋 (2026-08-25): [Dispatch #128 — Speed of Service: real per-store target color bar + fix the
+  underlying metric](dispatch-128.md).** Owner asked for a per-location color bar, then (in
+  response to a design question) added two binding corrections: *"KVS and R2P are both part of
+  yearly targets... For OEPE throughout always remember to use the OEPE w/o park metric as that is
+  the one that is utilized."* Two real findings: (1) the panel's DT number is currently WRONG —
+  it sums raw `dt_untilserve/dt_trans_cnt` instead of the shared, reconciled `oepeSeconds()`
+  helper (`src/utils/oepe.js`, r=0.9958 against a real QSRSoft report, explicitly `tOepe`'s basis)
+  — fix the metric before coloring it; (2) only DT has interactive trend/daypart charts today, the
+  other 3 stations are static boxes — the owner's "unable to select other metrics" complaint.
+  Station→target mapping confirmed via `supabase.js`'s own field comments, not guessed: DT→`tOepe`,
+  Front Counter→`tR2p`, Kitchen/MFY→`tKvst`; Beverage has no per-store target (owner-confirmed) and
+  gets a visually-distinct fallback treatment, not a silently-guessed number. `tKvsu` (KVS
+  utilization, a 0-1 fraction) is explicitly NOT part of this — different metric class entirely.
+- **📋 (2026-08-25): [Dispatch #127 — At A Glance "Projections & Forecasting" tile: chart/badges
+  collide on mobile](dispatch-127.md).** Owner (mobile screenshot): *"need to fix chart all stacked
+  on top of each other."* Two real candidates in the code, deliberately left for the engineer to
+  reproduce-then-fix rather than guessed from the screenshot alone (per the standing "measure it,
+  don't reason about it" rule): the CI+drift-badges row's `.split(' ').pop()` store-name
+  truncation reading as run-together fragments, and/or the inline SVG bar chart's fixed
+  `viewBox`/`bw`/`gap` math not matching its responsive `width:'100%'` box at real mobile widths.
+- **✅ RESOLVED (2026-08-25): Dispatch #125/#126's policy reversal — both merged** (PR #725, PR
+  #727). Owner, directly, after #123/#124 shipped built
   around the identity-vault: *"there is no reason to hide names for scheduling and punch times >
   everyone can see this data as-is."* **This supersedes the tokenization requirement in #123/#124
   below for THESE TWO FEATURES ONLY** — the identity-vault pattern itself, and its use elsewhere
