@@ -62,7 +62,14 @@ function renderNavTexts(permFn) {
 // sched-summary/labor-analytics), so their old labels/icons ('Forecast Accuracy', 🌉/'MBI vs
 // LifeLenz Accuracy') drop out of this snapshot entirely, replaced by one 'Forecast Reports'
 // entry at Test Kitchen's tkOrder-5 slot.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-08-25 for dispatch #123: 'Crew Schedule' (Crew Schedule Lookup) added
+// as a new kind:'nav', section:'people', route:true entry -- lands first in the People section
+// (PANELS' declaration order is alphabetical by id, and 'crew-schedule' sorts before
+// 'perf-reviews'/'security'). Re-captured again same day for dispatch #125's RBAC re-decision:
+// perm flipped from 'security.view' to 'analytics.store' (ordinary panel RBAC, once the panel
+// stopped gating on an identity reveal) -- text content unaffected, only the permission-gate
+// tables below change.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -129,9 +136,17 @@ const HIDDEN_WHEN_DENIED = {
   // ONLY analytics.store no longer removes the icon from the DOM -- the district-gated panel
   // still shows it. See the note above this table: "an icon shared with a still-visible item
   // does not disappear."
-  'analytics.store': ['3PO Delivery', 'Count Cycle', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // dispatch #123 (2026-08-25) briefly dropped '🗓' out of this list ('Crew Schedule' was gated
+  // 'security.view' then, so 'Scheduling' alone kept the icon visible under an analytics.store
+  // denial). Dispatch #125's RBAC re-decision (same day) moved 'Crew Schedule' to
+  // perm:'analytics.store' too, so now BOTH 🗓-owning panels are gated by the same permission --
+  // 🗓 (and 'Crew Schedule' itself) go back to disappearing when analytics.store is denied, same
+  // as any icon with no other owner.
+  'analytics.store': ['3PO Delivery', 'Count Cycle', 'Crew Schedule', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   'reviews.view': ['Performance Reviews'],
+  // 'Crew Schedule' no longer carries perm:'security.view' as of dispatch #125 (moved to
+  // analytics.store, see above) -- 🔒 is unique to 'Security' so it disappears with it.
   'security.view': ['Security', '🔒'],
   'settings.view': ['Panel Manager', 'Settings', '⚙', '🧩'],
 };

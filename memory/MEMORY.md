@@ -115,6 +115,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   never persist one, assert-guard the pull script. Split into two dispatches deliberately (LifeLenz
   schedule + panel vs. QSRSoft punch pull, no file overlap) so they can build in parallel; wiring
   punch data into the panel is an explicit later follow-up, not part of either.
+- **🔄 SUPERSEDED same day (2026-08-25): [Dispatch #125 — reverse the tokenization above for the
+  LifeLenz/PR #725 side](dispatch-125.md) + [Dispatch #126 — same reversal for the QSRSoft/PR #724
+  side](dispatch-126.md).** Owner, directly, after #123/#124 shipped tokenized: *"there is no
+  reason to hide names for scheduling and punch times > everyone can see this data as-is."* The
+  paragraph above — "requires routing any employee name through the existing tokenized identity
+  vault... mirroring `securityPanelAccess()`" — is now **history, not the shipped design**:
+  `lifelenz_shift_assignments.emp_token` was replaced with a plain `employee_name` column, the
+  Crew Schedule panel's click-to-reveal step is gone, and its RBAC gate moved from
+  `security.view`/`securityPanelAccess()` to ordinary `analytics.store` panel RBAC (nav visibility
+  + accessible_locs RLS, same as Labor Tools/Calendar Manager — no more panel-specific gate).
+  Identity-vault tokenization itself is UNCHANGED everywhere else (Register Audit, Security panel
+  findings) — this reversal is scoped to these two features only.
 - **📋 (2026-08-25): [Dispatch #122 — Events & Tags: holiday sub-filter + print shows full filtered list](dispatch-122.md)** —
   Owner: *"for Holidays, once selected, add another selector for which holiday... for print, show
   all results in one view."* `EventCalendar` (`store-dash.js`) — each holiday already carries a

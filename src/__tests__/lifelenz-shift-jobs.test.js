@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   rollupShiftsByRole, rollupShiftsByEmployee, computeShiftJobs,
-  resolveRoleName, resolveJobTitle,
+  resolveRoleName, resolveJobTitle, shiftsForEmployeeSchedule,
 } from '../engine/lifelenz-shift-jobs.js';
 
 const DT   = '01979dc0-6af3-786a-82a1-17bd10262233'; // Drive Thru
@@ -14,15 +14,18 @@ const SCH  = '01979dc0-a7cb-7677-a46e-d06dd5d2c7aa';
 // Shaped like ShiftsForSchedulePeriod → data.shifts.edges[].node. Segment seconds/earnings
 // are real-world consistent ($15/hr: 14400s=4h=$60, 9000s=2.5h=$37.5, etc.).
 const edges = [
-  { node: { assignedEmploymentId: 'E1', shiftType: 'roster', scheduleId: SCH, pivotMetrics: [
+  { node: { assignedEmploymentId: 'E1', shiftType: 'roster', scheduleId: SCH,
+    shiftStartTime: '2026-08-25T13:00:00.000Z', shiftEndTime: '2026-08-25T19:30:00.000Z', pivotMetrics: [
     { businessRoleId: DT, earnings: 60,   seconds: 14400, payType: 'regular' },
     { businessRoleId: DT, earnings: 37.5, seconds: 9000,  payType: 'regular' },
   ] } },
-  { node: { assignedEmploymentId: 'E2', shiftType: 'roster', scheduleId: SCH, pivotMetrics: [
+  { node: { assignedEmploymentId: 'E2', shiftType: 'roster', scheduleId: SCH,
+    shiftStartTime: '2026-08-26T11:00:00.000Z', shiftEndTime: '2026-08-26T15:30:00.000Z', pivotMetrics: [
     { businessRoleId: GB, earnings: 15,   seconds: 3600,  payType: 'regular' },
     { businessRoleId: GR, earnings: 52.5, seconds: 12600, payType: 'overtime' },
   ] } },
-  { node: { assignedEmploymentId: 'E1', shiftType: 'roster', scheduleId: SCH, pivotMetrics: [
+  { node: { assignedEmploymentId: 'E1', shiftType: 'roster', scheduleId: SCH,
+    shiftStartTime: '2026-08-27T13:00:00.000Z', shiftEndTime: '2026-08-27T19:30:00.000Z', pivotMetrics: [
     { businessRoleId: LOB, earnings: 30,   seconds: 7200,  payType: 'regular' },
     { businessRoleId: LOB, earnings: 67.5, seconds: 16200, payType: 'regular' },
   ] } },
@@ -113,5 +116,46 @@ describe('lifelenz-shift-jobs — totals + name resolution', () => {
   it('resolveJobTitle maps known ids', () => {
     expect(resolveJobTitle(CREW)).toBe('Crew Person');
     expect(resolveJobTitle('nope')).toBe(null);
+  });
+});
+
+// dispatch #123 (Crew Schedule Lookup) -- per-shift rows, not the weekly rollup above.
+describe('lifelenz-shift-jobs — shiftsForEmployeeSchedule (per-shift, dispatch #123)', () => {
+  it('3 committed shifts (E1×2, E2×1) — offer/bleed/rejected still excluded, same as the rollups', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    expect(rows.length).toBe(3);
+  });
+
+  it('sorted by start time, each row carries its own date/start/end (not aggregated)', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    expect(rows.map(r => r.employmentId)).toEqual(['E1', 'E2', 'E1']);
+    expect(rows[0].date).toBe('2026-08-25');
+    expect(rows[0].startISO).toBe('2026-08-25T13:00:00.000Z');
+    expect(rows[0].endISO).toBe('2026-08-25T19:30:00.000Z');
+  });
+
+  it('resolves name + jobTitle from the roster, and the primary businessRole for a multi-segment shift', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster });
+    const e1first = rows.find(r => r.employmentId === 'E1' && r.date === '2026-08-25');
+    expect(e1first.name).toBe('Alice A');
+    expect(e1first.jobTitle).toBe('Crew Person');
+    expect(e1first.businessRoleId).toBe(DT);
+    expect(e1first.roleName).toBe('Drive Thru');
+    expect(e1first.category).toBe('Variable');
+  });
+
+  it('an employee with no roster entry gets name:null — the pull script\'s own graceful-degrade case', () => {
+    const rows = shiftsForEmployeeSchedule(shifts, { scheduleId: SCH, roster: [] });
+    expect(rows.every(r => r.name === null)).toBe(true);
+    expect(rows.every(r => r.employmentId)).toBe(true); // the ID key survives regardless
+  });
+
+  it('a committed shift missing shiftStartTime/shiftEndTime is skipped, not guessed at', () => {
+    const noTimes = { edges: [
+      { node: { assignedEmploymentId: 'E9', shiftType: 'roster', scheduleId: SCH, pivotMetrics: [
+        { businessRoleId: DT, earnings: 10, seconds: 3600, payType: 'regular' },
+      ] } }, // no shiftStartTime/shiftEndTime at all
+    ] };
+    expect(shiftsForEmployeeSchedule(noTimes, { scheduleId: SCH })).toEqual([]);
   });
 });

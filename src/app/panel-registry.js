@@ -60,6 +60,15 @@ export const PANELS = [
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analysis' },
+  // Crew Schedule Lookup (dispatch #123) -- search an employee, see their upcoming schedule.
+  // perm:'analytics.store' (dispatch #125, RBAC re-decision) -- was 'security.view' when the
+  // panel gated behind an identity-reveal step; the owner reversed that ("no reason to hide
+  // names for scheduling and punch times", 2026-08-25) and the panel now shows names directly
+  // with no internal permission check of its own (see src/views/crew-schedule-panel.js's file
+  // header for the full reasoning). This is now ORDINARY panel RBAC -- the same nav-gate key
+  // Labor Tools/Scheduling/Calendar Manager use, backstopped by the table's own accessible_locs
+  // RLS (supabase/schema-lifelenz-shift-assignments.sql), not a panel-specific gate.
+  { id:'crew-schedule', label:'Crew Schedule', icon:'🗓', perm:'analytics.store', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations' },

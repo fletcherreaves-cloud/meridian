@@ -175,6 +175,50 @@ function _primaryJobTitle(info) {
 
 const _titleCase = s => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 
+// Per-EMPLOYEE, per-SHIFT rows (dispatch #123, Crew Schedule Lookup) -- one row PER COMMITTED
+// SHIFT, not rolled up. rollupShiftsByEmployee (above) deliberately collapses a week into one
+// hours/cost total per employee; a "see their upcoming schedule" view needs the opposite -- each
+// shift's own date/start/end preserved. `shiftStartTime`/`shiftEndTime` are real fields on the
+// Shift node (confirmed via the owner's live 2026-07-24 DevTools capture of this SAME query,
+// memory/project-lifelenz-schedule-jobs.md line 33 -- `{ id, shiftStartTime, shiftEndTime,
+// shiftType, assignedEmploymentId, ... }`); scripts/lifelenz-pull.mjs's SHIFTS_QUERY just never
+// asked for them before this dispatch, since the per-station rollup above never needed a time.
+// A shift with no start/end (a query-shape drift from that 2026-07-24 capture) is skipped rather
+// than guessed at -- see the pull script's own loud warning for that case.
+// A shift can touch more than one businessRoleId (e.g. a grill shift spanning Breakfast then
+// Regular Menu) -- rollupShiftsByRole fans those out into two role-rows; a per-shift SCHEDULE
+// row is singular, so this takes the FIRST segment with a businessRoleId, matching how the
+// LifeLenz UI itself labels one shift by its primary station.
+export function shiftsForEmployeeSchedule(shifts, opts = {}) {
+  const nodes = _committed(_nodes(shifts), opts);
+  const roster = _rosterMap(opts.roster);
+  const out = [];
+  for (const nd of nodes) {
+    const eid = nd.assignedEmploymentId;
+    if (!eid || !nd.shiftStartTime || !nd.shiftEndTime) continue;
+    const info = roster.get(eid) || {};
+    const seg = (nd.pivotMetrics || []).find(s => s && s.businessRoleId) || {};
+    const roleId = seg.businessRoleId || null;
+    const meta = resolveRoleMeta(roleId);
+    out.push({
+      employmentId: eid,
+      name: info.computedName || info.name || null,
+      jobTitle: _primaryJobTitle(info),
+      shiftId: nd.id,
+      scheduleId: nd.scheduleId,
+      date: String(nd.shiftStartTime).slice(0, 10),
+      startISO: nd.shiftStartTime,
+      endISO: nd.shiftEndTime,
+      businessRoleId: roleId,
+      roleName: roleId ? resolveRoleName(roleId) : null,
+      category: meta ? meta.category : null,
+      code: meta ? meta.code : null,
+      isAbsent: !!nd.isAbsent,
+    });
+  }
+  return out.sort((a, b) => a.startISO.localeCompare(b.startISO));
+}
+
 // Convenience: both rollups + totals for one schedule/week.
 export function computeShiftJobs(shifts, opts = {}) {
   const byRole = rollupShiftsByRole(shifts, opts);
