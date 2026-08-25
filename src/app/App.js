@@ -2789,6 +2789,7 @@ function App() {
           if(modal==='settings')   setShowSettings(true);
           if(modal==='help')       setShowHelp(true);
           if(modal==='proj-brief') setShowProjBriefSA(true);
+          if(modal==='sage')       {setShowSage(true);setSageMin(false);}
         }
       }),
 
