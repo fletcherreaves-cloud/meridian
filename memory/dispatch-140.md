@@ -1,9 +1,22 @@
-# Dispatch #140 — Move Training Retention into the Scheduling hub as a tab (not a standalone
-# nav item)
+# Dispatch #140 — Training Retention: move into the Scheduling hub, drop the internal coaching
+# note from view, week-anchored range picker, broaden the location selector
 
-**Owner (2026-08-25):** confirmed after I pointed out Training Retention shipped (dispatch #134)
-as a separate sidebar item instead of living with its sibling scheduling tools — *"It could move
-into the Schedule Dashboard as a logical home"* → confirmed "yes" when offered the fix.
+**Owner (2026-08-25), two rounds:**
+1. Confirmed after I pointed out Training Retention shipped (dispatch #134) as a separate sidebar
+   item instead of living with its sibling scheduling tools — *"It could move into the Schedule
+   Dashboard as a logical home"* → confirmed "yes" when offered the fix.
+2. Follow-up, same panel: *"let's drop the worth a coaching visit comment on this page, or at
+   least on the printed form (I don't want to have a store see that comment directly) > also
+   needs the location selector and ability to set start timeframe and end time frame (weekly
+   basis)."* (The owner's separate rollup-report ask from the same message is its own dispatch —
+   see `dispatch-141.md` — a materially new build, not a fix to this panel.)
+3. Confirmed week-anchored, not calendar-day: *"let's do weeks."*
+4. Same reply, more scope: *"while back in there I like the labor trend chart, do one for Sched
+   vs Forecast hours and TPMH > Honestly I wouldn't mind seeing all of the fields with a small
+   chart. That is really helpful. Maybe make the findings box shorter and spread the text out and
+   free up some room and then stack the charts for effect."*
+
+Five items, all on the same file, bundled into one dispatch for one engineer.
 
 ## Same shape as dispatch #135's Targets Editor move — follow that precedent exactly
 
@@ -30,49 +43,106 @@ pattern, don't reinvent it.
   class dispatch #135 fixed for Targets Editor's `ModalShell`.
 - `src/app/panel-registry.js:183` — `sched-retention` entry, currently `kind:'nav', section:
   'scheduling', route:true`. This is the field that needs to flip.
+- `src/views/schedule-retention.js:110` — `buildNarrative()`'s regression branch ends
+  `"...— worth a follow-up coaching visit."` This is the language the owner wants gone. His
+  parenthetical ("I don't want to have a store see that comment directly") means the printed
+  output is the hard requirement, but the phrasing "drop... on this page, or at least" reads as a
+  preference to drop it everywhere — remove it from the narrative string itself (both on-screen
+  and print read from the same `buildNarrative()` output), not just from the print template.
+- `src/views/schedule-retention.js:264` — `LocationSelector` is `mode:'store'` (a flat All/store
+  picker, no State/Patch tier — confirmed by reading `PanelControls.js`'s `mode==='store'` render
+  branch). The owner wants a fuller selector.
+- `src/views/schedule-retention.js:267` — `DateRangeControl` with `allowCustom:true` — a
+  calendar-day picker. The owner wants week-level start/end selection instead, matching how the
+  report's own data is actually bucketed (`WEEK_START_DOW`/`weekStartOf()`,
+  `schedule-summary.js` — Wednesday-anchored LifeLenz business weeks).
+- `src/views/schedule-retention.js:225-244` — the `sparkline` is a single, hardcoded inline SVG
+  tied specifically to `laborPct` (`vals = weeks.map(w => w.laborPct)`) — not a reusable
+  component. The owner wants one per metric row.
 
 ## Scope — build
 
-1. Split `ScheduleRetentionPanel` into a content-only component (keep its internal state/logic
-   unchanged — `scope`, `dateRange`, `markedWeekKey`, the whole `weeks`/`narrative` computation)
-   that renders WITHOUT its own `RoutePanelShell`, following exactly how the other embeddable
-   `SCHED_TABS` panels handle `embedded` mode. State the name you land on (e.g.
+1. **Hub move.** Split `ScheduleRetentionPanel` into a content-only component (keep its internal
+   state/logic unchanged — `scope`, `dateRange`, `markedWeekKey`, the whole `weeks`/`narrative`
+   computation) that renders WITHOUT its own `RoutePanelShell`, following exactly how the other
+   embeddable `SCHED_TABS` panels handle `embedded` mode. State the name you land on (e.g.
    `ScheduleRetentionSection`, matching `TargetsEditorSection`'s naming from #135) and your
-   reasoning if you deviate.
-2. Add a new entry to `SCHED_TABS` in `App.js` (e.g. `{ id: 'retention', label: 'Training
-   Retention', icon: '🎓', perm: 'analytics.store' }`) and wire it into `SchedulingHubPanel`'s
-   tab-body ternary.
-3. Flip `panel-registry.js`'s `sched-retention` entry from `kind:'nav'` to `kind:'hub-tab'`
-   (matching #135's exact precedent for `targets-editor`) — same reasoning: it opens a hub and
-   selects a tab, no sidebar entry of its own.
-4. Handle the existing `?panel=sched-retention` deep link the same way #135 handled
-   `?panel=targets-editor` — should open the Scheduling hub and land directly on the new
-   Training Retention tab, not 404 or open a standalone panel. Check `App.js`'s `modal===` /
-   `goRoute` handling for the exact mechanism #135 used and mirror it here (likely an
-   `initialTab`/`schedTab` value threaded through, given `SchedulingHubPanel` already accepts
-   `initialTab`).
-5. Keep the location scoping WITHIN this tab exactly as it is today (`LocationSelector`
-   `mode:'store'` scoped to a single store, per dispatch #134's original design) — the hub itself
-   has no cross-tab location scope to inherit from, each `SCHED_TABS` panel manages its own scope
-   independently (confirm this is true for the sibling panels before assuming it, but it's very
-   likely true given `common` doesn't pass a shared scope value).
+   reasoning if you deviate. Add a new entry to `SCHED_TABS` in `App.js` (e.g. `{ id: 'retention',
+   label: 'Training Retention', icon: '🎓', perm: 'analytics.store' }`), wire it into
+   `SchedulingHubPanel`'s tab-body ternary, flip `panel-registry.js`'s `sched-retention` entry
+   from `kind:'nav'` to `kind:'hub-tab'` (matching #135's exact precedent), and handle the
+   existing `?panel=sched-retention` deep link the same way #135 handled `?panel=targets-editor`
+   (open the hub, land on this tab — not a 404, not a standalone panel).
+2. **Drop the coaching-visit language.** Remove `"— worth a follow-up coaching visit."` from
+   `buildNarrative()`'s regression branch. Keep the factual magnitude/direction statement (e.g.
+   "Labor % worsened Xpp since the workshop (A% → B%)") — only the editorial tail goes. This
+   applies to the narrative wherever it's consumed (on-screen AND `buildPrintHTML()`, since both
+   read the same `buildNarrative()` output) — confirm there isn't a SEPARATE hardcoded copy of
+   this phrase inside `buildPrintHTML()` itself before assuming one fix covers both.
+3. **Week-anchored range picker.** Replace (or add alongside, your call) `DateRangeControl` with
+   a picker keyed to actual LifeLenz business weeks — "start week" / "end week" rather than raw
+   calendar dates. Reuse `weekStartOf()`/`WEEK_START_DOW` (`schedule-summary.js`) for the week
+   boundaries; do not re-derive the anchor. A reasonable shape: two `<select>`s populated from the
+   distinct weeks actually present in `ds.schedRows` for the selected store (or scope, once #4
+   below is in), sorted, each showing e.g. "Wk of 7/22" — state your exact UI choice.
+4. **Broaden the location selector.** Change `LocationSelector` from `mode:'store'` to
+   `mode:'progressive'` (the same All→State→Patch→Store hierarchy this session's other panels
+   use) so a Patch/State/All scope is selectable, not just one store at a time. **Read dispatch
+   #139 first** (`memory/dispatch-139.md`, merged this session, fix likely in flight/landed by
+   the time you start) — `LocationSelector`'s Patch tier had a stale-data bug (a hardcoded
+   supervisor map disagreeing with the live, Settings-editable one). Confirm #139's fix is
+   already in `main` before you build on `LocationSelector` here; if it isn't yet, do NOT
+   re-introduce or work around the stale source yourself — flag it and proceed once it lands,
+   since this panel would inherit that bug directly otherwise.
+   - When scope narrows to a single store (`level:'store'`), keep today's per-store detail view
+     exactly as it is.
+   - When scope is broader (All/State/Patch), this panel's existing per-store view doesn't apply
+     directly — dispatch #141 (`memory/dispatch-141.md`) is the aggregate rollup report for that
+     case. **Coordinate scope shapes with #141 if both are in flight, so the same
+     `LocationSelector` value shape works for both** — check whether #141 has already landed or
+     is in progress before deciding how to handle a broader-than-store scope here (e.g. show a
+     "select a store to see its detail" empty state, or link into #141's rollup, your call —
+     state your reasoning).
+5. **A small sparkline per metric row, plus a layout pass.** Generalize the existing `laborPct`-
+   only `sparkline` into a small reusable function parameterized by a metric accessor (e.g.
+   `sparklineFor(weeks, w => w.laborPct)`), and render one next to (or above/below, your call for
+   what reads best at this width) every metric row currently in the table — at minimum Labor %
+   (already exists), Sched Hours, Fcst Hours, Hours ± Fcst, TPMH (owner named these two
+   explicitly), and if it fits cleanly, Fixed %/Floor %/Combined Fixed+Floor % too (owner: "all of
+   the fields"). Each sparkline keeps the existing pre/post-workshop dot coloring
+   (`preSet.has(weeks[i].weekKey)`) — that visual language is proven, don't drop it.
+   **Layout**: the owner explicitly asked to shrink/compact the findings (narrative) box and
+   spread its text out to free vertical room, then stack the per-metric charts underneath "for
+   effect" — a vertically-stacked small-multiples layout, not side-by-side crammed in. Your call
+   on the exact spacing/typography, but the narrative box should read as a compact summary strip,
+   not the dominant visual element it is today, once the charts are added.
 
 ## Do NOT
 
-- Do not change `ScheduleRetentionPanel`'s internal computation logic (`computeStoreWeeks`,
-  `buildNarrative`, `splitWeeksAtMark`, the sparkline, print/export) — this is a shell/placement
-  move only, same as #135.
+- Do not change `computeStoreWeeks`/`aggregateSpan`/`splitWeeksAtMark`'s underlying math — this
+  dispatch is UI/copy/scope changes only, not a metrics change.
 - Do not remove the panel's print/export capability in the process of embedding it.
 - Do not touch any other `SCHED_TABS` sibling panel's behavior.
+- Do not silently drop the FACTUAL content of the regression narrative sentence — only the
+  editorial "worth a follow-up coaching visit" tail goes; the pp-change and before/after numbers
+  stay, on-screen and in print.
 
 ## Verification bar
 
-- Confirm Training Retention now renders as a tab inside the "Labor & Scheduling" hub (sidebar →
-  Scheduling & Labor → Scheduling, tab bar now includes 🎓 Training Retention), and is no longer
-  a separate top-level sidebar item.
-- Confirm the old `?panel=sched-retention` deep link still lands correctly (hub open, correct tab
-  selected), not a 404 or a standalone panel.
-- Confirm print/export still works identically from within the tab.
+- Confirm Training Retention now renders as a tab inside the "Labor & Scheduling" hub, no longer
+  a separate top-level sidebar item; old `?panel=sched-retention` deep link still lands correctly.
+- Grep the shipped diff for "coaching visit" — zero matches anywhere in `schedule-retention.js`,
+  on-screen render path or print HTML.
+- Confirm a week-start/week-end selection actually bounds the shown weeks to that range (test
+  with a real multi-month `schedRows` fixture, not just a 2-week one).
+- Confirm the location selector now shows State/Patch tiers (not just All+flat store list), and
+  that a real store under a real live-assigned patch (post dispatch #139) resolves correctly.
+- Confirm print/export still works identically from within the tab, minus the coaching-visit line.
+- Confirm a small sparkline renders for Labor %, Sched Hours, Fcst Hours, and TPMH at minimum
+  (the two the owner explicitly named plus the one that already existed), each still showing the
+  pre/post-workshop dot coloring; confirm the narrative box is visually more compact than before
+  and the charts read as a stacked, not crowded, layout — a screenshot in the PR body is the
+  clearest way to show this, not just a description.
 - Full `npx vitest run` suite passing at the same or higher count as `main` (update
   `shell-nav-snapshot.test.js`'s hardcoded nav snapshot the same way #135 did, if it references
   the old standalone entry). `npm run build` clean; report before/after entry-chunk size.
