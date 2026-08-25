@@ -317,6 +317,16 @@ actual code — this note nearly caused a duplicate reimplementation.
   actually emits — it caught a real error on every round of the 2026-08-08 data-contract work
   (four chains would otherwise have shipped as silent zeros). Its field list used to be typed by
   hand and went stale four times in that one day.
+- **Touching a panel for any reason? Also check it against the panel contract (owner-stated
+  2026-08-25, standing rule).** `memory/panel-contract.md` — close button (`ModalShell`/
+  `RoutePanelShell`, never a hand-rolled backdrop), date picker mode, `LocationSelector`, wide
+  tables scrolling horizontally on mobile (`overflowX:'auto'`, not left `hidden`), and whether the
+  panel is a natural fit for `route:true` (`panel-registry.js`) — bring whichever of these the
+  panel is missing into line **as long as it doesn't meaningfully widen that dispatch's blast
+  radius**. Opportunistic, not a mandate to sweep all 101 panels (only 13 are `route:true` today
+  — that ratio is expected to stay low for a long time, not a gap to close in one pass). See that
+  file for current adoption numbers and the live ratchets that guard the close-button and
+  mobile-scroll conventions.
 - **An agent session's environment is fixed at container start (measured 2026-08-24).** A variable
   added to the environment config *while a session is running* never reaches that session — the
   container was provisioned before it existed. Checked directly: after the owner saved

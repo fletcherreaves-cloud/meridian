@@ -84,6 +84,29 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #119 — Mobile: wide tables clipped with no horizontal scroll (Promo/Discount ROI + a ratchet)](dispatch-119.md)** —
+  Owner: *"Throughout environment > need to add side scroll to be able to see all data on mobile.
+  Reference Promo Discount ROI."* Confirmed real: `promo-roi.js`'s results table container leaves
+  the horizontal axis effectively `hidden` (shorthand `overflow:'hidden'` + only `overflowY`
+  overridden) around a `width:'100%'` table — wide rows clip on mobile with no way to scroll to
+  them. Fixes that panel, and adds a ratchet test (mirroring the existing
+  `ratchet-modal-backdrop-bypass.test.js`) for the same anti-pattern app-wide, seeded from a real
+  measurement on the fix branch — NOT the ~13-file loose grep this dispatch's own investigation
+  produced (explicitly flagged as an unverified heuristic, not a count to copy into a `CEILING`).
+- **📋 (2026-08-25): [Dispatch #118 — Visit Readiness: Days-Since-Last-Visit column + real column headers](dispatch-118.md)** —
+  Owner: *"add a column as well for Days since last visit... put the column headers over the
+  actual columns."* `src/views/visit-readiness.js` has two lists with this problem: the main
+  `StoreRow` list has no header row at all (each row repeats its own Speed/Accuracy/Quality/
+  Leadership labels inline) and no days-since-last-visit figure despite `s.lastVisit.ms` already
+  being on every store object; the Frequency-by-store block already computes `daysSinceLast` but
+  only names its columns in a plain-text caption, not real header cells. Presentation-only —
+  scoring/aggregation math untouched.
+- **📚 Standing rule added (2026-08-25): [Panel contract is now a per-dispatch opportunistic
+  check](panel-contract.md)** — owner: *"as we work in each panel, let's get the close (x) button
+  standardized... date pickers and location selectors... continue with the url page migration
+  while we are in there."* CLAUDE.md's Dev Rules now points here. Current numbers: hand-rolled-
+  backdrop ratchet `CEILING=77` (was 78); `route:true` adoption 13/101 panels (expected to stay
+  low for a long time, not a gap to close in one pass).
 - **🔴 NEWEST (2026-08-25): [Dispatch #113 — HIGH PRIORITY: Promo/Discount ROI's methodology is endogenous, currently live and misleading](dispatch-113.md)** —
   `matchedLift()` splits days by promo/discount dollar intensity — a variable that is itself a
   function of that day's sales (spend scales with traffic) — so at a TRUE effect of 0% it reports
