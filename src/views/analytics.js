@@ -3261,6 +3261,17 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
           }),
           btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
       ),
+      // ── Scroll region (#116) ──────────────────────────────────────
+      // KPI cards + Root-Cause Priority Matrix + Waste-Entry Discipline + Contributors
+      // table used to be four fixed-height (flexShrink:0) siblings under this flex
+      // column, with only the Contributors table itself scrollable. On a short mobile
+      // viewport the fixed stack above the table could alone exceed the available
+      // height, squeezing the table toward zero with no scroll affordance to reach it
+      // (owner-reported). Fix: one shared scroll region wraps all four sections so
+      // every section — including the table below the two matrices — is always
+      // reachable regardless of viewport height. Individual sections keep flexShrink:0
+      // so they size to content inside the scrolling column instead of being squished.
+      div({style:{flex:1,minHeight:0,overflowY:'auto',display:'flex',flexDirection:'column'}},
       // ── KPI cards ──────────────────────────────────────────────────
       kpiCards(),
       // ── Root-Cause Priority Matrix ──────────────────────────────────
@@ -3320,9 +3331,9 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
       })(),
 
       // ── Contributors table ──────────────────────────────────────────
-      !metrics?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:'11px'}},
+      !metrics?div({style:{flexShrink:0,padding:'40px 0',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:'11px'}},
         'No FOB data for '+monthLabel(selMonth)+(selLoc!=='all'?' · '+sNameC(selLoc):'')):
-      div({style:{flex:1,overflowY:'auto',padding:'0 0 20px'}},
+      div({style:{flexShrink:0,padding:'0 0 20px'}},
         // Instruction note
         div({style:{padding:'6px 16px',fontSize:'8.5px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',
           background:'rgba(255,255,255,.02)',display:'flex',gap:12}},
@@ -3340,6 +3351,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
             'Difference $ = (Actual% − Target%) × Net Sales. Negative = favorable (money below target). Positive = unfavorable (over target).')))
         )
       )
+      ) // ── end scroll region (#116) ──
     )
   );
 }
