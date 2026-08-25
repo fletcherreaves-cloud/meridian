@@ -54,7 +54,11 @@ const scopeRowLabel = (scope_type, scope_id) => scope_type === 'company' ? 'Comp
   : scope_type === 'patch' ? 'Patch: ' + scope_id
   : 'Store: ' + (sNameC(scope_id) || scope_id);
 
-const fmtVal = (v, unit) => v == null ? '—' : unit === 'pct' ? (v * 100).toFixed(2) + '%' : unit === 'usd' ? '$' + Number(v).toLocaleString() : unit === 'sec' ? v + ' sec' : String(v);
+// Dispatch #142 item 4 — usd used Number.toLocaleString()'s default (up to 3 decimal
+// places), so an imported target with float noise (e.g. from a workbook % calculation)
+// could still show as "$111,513.158". Whole dollars, matching the app's existing money()
+// convention (yearly-projections.js) — display only, the stored/scored value is untouched.
+export const fmtVal = (v, unit) => v == null ? '—' : unit === 'pct' ? (v * 100).toFixed(2) + '%' : unit === 'usd' ? '$' + Math.round(v).toLocaleString() : unit === 'sec' ? v + ' sec' : String(v);
 
 export function TargetsEditorSection({ ds }) {
   const { useState, useEffect, useMemo } = React;

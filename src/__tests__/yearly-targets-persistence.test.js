@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 let _mockRows = [];
 let _lastUpsert = null; // { table, rows, opts }
+let _upsertErrorOnce = null; // { code, message } — injected once, then cleared
 
 vi.stubEnv('VITE_SUPABASE_URL', 'http://fake.test');
 vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'fake-key');
@@ -27,6 +28,10 @@ vi.mock('@supabase/supabase-js', () => ({
       },
       upsert: (rows, opts) => {
         _lastUpsert = { table, rows, opts };
+        if (_upsertErrorOnce) {
+          const err = _upsertErrorOnce; _upsertErrorOnce = null;
+          return Promise.resolve({ data: null, error: err });
+        }
         return Promise.resolve({ data: rows, error: null });
       },
     }),
@@ -35,7 +40,7 @@ vi.mock('@supabase/supabase-js', () => ({
 
 const { saveYearlyTargets, loadYearlyTargets, loadAllYearlyTargets } = await import('../lib/supabase.js');
 
-beforeEach(() => { _mockRows = []; _lastUpsert = null; });
+beforeEach(() => { _mockRows = []; _lastUpsert = null; _upsertErrorOnce = null; });
 
 describe('saveYearlyTargets — writes to yearly_targets, mapping every parseYearlyTargets() field', () => {
   it('maps ds.targets field names to yearly_targets columns and upserts on (loc,year)', async () => {
@@ -96,6 +101,32 @@ describe('saveYearlyTargets — writes to yearly_targets, mapping every parseYea
   });
 });
 
+// Dispatch #142 items 1-3 — parseYearlyTargets() already parses tProdSales/tCrewLabor
+// correctly, but the yearly_targets table + this save/load mapping never captured either
+// (confirmed against the live production schema, 2026-08-25 — see
+// supabase/schema-dispatch-142-sales-labor-targets.sql). This is the fix.
+describe('saveYearlyTargets — Product Sales + Crew Labor % (dispatch #142 items 1-3)', () => {
+  it('maps tProdSales -> prod_sales and tCrewLabor -> crew_labor_pct', async () => {
+    await saveYearlyTargets({ '3708': { tProdSales: 650000.42, tCrewLabor: 0.195 } }, 2026);
+    const row = _lastUpsert.rows[0];
+    expect(row.prod_sales).toBe(650000.42);
+    expect(row.crew_labor_pct).toBe(0.195);
+  });
+
+  it('degrades gracefully when the migration has not run yet (42703): retries without the two new columns instead of failing the whole upload', async () => {
+    _upsertErrorOnce = { code: '42703', message: 'column "prod_sales" of relation "yearly_targets" does not exist' };
+    const r = await saveYearlyTargets({ '3708': { tOepe: 140, tProdSales: 650000 } }, 2026);
+    expect(r.saved).toBe(1);
+    expect(r.errors).toEqual([]);
+    // The retried (fallback) upsert is the one _lastUpsert holds after the call resolves —
+    // confirm it dropped prod_sales/crew_labor_pct but kept every other real field.
+    const row = _lastUpsert.rows[0];
+    expect('prod_sales' in row).toBe(false);
+    expect('crew_labor_pct' in row).toBe(false);
+    expect(row.oepe_pace).toBe(140);
+  });
+});
+
 describe('loadYearlyTargets / loadAllYearlyTargets — round-trip + null-stripping (mirrors #166)', () => {
   it('loadYearlyTargets: maps columns back to ds.targets field names for one year', async () => {
     _mockRows = [{ loc: '3708', year: 2026, oepe_pace: 140, osat_b2b_pct: 0.02, kvs_usage_pct: null, source: 'upload' }];
@@ -107,6 +138,21 @@ describe('loadYearlyTargets / loadAllYearlyTargets — round-trip + null-strippi
 
   it('loadYearlyTargets: returns {} without a year', async () => {
     expect(await loadYearlyTargets()).toEqual({});
+  });
+
+  it('loadYearlyTargets: maps prod_sales/crew_labor_pct back to tProdSales/tCrewLabor (dispatch #142)', async () => {
+    _mockRows = [{ loc: '3708', year: 2026, prod_sales: 650000.42, crew_labor_pct: 0.195 }];
+    const t = await loadYearlyTargets(2026);
+    expect(t['3708'].tProdSales).toBe(650000.42);
+    expect(t['3708'].tCrewLabor).toBe(0.195);
+  });
+
+  it('loadYearlyTargets: a row from BEFORE the migration ran (no prod_sales/crew_labor_pct column at all) does not crash and leaves those keys absent', async () => {
+    _mockRows = [{ loc: '3708', year: 2026, oepe_pace: 140 }]; // no prod_sales/crew_labor_pct key present
+    const t = await loadYearlyTargets(2026);
+    expect(t['3708'].tOepe).toBe(140);
+    expect('tProdSales' in t['3708']).toBe(false);
+    expect('tCrewLabor' in t['3708']).toBe(false);
   });
 
   it('loadAllYearlyTargets: keys the result by year, each store null-stripped independently', async () => {

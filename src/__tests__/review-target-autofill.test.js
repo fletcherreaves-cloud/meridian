@@ -83,18 +83,21 @@ describe('mergedTargetsForLocMonth — per-period lookup, no cross-month leakage
 
 describe('autoPopulateKPIs — per-month targets do not leak across months (dispatch #109 item #4)', () => {
   it("fills each month's laborTgt from that SAME month's allMonthlyTargets entry", () => {
+    // tCrewLabor, not tLabor — dispatch #142 items 2/3 switched REVIEW_METRIC_TARGET_FIELD.labor
+    // to the org's authoritative labor basis (labor-basis.js), the field a real monthly
+    // workbook upload actually persists (monthly_targets.crew_labor_pct).
     const ds = {
       loaded: true,
       allMonthlyTargets: {
-        '2026-4': { '3708': { tLabor: 0.21, _year: 2026, _month: 4 } },
-        '2026-6': { '3708': { tLabor: 0.19, _year: 2026, _month: 6 } },
-        // 2026-5 deliberately absent — must fall through to DEFAULT_TARGETS.tLabor (0.22),
-        // NOT to April's 0.21 or June's 0.19.
+        '2026-4': { '3708': { tCrewLabor: 0.24, _year: 2026, _month: 4 } },
+        '2026-6': { '3708': { tCrewLabor: 0.19, _year: 2026, _month: 6 } },
+        // 2026-5 deliberately absent — must fall through to DEFAULT_TARGETS.tCrewLabor (0.21),
+        // NOT to April's 0.24 or June's 0.19.
       },
     };
     const r = autoPopulateKPIs(review(), ds);
-    expect(r.kpis.months[4].laborTgt).toBe(0.21);
-    expect(r.kpis.months[5].laborTgt).toBe(0.22); // DEFAULT_TARGETS fallback, not a neighbor's value
+    expect(r.kpis.months[4].laborTgt).toBe(0.24);
+    expect(r.kpis.months[5].laborTgt).toBe(0.21); // DEFAULT_TARGETS fallback, not a neighbor's value
     expect(r.kpis.months[6].laborTgt).toBe(0.19);
   });
 });
@@ -106,15 +109,31 @@ describe('autoPopulateKPIs target auto-fill (Notes 32 A)', () => {
     expect(jun.oepeTgt).toBe(140);
     expect(jun.r2pTgt).toBe(95);
     expect(jun.kvsTgt).toBe(45);
-    expect(jun.laborTgt).toBe(0.22);
+    // Dispatch #142 items 2/3: labor now resolves tCrewLabor (the org's authoritative labor
+    // basis, labor-basis.js DEFAULT_LABOR_BASIS), not the legacy static-only tLabor — 3708's
+    // DEFAULT_TARGETS carries tCrewLabor:0.21 vs tLabor:0.22, so this value is the tell that
+    // the fix is wired to the right field.
+    expect(jun.laborTgt).toBe(0.21);
     expect(jun.salesVsTgtTgt).toBe(111513.16);
     expect(jun.opSuppliesTgt).toBeCloseTo(2938.76, 1);
     expect(jun.tpphTgt).toBe(5.6);
   });
 
   it('monthly target overrides the DEFAULT during auto-fill', () => {
-    const r = autoPopulateKPIs(review(), { loaded: true, monthlyTargets: { '3708': { tLabor: 0.20 } } });
+    // tCrewLabor (not tLabor) is the field a real monthly workbook upload actually persists
+    // (monthly_targets.crew_labor_pct) — dispatch #142 items 2/3.
+    const r = autoPopulateKPIs(review(), { loaded: true, monthlyTargets: { '3708': { tCrewLabor: 0.20 } } });
     expect(r.kpis.months[3].laborTgt).toBe(0.20);
+  });
+
+  it('a monthly tCrewLabor override wins over a yearly tLabor value for the SAME month (dispatch #142 item 3 — monthly supersedes yearly)', () => {
+    const ds = {
+      loaded: true,
+      targets: { '3708': { tLabor: 0.23 } }, // yearly workbook value (legacy field, still resolves)
+      allMonthlyTargets: { '2026-6': { '3708': { tCrewLabor: 0.195, _year: 2026, _month: 6 } } },
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[6].laborTgt).toBe(0.195); // monthly wins, not the yearly 0.23
   });
 
   it('does not override a target already present on the month', () => {
@@ -124,8 +143,9 @@ describe('autoPopulateKPIs target auto-fill (Notes 32 A)', () => {
   });
 
   it('every DEFAULT_TARGETS-native mapped target field actually exists for a real store', () => {
-    // These 7 predate dispatch #109 and live in DEFAULT_TARGETS (constants.js) itself.
-    const NATIVE = ['tOepe', 'tR2p', 'tKvst', 'tLabor', 'tProdSales', 'tOpSupply', 'tTpph'];
+    // These predate dispatch #109 and live in DEFAULT_TARGETS (constants.js) itself.
+    // tCrewLabor (not tLabor) since dispatch #142 items 2/3 — see REVIEW_METRIC_TARGET_FIELD.labor.
+    const NATIVE = ['tOepe', 'tR2p', 'tKvst', 'tCrewLabor', 'tProdSales', 'tOpSupply', 'tTpph'];
     const t = mergedTargetsForLoc({}, '3708');
     for (const tf of NATIVE) {
       expect(t[tf], `missing ${tf}`).not.toBeUndefined();
@@ -153,6 +173,72 @@ describe('autoPopulateKPIs target auto-fill (Notes 32 A)', () => {
     // confirms they are genuinely yearly-only, not silently backed by a hard-coded default.
     const noYearly = mergedTargetsForLoc({}, '3708');
     expect(noYearly.tMcdWait).toBeUndefined();
+  });
+});
+
+// Dispatch #142 item 5 — osat had real workbook data (tOsat, from parseYearlyTargets' Voice
+// OSAT PACE column) but no REVIEW_METRIC_TARGET_FIELD entry at all, so osatTgt never filled
+// even when officialTgts.tOsat was populated.
+describe('autoPopulateKPIs osat target wiring (dispatch #142 item 5)', () => {
+  it('maps osat -> tOsat and fills osatTgt from a yearly-workbook value', () => {
+    expect(REVIEW_METRIC_TARGET_FIELD.osat).toBe('tOsat');
+    const ds = { loaded: true, targets: { '3708': { tOsat: 0.82 } } };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[6].osatTgt).toBeCloseTo(0.82, 6);
+  });
+
+  it('a monthly tOsat value wins over yearly for that month, same precedence as every other metric', () => {
+    const ds = {
+      loaded: true,
+      targets: { '3708': { tOsat: 0.80 } },
+      allMonthlyTargets: { '2026-6': { '3708': { tOsat: 0.85, _year: 2026, _month: 6 } } },
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    expect(r.kpis.months[6].osatTgt).toBeCloseTo(0.85, 6);
+  });
+
+  it('actual (SMG FullScale osat5) and target (tOsat, via parsePct) are on the same 0-1 scale — no unit mismatch', () => {
+    const ds = {
+      loaded: true,
+      targets: { '3708': { tOsat: 0.82 } },
+      smgFullscale: [{ loc: '3708', year: 2026, month: 6, osat5: 0.79 }],
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    const jun = r.kpis.months[6];
+    expect(jun.osat).toBeCloseTo(0.79, 6);
+    expect(jun.osatTgt).toBeCloseTo(0.82, 6);
+  });
+});
+
+// Dispatch #142 items 1-3 — the legacy lr-based fallback added after the generic auto-fill
+// loop only ever applies when officialTgts left the slot unresolved, never overriding a real
+// workbook target (the exact bug being fixed: the old code did the reverse).
+describe('autoPopulateKPIs Sales/Labor target precedence (dispatch #142 items 1-3)', () => {
+  it('a real officialTgts value always wins over an lr-carried salesTgt/laborTgt, even if lr has one', () => {
+    const ds = {
+      loaded: true,
+      targets: { '3708': { tProdSales: 650000, tCrewLabor: 0.19 } },
+      laborRows: [{ loc: '3708', date: new Date('2026-06-05T00:00:00'), sales: 500000, salesTgt: 1, laborTgt: 0.99 }],
+    };
+    const r = autoPopulateKPIs(review(), ds);
+    const jun = r.kpis.months[6];
+    expect(jun.salesVsTgtTgt).toBe(650000); // officialTgts, NOT the lr salesTgt of 1
+    expect(jun.laborTgt).toBeCloseTo(0.19, 6); // officialTgts, NOT the lr laborTgt of 0.99
+  });
+
+  it('falls back to an lr-carried salesTgt/laborTgt only when officialTgts genuinely has nothing for that slot', () => {
+    // No DEFAULT_TARGETS entry for this made-up loc, no yearly/monthly — officialTgts resolves
+    // to {} for both fields.
+    const loc = '99999';
+    const rv = { loc, year: 2026, half: 'H1', role: 'GM', kpis: { months: blankMonths() } };
+    const ds = {
+      loaded: true,
+      laborRows: [{ loc, date: new Date('2026-06-05T00:00:00'), sales: 50000, salesTgt: 48000, laborTgt: 0.21 }],
+    };
+    const r = autoPopulateKPIs(rv, ds);
+    const jun = r.kpis.months[6];
+    expect(jun.salesVsTgtTgt).toBe(48000);
+    expect(jun.laborTgt).toBeCloseTo(0.21, 6);
   });
 });
 
@@ -291,9 +377,11 @@ describe('autoPopulateKPIs Total Profit vs Target (dispatch #109 item #5)', () =
     };
     const r = autoPopulateKPIs(review(), ds);
     const jun = r.kpis.months[6];
-    // fob$ = (tFOBTarget 0.0385 - 0.05) * 100000 = -1150; labor$ = (tLabor 0.22 - 0.21) * 100000 = +1000;
-    // opSupply$ = tOpSupply 2938.761005 - 3200 = -261.238995 → total = -411.238995
-    expect(jun.totalProfit).toBeCloseTo(-411.24, 1);
+    // fob$ = (tFOBTarget 0.0385 - 0.05) * 100000 = -1150; labor$ = (tCrewLabor 0.21 - 0.21) *
+    // 100000 = 0 (dispatch #142 items 2/3 switched the labor target basis from tLabor 0.22 to
+    // tCrewLabor 0.21 — 3708's DEFAULT_TARGETS carries both, and they legitimately differ);
+    // opSupply$ = tOpSupply 2938.761005 - 3200 = -261.238995 → total = -1411.238995
+    expect(jun.totalProfit).toBeCloseTo(-1411.24, 1);
     expect(jun.totalProfitTgt).toBe(0);
     // The $-scale foodOB metric (fobDollar) is untouched by this — confirms no cross-contamination.
     expect(jun.foodOB).toBe(500);

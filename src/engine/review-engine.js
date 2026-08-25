@@ -719,7 +719,23 @@ export function computeScoreBreakdown(review, cfg) {
 // fob$) lands. Metrics with NO entry here are the "no configured target → prompt the user
 // (optionally seed from Smart Targets)" cases surfaced by missingReviewTargets().
 export const REVIEW_METRIC_TARGET_FIELD = {
-  oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst', labor: 'tLabor',
+  oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst',
+  // labor: was 'tLabor' — the field labor-basis.js's own LABOR_BASIS_FIELDS comment names
+  // as "legacy... static only, no monthly path — the field the bug graded on" (issue #153).
+  // #153 already moved every OTHER labor-target consumer onto resolveLaborTarget()'s
+  // DEFAULT_LABOR_BASIS ('tCrewLabor', the field actually "sent to operators mid-month for
+  // approval" and the one monthly_targets.crew_labor_pct actually persists) — this Performance
+  // Review mapping was never updated to follow, so a monthly-uploaded labor target could never
+  // reach it (dispatch #142 items 2/3: "Labor should reflect monthly target when present").
+  // tLabor's own yearly-tier persistence (yearly_targets.labor_pct) also round-trips, but
+  // tCrewLabor didn't exist as a yearly-tier column at all until this dispatch — see
+  // supabase/schema-dispatch-142-sales-labor-targets.sql + saveYearlyTargets/loadYearlyTargets.
+  labor: 'tCrewLabor',
+  // osat: was UNMAPPED — dispatch #142 item 5. parseYearlyTargets() already parses Voice OSAT
+  // PACE into tOsat (real column, real data, round-trips via yearly_targets.voice_osat_pct),
+  // and the actual side (mo.osat = SMG FullScale osat5, dispatch #109) is already the same
+  // 0-1 fraction scale (parsePct()'s convention) — confirmed before wiring, not assumed.
+  osat: 'tOsat',
   salesVsTgt: 'tProdSales', opSupplies: 'tOpSupply', tpph: 'tTpph',
   // Dispatch #109 — the yearly workbook (dispatch #107) added these fields to ds.targets;
   // the actuals were already auto-sourced (digitalGC/delivGC, item #2) or just got wired
@@ -924,11 +940,23 @@ export function autoPopulateKPIs(review, ds) {
 
     if (lr.length) {
       const s  = sum(lr,'sales');
-      const st = sum(lr,'salesTgt')||sum(lr,'tSales');
-      const lt = avg(lr,'laborTgt')||avg(lr,'tLabor')||avg(lr,'tCombLabor');
       if (s !=null) mo.salesVsTgt    = s;
-      if (st!=null) mo.salesVsTgtTgt = st;
-      if (lt!=null) mo.laborTgt = lt;
+      // Dispatch #142 items 1-3: salesVsTgtTgt/laborTgt used to be set HERE, from
+      // sum(lr,'salesTgt')/avg(lr,'laborTgt') — a manual-upload field that unconditionally
+      // overwrote whatever the officialTgts cascade (yearly/monthly workbook, computed just
+      // above) would have supplied, completely bypassing DEFAULT < yearly < monthly
+      // precedence for these two metrics only. Verified against the actual data model before
+      // removing, not just assumed: parseLaborData() (src/parsers/index.js) never emits a
+      // salesTgt/tSales/laborTgt/tCombLabor field on a labor row, saveLaborRows()/
+      // loadLaborRows() (src/lib/supabase.js) never round-trip one either, and the live
+      // production `labor_rows` table has no such column — so this bypass was already fully
+      // dead code today, not the active cause of the wrong numbers. It's still removed per
+      // the dispatch, both because it's misleading dead code and because an unconditional
+      // overwrite here would silently reintroduce the bypass the moment any future labor-row
+      // format ever added a same-named field. These two metrics now fall through to the SAME
+      // generic auto-fill loop every other metric already uses (below) — with the old lr
+      // fields kept ONLY as an explicit fallback AFTER officialTgts, never instead of it (see
+      // that block, right after the generic loop).
     }
     // OEPE / R2P / KVS / Labor % actuals (dispatch #109 item #3) — routed through
     // metric-source.js's metricAvg (glimpse/DAR/controls auto-first, manual upload last)
@@ -997,6 +1025,22 @@ export function autoPopulateKPIs(review, ds) {
     for (const [mk, tf] of Object.entries(REVIEW_METRIC_TARGET_FIELD)) {
       const slot = mk + 'Tgt';
       if (mo[slot] == null && officialTgts[tf] != null) mo[slot] = officialTgts[tf];
+    }
+
+    // Dispatch #142 items 1-3 — legacy manual-upload fallback for Sales/Labor targets,
+    // AFTER officialTgts (never instead of it, same precedence direction as everywhere
+    // else). Investigated whether any legitimate case still needs this: no current parser
+    // or Supabase table populates salesTgt/tSales/laborTgt/tCombLabor on a labor row (see
+    // the comment above where these used to be read unconditionally), so this is a no-op
+    // today, kept only as a safety net in case a future/legacy upload format ever carries
+    // a real per-row target and officialTgts genuinely has nothing for that month.
+    if (mo.salesVsTgtTgt == null) {
+      const st = sum(lr,'salesTgt') ?? sum(lr,'tSales');
+      if (st != null) mo.salesVsTgtTgt = st;
+    }
+    if (mo.laborTgt == null) {
+      const lt = avg(lr,'laborTgt') ?? avg(lr,'tLabor') ?? avg(lr,'tCombLabor');
+      if (lt != null) mo.laborTgt = lt;
     }
 
     // FOB $ target (dispatch #132 item 5 — "FOB target is a monthly target"). foodOB scores

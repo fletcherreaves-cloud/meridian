@@ -2937,11 +2937,20 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
   const [activeCat, setActiveCat] = React.useState('Service & Ops');
   const TARGET_FIELDS = (TARGET_FIELDS_CATS.find(c=>c.cat===activeCat)||TARGET_FIELDS_CATS[0]).fields;
 
+  // Dispatch #142 item 4 — %-scale fields already round via .toFixed above; $ fields (no
+  // `scale`, unit:'$') rendered the raw imported decimal with no formatting at all (the
+  // owner's "I did not realize they had decimals until I checked in workbook" — this display-
+  // only round, never the stored value: saveField below still parses whatever the user types).
+  const _fieldDisplay = (raw, field) => {
+    if (field.scale) return (raw*field.scale).toFixed(field.k==='tCashOSPct'?2:1);
+    if (field.unit === '$') return Number(raw).toFixed(0);
+    return raw;
+  };
   const getFieldVal = (loc, field) => {
     const mData = activeMonthData[loc];
-    if(mData&&mData[field.k]!=null) return field.scale ? (mData[field.k]*field.scale).toFixed(field.k==='tCashOSPct'?2:1) : mData[field.k];
+    if(mData&&mData[field.k]!=null) return _fieldDisplay(mData[field.k], field);
     const merged = mergedTargets[loc]||DEFAULT_TARGETS[loc]||{};
-    if(merged[field.k]!=null) return field.scale ? (merged[field.k]*field.scale).toFixed(field.k==='tCashOSPct'?2:1) : merged[field.k];
+    if(merged[field.k]!=null) return _fieldDisplay(merged[field.k], field);
     return '';
   };
 
