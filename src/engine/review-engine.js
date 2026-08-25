@@ -1,5 +1,6 @@
 // Performance Review Engine — config, storage, and scoring
 import { DEFAULT_TARGETS } from '../constants.js';
+import { metricAvg } from './metric-source.js';
 
 const REVIEW_CONFIG_KEY    = 'mf_review_config_v1';
 const PERF_REVIEWS_KEY     = 'mf_perf_reviews_v1';
@@ -36,7 +37,7 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'osat',       label:'Voice OSAT',                 weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'osat',  pctInput:true, note:'Auto from SMG FullScale (5★ %)' },
       { key:'epb2b',      label:'EPB2B (Pace Portal, %)',     weight:0.10, better:'lower',  unit:'pct', scored:true,  t:[-0.02,0.02,0.04], src:'manual',              pctInput:true, note:'Lower EPB2B = better' },
       { key:'r2p',        label:'R2P Front Counter (sec)',    weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'r2p',        note:'Target = store R2P target (sec)' },
-      { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'manual',                    note:'Target = 240 sec (4 min)' },
+      { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'auto', field:'restaurantTimeSec', note:'Auto: McDelivery 3PO Restaurant Time (cloud) vs store target' },
       { key:'kvs',        label:'KVS Time (sec)',             weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-3,3,6],          src:'auto', field:'kvst',       note:'Target = store KVS target (sec)' },
       { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'manual',              pctInput:true, note:'Not scored — reference only' },
       { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'manual',                    note:'Absolute count vs target' },
@@ -53,13 +54,13 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report' },
       { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
       { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual', dollar:true,           note:'$ vs budget target' },
-      { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'manual', dollar:true,           note:'$ vs target' },
+      { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', dollar:true,           note:'Auto: Σ(target−actual) across FOB%/Labor%/Op-Supplies, this category\'s own 3 controllables' },
     ],
     people: [
-      { key:'shiftCert',  label:'# Shift Certified Managers', weight:0.25, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'Count vs target' },
+      { key:'shiftCert',  label:'# Shift Certified Managers', weight:0.25, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'auto',                    note:'Auto: Roster role counts (Shift Mgr bucket) vs store target' },
       { key:'shiftVerif', label:'# Shift Verifications by GM',weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'Count vs target' },
-      { key:'headcount',  label:'Total Headcount vs Target',  weight:0.30, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',                    note:'EOM headcount vs target' },
-      { key:'turnover90', label:'0-90 Day Crew Turnover (%)', weight:0.20, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual',              pctInput:true, note:'Lower turnover % = better' },
+      { key:'headcount',  label:'Total Headcount vs Target',  weight:0.30, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'auto',                    note:'Auto: Roster Statistics (Roster Active) vs store target' },
+      { key:'turnover90', label:'0-90 Day Crew Turnover (%)', weight:0.20, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto',              pctInput:true, note:'Auto: Turnover Monthly (0-90 day) vs store target' },
       { key:'retention',  label:'Execution of Retention Prg.',weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% completion vs target' },
     ],
   },
@@ -696,6 +697,22 @@ export function computeScoreBreakdown(review, cfg) {
 export const REVIEW_METRIC_TARGET_FIELD = {
   oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst', labor: 'tLabor',
   salesVsTgt: 'tProdSales', opSupplies: 'tOpSupply', tpph: 'tTpph',
+  // Dispatch #109 — the yearly workbook (dispatch #107) added these fields to ds.targets;
+  // the actuals were already auto-sourced (digitalGC/delivGC, item #2) or just got wired
+  // (delivWait, item #1; shiftCert/headcount/turnover90, item #6) but had no target mapping.
+  delivWait: 'tMcdWait', digitalGC: 'tDigAppGCRD', delivGC: 'tMcdGCRD',
+  // shiftCert ('# Shift Certified Managers') ↔ tShiftLeaders ('Shift Leader Target' column
+  // in the yearly workbook) — not a perfect name match, wired as the closest real target
+  // (both describe the store's target count of managers certified/authorized to run a shift
+  // alone; "Shift Leader" and "Shift Manager" are used interchangeably across the org's own
+  // source docs — see performance-reviews.js's SRC line for this metric, which itself cites
+  // Altametrics' "Cert. Swing Mgr" label as a third name for the same role level). Flagged
+  // here rather than silently assumed identical — revisit if the owner corrects it.
+  shiftCert: 'tShiftLeaders', headcount: 'tHeadcount', turnover90: 'tToCrew090',
+  // Dispatch #109 item #8 — target mapping for the 4 new EXTRA_KPIS candidates
+  // (kpi-registry.js), matching the existing tpph precedent: the target auto-fills here
+  // even though autoPopulateKPIs has not been taught to read the ACTUAL side for these yet.
+  avgCheck: 'tAvgCheck', tRedBPct: 'tRedBPct', posOverAmt: 'tPosOverAmt', cashOSAmt: 'tCashOSAmt',
 };
 
 // Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly
@@ -706,6 +723,33 @@ export function mergedTargetsForLoc(ds, loc) {
     ...(DEFAULT_TARGETS[L] || {}),
     ...((ds && ds.targets && ds.targets[L]) || {}),
     ...((ds && ds.monthlyTargets && ds.monthlyTargets[L]) || {}),
+  };
+}
+
+// Month-aware official targets for a loc (dispatch #109 item #4). mergedTargetsForLoc above
+// is a SINGLE snapshot — its monthly tier is `ds.monthlyTargets`, which App.js derives from
+// whichever period was uploaded/loaded MOST RECENTLY (the "current" snapshot), not the
+// review's own month. autoPopulateKPIs used to compute that snapshot ONCE, outside its
+// per-month loop, and apply it to every month in the review's half — so a store's April
+// target could silently apply to January too. This version keys the monthly tier by the
+// SPECIFIC year+month requested, from `ds.allMonthlyTargets` (the full per-period index
+// App.js already loads — 'YYYY-M', non-padded month, same convention as pipeline.js's own
+// key construction and Planning > Yearly's `all[year + '-' + m]` lookup, yearly-projections.js).
+// `ds.monthlyTargets` is layered ONLY on top of a matching period (guarded by its own
+// _year/_month stamp, mirroring eom-supervisor.js's `mtOK` check) so a locally-parsed upload
+// not yet round-tripped through allMonthlyTargets still wins for ITS OWN month, but can never
+// leak into a different one — the exact cross-month contamination this fix exists to close.
+export function mergedTargetsForLocMonth(ds, loc, year, month) {
+  const L = String(loc);
+  const periodKey = `${year}-${month}`;
+  const fromAll = (ds && ds.allMonthlyTargets && ds.allMonthlyTargets[periodKey] && ds.allMonthlyTargets[periodKey][L]) || null;
+  const snap = (ds && ds.monthlyTargets && ds.monthlyTargets[L]) || null;
+  const snapOK = snap && (snap._year == null || (snap._year === year && snap._month === month));
+  return {
+    ...(DEFAULT_TARGETS[L] || {}),
+    ...((ds && ds.targets && ds.targets[L]) || {}),
+    ...(fromAll || {}),
+    ...(snapOK ? snap : {}),
   };
 }
 
@@ -733,7 +777,10 @@ export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;
   const loc = review.loc;
   const months = JSON.parse(JSON.stringify(review.kpis.months));
-  const officialTgts = mergedTargetsForLoc(ds, loc); // DEFAULT < yearly < monthly (monthly wins)
+  // Dispatch #109 item #4 — targets are resolved PER MONTH below (mergedTargetsForLocMonth),
+  // not once here for the whole review period. See that function's own comment for why: the
+  // old single mergedTargetsForLoc() snapshot let one month's uploaded target silently apply
+  // to every other month in the review's half.
 
   const byMonth = (rows, locF='loc') => {
     const map={};
@@ -752,7 +799,6 @@ export function autoPopulateKPIs(review, ds) {
   const sum = (arr,k) => { const v=arr.map(r=>r[k]).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+b,0):null; };
 
   const laborM = byMonth(ds.laborRows);
-  const opsM   = byMonth(ds.opsRows);
   const fobM   = byMonth(ds.fobRows);
   const ebosM  = byMonth(ds.ebosRows); // eBOS daily op-supplies purchases (Notes 32 #4)
 
@@ -761,6 +807,16 @@ export function autoPopulateKPIs(review, ds) {
   // active count), Shift-Cert ← Roster role counts (shiftMgr bucket), 0-90 ← Turnover.
   const _ry = review.year || new Date().getFullYear();
   const monthNum = pm => parseInt(String(pm || '').slice(5, 7));
+  // Calendar-month date range for metric-source.js's metricAvg (dispatch #109 item #3) —
+  // OEPE/R2P/KVS/Labor% below are resolved through the app's own auto-first resolver
+  // instead of hand-filtering ds.opsRows/ds.laborRows, so a month range in the shape it
+  // expects ({s,e}, either Date or 'YYYY-MM-DD' — see metricSeries) is built once per month.
+  const monthRange = (m) => {
+    const s = `${_ry}-${String(m).padStart(2, '0')}-01`;
+    const lastDay = new Date(_ry, m, 0).getDate();
+    const e = `${_ry}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    return { s, e };
+  };
   const byLocMonth = (rows) => {
     const m = {};
     for (const r of (rows || [])) {
@@ -807,27 +863,37 @@ export function autoPopulateKPIs(review, ds) {
   for (const [mn, mo] of Object.entries(months)) {
     const m = parseInt(mn);
     const lr = laborM[m]||[];
-    const or = opsM[m]||[];
     const fr = fobM[m]||[];
     const er = ebosM[m]||[];
     const sr = smgFSByMonth[m];
+    // Dispatch #109 item #4 — resolved for THIS month specifically (DEFAULT < yearly <
+    // this month's allMonthlyTargets entry), not the single review-wide snapshot the old
+    // code used. See mergedTargetsForLocMonth's own comment for the full rationale.
+    const officialTgts = mergedTargetsForLocMonth(ds, loc, _ry, m);
 
     if (lr.length) {
       const s  = sum(lr,'sales');
       const st = sum(lr,'salesTgt')||sum(lr,'tSales');
-      const lp = avg(lr,'laborPct');
       const lt = avg(lr,'laborTgt')||avg(lr,'tLabor')||avg(lr,'tCombLabor');
       if (s !=null) mo.salesVsTgt    = s;
       if (st!=null) mo.salesVsTgtTgt = st;
-      if (lp!=null) mo.labor    = lp;
       if (lt!=null) mo.laborTgt = lt;
     }
-    if (or.length) {
-      const oepe = avg(or,'oepe'), r2p=avg(or,'r2p'), kvs=avg(or,'kvst');
-      if (oepe!=null) mo.oepe = oepe;
-      if (r2p !=null) mo.r2p  = r2p;
-      if (kvs !=null) mo.kvs  = kvs;
-    }
+    // OEPE / R2P / KVS / Labor % actuals (dispatch #109 item #3) — routed through
+    // metric-source.js's metricAvg (glimpse/DAR/controls auto-first, manual upload last)
+    // instead of hand-filtering ds.opsRows/ds.laborRows directly, closing the exact bypass
+    // CLAUDE.md's auto-first rule exists to prevent (a stale manual upload winning over a
+    // current cloud stream on the same day). Strictly a superset of the old ds.opsRows /
+    // ds.laborRows-only fallback — both are still in the resolver's own chains.
+    const range = monthRange(m);
+    const oepeAvg  = metricAvg(ds, loc, range, 'oepe');
+    const r2pAvg   = metricAvg(ds, loc, range, 'r2p');
+    const kvsAvg   = metricAvg(ds, loc, range, 'kvst');
+    const laborAvg = metricAvg(ds, loc, range, 'laborPct');
+    if (oepeAvg  != null) mo.oepe  = oepeAvg;
+    if (r2pAvg   != null) mo.r2p   = r2pAvg;
+    if (kvsAvg   != null) mo.kvs   = kvsAvg;
+    if (laborAvg != null) mo.labor = laborAvg;
     if (fr.length) {
       const fd = sum(fr,'fobDollar');
       if (fd!=null) mo.foodOB = fd;
@@ -851,6 +917,12 @@ export function autoPopulateKPIs(review, ds) {
     if (dig && dig.appGcRd != null) mo.digitalGC = dig.appGcRd;
     const dlv = deliveryM[m];
     if (dlv && dlv.deliveryGcRd != null) mo.delivGC = dlv.deliveryGcRd;
+    // Delivery Wait Time actual (dispatch #109 item #1) — "Restaurant Time" is the
+    // in-store/restaurant-side wait leg, confirmed against people-reports.js's own field
+    // comments AND the yearly workbook's "McDelivery Restaurant Wait Time" column (which
+    // tMcdWait, this metric's target below, is filled from) — NOT mcDeliveryTimeSec, the
+    // courier/total-delivery-side leg.
+    if (dlv && dlv.restaurantTimeSec != null) mo.delivWait = dlv.restaurantTimeSec;
     // Manager-attributed OVERRIDE (after the store fills): a DM/shift review's
     // operational metrics use this manager's own shifts. Only the rate/time metrics
     // that compare fairly to the store target (OEPE/R2P/KVS/Labor%); volume metrics
@@ -874,6 +946,28 @@ export function autoPopulateKPIs(review, ds) {
     for (const [mk, tf] of Object.entries(REVIEW_METRIC_TARGET_FIELD)) {
       const slot = mk + 'Tgt';
       if (mo[slot] == null && officialTgts[tf] != null) mo[slot] = officialTgts[tf];
+    }
+
+    // Total Profit vs Target (dispatch #109 item #5) — derive from THIS SAME month's
+    // already-resolved Labor%/Op-Supplies values (set above) plus FOB%, no separate pull.
+    // The review's own `foodOB` metric scores in DOLLARS (fobDollar, above), so it can't
+    // feed deriveTotalProfitVsTarget directly — that function needs the FOB *percentage*
+    // legs, read straight off the same `fr` FOB rows (fobPct, sibling field to fobDollar)
+    // and the same officialTgts.tFOBTarget already resolved in scope here — not a new pull.
+    if (mo.totalProfit == null) {
+      const fobPctActual = avg(fr, 'fobPct');
+      const fobPctTarget = officialTgts.tFOBTarget ?? null;
+      const sales = mo.salesVsTgt; // no separate net/prod-sales split available here; one figure feeds both legs
+      const { total$ } = deriveTotalProfitVsTarget({
+        fobPctActual, fobPctTarget,
+        laborPctActual: mo.labor, laborPctTarget: mo.laborTgt,
+        opSuppliesActual: mo.opSupplies, opSuppliesTarget: mo.opSuppliesTgt,
+        netSales: sales, prodSales: sales,
+      });
+      if (total$ != null) {
+        mo.totalProfit = total$;
+        if (mo.totalProfitTgt == null) mo.totalProfitTgt = 0;
+      }
     }
   }
 
