@@ -84,6 +84,15 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #121 — Forecasting Reference: update content, remove byline, convert to a route page](dispatch-121.md)** —
+  Owner: *"Need to update to current... remove the line with my name and title... [title is]
+  Director of Strategy Planning and Improvement... convert to url page... last version update was
+  on v4.210."* `public/forecast-reference.html` (1470-line static doc) confirmed genuinely stale:
+  zero mentions of the `'simple'` T3M/T6W/T3W trailing model, first-class in `forecastDay()` since
+  v4.532 and the proven backtest winner (v4.483) — a real, major documentation gap, not assumed.
+  Byline (name/title/date) and a second wrong "District Manager" footer label both need fixing.
+  Currently shown in a small `ModalShell`+iframe with no `route:true` entry — convert per the
+  panel-contract standing rule, keeping the static HTML content (not a full React rewrite).
 - **📋 (2026-08-25): [Dispatch #120 — Security panel: mobile-unusable location pills, findings readability](dispatch-120.md)** —
   Owner: *"Security > unusable on mobile with all the pulls for locations. Needs to be changed to
   location selector and add date selector while in there as well... prior events selectable to go
