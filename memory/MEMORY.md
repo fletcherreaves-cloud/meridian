@@ -84,8 +84,33 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #136 — Speed of Service print/export + Record Day location picker,
+  print/export, and recent-record highlighting](dispatch-136.md).** Two small, independent asks on
+  panels already touched this session, bundled for one engineer: (1) `dt-speedofservice.js` gets
+  print/export via the same `ExportDropdown`/full-content-printable pattern dispatches #122/#129/
+  #134 established — do not touch dispatch #128's just-shipped target-color-bar logic. (2)
+  `record-day.js` currently has **zero location filtering** (confirmed by reading the file, no
+  `LocationSelector` import) — add one (`mode:'progressive'`), thread the scope through print/
+  export, and add a recent-record-breaker highlight that reuses `RecentBreakersTab`'s existing
+  `windowDays` (never invent a second "how recent" definition) and must survive into the printed
+  output, not just the live DOM (see dispatch #129's `print-color-adjust` finding for the trap).
+- **📋 (2026-08-25): [Dispatch #135 — Targets Editor v2: add 6 missing metric fields, move into
+  Performance Review → Customize, re-verify Total Profit/Complaints workbook-source
+  claim](dispatch-135.md).** Owner pushed back directly on dispatch #132's finding that Total
+  Profit/Complaints have no workbook source — *"Please re-read these next lines carefully... all
+  found in Monthly and Yearly Targets."* The PM independently re-grepped the parser and got the
+  same "no match" result #132 got, but this is a **real, unresolved disagreement between the code
+  and the owner's stated belief, not something to silently re-assert** — the engineer must resolve
+  it with evidence (real header text if a naming mismatch, or a clear conceptual-mismatch
+  explanation), not just repeat the prior conclusion. Also: add the 6 remaining `src:'manual'`
+  metrics from `review-engine.js` that #132 didn't cover (EPB2B, FS Audits, FS EcoSure, FS Tablet
+  T-60, Shift Verifications by GM, Retention Prg — investigate each for a real workbook column
+  before assuming override-only), and move the standalone Targets Editor panel into Performance
+  Review's existing Customize tab per the owner's explicit *"this does not need it's own panel."*
 - **✅ RESOLVED (2026-08-25): Dispatch #133 merged** — Labor Analysis in-progress-week fix, PR
   #739. See below for the original entry.
+- **✅ RESOLVED (2026-08-25): Dispatch #134 merged** — Schedule Retention training report, PR #742
+  (v5.170). See below for the original entry.
 - **📋 (2026-08-25): [Dispatch #134 — Schedule Summary: per-store training-retention report
   (period, side-by-side weeks) + print/export](dispatch-134.md).** Owner wants a permanent,
   per-location report to check whether stores retained training from a schedule workshop: pick a
