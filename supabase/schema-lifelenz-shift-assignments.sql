@@ -5,13 +5,21 @@
 -- week/station (src/engine/lifelenz-shift-jobs.js's shiftsForEmployeeSchedule), plus a roster
 -- lookup (GetSchedulableEmploymentsForPeriod) for the employee's name.
 --
--- 🔴 NON-NEGOTIABLE (dispatch #123): NO RAW EMPLOYEE NAME COLUMN. emp_token is the only identity
--- column, exactly the same tokenize-before-write discipline dispatch #37 established for
--- audit_rows.emp_token -- see src/engine/identity-vault.js and scripts/qsrsoft-register-audit-
--- pull.mjs's saveAuditRows(). assigned_employment_id (LifeLenz's own opaque employment id) is
--- kept in the clear -- it is a system key, not a name, and the dispatch explicitly allows it as
--- a display fallback ("Employee #12345") when no name was resolvable (roster fetch failed, or
--- the employee genuinely has no roster entry in this window).
+-- 🔄 DISPATCH #125 (owner directive, 2026-08-25, sent while this PR was open for review):
+-- "there is no reason to hide names for scheduling and punch times > everyone can see this data
+-- as-is." This table originally stored ONLY emp_token (dispatch #123's non-negotiable rule at
+-- the time). That rule is reversed: employee_name now stores the resolved name directly, and the
+-- emp_token/identity-vault machinery has been dropped from this table entirely --
+-- scripts/lifelenz-pull.mjs no longer calls tokenizeRows()/getOrCreateToken() for this pull, and
+-- there is no other consumer of an emp_token on this table (dispatch #126's companion QSRSoft
+-- punch-times migration resolves ITS employee_name via a DIFFERENT join -- qsr_employee_tenure --
+-- not by joining back to this table's emp_token, so keeping the column around for a future
+-- cross-table join was considered and rejected as dead weight: it would mean continuing to run
+-- identity-vault writes, with their audit-log surface, for zero consumers).
+-- assigned_employment_id (LifeLenz's own opaque employment id) remains the stable join key --
+-- unrelated to this change, it was never a privacy mechanism, just a system identifier, and is
+-- still used as a display fallback ("Employee #12345") on the rare row where no roster match was
+-- found (roster fetch failed, or the employee genuinely has no roster entry in this window).
 create table if not exists public.lifelenz_shift_assignments (
   loc                     text        not null,   -- store number, e.g. '0003708'
   shift_id                text        not null,   -- LifeLenz GraphQL Shift.id -- globally unique
@@ -19,8 +27,8 @@ create table if not exists public.lifelenz_shift_assignments (
   date                    date        not null,    -- calendar date of shift_start (LifeLenz's own scheduling day, NOT the 4am ABC business-day boundary -- this is a SCHEDULE, displayed the same way LifeLenz's own UI groups a shift by its start date)
   shift_start             timestamptz,
   shift_end               timestamptz,
-  assigned_employment_id  text        not null,    -- LifeLenz employmentId -- opaque, safe to display as "Employee #<id>" when emp_token is null
-  emp_token               uuid        references public.employee_identity_vault(id),
+  assigned_employment_id  text        not null,    -- LifeLenz employmentId -- opaque, safe to display as "Employee #<id>" when employee_name is null
+  employee_name           text,                    -- resolved employee name (dispatch #125). Nullable: a roster fetch failure or a genuinely unmatched employmentId leaves this null and the panel falls back to assigned_employment_id.
   business_role_id        text,                    -- LifeLenz businessRoleId (station) -- src/engine/lifelenz-shift-jobs.js's LIFELENZ_BUSINESS_ROLES
   role_name               text,
   category                text,                    -- Variable | Floor | Fixed
@@ -32,12 +40,14 @@ create table if not exists public.lifelenz_shift_assignments (
   primary key (loc, shift_id)
 );
 
--- Seam for dispatch #124 (actual punch times, a separate/parallel dispatch, NOT built here):
--- that pull's own table is expected to join onto this one by (loc, date, emp_token) to compute
--- scheduled-vs-punched. This index exists for that future join AND for the panel's own
--- "employee's upcoming schedule, scoped to a location + date range" query today.
-create index if not exists lifelenz_shift_assignments_loc_date_emp_idx
-  on public.lifelenz_shift_assignments (loc, date, emp_token);
+-- Seam for dispatch #124/#126 (actual punch times, a separate/parallel dispatch, NOT built
+-- here): that table joins onto this one by (loc, date) + name/employmentId matching to compute
+-- scheduled-vs-punched (the original emp_token-based join seam this index was built for no
+-- longer applies -- #126 resolves its own employee_name via qsr_employee_tenure instead). This
+-- index still serves the panel's own "employee's upcoming schedule, scoped to a location + date
+-- range" query, so it's kept, just no longer indexing emp_token.
+create index if not exists lifelenz_shift_assignments_loc_date_idx
+  on public.lifelenz_shift_assignments (loc, date);
 create index if not exists lifelenz_shift_assignments_date_idx
   on public.lifelenz_shift_assignments (date desc);
 create index if not exists lifelenz_shift_assignments_employment_idx
@@ -45,35 +55,49 @@ create index if not exists lifelenz_shift_assignments_employment_idx
 
 alter table public.lifelenz_shift_assignments enable row level security;
 
--- Gated read -- deliberately the SAME tier as security_findings and reveal_employee_identity()
--- (admin/supervisor always; manager only when org_config.gm_identity_reveal_enabled), NOT the
--- looser "any authenticated user" `using(true)` pattern most operational tables in this repo use
--- (lifelenz_schedule, lifelenz_job_hours, even audit_rows itself). Reasoning, stated explicitly
--- per security_findings' own precedent comment: a token alone isn't PII, but a per-employee
--- SCHEDULE, searchable and multi-select-able by design, is exactly the "named-employee" surface
--- CLAUDE.md's own dispatch #123 brief calls out as a first for this app -- a small night crew
--- with one flagged token (or one schedule row) isn't meaningfully anonymous to whoever is
--- looking. Starting at the conservative tier and loosening later on an explicit owner decision
--- is the safer default than the reverse. This is also the one place dispatch #123's own "should
--- a GM see their own store's schedule without the reveal toggle" open question is answered: NO,
--- deliberately -- see the PR body for the full reasoning (consistency with the Security panel's
--- established tier; avoiding a new, unreviewed RLS carve-out on the most sensitive table in this
--- schema, so soon after the reveal_employee_identity() NULL-role bypass incident).
+-- RBAC re-decision (dispatch #125, stated explicitly per the dispatch's request, not a rubber
+-- stamp): dispatch #123 gated this table at the SAME tier as security_findings/
+-- reveal_employee_identity() (admin/supervisor always; manager only with
+-- org_config.gm_identity_reveal_enabled) specifically BECAUSE it was named-employee-revealing
+-- data. With the owner's reversal that names are not sensitive here ("everyone can see this data
+-- as-is"), a per-employee work schedule is ordinary operational data -- the same category as
+-- lifelenz_schedule/lifelenz_job_hours (labor planning) or the per-loc-scoped tables in
+-- schema-rls-phase2-loc.sql (labor_rows, ops_rows, ...) -- not an identity investigation. A GM
+-- asking "who's on shift Tuesday at my store" is core scheduling use, not a security lookup, and
+-- keeping the security_findings-tier gate on it after the reveal step is removed would mean most
+-- managers (and every gm/office_staff/DO/VP/owner role) simply can't open the panel at all with
+-- no principled reason left -- the ONLY thing that tier ever protected was the name itself.
+-- So this drops to the SAME two-layer pattern every other loc-keyed operational table in this
+-- schema uses: tenant match (this deployment is single-tenant today, same default as before) +
+-- accessible_locs scoping via the existing (select public.my_locs()) RESTRICTIVE predicate
+-- (schema-rls-phase2-loc.sql's own pattern, reproduced here inline since this table was created
+-- after that migration ran rather than being in its table array). This is NOT "no RBAC" -- a GM
+-- still only ever sees rows for locs in their own accessible_locs, exactly like every other
+-- operational panel (Labor Tools, Calendar Manager) that has no panel-specific gate beyond
+-- ordinary nav permission + RLS loc scoping. Nav-level visibility is perm:'analytics.store' in
+-- src/app/panel-registry.js (same key Labor Tools/Scheduling/Calendar Manager use), not
+-- perm:'security.view' -- there is no more reason for this panel to sit behind the Security nav
+-- gate than there is for Labor Tools to.
 drop policy if exists "lifelenz_shift_assignments: gated read" on public.lifelenz_shift_assignments;
-create policy "lifelenz_shift_assignments: gated read" on public.lifelenz_shift_assignments
-  for select using (
-    tenant_id = '00000000-0000-0000-0000-000000000001'::uuid
-    and (
-      get_my_role() in ('admin', 'supervisor')
-      or (
-        get_my_role() = 'manager'
-        and coalesce((select (data->>'enabled')::boolean from public.org_config where key = 'gm_identity_reveal_enabled'), false)
-      )
-    )
+drop policy if exists "lifelenz_shift_assignments: tenant read" on public.lifelenz_shift_assignments;
+create policy "lifelenz_shift_assignments: tenant read" on public.lifelenz_shift_assignments
+  for select using (tenant_id = '00000000-0000-0000-0000-000000000001'::uuid);
+
+drop policy if exists "lifelenz_shift_assignments: loc scope" on public.lifelenz_shift_assignments;
+create policy "lifelenz_shift_assignments: loc scope" on public.lifelenz_shift_assignments
+  as restrictive for all to authenticated
+  using (
+    (select public.my_locs()) is null
+    or ltrim(loc, '0') in (select unnest((select public.my_locs())))
+  )
+  with check (
+    (select public.my_locs()) is null
+    or ltrim(loc, '0') in (select unnest((select public.my_locs())))
   );
 -- No insert/update/delete policy for any role -- every write comes from scripts/lifelenz-
 -- pull.mjs's service-role key, which bypasses RLS entirely regardless of policies here. Matches
--- security_findings'/identity_reveal_log's own "writes are backend-only" pattern.
+-- security_findings'/identity_reveal_log's own "writes are backend-only" pattern -- unchanged by
+-- this dispatch, it was never part of the identity-tokenization question.
 
 comment on table public.lifelenz_shift_assignments is
-  'Per-employee, per-shift schedule rows (dispatch #123, Crew Schedule Lookup). emp_token only -- NEVER a raw name column. Written only by scripts/lifelenz-pull.mjs (service role); read gated to the same tier as reveal_employee_identity()/security_findings.';
+  'Per-employee, per-shift schedule rows (dispatch #123, Crew Schedule Lookup). Stores employee_name directly (dispatch #125 reversed the original emp_token-only design -- owner: "no reason to hide names for scheduling"). Written only by scripts/lifelenz-pull.mjs (service role); read gated by ordinary tenant + accessible_locs RLS, the same tier as other operational labor tables (lifelenz_schedule, labor_rows), not the identity-reveal-specific tier.';

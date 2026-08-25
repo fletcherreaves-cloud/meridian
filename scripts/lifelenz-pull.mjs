@@ -30,9 +30,11 @@ import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // shiftsForEmployeeSchedule (dispatch #123, Crew Schedule Lookup) — same source, per-SHIFT
 // instead of rolled up. See the pullShiftAssignments() section below.
 import { rollupShiftsByRole, shiftsForEmployeeSchedule } from '../src/engine/lifelenz-shift-jobs.js';
-// dispatch #123's own non-negotiable rule: an employee name is NEVER written to a table raw.
-// Same mechanism scripts/qsrsoft-register-audit-pull.mjs already uses for audit_rows.emp_token.
-import { tokenizeRows } from '../src/engine/identity-vault.js';
+// dispatch #123 originally routed the resolved name through identity-vault.js's tokenizeRows()
+// before this table existed a name column at all. Dispatch #125 (owner directive, 2026-08-25:
+// "there is no reason to hide names for scheduling and punch times > everyone can see this data
+// as-is") reverses that: the resolved name is now stored directly (see upsertShiftAssignmentRows
+// below). No import of identity-vault.js remains in this file.
 
 const BASE         = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID  = '01979dbf-a166-759b-8702-aba9915c578e';
@@ -881,22 +883,20 @@ async function pullJobHours(token, schedules, start, end) {
 // committed CSV/per-job pulls that ran before it. Escape hatch: LIFELENZ_SKIP_SHIFT_ASSIGNMENTS=1.
 async function upsertShiftAssignmentRows(loc, rows) {
   if (!rows.length) return 0;
-  // dispatch #123's non-negotiable rule: a raw employee name is NEVER written to this table.
-  // Tokenize BEFORE upsert -- ONE RPC call per DISTINCT name in this store's batch (not per
-  // row), the same batching discipline identity-vault.js's own header documents and
-  // qsrsoft-register-audit-pull.mjs's saveAuditRows() already uses for audit_rows.emp_token.
-  const named = rows.filter(r => r.name);
-  const tokenMap = await tokenizeRows(supabase, named, 'name');
+  // dispatch #125 (owner directive, 2026-08-25): store the resolved name directly. No
+  // tokenization step -- see the file header for the reversal from dispatch #123's original
+  // emp_token-only design. assigned_employment_id stays the stable join key regardless (it was
+  // never a privacy mechanism, just LifeLenz's own opaque identifier).
   const now = new Date().toISOString();
   const upsert = rows.map(r => ({
     loc, shift_id: r.shiftId, date: r.date,
     shift_start: r.startISO, shift_end: r.endISO,
     assigned_employment_id: r.employmentId,
-    // emp_token only -- NEVER r.name itself. A shift whose employee has no roster match (roster
-    // fetch failed, or genuinely no name field) gets emp_token:null and is still fully usable by
-    // the panel via assigned_employment_id as an opaque display key ("Employee #12345"), per
-    // dispatch #123's explicit graceful-degradation instruction.
-    emp_token: r.name ? (tokenMap.get(r.name.trim()) ?? null) : null,
+    // The resolved name, trimmed, or null when no roster match was found (roster fetch failed,
+    // or the employee genuinely has no roster entry this window) -- the panel falls back to
+    // assigned_employment_id as a display key ("Employee #12345") in that case, same graceful-
+    // degradation behavior dispatch #123 established, just without a token in between.
+    employee_name: r.name ? r.name.trim() : null,
     business_role_id: r.businessRoleId, role_name: r.roleName,
     category: r.category, code: r.code, job_title: r.jobTitle,
     is_absent: r.isAbsent, schedule_id: r.scheduleId,
@@ -924,7 +924,7 @@ async function pullShiftAssignments(token, schedules, start, end) {
 
     // Roster fetched ONCE per store for the whole pull window (see fetchEmploymentsForSchedule).
     // Best-effort: a roster failure degrades every shift at this store to ID-only rows
-    // (emp_token:null, assigned_employment_id kept) rather than blocking the shift rows.
+    // (employee_name:null, assigned_employment_id kept) rather than blocking the shift rows.
     let rosterMap = new Map();
     try {
       const edges = await fetchEmploymentsForSchedule(token, scheduleId, start, end);

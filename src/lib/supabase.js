@@ -758,15 +758,16 @@ export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4 } = {}
   }));
 }
 
-// ── Crew Schedule Lookup (dispatch #123) — per-employee, per-shift rows ─────────────────────
+// ── Crew Schedule Lookup (dispatch #123, names de-tokenized under dispatch #125) — per-employee,
+// per-shift rows ──────────────────────────────────────────────────────────────────────────────
 // Read-only from the client: rows are written only by scripts/lifelenz-pull.mjs's service-role
 // key (lifelenz_shift_assignments has no insert/update/delete policy at all — see
-// supabase/schema-lifelenz-shift-assignments.sql). RLS gates the SELECT itself to the same tier
-// as reveal_employee_identity()/security_findings (admin/supervisor always; manager only with
-// org_config.gm_identity_reveal_enabled) — an unauthorized caller gets zero rows back from
-// Postgres directly, before this function's own client-side gate (src/views/crew-schedule-
-// panel.js's permState check) ever runs. `start`/`end` are 'YYYY-MM-DD' calendar-date strings
-// (DateRangeControl's own shape); `locs` narrows to the current LocationSelector scope.
+// supabase/schema-lifelenz-shift-assignments.sql). RLS gates the SELECT the same way every other
+// ordinary operational table in this app does — tenant match + accessible_locs scoping, NOT the
+// identity-reveal-specific tier dispatch #123 originally used (owner directive, dispatch #125:
+// "there is no reason to hide names for scheduling and punch times"). `start`/`end` are
+// 'YYYY-MM-DD' calendar-date strings (DateRangeControl's own shape); `locs` narrows to the
+// current LocationSelector scope.
 export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
@@ -783,7 +784,7 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
     shiftStart:            r.shift_start,
     shiftEnd:              r.shift_end,
     assignedEmploymentId:  r.assigned_employment_id,
-    empToken:              r.emp_token,
+    employeeName:          r.employee_name,
     businessRoleId:        r.business_role_id,
     roleName:              r.role_name,
     category:              r.category,
