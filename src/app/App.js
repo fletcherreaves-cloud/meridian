@@ -190,7 +190,9 @@ const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default:
 const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default: m.EventCalendar })));
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
-const TargetsEditorPanel = lazyPanel(() => import('../views/targets-editor.js').then(m => ({ default: m.TargetsEditorPanel })));
+// TargetsEditorPanel — dispatch #135 item 3 moved this UI into Performance Review -> Customize
+// -> Targets (see performance-reviews.js's TargetsEditorSection usage). No longer a standalone
+// lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
@@ -665,7 +667,9 @@ function App() {
   const [showRanking, setShowRanking]  = useState(false);
   const [rankingDefault, setRankingDefault] = useState('score');
   const [showTargets, setShowTargets]  = useState(false);
-  const [showTargetsEditor, setShowTargetsEditor] = useState(false);   // dispatch #132 item 3
+  // showTargetsEditor removed — dispatch #135 item 3 moved this UI into Performance Review ->
+  // Customize -> Targets (perfReviewsEntry below drives the redirect for old deep links).
+  const [perfReviewsEntry, setPerfReviewsEntry] = useState(null); // {tab, section} | null — one-shot deep-link target for PerformanceReviewsPanel
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   const [showPlanningHub, setShowPlanningHub] = useState(false);   // Notes 24 Planning hub
   const [planningTab, setPlanningTab] = useState('targets');
@@ -2595,7 +2599,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showTargetsEditor||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2626,7 +2630,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowTargetsEditor(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
@@ -2741,7 +2745,9 @@ function App() {
         if(modal==='report')         goRoute('report');
         if(modal==='about')          setShowAbout(true);
         if(modal==='targets')        setShowTargets(true);
-        if(modal==='targets-editor') perm('reviews.customize')&&setShowTargetsEditor(true);
+        // 'targets-editor' — dispatch #135 item 3: no longer its own panel, redirects into
+        // Performance Review -> Customize -> Targets so an old deep link doesn't 404.
+        if(modal==='targets-editor') perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'targets'}),goRoute('perf-reviews'));
         if(modal==='events')         setShowEvents(true);
         if(modal==='help')           setShowHelp(true);
         if(modal==='kb')             setShowKB(true);
@@ -2903,7 +2909,9 @@ function App() {
       // component (they already rendered their own header chrome); fob-analysis and fob-eom had
       // no internal chrome, so they're wrapped in RoutePanelShell directly here.
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
-      routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,onClose:()=>goRoute(null)}),
+      routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
+        initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
+        onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
@@ -2941,7 +2949,6 @@ function App() {
     showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:perm('users.manage.all')?()=>setShowAdminPanel(true):null}),
     showRanking  &&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);setShowRanking(false);},onClose:()=>setShowRanking(false)}),
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
-    showTargetsEditor&&h(TargetsEditorPanel,{ds,onClose:()=>setShowTargetsEditor(false)}),
     // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
     showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
     // sched-hub — Dispatch #55 Part B: moved to the routePanel gate in the main content area

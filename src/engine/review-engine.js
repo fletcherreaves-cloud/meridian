@@ -737,13 +737,23 @@ export const REVIEW_METRIC_TARGET_FIELD = {
   // (kpi-registry.js), matching the existing tpph precedent: the target auto-fills here
   // even though autoPopulateKPIs has not been taught to read the ACTUAL side for these yet.
   avgCheck: 'tAvgCheck', tRedBPct: 'tRedBPct', posOverAmt: 'tPosOverAmt', cashOSAmt: 'tCashOSAmt',
-  // Dispatch #132 items 2/6 — these two fields have NO workbook source anywhere (confirmed by
-  // reading parseYearlyTargets/parseMonthlyTargets, src/parsers/index.js) and resolve ONLY from
-  // a Targets-editor override (target-overrides.js), at whichever scope (company/state/patch/
-  // store) the owner sets one. Absent any override, mergedTargetsForLoc simply never carries
-  // these keys — totalProfit falls back to its positiveOnly interim rule (rateMetric), and
-  // complaints stays unscored-by-target (missingReviewTargets flags it) until one is set.
+  // Dispatch #132 items 2/6, RE-VERIFIED by dispatch #135 item 2 (owner explicitly disputed the
+  // "no workbook source" finding) — still resolve ONLY from a Targets-editor override
+  // (target-overrides.js), at whichever scope (company/state/patch/store) the owner sets one.
+  // totalProfit: confirmed again, no column anywhere in yearly_targets/monthly_targets (parser +
+  // live production Supabase schema+data, 2026-08-25). complaints: the workbook DOES have a real
+  // "1-800 Contacts" column (t1800Contacts) but it's a raw COUNT, not the /100K RATE this metric
+  // needs — see target-overrides.js's TARGET_OVERRIDE_FIELDS note on tComplaintsTarget for the
+  // full evidence. Absent any override, mergedTargetsForLoc simply never carries these keys —
+  // totalProfit falls back to its positiveOnly interim rule (rateMetric), and complaints stays
+  // unscored-by-target (missingReviewTargets flags it) until one is set.
   totalProfit: 'tTotalProfitTarget', complaints: 'tComplaintsTarget',
+  // Dispatch #135 item 1 — the rest of DEFAULT_REVIEW_CONFIG's src:'manual' metrics, now
+  // explicitly requested. All six investigated the same way (parser re-read in full, no column
+  // found for any); see target-overrides.js's TARGET_OVERRIDE_FIELDS entries for each one's
+  // specific evidence (real actual-data source found, just not a workbook TARGET).
+  epb2b: 'tEPB2BTarget', fsAudits: 'tFSAuditsTarget', fsEcoSure: 'tFSEcoSureTarget',
+  fsTablet: 'tFSTabletTarget', shiftVerif: 'tShiftVerifTarget', retention: 'tRetentionTarget',
 };
 
 // Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly

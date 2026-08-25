@@ -143,6 +143,38 @@ describe('mergedTargetsForLoc / mergedTargetsForLocMonth — override wins over 
   });
 });
 
+// Dispatch #135 item 1 — the 6 fields added to TARGET_OVERRIDE_FIELDS beyond #132's original 8
+// (owner: "I need unlisted ones to be here (EPB2B, FS Audits Completed, Food Safety EcoSure, FS
+// Completion % T-60, Shift Verifications by GM, Execution of Retention Prg.)"). The generic
+// "stays in sync" describe block above already covers wiring correctness for every entry
+// (including these 6) via reviewKey<->field parity; this block proves the cascade end-to-end
+// for one of them specifically, same pattern as the "company override fills a field with no
+// other source at all" test above for totalProfit/complaints.
+describe('the 6 dispatch #135 fields are present and resolve through the real cascade', () => {
+  it('TARGET_OVERRIDE_FIELDS has all 6 new fields, in addition to the original 8', () => {
+    const fields = TARGET_OVERRIDE_FIELDS.map(f => f.field);
+    expect(fields).toEqual(expect.arrayContaining([
+      'tEPB2BTarget', 'tFSAuditsTarget', 'tFSEcoSureTarget',
+      'tFSTabletTarget', 'tShiftVerifTarget', 'tRetentionTarget',
+    ]));
+    expect(TARGET_OVERRIDE_FIELDS.length).toBe(14); // 8 (dispatch #132) + 6 (dispatch #135 item 1)
+  });
+  it('a company-wide EPB2B override resolves through mergedTargetsForLoc with no other source', () => {
+    const ds = { targetOverrides: indexTargetOverrides([{ scope_type: 'company', scope_id: 'ALL', field: 'tEPB2BTarget', value: 0.02 }]) };
+    expect(mergedTargetsForLoc(ds, '3708').tEPB2BTarget).toBe(0.02);
+    expect(mergedTargetsForLoc({}, '3708').tEPB2BTarget).toBeUndefined();
+  });
+  it('a store-scoped Retention override wins over a company default, reaching the review metric key via REVIEW_METRIC_TARGET_FIELD', () => {
+    const rows = [
+      { scope_type: 'company', scope_id: 'ALL', field: 'tRetentionTarget', value: 0.80 },
+      { scope_type: 'store', scope_id: '3708', field: 'tRetentionTarget', value: 0.90 },
+    ];
+    const idx = indexTargetOverrides(rows);
+    expect(mergedTargetsForLoc({ targetOverrides: idx }, '3708')[REVIEW_METRIC_TARGET_FIELD.retention]).toBe(0.90);
+    expect(mergedTargetsForLoc({ targetOverrides: idx }, '6178')[REVIEW_METRIC_TARGET_FIELD.retention]).toBe(0.80); // FL, company default
+  });
+});
+
 describe('rateMetric positiveOnly — Total Profit interim rule (dispatch #132 item 6)', () => {
   const cfg = { better: 'higher', unit: 'pct', t: [0.05, 0, -0.05], positiveOnly: true };
   it('scores 4 (passing) when actual is positive and no real target is resolved', () => {

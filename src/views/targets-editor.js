@@ -1,5 +1,7 @@
 // @ts-nocheck
-// ── Targets Editor (dispatch #132 item 3) ─────────────────────────────────────────────────
+// ── Targets Editor (dispatch #132 item 3; moved into Performance Review → Customize by
+// dispatch #135 item 3 — "this does not need it's own panel, should be inside Customize on
+// Perf Review dashboard") ──────────────────────────────────────────────────────────────────
 // "For all metrics without a target, let's setup a place in panel to establish targets so
 // they write automatically > Give option to set company wide targets or by store/patch/
 // state/owner." Scoped to the fields THIS dispatch is about (see target-overrides.js's
@@ -10,8 +12,13 @@
 // (All -> State -> Patch -> Store, PanelControls.js), the same control every other
 // scope-aware panel in this app already uses. "Company-wide" = LocationSelector's "All
 // Locations" tier.
+//
+// TargetsEditorSection is CONTENT ONLY (no ModalShell) — it renders as one of the tabs inside
+// CustomizePanel (src/views/performance-reviews.js), which already supplies the surrounding
+// page chrome (RoutePanelShell) and the Customize sub-tab bar. Kept in its own file per the
+// dispatch's own "your call on file organization" — the logic is independent of
+// performance-reviews.js and easiest to keep separately testable/greppable there.
 import * as React from 'react';
-import { ModalShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { loadTargetOverrides, saveTargetOverride, deleteTargetOverride } from '../lib/supabase.js';
@@ -49,7 +56,7 @@ const scopeRowLabel = (scope_type, scope_id) => scope_type === 'company' ? 'Comp
 
 const fmtVal = (v, unit) => v == null ? '—' : unit === 'pct' ? (v * 100).toFixed(2) + '%' : unit === 'usd' ? '$' + Number(v).toLocaleString() : unit === 'sec' ? v + ' sec' : String(v);
 
-export function TargetsEditorPanel({ ds, onClose }) {
+export function TargetsEditorSection({ ds }) {
   const { useState, useEffect, useMemo } = React;
   const [rows, setRows] = useState(null);            // raw override rows, null = loading
   const [busy, setBusy] = useState(false);
@@ -104,12 +111,11 @@ export function TargetsEditorPanel({ ds, onClose }) {
     return { ...ov, full };
   }, [previewStore, overridesIndex, fieldKey, ds]);
 
-  return h(ModalShell, {
-    title: 'Targets Editor', icon: '🎯', maxWidth: 820, onClose,
-    subtitle: 'Set Performance Review targets by Company / State / Patch / Store — no re-upload needed',
-    headerExtra: msg ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, busy ? '…' : msg) : null,
-    bodyStyle: { padding: 14, display: 'flex', flexDirection: 'column', gap: 14 },
-  },
+  return div({ style: { padding: 4, display: 'flex', flexDirection: 'column', gap: 14 } },
+    div({ style: { fontSize: 11, color: 'var(--text3)', marginBottom: 2, padding: '8px 12px',
+      background: 'var(--surf2)', borderRadius: 'var(--r)', border: '.5px solid var(--bdr)', lineHeight: 1.5 } },
+      'Set Performance Review targets by Company / State / Patch / Store — no re-upload needed.',
+      msg && span({ style: { marginLeft: 8, fontWeight: 700, color: 'var(--text2)' } }, busy ? '…' : msg)),
     // ── field picker ──
     div(null, label9('Target field'),
       div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },

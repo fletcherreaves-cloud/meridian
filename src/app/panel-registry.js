@@ -198,12 +198,13 @@ export const PANELS = [
   { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   // Targets Editor (dispatch #132 item 3) -- company/state/patch/store override cascade for
-  // Performance Review target fields that have no (or an adjustable) workbook source. Gated on
-  // reviews.customize (same perm as "Customize scoring weights & thresholds" -- admin-only by
-  // default, supervisor/manager false) since it's the same class of admin action: changing how
-  // reviews score, not viewing/submitting one. section:'people', next to perf-reviews, since
-  // every field it edits today is a Performance Review metric target.
-  { id:'targets-editor', label:'Targets Editor', icon:'🎯', perm:'reviews.customize', kind:'nav', section:'people' },
+  // Performance Review target fields that have no (or an adjustable) workbook source. Dispatch
+  // #135 item 3 moved its UI into Performance Review -> Customize -> Targets (owner: "this does
+  // not need it's own panel, should be inside Customize on Perf Review dashboard") -- converted
+  // nav -> kind:'hub-tab', same "opens a hub and selects a tab, no sidebar entry of its own"
+  // pattern as fcst-accuracy/lifelenz-bridge above. Old deep links (modal==='targets-editor')
+  // now open perf-reviews and select Customize > Targets instead of a standalone panel.
+  { id:'targets-editor', label:'Targets Editor', icon:'🎯', perm:'reviews.customize', kind:'hub-tab', section:'people' },
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
   // Dispatch #77 -- gated on analytics.district (a general leaderboard, not a Security panel;
   // must NOT inherit security.view), kind:'test-kitchen' with its real eventual section:'analytics'
