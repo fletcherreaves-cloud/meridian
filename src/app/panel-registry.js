@@ -184,6 +184,9 @@ export const PANELS = [
   // (modal==='sched-retention') now open the hub and select the Training Retention tab instead
   // of a standalone panel.
   { id:'sched-retention', label:'Training Retention', icon:'🎓', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
+  // Dispatch #141 -- cross-store Patch/Operator/Org/State rollup of the above ("who is driving
+  // this"), a sibling hub tab, same kind/section shape.
+  { id:'sched-retention-rollup', label:'Retention Rollup', icon:'📊', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'sched-summary', label:'Sched Summary', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'scheduling', label:'Scheduling', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   // Static nav gate only (admin/supervisor always match, manager sees the entry per

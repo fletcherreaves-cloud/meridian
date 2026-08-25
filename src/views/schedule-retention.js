@@ -38,11 +38,12 @@
 //    metric row (Labor %, Sched/Fcst Hrs, Hours ± Fcst, TPMH, Fixed/Floor/Combined %), stacked as
 //    small multiples below a shrunk, horizontally-spread narrative strip.
 import * as React from 'react';
-import { LocationSelector, buildLocationHierarchy } from '../components/PanelControls.js';
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { computeStoreWeeks, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from '../engine/schedule-summary.js';
 import { StationBreakdown } from './schedule-summary.js';
 import { ExportDropdown } from './store-dash.js';
-import { INV_ORG_COORDS, STORE_NAMES, sNameC } from '../constants.js';
+import { INV_ORG_COORDS, STORE_NAMES, sNameC, sName, supervisorOf, getStoreOrg, DEF_SETTINGS } from '../constants.js';
+import { loadRetentionMarks, saveRetentionMark } from '../lib/supabase.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -271,30 +272,63 @@ export function ScheduleRetentionSection({ ds, stores }) {
   // separate report (not yet built when this shipped), not reimplemented here.
   const loc = scope.level === 'store' ? _normLoc(scope.id) : null;
 
-  // Persist which week is "the workshop week" per store, locally — a UI convenience only, never
-  // a new data pipeline (out of scope per the dispatch). Wrapped in try/catch: private windows /
-  // blocked site data must not break the panel. Also resets the week-range picker to its default
-  // trailing window whenever the store changes (never on every schedRows refresh, so a live
-  // reload doesn't clobber a manually-picked range).
+  // Dispatch #141: workshop-week marks are now cloud-persisted (supabase/schema-dispatch-141-
+  // retention-marks.sql, src/lib/supabase.js's loadRetentionMarks/saveRetentionMark) — Supabase
+  // is the source of truth, not localStorage. A mark made from one device/session is invisible
+  // to a rollup computed elsewhere unless it lives in a shared table (the blocking prerequisite
+  // that dispatch's own brief called out). localStorage is kept ONLY as a same-session,
+  // instant-paint fast-path cache: it renders immediately on store switch, before the one-time
+  // cloud read below resolves, and is overwritten by the cloud value the moment it does — never
+  // trusted as authoritative once `marksLoaded` is true.
+  const [cloudMarks, setCloudMarks] = React.useState({});     // loc -> weekKey, from Supabase
+  const [marksLoaded, setMarksLoaded] = React.useState(false);
   React.useEffect(() => {
-    if (!loc) { setMarkedWeekKey(null); setWeekRange({ startKey: null, endKey: null }); setInspectWeekKey(null); return; }
-    try {
-      const saved = JSON.parse(localStorage.getItem('mf_sched_retention_mark') || '{}');
-      setMarkedWeekKey(saved[loc] || null);
-    } catch { setMarkedWeekKey(null); }
+    let alive = true;
+    loadRetentionMarks().then(rows => {
+      if (!alive) return;
+      const m = {};
+      for (const r of (rows || [])) if (r.loc && r.weekKey) m[r.loc] = r.weekKey;
+      setCloudMarks(m);
+      setMarksLoaded(true);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  // Resets the week-range picker to its default trailing window whenever the STORE changes
+  // (never on every schedRows/cloudMarks refresh, so a live reload doesn't clobber a manually-
+  // picked range) — split from the mark-sync effect below so the two concerns don't fight.
+  React.useEffect(() => {
+    if (!loc) { setWeekRange({ startKey: null, endKey: null }); setInspectWeekKey(null); return; }
     const avail = computeStoreWeeks(ds?.schedRows || [], loc, {});
     setWeekRange(defaultWeekRange(avail));
     setInspectWeekKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc]);
+
+  // Keeps markedWeekKey in sync with whichever store is selected — cloud-first once loaded,
+  // localStorage fast-path only until then (see comment above cloudMarks).
+  React.useEffect(() => {
+    if (!loc) { setMarkedWeekKey(null); return; }
+    if (marksLoaded) { setMarkedWeekKey(cloudMarks[loc] || null); return; }
+    try {
+      const saved = JSON.parse(localStorage.getItem('mf_sched_retention_mark') || '{}');
+      setMarkedWeekKey(saved[loc] || null);
+    } catch { setMarkedWeekKey(null); }
+  }, [loc, marksLoaded, cloudMarks]);
+
   const markWeek = (weekKey) => {
     setMarkedWeekKey(prev => {
       const next = prev === weekKey ? null : weekKey;
+      // Same-session cache write, purely for instant paint — see comment above cloudMarks.
       try {
         const saved = JSON.parse(localStorage.getItem('mf_sched_retention_mark') || '{}');
         if (next) saved[loc] = next; else delete saved[loc];
         localStorage.setItem('mf_sched_retention_mark', JSON.stringify(saved));
       } catch {}
+      setCloudMarks(cm => { const n = { ...cm }; if (next) n[loc] = next; else delete n[loc]; return n; });
+      saveRetentionMark(loc, next).then(({ error }) => {
+        if (error) console.warn('[sched_retention_marks] failed to persist mark for', loc, ':', error);
+      });
       return next;
     });
   };
@@ -391,7 +425,7 @@ export function ScheduleRetentionSection({ ds, stores }) {
       'Pick a location above to see its schedule-retention report — every LifeLenz business week in the selected period, side by side.')
     : !loc ? emptyState('🏬',
       'This report compares one store’s own schedule weeks over time — pick a Store above to see it. ' +
-      'A rollup across a whole ' + (scope.level === 'state' ? 'state' : 'patch') + ' is a separate report (the patch/operator/org/state rollup work), not built into this per-store view.')
+      'For a rollup across a whole ' + (scope.level === 'state' ? 'state' : 'patch') + ' — "who is driving this" — see the Retention Rollup tab next to this one (dispatch #141): same before/after math, aggregated across every marked store in the group.')
     : !weeks.length ? emptyState('📋',
       'No LifeLenz schedule weeks for ' + storeLabel + ' in this period. Widen the week range or check the daily LifeLenz sync.')
     : div({ style: { padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 } },
@@ -462,6 +496,263 @@ export function ScheduleRetentionSection({ ds, stores }) {
 
       div({ style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6 } },
         '⚙ Same metrics as Schedule Summary, reconciled to the penny/minute. Over/Under = Scheduled − Forecast hours. Labor % is dollar-weighted from ACTUAL results once a week posts real sales/labor — it reads — (and Actual Sales reads “forecast-only”) until then. Click a week header to mark/unmark it as the workshop week.'),
+    ),
+  );
+
+  return body;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// ── Retention Rollup — Patch / Operator / Org / State ("who is driving this") ────────────────
+// Dispatch #141 (memory/dispatch-141.md), owner's ask: "If possible do a patch and operator/
+// org/state rollup report as well. It would be interesting to see who is driving this."
+//
+// Placement decision: a NEW hub tab (SCHED_TABS 'retention-rollup' in App.js), next to Training
+// Retention, rather than a mode/toggle folded into ScheduleRetentionSection above. Reasoning:
+// dispatch #140 already gave the per-store panel's broader-than-store scope a documented,
+// deliberate empty state ("pick a store above… the cross-store rollup is dispatch #141's
+// separate report, not built into this per-store view") — #140's own comment explicitly framed
+// this as the coordination point for #141 to resolve, and a *separate tab* is what that empty
+// state's wording already promises (updated above to name this tab directly) rather than
+// silently repurposing the same screen's State/Patch scope for a completely different kind of
+// view (group leaderboard vs. one store's week-by-week grid). Two tabs sharing the Supabase
+// marks + LocationSelector + METRICS/formatter plumbing costs one extra file section, not a
+// second implementation.
+//
+// MATH: reuses computeStoreWeeks/splitWeeksAtMark/aggregateSpan verbatim (never re-derived).
+// storeRetentionSplit() does the SAME per-store before/after split ScheduleRetentionSection
+// does above, once per store in scope. aggregateRetentionRollup() then buckets those splits by
+// a caller-supplied grouping dimension and re-aggregates: concatenating every in-scope store's
+// `pre` weeks (and, separately, its `post` weeks) into one combined per-group list, then calling
+// aggregateSpan() on each combined list. This IS the dollar-weighted, ratio-of-aggregates rollup
+// the dispatch requires ("dollar-weight-aggregate those deltas… never average an average") —
+// aggregateSpan already dollar-weights labor % by sales and sums hours/GC additively per week;
+// applying it to a combined multi-store week-list is the exact same rule one level up, matching
+// computeScheduleSummary()'s own per-week district rollup (schedule-summary.js) in spirit. A
+// group's delta is then simply its combined POST aggregate minus its combined PRE aggregate —
+// never a straight average of each store's own delta.
+
+// Grouping dimension: PATCH — LIVE supervisorOf() (dispatch #139's fix), never a direct
+// invOrgCoords[loc].sup read. Same source buildLocationHierarchy's own Patch tier resolves
+// through (PanelControls.js) — a store recently reassigned to a new supervisor shows under its
+// CURRENT patch here, matching every other already-fixed panel.
+export function patchGroupOf(loc, invOrgCoords) {
+  const l = _normLoc(loc);
+  return supervisorOf(l, invOrgCoords?.[l]?.sup) || null;
+}
+
+// Grouping dimension: OPERATOR — MEASURED, per the dispatch's explicit instruction not to
+// assume either way. A grep of this codebase (management.js's "Operator Groups" Settings tab,
+// `S.operators` → `{name:[locs]}`) found a real live/Settings-editable operator assignment map,
+// already consumed by scheduling.js / one-pager.js / store-dash.js's own operator-scoped views —
+// so `op` is NOT simply a static, rarely-changing field the way state/org are. But it has NOT
+// received dispatch #139's specific treatment: there is no effective-dated whoRan()-style
+// timeline and no single-store live-lookup helper analogous to supervisorOf() for operator, so
+// this cannot claim the same "as-of-today, reassignment-aware" guarantee sup now has. This
+// resolves `settings.operators` first (live, Settings-editable — the same source every other
+// operator-grouped panel already reads), falling back to invOrgCoords[loc].op only for a store
+// the settings map doesn't cover at all — the same fallback SHAPE supervisorOf() uses, without
+// overstating what it actually verifies.
+export function operatorGroupOf(loc, invOrgCoords, settings) {
+  const l = _normLoc(loc);
+  const groups = (settings && settings.operators) || DEF_SETTINGS.operators || {};
+  for (const [name, locs] of Object.entries(groups)) {
+    if ((locs || []).some(x => _normLoc(x) === l)) return name;
+  }
+  return invOrgCoords?.[l]?.op || null;
+}
+
+// Grouping dimensions: ORG / STATE — CLAUDE.md Organization Context: stable, already-correct,
+// no known staleness issue (unlike sup pre-#139) — safe to read directly.
+export function orgGroupOf(loc) {
+  return getStoreOrg(_normLoc(loc)) === 'emerald' ? 'Emerald Arches' : 'MCDOK';
+}
+export function stateGroupOf(loc, invOrgCoords) {
+  return invOrgCoords?.[_normLoc(loc)]?.state || null;
+}
+
+export const ROLLUP_DIMENSIONS = [
+  { id: 'patch',    label: 'Patch',    groupOf: (loc, invOrgCoords) => patchGroupOf(loc, invOrgCoords) },
+  { id: 'operator', label: 'Operator', groupOf: (loc, invOrgCoords, settings) => operatorGroupOf(loc, invOrgCoords, settings) },
+  { id: 'org',      label: 'Org',      groupOf: (loc) => orgGroupOf(loc) },
+  { id: 'state',    label: 'State',    groupOf: (loc, invOrgCoords) => stateGroupOf(loc, invOrgCoords) },
+];
+
+// One store's before/after split — pure, independently testable. `markedWeekKey` must resolve
+// to an ACTUAL computed week for the store (findIndex succeeds), not just be non-null: a mark
+// left over from a week LifeLenz sync no longer covers would otherwise silently fall through to
+// splitWeeksAtMark's own midpoint-split fallback and be counted as if properly split. Per the
+// dispatch's scope item 4, a store failing any of these checks is EXCLUDED with a stated reason
+// — never silently dropped, never silently included with a fabricated split.
+export function storeRetentionSplit(schedRows, loc, markedWeekKey) {
+  const allWeeks = computeStoreWeeks(schedRows || [], loc, {});
+  if (!markedWeekKey) return { loc, included: false, reason: 'no-mark' };
+  const idx = allWeeks.findIndex(w => w.weekKey === markedWeekKey);
+  if (idx < 0) return { loc, included: false, reason: 'mark-not-found' };
+  const { pre, post } = splitWeeksAtMark(allWeeks, markedWeekKey);
+  if (!pre.length || !post.length) return { loc, included: false, reason: 'insufficient-weeks' };
+  return { loc, included: true, pre, post };
+}
+
+// Buckets a set of storeRetentionSplit() results by `groupOf(loc)` and re-aggregates — see file
+// header above for why concatenating pre/post week-lists per group and calling aggregateSpan()
+// on each is the correct dollar-weighted rollup, not a re-derivation of it. Sorted by Labor %
+// delta ascending (most negative = biggest improvement first) so "who is driving this" reads
+// top-to-bottom as a leaderboard; groups with no measurable Labor % delta (no actuals-posted
+// week on both sides, district-wide) sort after every group that has one, ranked among
+// themselves by store count so a real "no signal yet" group isn't confused with "improved 0.00".
+export function aggregateRetentionRollup(storeSplits, groupOf) {
+  const buckets = {};
+  const excluded = [];
+  for (const sd of (storeSplits || [])) {
+    if (!sd.included) { excluded.push(sd); continue; }
+    const gid = groupOf(sd.loc) || 'Unassigned';
+    (buckets[gid] ||= { preWeeks: [], postWeeks: [], locs: [] });
+    buckets[gid].preWeeks.push(...sd.pre);
+    buckets[gid].postWeeks.push(...sd.post);
+    buckets[gid].locs.push(sd.loc);
+  }
+  const rows = Object.keys(buckets).map(gid => {
+    const g = buckets[gid];
+    const a = aggregateSpan(g.preWeeks), b = aggregateSpan(g.postWeeks);
+    const laborPctDelta = (a.laborPct != null && b.laborPct != null) ? b.laborPct - a.laborPct : null;
+    const tpmhDelta = (a.tpmh != null && b.tpmh != null) ? b.tpmh - a.tpmh : null;
+    const hrsDiffDelta = (a.hrsDiffAvgPerWeek != null && b.hrsDiffAvgPerWeek != null) ? b.hrsDiffAvgPerWeek - a.hrsDiffAvgPerWeek : null;
+    return {
+      group: gid, storeCount: g.locs.length, locs: g.locs.slice().sort((x, y) => Number(x) - Number(y)),
+      pre: a, post: b, laborPctDelta, tpmhDelta, hrsDiffDelta,
+    };
+  });
+  rows.sort((x, y) => {
+    if (x.laborPctDelta == null && y.laborPctDelta == null) return y.storeCount - x.storeCount;
+    if (x.laborPctDelta == null) return 1;
+    if (y.laborPctDelta == null) return -1;
+    return x.laborPctDelta - y.laborPctDelta;
+  });
+  return { rows, excluded };
+}
+
+const _lpDeltaColor = d => d == null ? 'var(--text3)' : d < -0.15 ? '#10b981' : d > 0.15 ? '#ef4444' : 'var(--text3)';
+const _lpVerdict = d => d == null ? '— no actuals-posted week yet' : d < -0.15 ? '✅ improved' : d > 0.15 ? '⚠️ worsened' : '➖ flat';
+const _EXCLUDE_REASON_LABEL = {
+  'no-mark': 'no workshop week marked yet',
+  'mark-not-found': 'marked week no longer in the synced range',
+  'insufficient-weeks': 'not enough weeks on one side of the mark',
+};
+
+// ── Component ─────────────────────────────────────────────────────────────────────────────────
+// Content-only (same shape as ScheduleRetentionSection) — renders as SCHED_TABS'
+// 'retention-rollup' tab in App.js's SchedulingHubPanel.
+export function ScheduleRetentionRollupSection({ ds, stores, settings }) {
+  const treeStores = stores || EMPTY_STORES;
+  const tree = React.useMemo(() => buildLocationHierarchy(treeStores, INV_ORG_COORDS, STORE_NAMES), [treeStores]);
+  const [scope, setScope] = React.useState({ level: 'all', id: null });
+  const [dim, setDim] = React.useState('patch');
+
+  // Same cloud-first mark load as ScheduleRetentionSection above (dispatch #141) — this view is
+  // meaningless on localStorage-only marks (a store marked from a different device/session would
+  // silently read as "no workshop week" and make every group's aggregate wrong), so it reads
+  // ONLY the Supabase table, no localStorage fallback (that fast-path exists on the per-store
+  // panel purely for instant single-store paint; a rollup has no single-store paint to protect).
+  const [cloudMarks, setCloudMarks] = React.useState({});
+  const [marksLoaded, setMarksLoaded] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    loadRetentionMarks().then(rows => {
+      if (!alive) return;
+      const m = {};
+      for (const r of (rows || [])) if (r.loc && r.weekKey) m[r.loc] = r.weekKey;
+      setCloudMarks(m);
+      setMarksLoaded(true);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const locsInScope = React.useMemo(() => locationSelectorLocs(scope, tree), [scope, tree]);
+
+  const storeSplits = React.useMemo(() => {
+    if (!marksLoaded) return [];
+    return locsInScope.map(loc => storeRetentionSplit(ds?.schedRows || [], loc, cloudMarks[loc] || null));
+  }, [locsInScope, ds?.schedRows, cloudMarks, marksLoaded]);
+
+  const dimDef = ROLLUP_DIMENSIONS.find(d => d.id === dim) || ROLLUP_DIMENSIONS[0];
+  const { rows, excluded } = React.useMemo(
+    () => aggregateRetentionRollup(storeSplits, loc => dimDef.groupOf(loc, INV_ORG_COORDS, settings)),
+    [storeSplits, dimDef, settings],
+  );
+  const includedCount = storeSplits.length - excluded.length;
+
+  const scopeLabel = scope.level === 'all' ? 'All Locations'
+    : scope.level === 'state' ? (tree.states.find(s => s.id === scope.id)?.label || scope.id)
+    : scope.level === 'patch' ? (tree.patches.find(p => p.id === scope.id)?.label || scope.id)
+    : scope.id ? sNameC(scope.id) : '';
+
+  const th = t => h('th', { key: t, style: { textAlign: t === 'Group' ? 'left' : 'right', padding: '6px 8px', fontSize: 9.5, textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
+  const td = (v, style) => h('td', { style: { textAlign: 'right', padding: '6px 8px', fontSize: 11, fontFamily: 'var(--mono)', whiteSpace: 'nowrap', ...style } }, v);
+
+  const emptyState = (icon, msg) => div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
+    div({ style: { fontSize: 26, marginBottom: 10 } }, icon), msg);
+
+  const body = div(null,
+    div({ style: { fontSize: 11, color: 'var(--text3)', padding: '8px 12px', margin: '0 0 8px',
+      background: 'var(--surf2)', borderRadius: 'var(--r)', border: '.5px solid var(--bdr)', lineHeight: 1.5 } },
+      '📊 "Who is driving this" — every marked store\'s own before/after workshop split (dispatch #141), dollar-weight-aggregated by group. ' +
+      (marksLoaded ? includedCount + ' of ' + storeSplits.length + ' store' + (storeSplits.length === 1 ? '' : 's') + ' in scope have a usable mark.' : 'Loading marks…')),
+
+    div({ style: { display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, mode: 'progressive' }),
+      div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Group by:'),
+        ...ROLLUP_DIMENSIONS.map(d => btn({
+          key: d.id, onClick: () => setDim(d.id),
+          style: { padding: '4px 12px', borderRadius: 'var(--r)', border: '.5px solid ' + (dim === d.id ? 'rgba(245,158,11,.4)' : 'var(--bdr)'),
+            background: dim === d.id ? 'var(--adim)' : 'transparent', color: dim === d.id ? 'var(--amber)' : 'var(--text2)',
+            fontSize: '11px', fontWeight: dim === d.id ? 700 : 400, cursor: 'pointer' },
+        }, d.label)),
+        ExportDropdown && rows.length ? h(ExportDropdown, {
+          title: 'Retention Rollup by ' + dimDef.label + ' — ' + scopeLabel,
+          filename: 'retention_rollup_' + dim + '_' + new Date().toISOString().slice(0, 10),
+          rows: rows.map(r => ({
+            [dimDef.label]: r.group, Stores: r.storeCount,
+            'Labor % Before': r.pre.laborPct == null ? '' : pct(r.pre.laborPct), 'Labor % Since': r.post.laborPct == null ? '' : pct(r.post.laborPct),
+            'Labor % Δ (pp)': r.laborPctDelta == null ? '' : (r.laborPctDelta * 100).toFixed(2),
+            'Sched-Fcst Hrs/Wk Before': r.pre.hrsDiffAvgPerWeek == null ? '' : r.pre.hrsDiffAvgPerWeek.toFixed(1),
+            'Sched-Fcst Hrs/Wk Since': r.post.hrsDiffAvgPerWeek == null ? '' : r.post.hrsDiffAvgPerWeek.toFixed(1),
+            'TPMH Before': r.pre.tpmh == null ? '' : r.pre.tpmh.toFixed(2), 'TPMH Since': r.post.tpmh == null ? '' : r.post.tpmh.toFixed(2),
+          })),
+        }) : null,
+      ),
+    ),
+
+    !marksLoaded ? emptyState('⏳', 'Loading workshop-week marks from Supabase…')
+    : !locsInScope.length ? emptyState('🎓', 'Pick a location above to see the rollup for that scope.')
+    : !rows.length ? emptyState('📋', 'No store in this scope has a usable workshop-week mark yet — mark one in the Training Retention tab first.')
+    : div({ style: { padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 } },
+
+      div({ style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'auto' } },
+        h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 620 } },
+          h('thead', null, h('tr', null, [dimDef.label, 'Stores', 'Labor % Before → Since', 'Labor % Δ', 'Sched-Fcst Hrs/Wk Δ', 'TPMH Δ', 'Verdict'].map(th))),
+          h('tbody', null, ...rows.map((r, i) => h('tr', { key: r.group, style: { borderTop: '.5px solid var(--bdr)', background: i === 0 && r.laborPctDelta != null ? 'rgba(16,185,129,.06)' : 'transparent' } },
+            h('td', { style: { padding: '6px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' } }, (i === 0 && r.laborPctDelta != null ? '🏆 ' : '') + r.group),
+            td(r.storeCount),
+            td(r.pre.laborPct == null || r.post.laborPct == null ? '—' : pct(r.pre.laborPct) + ' → ' + pct(r.post.laborPct)),
+            td(r.laborPctDelta == null ? '—' : (r.laborPctDelta >= 0 ? '+' : '') + (r.laborPctDelta * 100).toFixed(2) + 'pp', { color: _lpDeltaColor(r.laborPctDelta), fontWeight: 700 }),
+            td(r.hrsDiffDelta == null ? '—' : (r.hrsDiffDelta >= 0 ? '+' : '') + r.hrsDiffDelta.toFixed(1) + ' hrs/wk'),
+            td(r.tpmhDelta == null ? '—' : (r.tpmhDelta >= 0 ? '+' : '') + r.tpmhDelta.toFixed(2)),
+            h('td', { style: { textAlign: 'left', padding: '6px 8px', fontSize: 10.5, color: _lpDeltaColor(r.laborPctDelta), whiteSpace: 'nowrap' } }, _lpVerdict(r.laborPctDelta)),
+          ))),
+        ),
+      ),
+
+      excluded.length > 0 && div({ style: { fontSize: 10.5, color: 'var(--text3)', border: '.5px dashed var(--bdr)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.6 } },
+        div({ style: { fontWeight: 700, marginBottom: 4, color: 'var(--text2)' } },
+          '⚠️ ' + excluded.length + ' store' + (excluded.length === 1 ? '' : 's') + ' in this scope excluded from every group\'s aggregate above (no before/after delta to measure):'),
+        ...Object.entries(excluded.reduce((m, e) => { (m[e.reason] ||= []).push(e.loc); return m; }, {})).map(([reason, locs]) =>
+          div({ key: reason }, '• ' + _EXCLUDE_REASON_LABEL[reason] + ': ' + locs.map(l => sName(l) || l).join(', '))),
+      ),
+
+      div({ style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6 } },
+        '⚙ Each group\'s Before/Since figures are the DOLLAR-WEIGHTED aggregate of every marked store\'s own before/after weeks in that group (same rule aggregateSpan/computeScheduleSummary use elsewhere) — never a straight average of stores\' individual deltas. Δ = Since − Before; negative Labor % Δ and Sched-Fcst Hrs/Wk Δ moving toward 0 are improvements.'),
     ),
   );
 
