@@ -165,9 +165,18 @@ All four items shipped in `src/views/eom-dashboard.js` (`cadenceFromOnHand()`/`C
 one one-line export added to `src/engine/count-cycle.js`. New tests:
 `src/__tests__/dispatch-112-count-cadence.test.js` (10 tests, all render/exercise the actual
 consumers, not isolated engine calls). Full suite 2393/2393 passing (231 files) including the
-pre-existing dispatch-97/dispatch-98 suites unchanged. Build clean. Entry gzip 456.87 → 456.88 KB,
-eager-payload 528.01 → 528.02 KB (budget 850 KB) — noise-level; `eom-dashboard`'s own lazy chunk
-grew 65.20 → 65.65 KB gzip.
+pre-existing dispatch-97/dispatch-98 suites unchanged. Build clean. Entry gzip 456.87 → 456.89 KB,
+eager-payload 528.01 → 528.03 KB (budget 850 KB) — noise-level; `eom-dashboard`'s own lazy chunk
+grew 65.20 → 65.67 KB gzip.
+
+Also, per the panel-contract standing rule that landed on `main` mid-session (2026-08-25, "touching
+a panel for any reason? also check it against the panel contract"): `CadenceMonitor`'s table had no
+`overflowX:'auto'` wrapper at all before this dispatch, and this dispatch was already widening it
+5 → 7 columns — the exact scenario the rule calls out as worth fixing opportunistically. Wrapped it
+in the same `overflowX:'auto'` + `width:'max-content'`/`minWidth:'100%'` pattern already used
+elsewhere in this file, verified against `src/__tests__/scroll-table-width.test.js`'s ratchet
+(which specifically catches the `width:'100%'`-with-no-`minWidth` variant that looks like it
+scrolls but doesn't).
 
 ### Item 1 — count-day population: measured, then fixed
 

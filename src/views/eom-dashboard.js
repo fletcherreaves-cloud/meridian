@@ -697,7 +697,12 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
     div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px' } }, '🗓 Weekly Count Cadence'),
     div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
       `Every store runs a full Food + Condiment count weekly. ${nOverdue ? `⚠ ${nOverdue} overdue (≥8 days)` : '✓ all current'}${nNever ? ` · ${nNever} with no full weekly on record` : ''}. Click a store to see which count window each item's variance happened in.`),
-    h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
+    // Panel-contract standing rule (memory/panel-contract.md, 2026-08-25) — a table this dispatch
+    // is already widening (5 -> 7 columns) must scroll horizontally on mobile, not clip. Matches
+    // the same overflowX:'auto' + width:'max-content'/minWidth:'100%' pattern already used
+    // elsewhere in this file (e.g. the FOB-report tables above).
+    div({ style: { overflowX: 'auto' } },
+    h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
       h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
         ['Store', 'Counts on', 'Last full count', 'Last count', 'This window', 'Uncounted F/C/P', 'Status'].map(th))),
       h('tbody', null, data.flatMap(({ loc, name, c }) => {
@@ -766,7 +771,7 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
                       ` between ${w.from} and ${w.to}`)))
                 : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
         return rowEls;
-      }))));
+      })))));
 }
 
 // Change Monitor v2 (Notes 41, session model 2026-08-01) — reads the raw count ledger the way QSRSoft's
