@@ -1,10 +1,12 @@
 // @ts-nocheck
-// scripts/qsrsoft-punch-times-pull.mjs — dispatch #124. No supabase/fetch dependency in
-// mapRow()/extractRows()/assertNoDeniedSelectCols() themselves, cheap to test directly, same
-// reasoning register-audit-pull.test.js / employee-roster-tenure-pull.test.js already give for
-// testing a scripts/ module this way. resolveEmpTokens() is tested with a mocked supabase client
-// (matching identity-vault.test.js's own pattern), since this sandbox has no live Supabase to
-// exercise a real qsr_employee_tenure join against.
+// scripts/qsrsoft-punch-times-pull.mjs — dispatch #124, un-tokenized by dispatch #126. No
+// supabase/fetch dependency in mapRow()/extractRows()/assertNoDeniedSelectCols() themselves,
+// cheap to test directly, same reasoning register-audit-pull.test.js / employee-roster-tenure-
+// pull.test.js already give for testing a scripts/ module this way. resolveEmployeeIdentity()
+// (dispatch #126 — was resolveEmpTokens(), now resolves employeeName as the primary field
+// alongside the kept empToken) is tested with a mocked supabase client (matching
+// identity-vault.test.js's own pattern), since this sandbox has no live Supabase to exercise a
+// real qsr_employee_tenure join against.
 //
 // Per this dispatch's own verification bar: "A real test exercises the assert-guard (confirms it
 // actually fails when a blocked field is present), not just a comment." The whole
@@ -15,7 +17,7 @@
 // standing PII-fixture discipline (register-audit-pull.test.js, employee-roster-tenure-pull.test.js).
 import { describe, it, expect, vi } from 'vitest';
 import {
-  mapRow, extractRows, assertNoDeniedSelectCols, SELECT_COLS, resolveEmpTokens,
+  mapRow, extractRows, assertNoDeniedSelectCols, SELECT_COLS, resolveEmployeeIdentity,
 } from '../../scripts/qsrsoft-punch-times-pull.mjs';
 
 // Shaped like the finding's documented safe-field list (memory/finding-qsrsoft-time-punches-
@@ -165,7 +167,7 @@ describe('assertNoDeniedSelectCols() — the SELECT_COLS denial guard (dispatch 
   });
 });
 
-describe('resolveEmpTokens() — geid → qsr_employee_tenure.full_employee_name → identity-vault token', () => {
+describe('resolveEmployeeIdentity() — geid → qsr_employee_tenure.full_employee_name → {employeeName, empToken} (dispatch #126)', () => {
   function mockSupabase({ tenureRows = [], rpcImpl } = {}) {
     return {
       from: vi.fn(() => ({
@@ -181,30 +183,30 @@ describe('resolveEmpTokens() — geid → qsr_employee_tenure.full_employee_name
 
   const rows = (over = []) => [
     { loc: '0003708', geid: '12345678', punchType: 'shift' },
-    { loc: '0003708', geid: '12345678', punchType: 'meal' }, // same person, second punch — must not double-tokenize
+    { loc: '0003708', geid: '12345678', punchType: 'meal' }, // same person, second punch — must not double-resolve
     ...over,
   ];
 
-  it('resolves a geid with a matching tenure row to an emp_token', async () => {
+  it('resolves a geid with a matching tenure row to BOTH employeeName (primary) and empToken (kept, dispatch #126)', async () => {
     const supabase = mockSupabase({ tenureRows: [{ loc: '0003708', geid: '12345678', full_employee_name: 'A Synthetic Name' }] });
-    const map = await resolveEmpTokens(supabase, rows());
-    expect(map.get('0003708|12345678')).toBe('tok-A Synthetic Name');
+    const map = await resolveEmployeeIdentity(supabase, rows());
+    expect(map.get('0003708|12345678')).toEqual({ employeeName: 'A Synthetic Name', empToken: 'tok-A Synthetic Name' });
   });
 
   it('calls the identity-vault RPC exactly once per DISTINCT resolved name, not once per punch row', async () => {
     const supabase = mockSupabase({ tenureRows: [{ loc: '0003708', geid: '12345678', full_employee_name: 'A Synthetic Name' }] });
-    await resolveEmpTokens(supabase, rows());
+    await resolveEmployeeIdentity(supabase, rows());
     expect(supabase.rpc).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves emp_token unresolved (map has no entry) for a geid absent from qsr_employee_tenure — geid stays the fallback key', async () => {
+  it('leaves employeeName/empToken unresolved (map has no entry) for a geid absent from qsr_employee_tenure — geid stays the fallback key', async () => {
     const supabase = mockSupabase({ tenureRows: [] });
-    const map = await resolveEmpTokens(supabase, rows());
+    const map = await resolveEmployeeIdentity(supabase, rows());
     expect(map.has('0003708|12345678')).toBe(false);
     expect(map.size).toBe(0);
   });
 
-  it('two different geids resolving to the SAME name still cost only one RPC call (name-cache, not geid-cache)', async () => {
+  it('two different geids resolving to the SAME name still cost only one RPC call (name-cache, not geid-cache), and share the same employeeName + empToken', async () => {
     const supabase = mockSupabase({
       tenureRows: [
         { loc: '0003708', geid: '111', full_employee_name: 'Shared Name' },
@@ -215,16 +217,17 @@ describe('resolveEmpTokens() — geid → qsr_employee_tenure.full_employee_name
       { loc: '0003708', geid: '111', punchType: 'shift' },
       { loc: '0003708', geid: '222', punchType: 'shift' },
     ];
-    const map = await resolveEmpTokens(supabase, twoRows);
+    const map = await resolveEmployeeIdentity(supabase, twoRows);
     expect(supabase.rpc).toHaveBeenCalledTimes(1);
-    expect(map.get('0003708|111')).toBe(map.get('0003708|222'));
+    expect(map.get('0003708|111').employeeName).toBe('Shared Name');
+    expect(map.get('0003708|111')).toEqual(map.get('0003708|222'));
   });
 
   it('returns an empty map without touching supabase when there are no rows or no client', async () => {
     const supabase = mockSupabase();
-    expect((await resolveEmpTokens(supabase, [])).size).toBe(0);
+    expect((await resolveEmployeeIdentity(supabase, [])).size).toBe(0);
     expect(supabase.from).not.toHaveBeenCalled();
-    expect((await resolveEmpTokens(null, rows())).size).toBe(0);
+    expect((await resolveEmployeeIdentity(null, rows())).size).toBe(0);
   });
 
   it('never throws and simply returns an empty map when the tenure lookup errors', async () => {
@@ -233,7 +236,7 @@ describe('resolveEmpTokens() — geid → qsr_employee_tenure.full_employee_name
       rpc: vi.fn(),
     };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const map = await resolveEmpTokens(supabase, rows());
+    const map = await resolveEmployeeIdentity(supabase, rows());
     expect(map.size).toBe(0);
     expect(supabase.rpc).not.toHaveBeenCalled();
     warn.mockRestore();

@@ -9,6 +9,15 @@ metadata:
 
 # Dispatch #124 — actual punch-times pull, implementation record
 
+🔓 **Partially superseded by dispatch #126 (2026-08-25, `memory/dispatch-126.md`).** The
+tokenization DECISION this file records below (§2: resolve via `qsr_employee_tenure`, never
+tokenize `geid` directly) is still accurate and unchanged. What changed is the POLICY on top of
+it: the owner reversed "hide names by default" for this table, so the resolved name is now stored
+directly as `qsr_punch_times.employee_name` (nullable, primary field) instead of being tokenized
+away — `emp_token` is kept, additive, not the only identity column anymore. The geid/audit_rows
+identity-space measurement and the business-day-boundary open question below are both untouched by
+#126 and still hold.
+
 Built `scripts/qsrsoft-punch-times-pull.mjs` + `supabase/schema-qsr-punch-times.sql` +
 `.github/workflows/qsrsoft-punch-times-pull.yml` per `memory/dispatch-124.md`, on top of
 `memory/finding-qsrsoft-time-punches-endpoint-2026-08-21.md`. This file records the three things
