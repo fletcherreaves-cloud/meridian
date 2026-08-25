@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DOW_BASE, DEFAULT_TARGETS, DEF_SETTINGS, MODEL_CODE_LABELS, STORE_COORDS, EVENT_TYPES, EVENT_TYPE_GROUPS, getKB, INV_ORG_COORDS, DEFAULT_MODEL_ASSIGNMENTS, STORE_KB, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, supervisorOf } from '../constants.js';
 import { dKey, addD, dowOf, dFmt, nDK, weekStartOf } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, getWeatherNote, getDIRecommendation, fetchLY, getStoreOrg, getModelAssignment, InfoIcon, fetchRow } from '../engine/forecast.js';
@@ -2230,10 +2230,13 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
   const toggleExp = (loc) => setExpanded(p=>({...p,[loc]:!p[loc]}));
 
   // ── Supervisor patches (for filter buttons) ────────────────────────────────
+  // dispatch #139 — patch resolves LIVE (supervisorOf/whoRan) first; s.sup (buildStore already
+  // resolves this live too, per #363) then INV_ORG_COORDS.sup are just the fallback chain for a
+  // loc the live timeline doesn't cover, never the primary source.
   const supPatches = uM(()=>{
     const seen=new Set(), patches=[];
     (stores||[]).forEach(s=>{
-      const sup=s.sup||(INV_ORG_COORDS[s.loc]||{}).sup||'';
+      const sup=supervisorOf(s.loc,s.sup||(INV_ORG_COORDS[s.loc]||{}).sup)||'';
       if(sup&&!seen.has(sup)){seen.add(sup);patches.push(sup);}
     });
     return patches.sort();
@@ -2246,7 +2249,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
     const filtFn = orgFilter==='all' ? ()=>true
       : orgFilter==='ok' ? s=>(INV_ORG_COORDS[s.loc]||{}).state==='OK'
       : orgFilter==='fl' ? s=>(INV_ORG_COORDS[s.loc]||{}).state==='FL'
-      : s=>s.sup===orgFilter; // supervisor filter
+      : s=>(supervisorOf(s.loc,s.sup)||'')===orgFilter; // supervisor filter (dispatch #139 — live-first)
 
     const out = valid.filter(filtFn).map(s=>{
       const crits = s.findings.filter(f=>f.t==='crit');

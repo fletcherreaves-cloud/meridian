@@ -4,7 +4,7 @@ import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
 import { businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
-import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS } from '../constants.js';
+import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS, supervisorOf } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
@@ -2282,7 +2282,9 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
   // and we never "average an average" of pre-rolled store rates. GC vs LY is summed.
   const groups=React.useMemo(()=>{
     if(groupDim==='store') return null;
-    const keyOf=s=> groupDim==='patch'? (s.sup||(INV_ORG_COORDS[s.loc]||{}).sup||'')
+    // dispatch #139 — patch resolves LIVE (supervisorOf/whoRan) first; s.sup/INV_ORG_COORDS.sup
+    // are just the fallback chain for a loc the live timeline doesn't cover.
+    const keyOf=s=> groupDim==='patch'? (supervisorOf(s.loc,s.sup)||'')
       : groupDim==='operator'? (s.operator||(INV_ORG_COORDS[s.loc]||{}).operator||'')
       : groupDim==='state'? ((INV_ORG_COORDS[s.loc]||{}).state||'')
       : '';

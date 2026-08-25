@@ -22,7 +22,7 @@ import {
   loadQsrVarianceStat, loadQsrVarianceHistoryAll, loadAuditRowsWindow,
   loadQsrSecurityEventsForSubject,
 } from '../lib/supabase.js';
-import { INV_ORG_COORDS, STORE_NAMES } from '../constants.js';
+import { INV_ORG_COORDS, STORE_NAMES, supervisorOf } from '../constants.js';
 import { RevealName } from './store-analytics.js';
 import { addD, fmtDI } from '../utils/date.js';
 import {
@@ -180,7 +180,11 @@ export function scopeMatches(loc, scope) {
   if (!scope || scope.level === 'all') return true;
   const org = INV_ORG_COORDS[loc] || {};
   if (scope.level === 'state') return org.state === scope.value;
-  if (scope.level === 'patch') return org.sup === scope.value;
+  // dispatch #139 — patch resolves LIVE (supervisorOf/whoRan), falling back to the static
+  // org.sup seed only for a loc the live assignment timeline doesn't cover, matching the fix in
+  // PanelControls.js's buildLocationHierarchy (the same source this panel's LocationSelector
+  // patch picker now draws from) so a patch picked in the UI actually matches findings here.
+  if (scope.level === 'patch') return supervisorOf(loc, org.sup) === scope.value;
   if (scope.level === 'store') return loc === scope.value;
   return true;
 }

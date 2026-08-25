@@ -35,18 +35,22 @@
 // establishing missing targets, not versioning them per year; a `year` dimension is a natural
 // future extension of the same table/UI if that's ever needed (see the schema file's comment).
 
-import { INV_ORG_COORDS } from '../constants.js';
+import { INV_ORG_COORDS, supervisorOf } from '../constants.js';
 
 export const SCOPE_TYPES = ['company', 'state', 'patch', 'store'];
 export const SCOPE_LABELS = { company: 'Company-wide', state: 'State', patch: 'Patch', store: 'Store' };
 export const COMPANY_SCOPE_ID = 'ALL';
 
-// A store's own state/patch ids, from the SAME source (INV_ORG_COORDS) and SAME fields
-// (.state / .sup) buildLocationHierarchy() in PanelControls.js reads — so a patch selected here
-// is the identical patch LocationSelector's progressive mode shows for that store.
+// A store's own state/patch ids, from the SAME source (INV_ORG_COORDS for state; live
+// supervisorOf()/whoRan(), falling back to INV_ORG_COORDS.sup, for patch — dispatch #139) and
+// SAME resolution buildLocationHierarchy() in PanelControls.js now uses — so a patch selected
+// here is the identical patch LocationSelector's progressive mode shows for that store. Before
+// dispatch #139 this read the static INV_ORG_COORDS.sup seed directly, which would have silently
+// desynced from the Patch picker the moment buildLocationHierarchy went live: an override set
+// for a newly-live patch (e.g. Mary) would resolve here to the old static name and never match.
 export function scopeIdsForLoc(loc) {
   const meta = INV_ORG_COORDS?.[String(loc)];
-  return { state: meta?.state ?? null, patch: meta?.sup ?? null };
+  return { state: meta?.state ?? null, patch: supervisorOf(loc, meta?.sup) };
 }
 
 const overrideKey = (scopeType, scopeId) => `${scopeType}:${scopeType === 'company' ? COMPANY_SCOPE_ID : String(scopeId ?? '')}`;
