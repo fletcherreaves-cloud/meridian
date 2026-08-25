@@ -2581,6 +2581,10 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 - [Perf-Review Excel audit](perf-review-excel-audit.md) — threshold decisions vs the authoritative
   workbook; ROUND 2 banked corrections (OEPE %-of-target, Shift-Certified step, Bonus-Eligibility, etc.).
 - [Performance Review System](project-perf-reviews.md) — engine, data model, scoring, roadmap.
+- [Targets Editor](project-targets-editor.md) — dispatch #132: company/state/patch/store target
+  override cascade (`target_overrides` table), architecture decision vs `yearly_targets`, the
+  relationship to (and gap in) the existing `MonthlyTargetManager` panel, Complaints/100K + Shift
+  Certified Manager investigation findings.
 
 ## 📋 Leadership One-Pager + Opportunity $
 - [Opportunity-$ design](design-opportunity-dollars.md) — Labor/Food/GC gaps → recoverable dollars;

@@ -460,6 +460,52 @@ function _yearlyRowToTargets(r) {
   };
 }
 
+// ── Target Overrides (dispatch #132 item 3) ───────────────────────────────────
+// Company/State/Patch/Store scoped override cascade — see supabase/schema-target-overrides.sql
+// and src/engine/target-overrides.js for the full precedence + architecture reasoning. Returns
+// the flat row shape target-overrides.js's indexTargetOverrides() expects directly.
+export async function loadTargetOverrides() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('target_overrides').select('*');
+  if (error || !data) {
+    if (error && (error.message?.includes('relation') || error.code === '42P01')) {
+      console.error('[target_overrides] Table does not exist in Supabase. Run supabase/schema-target-overrides.sql in your Supabase SQL editor.');
+    } else if (error) {
+      console.warn('[target_overrides] load error:', error.message);
+    }
+    return [];
+  }
+  return data.map(r => ({ id: r.id, scope_type: r.scope_type, scope_id: r.scope_id, field: r.field, value: r.value, updated_at: r.updated_at }));
+}
+
+// Upsert one override (scope_type/scope_id/field is the unique key — see the table's
+// unique(tenant_id, scope_type, scope_id, field)). scope_id must be 'ALL' for scope_type
+// 'company' — the caller (targets-editor.js) always passes that, not null, so the unique
+// index behaves predictably (Postgres treats NULLs as distinct, which would let duplicate
+// company-scope rows for the same field slip past a NULL-based unique constraint).
+export async function saveTargetOverride({ scope_type, scope_id, field, value }) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  if (!SCOPE_TYPES_LOCAL.includes(scope_type)) return { error: `invalid scope_type: ${scope_type}` };
+  if (value == null || isNaN(value)) return { error: 'value is required and must be numeric' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const row = {
+    scope_type, scope_id: scope_type === 'company' ? 'ALL' : String(scope_id ?? ''),
+    field, value: Number(value), updated_at: new Date().toISOString(), updated_by: uid || null,
+  };
+  const { error } = await supabase.from('target_overrides').upsert(row, { onConflict: 'tenant_id,scope_type,scope_id,field' });
+  if (error) { console.error('[target_overrides] save error:', error.message); return { error: error.message }; }
+  return { error: null };
+}
+
+export async function deleteTargetOverride(id) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const { error } = await supabase.from('target_overrides').delete().eq('id', id);
+  if (error) { console.error('[target_overrides] delete error:', error.message); return { error: error.message }; }
+  return { error: null };
+}
+
+const SCOPE_TYPES_LOCAL = ['company', 'state', 'patch', 'store'];
+
 // ── SMG FullScale persistence ─────────────────────────────────────────────────
 // rows: array of { loc, year, month, reportStart, reportEnd, osatTop2, osat5, osatAvg,
 //                  osatB2B, accuracyB2B, dtProblem, overallProblem }
@@ -1953,7 +1999,11 @@ export async function loadDtHistory(range = 90) {
   // both the head-count query and the fetchAll fallback path via the new extraFilter param.
   return _pagedParallel({
     table: 'qsr_daily_activity',
-    select: 'loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
+    // dt_untilstore/dt_heldtime added (dispatch #128) — dt-speedofservice.js's DT number was
+    // summing raw dt_untilserve/dt_trans_cnt directly instead of the shared, reconciled
+    // oepeSeconds() (src/utils/oepe.js), which needs these two extra components to subtract
+    // parked/held time. This is the only production call site for loadDtHistory (verified above).
+    select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
     gteCol: 'dt', gteVal: startDt,
     extraFilter: q => { const qq = q.gt('dt_trans_cnt', 0); return endDt ? qq.lte('dt', endDt) : qq; },
     orderCol: 'dt', ascending: true, extraOrder: ['loc', 'hour_slot'],

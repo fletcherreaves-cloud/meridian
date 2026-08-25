@@ -36,7 +36,7 @@ const ROOTS = ['src/views', 'src/features'];
 // conversion (routePanel==='count-cycle'). sched-hub/perf-reviews/eom-dashboard's hand-rolled
 // chrome used a different shape (no literal `position:'fixed', inset:0` on one line, or was
 // caught by other means) so they don't move this count.
-const CEILING = 77;
+const CEILING = 76;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

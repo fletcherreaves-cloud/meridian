@@ -1,6 +1,7 @@
 // Performance Review Engine — config, storage, and scoring
 import { DEFAULT_TARGETS } from '../constants.js';
 import { metricAvg } from './metric-source.js';
+import { applyTargetOverrides } from './target-overrides.js';
 
 const REVIEW_CONFIG_KEY    = 'mf_review_config_v1';
 const PERF_REVIEWS_KEY     = 'mf_perf_reviews_v1';
@@ -40,7 +41,15 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'auto', field:'restaurantTimeSec', note:'Auto: McDelivery 3PO Restaurant Time (cloud) vs store target' },
       { key:'kvs',        label:'KVS Time (sec)',             weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-3,3,6],          src:'auto', field:'kvst',       note:'Target = store KVS target (sec)' },
       { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'manual',              pctInput:true, note:'Not scored — reference only' },
-      { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'manual',                    note:'Absolute count vs target' },
+      // Dispatch #132 item 2, investigated (NOT wired to t1800Contacts): the yearly workbook's
+      // "1-800 Contacts" column is a raw per-store COUNT target, not a /100K rate — confirmed by
+      // reading parseYearlyTargets() (src/parsers/index.js), which parses it with a plain
+      // parseFloat, no guest-count normalization anywhere near it. This metric is also a rate
+      // ("/100K"), and no guest-count-normalized ACTUAL is captured anywhere in the app either,
+      // so `src` stays 'manual' for the actual. The TARGET side can now resolve from a Targets-
+      // editor override (tComplaintsTarget, REVIEW_METRIC_TARGET_FIELD) once the owner sets one —
+      // see target-overrides.js's TARGET_OVERRIDE_FIELDS note on this exact field.
+      { key:'complaints', label:'Complaint Contacts/100K',    weight:0.05, better:'lower',  unit:'abs', scored:true,  t:[-2,2,4],          src:'manual',                    note:'Absolute count vs target (not auto-sourced — see the mapping investigation above this entry)' },
       { key:'fsAudits',   label:'FS Audits Completed',        weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% of target audits completed' },
       { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% score vs target' },
       { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'Tablet completion %' },
@@ -51,10 +60,16 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'delivGC',    label:'Delivery GC/Rest/Day',       weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'delivGC',  note:'Auto: 3PO Delivery GC/R/D (cloud) vs store target' },
     ],
     profit: [
-      { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report' },
+      { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report; target = workbook FOB% (monthly-preferred) × the month\'s sales — dispatch #132 item 5' },
       { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
       { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual', dollar:true,           note:'$ vs budget target' },
-      { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', dollar:true,           note:'Auto: Σ(target−actual) across FOB%/Labor%/Op-Supplies, this category\'s own 3 controllables' },
+      // positiveOnly (dispatch #132 item 6, owner-stated interim rule): "should be set to
+      // anything positive (for now)". No workbook column feeds a real dollar target for this,
+      // so until one is set via the Targets editor (tTotalProfitTarget override, any scope),
+      // rateMetric() scores purely on sign — see that function's positiveOnly branch. A real
+      // override target, once set, is used normally (deviation-based, same as every other
+      // metric) — the interim rule is a fallback default, not a permanent replacement.
+      { key:'totalProfit',label:'Total Profit vs Target ($)', weight:0.15, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', dollar:true, positiveOnly:true, note:'Auto: Σ(target−actual) across FOB%/Labor%/Op-Supplies, this category\'s own 3 controllables. No real target exists yet — scores positive=passing until one is set in the Targets editor.' },
     ],
     people: [
       { key:'shiftCert',  label:'# Shift Certified Managers', weight:0.25, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'auto',                    note:'Auto: Roster role counts (Shift Mgr bucket) vs store target' },
@@ -505,7 +520,16 @@ export function resolveReviewConfig(review, cfg) {
 
 // ── Scoring ────────────────────────────────────────────────────────────────────
 export function rateMetric(actual, target, metricCfg) {
-  if (actual == null || target == null) return null;
+  if (actual == null) return null;
+  // Interim scoring rule (dispatch #132 item 6 — Total Profit): a metric flagged positiveOnly
+  // has no resolvable real target yet (target is null, or the derived 0-placeholder
+  // autoPopulateKPIs fills in when nothing else set it — see that function). Score on SIGN
+  // only: passing (4) if actual is positive, else failing (1). The moment a real, non-zero
+  // target IS resolved (a Targets-editor override was set, any scope), this branch is skipped
+  // and scoring falls through to the normal deviation-based rating below — the interim rule is
+  // only ever a fallback default, never a permanent replacement for a real target.
+  if (metricCfg.positiveOnly && (target == null || target === 0)) return actual > 0 ? 4 : 1;
+  if (target == null) return null;
   if (metricCfg.unit === 'pct' && target === 0) return null;
   const dev = metricCfg.unit === 'pct'
     ? (actual - target) / Math.abs(target)
@@ -713,17 +737,31 @@ export const REVIEW_METRIC_TARGET_FIELD = {
   // (kpi-registry.js), matching the existing tpph precedent: the target auto-fills here
   // even though autoPopulateKPIs has not been taught to read the ACTUAL side for these yet.
   avgCheck: 'tAvgCheck', tRedBPct: 'tRedBPct', posOverAmt: 'tPosOverAmt', cashOSAmt: 'tCashOSAmt',
+  // Dispatch #132 items 2/6 — these two fields have NO workbook source anywhere (confirmed by
+  // reading parseYearlyTargets/parseMonthlyTargets, src/parsers/index.js) and resolve ONLY from
+  // a Targets-editor override (target-overrides.js), at whichever scope (company/state/patch/
+  // store) the owner sets one. Absent any override, mergedTargetsForLoc simply never carries
+  // these keys — totalProfit falls back to its positiveOnly interim rule (rateMetric), and
+  // complaints stays unscored-by-target (missingReviewTargets flags it) until one is set.
+  totalProfit: 'tTotalProfitTarget', complaints: 'tComplaintsTarget',
 };
 
 // Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly
-// (ds.monthlyTargets) — the established precedence (monthly wins), matching store-dash/analytics.
+// (ds.monthlyTargets) < Targets-editor override (ds.targetOverrides — company/state/patch/store
+// cascade, dispatch #132 item 3; see target-overrides.js) — the established precedence
+// (monthly wins over yearly, matching store-dash/analytics), now extended one tier further: an
+// explicit override is a human intentionally setting/correcting a number right now, so it wins
+// over whatever the last workbook upload said, same reasoning as monthly already winning over
+// yearly. ds.targetOverrides is the pre-indexed shape indexTargetOverrides() produces (App.js
+// builds it once at startup from loadTargetOverrides()), not raw rows.
 export function mergedTargetsForLoc(ds, loc) {
   const L = String(loc);
-  return {
+  const base = {
     ...(DEFAULT_TARGETS[L] || {}),
     ...((ds && ds.targets && ds.targets[L]) || {}),
     ...((ds && ds.monthlyTargets && ds.monthlyTargets[L]) || {}),
   };
+  return applyTargetOverrides(base, ds && ds.targetOverrides, L);
 }
 
 // Month-aware official targets for a loc (dispatch #109 item #4). mergedTargetsForLoc above
@@ -745,12 +783,15 @@ export function mergedTargetsForLocMonth(ds, loc, year, month) {
   const fromAll = (ds && ds.allMonthlyTargets && ds.allMonthlyTargets[periodKey] && ds.allMonthlyTargets[periodKey][L]) || null;
   const snap = (ds && ds.monthlyTargets && ds.monthlyTargets[L]) || null;
   const snapOK = snap && (snap._year == null || (snap._year === year && snap._month === month));
-  return {
+  const base = {
     ...(DEFAULT_TARGETS[L] || {}),
     ...((ds && ds.targets && ds.targets[L]) || {}),
     ...(fromAll || {}),
     ...(snapOK ? snap : {}),
   };
+  // Targets-editor override wins over this month's resolved workbook value too — same
+  // precedence tier as mergedTargetsForLoc above (dispatch #132 item 3).
+  return applyTargetOverrides(base, ds && ds.targetOverrides, L);
 }
 
 // Scored metrics (across the review's config categories) that have NO resolvable target —
@@ -946,6 +987,18 @@ export function autoPopulateKPIs(review, ds) {
     for (const [mk, tf] of Object.entries(REVIEW_METRIC_TARGET_FIELD)) {
       const slot = mk + 'Tgt';
       if (mo[slot] == null && officialTgts[tf] != null) mo[slot] = officialTgts[tf];
+    }
+
+    // FOB $ target (dispatch #132 item 5 — "FOB target is a monthly target"). foodOB scores
+    // in DOLLARS (fobDollar, above) but the workbook's tFOBTarget is a PERCENTAGE — that scale
+    // mismatch is exactly why foodOB was excluded from REVIEW_METRIC_TARGET_FIELD entirely (see
+    // that map's own comment); it never got an auto target at all before this. Convert using
+    // this SAME month's sales (mo.salesVsTgt, same reuse pattern as the Total Profit derivation
+    // below). officialTgts.tFOBTarget already resolves DEFAULT < yearly < monthly < override
+    // (mergedTargetsForLocMonth, above), so "prefer monthly over yearly" — the owner's explicit
+    // ask — falls out of that existing precedence for free; nothing month-specific to add here.
+    if (mo.foodOBTgt == null && officialTgts.tFOBTarget != null && mo.salesVsTgt != null) {
+      mo.foodOBTgt = officialTgts.tFOBTarget * mo.salesVsTgt;
     }
 
     // Total Profit vs Target (dispatch #109 item #5) — derive from THIS SAME month's
