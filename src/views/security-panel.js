@@ -29,11 +29,16 @@ import {
   monthsBack, assembleInventoryDrilldown, assembleCashDrilldown,
   classifySubjectShape, buildSubjectTimeline, corroboratingFlags,
 } from '../engine/security-drilldown.js';
-// dispatch #100 -- the Org/Store pills below extend scopeMatches' own All->State->Org->Store
-// hierarchy (feedback-selector-ui-standard.md); the date-range control reuses the shared
-// DateRangeControl (issue #126 Spine 1) rather than a bespoke date-input pair, matching this
-// repo's "don't invent a new pattern" standing rule.
-import { DateRangeControl, DATE_RANGE_PRESETS } from '../components/PanelControls.js';
+// dispatch #100 -- the date-range control reuses the shared DateRangeControl (issue #126 Spine 1)
+// rather than a bespoke date-input pair, matching this repo's "don't invent a new pattern"
+// standing rule.
+// dispatch #120 -- the hand-rolled State/Org/Store pill rows (~30 pills flat, unusable on mobile)
+// are replaced by the shared LocationSelector in mode:'progressive' (dispatch #104), which reveals
+// one tier at a time: States first, picking a State reveals its Patches, picking a Patch reveals
+// its Stores. See scopeToSelectorValue/selectorValueToScope below for the translation this panel
+// needs since it keeps its own {level,value} scope shape (panel-contract.md §3) and the Org/Patch
+// decision recorded there.
+import { DateRangeControl, DATE_RANGE_PRESETS, LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -161,14 +166,37 @@ export function classifySubjectTrend(history) {
   return priorFlagged ? 'improving' : 'clear';
 }
 
-// Store scope hierarchy (feedback-selector-ui-standard.md): All -> State -> Org -> Store.
+// Store scope hierarchy (feedback-selector-ui-standard.md, updated by dispatch #120): All ->
+// State -> Patch -> Store. The 'org' level (FL/OK mapped to emerald/mcdok) is REMOVED here --
+// dispatch #120's investigation confirmed it was 1:1 redundant with 'state' for this business
+// (CLAUDE.md's own canonical mapping: MCDOK=Oklahoma, Emerald Arches=Florida), so it never added
+// a second independent dimension, only a second button row selecting the same store set 'state'
+// already reaches. 'patch' (org.sup, the supervisor field already in INV_ORG_COORDS -- the same
+// source PanelControls.js's LocationSelector itself draws its Patch tier from) replaces it with a
+// genuinely finer-grained, previously-unavailable scope: two stores in the same state/org can sit
+// under different supervisors, so Patch can isolate one where State/Org never could. See the PR
+// body for the full before/after reasoning.
 export function scopeMatches(loc, scope) {
   if (!scope || scope.level === 'all') return true;
   const org = INV_ORG_COORDS[loc] || {};
   if (scope.level === 'state') return org.state === scope.value;
-  if (scope.level === 'org') return (org.state === 'FL' ? 'emerald' : 'mcdok') === scope.value;
+  if (scope.level === 'patch') return org.sup === scope.value;
   if (scope.level === 'store') return loc === scope.value;
   return true;
+}
+
+// dispatch #120 -- translation at the UI boundary only (panel-contract.md §3): this panel's own
+// `scope` state keeps its pre-existing {level, value} shape (in-memory only, nothing persisted,
+// so there is no stored-data migration concern -- just cheap to translate at render time), while
+// LocationSelector's own value shape is {level, id}. 'org' has no counterpart on either side any
+// more (see scopeMatches' own comment above for why it was dropped, not just renamed).
+export function scopeToSelectorValue(scope) {
+  if (!scope || scope.level === 'all') return { level: 'all', id: null };
+  return { level: scope.level, id: scope.value };
+}
+export function selectorValueToScope(value) {
+  if (!value || value.level === 'all') return { level: 'all' };
+  return { level: value.level, value: value.id };
 }
 
 // dispatch #100 -- the date-range control's own filtering basis. windowEnd (the security rule's
@@ -187,6 +215,48 @@ export function windowEndInRange(windowEnd, range) {
   if (range.s && windowEnd < range.s) return false;
   if (range.e && windowEnd > range.e) return false;
   return true;
+}
+
+// dispatch #120 -- findings readability. Investigated a click-through to an "actual event" first
+// (per the owner's own primary ask): RegisterAuditTab (store-analytics.js) is the only candidate
+// that surfaced, and it does NOT qualify as a real navigation target for a security_findings row
+// -- it reads a completely separate, manually-uploaded dataset (`ds.auditRows`, "Load a Register
+// Audit YYYY-MM-DD to YYYY-MM-DD.xlsx file to activate"), has no date-range prop at all (filters
+// only by `loc`, the store's ENTIRE uploaded history), and is nested inside StoreDash's tab
+// switcher rather than being URL/route-addressable with a store+window to pre-scope to. Wiring a
+// "go to event" link there would silently jump to an unrelated, possibly-empty dataset and imply
+// a connection that doesn't exist. security-events-level detail for a finding ALREADY renders
+// in-panel via SubjectEvents (loadQsrSecurityEventsForSubject, cash domain) -- that is the real
+// "actual event" view, and it already exists. So the owner's own explicitly-offered fallback
+// applies: a clearer table layout for the findings list, sortable by window/rule/subject.
+//
+// 'signals' is the SPECIAL default: with sortDir 'desc' it returns `groups` UNCHANGED --
+// groupFindingsBySubject's own flaggedCount-desc/worstValue-desc order, tie-broken by worstValue
+// -- rather than re-deriving that tie-break here, so the table's default view renders identically
+// to the pre-table card list's order. Any other key/direction combination re-sorts on a single
+// comparable value per group.
+export function latestWindowEnd(group) {
+  const ends = (group.verdicts || []).map(v => v.windowEnd).filter(Boolean);
+  return ends.length ? ends.reduce((a, b) => (b > a ? b : a)) : '';
+}
+export function sortFindingsForDisplay(groups, sortKey, sortDir) {
+  if (!sortKey || (sortKey === 'signals' && sortDir !== 'asc')) return groups;
+  const dir = sortDir === 'asc' ? 1 : -1;
+  const val = (g) => {
+    if (sortKey === 'signals') return g.flaggedCount;
+    if (sortKey === 'subject') return (g.subjectType === 'emp' ? g.empToken : g.wrin) || '';
+    if (sortKey === 'rule') {
+      const ids = g.verdicts.map(v => v.ruleId).filter(Boolean).sort();
+      return ids[0] || '';
+    }
+    if (sortKey === 'window') return latestWindowEnd(g);
+    return 0;
+  };
+  return [...groups].sort((a, b) => {
+    const av = val(a), bv = val(b);
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+    return String(av).localeCompare(String(bv)) * dir;
+  });
 }
 
 // dispatch #46 §A point 3 -- "units on every number." Five live rules, five units -- a hardcoded
@@ -536,6 +606,12 @@ function explanationReason(explanation) {
 function fNum(n) { return n == null ? '—' : Number(n).toFixed(2); }
 function fDateTime(iso) { return iso ? new Date(iso).toLocaleString() : '—'; }
 
+// dispatch #120 -- real <table>/<tr>/<td> markup (findings-readability fallback, see
+// sortFindingsForDisplay's own header comment for why a click-through wasn't wired instead).
+// Returns a Fragment of two <tr>s (the row itself, plus a colSpan'd detail row when expanded) so
+// the parent's <tbody> gets valid direct children -- same cell content as before the table
+// conversion, just laid out in columns instead of one flex row.
+const SUBJECT_ROW_COLS = 6;
 function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, ruleFilter, domain, findings, domainRuleIds, item }) {
   const chips = group.verdicts
     .filter(v => !ruleFilter || v.ruleId === ruleFilter)
@@ -552,29 +628,38 @@ function SubjectRow({ group, rulesById, revealed, onReveal, expanded, onToggle, 
   const subjectLabel = group.subjectType === 'emp'
     ? (revealed[group.empToken] || 'This employee')
     : (itemName ? `${itemName} (${group.wrin}, store ${group.loc})` : `Item ${group.wrin} (store ${group.loc})`);
-  return div(null,
-    div({
+  const windowEnd = latestWindowEnd(group);
+  const td = (p, ...c) => h('td', p, ...c);
+  return h(React.Fragment, null,
+    h('tr', {
       onClick: onToggle,
-      style: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', borderBottom: expanded ? 'none' : '1px solid var(--bdr)' },
+      style: { cursor: 'pointer', borderBottom: expanded ? 'none' : '1px solid var(--bdr)' },
     },
-      span({ style: {
-        minWidth: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 12, fontWeight: 800, color: '#fff',
-        background: group.flaggedCount >= 2 ? 'var(--crit,#ef4444)' : group.flaggedCount === 1 ? 'var(--amber,#f59e0b)' : 'var(--text3)',
-      } }, group.flaggedCount),
-      div({ style: { minWidth: 150, maxWidth: 220, fontWeight: 700, fontSize: 12.5, color: 'var(--text)' }, title: itemName ? `${itemName} — WRIN ${group.wrin}` : undefined },
-        group.subjectType === 'emp'
-          ? h(RevealName, { token: group.empToken, cache: revealed, onReveal })
-          : (itemName
-              ? [itemName, span({ key: 'wrin', style: { fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginLeft: 5 } }, group.wrin)]
-              : `Item ${group.wrin}`),
+      td({ style: { padding: '10px 8px', whiteSpace: 'nowrap' } },
+        span({ style: {
+          minWidth: 26, width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 800, color: '#fff',
+          background: group.flaggedCount >= 2 ? 'var(--crit,#ef4444)' : group.flaggedCount === 1 ? 'var(--amber,#f59e0b)' : 'var(--text3)',
+        } }, group.flaggedCount)),
+      td({ style: { padding: '10px 8px' } },
+        div({ style: { minWidth: 150, maxWidth: 220, fontWeight: 700, fontSize: 12.5, color: 'var(--text)' }, title: itemName ? `${itemName} — WRIN ${group.wrin}` : undefined },
+          group.subjectType === 'emp'
+            ? h(RevealName, { token: group.empToken, cache: revealed, onReveal })
+            : (itemName
+                ? [itemName, span({ key: 'wrin', style: { fontSize: 10, fontWeight: 400, color: 'var(--text3)', marginLeft: 5 } }, group.wrin)]
+                : `Item ${group.wrin}`),
+        ),
+        item?.cls && span({ style: { fontSize: 10, color: 'var(--text3)', border: '1px solid var(--bdr)', borderRadius: 999, padding: '1px 7px' } }, item.cls),
       ),
-      span({ style: { fontSize: 11, color: 'var(--text3)', minWidth: 60 } }, `Store ${group.loc}`),
-      item?.cls && span({ style: { fontSize: 10, color: 'var(--text3)', border: '1px solid var(--bdr)', borderRadius: 999, padding: '1px 7px' } }, item.cls),
-      div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 } }, chips),
-      span({ style: { fontSize: 11, color: 'var(--text3)' } }, expanded ? '▲' : '▼'),
+      td({ style: { padding: '10px 8px', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' } },
+        span(null, `Store ${group.loc}`)),
+      td({ style: { padding: '10px 8px' } }, div({ style: { display: 'flex', gap: 6, flexWrap: 'wrap' } }, chips)),
+      td({ style: { padding: '10px 8px', fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' } }, windowEnd || '—'),
+      td({ style: { padding: '10px 8px', fontSize: 11, color: 'var(--text3)', textAlign: 'right', whiteSpace: 'nowrap' } }, expanded ? '▲' : '▼'),
     ),
-    expanded && h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds }),
+    expanded && h('tr', null,
+      td({ colSpan: SUBJECT_ROW_COLS, style: { padding: 0 } },
+        h(SubjectDetail, { group, rulesById, subjectLabel, domain, findings, domainRuleIds }))),
   );
 }
 
@@ -694,6 +779,14 @@ export function SecurityPanel({ userRole, onClose }) {
   // null = unbounded (the pre-#100 behavior, unchanged) -- {s,e} is DateRangeControl's own shape.
   const [dateRange, setDateRange] = React.useState(null);
   const [expanded, setExpanded] = React.useState(null);
+  // dispatch #120 -- findings table sort. 'signals' + 'desc' is the default and, per
+  // sortFindingsForDisplay's own comment, renders identically to the pre-table card order.
+  const [sortKey, setSortKey] = React.useState('signals');
+  const [sortDir, setSortDir] = React.useState('desc');
+  const toggleSort = (key) => {
+    if (key === sortKey) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(key === 'subject' || key === 'rule' ? 'asc' : 'desc'); }
+  };
   const [revealed, setRevealed] = React.useState({});
   const [showLegend, setShowLegend] = React.useState(() => {
     try { return localStorage.getItem(LEGEND_DISMISSED_KEY) !== '1'; } catch { return true; }
@@ -793,6 +886,10 @@ export function SecurityPanel({ userRole, onClose }) {
       .filter(g => g.verdicts.length > 0);
   }, [findings, domain, scope, ruleFilter, minSignals, domainRuleIds, dateRange]);
 
+  // dispatch #120 -- see sortFindingsForDisplay's own header comment for the 'signals'/'desc'
+  // no-op case that keeps the default view identical to the pre-table order.
+  const sortedGroups = React.useMemo(() => sortFindingsForDisplay(groups, sortKey, sortDir), [groups, sortKey, sortDir]);
+
   const newestBatch = React.useMemo(() =>
     findings.reduce((m, f) => (!m || (f.computedAt && f.computedAt > m)) ? f.computedAt : m, null), [findings]);
 
@@ -829,17 +926,10 @@ export function SecurityPanel({ userRole, onClose }) {
   }, [domain, dataState, groups, domainRuleIds]);
 
   const domainRules = rules.filter(r => r.domain === domain);
-  const states = React.useMemo(() => [...new Set(Object.values(INV_ORG_COORDS).map(o => o.state).filter(Boolean))], []);
-  // dispatch #100 -- Org and Store tiers for the same All->State->Org->Store row. `orgs` derived
-  // the same way `states` already is (from the live INV_ORG_COORDS data, not a hardcoded list) and
-  // through the EXACT mapping scopeMatches itself uses (org.state==='FL' ? 'emerald' : 'mcdok'),
-  // so a future third org/state added to INV_ORG_COORDS is picked up with no code change here.
-  // `storeLocs` is every loc INV_ORG_COORDS knows about, numeric-sorted -- the same store-universe
-  // source opportunity-dollars.js's LocationSelector already draws its own flat store-pill row
-  // from, so a 27-store wrapped pill row is a proven, shipped pattern here, not a new risk.
-  const orgs = React.useMemo(() => [...new Set(Object.values(INV_ORG_COORDS).map(o => (o.state === 'FL' ? 'emerald' : 'mcdok')))].sort(), []);
-  const storeLocs = React.useMemo(() => Object.keys(INV_ORG_COORDS).sort((a, b) => Number(a) - Number(b)), []);
-  const ORG_LABELS = { emerald: 'Emerald Arches', mcdok: 'MCDOK' };
+  // dispatch #120 -- {loc} shape only, matching report-subscriptions.js's own LocationSelector
+  // wiring: it derives state/patch/store tiers itself from INV_ORG_COORDS. Every loc
+  // INV_ORG_COORDS knows about, same store universe the old hand-rolled storeLocs pill row used.
+  const _stores = React.useMemo(() => Object.keys(INV_ORG_COORDS).map(loc => ({ loc })), []);
 
   // Dispatch #50 Part A -- owner: "scroll not working in the modal." Root cause: a flex item's
   // default min-height is 'auto' (content-based), not 0, so a flex column refuses to shrink below
@@ -853,7 +943,7 @@ export function SecurityPanel({ userRole, onClose }) {
   // automatic-minimum-size support for that exception has a real inconsistency history, so an
   // explicit minHeight:0 there too costs nothing and removes the reliance on it).
   return div({ style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
-    // ── Domain tabs + scope pills ──
+    // ── Domain tabs + Legend ──
     div({ style: { display: 'flex', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--bdr)', flexWrap: 'wrap', alignItems: 'center' } },
       ['cash', 'inventory'].map(d => btn({
         key: d, onClick: () => { setDomain(d); setRuleFilter(null); },
@@ -862,26 +952,24 @@ export function SecurityPanel({ userRole, onClose }) {
           background: domain === d ? 'rgba(245,188,0,.12)' : 'transparent', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         },
       }, d === 'cash' ? '💵 Cash' : '📦 Inventory')),
-      span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
-      pill('All', scope.level === 'all', () => setScope({ level: 'all' })),
-      states.map(st => pill(st, scope.level === 'state' && scope.value === st, () => setScope({ level: 'state', value: st }))),
-      // dispatch #100 -- Org and Store pills, extending the SAME row (same pill() helper, same
-      // scope shape scopeMatches already consumes) rather than a new control. A thin divider
-      // separates each tier, reusing the exact divider style already used above (domain tabs ->
-      // location pills) so Org/Store read as a new group, not a continuation of State.
-      span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
-      orgs.map(org => pill(ORG_LABELS[org] || org, scope.level === 'org' && scope.value === org, () => setScope({ level: 'org', value: org }))),
-      span({ style: { width: 1, height: 20, background: 'var(--bdr)', margin: '0 4px' } }),
-      storeLocs.map(loc => pill(
-        STORE_NAMES[loc] ? `${loc} — ${STORE_NAMES[loc]}` : loc,
-        scope.level === 'store' && scope.value === loc,
-        () => setScope({ level: 'store', value: loc }),
-      )),
       btn({
         onClick: () => setShowLegend(s => !s),
         style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
       }, '❓ Legend'),
       newestBatch && span({ style: { marginLeft: showLegend ? 0 : 'auto', fontSize: 10.5, color: 'var(--text3)' } }, `Latest batch: ${fDateTime(newestBatch)}`),
+    ),
+    // dispatch #120 -- location scope, on its own row: the shared LocationSelector in
+    // mode:'progressive' (dispatch #104), replacing the hand-rolled All/State/Org/Store pill row
+    // that put ~30 pills on screen simultaneously (unusable on mobile, per the owner's own
+    // screenshot). Progressive reveals one tier at a time -- States first, picking a State reveals
+    // its Patches, picking a Patch reveals its Stores -- so the pill count per screen stays small.
+    // scope keeps this panel's own {level,value} shape (panel-contract.md §3); translated at this
+    // boundary only via scopeToSelectorValue/selectorValueToScope.
+    div({ style: { padding: '8px 14px', borderBottom: '1px solid var(--bdr)' } },
+      h(LocationSelector, {
+        stores: _stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, mode: 'progressive',
+        value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
+      }),
     ),
     // dispatch #46 §A point 2 -- a legend defining the vocabulary, dismissible and remembered.
     showLegend && h(Legend, { onDismiss: dismissLegend, rules }),
@@ -926,17 +1014,55 @@ export function SecurityPanel({ userRole, onClose }) {
       permState === 'allowed' && dataState === 'loading' && emptyState('Loading findings…'),
       permState === 'allowed' && dataState === 'error' && emptyState('Could not load findings — try again.', true),
       permState === 'allowed' && dataState === 'loaded' && groups.length === 0 && emptyState('No findings match the current filters.'),
-      permState === 'allowed' && dataState === 'loaded' && groups.map(g => {
-        const ik = domain === 'inventory' ? inventoryItemKey(g, domainRuleIds) : null;
-        const item = ik ? itemInfo[ik.key] : null;
-        return h(SubjectRow, {
-          key: g.key, group: g, rulesById, revealed, onReveal, ruleFilter,
-          expanded: expanded === g.key, onToggle: () => setExpanded(expanded === g.key ? null : g.key),
-          domain, findings, domainRuleIds, item,
-        });
-      }),
+      // dispatch #120 -- real <table>/<th> markup, sortable by Signals/Subject/Rule/Window (see
+      // sortFindingsForDisplay's own header comment for why this was chosen over a click-through
+      // to an "actual event" view). Wrapped in its own overflowX:'auto' scroller per panel-
+      // contract.md's mobile-scroll rule, though this table's column count stays modest.
+      permState === 'allowed' && dataState === 'loaded' && groups.length > 0 && div({ style: { overflowX: 'auto' } },
+        // width:'max-content' + minWidth:'100%' (not width:'100%' alone) -- the #192 rule
+        // (scroll-table-width.test.js): a table locked to its wrapper's width has nothing to
+        // scroll TO, so the browser silently crushes columns instead of the overflowX:'auto'
+        // wrapper ever showing a scrollbar. This table's Rule-chips column can genuinely run wide.
+        h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 12 } },
+          h('thead', null,
+            h('tr', null,
+              sortTh('Signals', 'signals', sortKey, sortDir, toggleSort),
+              sortTh('Subject', 'subject', sortKey, sortDir, toggleSort),
+              h('th', { style: thStyle(false) }, 'Store'),
+              sortTh('Rule', 'rule', sortKey, sortDir, toggleSort),
+              sortTh('Window', 'window', sortKey, sortDir, toggleSort),
+              h('th', { style: thStyle(false) }, ''),
+            ),
+          ),
+          h('tbody', null, sortedGroups.map(g => {
+            const ik = domain === 'inventory' ? inventoryItemKey(g, domainRuleIds) : null;
+            const item = ik ? itemInfo[ik.key] : null;
+            return h(SubjectRow, {
+              key: g.key, group: g, rulesById, revealed, onReveal, ruleFilter,
+              expanded: expanded === g.key, onToggle: () => setExpanded(expanded === g.key ? null : g.key),
+              domain, findings, domainRuleIds, item,
+            });
+          })),
+        ),
+      ),
     ),
   );
+}
+
+// dispatch #120 -- sortable column header, shared by the findings table above. Shows the sort
+// direction only on the currently-active column so the other headers don't imply an order they
+// aren't applying.
+function thStyle(sortable) {
+  return {
+    padding: '8px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, color: 'var(--text3)',
+    textTransform: 'uppercase', letterSpacing: '.03em', borderBottom: '1px solid var(--bdr)',
+    cursor: sortable ? 'pointer' : 'default', whiteSpace: 'nowrap', userSelect: 'none',
+  };
+}
+function sortTh(label, key, sortKey, sortDir, onSort) {
+  const active = sortKey === key;
+  const arrow = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+  return h('th', { style: thStyle(true), onClick: () => onSort(key) }, label + arrow);
 }
 
 function pill(label, active, onClick) {
