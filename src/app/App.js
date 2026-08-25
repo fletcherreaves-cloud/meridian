@@ -190,6 +190,7 @@ const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default:
 const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default: m.EventCalendar })));
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
+const TargetsEditorPanel = lazyPanel(() => import('../views/targets-editor.js').then(m => ({ default: m.TargetsEditorPanel })));
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
@@ -249,7 +250,8 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides } from '../lib/supabase.js';
+import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
@@ -662,6 +664,7 @@ function App() {
   const [showRanking, setShowRanking]  = useState(false);
   const [rankingDefault, setRankingDefault] = useState('score');
   const [showTargets, setShowTargets]  = useState(false);
+  const [showTargetsEditor, setShowTargetsEditor] = useState(false);   // dispatch #132 item 3
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   const [showPlanningHub, setShowPlanningHub] = useState(false);   // Notes 24 Planning hub
   const [planningTab, setPlanningTab] = useState('targets');
@@ -1277,6 +1280,19 @@ function App() {
           console.log(`[Meridian] ✓ Loaded yearly targets for ${years.join(', ')} (${Object.values(allY[latestYear]||{}).length} stores/latest year)`);
         }
       }catch(e){console.warn('[Meridian] Yearly targets load failed:',e);} };
+      // Targets-editor overrides (dispatch #132 item 3) -- indexed ONCE here, not per-lookup,
+      // since review-engine.js's mergedTargetsForLoc/mergedTargetsForLocMonth call
+      // applyTargetOverrides() once per metric per month. ds.targetOverrides is that pre-
+      // indexed shape (target-overrides.js's indexTargetOverrides output), not raw rows.
+      const _stTargetOverrides = async () => {
+      try{
+        const rows = await loadTargetOverrides();
+        if(rows.length > 0){
+          const idx = indexTargetOverrides(rows);
+          setDs(prev => prev ? { ...prev, targetOverrides: idx } : prev);
+          console.log(`[Meridian] ✓ Loaded ${rows.length} target override(s) from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Target overrides load failed:',e);} };
       const _stSmgFullscale = async () => {
       try{
         const fsRows = await loadSmgFullscale();
@@ -1727,6 +1743,7 @@ function App() {
       const _t2Start = performance.now();
       const _t2 = Promise.all([
         _timedStage('T2 smgFullscale', _stSmgFullscale, _t2Start),
+        _timedStage('T2 targetOverrides', _stTargetOverrides, _t2Start),
         _timedStage('T2 voicePerformance', _stVoicePerformance, _t2Start),
         _timedStage('T2 voiceDaypart', _stVoiceDaypart, _t2Start),
         _timedStage('T2 smgComments', _stSmgComments, _t2Start),
@@ -2577,7 +2594,7 @@ function App() {
     showMorningBrief||showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showPromoRoi||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||showRanking||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showTargetsEditor||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showSignals||showSecurity||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2608,7 +2625,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowTargetsEditor(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
@@ -2722,6 +2739,7 @@ function App() {
         if(modal==='report')         goRoute('report');
         if(modal==='about')          setShowAbout(true);
         if(modal==='targets')        setShowTargets(true);
+        if(modal==='targets-editor') perm('reviews.customize')&&setShowTargetsEditor(true);
         if(modal==='events')         setShowEvents(true);
         if(modal==='help')           setShowHelp(true);
         if(modal==='kb')             setShowKB(true);
@@ -2920,6 +2938,7 @@ function App() {
     showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:perm('users.manage.all')?()=>setShowAdminPanel(true):null}),
     showRanking  &&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);setShowRanking(false);},onClose:()=>setShowRanking(false)}),
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
+    showTargetsEditor&&h(TargetsEditorPanel,{ds,onClose:()=>setShowTargetsEditor(false)}),
     // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
     showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
     // sched-hub — Dispatch #55 Part B: moved to the routePanel gate in the main content area

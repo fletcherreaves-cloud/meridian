@@ -190,6 +190,13 @@ export const PANELS = [
   { id:'smg-voice', label:'Guest Voice', icon:'💬', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
+  // Targets Editor (dispatch #132 item 3) -- company/state/patch/store override cascade for
+  // Performance Review target fields that have no (or an adjustable) workbook source. Gated on
+  // reviews.customize (same perm as "Customize scoring weights & thresholds" -- admin-only by
+  // default, supervisor/manager false) since it's the same class of admin action: changing how
+  // reviews score, not viewing/submitting one. section:'people', next to perf-reviews, since
+  // every field it edits today is a Performance Review metric target.
+  { id:'targets-editor', label:'Targets Editor', icon:'🎯', perm:'reviews.customize', kind:'nav', section:'people' },
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
   // Dispatch #77 -- gated on analytics.district (a general leaderboard, not a Security panel;
   // must NOT inherit security.view), kind:'test-kitchen' with its real eventual section:'analytics'
