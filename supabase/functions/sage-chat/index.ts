@@ -509,9 +509,17 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const startDate = (input.start_date as string) || new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
     const marginRate = typeof input.margin_rate === 'number' ? input.margin_rate : 0.35;
 
-    const [g, c] = await Promise.all([
+    const [g, oc, c] = await Promise.all([
       // .order() on the full PK (loc, date) -- required for offset paging, see paginate.js.
       fetchAllRows(() => sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate).order('date').order('loc')),
+      // Discount -- opsCash (auto-pulled qsr_cash_sheet, discount_amt inside its `metrics` jsonb
+      // column) preferred, ctrl_rows (manual upload) fallback. dispatch-111.md: without this,
+      // SAGE's discount lever was ctrl_rows-only -- the same gap src/engine/promo-roi.js's
+      // buildDailyRecords had, and for the same reason (manual uploads are last-resort fill only
+      // per CLAUDE.md's auto-first rule, so a loc/date with no manual Controls upload scored empty
+      // even with real auto-pulled discount data). Field names line up 1:1 with src/lib/supabase.js's
+      // loadOpsCashSheet (discAmt <- metrics.discount_amt) -- verified against that mapping, not assumed.
+      fetchAllRows(() => sb.from('qsr_cash_sheet').select('loc,dt,metrics').gte('dt', startDate).lte('dt', endDate).order('dt').order('loc')),
       fetchAllRows(() => sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate).order('date').order('loc')),
     ]);
     if (g.error) return `Database error: ${g.error.message}`;
@@ -531,11 +539,25 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       // SAGE and the panel disagree on the same data again.
       promoRecs.push({ loc: normLoc(r.loc), dow: dow(r.date), sales: r.all_net_sales || 0, gc: r.gc ?? null, int: r.promo_amt ?? null, spend: r.promo_amt || 0 });
     }
-    const discRecs: PRec[] = [];
+    // opsCash first-writer-wins per (loc, dt), then ctrl_rows fills any date opsCash didn't cover
+    // -- mirrors buildDailyRecords' opsCashRows-then-ctrlRows loop order exactly.
+    const discAmtByKey: Record<string, number> = {};
+    for (const r of oc.data || []) {
+      const amt = (r.metrics as Record<string, unknown> | null)?.discount_amt;
+      if (typeof amt !== 'number') continue;
+      const k = normLoc(r.loc) + '|' + r.dt;
+      if (discAmtByKey[k] == null) discAmtByKey[k] = amt;
+    }
     for (const r of c.data || []) {
-      const s = salesByKey[normLoc(r.loc) + '|' + r.date];
+      const k = normLoc(r.loc) + '|' + r.date;
+      if (discAmtByKey[k] == null && r.disc_amt != null) discAmtByKey[k] = r.disc_amt;
+    }
+    const discRecs: PRec[] = [];
+    for (const [k, amt] of Object.entries(discAmtByKey)) {
+      const s = salesByKey[k];
       if (!s) continue; // discount rows need same-day sales from glimpse
-      discRecs.push({ loc: normLoc(r.loc), dow: s.dow, sales: s.sales, gc: s.gc, int: r.disc_amt ?? null, spend: r.disc_amt || 0 });
+      const loc = k.slice(0, k.indexOf('|'));
+      discRecs.push({ loc, dow: s.dow, sales: s.sales, gc: s.gc, int: amt, spend: amt || 0 });
     }
 
     const promo = matchedLift(promoRecs, marginRate);

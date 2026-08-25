@@ -93,3 +93,57 @@ it (e.g. if SAGE's tool already gets its `ctrl_rows`-equivalent data differently
   already shipped and verified; this dispatch is strictly the sourcing gap that finding left open.
 - **Do not invent a new auto-pulled data source** — `opsCashRows`/`metric-source.js`'s existing
   `discAmt`/`discPct` chains are the answer; reuse them.
+
+## Resolution (2026-08-25, v5.152)
+
+Fixed as scoped, at both surfaces.
+
+**`src/engine/promo-roi.js`.** `buildDailyRecords` now loops `ds.opsCashRows || []` for
+`discAmt`/`discPct`, positioned before the existing `ds.ctrlRows` loop — same `rec.field == null`
+first-writer-wins guard already used throughout the function, mirroring the promo leg's
+`glimpseRows`-then-`ctrlRows` shape exactly. Field names needed no mapping: `opsCashRows` rows
+already carry camelCase `discAmt`/`discPct` (verified against `src/lib/supabase.js`'s
+`loadOpsCashSheet`, which aliases `metrics.discount_amt` → `discAmt` and derives `discPct` — same
+names `ctrlRows` uses), so the loop body is a straight copy of the corresponding `ctrlRows` lines.
+
+**Reproduced before fixing, per the standing measure-first rule.** A fixture with `opsCashRows`
+data and no `ctrlRows` at all returned `discAmt`/`discPct` as `null` from `buildDailyRecords` —
+confirmed by running the engine directly, not by reading the code and assuming. After the fix, the
+same fixture resolves both fields from `opsCashRows`. A `ctrlRows`-only fixture (no `opsCashRows`)
+resolves exactly as before — purely additive, nothing removed.
+
+**`supabase/functions/sage-chat/index.ts`'s hand-ported `matchedLift`.** Checked, and it had the
+identical gap: `query_promo_roi`'s discount leg queried `ctrl_rows` only, with no auto-pulled
+equivalent. Fixed the same way — a new `qsr_cash_sheet` query (`.select('loc,dt,metrics')`),
+extracting `discount_amt` out of the `metrics` jsonb column, folded into a `discAmtByKey` map with
+`qsr_cash_sheet` written first and `ctrl_rows` filling only keys it left empty (same
+first-writer-wins ordering as the client engine). This file can't be exercised by the Vitest suite
+(top-level `Deno.env`/URL imports block loading it in Node), so it was verified by close reading
+against the already-working `promo`/glimpse loop in the same function, not by a passing test —
+flagging that limitation rather than silently skipping it, per the dispatch's explicit ask to
+either fix or document why it doesn't need it. Needs a `sage-chat` redeploy to activate, same as
+every other tool change in this file.
+
+**Tests.** `src/__tests__/promo-roi.test.js` gained: `opsCashRows`-only sourcing (no `ctrlRows` in
+the fixture at all — the exact gap), `opsCashRows`-wins-over-`ctrlRows` ordering, `ctrlRows`
+fallback on a date `opsCashRows` doesn't cover, a full `computePromoDiscountRoi` pipeline case, and
+a real `PromoRoiPanel` render (`react-dom` + `happy-dom`, `@vitest-environment happy-dom` pragma
+added to the file) confirming the Discounts section populates from `opsCashRows` alone with zero
+`ctrlRows` in the fixture — per this repo's "exercise the actual consumer" rule, not just the
+engine in isolation. Confirmed revert-sensitive by temporarily stashing the engine change and
+watching 5 assertions fail with exactly the predicted symptom, then restoring it and confirming
+green.
+
+`src/__tests__/sage-paginate.test.js`'s `fetchAllRows` call-site count (a guard against the file
+scan silently matching nothing) needed updating 7 → 8 for the new `qsr_cash_sheet` query — caught
+by the existing test, not missed by it; its per-call `.order(...)` check already covered the new
+query since it carries `.order('dt').order('loc')` like every other call site.
+
+**Not touched, per scope.** The promo leg's sourcing (already correct) and the `intensityField`
+percentage-vs-dollar fix from `memory/finding-promo-roi-denominator-bias-2026-08-23.md` (already
+shipped) — neither line in this file was edited.
+
+**Verification.** 2362/2362 tests passing, `npm run build` clean. Entry chunk impact (the panel is
+a static import in `App.js`, not `lazyPanel()`-wrapped): 1568.13 KB / 456.86 KB gzip before →
+1568.32 KB / 456.89 KB gzip after (+0.03 KB gzip — no new import, negligible, from the few added
+lines in an already-loaded module).
