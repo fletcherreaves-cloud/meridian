@@ -84,6 +84,21 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🔴 NEW FEATURE, PII-SENSITIVE (2026-08-25): [Dispatch #123 — Crew Schedule Lookup: search an
+  employee, see their upcoming schedule](dispatch-123.md) + [Dispatch #124 — actual punch times,
+  backend pull only](dispatch-124.md)** — owner explored "can we see actual crew/manager
+  schedules," confirmed feasible (LifeLenz already fetches `assignedEmploymentId` per shift but
+  discards it into aggregate role rollups; QSRSoft's `people/time-punches-matched` has real punch
+  times), owner chose the full build. **This is the first Meridian feature that searches/browses
+  individual NAMED employees** — both dispatches require routing any employee name through the
+  existing tokenized identity vault (`src/engine/identity-vault.js`, the same pattern Register
+  Audit already uses) and RBAC-gating who can see it, mirroring `security-panel.js`'s
+  `securityPanelAccess()`. **Dispatch #124 sits next to a QSRSoft endpoint that returns full SSNs
+  if queried carelessly** — `memory/finding-qsrsoft-time-punches-endpoint-2026-08-21.md` (read in
+  full before touching it) already logged the exact rules: never request `ssn` in `selectCols`,
+  never persist one, assert-guard the pull script. Split into two dispatches deliberately (LifeLenz
+  schedule + panel vs. QSRSoft punch pull, no file overlap) so they can build in parallel; wiring
+  punch data into the panel is an explicit later follow-up, not part of either.
 - **📋 (2026-08-25): [Dispatch #122 — Events & Tags: holiday sub-filter + print shows full filtered list](dispatch-122.md)** —
   Owner: *"for Holidays, once selected, add another selector for which holiday... for print, show
   all results in one view."* `EventCalendar` (`store-dash.js`) — each holiday already carries a
