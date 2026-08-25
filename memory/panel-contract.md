@@ -87,3 +87,37 @@ itself, and one ratchet per convention is enough surface for now. A future dispa
 `DateRangeControl` candidate should consider whether a parallel ratchet earns its keep once
 there's a real bypass pattern to point it at (a hand-rolled day-count preset row is a plausible
 one; none of dispatch #30's two conversions produced a clean regex for it).
+
+## Standing rule: opportunistic conformance, checked and refreshed 2026-08-25
+
+**Owner-stated 2026-08-25:** *"as we work in each panel, let's get the close (x) button
+standardized... as well as the date pickers and location selectors as we have established. This
+would be easy work while we are in each panel. Also, continue with the url page migration while
+we are in there."* This makes the contract above (close button → `ModalShell`/`RoutePanelShell`,
+date mode, `LocationSelector`, and the routing migration below) a **standing per-dispatch check,
+not a one-time project** — every dispatch that touches a panel for any reason should also bring
+that panel's close button, date picker, and location selector into line with this contract, and
+convert it to a `route:true` entry in `panel-registry.js` if that's a natural fit, **as long as
+doing so doesn't meaningfully widen that dispatch's blast radius**. This is the same "fix it
+opportunistically when you're already there" model CLAUDE.md already uses for stale line-number
+citations — not a mandate to go sweep all 101 panels in one pass.
+
+**Numbers, re-measured 2026-08-25 (do not copy stale figures forward — re-measure at the source
+each time, per this file's own "never copy a number from a dispatch/plan doc into a CEILING"
+rule):**
+- Hand-rolled-backdrop ratchet (`ratchet-modal-backdrop-bypass.test.js`) `CEILING = 77` (was 78 on
+  2026-08-19 — one fewer hand-rolled backdrop exists now than when this file was first written;
+  the ratchet is doing its job).
+- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **13 of 101** registered panels in
+  `panel-registry.js` (`grep -c "route:\s*true"` vs. total `id:` entries). The other 88 are still
+  modal-only (`ModalShell`) — this is a large, multi-year-scale migration by design, not a gap to
+  close in any single dispatch. Convert a panel to `route:true` opportunistically per the rule
+  above; don't treat the low ratio itself as something to fix directly.
+- A parallel finding, same day: `promo-roi.js`'s results table had a mobile-scroll bug of the
+  same "hand-rolled instead of the shared pattern" shape (a scroll container with the horizontal
+  axis left effectively `hidden`, clipping wide tables on mobile with no way to reach the rest of
+  the row) — see `memory/dispatch-119.md`, which also adds a ratchet for that specific
+  anti-pattern. Treat mobile horizontal-scroll on wide tables as a fourth thing worth checking
+  opportunistically alongside close button / date picker / location selector / routing, even
+  though (unlike those four) it doesn't yet have a dedicated shared component to convert to —
+  just `overflowX:'auto'` on the actual scroll container, verified at a real mobile viewport.

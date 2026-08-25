@@ -60,3 +60,51 @@ vision item on top of it. That's future work once this foundational wiring exist
 - **Do not build the Pricing Engine or Filet-O-Fish-Fridays correlation work** CLAUDE.md names as
   the eventual destination — this dispatch is the data-wiring foundation only.
 - **Do not remove or break the existing manual-upload path** — additive only.
+
+## Resolution
+
+**Row shape confirmed against `loadPmixRows` (`src/lib/supabase.js`) before designing the UI:**
+`{loc, date:Date, item, price, desc, familyGroup, soldQty, discQty, promoQty, offerAmt, discAmt,
+unitFoodCost, unitPaperCost}` — per-store, per-date, per-item. Genuinely richer than
+`ds.pmixData`'s per-file `byFamily` rollup (no store/date/item grain at all).
+
+**`ProductMixPanel` (`src/views/labor-tools.js`) now reads both, additively.** A `dataSrc` toggle
+('cloud' | 'manual') is added to the panel header:
+- **Cloud tab** (`ds.pmixRows`) is the default whenever it has rows — auto/emailed-first,
+  freshest-wins, satisfied at the panel level by making cloud the pre-selected tab rather than
+  merging the two into one computation (the dispatch's own scope note allowed "two separate
+  tabs/sections" as an implementation choice). Adds a per-store `<select>` (pattern matched from
+  `DARDaypartPanel`'s existing `selLoc`/`sNameC` idiom in the same file) and date-range quick-picks
+  (7/30/90/180/All), anchored to the newest date actually present in `ds.pmixRows` rather than
+  wall-clock "today" — so the panel isn't empty just because the pull lags a day. Family-group
+  aggregation (units/disc/mix% bar chart, discount-exposure banner) reuses the exact same shape and
+  thresholds as the pre-existing manual view. A new **Top Items** table surfaces the item-level
+  grain (`item`/`desc`/`price`) the manual rollup collapses away — genuinely new information, not
+  just a re-skin of the family chart.
+- **Manual tab** (`ds.pmixData`) is byte-for-byte the pre-existing experience: same aggregation,
+  same summary tiles, same `#302` column-validation error banner. Falls back to being the default
+  tab only when `ds.pmixRows` is empty, matching pre-dispatch behavior exactly in that case.
+
+**Verification bar met, all three items:**
+1. **Real per-store/per-date cloud data renders** — proved by rendering the actual
+   `ProductMixPanel` (not an isolated aggregation helper) with a synthetic `ds.pmixRows` fixture
+   shaped exactly like `loadPmixRows`'s real output, across two real store locs (3708
+   Ardmore-Broadway, 5183 Chickasha-So 4th). Switching the store selector re-aggregates to the
+   other store's rows and the previous store's family names disappear — confirms per-store
+   filtering, not a district-wide sum.
+2. **Manual path unchanged** — same fixture also carries `ds.pmixData`; the Manual tab renders its
+   `Combos` family/tiles exactly as before, and cloud-only elements (store selector, Top Items) are
+   absent from it.
+3. **Auto-first precedence** — with both sources populated, the panel defaults to the Cloud tab;
+   with only `ds.pmixData` populated, it defaults to Manual (pre-dispatch behavior, unchanged).
+   `src/__tests__/dispatch-114-product-mix-cloud.test.js` (7 tests, `createRoot`/`act` under
+   happy-dom, same idiom as `dispatch-110-sos-panel.test.js`) covers all of the above plus the
+   both-empty and cloud-empty-for-this-store/range fallback states.
+
+**Speed check:** `ProductMixPanel` was already lazy-loaded via `lazyPanel()` (App.js's
+`_laborTools()` dynamic import) before this dispatch, so the entry chunk is untouched — eager total
+528.02 KB gzip both before and after (budget 850 KB). Only the lazy `labor-tools` chunk grew, which
+is demand-loaded, not shipped to every user on load.
+
+**Out of scope, not done here (as directed):** Pricing Engine, Filet-O-Fish-Fridays correlation.
+2383/2383 tests pass (2376 baseline + 7 new), `npm run build` clean.

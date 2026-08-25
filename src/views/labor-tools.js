@@ -281,16 +281,98 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
   const {useState:uSt, useMemo:uM} = React;
   const [sortBy,  setSortBy]  = uSt('units');
 
-  const hasPMix = ds.pmixData && Object.keys(ds.pmixData).length > 0;
+  // ── Cloud (dispatch #114) ────────────────────────────────────────────────
+  // ds.pmixRows is the real, auto-pulled stream: scripts/qsrsoft-pmix-pull.mjs
+  // (scheduled Action) -> qsr_product_mix -> loadPmixRows() -> App.js's
+  // configureLazyFill. It's per-store, per-date, per-item -- unlike ds.pmixData
+  // below (manual upload: per-file, lifetime-cumulative, no store/date grain).
+  // Auto/emailed-first standing rule (CLAUDE.md): cloud is primary whenever it
+  // has data; manual is last-resort fill, kept as a separate tab (additive).
+  const hasCloudPMix  = !!(ds.pmixRows && ds.pmixRows.length);
+  const hasManualPMix = !!(ds.pmixData && Object.keys(ds.pmixData).length);
+  const [dataSrc, setDataSrc] = uSt(hasCloudPMix ? 'cloud' : 'manual');
 
+  const pmixDate = r => r.date instanceof Date ? r.date : new Date(r.date);
+
+  const cloudLocs = uM(()=>{
+    const s = new Set();
+    (ds.pmixRows||[]).forEach(r=>{ if(r.loc!=null) s.add(String(r.loc)); });
+    return [...s].sort((a,b)=>sNameC(a).localeCompare(sNameC(b)));
+  },[ds.pmixRows]);
+  const [cloudLocSel, setCloudLocSel] = uSt('');
+  const cloudLoc = cloudLocSel && cloudLocs.includes(cloudLocSel) ? cloudLocSel : cloudLocs[0];
+  const [cloudRange, setCloudRange] = uSt('30'); // '7'|'30'|'90'|'180'|'all'
+
+  const cloudMaxDate = uM(()=>{
+    let max=null;
+    (ds.pmixRows||[]).forEach(r=>{ const d=pmixDate(r); if(!isNaN(d)&&(!max||d>max)) max=d; });
+    return max;
+  },[ds.pmixRows]);
+
+  const cloudFiltered = uM(()=>{
+    if(!cloudLoc) return [];
+    let rows = (ds.pmixRows||[]).filter(r=>String(r.loc)===cloudLoc);
+    if(cloudRange!=='all' && cloudMaxDate){
+      const cutoff = new Date(cloudMaxDate); cutoff.setDate(cutoff.getDate()-parseInt(cloudRange,10));
+      rows = rows.filter(r=>pmixDate(r) >= cutoff);
+    }
+    return rows;
+  },[ds.pmixRows,cloudLoc,cloudRange,cloudMaxDate]);
+
+  const cloudDateExtent = uM(()=>{
+    if(!cloudFiltered.length) return null;
+    let min=null,max=null;
+    cloudFiltered.forEach(r=>{ const d=pmixDate(r); if(!min||d<min) min=d; if(!max||d>max) max=d; });
+    return {min,max};
+  },[cloudFiltered]);
+
+  const cloudData = uM(()=>{
+    if(!cloudFiltered.length) return null;
+    const combined = {};
+    cloudFiltered.forEach(r=>{
+      const fam = r.familyGroup || 'Other';
+      if(!combined[fam]) combined[fam]={family:fam,units:0,disc:0,sales:0};
+      const units = r.soldQty||0;
+      combined[fam].units += units;
+      combined[fam].disc  += r.discQty||0;
+      combined[fam].sales += (r.price||0)*units;
+    });
+    const families = Object.values(combined);
+    const totalUnits = families.reduce((a,f)=>a+f.units,0);
+    const totalDisc  = families.reduce((a,f)=>a+f.disc,0);
+    return families.map(f=>({
+      ...f,
+      unitPct:  totalUnits>0?f.units/totalUnits:0,
+      discRate: f.units>0?f.disc/f.units:0,
+      discPct:  totalDisc>0?f.disc/totalDisc:0,
+    })).sort((a,b)=>b.units-a.units);
+  },[cloudFiltered]);
+
+  // Item-level breakdown -- only the cloud stream carries this grain; the
+  // manual-upload file collapses straight to family-group totals.
+  const cloudTopItems = uM(()=>{
+    if(!cloudFiltered.length) return [];
+    const byItem = {};
+    cloudFiltered.forEach(r=>{
+      if(r.item==null) return;
+      const key = r.item;
+      if(!byItem[key]) byItem[key]={item:key,desc:r.desc||'',family:r.familyGroup||'Other',units:0,sales:0,disc:0};
+      byItem[key].units += r.soldQty||0;
+      byItem[key].sales += (r.price||0)*(r.soldQty||0);
+      byItem[key].disc  += r.discQty||0;
+    });
+    return Object.values(byItem).sort((a,b)=>b.units-a.units).slice(0,15);
+  },[cloudFiltered]);
+
+  // ── Manual upload (ds.pmixData -- per-file, lifetime-cumulative rollup) ──
   // #302 — a file that failed column validation (missing Family Group / Disc Qty /
   // Offer Discount $) carries an explicit .error instead of silently defaulting; surface
   // it rather than letting it render as an empty/zero panel.
   const pmixErrors = uM(()=>Object.entries(ds.pmixData||{})
     .filter(([,pmx])=>pmx&&pmx.error).map(([name,pmx])=>({name,error:pmx.error})),[ds.pmixData]);
 
-  const data = uM(()=>{
-    if(!hasPMix) return null;
+  const manualData = uM(()=>{
+    if(!hasManualPMix) return null;
     // Aggregate across all loaded PMix files
     const combined = {};
     Object.values(ds.pmixData).forEach(pmx=>{
@@ -312,6 +394,9 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
     })).sort((a,b)=>b.units-a.units);
   },[ds.pmixData]);
 
+  const data = dataSrc==='cloud' ? cloudData : manualData;
+  const activeHasData = dataSrc==='cloud' ? cloudFiltered.length>0 : hasManualPMix;
+
   const sorted = data ? [...data].sort((a,b)=>{
     if(sortBy==='units') return b.units-a.units;
     if(sortBy==='disc')  return b.discRate-a.discRate;
@@ -321,6 +406,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
 
   const COLORS=['var(--warn)','#34d399','#60a5fa','#a78bfa','var(--crit)','#fb923c','#4ade80','#38bdf8'];
   const maxUnits = data?Math.max(...data.map(f=>f.units)):1;
+  const fmtD = d => d ? d.toISOString().slice(0,10) : '—';
 
   return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:457,
     display:'flex',flexDirection:'column',paddingTop:20}},
@@ -333,8 +419,16 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
         span({style:{fontSize:'18px'}},'🍔'),
         div({style:{flex:1}},
           div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Product Mix Dashboard'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'Family group unit sales, discount exposure, mix contribution — from loaded Product Mix reports')
+          div({style:{fontSize:'9px',color:'var(--text3)'}},
+            dataSrc==='cloud'
+              ? 'Auto-pulled, per-store per-date product mix (qsr_product_mix) — family mix, discount exposure, top items'
+              : 'Family group unit sales, discount exposure, mix contribution — from loaded Product Mix files')
         ),
+        span({style:{fontSize:'8px',color:'var(--text3)'}},'Source:'),
+        ...['cloud','manual'].map(s=>btn({key:s,className:'btn btn-sm',
+          style:{fontSize:'8.5px',background:dataSrc===s?'var(--adim)':'transparent',
+            color:dataSrc===s?'var(--amber)':'var(--text3)'},onClick:()=>setDataSrc(s)},
+          s==='cloud'?('☁ Cloud'+(hasCloudPMix?'':' (none)')):('📁 Manual'+(hasManualPMix?'':' (none)')))),
         span({style:{fontSize:'8px',color:'var(--text3)'}},'Sort:'),
         ...['units','disc','pct'].map(s=>btn({key:s,className:'btn btn-sm',
           style:{fontSize:'8.5px',background:sortBy===s?'var(--adim)':'transparent',
@@ -342,27 +436,55 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
           s==='units'?'Units':s==='disc'?'Disc Rate':'Mix %')),
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
-      pmixErrors.length>0&&div({style:{padding:'8px 16px',flexShrink:0,background:'var(--adim)',
+      dataSrc==='cloud'&&hasCloudPMix&&div({style:{padding:'6px 16px',borderBottom:'.5px solid var(--bdr)',
+        flexShrink:0,background:'var(--surf2)',display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}},
+        span({style:{fontSize:'8px',color:'var(--text3)'}},'Store:'),
+        h('select',{value:cloudLoc||'',onChange:e=>setCloudLocSel(e.target.value),
+          style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'9px',padding:'3px 6px'}},
+          cloudLocs.map(l=>h('option',{key:l,value:l},sNameC(l)))
+        ),
+        span({style:{fontSize:'8px',color:'var(--text3)',marginLeft:8}},'Range:'),
+        ...['7','30','90','180','all'].map(r=>btn({key:r,className:'btn btn-sm',
+          style:{fontSize:'8.5px',background:cloudRange===r?'var(--adim)':'transparent',
+            color:cloudRange===r?'var(--amber)':'var(--text3)'},onClick:()=>setCloudRange(r)},
+          r==='all'?'All':r+'D')),
+        cloudDateExtent&&span({style:{fontSize:'8px',color:'var(--text3)',marginLeft:'auto'}},
+          fmtD(cloudDateExtent.min)+' → '+fmtD(cloudDateExtent.max))
+      ),
+      dataSrc==='manual'&&pmixErrors.length>0&&div({style:{padding:'8px 16px',flexShrink:0,background:'var(--adim)',
         borderBottom:'.5px solid var(--bdr)'}},
         pmixErrors.map(e=>div({key:e.name,style:{fontSize:'9.5px',color:'var(--amber)',lineHeight:1.6}},
           span({style:{fontWeight:700}},e.name+': '),e.error))
       ),
-      !hasPMix?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
+      !activeHasData?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
         flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},
         div({style:{fontSize:36}},'🍔'),
-        div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'No Product Mix Data Loaded'),
-        div({style:{fontSize:'10px',textAlign:'center',maxWidth:380,lineHeight:1.7}},'Load Product Mix files (Product_Mix_YYYYMMDD_to_YYYYMMDD_[store].xlsx) to see menu analytics.')
+        div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},
+          dataSrc==='cloud'?'No Cloud Product Mix Data':'No Product Mix Data Loaded'),
+        div({style:{fontSize:'10px',textAlign:'center',maxWidth:380,lineHeight:1.7}},
+          dataSrc==='cloud'
+            ? (hasCloudPMix
+              ? 'No product-mix rows for '+(cloudLoc?sNameC(cloudLoc):'this store')+' in the selected range. Try a wider range or another store.'
+              : 'The auto-pull hasn\'t landed any qsr_product_mix rows yet. Check the Manual tab, or Data Manager for the pull\'s sync status.')
+            : 'Load Product Mix files (Product_Mix_YYYYMMDD_to_YYYYMMDD_[store].xlsx) to see menu analytics.')
       ):
       div({style:{flex:1,overflowY:'auto',padding:'12px 16px'}},
         // Summary strip
         data&&div({style:{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}},
-          ...[
+          ...(dataSrc==='cloud'?[
+            {l:'Store',v:sNameC(cloudLoc)},
+            {l:'Family Groups',v:data.length},
+            {l:'Total Units',  v:data.reduce((a,f)=>a+f.units,0).toLocaleString()},
+            {l:'Disc Units',   v:data.reduce((a,f)=>a+f.disc,0).toLocaleString()},
+            {l:'Overall Disc Rate',v:((data.reduce((a,f)=>a+f.disc,0)/Math.max(data.reduce((a,f)=>a+f.units,0),1))*100).toFixed(2)+'%'},
+          ]:[
             {l:'Family Groups',v:data.length},
             {l:'Total Units',  v:data.reduce((a,f)=>a+f.units,0).toLocaleString()},
             {l:'Disc Units',   v:data.reduce((a,f)=>a+f.disc,0).toLocaleString()},
             {l:'Overall Disc Rate',v:((data.reduce((a,f)=>a+f.disc,0)/Math.max(data.reduce((a,f)=>a+f.units,0),1))*100).toFixed(2)+'%'},
             {l:'Files Loaded', v:Object.keys(ds.pmixData||{}).length},
-          ].map((k,i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
+          ]).map((k,i)=>div({key:i,style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',
             borderRadius:'var(--r)',padding:'8px 12px',flex:'1 1 80px'}},
             div({style:{fontSize:'7.5px',textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)'}},(k.l)),
             div({style:{fontSize:'13px',fontWeight:800,fontFamily:'var(--mono)',color:'var(--amber)'}},(k.v))
@@ -401,6 +523,29 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
               +sorted.filter(f=>f.discRate>.10).map(f=>f.family+' ('+((f.discRate*100).toFixed(2))+'%)').join(', ')
               +'. High discount rates may indicate promo over-reliance or operational comp-out issues.'
             :'No family groups exceed 10% discount rate. Discount exposure appears controlled.'
+        ),
+        // Top items (cloud only -- item-level grain the manual-upload rollup doesn't carry)
+        dataSrc==='cloud'&&cloudTopItems.length>0&&div({style:{marginTop:16}},
+          div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:8}},
+            'Top Items — '+sNameC(cloudLoc)+' · '+(cloudRange==='all'?'All Time':cloudRange+'D')),
+          h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px'}},
+            h('thead',null,h('tr',null,
+              h('th',{style:{textAlign:'left',padding:'4px 6px',color:'var(--text3)',fontSize:'8px',textTransform:'uppercase',borderBottom:'.5px solid var(--bdr)'}},'Item'),
+              h('th',{style:{textAlign:'left',padding:'4px 6px',color:'var(--text3)',fontSize:'8px',textTransform:'uppercase',borderBottom:'.5px solid var(--bdr)'}},'Family'),
+              h('th',{style:{textAlign:'right',padding:'4px 6px',color:'var(--text3)',fontSize:'8px',textTransform:'uppercase',borderBottom:'.5px solid var(--bdr)'}},'Units'),
+              h('th',{style:{textAlign:'right',padding:'4px 6px',color:'var(--text3)',fontSize:'8px',textTransform:'uppercase',borderBottom:'.5px solid var(--bdr)'}},'Sales'),
+              h('th',{style:{textAlign:'right',padding:'4px 6px',color:'var(--text3)',fontSize:'8px',textTransform:'uppercase',borderBottom:'.5px solid var(--bdr)'}},'Disc Rate')
+            )),
+            tbody(null, cloudTopItems.map((it,i)=>tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
+              td({style:{padding:'4px 6px',color:'var(--text)'}},it.desc||('Item '+it.item)),
+              td({style:{padding:'4px 6px',color:'var(--text3)'}},it.family),
+              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text)'}},it.units.toLocaleString()),
+              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text)'}},f$(it.sales)),
+              td({style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',
+                color:(it.units>0&&(it.disc/it.units)>.1?'var(--crit)':'var(--text3)')}},
+                it.units>0?((it.disc/it.units*100).toFixed(1)+'%'):'—')
+            )))
+          )
         )
       )
     )
