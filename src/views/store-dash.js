@@ -3246,6 +3246,13 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
   const [editDate, setEditDate] = useState(fmtDI(new Date()));
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  // Dispatch #122: "which holiday" sub-filter, only meaningful when typeFilter==='holiday' —
+  // auto-tagging (below) pools every holiday into one `type:'holiday'` bucket, so this narrows
+  // by the distinct holiday name carried in each tagged event's `note` field instead. Reset
+  // whenever the top-level type changes so a stale holiday selection can't silently narrow a
+  // later, unrelated type filter.
+  const [holidayFilter, setHolidayFilter] = useState('all');
+  useEffect(()=>{ setHolidayFilter('all'); },[typeFilter]);
   const [locFilter, setLocFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
   const [dupesOnly, setDupesOnly] = useState(false);
@@ -3289,6 +3296,24 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
 
   const typeOptions = useMemo(()=>[...new Set(allEvents.map(e=>e.type||'other'))].sort(),[allEvents]);
 
+  // Dispatch #122: distinct holiday names present among 'holiday'-typed events, keyed off
+  // `note` — the auto-tag flow below writes buildHolidays()'s stable per-holiday `label`
+  // straight into `note` (note:hol.label), so this is the same name every "New Year Day"/
+  // "Independence Day"/etc event carries across every year and store it was tagged on.
+  // NOTE: `holiday_major` is computed in the auto-tag loop below but never actually assigned
+  // (every auto-tagged holiday is written as type:'holiday' regardless of impact) — confirmed
+  // by grep, so there is only the one real holiday type to sub-filter here.
+  const holidayCounts = useMemo(()=>{
+    const c={};
+    for(const e of allEvents){
+      if((e.type||'other')!=='holiday') continue;
+      const name=e.note||'(Unnamed Holiday)';
+      c[name]=(c[name]||0)+1;
+    }
+    return c;
+  },[allEvents]);
+  const holidayOptions = useMemo(()=>Object.keys(holidayCounts).sort(),[holidayCounts]);
+
   // Locations ordered by tag count, highest first, each showing its count — a store with an
   // implausible number of tagged days (450 on one store broke Dialed-In calibration district-wide,
   // v4.910) should be the first thing visible here, not buried in an alphabetical list.
@@ -3303,6 +3328,8 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
     let evs=allEvents;
     if(dupesOnly) evs=evs.filter(e=>dupeKeys.has(e.loc+'|'+e.dk+'|'+normLabel(e.label)));
     if(typeFilter!=='all') evs=evs.filter(e=>(e.type||'other')===typeFilter);
+    if(typeFilter==='holiday'&&holidayFilter!=='all')
+      evs=evs.filter(e=>(e.note||'(Unnamed Holiday)')===holidayFilter);
     if(locFilter!=='all') evs=evs.filter(e=>String(e.loc)===String(locFilter));
     if(search.trim()){
       const s=search.toLowerCase();
@@ -3319,7 +3346,7 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
     else if(sortBy==='type') evs.sort((a,b)=>(a.type||'other').localeCompare(b.type||'other'));
     else evs.sort((a,b)=>b.date-a.date);
     return evs;
-  },[allEvents,typeFilter,locFilter,search,sortBy,dupesOnly,dupeKeys]);
+  },[allEvents,typeFilter,holidayFilter,locFilter,search,sortBy,dupesOnly,dupeKeys]);
 
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
@@ -3375,6 +3402,30 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
             onUpdate(next);
             alert('Auto-tagged '+count+' holiday events across all stores (current year ±1). Pre-existing tags were preserved.');
           }},'🗓 Auto-Tag Holidays'),
+        // Dispatch #122: reuse the repo's existing print pattern (ExportDropdown's "HTML
+        // Report / Print" — same component RankingView etc. already use) instead of a native
+        // Ctrl+P, since this panel's results live inside a scrolled overflow:auto container
+        // capped by the modal's own maxHeight — native print of that would only capture what's
+        // currently scrolled into view. ExportDropdown builds its printable HTML from the raw
+        // `rows` array (not the DOM), so it always contains the FULL current `filtered` set —
+        // both the type filter and, when applicable, the holiday sub-filter — never just what's
+        // visible in the scroll viewport. CSV/JSON come along for free from the same component.
+        h(ExportDropdown,{
+          title:'Events & Tags'+
+            (typeFilter!=='all'?' — '+(EVENT_TYPES[typeFilter]?.label||typeFilter):'')+
+            (typeFilter==='holiday'&&holidayFilter!=='all'?' — '+holidayFilter:''),
+          filename:'events-tags_'+new Date().toISOString().slice(0,10),
+          rows:filtered.map(ev=>({
+            // Weekday via toLocaleDateString (same as the on-screen row below), not a raw
+            // getDay call — src/__tests__/ratchet-week-day-arithmetic.test.js ratchets bare
+            // getDay call sites in src/views/+src/features/ to a fixed ceiling.
+            Date: ev.date.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}),
+            Store: STORE_NAMES[ev.loc]||ev.loc,
+            Type: (EVENT_TYPES[ev.type]||EVENT_TYPES.other).label,
+            Event: ev.label||(EVENT_TYPES[ev.type]||EVENT_TYPES.other).label,
+            Note: ev.note||'',
+          })),
+        }),
         btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
       ),
       // #192: was a warning claiming heavy tagging drops LY comparison entirely — true before
@@ -3409,6 +3460,15 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
           opt({value:'all'},'All Types ('+allEvents.length+')'),
           typeOptions.map(t=>opt({key:t,value:t},
             (EVENT_TYPES[t]?.icon||'')+' '+(EVENT_TYPES[t]?.label||t)+' ('+allEvents.filter(e=>(e.type||'other')===t).length+')'))
+        ),
+        // Dispatch #122: which-holiday sub-filter — only shown for the Holiday type, since
+        // that's the only type where a single filter pools many distinct, differently-named
+        // days together (New Year's, Independence Day, Thanksgiving, …).
+        typeFilter==='holiday'&&holidayOptions.length>0&&sel({value:holidayFilter,onChange:e=>setHolidayFilter(e.target.value),
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'4px 6px'}},
+          opt({value:'all'},'All Holidays ('+Object.values(holidayCounts).reduce((a,n)=>a+n,0)+')'),
+          holidayOptions.map(name=>opt({key:name,value:name},name+' ('+holidayCounts[name]+')'))
         ),
         sel({value:locFilter,onChange:e=>setLocFilter(e.target.value),
           style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
