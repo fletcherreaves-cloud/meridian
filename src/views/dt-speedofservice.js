@@ -16,6 +16,20 @@ import { oepeSeconds } from '../utils/oepe.js';
 // var() colors; a raw `+'66'` silently drops on a var() color per #351/#368).
 import { withAlpha } from './patch-heatmap.js';
 
+// Dispatch #136 Part 1 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ chart.js/
+// auto, which this panel already pulls in directly) that this session's established pattern
+// (record-day.js, dispatch #130) keeps out of the immediately-loaded panel code via React.lazy:
+// the actual import() only fires on first render of the Export control, which only happens once
+// this already-lazyPanel()'d panel is open AND has data to export.
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
+// Local HTML-escaper for the print report only -- same tiny pattern every print/export builder
+// in this codebase repeats locally (record-day.js, analytics.js, eom-dashboard.js, etc.) rather
+// than a shared import, since it's a two-line function, not a module.
+function esc(s) { return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
 const h = React.createElement;
 const div  = (p,...c) => h('div',  p, ...c);
 const span = (p,...c) => h('span', p, ...c);
@@ -159,6 +173,44 @@ function useChart(canvasRef, buildFn, deps) {
   }, deps); // eslint-disable-line
 }
 
+// Pure weekly (Mon–Sun) aggregation, shared by DtTrendChart's useMemo below AND the Part 1
+// print report (dispatch #136) -- extracted verbatim (no behavior change) from what used to be
+// DtTrendChart's own inline useMemo body, so the printed Weekly Trend numbers are computed by
+// the SAME code the on-screen chart draws from, not a second hand-copy that could drift (the
+// exact "diff the two computations" trap CLAUDE.md warns about).
+function weeklySeriesFor(rows, activeLocs, mode, label, station) {
+  const fields = STATION_FIELDS.find(f => f.key === station) || STATION_FIELDS[0];
+  const bySeries = {}, weekSet = new Set();
+  for (const r of rows) {
+    const loc = String(parseInt(r.loc, 10));
+    if (!activeLocs.includes(loc)) continue;
+    const d = new Date(r.dt + 'T00:00:00');
+    const day = d.getDay();
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // Monday of week
+    const wk = d.toISOString().slice(0, 10);
+    weekSet.add(wk);
+    const sk = mode === 'store' ? loc : mode === 'patch' ? (locPatch(loc) || 'Other') : 'all';
+    const bs = (bySeries[sk] = bySeries[sk] || {});
+    const cell = (bs[wk] = bs[wk] || { us: 0, store: 0, held: 0, cnt: 0 });
+    for (const k of fields.us)  cell.us  += r[k] || 0;
+    for (const k of fields.cnt) cell.cnt += r[k] || 0;
+    for (const k of (fields.store || [])) cell.store += r[k] || 0;
+    for (const k of (fields.held  || [])) cell.held  += r[k] || 0;
+  }
+  const weeks = [...weekSet].sort();
+  const series = Object.entries(bySeries).map(([key, wkMap]) => ({
+    key,
+    name: mode === 'store' ? (STORE_NAMES[key] || key) : mode === 'patch' ? key : label,
+    data: weeks.map(w => {
+      if (!wkMap[w] || wkMap[w].cnt <= 0) return null;
+      const v = stationAvgSec(station, wkMap[w]);
+      return v == null ? null : Math.round(v * 10) / 10;
+    }),
+    totalCnt: Object.values(wkMap).reduce((a, v) => a + v.cnt, 0),
+  })).sort((a, b) => b.totalCnt - a.totalCnt);
+  return { weeks, series };
+}
+
 // ── Trend chart (weekly aggregation) ─────────────────────────────────────────
 // mode: 'avg' = single weighted district/scope line; 'store' = one line per store;
 // 'patch' = one line per patch. Every line sums the SELECTED station's raw components within its
@@ -167,40 +219,11 @@ function useChart(canvasRef, buildFn, deps) {
 // STATION_FIELDS' column mappings feeds the reducer (dispatch #128 Part 3).
 function DtTrendChart({ rows, activeLocs, label, mode = 'avg', station = 'dt' }) {
   const ref = React.useRef(null);
-  const fields = STATION_FIELDS.find(f => f.key === station) || STATION_FIELDS[0];
   const bands = scopeBands(station, activeLocs);
 
-  const { weeks, series } = React.useMemo(() => {
-    const bySeries = {}, weekSet = new Set();
-    for (const r of rows) {
-      const loc = String(parseInt(r.loc, 10));
-      if (!activeLocs.includes(loc)) continue;
-      const d = new Date(r.dt + 'T00:00:00');
-      const day = d.getDay();
-      d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // Monday of week
-      const wk = d.toISOString().slice(0, 10);
-      weekSet.add(wk);
-      const sk = mode === 'store' ? loc : mode === 'patch' ? (locPatch(loc) || 'Other') : 'all';
-      const bs = (bySeries[sk] = bySeries[sk] || {});
-      const cell = (bs[wk] = bs[wk] || { us: 0, store: 0, held: 0, cnt: 0 });
-      for (const k of fields.us)  cell.us  += r[k] || 0;
-      for (const k of fields.cnt) cell.cnt += r[k] || 0;
-      for (const k of (fields.store || [])) cell.store += r[k] || 0;
-      for (const k of (fields.held  || [])) cell.held  += r[k] || 0;
-    }
-    const weeks = [...weekSet].sort();
-    const series = Object.entries(bySeries).map(([key, wkMap]) => ({
-      key,
-      name: mode === 'store' ? (STORE_NAMES[key] || key) : mode === 'patch' ? key : label,
-      data: weeks.map(w => {
-        if (!wkMap[w] || wkMap[w].cnt <= 0) return null;
-        const v = stationAvgSec(station, wkMap[w]);
-        return v == null ? null : Math.round(v * 10) / 10;
-      }),
-      totalCnt: Object.values(wkMap).reduce((a, v) => a + v.cnt, 0),
-    })).sort((a, b) => b.totalCnt - a.totalCnt);
-    return { weeks, series };
-  }, [rows, activeLocs.join(','), mode, label, station]);
+  const { weeks, series } = React.useMemo(
+    () => weeklySeriesFor(rows, activeLocs, mode, label, station),
+    [rows, activeLocs.join(','), mode, label, station]);
 
   useChart(ref, canvas => {
     if (!weeks.length) return null;
@@ -318,6 +341,154 @@ function DtDaypartChart({ daypartData, green = DT_GREEN, amber = DT_AMB, station
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
+// ── Print / Export (dispatch #136 Part 1) ─────────────────────────────────────
+// Reuses this session's established pattern (dispatch #122/#129/#134, and record-day.js's own
+// dispatch #130 adoption): a full, scroll-independent printable HTML document built straight from
+// the same computed data the screen renders -- not a native window.print() against this panel's
+// scrolled/chart-heavy overlay, which would hit the exact viewport-clipping trap those dispatches
+// already fixed elsewhere. Colors are literal hex (this opens in a blank window with no
+// meridian.css loaded), carried by TEXT color, never a background fill -- dispatch #129's own
+// finding that print-color-adjust defaults to 'economy' (unset anywhere in this codebase), so a
+// background-only signal prints as nearly blank.
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No data.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(h=>`<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr style="background:${i%2?'#fff':'#fafafa'}">${r.map(c=>`<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${esc(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+
+// Store Ranking CSV/JSON export spec for the currently selected station -- the shared
+// ExportDropdown's per-tab-scoped pattern (record-day.js dispatch #130), here scoped to
+// "currently selected station" since that's this panel's one interactive dimension. Rows follow
+// the ON-SCREEN sort (sortCol/sortDir), so an export triggered right after a header-click sort
+// matches what's visibly on screen, not always avg-ascending.
+function dtExportSpec(sorted, station, shortLabel, rangeLabel, trendLabel) {
+  const today = new Date().toISOString().slice(0,10);
+  const rowsOut = sorted.map(s => {
+    const sBands = stationBands(station, s.loc);
+    return {
+      Store: sNameC(s.loc),
+      [`Avg ${shortLabel}`]: fmtDT(s.avg),
+      Transactions: s.trans,
+      Trend: s.trend==null ? '—' : (s.trend<0?'▲ ':'▼ ')+Math.abs(s.trend).toFixed(1)+'s',
+      'Target (green)': Math.round(sBands.green)+'s'+(sBands.hasTarget?'':' (default)'),
+      'Caution Threshold (amber)': Math.round(sBands.amber)+'s',
+    };
+  });
+  return {
+    rows: rowsOut,
+    columns: ['Store',`Avg ${shortLabel}`,'Transactions','Trend','Target (green)','Caution Threshold (amber)'].map(k=>({key:k,label:k})),
+    title: `Speed of Service — ${shortLabel} — ${trendLabel} — ${rangeLabel}`,
+    filename: `speed-of-service-${station}-${today}`,
+  };
+}
+
+// Full district print report -- district/station summary, the per-store table with its
+// color-banded targets (as text, per the print-color-adjust note above), and the weekly-trend/
+// daypart/hour numbers underlying the on-screen charts, all as real tables (a chart-only print
+// with no numbers would fail the dispatch's own verification bar). weeklySeriesFor is the exact
+// same function DtTrendChart's 'avg' mode useMemo calls, so these numbers can't drift from what
+// the chart draws.
+function buildDtPrintHtml({ rows, activeLocs, station, rangeLabel, trendLabel, sorted, stationData,
+  hourData, daypartData, districtAvg, totalTrans, bestStore, worstStore, bestDp, worstDp }) {
+  const now = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const shortLabel = STATION_SHORT[station];
+  const bands = scopeBands(station, activeLocs);
+
+  const heroCard = (label, val, sub, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
+    <div style="font-size:17px;font-weight:800;color:${color||'#0f172a'};margin-bottom:2px">${esc(val||'—')}</div>
+    <div style="font-size:10px;color:#6b7280">${esc(sub||'')}</div>
+  </div>`;
+  const heroSection = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+      ${heroCard(`District Avg ${shortLabel}`, fmtDT(districtAvg), `${totalTrans.toLocaleString()} transactions`, dtColor(districtAvg, bands.green, bands.amber))}
+      ${bestStore  ? heroCard('Fastest Store', sNameC(bestStore.loc), fmtDT(bestStore.avg), '#10b981') : ''}
+      ${worstStore ? heroCard('Needs Attention', sNameC(worstStore.loc), fmtDT(worstStore.avg), '#ef4444') : ''}
+      ${bestDp     ? heroCard('Fastest Daypart', bestDp.label, fmtDT(bestDp.avg), '#10b981') : ''}
+      ${worstDp    ? heroCard('Slowest Daypart', worstDp.label, fmtDT(worstDp.avg), '#ef4444') : ''}
+    </div>`;
+
+  const stationRows = stationData.map(s => {
+    const sBands = scopeBands(s.key, activeLocs);
+    return [esc(s.icon+' '+s.label), `<b style="color:${dtColor(s.avg, sBands.green, sBands.amber)}">${fmtDT(s.avg)}</b>`,
+      Math.round(sBands.green)+'s / '+Math.round(sBands.amber)+'s'+(sBands.hasTarget?'':' (default)'),
+      s.cnt.toLocaleString()];
+  });
+
+  const storeRows = sorted.map(s => {
+    const sBands = stationBands(station, s.loc);
+    const trendStr = s.trend == null ? '—' : (s.trend < 0 ? '▲ ' : '▼ ') + Math.abs(s.trend).toFixed(1) + 's';
+    return [esc(sNameC(s.loc)), `<b style="color:${dtColor(s.avg, sBands.green, sBands.amber)}">${fmtDT(s.avg)}</b>`,
+      s.trans.toLocaleString(), trendStr,
+      Math.round(sBands.green)+'s / '+Math.round(sBands.amber)+'s'+(sBands.hasTarget?'':' (default)')];
+  });
+
+  const { weeks, series } = weeklySeriesFor(rows, activeLocs, 'avg', trendLabel, station);
+  const avgSeries = series[0];
+  const weekRows = weeks.map((w,i) => [
+    new Date(w+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}),
+    avgSeries?.data[i]!=null ? fmtDT(avgSeries.data[i]) : '—',
+  ]);
+
+  const daypartRows = daypartData.map(d => [esc(d.label), d.avg!=null?fmtDT(d.avg):'—', d.trans.toLocaleString()]);
+  const hourRows = hourData.map(r => [esc(r.label), fmtDT(r.avg), r.trans.toLocaleString()]);
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Speed of Service — District Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">Speed of Service — District Report</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">District Report</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">🚗 Speed of Service</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${esc(trendLabel)} · ${esc(rangeLabel)} · station: ${esc(shortLabel)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+
+  ${reportSection('Summary', heroSection)}
+  ${reportSection('Speed of Service by Station', reportTable(['Station','Avg','Target (green / amber)','Transactions'], stationRows))}
+  ${reportSection(`Store Ranking — ${shortLabel}`, reportTable(['Store',`Avg ${shortLabel}`,'Transactions','Trend','Target (green / amber)'], storeRows))}
+  ${reportSection(`Weekly ${shortLabel} Trend`, reportTable(['Week', `Avg ${shortLabel}`], weekRows))}
+  ${reportSection(`Avg ${shortLabel} by Daypart`, reportTable(['Daypart', `Avg ${shortLabel}`, 'Transactions'], daypartRows))}
+  ${reportSection(`By Hour — ${shortLabel}`, reportTable(['Hour', `Avg ${shortLabel}`, 'Transactions'], hourRows))}
+
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">QSR Forecasting & Analytics · Generated ${now} · CONFIDENTIAL</span>
+  </div>
+</div>
+</body></html>`;
+  return html;
+}
+
 function SummaryCard({ label, value, sub, color }) {
   return div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)',
     padding:'10px 14px', minWidth:130 }},
@@ -524,6 +695,23 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   const bands      = scopeBands(station, activeLocs);
   const shortLabel = STATION_SHORT[station];
 
+  // Dispatch #136 Part 1 -- CSV/JSON export spec (Store Ranking, current station + on-screen
+  // sort) and the full district print report, both recomputed whenever what's currently in view
+  // changes so a print/export triggered right after switching station/date-range/org filter
+  // always reflects what's actually on screen.
+  const exportSpec = React.useMemo(
+    () => dtExportSpec(sorted, station, shortLabel, rangeLabel, trendLabel),
+    [sorted, station, shortLabel, rangeLabel, trendLabel]);
+
+  const handlePrintReport = React.useCallback(() => {
+    const html = buildDtPrintHtml({ rows, activeLocs, station, rangeLabel, trendLabel, sorted,
+      stationData, hourData, daypartData, districtAvg, totalTrans, bestStore, worstStore, bestDp, worstDp });
+    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+    if (w) { w.document.write(html); w.document.close(); }
+    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+  }, [rows, activeLocs, station, rangeLabel, trendLabel, sorted, stationData, hourData, daypartData,
+      districtAvg, totalTrans, bestStore, worstStore, bestDp, worstDp]);
+
   return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460,
     display:'flex', flexDirection:'column', paddingTop:20 }},
     div({ style:{ flex:'0 0 20px', cursor:'pointer' }, onClick:onClose }),
@@ -558,6 +746,14 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
             ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
               .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
         ),
+        // Dispatch #136 Part 1 -- Export (CSV/JSON, current station + on-screen sort) and Print
+        // Report (full district document -- station/store/weekly-trend/daypart/hour tables, not
+        // just a chart image). Hidden while loading/empty, matching this session's other panels.
+        !loading && rows.length > 0 && h(React.Suspense, {
+          fallback: h('button', { className:'btn btn-sm', style:{ opacity:.5 }, disabled:true }, '⬇ Export') },
+          h(LazyExportDropdown, { rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
+        ),
+        !loading && rows.length > 0 && btn({ className:'btn btn-sm', onClick:handlePrintReport }, '🖨 Print Report'),
         btn({ className:'btn btn-sm', style:{ color:'var(--text3)' }, onClick:onClose }, '✕'),
       ),
 
