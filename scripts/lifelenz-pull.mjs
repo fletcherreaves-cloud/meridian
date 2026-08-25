@@ -771,9 +771,21 @@ async function fetchShiftsForSchedule(token, scheduleId, weekStart) {
 // the same id `shifts.assignedEmploymentId` points at ("employmentId → name → label
 // ShiftsForSchedulePeriod shifts by person" — the doc's own words). This is the answer to
 // dispatch #123's "is a name field reachable from assignedEmploymentId" investigation: YES, via
-// this query — not an assumption, a real captured response, cited above. See this dispatch's PR
-// body for why that capture stands in for a fresh introspection run (no LIFELENZ_TOKEN was
-// available in the sandbox that wrote this).
+// this query — not an assumption, a real captured response, cited above.
+//
+// 🔧 dispatch #137 fix (2026-08-25): every production run of this query failed with GraphQL
+// error `Field 'employmentsInScheduleTimeRange' doesn't accept argument 'includePayRates'`
+// (measured directly off the live LifeLenz Daily Sync job logs, not guessed), so every roster
+// fetch degraded to ID-only rows and `employee_name` was null for 100% of saved rows — the root
+// cause of the "names are masked" report. This file already learned this exact lesson for the
+// sibling `shifts()` field (see SHIFTS_QUERY's own comment above: "includePayRates is NOT a
+// shifts() argument; it only gates the earnings field via an @include directive"). The same
+// mistake was repeated here for a different field: `includePayRates`/`includeEmploymentAvailability`/
+// `includeEmploymentContracts`/`includeSharedSchedule` were never real arguments to
+// `employmentsInScheduleTimeRange` — they gate optional response fields (employmentRate,
+// employmentAvailability, employmentContracts, sharedSchedule data) via directives, and none of
+// those fields are requested below, so the flags are just dropped rather than reintroduced as
+// unused variables.
 //
 // PII-MINIMIZATION, deliberately: the real Employment type also carries dateOfBirth (a MINOR
 // flag), schoolId, email, and full pay-rate history (employmentRate/employmentRates) — none of
@@ -781,7 +793,7 @@ async function fetchShiftsForSchedule(token, scheduleId, weekStart) {
 // resolve a name, mirroring dispatch #124's own "never request a PII field you don't need"
 // discipline for a completely different endpoint, same principle.
 const EMPLOYMENTS_QUERY = `query GetSchedulableEmploymentsForPeriod($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!, $after: String) {
-  employmentsInScheduleTimeRange(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, includePayRates: false, includeEmploymentAvailability: false, includeEmploymentContracts: false, includeSharedSchedule: true, after: $after) {
+  employmentsInScheduleTimeRange(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, after: $after) {
     edges { node { id computedName firstName lastName } }
     pageInfo { endCursor hasNextPage }
   }
@@ -902,13 +914,23 @@ async function upsertShiftAssignmentRows(loc, rows) {
     is_absent: r.isAbsent, schedule_id: r.scheduleId,
     updated_at: now,
   }));
+  // 🔧 dispatch #137 fix (2026-08-25): Postgres rejects an upsert batch that names the SAME
+  // onConflict key ('loc,shift_id') twice ("ON CONFLICT DO UPDATE command cannot affect row a
+  // second time"), measured directly off production job logs -- this silently zeroed out most
+  // stores' saved rows (472/13688 total). `shiftId` can repeat across this call's input (e.g. a
+  // shift straddling a pagination page, or the same node returned by two adjacent per-week
+  // fetches) -- dedupe on the exact conflict key before upserting, keeping the LAST occurrence
+  // (the most recently fetched copy of that shift).
+  const dedup = new Map();
+  for (const row of upsert) dedup.set(row.shift_id, row);
+  const deduped = [...dedup.values()];
   const CHUNK = 500;
   let saved = 0;
-  for (let i = 0; i < upsert.length; i += CHUNK) {
+  for (let i = 0; i < deduped.length; i += CHUNK) {
     const { error } = await supabase.from('lifelenz_shift_assignments')
-      .upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,shift_id' });
+      .upsert(deduped.slice(i, i + CHUNK), { onConflict: 'loc,shift_id' });
     if (error) { console.warn('[shift-assignments] save error:', error.message); }
-    else saved += Math.min(CHUNK, upsert.length - i);
+    else saved += Math.min(CHUNK, deduped.length - i);
   }
   return saved;
 }
