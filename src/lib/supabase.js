@@ -758,6 +758,44 @@ export async function loadLifeLenzJobHours({ weeksBack = 60, weeksFwd = 4 } = {}
   }));
 }
 
+// ── Crew Schedule Lookup (dispatch #123, names de-tokenized under dispatch #125) — per-employee,
+// per-shift rows ──────────────────────────────────────────────────────────────────────────────
+// Read-only from the client: rows are written only by scripts/lifelenz-pull.mjs's service-role
+// key (lifelenz_shift_assignments has no insert/update/delete policy at all — see
+// supabase/schema-lifelenz-shift-assignments.sql). RLS gates the SELECT the same way every other
+// ordinary operational table in this app does — tenant match + accessible_locs scoping, NOT the
+// identity-reveal-specific tier dispatch #123 originally used (owner directive, dispatch #125:
+// "there is no reason to hide names for scheduling and punch times"). `start`/`end` are
+// 'YYYY-MM-DD' calendar-date strings (DateRangeControl's own shape); `locs` narrows to the
+// current LocationSelector scope.
+export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('lifelenz_shift_assignments').select('*').range(from, to);
+    if (start) q = q.gte('date', start);
+    if (end) q = q.lte('date', end);
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'lifelenz_shift_assignments');
+  return (data || []).map(r => ({
+    loc:                  r.loc,
+    shiftId:               r.shift_id,
+    date:                  r.date,
+    shiftStart:            r.shift_start,
+    shiftEnd:              r.shift_end,
+    assignedEmploymentId:  r.assigned_employment_id,
+    employeeName:          r.employee_name,
+    businessRoleId:        r.business_role_id,
+    roleName:              r.role_name,
+    category:              r.category,
+    code:                  r.code,
+    jobTitle:              r.job_title,
+    isAbsent:              r.is_absent,
+    scheduleId:            r.schedule_id,
+    updatedAt:             r.updated_at,
+  }));
+}
+
 // Save labor rows to Supabase for cross-device persistence and DI calibration history
 export async function saveLaborRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

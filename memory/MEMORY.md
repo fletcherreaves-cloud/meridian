@@ -150,6 +150,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   never persist one, assert-guard the pull script. Split into two dispatches deliberately (LifeLenz
   schedule + panel vs. QSRSoft punch pull, no file overlap) so they can build in parallel; wiring
   punch data into the panel is an explicit later follow-up, not part of either.
+- **🔄 SUPERSEDED same day (2026-08-25): [Dispatch #125 — reverse the tokenization above for the
+  LifeLenz/PR #725 side](dispatch-125.md) + [Dispatch #126 — same reversal for the QSRSoft/PR #724
+  side](dispatch-126.md).** Owner, directly, after #123/#124 shipped tokenized: *"there is no
+  reason to hide names for scheduling and punch times > everyone can see this data as-is."* The
+  paragraph above — "requires routing any employee name through the existing tokenized identity
+  vault... mirroring `securityPanelAccess()`" — is now **history, not the shipped design**:
+  `lifelenz_shift_assignments.emp_token` was replaced with a plain `employee_name` column, the
+  Crew Schedule panel's click-to-reveal step is gone, and its RBAC gate moved from
+  `security.view`/`securityPanelAccess()` to ordinary `analytics.store` panel RBAC (nav visibility
+  + accessible_locs RLS, same as Labor Tools/Calendar Manager — no more panel-specific gate).
+  Identity-vault tokenization itself is UNCHANGED everywhere else (Register Audit, Security panel
+  findings) — this reversal is scoped to these two features only.
 - **📋 (2026-08-25): [Dispatch #122 — Events & Tags: holiday sub-filter + print shows full filtered list](dispatch-122.md)** —
   Owner: *"for Holidays, once selected, add another selector for which holiday... for print, show
   all results in one view."* `EventCalendar` (`store-dash.js`) — each holiday already carries a
@@ -1141,6 +1153,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   `geid` as the always-present fallback join key. Business-day boundary left explicitly
   unconfirmed (no live QSRSoft credentials this session) — table stores raw timestamps, no `dt`
   column, no assumption baked in.
+  🔓 **Partially superseded by dispatch #126** — the identity-resolution PATH above is unchanged,
+  but the resolved name is now stored directly (`qsr_punch_times.employee_name`) instead of being
+  tokenized away by default; see `dispatch-126.md` below.
+- **[Dispatch #126 — reverse identity-vault tokenization for punch times, owner-directed](dispatch-126.md)**
+  — Owner, directly, after #124 shipped tokenized-only: *"there is no reason to hide names for
+  scheduling and punch times > everyone can see this data as-is."* Added `qsr_punch_times.
+  employee_name` (nullable, primary resolved-identity column), populated via the SAME
+  `geid → qsr_employee_tenure.full_employee_name` join #124 already ran, storing the name directly
+  instead of tokenizing it. `emp_token` KEPT (not dropped, no wrong answer either way per the
+  dispatch) — additive, harmless, potential cross-reference key. **Does NOT touch** the punch
+  endpoint's `SELECT_COLS`/`DENIED_SELECT_COLS`/`assertNoDeniedSelectCols()` guard — that SSN/name
+  denylist on `people/time-punches-matched` is a separate, unrelated risk and stays exactly as
+  strict. One-time backfill SQL written (in `supabase/schema-qsr-punch-times.sql`) for rows already
+  collected in production — NOT run from the agent sandbox (no live Supabase credential available),
+  handed off for the owner or a future session with `SUPABASE_SERVICE_ROLE_KEY` to execute.
+  Companion dispatch #125 covers the same reversal on the LifeLenz/crew-schedule side, separately.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`service/statistics` — the one that supersedes `dt-timer`](finding-qsrsoft-service-statistics-endpoint-2026-08-21.md)** —
   Richest of the four service captures. **Build service-times work on this, not `dt-timer`** — it has
   the same DT segments *plus* a `*Trans` denominator per metric, a `*Masked` data-quality count,
