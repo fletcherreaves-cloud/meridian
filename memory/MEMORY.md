@@ -84,7 +84,46 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-25): morning backlog sweep — 3 items dispatched, all pre-verified ready (no owner input needed)** —
+- **🔴 NEWEST (2026-08-25): [Dispatch #113 — HIGH PRIORITY: Promo/Discount ROI's methodology is endogenous, currently live and misleading](dispatch-113.md)** —
+  `matchedLift()` splits days by promo/discount dollar intensity — a variable that is itself a
+  function of that day's sales (spend scales with traffic) — so at a TRUE effect of 0% it reports
+  **+16.5% mean lift, 27/27 stores "paying."** SAGE has already independently refused to trust this
+  screen twice, most recently self-diagnosing the exact reverse-causality bug. Already-shipped
+  dispatch #111 fixed an unrelated sourcing bug and did NOT touch this. Promising lead found: real
+  `type==='promo'` tags already exist in `org_events` with "solid coverage" per dispatch #108's own
+  measurement — investigate whether they're genuinely exogenous (tagged independent of the day's
+  outcome) before building day-of-week matching from scratch. `memory/finding-promo-roi-denominator-
+  bias-2026-08-23.md` is the authoritative writeup — already self-corrected once after an earlier
+  "fix" made the bias worse, not better, in a realistic simulation. Regression bar: must not
+  regress on that same realistic (spend-scales-with-traffic) simulation.
+- **📋 (2026-08-25): [Dispatch #112 — Weekly Count Cadence: count-day population, Last Count column, per-class F/C/P uncounted columns, full-class drilldown](dispatch-112.md)** —
+  Owner's live ask on `CadenceMonitor`/`cadenceFromOnHand` (`eom-dashboard.js`). Found
+  `count-cycle.js`'s `cycleCompliance()` already computes most of what's needed — real, tested
+  mid-month-Paper tracking (`paperThisMonth`/`paperMissing`, exactly the "P if mid month"
+  semantics), per-class counted/active tallies (`perClassCounted`), and a true-most-recent-session
+  concept (`lastAny`) — but `cadenceFromOnHand` never reuses any of it, computing its own narrower
+  Food/Condiment-only `missing` and omitting Paper entirely. "Count day" (`detectedWeekdayName`) is
+  derived only from fully-98%-qualifying sessions, which may be under-populating it — verify live
+  before assuming the fix, per this session's own standing rule. "Last count" has two different
+  existing candidate definitions (`lastAttempt`'s size-priority pick vs. `lastAny`'s pure recency)
+  that don't obviously agree — flagged for the engineer to resolve deliberately, not silently pick.
+- **📋 (2026-08-25): [Dispatch #114 — Wire Product Mix's already-auto-pulled cloud data into its panel](dispatch-114.md)** —
+  `scripts/qsrsoft-pmix-pull.mjs` is a real, scheduled auto-pull already lazy-filling
+  `ds.pmixRows` (`App.js`), but `ProductMixPanel` (`labor-tools.js`) only ever reads the
+  manual-upload `ds.pmixData` blob — confirmed by grep, zero references to `pmixRows` anywhere in
+  the panel. Violates the standing auto-first rule; blocks CLAUDE.md's "Product Mix → Pricing
+  Engine" next-candidate-area note. Scoped to the data-wiring gap only, not the Pricing Engine
+  itself.
+- **📋 (2026-08-25): [Dispatch #115 — Fix the Base Food % tolerance check's metric-definition mismatch](dispatch-115.md)** —
+  `tolerance-status.js`'s `baseFd` check compares `totalBaseFood/sales` (~23-28% real magnitude,
+  shaped like a broad food-cost ratio) against `tFOBBase` (~3.8-4.1% real per-store values — one of
+  FOB's six small variance components, not a broad measure) — a metric-definition mismatch that
+  fires a false CRITICAL on every store, every period, into the Coaching pipeline dispatch #94 just
+  shipped. Already surfaced and explicitly deferred by dispatch #94's own resolution ("flagged
+  prominently... not fixed here") — this dispatch is that deferred fix. Magnitude evidence points
+  toward `tFOBTotal` as the likely correct comparison target, but the dispatch requires tracing
+  `totalBaseFood`'s actual parser/field semantics to confirm, not just magnitude-matching.
+- **📋 (2026-08-25): morning backlog sweep — 3 items dispatched, all pre-verified ready (no owner input needed)** —
   [Dispatch #98](dispatch-98.md) (Inventory Control summary tiles are EOM-only, don't swap to
   Count Cycle's own data when that tab is active — brief already written when #97 landed, never
   picked up; re-verified the root cause is still accurate against current
