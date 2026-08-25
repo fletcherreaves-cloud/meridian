@@ -79,7 +79,9 @@ export const PANELS = [
   // like 'labor-analytics' selects SchedulingHubPanel's Analytics tab and routes to 'sched-hub'.
   // Its own panel component (ForecastAccuracyPanel, src/views/analytics.js) is unchanged.
   { id:'fcst-accuracy', label:'Forecast Accuracy', icon:'🎯', perm:'analytics.forecasting', kind:'hub-tab', section:'forecasting' },
-  { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:8 },
+  // route:true — Dispatch #121: converted from a small ModalShell+iframe to a real URL-addressable
+  // page (RoutePanelShell in App.js), per memory/panel-contract.md's standing conversion rule.
+  { id:'fcst-ref', label:'Fcst Reference', icon:'📐', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:8 },
   // disabledWhen:'noStore' (dispatch #61) -- the one per-item option in the old hand-built
   // shell.js list (`navPBeta('forecast-audit', { disabled: !selStore })`). Declared here so the
   // derived Test Kitchen loop doesn't need to special-case this id -- shell.js maps the key to
