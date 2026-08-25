@@ -1,0 +1,149 @@
+---
+name: dispatch-110
+description: Owner's Speed of Service panel feedback (Notes 69, src/views/dt-speedofservice.js). Four bounded items to ship now -- add an Avg-DT bar to the By-Hour table matching the existing trans bar (plus resizing Store Ranking/By Hour), convert the Weekly DT Trend chart from line to bar, swap the panel's hardcoded 30/60/90-day dropdown for the shared DateRangeControl component (full presets + custom range), and fix a real bug where the weekly trend chart goes stale on patch selection because a Chart.js redraw effect's dependency array doesn't include the actual filtered data. A fifth item -- "pick a metric, page adapts" -- is a major rearchitecture (the whole data layer is hardcoded to the DT/station schema, not routed through the app's generic metric-source.js registry) and is explicitly OUT of this dispatch's scope; noted for a future, separate effort.
+sensitivity: open
+metadata:
+  node_type: memory
+  type: dispatch
+---
+
+# Dispatch #110 — Speed of Service: DT bar, bar-chart conversion, full date range, patch-selector bug fix
+
+## Owner's ask, in full (Notes 69, verbatim)
+
+- *"ByHour - District Avg > Let's add bar for avg dt like you have for trans. Can squeeze Store
+  Ranking panel and enlarge this panel to accommodate."*
+- *"Actually use the bar throughout. I like it. It is visually impactful."*
+- *"Note > This panel can be a case study for displaying other metrics on our list. Maybe even
+  converted or used as a dashboard"* — vision note, not an action item, see the "Not in scope"
+  section below.
+- *"I would like to see all date options if possible, not just 30/60/90"*
+- *"Give me option at top, if we adapt this page, to select metric and dynamically populate the
+  rest from that selection"* — see "Not in scope" below; this is a much bigger project than the
+  rest of this batch.
+- *"When selecting patches, it doesn't seem to change the chart on weekly dt trend"*
+
+**A background investigation (not a live engineer) already found the panel and root-caused the
+bug before this dispatch was written.** The panel is `src/views/dt-speedofservice.js`
+(`DTSpeedOfServicePanel`, `id:'dt-sos'` in `panel-registry.js`) — the only Speed of Service
+component in the repo. Read this whole dispatch; several details below correct assumptions the
+owner's message implies.
+
+## Correction to the owner's mental model: the "bar" isn't a chart
+
+The "By Hour — District Avg" section (~lines 521-552) is an HTML `<table>`, not a Chart.js chart.
+The existing "bar for trans" the owner refers to is a hand-rolled `<div>` sized by
+`Math.round(r.trans / maxTrans * 60)` px, not a chart dataset. This matters for scoping item #1
+below — it's a small, table-cell-level change, not chart configuration.
+
+There are exactly two REAL Chart.js charts in this file: `DtTrendChart` (weekly DT trend, `type:
+'line'`) and `DtDaypartChart` (avg DT by daypart, **already** `type: 'bar'`). Everything else —
+Summary Cards, Station tiles, Store Ranking, By Hour — is plain table/div markup already, no
+chart library involved, and none of it needs a "convert to bar" treatment because it isn't a bar
+OR a line today — it's just numbers/manual bars in a table.
+
+## Scope
+
+### Item 1 — Avg-DT bar in the By-Hour table, resize Store Ranking / By Hour
+
+Add a manual `<div>` bar to the "Avg DT" `<td>` (adjacent to where the existing trans bar lives),
+sized the same way the trans bar already is (`Math.round(r.avg / maxAvg * 60)`, with a new
+`maxAvg = Math.max(1, ...hourData.map(r => r.avg||0))` mirroring the existing `maxTrans`
+computation). Use `dtColor(r.avg)` for the bar's color, matching the existing color-coding
+convention used elsewhere in this file. Then adjust the two panels' `flex` basis values (Store
+Ranking currently `flex:'2 1 400px'`, By Hour currently `flex:'1 1 220px'`) to give By Hour more
+room now that it carries two bars per row instead of one — exact new ratios are an implementation
+choice, but confirm both tables stay legible at the app's normal viewport widths.
+
+### Item 2 — Convert the Weekly DT Trend chart from line to bar
+
+`DtTrendChart` (`type:'line'`) is the one remaining non-bar chart in this panel; `DtDaypartChart`
+is already a bar chart, matching the owner's "use the bar throughout" preference. Convert
+`DtTrendChart` to `type:'bar'`. **This has real design complexity the owner's one-line ask doesn't
+address — work through it, don't just flip the `type` string:**
+- The chart has 3 modes (`avg` = single district/scope line, `store` = one series per store,
+  `patch` = one series per patch) plus two dashed horizontal reference lines (200s target / 240s
+  caution, via a `refLine()` helper). A bar chart needs a real design decision for how the
+  multi-series `store`/`patch` modes render — grouped bars per week, or keep those two modes as a
+  line/mixed chart and only convert the single-series `avg` mode to bars, since that's the one
+  most directly comparable to `DtDaypartChart`'s existing single-series bar treatment. Reference
+  lines translate directly to Chart.js annotation/threshold lines either way.
+- **Verify the underlying weekly-average computation is unaffected by the type change** — this is
+  a pure rendering change, the data pipeline (`weeks`/`series` `useMemo`) must produce identical
+  numbers before and after.
+
+### Item 3 — Full date-range options (not just 30/60/90)
+
+Confirmed: this panel hardcodes its own `PERIODS = [30d, 60d, 90d]`, rendered as a plain
+`<select>`. A shared, fuller component already exists and is already adopted by other panels this
+session touched (Security, Form Completions): `DateRangeControl` in
+`src/components/PanelControls.js`, backed by `DATE_RANGE_PRESETS` (7/14/28/30/60/90/180 days) plus
+an `allowCustom` start/end date picker. **Reuse it, don't build a new one** — swap the local
+`PERIODS`/`<select>` for `h(DateRangeControl, {...})`, matching `security-panel.js`'s or
+`forms-panel.js`'s existing usage pattern. This requires adapting `loadDtHistory(days)`
+(`src/lib/supabase.js`) to accept a resolved date range (`{s,e}` or equivalent) instead of a bare
+day count — check both call sites and every other consumer of `loadDtHistory` before changing its
+signature, so this doesn't silently break another panel that reuses the same loader.
+
+### Item 4 — Fix the patch-selector bug on Weekly DT Trend (real, root-caused)
+
+**Confirmed bug, not a misunderstanding.** The org/patch filter correctly flows through
+`activeLocs` into `DtTrendChart`'s own `useMemo` (which correctly recomputes `weeks`/`series` on
+every patch change) — the data pipeline is NOT the problem. The bug is in the shared `useChart`
+hook's imperative Chart.js redraw: `useChart(ref, canvas => {...}, [weeks.join(','),
+series.length, mode])`. In the default `'avg'` trend mode, `series` always has exactly one entry
+regardless of scope, and `weeks.join(',')` (the set of week-start dates with any qualifying row)
+usually stays identical across patch switches too — so neither dependency changes, the effect
+never re-fires, and the Chart.js canvas keeps rendering the previous patch's stale line even
+though the underlying `series` data genuinely changed. **Fix: add the actual filtered data (or
+`activeLocs.join(',')`) to `useChart`'s dependency array** so a content change — not just a
+shape change — triggers the redraw. Verify this doesn't regress the `store`/`patch` trend modes,
+which happened to "work" more often only because `series.length` frequently does change in those
+modes (different failure surface, same root cause — fix the dependency array once, correctly, for
+all three modes).
+
+## Not in scope for this dispatch — noted, not built
+
+**"Give me option at top... select metric and dynamically populate the rest"** and the related
+**"this panel can be a case study... converted or used as a dashboard"** note: the investigation
+found this is a **major rearchitecture**, not a bounded feature. `DtTrendChart`/`DtDaypartChart`'s
+rendering plumbing is reasonably generic, but the entire data layer — `loadDtHistory`'s hardcoded
+Supabase column list (`dt_untilserve`/`fc_untilserve`/`mfy1_untilserve`/`mfy2_untilserve`/
+`bev_untilserve` + matching `*_trans_cnt` pairs), the per-station field-name mapping, the hour/
+daypart bucket definitions, and every aggregation formula — is hardcoded to this one metric
+family's exact schema shape (hourly, per-station, `dt_daily_activity`-sourced). None of it routes
+through the app's generic `metric-source.js` `METRIC_SOURCES` registry, which most other panels
+this session already use and which already has OEPE/R2P as resolver-driven keys. A real "pick any
+metric, page adapts" version needs a new hourly/station-rollup data-fetch abstraction generalized
+across `METRIC_SOURCES` keys (most of which aren't even hour-slot-granular in the schema) — this
+is its own dispatch-scale project, not a dropdown. **Do not attempt it here.** If a future session
+picks this up, this dispatch's Item 2 (line→bar conversion) is a natural design precedent to reuse
+for whatever the generalized version's chart rendering looks like.
+
+## Verification bar
+
+- Item 1: render the real panel, confirm the Avg DT column now shows a bar sized proportionally
+  the same way the trans bar already is, and confirm Store Ranking / By Hour both remain legible
+  at normal widths.
+- Item 2: render the real panel, confirm the weekly trend now renders as bars (in at least the
+  `avg` mode), confirm the underlying weekly averages are byte-identical to the pre-change line
+  chart's values (spot-check by hand against raw data for at least one week/store), confirm
+  reference lines still render.
+- Item 3: render the real panel, confirm all 7 presets plus custom start/end are selectable and
+  each actually changes the loaded data range; confirm no other `loadDtHistory` consumer broke.
+- Item 4: render the real panel, switch patches in `avg` mode, confirm the weekly trend chart
+  visibly updates (not just the data changing invisibly) — this is the exact bug report, verify
+  the fix against the actual reported symptom, not just against the code diff. Also verify `store`
+  and `patch` trend modes still update correctly.
+- Full suite green, `npm run build` clean, before/after entry-chunk gzip numbers in the commit body.
+
+## Do NOT
+
+- **Do not attempt the "pick a metric, page adapts" redesign in this dispatch** — it's a
+  rearchitecture, scope it separately if picked up later.
+- **Do not convert anything already table/div-based** (Summary Cards, Station tiles, Store
+  Ranking, By Hour) to a "bar chart" — those aren't charts, the owner's "use the bar throughout"
+  ask is fully satisfied by items 1 (adds a second manual bar) and 2 (the one remaining line
+  chart) once both land.
+- **Do not change `loadDtHistory`'s signature without checking every existing call site** — it's
+  a shared loader; a signature change ripples.
