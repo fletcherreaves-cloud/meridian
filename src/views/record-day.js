@@ -1,10 +1,14 @@
 // @ts-nocheck
 import * as React from 'react';
-import { sName, STORE_NAMES } from '../constants.js';
+import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { dKey, businessDate } from '../utils/date.js';
 import { fN } from '../utils/fmt.js';
 import { metricSeries, dailyDataFreshness } from '../engine/metric-source.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
+// Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
+// standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
+// at all before this dispatch.
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 
 // ExportDropdown lives in store-dash.js -- a 145 KB module (+ the chart.js/auto runtime it
 // pulls in) that App.js deliberately keeps OUT of the entry chunk via a dynamic `import()`
@@ -384,7 +388,33 @@ function computeRecords(ds, windowDays) {
   const merged   = mergeStores(saved?.stores, computed);
   saveMerged(merged);
 
-  // ── District heroes ───────────────────────────────────────────────
+  // ── Top days ──────────────────────────────────────────────────────
+  const topDays = [...days].sort((a,b)=>b.sales-a.sales).slice(0,20);
+
+  return {
+    stores: merged,
+    recentBreakers,
+    topDays,
+    // `days` (every store-day the scan built, unfiltered) is exposed alongside topDays so a
+    // location-scoped view (dispatch #136 Part 2) can re-derive a scoped Top Days list -- the
+    // district-wide top-20 filtered post-hoc to one store would usually come back near-empty,
+    // not "this store's top 20." Same input the district's own topDays came from, just not yet
+    // sliced to 20 or district-wide sorted.
+    days,
+    ...districtHeroes(merged),
+    dataEnd, windowDays,
+    totalStores: Object.keys(merged).length,
+    savedAt: saved?.savedAt,
+  };
+}
+
+// ── District heroes ────────────────────────────────────────────────────────
+// Pure: the single best-in-district value per metric, given a store→record map. Extracted out of
+// computeRecords (dispatch #136 Part 2) so a location-scoped view can re-pick district champions
+// from a narrowed store set using the EXACT same selection logic, without re-running any of the
+// record detection/scoring above it (per the dispatch's "do not touch computeRecords()'s scoring
+// logic beyond location filtering" -- this only re-selects a max over already-scored records).
+function districtHeroes(storesMap) {
   let distSalesDay  = { val:0, loc:null, dk:null };
   let distSalesWeek = { val:0, loc:null, wdk:null };
   let distSalesMo   = { val:0, loc:null, ym:null };
@@ -394,7 +424,7 @@ function computeRecords(ds, windowDays) {
   let distR2p       = { val:Infinity, loc:null, dk:null };
   let distAvgChk    = { val:0, loc:null, dk:null };
 
-  for (const [loc, r] of Object.entries(merged)) {
+  for (const [loc, r] of Object.entries(storesMap || {})) {
     if ((r.sales?.day?.val||0)   > distSalesDay.val)  distSalesDay  = {...r.sales.day,   loc};
     if ((r.sales?.week?.val||0)  > distSalesWeek.val) distSalesWeek = {...r.sales.week,  loc};
     if ((r.sales?.month?.val||0) > distSalesMo.val)   distSalesMo   = {...r.sales.month, loc};
@@ -405,18 +435,39 @@ function computeRecords(ds, windowDays) {
     if ((r.avgChk?.day?.val||0)  > distAvgChk.val)   distAvgChk    = {...r.avgChk.day,  loc};
   }
 
-  // ── Top days ──────────────────────────────────────────────────────
-  const topDays = [...days].sort((a,b)=>b.sales-a.sales).slice(0,20);
+  return { distSalesDay, distSalesWeek, distSalesMo, distGCDay, distOepe, distKvs, distR2p, distAvgChk };
+}
+
+// ── Location scoping (dispatch #136 Part 2) ─────────────────────────────────
+// Pure: narrow a full computeRecords() result to one location scope. `locs` is null for "All
+// Locations" (returns `data` unchanged -- no filtering, no re-derivation, byte-identical to
+// today's always-full-district behavior). Never touches record detection: `stores` entries are
+// already-computed per-store records (computeRecords' own per-store loop is untouched), this
+// just picks which of them are in view, re-derives Top Days from the underlying `days` (so a
+// single-store scope shows THAT store's top 20, not the district top-20 filtered down to
+// whatever few of them happen to be that store's), and re-picks district champions via
+// districtHeroes() over the narrowed store set.
+function scopeRecordData(data, locs) {
+  if (!data || !locs) return data;
+  const locSet = new Set(locs.map(String));
+
+  const stores = {};
+  for (const [loc, r] of Object.entries(data.stores)) {
+    if (locSet.has(String(loc))) stores[loc] = r;
+  }
+  const recentBreakers = data.recentBreakers.filter(b => locSet.has(String(b.loc)));
+  const topDays = [...(data.days || [])]
+    .filter(d => locSet.has(String(d.loc)))
+    .sort((a,b) => b.sales - a.sales)
+    .slice(0, 20);
 
   return {
-    stores: merged,
+    ...data,
+    stores,
     recentBreakers,
     topDays,
-    distSalesDay, distSalesWeek, distSalesMo,
-    distGCDay, distOepe, distKvs, distR2p, distAvgChk,
-    dataEnd, windowDays,
-    totalStores: Object.keys(merged).length,
-    savedAt: saved?.savedAt,
+    ...districtHeroes(stores),
+    totalStores: Object.keys(stores).length,
   };
 }
 
@@ -479,31 +530,67 @@ function SortTH({ label, sk, sortKey, onSort, right }) {
   }, label + (active ? ' ▾' : ''));
 }
 
+// ── Recent-record highlighting (dispatch #136 Part 2 item 3) ────────────────
+// Owner: "highlight recent breaks on any method printed and displayed... highlight, use a new
+// record set chip, or something that will look good" -- mechanism deliberately left open.
+// Chosen mechanism: a small "🔥 NEW" text+border chip next to any record value that ALSO appears
+// in `recentBreakers`, on every tab that shows a record (not just Recent Breaks), plus the same
+// chip rendered into the print report's tables. Chosen over a background-tint cell because a
+// background-only signal doesn't survive print by default (dispatch #129's own finding --
+// print-color-adjust defaults to 'economy', unset anywhere in this codebase); a chip built from
+// real glyphs/text/border prints exactly as it displays, with no extra CSS required.
+//
+// "Recent" is NOT a second definition -- it's a lookup straight off `recentBreakers`, which is
+// already exactly "beat within windowDays of the freshest data" (RecentBreakersTab's own,
+// existing control). Keyed on loc|type|dk using the SAME date-key flagRecent used when it
+// created the entry (day dk, week wdk, or month ym+'-01' -- see the day/week/month flagRecent
+// calls above), so a chip lights up only for the exact record cell that broke within the window.
+function buildBreakIndex(recentBreakers) {
+  const set = new Set();
+  for (const b of (recentBreakers || [])) set.add(`${b.loc}|${b.type}|${b.dk}`);
+  return set;
+}
+function isRecentBreak(idx, loc, type, dk) {
+  return !!dk && idx.has(`${loc}|${type}|${dk}`);
+}
+const CHIP_STYLE = { display:'inline-flex', alignItems:'center', fontSize:9, fontWeight:800,
+  color:'#f59e0b', border:'1.5px solid #f59e0b', borderRadius:4, padding:'0 4px', marginLeft:5,
+  whiteSpace:'nowrap', verticalAlign:'middle', lineHeight:'14px' };
+function RecentBreakChip({ show }) {
+  return show ? span({ style:CHIP_STYLE, title:'Broken within the current Recent Breaks window' }, '🔥 NEW') : null;
+}
+// Print-report equivalent -- same glyph/border chip, inline HTML (no meridian.css available in
+// the print window).
+function chipHtml(show) {
+  return show ? ' <span style="display:inline-block;font-size:9px;font-weight:800;color:#b45309;border:1.5px solid #b45309;border-radius:4px;padding:0 4px;margin-left:4px;white-space:nowrap">🔥 NEW</span>' : '';
+}
+
 // ── Hero Grid ─────────────────────────────────────────────────────────────────
 
-function HeroCard({ label, val, sub }) {
+function HeroCard({ label, val, sub, broken }) {
   return div({ style:S.heroCard },
     div({ style:S.heroLbl }, label),
-    div({ style:S.heroVal }, val || '—'),
+    div({ style:S.heroVal }, val || '—', h(RecentBreakChip, { show:broken })),
     div({ style:S.heroSub }, sub || ''),
   );
 }
 
-function HeroGrid({ data }) {
+function HeroGrid({ data, breakIndex }) {
   const { distSalesDay, distSalesWeek, distSalesMo, distGCDay, distOepe, distKvs, distR2p, distAvgChk } = data;
+  const brk = (loc, type, dk) => isRecentBreak(breakIndex, loc, type, dk);
   return div({},
     div({ style:S.sLbl }, 'District All-Time Champions'),
     div({ style:S.heroGrid },
-      h(HeroCard,{ label:'🏆 Best Day Sales',  val:distSalesDay?.val?f$2(distSalesDay.val):'—',  sub:distSalesDay?.loc?`${sName(distSalesDay.loc)} · ${fDate(distSalesDay.dk)}`:'' }),
-      h(HeroCard,{ label:'📅 Best Week Sales',  val:distSalesWeek?.val?f$2(distSalesWeek.val):'—', sub:distSalesWeek?.loc?`${sName(distSalesWeek.loc)} · ${fWeekLabel(distSalesWeek.wdk)}`:'' }),
-      h(HeroCard,{ label:'📊 Best Month Sales', val:distSalesMo?.val?f$2(distSalesMo.val):'—',    sub:distSalesMo?.loc?`${sName(distSalesMo.loc)} · ${fMonthLabel(distSalesMo.ym)}`:'' }),
-      h(HeroCard,{ label:'👥 Best GC Day',      val:distGCDay?.val?fGC(distGCDay.val):'—',       sub:distGCDay?.loc?`${sName(distGCDay.loc)} · ${fDate(distGCDay.dk)}`:'' }),
+      h(HeroCard,{ label:'🏆 Best Day Sales',  val:distSalesDay?.val?f$2(distSalesDay.val):'—',  sub:distSalesDay?.loc?`${sName(distSalesDay.loc)} · ${fDate(distSalesDay.dk)}`:'', broken:brk(distSalesDay?.loc,'Sales Day',distSalesDay?.dk) }),
+      h(HeroCard,{ label:'📅 Best Week Sales',  val:distSalesWeek?.val?f$2(distSalesWeek.val):'—', sub:distSalesWeek?.loc?`${sName(distSalesWeek.loc)} · ${fWeekLabel(distSalesWeek.wdk)}`:'', broken:brk(distSalesWeek?.loc,'Sales Week',distSalesWeek?.wdk) }),
+      h(HeroCard,{ label:'📊 Best Month Sales', val:distSalesMo?.val?f$2(distSalesMo.val):'—',    sub:distSalesMo?.loc?`${sName(distSalesMo.loc)} · ${fMonthLabel(distSalesMo.ym)}`:'', broken:brk(distSalesMo?.loc,'Sales Month',distSalesMo?.ym?distSalesMo.ym+'-01':null) }),
+      h(HeroCard,{ label:'👥 Best GC Day',      val:distGCDay?.val?fGC(distGCDay.val):'—',       sub:distGCDay?.loc?`${sName(distGCDay.loc)} · ${fDate(distGCDay.dk)}`:'', broken:brk(distGCDay?.loc,'GC Day',distGCDay?.dk) }),
     ),
     div({ style:{ ...S.heroGrid, marginTop:12 } },
-      h(HeroCard,{ label:'⚡ Best OEPE',    val:distOepe?.val<Infinity?fSec(distOepe.val):'—',  sub:distOepe?.loc?`${sName(distOepe.loc)} · ${fDate(distOepe.dk)}`:'' }),
-      h(HeroCard,{ label:'🍟 Best KVS',     val:distKvs?.val<Infinity?fSec(distKvs.val):'—',   sub:distKvs?.loc?`${sName(distKvs.loc)} · ${fDate(distKvs.dk)}`:'' }),
-      h(HeroCard,{ label:'📦 Best R2P',     val:distR2p?.val<Infinity?fSec(distR2p.val):'—',   sub:distR2p?.loc?`${sName(distR2p.loc)} · ${fDate(distR2p.dk)}`:'' }),
-      h(HeroCard,{ label:'💰 Best Avg Check',val:distAvgChk?.val?f$2(distAvgChk.val):'—',       sub:distAvgChk?.loc?`${sName(distAvgChk.loc)} · ${fDate(distAvgChk.dk)}`:'' }),
+      h(HeroCard,{ label:'⚡ Best OEPE',    val:distOepe?.val<Infinity?fSec(distOepe.val):'—',  sub:distOepe?.loc?`${sName(distOepe.loc)} · ${fDate(distOepe.dk)}`:'', broken:brk(distOepe?.loc,'OEPE',distOepe?.dk) }),
+      h(HeroCard,{ label:'🍟 Best KVS',     val:distKvs?.val<Infinity?fSec(distKvs.val):'—',   sub:distKvs?.loc?`${sName(distKvs.loc)} · ${fDate(distKvs.dk)}`:'', broken:brk(distKvs?.loc,'KVS',distKvs?.dk) }),
+      h(HeroCard,{ label:'📦 Best R2P',     val:distR2p?.val<Infinity?fSec(distR2p.val):'—',   sub:distR2p?.loc?`${sName(distR2p.loc)} · ${fDate(distR2p.dk)}`:'', broken:brk(distR2p?.loc,'R2P',distR2p?.dk) }),
+      h(HeroCard,{ label:'💰 Best Avg Check',val:distAvgChk?.val?f$2(distAvgChk.val):'—',       sub:distAvgChk?.loc?`${sName(distAvgChk.loc)} · ${fDate(distAvgChk.dk)}`:'', broken:brk(distAvgChk?.loc,'Avg Check',distAvgChk?.dk) }),
     ),
   );
 }
@@ -594,7 +681,7 @@ function RecentBreakersTab({ data, windowDays, onWindowChange }) {
 
 // ── Sales & Volume tab ────────────────────────────────────────────────────────
 
-function SalesVolumeTab({ data }) {
+function SalesVolumeTab({ data, breakIndex }) {
   const [sortKey, setSortKey] = useState('salesDay');
   const { stores } = data;
 
@@ -635,14 +722,14 @@ function SalesVolumeTab({ data }) {
               const r=stores[loc];
               return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
                 td({style:{...S.td,fontWeight:500}}, sName(loc)),
-                td({style:{...S.tdR,fontWeight:600,color:sortKey==='salesDay'?'var(--acc)':'var(--txt)'}}, r.sales?.day?.val?f$2(r.sales.day.val):'—'),
+                td({style:{...S.tdR,fontWeight:600,color:sortKey==='salesDay'?'var(--acc)':'var(--txt)'}}, r.sales?.day?.val?f$2(r.sales.day.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Sales Day',r.sales?.day?.dk)})),
                 td({style:S.tdM}, fDateShort(r.sales?.day?.dk)),
-                td({style:{...S.tdR,color:sortKey==='salesWeek'?'var(--acc)':'var(--txt)'}}, r.sales?.week?.val?f$2(r.sales.week.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='salesWeek'?'var(--acc)':'var(--txt)'}}, r.sales?.week?.val?f$2(r.sales.week.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Sales Week',r.sales?.week?.wdk)})),
                 td({style:S.tdM}, r.sales?.week?.wdk?fDateShort(r.sales.week.wdk):'—'),
-                td({style:{...S.tdR,color:sortKey==='salesMonth'?'var(--acc)':'var(--txt)'}}, r.sales?.month?.val?f$2(r.sales.month.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='salesMonth'?'var(--acc)':'var(--txt)'}}, r.sales?.month?.val?f$2(r.sales.month.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Sales Month',r.sales?.month?.ym?r.sales.month.ym+'-01':null)})),
                 td({style:S.tdM}, fMonthLabel(r.sales?.month?.ym)),
-                td({style:{...S.tdR,color:sortKey==='bf'?'var(--acc)':'var(--txt)'}}, r.bf?.day?.val?f$2(r.bf.day.val):'—'),
-                td({style:{...S.tdR,color:sortKey==='avgChk'?'var(--acc)':'var(--txt)'}}, r.avgChk?.day?.val?f$2(r.avgChk.day.val):'—'),
+                td({style:{...S.tdR,color:sortKey==='bf'?'var(--acc)':'var(--txt)'}}, r.bf?.day?.val?f$2(r.bf.day.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Breakfast Sales',r.bf?.day?.dk)})),
+                td({style:{...S.tdR,color:sortKey==='avgChk'?'var(--acc)':'var(--txt)'}}, r.avgChk?.day?.val?f$2(r.avgChk.day.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'Avg Check',r.avgChk?.day?.dk)})),
               );
             }),
           ),
@@ -667,7 +754,7 @@ function SalesVolumeTab({ data }) {
               const r=stores[loc];
               return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
                 td({style:{...S.td,fontWeight:500}}, sName(loc)),
-                td({style:{...S.tdR,fontWeight:600,color:sortKey==='gcDay'?'var(--acc)':'var(--txt)'}}, r.gc?.day?.val?fGC(r.gc.day.val):'—'),
+                td({style:{...S.tdR,fontWeight:600,color:sortKey==='gcDay'?'var(--acc)':'var(--txt)'}}, r.gc?.day?.val?fGC(r.gc.day.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'GC Day',r.gc?.day?.dk)})),
                 td({style:S.tdM}, fDateShort(r.gc?.day?.dk)),
                 td({style:{...S.tdR,color:sortKey==='gcWeek'?'var(--acc)':'var(--txt)'}}, r.gc?.week?.val?fGC(r.gc.week.val):'—'),
                 td({style:S.tdM}, r.gc?.week?.wdk?fDateShort(r.gc.week.wdk):'—'),
@@ -684,7 +771,7 @@ function SalesVolumeTab({ data }) {
 
 // ── Speed tab ────────────────────────────────────────────────────────────────
 
-function SpeedTab({ data }) {
+function SpeedTab({ data, breakIndex }) {
   const [sortKey, setSortKey] = useState('oepe');
   const { stores } = data;
 
@@ -718,11 +805,11 @@ function SpeedTab({ data }) {
             const oepe=r.speed?.oepe, kvs=r.speed?.kvs, r2p=r.speed?.r2p;
             return tr({ key:loc, style:{background:i%2?'':'rgba(255,255,255,.015)'} },
               td({style:{...S.td,fontWeight:500}}, sName(loc)),
-              td({style:{...S.tdR,fontWeight:600,color:sortKey==='oepe'?'var(--acc)':'var(--txt)'}}, oepe?.val?fSec(oepe.val):'—'),
+              td({style:{...S.tdR,fontWeight:600,color:sortKey==='oepe'?'var(--acc)':'var(--txt)'}}, oepe?.val?fSec(oepe.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'OEPE',oepe?.dk)})),
               td({style:S.tdM}, fDateShort(oepe?.dk)),
-              td({style:{...S.tdR,color:sortKey==='kvs'?'var(--acc)':'var(--txt)'}},  kvs?.val?fSec(kvs.val):'—'),
+              td({style:{...S.tdR,color:sortKey==='kvs'?'var(--acc)':'var(--txt)'}},  kvs?.val?fSec(kvs.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'KVS',kvs?.dk)})),
               td({style:S.tdM}, fDateShort(kvs?.dk)),
-              td({style:{...S.tdR,color:sortKey==='r2p'?'var(--acc)':'var(--txt)'}},  r2p?.val?fSec(r2p.val):'—'),
+              td({style:{...S.tdR,color:sortKey==='r2p'?'var(--acc)':'var(--txt)'}},  r2p?.val?fSec(r2p.val):'—', h(RecentBreakChip,{show:isRecentBreak(breakIndex,loc,'R2P',r2p?.dk)})),
               td({style:S.tdM}, fDateShort(r2p?.dk)),
             );
           }),
@@ -734,7 +821,7 @@ function SpeedTab({ data }) {
 
 // ── Day of Week tab ───────────────────────────────────────────────────────────
 
-function DOWTab({ data }) {
+function DOWTab({ data, breakIndex }) {
   const [dow,     setDow]     = useState(1); // default: Monday
   const [metric,  setMetric]  = useState('sales');
   const { stores } = data;
@@ -781,7 +868,8 @@ function DOWTab({ data }) {
                   td({style:{...S.td,fontWeight:500}}, sName(r.loc)),
                   td({style:S.tdM}, fDate(r.dk)),
                   td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}},
-                    metric==='sales'?f$2(r.val):fGC(r.val)),
+                    metric==='sales'?f$2(r.val):fGC(r.val),
+                    h(RecentBreakChip,{show:isRecentBreak(breakIndex,r.loc,`DOW ${metric==='sales'?'Sales':'GC'} (${DOW_SHORT[dow]})`,r.dk)})),
                 ),
               ),
             ),
@@ -797,7 +885,7 @@ function DOWTab({ data }) {
 
 // ── Top Days tab ──────────────────────────────────────────────────────────────
 
-function TopDaysTab({ data }) {
+function TopDaysTab({ data, breakIndex }) {
   const { topDays } = data;
   return div({ style:{ display:'flex',flexDirection:'column',gap:16 } },
     div({ style:S.sLbl }, `District Top ${topDays.length} Sales Days — All Time`),
@@ -816,7 +904,7 @@ function TopDaysTab({ data }) {
               td({style:{...S.td,color:i<3?'var(--acc)':'var(--txt3)',fontWeight:700}}, i+1),
               td({style:S.td}, sName(d.loc)),
               td({style:S.td}, fDate(d.dk)),
-              td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, f$2(d.sales)),
+              td({style:{...S.tdR,fontWeight:600,color:i===0?'var(--acc)':'var(--txt)'}}, f$2(d.sales), h(RecentBreakChip,{show:isRecentBreak(breakIndex,d.loc,'Sales Day',d.dk)})),
               td({style:S.tdR}, d.gc?fGC(d.gc):'—'),
             ),
           ),
@@ -960,23 +1048,27 @@ function reportSection(title, bodyHtml) {
 function buildFullReportHtml(data, windowDays) {
   const now = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const through = fDate(dKey(data.dataEnd));
+  // Dispatch #136 Part 2 item 3 -- the SAME recent-break lookup the on-screen tabs use (see
+  // buildBreakIndex above), so the print report's "🔥 NEW" chip lights up on exactly the same
+  // cells the live panel highlights, not a second recency rule.
+  const idx = buildBreakIndex(data.recentBreakers);
 
-  const heroCard = (label, val, sub) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+  const heroCard = (label, val, sub, chip) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
     <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
-    <div style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:2px">${val||'—'}</div>
+    <div style="font-size:17px;font-weight:800;color:#0f172a;margin-bottom:2px">${val||'—'}${chip||''}</div>
     <div style="font-size:10px;color:#6b7280">${esc(sub||'')}</div>
   </div>`;
   const heroSection = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
-      ${heroCard('🏆 Best Day Sales', data.distSalesDay.val?f$2(data.distSalesDay.val):'—', data.distSalesDay.loc?`${sName(data.distSalesDay.loc)} · ${fDate(data.distSalesDay.dk)}`:'')}
-      ${heroCard('📅 Best Week Sales', data.distSalesWeek.val?f$2(data.distSalesWeek.val):'—', data.distSalesWeek.loc?`${sName(data.distSalesWeek.loc)} · ${fWeekLabel(data.distSalesWeek.wdk)}`:'')}
-      ${heroCard('📊 Best Month Sales', data.distSalesMo.val?f$2(data.distSalesMo.val):'—', data.distSalesMo.loc?`${sName(data.distSalesMo.loc)} · ${fMonthLabel(data.distSalesMo.ym)}`:'')}
-      ${heroCard('👥 Best GC Day', data.distGCDay.val?fGC(data.distGCDay.val):'—', data.distGCDay.loc?`${sName(data.distGCDay.loc)} · ${fDate(data.distGCDay.dk)}`:'')}
+      ${heroCard('🏆 Best Day Sales', data.distSalesDay.val?f$2(data.distSalesDay.val):'—', data.distSalesDay.loc?`${sName(data.distSalesDay.loc)} · ${fDate(data.distSalesDay.dk)}`:'', chipHtml(isRecentBreak(idx,data.distSalesDay.loc,'Sales Day',data.distSalesDay.dk)))}
+      ${heroCard('📅 Best Week Sales', data.distSalesWeek.val?f$2(data.distSalesWeek.val):'—', data.distSalesWeek.loc?`${sName(data.distSalesWeek.loc)} · ${fWeekLabel(data.distSalesWeek.wdk)}`:'', chipHtml(isRecentBreak(idx,data.distSalesWeek.loc,'Sales Week',data.distSalesWeek.wdk)))}
+      ${heroCard('📊 Best Month Sales', data.distSalesMo.val?f$2(data.distSalesMo.val):'—', data.distSalesMo.loc?`${sName(data.distSalesMo.loc)} · ${fMonthLabel(data.distSalesMo.ym)}`:'', chipHtml(isRecentBreak(idx,data.distSalesMo.loc,'Sales Month',data.distSalesMo.ym?data.distSalesMo.ym+'-01':null)))}
+      ${heroCard('👥 Best GC Day', data.distGCDay.val?fGC(data.distGCDay.val):'—', data.distGCDay.loc?`${sName(data.distGCDay.loc)} · ${fDate(data.distGCDay.dk)}`:'', chipHtml(isRecentBreak(idx,data.distGCDay.loc,'GC Day',data.distGCDay.dk)))}
     </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
-      ${heroCard('⚡ Best OEPE', data.distOepe.val<Infinity?fSec(data.distOepe.val):'—', data.distOepe.loc?`${sName(data.distOepe.loc)} · ${fDate(data.distOepe.dk)}`:'')}
-      ${heroCard('🍟 Best KVS', data.distKvs.val<Infinity?fSec(data.distKvs.val):'—', data.distKvs.loc?`${sName(data.distKvs.loc)} · ${fDate(data.distKvs.dk)}`:'')}
-      ${heroCard('📦 Best R2P', data.distR2p.val<Infinity?fSec(data.distR2p.val):'—', data.distR2p.loc?`${sName(data.distR2p.loc)} · ${fDate(data.distR2p.dk)}`:'')}
-      ${heroCard('💰 Best Avg Check', data.distAvgChk.val?f$2(data.distAvgChk.val):'—', data.distAvgChk.loc?`${sName(data.distAvgChk.loc)} · ${fDate(data.distAvgChk.dk)}`:'')}
+      ${heroCard('⚡ Best OEPE', data.distOepe.val<Infinity?fSec(data.distOepe.val):'—', data.distOepe.loc?`${sName(data.distOepe.loc)} · ${fDate(data.distOepe.dk)}`:'', chipHtml(isRecentBreak(idx,data.distOepe.loc,'OEPE',data.distOepe.dk)))}
+      ${heroCard('🍟 Best KVS', data.distKvs.val<Infinity?fSec(data.distKvs.val):'—', data.distKvs.loc?`${sName(data.distKvs.loc)} · ${fDate(data.distKvs.dk)}`:'', chipHtml(isRecentBreak(idx,data.distKvs.loc,'KVS',data.distKvs.dk)))}
+      ${heroCard('📦 Best R2P', data.distR2p.val<Infinity?fSec(data.distR2p.val):'—', data.distR2p.loc?`${sName(data.distR2p.loc)} · ${fDate(data.distR2p.dk)}`:'', chipHtml(isRecentBreak(idx,data.distR2p.loc,'R2P',data.distR2p.dk)))}
+      ${heroCard('💰 Best Avg Check', data.distAvgChk.val?f$2(data.distAvgChk.val):'—', data.distAvgChk.loc?`${sName(data.distAvgChk.loc)} · ${fDate(data.distAvgChk.dk)}`:'', chipHtml(isRecentBreak(idx,data.distAvgChk.loc,'Avg Check',data.distAvgChk.dk)))}
     </div>`;
 
   const recentRows = data.recentBreakers.map(b => {
@@ -991,13 +1083,13 @@ function buildFullReportHtml(data, windowDays) {
   const salesLocs = Object.keys(data.stores).sort((a,b) => (data.stores[b].sales?.day?.val||0) - (data.stores[a].sales?.day?.val||0));
   const salesRows = salesLocs.map(loc => {
     const r = data.stores[loc];
-    return [esc(sName(loc)), r.sales?.day?.val?`<b>${f$2(r.sales.day.val)}</b>`:'—', fDateShort(r.sales?.day?.dk),
-      r.sales?.week?.val?f$2(r.sales.week.val):'—', r.sales?.week?.wdk?fDateShort(r.sales.week.wdk):'—',
-      r.sales?.month?.val?f$2(r.sales.month.val):'—', fMonthLabel(r.sales?.month?.ym)];
+    return [esc(sName(loc)), (r.sales?.day?.val?`<b>${f$2(r.sales.day.val)}</b>`:'—')+chipHtml(isRecentBreak(idx,loc,'Sales Day',r.sales?.day?.dk)), fDateShort(r.sales?.day?.dk),
+      (r.sales?.week?.val?f$2(r.sales.week.val):'—')+chipHtml(isRecentBreak(idx,loc,'Sales Week',r.sales?.week?.wdk)), r.sales?.week?.wdk?fDateShort(r.sales.week.wdk):'—',
+      (r.sales?.month?.val?f$2(r.sales.month.val):'—')+chipHtml(isRecentBreak(idx,loc,'Sales Month',r.sales?.month?.ym?r.sales.month.ym+'-01':null)), fMonthLabel(r.sales?.month?.ym)];
   });
   const gcRows = salesLocs.map(loc => {
     const r = data.stores[loc];
-    return [esc(sName(loc)), r.gc?.day?.val?`<b>${fGC(r.gc.day.val)}</b>`:'—', fDateShort(r.gc?.day?.dk),
+    return [esc(sName(loc)), (r.gc?.day?.val?`<b>${fGC(r.gc.day.val)}</b>`:'—')+chipHtml(isRecentBreak(idx,loc,'GC Day',r.gc?.day?.dk)), fDateShort(r.gc?.day?.dk),
       r.gc?.week?.val?fGC(r.gc.week.val):'—', r.gc?.week?.wdk?fDateShort(r.gc.week.wdk):'—',
       r.gc?.month?.val?fGC(r.gc.month.val):'—', fMonthLabel(r.gc?.month?.ym)];
   });
@@ -1005,9 +1097,9 @@ function buildFullReportHtml(data, windowDays) {
   const speedLocs = Object.keys(data.stores).sort((a,b) => (data.stores[a].speed?.oepe?.val||Infinity) - (data.stores[b].speed?.oepe?.val||Infinity));
   const speedRows = speedLocs.map(loc => {
     const r = data.stores[loc];
-    return [esc(sName(loc)), r.speed?.oepe?.val?`<b>${fSec(r.speed.oepe.val)}</b>`:'—', fDateShort(r.speed?.oepe?.dk),
-      r.speed?.kvs?.val?fSec(r.speed.kvs.val):'—', fDateShort(r.speed?.kvs?.dk),
-      r.speed?.r2p?.val?fSec(r.speed.r2p.val):'—', fDateShort(r.speed?.r2p?.dk)];
+    return [esc(sName(loc)), (r.speed?.oepe?.val?`<b>${fSec(r.speed.oepe.val)}</b>`:'—')+chipHtml(isRecentBreak(idx,loc,'OEPE',r.speed?.oepe?.dk)), fDateShort(r.speed?.oepe?.dk),
+      (r.speed?.kvs?.val?fSec(r.speed.kvs.val):'—')+chipHtml(isRecentBreak(idx,loc,'KVS',r.speed?.kvs?.dk)), fDateShort(r.speed?.kvs?.dk),
+      (r.speed?.r2p?.val?fSec(r.speed.r2p.val):'—')+chipHtml(isRecentBreak(idx,loc,'R2P',r.speed?.r2p?.dk)), fDateShort(r.speed?.r2p?.dk)];
   });
 
   // District DOW leaders — the #1 store per day-of-week, not the full store×day matrix (that
@@ -1018,10 +1110,13 @@ function buildFullReportHtml(data, windowDays) {
       const v = r.sales?.dow?.[i];
       if (v?.val && (!best || v.val > best.val)) best = { ...v, loc };
     }
-    return [esc(name), best?esc(sName(best.loc)):'—', best?`<b>${f$2(best.val)}</b>`:'—', best?fDate(best.dk):'—'];
+    return [esc(name), best?esc(sName(best.loc)):'—',
+      best?`<b>${f$2(best.val)}</b>`+chipHtml(isRecentBreak(idx,best.loc,`DOW Sales (${DOW_SHORT[i]})`,best.dk)):'—',
+      best?fDate(best.dk):'—'];
   });
 
-  const topRows = data.topDays.map((d,i) => [i+1, esc(sName(d.loc)), fDate(d.dk), `<b>${f$2(d.sales)}</b>`, d.gc?fGC(d.gc):'—']);
+  const topRows = data.topDays.map((d,i) => [i+1, esc(sName(d.loc)), fDate(d.dk),
+    `<b>${f$2(d.sales)}</b>`+chipHtml(isRecentBreak(idx,d.loc,'Sales Day',d.dk)), d.gc?fGC(d.gc):'—']);
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Record Day Intelligence — District Report</title>
@@ -1091,8 +1186,30 @@ export function RecordDayPanel({ stores, ds, onClose }) {
   const [tab,        setTab]        = useState('overview');
   const [resetKey,   setResetKey]   = useState(0);
   const [confirmReset, setConfirmReset] = useState(false);
+  // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive'). This panel
+  // had no location filtering at all before this dispatch; computeRecords() itself is untouched
+  // (still scores every store) -- scoping happens as a pure post-computation filter below
+  // (scopeRecordData), per the dispatch's own "very likely a UI-layer filter on top of already
+  // store-keyed data, not an engine change" steer.
+  const [scope, setScope] = useState({ level:'all', id:null });
 
   const data = useMemo(() => computeRecords(ds, windowDays), [ds, windowDays, resetKey]);
+
+  const tree = useMemo(() => buildLocationHierarchy(stores, INV_ORG_COORDS, STORE_NAMES), [stores]);
+  // null (not tree.locs) for 'all' -- scopeRecordData treats null as "no filtering, return data
+  // unchanged" so the common "All Locations" case never pays for a copy/re-derivation it doesn't
+  // need, and can never disagree with computeRecords' own output by construction.
+  const scopedLocs = useMemo(
+    () => (scope.level === 'all' ? null : locationSelectorLocs(scope, tree)),
+    [scope, tree]);
+  // The one thing every tab, the export, and the print report actually render from. Scoping
+  // computeRecords' full result here -- rather than inside it -- is what lets print/export
+  // "carry the location scope" for free: they already take `viewData`/`windowDays`, so a scope
+  // change reaches them the same render it reaches the screen, no separate plumbing.
+  const viewData = useMemo(() => scopeRecordData(data, scopedLocs), [data, scopedLocs]);
+  // Dispatch #136 Part 2 item 3 -- one recent-break lookup per render, shared by every tab below
+  // (RecentBreakersTab excluded -- every row there already IS a recent break).
+  const breakIndex = useMemo(() => buildBreakIndex(viewData?.recentBreakers), [viewData]);
 
   const handleReset = useCallback(() => {
     clearSaved();
@@ -1100,19 +1217,20 @@ export function RecordDayPanel({ stores, ds, onClose }) {
     setResetKey(k => k + 1);
   }, []);
 
-  const recentCount = data?.recentBreakers?.length || 0;
+  const recentCount = viewData?.recentBreakers?.length || 0;
 
   // Per-tab CSV/Excel export spec -- recomputed whenever the active tab, the underlying
-  // records, or the Recent Breaks window changes, so an export triggered right after switching
-  // tabs (or changing the window) always reflects what's actually on screen, never a stale one.
-  const exportSpec = useMemo(() => tabExportSpec(tab, data, windowDays), [tab, data, windowDays]);
+  // (now scope-filtered) records, or the Recent Breaks window changes, so an export triggered
+  // right after switching tabs, scope, or the window always reflects what's actually on screen,
+  // never a stale or unscoped one.
+  const exportSpec = useMemo(() => tabExportSpec(tab, viewData, windowDays), [tab, viewData, windowDays]);
 
   const handlePrintReport = useCallback(() => {
-    const html = buildFullReportHtml(data, windowDays);
+    const html = buildFullReportHtml(viewData, windowDays);
     const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
     if (w) { w.document.write(html); w.document.close(); }
     else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
-  }, [data, windowDays]);
+  }, [viewData, windowDays]);
 
   return h(ModalShell, {
     title: 'Record Day Intelligence',
@@ -1120,14 +1238,14 @@ export function RecordDayPanel({ stores, ds, onClose }) {
     onClose,
     maxWidth: 1400,
     zIndex: Z.nested,
-    subtitle: data
-      ? `${data.totalStores} stores · data through ${fDate(dKey(data.dataEnd))} · records accumulate across uploads`
+    subtitle: viewData
+      ? `${viewData.totalStores} stores${scope.level!=='all'?' in scope':''} · data through ${fDate(dKey(viewData.dataEnd))} · records accumulate across uploads`
       : 'Upload sales data to track records',
     headerExtra: div({ style:{ display:'flex',alignItems:'center',gap:8,flexWrap:'wrap' } },
-      data && h(React.Suspense, { fallback: h('button',{ style:{...S.ghostBtn, opacity:.5}, disabled:true }, '⬇ Export') },
+      viewData && h(React.Suspense, { fallback: h('button',{ style:{...S.ghostBtn, opacity:.5}, disabled:true }, '⬇ Export') },
         h(LazyExportDropdown, { btnClassName:undefined, rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
       ),
-      data && h('button',{ style:S.ghostBtn, onClick:handlePrintReport }, '🖨 Print Report'),
+      viewData && h('button',{ style:S.ghostBtn, onClick:handlePrintReport }, '🖨 Print Report'),
       confirmReset
         ? div({ style:{ display:'flex',alignItems:'center',gap:8,fontSize:12 } },
             span({ style:{color:'var(--txt3)'} }, 'Reset all saved records?'),
@@ -1136,24 +1254,30 @@ export function RecordDayPanel({ stores, ds, onClose }) {
           )
         : h('button',{ style:S.dangerBtn, onClick:()=>setConfirmReset(true) }, 'Reset Records'),
     ),
-    subHeader: div({ style:S.tabs },
-      ...TABS.map(t =>
-        h('button',{ key:t.key, style:S.tab(tab===t.key), onClick:()=>setTab(t.key) },
-          t.label + (t.key==='recent' && recentCount ? ` (${recentCount})` : ''),
+    subHeader: div({},
+      (stores && stores.length > 0) && div({ style:{ padding:'8px 20px 6px', borderBottom:'.5px solid var(--bdr)' } },
+        h(LocationSelector, { stores, invOrgCoords:INV_ORG_COORDS, storeNames:STORE_NAMES, value:scope, onChange:setScope, mode:'progressive' })),
+      div({ style:S.tabs },
+        ...TABS.map(t =>
+          h('button',{ key:t.key, style:S.tab(tab===t.key), onClick:()=>setTab(t.key) },
+            t.label + (t.key==='recent' && recentCount ? ` (${recentCount})` : ''),
+          ),
         ),
       ),
     ),
-    bodyStyle: data
+    bodyStyle: viewData
       ? { padding:'20px 24px', display:'flex', flexDirection:'column', gap:22 }
       : { display:'flex', alignItems:'center', justifyContent:'center' },
   },
-    !data && div({ style:{ color:'var(--txt3)', fontSize:14 } },
+    !viewData && div({ style:{ color:'var(--txt3)', fontSize:14 } },
       'No sales data loaded. Upload your data to begin tracking records.'),
-    data && tab==='overview' && h(HeroGrid, { data }),
-    data && tab==='recent'   && h(RecentBreakersTab, { data, windowDays, onWindowChange:setWindowDays }),
-    data && tab==='sales'    && h(SalesVolumeTab,     { data }),
-    data && tab==='speed'    && h(SpeedTab,            { data }),
-    data && tab==='dow'      && h(DOWTab,              { data }),
-    data && tab==='topdays'  && h(TopDaysTab,          { data }),
+    viewData && viewData.totalStores===0 && div({ style:{ color:'var(--txt3)', fontSize:13, padding:'8px 0' } },
+      'No stores in this scope have record data yet.'),
+    viewData && viewData.totalStores>0 && tab==='overview' && h(HeroGrid, { data:viewData, breakIndex }),
+    viewData && viewData.totalStores>0 && tab==='recent'   && h(RecentBreakersTab, { data:viewData, windowDays, onWindowChange:setWindowDays }),
+    viewData && viewData.totalStores>0 && tab==='sales'    && h(SalesVolumeTab,     { data:viewData, breakIndex }),
+    viewData && viewData.totalStores>0 && tab==='speed'    && h(SpeedTab,            { data:viewData, breakIndex }),
+    viewData && viewData.totalStores>0 && tab==='dow'      && h(DOWTab,              { data:viewData, breakIndex }),
+    viewData && viewData.totalStores>0 && tab==='topdays'  && h(TopDaysTab,          { data:viewData, breakIndex }),
   );
 }
