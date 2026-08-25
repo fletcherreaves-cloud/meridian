@@ -10,7 +10,7 @@ import { aggregateLifelenzLabor, LIFELENZ_LABOR_NOTE } from './lifelenz-labor-ag
 import { aggregateLaborSummary, LABOR_SUMMARY_NOTE } from './labor-summary-agg.js';
 import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_NOTE } from './forecast-snapshots-agg.js';
 import { fetchAllRows } from './paginate.js';
-import { PROMO_ROI_UNRELIABLE_NOTE } from './promo-roi-note.js';
+import { PROMO_ROI_METHOD_NOTE, DISCOUNT_ROI_NO_SIGNAL_NOTE } from './promo-roi-note.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -166,11 +166,12 @@ Returns per-store MAPE and signed-bias averages for each source over the date ra
   },
   {
     name: 'query_promo_roi',
-    description: `Analyze whether PROMOTIONS and DISCOUNTS are paying for themselves, per store.
-Use for questions about: promo ROI, discount effectiveness, "are our promos working", "is store X's discounting worth it", loss-prevention on give-aways.
-Method (matched-day): for each store, promo-heavy days are compared against promo-light days WITHIN the same weekday (controls for the weekly pattern and for running promos on slow days). Reports the sales/guest lift vs the give-away, converted to gross profit at an incremental margin.
-Returns per lever (promo, discount): a district verdict + per-store rows with lift %, extra sales/day, extra give-away/day, gross-profit delta/day, and a verdict (pays / costs / neutral).
-Needs several weeks of daily data. This is a directional screen, not a randomized experiment — say so.`,
+    description: `Analyze whether PROMOTIONS are paying for themselves, per store. DISCOUNT ROI cannot be measured (see below) and always returns "cannot determine" -- do not present it as a finding of zero/no effect.
+Use for questions about: promo ROI, "are our promos working", "which stores should run more/fewer LTOs".
+Method (matched-day, promo only): for each store, days a REAL org_events promo-calendar tag covers (the national marketing calendar McDonald's corporate sets months ahead) are compared against untagged days WITHIN the same weekday, restricted to that store's own known calendar coverage window. This replaced an earlier same-day promo-dollar-intensity split that was measured to fabricate a large positive lift even at zero true effect (give-away dollars scale with traffic) -- see the tool's returned promo_note for the full mechanism.
+Discount has no equivalent exogenous signal (register-level comps are a same-day reactive decision, not on a calendar) and is intentionally left unscored -- see discount_note.
+Returns for promo: a district verdict + per-store rows with lift %, extra sales/day, extra give-away/day, gross-profit delta/day, and a verdict (pays / costs / neutral / n/a), PLUS n_candidates and coverage (each store's known calendar window) so you can tell "no calendar tag loaded for this range" apart from "not enough matched days". If reason is present, no stores were scored -- report that honestly, don't imply a null finding.
+Needs several weeks of daily data AND a promo calendar tagged for the requested range. This is a directional screen, not a randomized experiment — say so.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -251,26 +252,37 @@ function applyScope<T extends { loc: string }>(stores: T[], allowed: Set<string>
 const SCOPE_NOTE = 'Access-restricted: per-store detail is limited to YOUR store(s). District totals/averages and your rank include all stores for context — but you must NEVER reveal, name, or infer another individual store’s figures.';
 
 // ── Matched-day promo/discount lift — port of src/engine/promo-roi.js ─────────
-function _median(a: number[]): number | null {
-  if (!a.length) return null;
-  const s = [...a].sort((x, y) => x - y);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
+// dispatch-113.md — split by an EXOGENOUS org_events 'promo' tag, not by same-day promo-dollar
+// intensity. See src/engine/promo-roi.js's top-of-file comment for the full rationale; this hand-
+// port must match its methodology exactly, or SAGE and the panel disagree on the same data again
+// (the exact trap dispatch-111's resolution already hit once for the unrelated sourcing bug).
 function _mean(a: number[]): number { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0; }
 
-type PRec = { loc: string; dow: number; sales: number; gc: number | null; int: number | null; spend: number };
-function matchedLift(records: PRec[], marginRate: number, minDays = 24, minPerCell = 2) {
-  const byLoc: Record<string, PRec[]> = {};
-  for (const r of records) { if (!(r.sales > 0) || r.int == null) continue; (byLoc[r.loc] ||= []).push(r); }
+type PRec = { loc: string; dow: number; sales: number; gc: number | null; spend: number };
+// tagCoverage: { tagged: Record<loc, Set<'YYYY-MM-DD'>>, covStart: Record<loc,string>, covEnd: Record<loc,string> }.
+// A record's own ISO date key must be supplied per-row (dk) so matchedLift can check it against
+// that loc's known calendar window without re-deriving a date string from a Date object here.
+type TagCoverage = { tagged: Record<string, Set<string>>; covStart: Record<string, string>; covEnd: Record<string, string> };
+function matchedLift(records: Array<PRec & { dk: string }>, tagCoverage: TagCoverage, marginRate: number, minDays = 24, minPerCell = 2) {
+  const { tagged, covStart, covEnd } = tagCoverage;
+  const byLoc: Record<string, Array<PRec & { dk: string }>> = {};
+  for (const r of records) {
+    if (!(r.sales > 0)) continue;
+    const lo = covStart[r.loc], hi = covEnd[r.loc];
+    if (!lo || !hi) continue; // no calendar coverage at all for this store/lever
+    if (r.dk < lo || r.dk > hi) continue; // outside the KNOWN calendar window -- unknown, not "untagged"
+    (byLoc[r.loc] ||= []).push(r);
+  }
+  const nCandidates = Object.keys(byLoc).length;
+  if (!nCandidates) return { district: null, byStore: [] as Array<Record<string, unknown>>, nCandidates: 0, reason: 'no_exogenous_tag_data' as const };
+
   const byStore: Array<Record<string, unknown>> = [];
   for (const loc of Object.keys(byLoc)) {
     const rows = byLoc[loc];
     if (rows.length < minDays) continue;
-    const med = _median(rows.map(r => r.int as number));
-    if (med == null) continue;
+    const tagSet = tagged[loc] || new Set<string>();
     const cells: Record<number, { heavy: PRec[]; light: PRec[] }> = {};
-    for (const r of rows) { (cells[r.dow] ||= { heavy: [], light: [] }); ((r.int as number) > med ? cells[r.dow].heavy : cells[r.dow].light).push(r); }
+    for (const r of rows) { (cells[r.dow] ||= { heavy: [], light: [] }); (tagSet.has(r.dk) ? cells[r.dow].heavy : cells[r.dow].light).push(r); }
     let wSum = 0, exS = 0, exG = 0, exSp = 0, baseS = 0, nCells = 0;
     for (const dow of Object.keys(cells)) {
       const { heavy, light } = cells[+dow];
@@ -294,8 +306,35 @@ function matchedLift(records: PRec[], marginRate: number, minDays = 24, minPerCe
   for (const s of byStore) { const w = s.days as number; dW += w; dS += (s.extra_sales_per_day as number) * w; dSp += (s.extra_giveaway_per_day as number) * w; dGp += (s.gross_profit_delta_per_day as number) * w; }
   const district = dW ? { stores: byStore.length, extra_sales_per_day: Math.round(dS / dW), extra_giveaway_per_day: Math.round(dSp / dW), gross_profit_delta_per_day: Math.round(dGp / dW), verdict: (dSp / dW) <= 0 ? 'n/a' : (dGp / dW) > 0 ? 'pays' : (dGp / dW) < 0 ? 'costs' : 'neutral' } : null;
   byStore.sort((a, b) => (a.gross_profit_delta_per_day as number) - (b.gross_profit_delta_per_day as number));
-  return { district, byStore };
+  return { district, byStore, nCandidates, coverage: { covStart, covEnd } };
 }
+
+// Build the exogenous tag-coverage map directly from org_events -- the Deno function has
+// service-role Supabase access, so unlike the client engine (which has to reconstruct this from
+// the already-hydrated mf_events day-map) it can just query the source table. Restricted to
+// event_type='promo' rows, enumerated day-by-day. See src/engine/promo-roi.js's
+// promoTagCoverage() -- same semantics, ported since Deno can't import the client engine.
+async function loadPromoTagCoverage(sb: ReturnType<typeof createClient>, startDate: string, endDate: string): Promise<TagCoverage> {
+  // Overlap condition, not a containment one -- a calendar window that starts before startDate or
+  // ends after endDate still needs to be counted for the days of it that DO fall in range.
+  const { data, error } = await sb.from('org_events').select('loc,date_start,date_end')
+    .eq('event_type', 'promo').lte('date_start', endDate).gte('date_end', startDate);
+  const tagged: Record<string, Set<string>> = {}, covStart: Record<string, string> = {}, covEnd: Record<string, string> = {};
+  if (error || !data) return { tagged, covStart, covEnd };
+  for (const row of data as Array<{ loc: string; date_start: string; date_end: string }>) {
+    const loc = normLoc(row.loc);
+    let d = new Date(row.date_start + 'T12:00:00'); const end = new Date((row.date_end || row.date_start) + 'T12:00:00');
+    for (let guard = 0; d <= end && guard < 400; guard++) {
+      const dk = d.toISOString().slice(0, 10);
+      (tagged[loc] ||= new Set<string>()).add(dk);
+      if (!covStart[loc] || dk < covStart[loc]) covStart[loc] = dk;
+      if (!covEnd[loc] || dk > covEnd[loc]) covEnd[loc] = dk;
+      d = new Date(d.getTime() + 86400000);
+    }
+  }
+  return { tagged, covStart, covEnd };
+}
+const NO_EXOGENOUS_SIGNAL: TagCoverage = { tagged: {}, covStart: {}, covEnd: {} };
 
 // `allowed` = the caller's accessible store set (null = full access). When set,
 // tools query ALL stores (for district context) but expose per-store detail only
@@ -509,7 +548,7 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const startDate = (input.start_date as string) || new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
     const marginRate = typeof input.margin_rate === 'number' ? input.margin_rate : 0.35;
 
-    const [g, oc, c] = await Promise.all([
+    const [g, oc, c, tagCoverage] = await Promise.all([
       // .order() on the full PK (loc, date) -- required for offset paging, see paginate.js.
       fetchAllRows(() => sb.from('daily_glimpse_daily').select('loc,date,all_net_sales,gc,promo_amt,promo_pct').gte('date', startDate).lte('date', endDate).order('date').order('loc')),
       // Discount -- opsCash (auto-pulled qsr_cash_sheet, discount_amt inside its `metrics` jsonb
@@ -521,23 +560,25 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       // loadOpsCashSheet (discAmt <- metrics.discount_amt) -- verified against that mapping, not assumed.
       fetchAllRows(() => sb.from('qsr_cash_sheet').select('loc,dt,metrics').gte('dt', startDate).lte('dt', endDate).order('dt').order('loc')),
       fetchAllRows(() => sb.from('ctrl_rows').select('loc,date,disc_pct,disc_amt').gte('date', startDate).lte('date', endDate).order('date').order('loc')),
+      // dispatch-113.md -- the exogenous split variable: real org_events 'promo' tags overlapping
+      // the requested window. Queried directly (service-role access), unlike the client engine
+      // which has to reconstruct this from the already-hydrated mf_events day-map.
+      loadPromoTagCoverage(sb, startDate, endDate),
     ]);
     if (g.error) return `Database error: ${g.error.message}`;
     if (!g.data?.length) return `No Daily Glimpse promo data found for ${startDate} to ${endDate}. Promo/discount ROI needs several weeks of daily data.`;
 
     const dow = (d: string) => new Date(d + 'T00:00:00').getDay();
-    const promoRecs: PRec[] = [];
+    const promoRecs: Array<PRec & { dk: string }> = [];
     const salesByKey: Record<string, { sales: number; gc: number | null; dow: number }> = {};
     for (const r of g.data) {
       const k = normLoc(r.loc) + '|' + r.date;
       salesByKey[k] = { sales: r.all_net_sales || 0, gc: r.gc ?? null, dow: dow(r.date) };
-      // memory/finding-promo-roi-denominator-bias-2026-08-23.md -- split on absolute give-away
-      // DOLLARS (promo_amt), not the percentage (promo_amt / sales). The percentage makes sales
-      // the denominator of the splitting variable, which sorts the heavy/light buckets by sales
-      // before sales is ever compared -- selection on the outcome, biased negative regardless of
-      // the true effect. This hand-port must match src/engine/promo-roi.js's fix exactly, or
-      // SAGE and the panel disagree on the same data again.
-      promoRecs.push({ loc: normLoc(r.loc), dow: dow(r.date), sales: r.all_net_sales || 0, gc: r.gc ?? null, int: r.promo_amt ?? null, spend: r.promo_amt || 0 });
+      // dispatch-113.md -- split by whether an EXOGENOUS org_events promo tag covers this date
+      // (tagCoverage, queried above), not by same-day promo_amt/promo_pct intensity. This
+      // hand-port must match src/engine/promo-roi.js's methodology exactly, or SAGE and the
+      // panel disagree on the same data again.
+      promoRecs.push({ loc: normLoc(r.loc), dow: dow(r.date), dk: r.date, sales: r.all_net_sales || 0, gc: r.gc ?? null, spend: r.promo_amt || 0 });
     }
     // opsCash first-writer-wins per (loc, dt), then ctrl_rows fills any date opsCash didn't cover
     // -- mirrors buildDailyRecords' opsCashRows-then-ctrlRows loop order exactly.
@@ -552,31 +593,36 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
       const k = normLoc(r.loc) + '|' + r.date;
       if (discAmtByKey[k] == null && r.disc_amt != null) discAmtByKey[k] = r.disc_amt;
     }
-    const discRecs: PRec[] = [];
+    const discRecs: Array<PRec & { dk: string }> = [];
     for (const [k, amt] of Object.entries(discAmtByKey)) {
       const s = salesByKey[k];
       if (!s) continue; // discount rows need same-day sales from glimpse
       const loc = k.slice(0, k.indexOf('|'));
-      discRecs.push({ loc, dow: s.dow, sales: s.sales, gc: s.gc, int: amt, spend: amt || 0 });
+      const dk = k.slice(k.indexOf('|') + 1);
+      discRecs.push({ loc, dow: s.dow, dk, sales: s.sales, gc: s.gc, spend: amt || 0 });
     }
 
-    const promo = matchedLift(promoRecs, marginRate);
-    const discount = matchedLift(discRecs, marginRate);
+    const promo = matchedLift(promoRecs, tagCoverage, marginRate);
+    // No exogenous discount-timing signal exists (see DISCOUNT_ROI_NO_SIGNAL_NOTE) -- always the
+    // empty coverage map, never tagCoverage, so this lever's "no candidates" result is honest
+    // rather than accidentally inheriting promo's calendar.
+    const discount = matchedLift(discRecs, NO_EXOGENOUS_SIGNAL, marginRate);
     const scP = applyScope(promo.byStore as Array<{ loc: string }>, allowed);
     const scD = applyScope(discount.byStore as Array<{ loc: string }>, allowed);
     return JSON.stringify({
       date_range: `${startDate} to ${endDate}`,
       margin_rate: marginRate,
-      promo: { district: promo.district, stores: scP.stores },
-      discount: { district: discount.district, stores: scD.stores },
+      promo: { district: promo.district, stores: scP.stores, n_candidates: promo.nCandidates,
+        ...('reason' in promo ? { reason: promo.reason } : {}),
+        ...(promo.coverage ? { coverage: promo.coverage } : {}) },
+      discount: { district: discount.district, stores: scD.stores, reason: 'no_signal_exists' },
       ...(scP.restricted ? { access: 'restricted', scope_note: SCOPE_NOTE } : {}),
-      // #85 #5: memory/finding-promo-roi-denominator-bias-2026-08-23.md's later measurement found
-      // the shipped split (promo_amt) is ALSO endogenous -- spend scaling with traffic sorts busy
-      // days into "heavy" before sales is compared, reproducing +16.5% mean lift / 27 of 27
-      // stores "pays" at a TRUE effect of zero. Every verdict this tool returns is currently
-      // unverified; the note says so up front so SAGE doesn't repeat the mistake of trusting a
-      // confidently-positive-looking number.
-      note: PROMO_ROI_UNRELIABLE_NOTE,
+      // dispatch-113.md -- the split is now an exogenous calendar fact, not same-day promo spend
+      // (memory/finding-promo-roi-denominator-bias-2026-08-23.md measured the old dollar split
+      // fabricating +16.5% mean lift / 27 of 27 "pays" at a true effect of zero; re-validated the
+      // new split against the same realistic construction -- see promo-roi-note.js).
+      promo_note: PROMO_ROI_METHOD_NOTE,
+      discount_note: DISCOUNT_ROI_NO_SIGNAL_NOTE,
     });
   }
 
