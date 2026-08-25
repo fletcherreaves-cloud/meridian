@@ -40,7 +40,12 @@ const ROOTS = ['src/views', 'src/features'];
 // (this is DOW bucketing of an already-resolved metric series, not week-start/business-day
 // boundary math — the bug class this ratchet exists to catch — so it is not itself a
 // violation; reviewed and added deliberately).
-const CEILING = 62;
+// Dispatch #134 (2026-08-25): +1 in the new src/views/schedule-retention.js — `DOW[d.date.
+// getDay()]` in its per-week "Inspect" daily-detail table, copied verbatim from src/views/
+// schedule-summary.js's own already-counted identical line (StoreRow's daily grid). Same
+// display-only day-name lookup on an already-resolved rollup() `days[].date`, not week-start/
+// business-day boundary arithmetic — reviewed and added deliberately, same as dispatch #68.
+const CEILING = 63;
 
 const PATTERN = /\.getDay\(\)/g;
 

@@ -174,6 +174,13 @@ export const PANELS = [
   { id:'revintel', label:'Revenue', icon:'◈', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'sage', label:'SAGE', icon:'🧠', perm:null, kind:'nav', section:'analytics' },
   { id:'sched-hub', label:'Scheduling', icon:'🗓', perm:'analytics.store', kind:'nav', section:'scheduling', route:true },
+  // Schedule Retention Report (dispatch #134) -- permanent, per-location report: pick a store +
+  // a period, see every LifeLenz business week in it side by side (same rollup() metrics
+  // Schedule Summary already computes), to check whether a store retained training from a
+  // schedule workshop. A separate, standalone route:true entry (not a Scheduling-hub tab) --
+  // it's inherently single-store, unlike every other tab in that hub. kind:'nav' from day one
+  // per the standing route-migration rule.
+  { id:'sched-retention', label:'Training Retention', icon:'🎓', perm:'analytics.store', kind:'nav', section:'scheduling', route:true },
   { id:'sched-summary', label:'Sched Summary', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'scheduling', label:'Scheduling', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   // Static nav gate only (admin/supervisor always match, manager sees the entry per

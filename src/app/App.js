@@ -195,6 +195,7 @@ const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ 
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
+const ScheduleRetentionPanel = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionPanel })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
 // #214/#207 batch-2: inventory.js is 76KB and was the last static import of a panel-sized
@@ -2718,6 +2719,7 @@ function App() {
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
+        if(modal==='sched-retention')perm('analytics.store')&&goRoute('sched-retention');
         if(modal==='dicompare')      perm('analytics.forecasting')&&goRoute('dicompare');
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         // fcst-accuracy / lifelenz-bridge CONVERTED to hub-tab (dispatch #106 Phase B) -- same
@@ -2905,6 +2907,7 @@ function App() {
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
+      routePanel==='sched-retention'&&h(ScheduleRetentionPanel,{stores,ds,onClose:()=>goRoute(null)}),
       routePanel==='fob-analysis'&&h(RoutePanelShell,{
         title:'Food Cost',
         icon:'🥗',
