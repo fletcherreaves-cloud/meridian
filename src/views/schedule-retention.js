@@ -1,5 +1,5 @@
 // @ts-nocheck
-// ── Schedule Retention Report (dispatch #134) ─────────────────────────────────────────────────
+// ── Schedule Retention Report (dispatch #134, moved + revised by dispatch #140) ──────────────
 // Owner's ask (memory/dispatch-134.md): "a report for each location (it can be a permanent
 // report) that allows for a period to be selected and then a side by side of each week in that
 // period for what is displayed on [Schedule Summary] currently" — to check whether a store held
@@ -9,16 +9,36 @@
 // — the SAME function the all-stores, single-current-week Schedule Summary panel
 // (src/views/schedule-summary.js) already calls and that reconciles to the LifeLenz screen
 // (src/__tests__/schedule-summary.test.js). computeStoreWeeks() (added alongside rollup() in
-// that file, this dispatch) is a "very small wrapper" per the dispatch's own instruction: same
+// that file, dispatch #134) is a "very small wrapper" per that dispatch's own instruction: same
 // per-row extraction, same dollar-weighting, just one store across an arbitrary multi-week
 // period instead of every store for one current week. The "bonus" ask (actual labor results
 // once a week completes) needs ZERO new data work — rollup()'s `sales`/`laborPct` are already
 // ACTUAL-weighted once a week posts real numbers (see that file's #361 comment), and sit at
 // their forecast-only null/0 state until then; this report just renders whichever state each
 // week is already in.
+//
+// ── Dispatch #140 revisions (memory/dispatch-140.md) ──────────────────────────────────────────
+// 1. Hub move: this file now exports a CONTENT-ONLY `ScheduleRetentionSection` (no own
+//    RoutePanelShell) — same shape as dispatch #135's TargetsEditorSection. It renders as one of
+//    the Scheduling & Labor hub's tabs (App.js's SCHED_TABS/SchedulingHubPanel), not a standalone
+//    nav entry any more (panel-registry.js's sched-retention flipped nav+route:true -> hub-tab).
+// 2. The narrative's "— worth a follow-up [staff-development] visit." editorial tail is gone
+//    (owner: "I don't want to have a store see that comment directly") — the factual pp-change/
+//    before-after numbers stay, on-screen and in print (buildPrintHTML reads the same
+//    buildNarrative() output, so one fix covers both).
+// 3. Week-anchored range picker (WeekRangeControl below) replaces the calendar-day
+//    DateRangeControl — start/end LifeLenz business weeks, reusing computeStoreWeeks'/
+//    weekStartOf's own Wed-anchored weekKey as the bound (never re-derived).
+// 4. LocationSelector broadened to mode:'progressive' (All->State->Patch->Store, dispatch #139's
+//    live-patch fix already under it). A single store keeps today's per-store detail view
+//    unchanged; a broader (All/State/Patch) scope shows a "pick a store" empty state instead —
+//    this panel is inherently single-store (before/after one store's own history), and the
+//    cross-store rollup for a broader scope is dispatch #141's separate report, not rebuilt here.
+// 5. sparklineFor() generalizes the old laborPct-only inline sparkline into one small chart per
+//    metric row (Labor %, Sched/Fcst Hrs, Hours ± Fcst, TPMH, Fixed/Floor/Combined %), stacked as
+//    small multiples below a shrunk, horizontally-spread narrative strip.
 import * as React from 'react';
-import { RoutePanelShell } from '../components/ModalShell.js';
-import { DateRangeControl, LocationSelector, buildLocationHierarchy, resolveDatePreset } from '../components/PanelControls.js';
+import { LocationSelector, buildLocationHierarchy } from '../components/PanelControls.js';
 import { computeStoreWeeks, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from '../engine/schedule-summary.js';
 import { StationBreakdown } from './schedule-summary.js';
 import { ExportDropdown } from './store-dash.js';
@@ -35,8 +55,8 @@ const _normLoc = l => String(parseInt(String(l ?? '').replace(/\D/g, ''), 10) ||
 // ── Formatters — copied verbatim from schedule-summary.js (display-only, not engine math;
 // duplicating a one-line formatter is not "re-deriving" the metrics the dispatch protects) ─────
 const f$ = n => n == null ? '—' : '$' + Math.round(n).toLocaleString();
-const hmU = v => { if (v == null) return '—'; const t = Math.round(Math.abs(v) * 60); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const hm = v => { if (v == null) return '—'; const neg = v < 0; const t = Math.round(Math.abs(v) * 60); return (neg ? '-' : '') + Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+const hmSigned = v => v == null ? '—' : (v >= 0 ? '+' : '') + hm(v);
 const pct = v => v == null ? '—' : ((Math.abs(v) <= 1.5 ? v * 100 : v)).toFixed(2) + '%';
 const fracPct = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -89,6 +109,9 @@ export function splitWeeksAtMark(weeks, markedWeekKey) {
 // the split point change, and produces nothing when there isn't enough data to say something
 // true. Voice-by-role (CLAUDE.md): headline states the decision in restaurant words, bullets
 // keep the exact numbers next to it.
+// Dispatch #140 item 2: the regression branch's editorial "worth a follow-up [staff-development]
+// visit" tail is REMOVED (owner: doesn't want a store to see that phrase directly) — only the
+// factual magnitude/direction statement stays, matching the improved/unchanged branches' style.
 export function buildNarrative(weeks, markedWeekKey) {
   const ws = weeks || [];
   if (ws.length < 2) {
@@ -107,7 +130,7 @@ export function buildNarrative(weeks, markedWeekKey) {
     headline = d < -0.15
       ? `✅ Labor % improved ${Math.abs(d).toFixed(2)}pp since the workshop (${a.laborPct.toFixed(2)}% → ${b.laborPct.toFixed(2)}%) — training appears to be sticking on labor cost.`
       : d > 0.15
-      ? `⚠️ Labor % worsened ${Math.abs(d).toFixed(2)}pp since the workshop (${a.laborPct.toFixed(2)}% → ${b.laborPct.toFixed(2)}%) — worth a follow-up coaching visit.`
+      ? `⚠️ Labor % worsened ${Math.abs(d).toFixed(2)}pp since the workshop (${a.laborPct.toFixed(2)}% → ${b.laborPct.toFixed(2)}%).`
       : `➖ Labor % is essentially unchanged since the workshop (${a.laborPct.toFixed(2)}% → ${b.laborPct.toFixed(2)}%, ${d >= 0 ? '+' : ''}${d.toFixed(2)}pp).`;
   } else {
     headline = 'No completed (actuals-posted) week yet on one side of the split — Labor % retention can’t be judged until at least one full week posts real numbers.';
@@ -124,6 +147,18 @@ export function buildNarrative(weeks, markedWeekKey) {
   return { headline, bullets, splitIdx, preN: pre.length, postN: post.length };
 }
 
+// Dispatch #140 item 3 — default week-range window, in whole LifeLenz business weeks (not
+// calendar days). `allWeeks` is every week computeStoreWeeks() finds for the store (oldest ->
+// newest, unbounded range); this just windows the trailing `count` of them, or all of them if
+// there are fewer. Pure + exported so the "which weeks does a fresh store default to" choice is
+// independently testable, same as splitWeeksAtMark above.
+export function defaultWeekRange(allWeeks, count = 12) {
+  const ws = allWeeks || [];
+  if (!ws.length) return { startKey: null, endKey: null };
+  const start = ws.length > count ? ws[ws.length - count] : ws[0];
+  return { startKey: start.weekKey, endKey: ws[ws.length - 1].weekKey };
+}
+
 const _esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // Full, scroll-independent printable report — built straight from the same computed `weeks` /
@@ -131,6 +166,9 @@ const _esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g
 // pattern (dispatch #122/#129: never depend on what happened to be scrolled into view). Colors
 // are literal hex (this opens in a blank window with no meridian.css loaded), carried by text
 // color + border rather than a background fill (print-color-adjust defaults to 'economy').
+// Reads narrative.headline/bullets verbatim — no separate hardcoded copy of the coaching-visit
+// phrase existed here (confirmed dispatch #140 item 2), so buildNarrative's fix alone covers
+// both the on-screen and the printed output.
 export function buildPrintHTML(storeLabel, periodLabel, weeks, narrative) {
   if (!weeks || !weeks.length) return '<p>No LifeLenz schedule weeks in this period.</p>';
   const th = (t) => '<th style="border:1px solid #ddd;padding:5px 8px;background:#f5f5f7;font-size:8px;text-transform:uppercase;text-align:right;white-space:nowrap">' + _esc(t) + '</th>';
@@ -140,7 +178,7 @@ export function buildPrintHTML(storeLabel, periodLabel, weeks, narrative) {
   const headRow = '<tr>' + rowLbl('Week of') + weeks.map(w => th(wkLabel(w.weekStart) + (w.sales > 0 ? ' (actual)' : ' (fcst)'))).join('') + '</tr>';
   const rows = [
     ['Labor % Sales', w => [pct(w.laborPct), diffColor(0)]],
-    ['Sched vs Fcst Hrs', w => [(w.hrsDiff >= 0 ? '+' : '') + hm(w.hrsDiff), diffColor(w.hrsDiff)]],
+    ['Sched vs Fcst Hrs', w => [hmSigned(w.hrsDiff), diffColor(w.hrsDiff)]],
     ['Scheduled Hrs', w => [hm(w.schedHrs), null]],
     ['Forecast Hrs', w => [hm(w.fcstHrs), null]],
     ['Schd TPMH', w => [w.tpmh == null ? '—' : w.tpmh.toFixed(2), null]],
@@ -164,32 +202,90 @@ export function buildPrintHTML(storeLabel, periodLabel, weeks, narrative) {
     narrHTML + table;
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────────────────────
+// Metric registry driving BOTH the side-by-side week table and the stacked per-metric
+// sparklines below it (dispatch #140 item 5) — one definition per metric instead of two
+// hand-written copies drifting apart. `get` reads the raw value off a week; `fmt` renders it;
+// `color`, if present, takes the raw value and returns a CSS color for both the table cell and
+// the sparkline's current-value readout.
+const METRICS = [
+  { key: 'laborPct', label: 'Labor % Sales', get: w => w.laborPct, fmt: pct, color: null },
+  { key: 'hrsDiff', label: 'Sched vs Fcst Hrs', get: w => w.hrsDiff, fmt: hmSigned, color: diffColor },
+  { key: 'schedHrs', label: 'Scheduled Hrs', get: w => w.schedHrs, fmt: hm, color: null },
+  { key: 'fcstHrs', label: 'Forecast Hrs', get: w => w.fcstHrs, fmt: hm, color: null },
+  { key: 'tpmh', label: 'Schd TPMH', get: w => w.tpmh, fmt: v => v == null ? '—' : v.toFixed(2), color: null },
+  { key: 'fixedLaborPct', label: 'Fixed % (hrs)', get: w => w.fixedLaborPct, fmt: fracPct, color: segColor },
+  { key: 'floorLaborPct', label: 'Floor % (hrs)', get: w => w.floorLaborPct, fmt: fracPct, color: segColor },
+  { key: 'combinedFixedFloorPct', label: 'Fixed+Floor %', get: w => w.combinedFixedFloorPct, fmt: fracPct, color: combColor },
+];
 
-function defaultRange() {
-  return resolveDatePreset('90d') || { id: '90d', s: '', e: '' };
+// ── WeekRangeControl — dispatch #140 item 3 ──────────────────────────────────────────────────
+// Two <select>s (start week / end week) populated from the distinct LifeLenz business weeks
+// actually present for this store (oldest -> newest, "Wk of M/D" labels via the shared wkLabel
+// formatter) rather than a calendar-day picker. Clamps so start never lands after end (and vice
+// versa) by snapping the other bound to match, instead of allowing an inverted/empty range.
+const _selStyle = {
+  background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)',
+  color: 'var(--text)', fontSize: '11px', padding: '4px 8px',
+};
+function WeekRangeControl({ weeks, value, onChange }) {
+  if (!weeks || !weeks.length) return null;
+  const idxOf = k => weeks.findIndex(w => w.weekKey === k);
+  const setStart = k => {
+    const si = idxOf(k), ei = idxOf(value?.endKey);
+    onChange({ startKey: k, endKey: ei >= 0 && ei < si ? k : (value?.endKey ?? k) });
+  };
+  const setEnd = k => {
+    const ei = idxOf(k), si = idxOf(value?.startKey);
+    onChange({ startKey: si >= 0 && si > ei ? k : (value?.startKey ?? k), endKey: k });
+  };
+  return div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+    span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Weeks:'),
+    h('select', { value: value?.startKey || '', onChange: e => setStart(e.target.value), style: _selStyle },
+      ...weeks.map(w => h('option', { key: w.weekKey, value: w.weekKey }, 'Wk of ' + wkLabel(w.weekStart)))),
+    span({ style: { fontSize: 10, color: 'var(--text3)' } }, '→'),
+    h('select', { value: value?.endKey || '', onChange: e => setEnd(e.target.value), style: _selStyle },
+      ...weeks.map(w => h('option', { key: w.weekKey, value: w.weekKey }, 'Wk of ' + wkLabel(w.weekStart)))),
+    span({ style: { fontSize: 9, color: 'var(--text3)' } }, '(' + weeks.length + ' wks available)'));
 }
 
-export function ScheduleRetentionPanel({ ds, stores, onClose }) {
+// ── Component ─────────────────────────────────────────────────────────────────────────────────
+// Dispatch #140 item 1: content-only, no own RoutePanelShell — renders as a tab inside App.js's
+// SchedulingHubPanel (SCHED_TABS 'retention' entry), the same "Section" shape #135 established
+// for TargetsEditorSection. All internal state/logic (scope, week range, markedWeekKey, the
+// weeks/narrative computation) is unchanged in substance from the standalone panel this replaces
+// — only the outer chrome and the range/location controls changed.
+export function ScheduleRetentionSection({ ds, stores }) {
   const treeStores = stores || EMPTY_STORES;
   const tree = React.useMemo(() => buildLocationHierarchy(treeStores, INV_ORG_COORDS, STORE_NAMES), [treeStores]);
   const [scope, setScope] = React.useState({ level: 'all', id: null });
-  const [dateRange, setDateRange] = React.useState(defaultRange);
+  const [weekRange, setWeekRange] = React.useState({ startKey: null, endKey: null });
   const [markedWeekKey, setMarkedWeekKey] = React.useState(null);
   const [inspectWeekKey, setInspectWeekKey] = React.useState(null);
 
+  // Dispatch #140 item 4: broadened to mode:'progressive' (All->State->Patch->Store). This
+  // report is inherently single-store (one location's own before/after history) — a broader
+  // scope has no per-store detail to show, so `loc` stays null until a specific store is picked,
+  // same as the flat mode:'store' picker did for "All Locations" before. A State/Patch selection
+  // gets its own, more specific empty-state message below rather than being lumped in with the
+  // initial "nothing picked yet" state — the cross-store rollup for that case is dispatch #141's
+  // separate report (not yet built when this shipped), not reimplemented here.
   const loc = scope.level === 'store' ? _normLoc(scope.id) : null;
 
   // Persist which week is "the workshop week" per store, locally — a UI convenience only, never
   // a new data pipeline (out of scope per the dispatch). Wrapped in try/catch: private windows /
-  // blocked site data must not break the panel.
+  // blocked site data must not break the panel. Also resets the week-range picker to its default
+  // trailing window whenever the store changes (never on every schedRows refresh, so a live
+  // reload doesn't clobber a manually-picked range).
   React.useEffect(() => {
-    if (!loc) { setMarkedWeekKey(null); return; }
+    if (!loc) { setMarkedWeekKey(null); setWeekRange({ startKey: null, endKey: null }); setInspectWeekKey(null); return; }
     try {
       const saved = JSON.parse(localStorage.getItem('mf_sched_retention_mark') || '{}');
       setMarkedWeekKey(saved[loc] || null);
     } catch { setMarkedWeekKey(null); }
+    const avail = computeStoreWeeks(ds?.schedRows || [], loc, {});
+    setWeekRange(defaultWeekRange(avail));
     setInspectWeekKey(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc]);
   const markWeek = (weekKey) => {
     setMarkedWeekKey(prev => {
@@ -203,9 +299,13 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
     });
   };
 
+  const allWeeksForStore = React.useMemo(
+    () => loc ? computeStoreWeeks(ds?.schedRows || [], loc, {}) : [],
+    [ds?.schedRows, loc],
+  );
   const weeks = React.useMemo(
-    () => loc ? computeStoreWeeks(ds?.schedRows || [], loc, { s: dateRange?.s, e: dateRange?.e }) : [],
-    [ds?.schedRows, loc, dateRange?.s, dateRange?.e],
+    () => loc ? computeStoreWeeks(ds?.schedRows || [], loc, { s: weekRange.startKey, e: weekRange.endKey }) : [],
+    [ds?.schedRows, loc, weekRange.startKey, weekRange.endKey],
   );
   const jobsIdx = React.useMemo(() => {
     const m = {};
@@ -221,30 +321,31 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
   const preSet = React.useMemo(() => new Set(pre.map(w => w.weekKey)), [pre]);
 
   const storeLabel = loc ? sNameC(loc) : null;
-  const periodLabel = dateRange?.s && dateRange?.e ? dateRange.s + ' → ' + dateRange.e : '';
+  const periodLabel = weeks.length ? 'Wk of ' + wkLabel(weeks[0].weekStart) + ' → Wk of ' + wkLabel(weeks[weeks.length - 1].weekStart) : '';
 
-  // ── Inline SVG sparkline — Labor % across the shown weeks (visual trend at a glance, this
-  // app's established "no chart-junk" line-trend language — dt-speedofservice.js's DtTrendChart,
-  // visit-readiness.js's per-store rows). Self-contained: one metric, one series, no library.
-  const sparkline = weeks.length >= 2 && (() => {
-    const vals = weeks.map(w => w.laborPct);
+  // ── Inline SVG sparkline factory — dispatch #140 item 5 generalizes the old laborPct-only
+  // chart into one per metric row (this app's established "no chart-junk" line-trend language —
+  // dt-speedofservice.js's DtTrendChart, visit-readiness.js's per-store rows). Self-contained: no
+  // library, one metric, one series. Keeps the proven pre/post-workshop dot coloring.
+  const sparklineFor = (accessor, { width = 130, height = 28, pad = 4, color = '#f5bc00' } = {}) => {
+    if (weeks.length < 2) return null;
+    const vals = weeks.map(accessor);
     const known = vals.filter(v => v != null);
     if (known.length < 2) return null;
     const lo = Math.min(...known), hi = Math.max(...known);
     const span2 = hi - lo || 1;
-    const W = 260, H = 40, pad = 4;
     const pts = vals.map((v, i) => {
-      const x = pad + (i / (vals.length - 1)) * (W - pad * 2);
+      const x = pad + (i / (vals.length - 1)) * (width - pad * 2);
       if (v == null) return null;
-      const y = H - pad - ((v - lo) / span2) * (H - pad * 2);
+      const y = height - pad - ((v - lo) / span2) * (height - pad * 2);
       return [x, y];
     });
     const known2 = pts.filter(Boolean);
     const path = known2.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
-    return h('svg', { width: W, height: H, style: { display: 'block' } },
-      h('path', { d: path, fill: 'none', stroke: '#f5bc00', strokeWidth: 1.6 }),
-      ...pts.map((p, i) => p && h('circle', { key: i, cx: p[0], cy: p[1], r: 2.2, fill: preSet.has(weeks[i].weekKey) ? '#94a3b8' : '#f5bc00' })));
-  })();
+    return h('svg', { width, height, style: { display: 'block', flexShrink: 0 } },
+      h('path', { d: path, fill: 'none', stroke: color, strokeWidth: 1.4 }),
+      ...pts.map((p, i) => p && h('circle', { key: i, cx: p[0], cy: p[1], r: 2, fill: preSet.has(weeks[i].weekKey) ? '#94a3b8' : color })));
+  };
 
   const th = (t, key) => h('th', {
     key, onClick: () => weeks[Number(key)] && markWeek(weeks[Number(key)].weekKey),
@@ -259,17 +360,24 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
 
   const inspectWeek = weeks.find(w => w.weekKey === inspectWeekKey);
 
+  const emptyState = (icon, msg) => div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
+    div({ style: { fontSize: 26, marginBottom: 10 } }, icon), msg);
+
   const body = div(null,
+    div({ style: { fontSize: 11, color: 'var(--text3)', padding: '8px 12px', margin: '0 0 8px',
+      background: 'var(--surf2)', borderRadius: 'var(--r)', border: '.5px solid var(--bdr)', lineHeight: 1.5 } },
+      '🎓 Compare one store’s LifeLenz schedule weeks before vs. after a training workshop.' +
+      (loc ? ' ' + storeLabel + ' · ' + periodLabel + ' · ' + weeks.length + ' week' + (weeks.length === 1 ? '' : 's') : '')),
+
     div({ style: { display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr)' } },
-      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: v => { setScope(v); setInspectWeekKey(null); }, mode: 'store' }),
+      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: v => { setScope(v); setInspectWeekKey(null); }, mode: 'progressive' }),
       loc && div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-        span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Period:'),
-        h(DateRangeControl, { value: dateRange, onChange: setDateRange, allowCustom: true }),
+        h(WeekRangeControl, { weeks: allWeeksForStore, value: weekRange, onChange: setWeekRange }),
         h(ExportDropdown, {
           title: 'Schedule Retention — ' + (storeLabel || '') + (periodLabel ? ' · ' + periodLabel : ''),
           filename: 'schedule_retention_' + (loc || 'store') + '_' + new Date().toISOString().slice(0, 10),
           rows: weeks.map(w => ({
-            'Week of': wkLabel(w.weekStart), 'Labor %': pct(w.laborPct), 'Sched vs Fcst Hrs': hm(w.hrsDiff),
+            'Week of': wkLabel(w.weekStart), 'Labor %': pct(w.laborPct), 'Sched vs Fcst Hrs': hmSigned(w.hrsDiff),
             'Scheduled Hrs': hm(w.schedHrs), 'Forecast Hrs': hm(w.fcstHrs), 'Schd TPMH': w.tpmh == null ? '' : w.tpmh.toFixed(2),
             'Fixed %': fracPct(w.fixedLaborPct), 'Floor %': fracPct(w.floorLaborPct), 'Fixed+Floor %': fracPct(w.combinedFixedFloorPct),
             'Sales Forecast': w.fcstSales, 'Actual Sales': w.sales || '', 'GC Forecast': w.fcstGC,
@@ -279,24 +387,38 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
       ),
     ),
 
-    !loc ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
-      div({ style: { fontSize: 26, marginBottom: 10 } }, '🎓'),
+    !loc && scope.level === 'all' ? emptyState('🎓',
       'Pick a location above to see its schedule-retention report — every LifeLenz business week in the selected period, side by side.')
-    : !weeks.length ? div({ style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
-      div({ style: { fontSize: 26, marginBottom: 10 } }, '📋'),
-      'No LifeLenz schedule weeks for ' + storeLabel + ' in this period. Widen the date range or check the daily LifeLenz sync.')
+    : !loc ? emptyState('🏬',
+      'This report compares one store’s own schedule weeks over time — pick a Store above to see it. ' +
+      'A rollup across a whole ' + (scope.level === 'state' ? 'state' : 'patch') + ' is a separate report (the patch/operator/org/state rollup work), not built into this per-store view.')
+    : !weeks.length ? emptyState('📋',
+      'No LifeLenz schedule weeks for ' + storeLabel + ' in this period. Widen the week range or check the daily LifeLenz sync.')
     : div({ style: { padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 } },
 
-      // Smart analysis — plain-language, grounded in the real weeks currently shown.
-      div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderLeft: '3px solid var(--amber)', borderRadius: 8, padding: '10px 14px' } },
-        div({ style: { fontSize: 13, fontWeight: 800, marginBottom: narrative.bullets.length ? 6 : 0 } }, narrative.headline),
-        ...narrative.bullets.map((b, i) => div({ key: i, style: { fontSize: 10.5, color: 'var(--text2)', marginTop: 2 } }, '• ' + b)),
-        weeks.length >= 2 && div({ style: { fontSize: 9, color: 'var(--text3)', marginTop: 6 } },
+      // Smart analysis — plain-language, grounded in the real weeks currently shown. Dispatch
+      // #140 item 5: shrunk into a compact strip with bullets spread horizontally (flex-wrap)
+      // instead of stacked one-per-line, freeing vertical room for the stacked charts below.
+      div({ style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderLeft: '3px solid var(--amber)', borderRadius: 8, padding: '8px 12px' } },
+        div({ style: { fontSize: 12, fontWeight: 800, marginBottom: narrative.bullets.length ? 4 : 0 } }, narrative.headline),
+        narrative.bullets.length > 0 && div({ style: { display: 'flex', flexWrap: 'wrap', columnGap: 16, rowGap: 2 } },
+          ...narrative.bullets.map((b, i) => div({ key: i, style: { fontSize: 10, color: 'var(--text2)' } }, '• ' + b))),
+        weeks.length >= 2 && div({ style: { fontSize: 9, color: 'var(--text3)', marginTop: 4 } },
           markedWeekKey ? 'Split at the 📌 marked week — click any week header to move it.' : 'No week marked as the workshop yet — click a week header below to mark it (defaults to a midpoint split until then).')),
 
-      sparkline && div({ style: { display: 'flex', alignItems: 'center', gap: 10 } },
-        div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, 'Labor % trend'),
-        sparkline,
+      // Stacked per-metric sparklines ("for effect", owner's own words) — a small-multiples
+      // trend strip, one row per metric, driven off the same METRICS registry as the table below.
+      div({ style: { display: 'flex', flexDirection: 'column', gap: 5, padding: '8px 10px', border: '.5px solid var(--bdr)', borderRadius: 8, background: 'var(--surf2)' } },
+        div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, 'Trend — every metric, pre vs. since'),
+        ...METRICS.map(m => {
+          const sp = sparklineFor(m.get);
+          if (!sp) return null;
+          const lastVal = m.get(weeks[weeks.length - 1]);
+          return div({ key: m.key, style: { display: 'flex', alignItems: 'center', gap: 10 } },
+            div({ style: { width: 118, fontSize: 10, color: 'var(--text2)', fontWeight: 600, flexShrink: 0 } }, m.label),
+            sp,
+            div({ style: { fontSize: 10.5, fontFamily: 'var(--mono)', fontWeight: 700, marginLeft: 'auto', color: m.color ? m.color(lastVal) : 'var(--text)' } }, m.fmt(lastVal)));
+        }),
         div({ style: { fontSize: 9, color: 'var(--text3)' } }, '● before  ·  ● since (or unmarked)')),
 
       // Side-by-side week grid — weeks in COLUMNS (chronological, oldest→newest), metrics in
@@ -311,14 +433,7 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
               String(i),
             )))),
           h('tbody', null,
-            metricRow('Labor % Sales', w => pct(w.laborPct)),
-            metricRow('Sched vs Fcst Hrs', w => (w.hrsDiff >= 0 ? '+' : '') + hm(w.hrsDiff), w => diffColor(w.hrsDiff)),
-            metricRow('Scheduled Hrs', w => hm(w.schedHrs)),
-            metricRow('Forecast Hrs', w => hm(w.fcstHrs)),
-            metricRow('Schd TPMH', w => w.tpmh == null ? '—' : w.tpmh.toFixed(2)),
-            metricRow('Fixed % (hrs)', w => fracPct(w.fixedLaborPct), w => segColor(w.fixedLaborPct)),
-            metricRow('Floor % (hrs)', w => fracPct(w.floorLaborPct), w => segColor(w.floorLaborPct)),
-            metricRow('Fixed+Floor %', w => fracPct(w.combinedFixedFloorPct), w => combColor(w.combinedFixedFloorPct)),
+            ...METRICS.map(m => metricRow(m.label, w => m.fmt(m.get(w)), m.color ? w => m.color(m.get(w)) : null)),
             metricRow('Sales Forecast', w => f$(w.fcstSales)),
             metricRow('Actual Sales', w => w.sales > 0 ? f$(w.sales) : 'forecast-only', w => w.sales > 0 ? '#10b981' : 'var(--text3)'),
             metricRow('GC Forecast', w => (w.fcstGC || 0).toLocaleString()),
@@ -340,7 +455,7 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
             h('td', { style: { padding: '3px 8px', color: 'var(--text2)' } }, DOW[d.date.getDay()] + ' ' + (d.date.getMonth() + 1) + '/' + d.date.getDate()),
             h('td', { style: { textAlign: 'right', padding: '3px 8px' } }, hm(d.schedHrs)),
             h('td', { style: { textAlign: 'right', padding: '3px 8px', color: 'var(--text3)' } }, hm(d.fcstHrs)),
-            h('td', { style: { textAlign: 'right', padding: '3px 8px', color: diffColor(d.hrsDiff), fontWeight: 700 } }, (d.hrsDiff >= 0 ? '+' : '') + hm(d.hrsDiff)),
+            h('td', { style: { textAlign: 'right', padding: '3px 8px', color: diffColor(d.hrsDiff), fontWeight: 700 } }, hmSigned(d.hrsDiff)),
             h('td', { style: { textAlign: 'right', padding: '3px 8px' } }, pct(d.laborPct)),
             h('td', { style: { textAlign: 'right', padding: '3px 8px' } }, f$(d.fcstSales)))))),
         h(StationBreakdown, { jobRows: jobsIdx[loc + '|' + inspectWeek.weekKey] })),
@@ -350,10 +465,5 @@ export function ScheduleRetentionPanel({ ds, stores, onClose }) {
     ),
   );
 
-  return h(RoutePanelShell, {
-    title: 'Training Retention',
-    icon: '🎓',
-    subtitle: loc ? (storeLabel + (periodLabel ? ' · ' + periodLabel : '') + ' · ' + weeks.length + ' week' + (weeks.length === 1 ? '' : 's')) : 'Pick a location to compare schedule weeks before vs. after a workshop',
-    onBack: onClose,
-  }, body);
+  return body;
 }
