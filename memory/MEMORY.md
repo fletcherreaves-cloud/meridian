@@ -84,6 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #142 — Performance Review: Sales/Labor targets bypass the official
+  cascade, Voice OSAT never wired despite real data, yearly-target decimal display, re-confirm
+  Complaints](dispatch-142.md).** Screenshot showed monthly Sales scored "Exceeds" against a
+  target 4-14× too small to be real. **Root cause confirmed by reading the code**:
+  `review-engine.js`'s Sales/Labor metrics (~line 927-928) never use `officialTgts`
+  (`mergedTargetsForLocMonth`'s correct DEFAULT<yearly<monthly<override cascade, computed on the
+  line directly above and correctly used by every OTHER metric) — they instead `sum()`/`avg()` a
+  raw manual-upload field off `ds.laborRows` directly, a completely separate legacy path. Explains
+  three of the owner's items at once (wrong sales number, labor not respecting monthly target,
+  "monthly supersedes yearly" not applying) from one bug. Also: **Voice OSAT has real parsed data
+  (`tOsat`, confirmed live in the yearly-targets parser) that has simply never been added to
+  `REVIEW_METRIC_TARGET_FIELD`** — a genuinely missing one-line map entry, not a parser gap.
+  Decimal-display concern investigated as a display-only fix (parser already preserves full
+  precision correctly, never truncates). **Complaints/"customer contacts" re-confirmed as
+  already-correct** (dispatch #135's raw-count-vs-/100K-rate finding stands) — communicated back
+  to the owner in the dispatch rather than re-opened.
 - **📋 (2026-08-25): [Dispatch #141 — Training Retention: patch/operator/org/state rollup report
   ("who is driving this")](dispatch-141.md).** New aggregate view across the per-store report
   dispatch #140 covers. **Blocking prerequisite found by reading the code**: the per-store
