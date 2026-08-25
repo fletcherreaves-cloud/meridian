@@ -84,6 +84,16 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #122 — Events & Tags: holiday sub-filter + print shows full filtered list](dispatch-122.md)** —
+  Owner: *"for Holidays, once selected, add another selector for which holiday... for print, show
+  all results in one view."* `EventCalendar` (`store-dash.js`) — each holiday already carries a
+  stable name (`buildHolidays()`'s `label`, written into the event's `note` field on auto-tag), so
+  a second-level filter just needs to derive distinct holiday names from the already-filtered set,
+  no schema change. Print: confirmed the panel has NO print functionality today at all, and its
+  results list is `overflow:auto`-scrolled inside a `maxHeight:92vh` modal, so native browser print
+  would only capture the visible scroll region — needs a real full-list print view, following an
+  existing in-repo pattern (e.g. `visit-readiness-report.js`'s printable-HTML approach) rather than
+  inventing a new one.
 - **📋 (2026-08-25): [Dispatch #121 — Forecasting Reference: update content, remove byline, convert to a route page](dispatch-121.md)** —
   Owner: *"Need to update to current... remove the line with my name and title... [title is]
   Director of Strategy Planning and Improvement... convert to url page... last version update was
