@@ -860,6 +860,57 @@ export async function loadLifeLenzShiftAssignments({ start, end, locs } = {}) {
   }));
 }
 
+// ── Time Punches (dispatch #138) — real clock punches (shift + meal), un-tokenized under
+// dispatch #126 ──────────────────────────────────────────────────────────────────────────────
+// Read-only from the client: rows are written only by scripts/qsrsoft-punch-times-pull.mjs's
+// service-role key (qsr_punch_times has no insert/update/delete policy for `authenticated` —
+// see supabase/schema-qsr-punch-times.sql). RLS gates the SELECT the exact same way
+// lifelenz_shift_assignments does above — tenant match + accessible_locs scoping, NOT an
+// identity-reveal tier (dispatch #126 owner directive: "no reason to hide names for scheduling
+// and punch times"). `employee_name` is nullable (resolved via a separate qsr_employee_tenure
+// join, not from the punch endpoint) — a null falls back to the geid-based short id client-side,
+// same convention as Crew Schedule Lookup's shortEmployeeId().
+//
+// ⚠️ This table has NO derived business-day `dt` column (schema header: boundary NOT confirmed —
+// no compType param on this endpoint). `start`/`end` here are 'YYYY-MM-DD' strings applied as a
+// RAW start_date_time range, widened by one day on each side so the whole 4am-4am business-day
+// window for the requested range is guaranteed to be inside the fetched set — callers must bucket
+// and filter the exact business day client-side via businessDate() (src/utils/date.js), which
+// src/views/time-punches-panel.js does. Never assume start_date_time's calendar date IS the
+// business day.
+export async function loadPunchTimes({ start, end, locs } = {}) {
+  if (!supabase) return [];
+  const widen = (dateStr, deltaDays) => {
+    if (!dateStr) return undefined;
+    const d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + deltaDays);
+    return d.toISOString().slice(0, 10);
+  };
+  const qStart = widen(start, -1);
+  const qEnd = widen(end, 1);
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_punch_times').select('*').range(from, to);
+    if (qStart) q = q.gte('start_date_time', qStart + 'T00:00:00');
+    if (qEnd) q = q.lte('start_date_time', qEnd + 'T23:59:59');
+    if (locs && locs.length) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+    return q;
+  }, 1000, 'qsr_punch_times');
+  return (data || []).map(r => ({
+    loc:           r.loc,
+    geid:          r.geid,
+    employeeName:  r.employee_name,
+    punchType:     r.punch_type,          // 'shift' | 'meal'
+    isPaidBreak:   r.is_paid_break,
+    startDateTime: r.start_date_time,
+    endDateTime:   r.end_date_time,
+    inModified:    r.in_modified,
+    outModified:   r.out_modified,
+    jobTitleCode:  r.job_title_code,
+    badgeType:     r.badge_type,
+    updatedAt:     r.updated_at,
+  }));
+}
+
 // Save labor rows to Supabase for cross-device persistence and DI calibration history
 export async function saveLaborRows(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };

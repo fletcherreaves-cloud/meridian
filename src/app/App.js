@@ -197,6 +197,9 @@ const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ 
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
+// Time Punches (dispatch #138) — companion to Crew Schedule Lookup just above, same
+// lazy-panel/route-panel wiring shape.
+const TimePunchesPanel = lazyPanel(() => import('../views/time-punches-panel.js').then(m => ({ default: m.TimePunchesPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
 // lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
@@ -2751,6 +2754,7 @@ function App() {
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='security')       perm('security.view')&&setShowSecurity(true);
         if(modal==='crew-schedule')  perm('analytics.store')&&goRoute('crew-schedule');
+        if(modal==='time-punches')   perm('analytics.store')&&goRoute('time-punches');
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
@@ -2930,6 +2934,7 @@ function App() {
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
+      routePanel==='time-punches'&&h(TimePunchesPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-analysis'&&h(RoutePanelShell,{
         title:'Food Cost',
         icon:'🥗',

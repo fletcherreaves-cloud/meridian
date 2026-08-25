@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the twelve panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134, minus #140)', () => {
-    // Ratchet, not a ceiling: adding a thirteenth route panel is a real routing change (a new
+  it('is exactly the thirteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138, minus #140)', () => {
+    // Ratchet, not a ceiling: adding a fourteenth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -212,10 +212,12 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // report) as route:true from day one, per its own explicit ask (twelve -> thirteen). Dispatch
     // #140 item 1 then moved it into the Scheduling & Labor hub as a tab (kind:'hub-tab'), the
     // same "route:true -> hub-tab" demotion #106 did for fcst-accuracy/lifelenz-bridge above --
-    // net back down to twelve, same shape as that precedent, not a new kind of change.
+    // net back down to twelve. Dispatch #138 added 'time-punches' (Time Punches) as route:true
+    // from day one, same "would I ever want to send someone a link to this?" reasoning as its
+    // 'crew-schedule' sibling (twelve -> thirteen).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub',
+      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub', 'time-punches',
     ]);
   });
 
