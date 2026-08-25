@@ -180,3 +180,104 @@ Per this repo's own #366 lesson (a test that only imports the engine can't tell 
   Assignment/override system — untouched. The `store-dash.js:15` dead `ModelHealthBadge` import
   (imported, never rendered) — a one-line adjacent cleanup, mention it in the PR if convenient,
   not required.
+
+## Resolution (2026-08-25)
+
+All 4 steps landed as specified, in `src/engine/forecast.js` only (plus the one adjacent cleanup
+named above). Nothing in the "explicitly not in this dispatch" list was touched.
+
+**Step 1 — measured before touching anything.** Built a throwaway fixture harness reusing
+`forecast.test.js`'s `ds`/`laborRows` builder pattern (temporary test file, run once, logged via
+`--reporter=verbose`, then deleted — never committed). Six scenarios against real computed output,
+not reasoning from reading the code:
+
+| scenario | `modelHealthScore` (pre-fix) | `computeModelHealth` (pre-fix) |
+|---|---|---|
+| A: fresh/healthy | 100 / Healthy | 100 / Trusted (green) |
+| B: 25d-stale calibration | 87 / Healthy | 79 / Trusted (green) |
+| C: drifting MAPE (2W≫6W) | 92 / Healthy | 75 / Trusted (green) |
+| D: never calibrated, 900d-stale data | 4 / Needs Attention | 6 / Needs Attention (red) |
+| E: calibrated 900d ago, dead data, terrible MAPE, low samples | 15 / Needs Attention | 17 / Needs Attention (red) |
+| **F: Calibration/Freshness/Sample maxed, Accuracy a true 0/25 (25-30% MAPE)** | **75 / Healthy** | **80 / Trusted (green)** |
+
+Confirmed both things the dispatch predicted: real point-level divergence between the two
+functions on identical inputs (up to 25 points, scenario C), AND — independent of that
+divergence — scenario F reproduced the floor-masking bug live in `modelHealthScore` itself: a
+store whose forecast is measurably wrong 25-30% of the time still graded green because three
+healthy components diluted the one true failure. That scenario became the primary fixture for
+every test written afterward.
+
+**Step 2 — one canonical rubric, landed in `modelHealthScore`.** Weights (30/25/25/20) and grade
+cutoffs (75/50) unchanged — no evidence surfaced anywhere in this work that supports different
+numbers. True-zero floors and the 6W→4W→full MAPE-window priority were already
+`modelHealthScore`'s shape; kept as-is. Settings-fingerprint check fixed for real: it now computes
+`JSON.stringify({lyOutlierThreshold, opsNorm})` from the CURRENT `settings` inline (matching
+`backtest.js`'s `calibrateStore`, which already stamps this same shape onto `di.settingsFp`) and
+compares against `di.settingsFp`, instead of reading `settings._fp`/`settings._settingsFp`, which
+grepped clean across the whole `src` tree — never assigned. Added the weakest-link override gate
+on top of the weighted sum: never-calibrated, data >45 days stale, or Accuracy scoring a true 0
+caps the grade at red; the promoted MAPE-drift check (`mape2w > mape6w + 5`) caps a would-be-green
+store at yellow instead, since drift is a leading indicator, not a proven failure — matching the
+dispatch's own distinction between the three "full failure" conditions and the drift condition's
+softer "shouldn't grade green" language.
+
+One addition beyond the dispatch's literal text, found necessary by the render-level verification
+step it also mandates: the gate clamps the returned **`score` number**, not only the `.grade`
+label object. Both `at-a-glance.js`'s red-store checklist item and its district green/yellow/red
+tally bucket by `modelHealthScore(...).score` thresholds directly (`s<50`, `score>=75`), never by
+`.grade` — so a label-only gate would have been invisible on the one screen (district-wide view)
+this whole dispatch is partly about, while still showing correctly on the two screens that read
+`.grade` as a string (store-analytics.js's confidence bar, `ModelHealthBadge`). Verified this
+mattered: an AtAGlance render test against scenario F failed until the score itself was clamped,
+even with the grade already correctly gated to red — the exact "fixed but never wired in" failure
+mode CLAUDE.md's own standing rule warns about, caught by rendering the actual consumer instead of
+trusting the function's return value in isolation. `reasons[].pts` — the per-component breakdown
+users actually see broken out in both UIs — stays the honest, unclamped weighted math; only the
+single summary number is capped, matching the SLA-scoring precedent this dispatch is grounded in
+(`min(hard-gate, weighted-average)`).
+
+**Step 3 — collapsed to one implementation.** `computeModelHealth(loc, settings, ds)` keeps its
+exact existing signature (including the swapped argument order every real call site already
+uses) and is now a thin adapter: calls `modelHealthScore(loc, ds, settings)`, then reshapes
+`reasons` (keyed by `.cat`) into the `{components, notes}` shape by `.pts`/`.msg`. Confirmed zero
+code changes were needed in `at-a-glance.js`, `store-analytics.js`, or `model-health-badge.js` —
+all three still call the same functions with the same signatures. Re-ran the step-1 fixture
+harness post-fix: all six scenarios now produce byte-identical score/grade from both functions
+(by construction — one calls the other), including scenario F correctly gating to
+`49 / Needs Attention` on both sides.
+
+**Step 4 — red grade has a consequence.** `forecastRange`/`forecastRangeAsync` — the functions
+`store-analytics.js`'s `StoreDash` actually calls to build the displayed projection — now compute
+`modelHealthScore` once per range call (not per day; it's an O(rows) scan and a display range can
+cover many days) via a small `_redGateForceModel` helper, and when the grade is red, pass
+`forceModel:'simple'` through to `forecastDay` for every day in the range. `forecastDay`'s
+`forceModel` argument already existed and already short-circuits `getModelAssignment` when set
+(added under v4.195 for the Forecast Accuracy Report), so `backtest.js` and that report — both of
+which pass their own explicit `forceModel` to test "what would model X have produced" — never
+reach this gate at all; nothing in `getModelAssignment`, `saveModelOverride`, or the Model
+Assignment backtest/override system was touched.
+
+**Verification — exercises the actual consumers, not just the two functions side by side.** Per
+the dispatch's own instruction, the step-1 comparison doesn't count as final verification. Two new
+test files, reusing the `createRoot`/`act`-under-`@vitest-environment happy-dom` pattern already
+established in `at-a-glance-checklist-freshness.test.js` (no `@testing-library` dependency in this
+repo):
+- `src/__tests__/model-health-reconcile.test.js` — renders `AtAGlance` with the scenario-F fixture
+  and asserts the rendered checklist/tally text reads "1 store at red model health" (not green);
+  renders `AtAGlance` again with a never-calibrated store as the dispatch's own illustrative
+  weakest-link example; renders `ModelHealthBadge` directly and asserts the DOM text contains both
+  the canonical score number and "Needs Attention" for the gated case, and separately asserts a
+  genuinely-healthy fixture renders "Trusted" with no false-positive gating.
+- `src/__tests__/model-health-red-gate-forecast.test.js` — calls `forecastRangeAsync` and
+  `forecastRange` directly (the real `StoreDash` code path) with a store whose
+  `DEFAULT_MODEL_ASSIGNMENTS` weekly model is `'ae'`, and asserts every returned day has
+  `modelUsed:'simple'` when the store is red-graded, and `modelUsed:'ae'` (the gate did NOT fire)
+  when the same store is healthy-graded — proving the override is real and conditional, not a
+  blanket change.
+
+8 new tests, all passing. Full suite: 228 files / 2363 tests, green (up from 226/2355 pre-dispatch).
+Build clean. Entry chunk gzip unchanged (456.86 KB — `forecast.js` was already in the entry
+bundle, this change adds logic inside it rather than moving code across the lazy/eager boundary);
+eager total 528.40 KB → 528.00 KB gzip (net negative, from the `store-dash.js` dead-import
+removal). Full detail and the exact before/after gzip numbers: commit body / `v5.152` changelog
+entry (`src/app/changelog/5.152.js`).
