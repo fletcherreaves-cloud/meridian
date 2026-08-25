@@ -400,9 +400,8 @@
   </div>
   <div class="cover-meta">
     MCDOK | Emerald Arches District<br>
-    Prepared by Meridian v4.210+<br>
-    Fletcher Reaves, District Manager<br>
-    Reference Date: June 2026
+    Meridian v5.164<br>
+    Reference Date: August 2026
   </div>
 </div>
 
@@ -417,6 +416,7 @@
   <div class="toc-entry"><span>4. Adaptive Ensemble (AE) — 5-Signal Blend</span><span class="toc-pg">§4</span></div>
   <div class="toc-entry"><span>5. Adaptive DI — Calibrated Multi-Window EWMA</span><span class="toc-pg">§5</span></div>
   <div class="toc-entry"><span>6. Multi-Model Engine (Composite, Trend, Momentum, Regression)</span><span class="toc-pg">§6</span></div>
+  <div class="toc-entry"><span>6B. Simple — Trailing T3M/T6W/T3W</span><span class="toc-pg">§6B</span></div>
 
   <div class="toc-section">Adjustment Layers</div>
   <div class="toc-entry"><span>7. Last Year Lookup — LY Priority Chain</span><span class="toc-pg">§7</span></div>
@@ -437,6 +437,7 @@
   <div class="toc-entry"><span>20. MAPE Drift Detection</span><span class="toc-pg">§20</span></div>
   <div class="toc-entry"><span>21. Confidence Intervals (σ)</span><span class="toc-pg">§21</span></div>
   <div class="toc-entry"><span>22. LifeLenz Bridge — WFM Bias Correction</span><span class="toc-pg">§22</span></div>
+  <div class="toc-entry"><span>22B. Period-Total Scoreboard — Model Re-Validation</span><span class="toc-pg">§22B</span></div>
 
   <div class="toc-section">Appendix</div>
   <div class="toc-entry"><span>A. Store Knowledge Base — All 27 Locations</span><span class="toc-pg">§A</span></div>
@@ -487,7 +488,7 @@
     <div class="section-num">2</div>
     <div>
       <div class="section-title">Model Types Overview</div>
-      <div class="section-subtitle">Four codes — assigned per store per horizon in Model Assignments</div>
+      <div class="section-subtitle">Five codes — assigned per store per horizon in Model Assignments</div>
     </div>
   </div>
 
@@ -518,10 +519,16 @@
         <td>No — single-signal</td>
         <td>Rapid operational change, unreliable LY</td>
       </tr>
+      <tr>
+        <td><span class="badge" style="background:#0a8a6a">SIMPLE</span></td>
+        <td>Trailing T3M/T6W/T3W</td>
+        <td>No — own trailing-rate pipeline</td>
+        <td>27-store backtest winner for monthly sales totals — beat every engineered model, ~5% MAPE vs 8–14%</td>
+      </tr>
     </tbody>
   </table>
 
-  <p>Each store has a <strong>weekly</strong> model assignment and a <strong>monthly</strong> model assignment, managed in the <em>Model Assignments</em> panel. Assignments are derived from backtest results and persist in localStorage. The <code>forceModel</code> parameter (used by Forecast Accuracy Report) can bypass the assignment without mutating storage.</p>
+  <p>Each store has a <strong>weekly</strong> model assignment and a <strong>monthly</strong> model assignment, managed in the <em>Model Assignments</em> panel. Assignments are derived from backtest results and persist in localStorage (and cloud-sync to Supabase <code>user_settings</code> — see §22B). The <code>forceModel</code> parameter (used by Forecast Accuracy Report) can bypass the assignment without mutating storage.</p>
 </div>
 
 
@@ -750,6 +757,64 @@ slope     = Σ((x − x̄)(y − ȳ)) / Σ((x − x̄)²)
 intercept = ȳ − slope × x̄
 
 <span class="highlight">regression</span> = (intercept + slope × n) × (1 + plusUp)   <span class="comment"># projects at point n</span></div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════ SECTION 6B ══ -->
+<div class="section" id="s6b">
+  <div class="section-header">
+    <div class="section-num" style="background:#0a8a6a">6B</div>
+    <div>
+      <div class="section-title">Simple (Trailing T3M/T6W/T3W)</div>
+      <div class="section-subtitle">Robust trailing-rate model — the Smart Targets backtest winner, propagated into forecastDay (v4.532)</div>
+    </div>
+  </div>
+
+  <p>A 27-store backtest (v4.483) proved that a simple recency-weighted blend of trailing daily sales rates beats every engineered model (DOW/DI/AE/Composite/Momentum/Regression/Ensemble) for <strong>monthly store-sales totals</strong> — engineered models won 0 of 27 stores, ~5% MAPE vs 8–14%. <code>forecastDay()</code>'s <code>'simple'</code> branch (assigned like any other model code, via Model Assignments) makes this a first-class day-level forecast so it flows through Monthly Projections, Forecast Accuracy, Proj-vs-Actuals, and the forecast table exactly like DOW/DI/AE/EWMA. Engineered models are fully preserved and remain selectable — nothing is removed.</p>
+
+  <h3>Step 1 — Trailing Daily Rate (three recency windows, robust mean)</h3>
+  <div class="formula"><span class="comment"># Robust mean daily rate over each trailing window, anchored at asOf (exclusive) —</span>
+<span class="comment"># asOf = start of the date being forecast, so the window never sees that day or later (leak-free)</span>
+rate(window) = mean of daily sales in [asOf − window, asOf), after dropping days
+               beyond 3×MAD from the window's own median (anomaly exclusion)
+
+t3m = rate(90 days)   <span class="comment"># trailing 3 months</span>
+t6w = rate(42 days)   <span class="comment"># trailing 6 weeks</span>
+t3w = rate(21 days)   <span class="comment"># trailing 3 weeks</span>
+
+<span class="comment"># Recency-weighted blend — most weight on the most recent window</span>
+<span class="highlight">dailyRate</span> = (t3m × 0.20 + t6w × 0.30 + t3w × 0.50) / (0.20 + 0.30 + 0.50)
+             <span class="comment"># a window missing data (no rows in range) drops out and the rest renormalize</span></div>
+
+  <table>
+    <thead><tr><th>Window</th><th>Span</th><th>Weight</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td class="td-code">t3m</td><td>90 days</td><td class="td-num">0.20</td><td>Longer-run stability anchor</td></tr>
+      <tr><td class="td-code">t6w</td><td>42 days</td><td class="td-num">0.30</td><td>Medium-term baseline</td></tr>
+      <tr><td class="td-code">t3w</td><td>21 days</td><td class="td-num">0.50</td><td>Heaviest weight — most responsive to recent trajectory</td></tr>
+    </tbody>
+  </table>
+
+  <p><strong>Minimum required:</strong> 14 trailing rows with real sales (<code>sales &gt; 0</code>, period-summary rows excluded). Below that, <code>forecastSimple()</code> returns null and <code>forecastDay()</code> falls through to the engineered DOW/DI pipeline for that store/date.</p>
+
+  <h3>Step 2 — Same-DOW Shape (a period total has no weekday; a single day does)</h3>
+  <p>The winning backtest graded <strong>period totals</strong>, which have no notion of a single weekday. To forecast one specific day, the trailing daily rate is scaled by how that day-of-week compares to the trailing average — computed the same robust-median way as Step 1, over the trailing 90 days:</p>
+
+  <div class="formula">allB    = robust median of ALL trailing sales in the last 90 days
+sameB   = robust median of sales on THIS forecast date's day-of-week, same 90 days
+
+<span class="highlight">dowShape</span> = clamp(sameB / allB, 0.5, 1.8)
+           <span class="comment"># requires ≥ 2 same-DOW points AND ≥ 7 total points, else dowShape = 1 (flat)</span>
+
+<span class="highlight">forecast</span> = dailyRate × dowShape</div>
+
+  <div class="callout">
+    <strong>Sums back to the winning monthly method</strong>
+    Summing 'simple' day forecasts across a full month reduces algebraically to (trailing daily rate × days) — the exact period-total method the 27-store backtest validated — while each individual day still respects its own weekday shape. Strictly pre-<code>asOf</code> at both steps, matching the AE/EWMA information horizon, so any backtest win is credible (no lookahead).
+  </div>
+
+  <h3>Guest Count</h3>
+  <p>The same two-step pipeline (trailing recency-weighted rate × same-DOW shape) runs independently on guest-count history when at least 14 trailing GC rows exist; otherwise <code>forecastSimple()</code> returns <code>gc: 0</code> and the caller's guest-count cross-check (§14) is skipped for that store/date rather than dividing by zero.</p>
 </div>
 
 
@@ -1378,6 +1443,47 @@ source = 'pattern'</div>
 </div>
 
 
+<!-- ══════════════════════════════════════════════════ SECTION 22B ══ -->
+<div class="section" id="s22b">
+  <div class="section-header">
+    <div class="section-num" style="background:#0a8a6a">22B</div>
+    <div>
+      <div class="section-title">Period-Total Scoreboard</div>
+      <div class="section-subtitle">Re-validation tool (v4.534) — grades all 5 models like-for-like on the metric the Simple model was discovered on</div>
+    </div>
+  </div>
+
+  <p>The Model Assignment and Forecast Accuracy backtests (§17–20) grade <strong>daily</strong> MAPE — a harder, different question where day-level noise and exact day-of-week placement dominate, which is the engineered models' (DOW/DI/AE) home turf. The v4.483 discovery that Simple (§6B) sweeps every engineered model was made on <strong>28-day period totals</strong>, where day-level errors cancel. The Period-Total Scoreboard (Model Assignment panel → 📊 Period-Total Scoreboard) closes that gap by grading all five models — <code>simple</code>, <code>dow</code>, <code>ae</code>, <code>ewma</code>, <code>di</code> — on the same period-total basis the discovery used, so "does Simple still sweep?" is answered on like-for-like terms rather than inferred from a different metric.</p>
+
+  <h3>Method</h3>
+  <div class="formula"><span class="comment"># Per store, roll `folds` (default 6) contiguous 28-day windows backward from the</span>
+<span class="comment"># latest actual. For each window, for each model, sum that model's leak-free daily</span>
+<span class="comment"># forecastDay() outputs over the days the window actually has data for:</span>
+
+for each 28-day window:
+  actTotal = Σ actual sales, days with data in window
+  for each model in {simple, dow, ae, ewma, di}:
+    fcTotal  = Σ forecastDay(loc, day, ds, btSettings, model), same days
+    windowMAPE(model) = |actTotal − fcTotal| / actTotal × 100
+
+<span class="highlight">periodMAPE(model)</span> = avg(windowMAPE(model) across all scored windows)
+<span class="highlight">winner</span> = model with lowest periodMAPE for this store</div>
+
+  <table>
+    <thead><tr><th>Guardrail</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr><td>Read-only</td><td>Writes nothing — no model assignments or localStorage are changed. Purely diagnostic.</td></tr>
+      <tr><td>Leak-free (engineered models)</td><td>Forced into Back Test mode (<code>eDt = date</code>) so DOW/DI/AE/EWMA trend windows anchor at the day being forecast, not the latest actual — otherwise they'd peek past the window.</td></tr>
+      <tr><td>Leak-free (Simple)</td><td>Already strictly <code>asOf = start-of-day</code> inside <code>forecastSimple()</code> (§6B) — held to the same standard here, if anything stricter.</td></tr>
+      <tr><td>AE fairness</td><td>Graded on its <em>static default</em> blend params, not the localStorage params grid-fit on full history — so an AE win here carries no in-sample lookahead advantage.</td></tr>
+      <tr><td>Sparse-window guard</td><td>A window is skipped unless at least 60% of its 28 days have actual data — a half-covered forecast total would otherwise look artificially low against the actual.</td></tr>
+    </tbody>
+  </table>
+
+  <p>Output: a per-store winner + ranked model table, a district-wide tally of how many stores each model won, and a verdict banner comparing median Simple MAPE vs the median best-engineered-model MAPE.</p>
+</div>
+
+
 <!-- ══════════════════════════════════════════════════ APPENDIX A ══ -->
 <div class="section" id="sa">
   <div class="section-header">
@@ -1461,9 +1567,9 @@ source = 'pattern'</div>
 
 
 <div class="doc-footer">
-  Meridian Forecasting Reference &nbsp;·&nbsp; MCDOK | Emerald Arches District &nbsp;·&nbsp; June 2026<br>
-  Generated from Meridian v4.210+ source — <code>src/engine/forecast.js</code><br>
-  Confidential — District Manager Internal Reference
+  Meridian Forecasting Reference &nbsp;·&nbsp; MCDOK | Emerald Arches District &nbsp;·&nbsp; August 2026<br>
+  Generated from Meridian v5.164 source — <code>src/engine/forecast.js</code><br>
+  Confidential — Internal Reference
 </div>
 
 </body>
