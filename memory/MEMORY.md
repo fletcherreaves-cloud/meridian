@@ -84,6 +84,19 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #140 — Move Training Retention into the Scheduling hub as a tab,
+  not a standalone nav item](dispatch-140.md).** Owner missed dispatch #134's Schedule Retention
+  report because it shipped as a separate top-level sidebar item instead of a tab alongside its
+  sibling scheduling tools (Labor Analytics/Scheduling/Sched Summary/Labor Analysis/Labor
+  Allocation/Skills) inside `SchedulingHubPanel`. Confirmed: that hub's tabs are a hand-maintained
+  `SCHED_TABS` array in `App.js`, not registry-driven, and `ScheduleRetentionPanel` currently
+  wraps itself in its own `RoutePanelShell` — plugging it in as-is would double-wrap chrome.
+  Exact same shape as dispatch #135's Targets Editor move (content-only section + registry
+  `kind:'nav'→'hub-tab'` flip); dispatch instructs the engineer to follow that precedent directly.
+  **Also answered, no dispatch needed**: the owner's separate "holiday selector in Event Impact"
+  question — it shipped (dispatch #122), just in the differently-named "Events & Tags" panel
+  (`store-dash.js`'s `EventCalendar`), not `event-impact.js` ("Event Impact Registry") — two
+  similarly-named, unrelated panels. Confirmed live via code read, not a bug.
 - **📋 (2026-08-25): [Dispatch #139 — Supervisor patch data has two sources of truth; the static
   one is stale ("Mary missing in Crew Schedule")](dispatch-139.md).** Confirmed root cause by
   reading the code: `src/constants.js`'s `INV_ORG_COORDS[loc].sup` is a static, hardcoded
