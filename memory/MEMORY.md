@@ -84,15 +84,29 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 (2026-08-25): [Dispatch #140 — Move Training Retention into the Scheduling hub as a tab,
-  not a standalone nav item](dispatch-140.md).** Owner missed dispatch #134's Schedule Retention
-  report because it shipped as a separate top-level sidebar item instead of a tab alongside its
-  sibling scheduling tools (Labor Analytics/Scheduling/Sched Summary/Labor Analysis/Labor
-  Allocation/Skills) inside `SchedulingHubPanel`. Confirmed: that hub's tabs are a hand-maintained
-  `SCHED_TABS` array in `App.js`, not registry-driven, and `ScheduleRetentionPanel` currently
-  wraps itself in its own `RoutePanelShell` — plugging it in as-is would double-wrap chrome.
-  Exact same shape as dispatch #135's Targets Editor move (content-only section + registry
-  `kind:'nav'→'hub-tab'` flip); dispatch instructs the engineer to follow that precedent directly.
+- **📋 (2026-08-25): [Dispatch #141 — Training Retention: patch/operator/org/state rollup report
+  ("who is driving this")](dispatch-141.md).** New aggregate view across the per-store report
+  dispatch #140 covers. **Blocking prerequisite found by reading the code**: the per-store
+  "workshop week" mark (`markedWeekKey`) is `localStorage`-only, never synced to Supabase — a
+  rollup computed in any session can't see marks set on other devices, so this dispatch requires
+  migrating that mark to a real Supabase table FIRST, before the rollup can mean anything.
+  Grouping-dimension sourcing: Patch must use dispatch #139's live `supervisorGroups()` fix
+  (never the stale static field); Operator's live-vs-static status is explicitly flagged
+  unverified (measure, don't assume); Org/State are already-stable fields, safe to use directly.
+- **📋 (2026-08-25): [Dispatch #140 — Training Retention: move into the Scheduling hub, drop the
+  internal coaching note from view, week-anchored range picker, broaden the location selector,
+  per-metric sparklines](dispatch-140.md).** Grew across three owner follow-ups on the same
+  panel. Owner missed dispatch #134's Schedule Retention report because it shipped as a separate
+  top-level sidebar item instead of a tab alongside its sibling scheduling tools inside
+  `SchedulingHubPanel` (hand-maintained `SCHED_TABS` array in `App.js`, not registry-driven) —
+  same shape as dispatch #135's Targets Editor move, engineer instructed to follow that
+  precedent directly. Also: drop `buildNarrative()`'s "— worth a follow-up coaching visit" tail
+  (owner: doesn't want a store to see that language, on-screen or in print); convert the date
+  range from calendar-day to LifeLenz-week-anchored; broaden `LocationSelector` from `mode:
+  'store'` to `'progressive'` (coordinate with #141 on the broader-scope UX); and generalize the
+  existing Labor%-only sparkline into one per metric row (owner named Sched-vs-Fcst hours and
+  TPMH explicitly, "wouldn't mind seeing all of the fields"), with a layout pass shrinking the
+  narrative box to make room for a stacked chart layout.
   **Also answered, no dispatch needed**: the owner's separate "holiday selector in Event Impact"
   question — it shipped (dispatch #122), just in the differently-named "Events & Tags" panel
   (`store-dash.js`'s `EventCalendar`), not `event-impact.js` ("Event Impact Registry") — two
