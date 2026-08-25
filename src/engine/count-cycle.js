@@ -118,7 +118,11 @@ export function inCloseWindow(dateStr, closeDays = 4) {
 // once Condiment is unconditional its universe is ~40 either way, comfortably clearing 0.75×40
 // off the 39 genuinely-counted items) — so no text-based exclusion was added on top. Full
 // measurement in memory/dispatch-96.md's Resolution section.
-const isActive = (r) => r.cls === 'Condiment' ? true : (r.active !== false || r.recipeItem === true);
+// Exported (dispatch #112) so a caller building a per-class uncounted-ITEM list off a different
+// engine (eom-inventory.js's diagnoseIncompleteCount, which has no active/recipeItem filtering of
+// its own) can bound that list to the SAME active universe this file's own classTotals use,
+// instead of re-deriving this predicate a second time.
+export const isActive = (r) => r.cls === 'Condiment' ? true : (r.active !== false || r.recipeItem === true);
 
 /**
  * Group on-hand rows into count SESSIONS — one per (store, last_counted date) — with a

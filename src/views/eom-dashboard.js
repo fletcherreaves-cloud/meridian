@@ -40,7 +40,7 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { detectSessions } from '../engine/count-cycle.js';
+import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
 import { dowOf } from '../utils/date.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 
@@ -274,6 +274,17 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
   const curPeriod = periodKey(asOf);
 
+  // Dispatch #112 — reuse count-cycle.js's own cycleCompliance() for real, tested mid-month-
+  // Paper tracking (paperMissing) and per-class counted/active tallies (perClass), rather than
+  // reimplementing either. It calls detectSessions(rows) again internally (same `rows`, so the
+  // same session grouping as sessionsByLoc/classTotalsByLoc above) — a small duplicated
+  // computation, not a duplicated ALGORITHM. Its own weekly-completion bar (COVER_FRAC=0.75)
+  // never leaks into anything below: the fields pulled from it here (paperMissing, perClass) are
+  // independent of that bar, and this function's own weeklyDone/lastWeekly/status grading
+  // (CLASS_DONE_PCT=0.98) is untouched — dispatch #97's deliberate, owner-scoped decision.
+  let complianceByLoc = {};
+  try { for (const c of cycleCompliance(rows, { asOf })) complianceByLoc[c.loc] = c; } catch { /* leave empty */ }
+
   const m = {};
   for (const loc of Object.keys(sessionsByLoc)) {
     const totals = classTotalsByLoc[loc] || {};
@@ -297,9 +308,32 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
     const lastAttempt = graded.filter(s => s.touchedWeekly)
       .sort((a, b) => attemptSize(b) - attemptSize(a) || (b.date > a.date ? 1 : -1))[0] || null;
 
+    // Dispatch #112 item 2 — "Last Count": the literal most-recent date ANY count activity
+    // happened, however small, no size/quality filter at all. Measured live (2026-08-25,
+    // qsr_onhand period 2026-08, service-role read) against the two other candidate readings
+    // already in this codebase: lastAttempt (above, size-picked) and cycleCompliance's lastAny
+    // (chronologically last NON-SPOT session) — 19/27 real stores disagreed among the three,
+    // e.g. store 6972 (lastAttempt=lastAny=08-20 vs. a real 08-25 touch neither one surfaces).
+    // The owner's ask was explicit ("even if incomplete") — this is the reading that actually
+    // answers "when did this store last touch inventory at all," so it's the one shown here;
+    // lastAttempt/lastAny stay as they were for their own existing purposes.
+    const lastCount = graded.length ? graded.map(s => s.date).sort().slice(-1)[0] : null;
+
+    // #97's own status-grading count, UNCHANGED — still weeklyDone-basis, not touched by item 1's
+    // day-detection broadening below.
     const weeklyDays = graded.filter(s => s.weeklyDone);
+    // Dispatch #112 item 1 — day-of-week detection uses ANY real Food/Condiment attempt
+    // (touchedWeekly), not only fully-weeklyDone sessions. Measured live 2026-08-25 against real
+    // qsr_onhand (period 2026-08, single-period-scoped, service-role read — 27 stores): the OLD
+    // weeklyDone-only basis populated detectedWeekdayName for 2/27 stores (7.4%); this broadened
+    // touchedWeekly basis populates 27/27 (100%), and every newly-populated store's touched dates
+    // hand-checked to an obviously real, mostly single-dominant-weekday pattern (e.g. store 6972:
+    // Thu 07/30, 08/06, 08/13, 08/20 — a clean weekly Thursday cadence the old basis never saw
+    // because no single session there ever reached the 98% Food+Condiment bar). Status grading
+    // below (weeklyDone/lastWeekly/Overdue) is completely UNTOUCHED — dispatch #97's deliberate bar.
+    const dayDetectionSessions = graded.filter(s => s.touchedWeekly);
     const dayFreq = {};
-    for (const s of weeklyDays) {
+    for (const s of dayDetectionSessions) {
       // R3 (ratchet-week-day-arithmetic.test.js) — via the shared dowOf helper (src/utils/date.js),
       // not a bare getDay call; this is DOW-bucketing an already-resolved count date, not week-
       // start/business-day boundary math, same category the ratchet's own dispatch #68 note allows.
@@ -318,15 +352,56 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
     // smaller session already cleared the bar (lastWeekly is set), the store is genuinely
     // compliant and an older, larger-but-partial attempt has nothing left worth notifying.
     let missing = null;
+    const storeRows = rows.filter(r => unpad(r.loc) === loc);
     if (!lastWeekly && lastAttempt && !lastAttempt.weeklyDone) {
       try {
-        const storeRows = rows.filter(r => unpad(r.loc) === loc);
         const diag = diagnoseIncompleteCount(storeRows, {
           period: curPeriod, asOf, windowStart: new Date(lastAttempt.date + 'T00:00:00'),
         });
         missing = (diag.byClass || []).filter(b => b.cls === 'food' || b.cls === 'condiment');
       } catch { missing = null; }
     }
+
+    // Dispatch #112 item 3/4 — Paper's uncounted count + missed-item list. The GATE (is Paper
+    // even due right now) is fully reused from cycleCompliance()'s own paperMissing, exactly as
+    // instructed — that mid-month-Paper detection (satisfiesMidPaper/paperExpected/
+    // paperThisMonth) is NOT reimplemented here. Unlike Food/Condiment above, Paper's due-ness
+    // follows its own floating mid-month cadence, independent of the Food+Condiment weekly bar,
+    // so it's gated separately: a Paper uncounted count/list only ever shows when cycleCompliance
+    // says Paper is actually due and not yet satisfied this month — never a misleading 0 or a
+    // stale count outside that window.
+    //
+    // The COUNT/item-list itself does NOT reuse perClassCounted()'s active-minus-counted, though
+    // the dispatch's own writeup suggested it — measured live (2026-08-25, real qsr_onhand, 7
+    // paperMissing=true stores) and found perClassCounted's pure-recency "most recent session
+    // touching Paper, whatever its size" pick two real ways wrong for a "how much is left"
+    // number: (a) CROSS-PERIOD LEAKAGE — it has no month boundary, so a store that touched Paper
+    // last period but not at all this period (e.g. loc 43701: last Paper touch 07-31, nothing in
+    // 08) reads as partially counted instead of 0/76 for the current period; (b) MULTI-SESSION
+    // UNDERCOUNTING — Paper counting can legitimately span more than one date within a period
+    // (e.g. loc 38609: 16 items on 08-13 + 13 more on 08-20), and a single-session pick (by
+    // recency OR by size) only ever sees one of those dates, understating real progress by the
+    // other session's items entirely. diagnoseIncompleteCount(), windowed at the CURRENT period's
+    // start, evaluates each item's OWN last_counted independently, so it naturally unions every
+    // session within the period and never reaches back into a prior one — both bugs measured
+    // fixed against the same 7 live stores (e.g. 38609's true progress: 29/74, the 16+13 union).
+    // Pre-filtered to isActive() (count-cycle.js, now exported for this reuse) because
+    // diagnoseIncompleteCount has no active/recipeItem filtering of its own — unfiltered, its
+    // byClass counts ran ABOVE the store's own active-Paper universe on several live stores.
+    const cc = complianceByLoc[loc] || null;
+    const paperMissing = !!(cc && cc.paperMissing);
+    let paperMissingRow = null, uncountedPaper = null;
+    if (paperMissing) {
+      try {
+        const paperActiveRows = storeRows.filter(r => r.cls === 'Paper' && isActiveOnHand(r));
+        const diag = diagnoseIncompleteCount(paperActiveRows, {
+          period: curPeriod, asOf, windowStart: new Date(`${curPeriod}-01T00:00:00`),
+        });
+        paperMissingRow = (diag.byClass || []).find(b => b.cls === 'paper') || null;
+        uncountedPaper = paperMissingRow ? paperMissingRow.count : 0;
+      } catch { paperMissingRow = null; uncountedPaper = null; }
+    }
+    const combinedMissing = [...(missing || []), ...(paperMissingRow ? [paperMissingRow] : [])];
 
     m[loc] = {
       // CadenceMonitor's table + the variance-trace touchpoints (annotateTouchpoints/
@@ -339,7 +414,9 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
       nWeekly: weeklyDays.length,
       nSpot: graded.filter(s => !s.weeklyDone).length,
       lastAttempt: lastAttempt ? lastAttempt.date : null,
-      missing,   // null once fully compliant (or before any attempt); else EOM-shaped byClass rows
+      lastCount,   // item 2 — literal most-recent count activity, any size, any class
+      missing: combinedMissing.length ? combinedMissing : null,   // Food/Condiment (+ Paper when due)
+      paperMissing, uncountedPaper,
       // weeklyByClassFor's "By class" chip basis (Count Cycle mode) — Food/Condiment only, the
       // same two classes the old engine's own default `classes` param ever populated — from the
       // SAME last-qualifying session used above for lastWeekly/daysSinceWeekly.
@@ -349,6 +426,19 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
         counts: { food: lastWeekly.counts.Food || 0, condiment: lastWeekly.counts.Condiment || 0 },
       }] : [],
     };
+    // Item 3 Food/Condiment uncounted counts — dispatch #98's own cycleClassCoverage() (below in
+    // this file) already derives {total,counted} per class off exactly this record shape
+    // (lastWeekly/weeklySessions/missing/classTotals); reuse it instead of re-deriving a third
+    // time. uncounted = total - counted, floored at 0 (a vacuous 0-total class reads 0, not N/A —
+    // Food/Condiment are always "due", unlike Paper's own mid-month gate above).
+    // IMPORTANT: pass the food/condiment-only `missing` here, NOT m[loc].missing (which may now
+    // carry a Paper-only row when Food/Condiment were never attempted at all this period —
+    // cycleClassCoverage's `else if (c.missing)` branch reads "class absent from this array" as
+    // "that class was fully covered", which is only true when the array came from a real
+    // Food/Condiment diagnosis).
+    const cov = cycleClassCoverage({ ...m[loc], missing });
+    m[loc].uncountedFood = Math.max(0, (cov.food.total || 0) - (cov.food.counted || 0));
+    m[loc].uncountedCondiment = Math.max(0, (cov.condiment.total || 0) - (cov.condiment.counted || 0));
   }
   return m;
 }
@@ -562,14 +652,39 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
   const th = (t) => h('th', { key: t, style: { padding: '4px 10px', borderBottom: '1px solid var(--bdr)', whiteSpace: 'nowrap' } }, t);
   // Scope addition (owner, 2026-08-24) — c.missing is EOM-shaped byClass rows (from
-  // diagnoseIncompleteCount, eom-inventory.js), filtered to Food/Condiment. Roll it up to a
-  // one-line "N items left ($X)" so a below-98% store is actionable at a glance, not just red.
+  // diagnoseIncompleteCount, eom-inventory.js). Dispatch #112 item 3/4 broadened this from
+  // Food/Condiment-only to also carry a Paper row when Paper is actually due (c.paperMissing).
+  // Roll it up to a one-line "N items left ($X)" so a below-98% store is actionable at a glance,
+  // not just red.
   const missingSummary = c => {
     if (!c.missing || !c.missing.length) return null;
     const n = c.missing.reduce((s, b) => s + b.count, 0);
     const v = c.missing.reduce((s, b) => s + b.valueAtRisk, 0);
     return n ? { n, v } : null;
   };
+  // Dispatch #112 item 3 — compact per-class uncounted-item chips, matching ClassChips'
+  // existing color coding (green=done, amber=uncounted, gray-dash=not-due) and hover-detail
+  // pattern (missingSummary's own item list, same as ClassChips' `title` tooltips) rather than
+  // inventing a new visual language. Paper is N/A (dash) whenever it isn't currently due
+  // (c.uncountedPaper == null) — never a misleading 0.
+  const fcpChip = (loc, key, label, n, missingRows) => {
+    const na = n == null;
+    const color = na ? 'var(--text3)' : n > 0 ? '#fb923c' : '#4ade80';
+    const row = (missingRows || []).find(b => b.cls === key);
+    const title = na
+      ? `${label}: not due this period`
+      : n > 0 && row
+      ? `${label}: ${n} uncounted — ${row.items.slice(0, 10).map(u => u.descr || u.wrin).join(', ')}${row.items.length > 10 ? ` …+${row.items.length - 10} more` : ''}`
+      : `${label}: fully counted`;
+    return span({
+      key: `${loc}-${key}`, title,
+      style: { fontSize: '10px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', border: `1px solid ${color}`, color, marginRight: '3px', cursor: (!na && n > 0) ? 'help' : 'default' },
+    }, na ? `${label} —` : `${label} ${n}`);
+  };
+  const UncountedFCP = ({ loc, c }) => div({ style: { display: 'flex' } },
+    fcpChip(loc, 'food', 'F', c.uncountedFood, c.missing),
+    fcpChip(loc, 'condiment', 'C', c.uncountedCondiment, c.missing),
+    fcpChip(loc, 'paper', 'P', c.uncountedPaper, c.missing));
 
   // Between-count variance windows for a store: per item, the biggest |delta| between consecutive
   // counts — that window localizes WHEN the product moved (Notes: the powerful part of the engine).
@@ -582,9 +697,14 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
     div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px' } }, '🗓 Weekly Count Cadence'),
     div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
       `Every store runs a full Food + Condiment count weekly. ${nOverdue ? `⚠ ${nOverdue} overdue (≥8 days)` : '✓ all current'}${nNever ? ` · ${nNever} with no full weekly on record` : ''}. Click a store to see which count window each item's variance happened in.`),
-    h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
+    // Panel-contract standing rule (memory/panel-contract.md, 2026-08-25) — a table this dispatch
+    // is already widening (5 -> 7 columns) must scroll horizontally on mobile, not clip. Matches
+    // the same overflowX:'auto' + width:'max-content'/minWidth:'100%' pattern already used
+    // elsewhere in this file (e.g. the FOB-report tables above).
+    div({ style: { overflowX: 'auto' } },
+    h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } },
       h('thead', null, h('tr', { style: { textAlign: 'left', color: 'var(--text3)', fontSize: '10px', textTransform: 'uppercase' } },
-        ['Store', 'Counts on', 'Last full count', 'This window', 'Status'].map(th))),
+        ['Store', 'Counts on', 'Last full count', 'Last count', 'This window', 'Uncounted F/C/P', 'Status'].map(th))),
       h('tbody', null, data.flatMap(({ loc, name, c }) => {
         const st = statusOf(c);
         const col = st >= 2 ? 'var(--crit)' : st === 1 ? '#f5bc00' : '#4ade80';
@@ -607,22 +727,35 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
               span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px', fontFamily: 'ui-monospace,Menlo,monospace' } }, `#${unpad(loc)}`)),
             h('td', { style: { padding: '6px 10px', color: 'var(--text2)' } }, c.detectedWeekdayName ? `${c.detectedWeekdayName}s` : '—'),
             h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, c.lastWeekly ? `${fmtDay(c.lastWeekly)}${c.daysSinceWeekly != null ? ` · ${c.daysSinceWeekly}d ago` : ''}` : '—'),
+            // Item 2 — the literal most-recent count activity, even incomplete (c.lastCount).
+            // Deliberately a DIFFERENT date than "Last full count" whenever the store has touched
+            // inventory since its last qualifying weekly count — that's the whole point of the
+            // column (see cadenceFromOnHand's own comment for the live-measured disagreement rate).
+            h('td', { style: { padding: '6px 10px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, c.lastCount ? fmtDay(c.lastCount) : '—'),
             h('td', { style: { padding: '6px 10px', color: 'var(--text3)' } }, `${c.nWeekly} weekly · ${c.nSpot} spot`),
+            h('td', { style: { padding: '6px 10px' } }, h(UncountedFCP, { loc, c })),
             h('td', { style: { padding: '6px 10px' } },
               span({ style: { color: col, fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' } }, label),
               missSum ? span({ style: { display: 'block', fontSize: '10px', color: 'var(--text3)', marginTop: '1px', whiteSpace: 'nowrap' } }, `${missSum.n} item${missSum.n === 1 ? '' : 's'} left · ${$(missSum.v)}`) : null)),
         ];
         if (isOpen) rowEls.push(
           h('tr', { key: loc + '-d', style: { borderBottom: '1px solid var(--bdr)' } },
-            h('td', { colSpan: 5, style: { padding: '8px 10px 10px 24px', background: 'var(--surf3)' } },
+            h('td', { colSpan: 7, style: { padding: '8px 10px 10px 24px', background: 'var(--surf3)' } },
               div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '0 0 4px' } },
                 trace.length && anchor && trace[0].date >= anchor
                   ? `FOB variance trace — since the last count (${fmtDay(anchor)})`
                   : 'FOB variance trace — this period'),
               h(VarianceTraceChart, { trace, jump }),
+              // Item 4 — the drilldown already generically renders whatever classes are present
+              // in c.missing (no class-specific logic here), so Paper's row (added by dispatch
+              // #112 item 3, gated on c.paperMissing) renders identically to Food/Condiment —
+              // verified by rendering a real Paper-missing store, not just assumed. Header date
+              // uses c.lastCount (item 2's literal most-recent-activity date), not c.lastAttempt
+              // — lastAttempt is a Food/Condiment-specific pick and can be stale or absent when
+              // the only thing missing this period is Paper.
               missSum ? div({ style: { margin: '10px 0' } },
                 div({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', margin: '0 0 3px' } },
-                  `Still uncounted since ${c.lastAttempt ? fmtDay(c.lastAttempt) : 'the last count attempt'} — notify the store to close these out`),
+                  `Still uncounted as of ${c.lastCount ? fmtDay(c.lastCount) : 'the last count activity'} — notify the store to close these out`),
                 ...c.missing.map((b, i) => div({ key: i, style: { fontSize: '11.5px', color: 'var(--text2)', padding: '2px 0' } },
                   span({ style: { fontWeight: 700, color: 'var(--text)', textTransform: 'capitalize' } }, b.cls),
                   ` — ${b.count} item${b.count === 1 ? '' : 's'} left (${$(b.valueAtRisk)}): `,
@@ -638,7 +771,7 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
                       ` between ${w.from} and ${w.to}`)))
                 : div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '4px 0' } }, 'No multi-point count history to bracket a variance window yet.'))));
         return rowEls;
-      }))));
+      })))));
 }
 
 // Change Monitor v2 (Notes 41, session model 2026-08-01) — reads the raw count ledger the way QSRSoft's
