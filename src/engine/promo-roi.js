@@ -19,7 +19,7 @@ const _num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
 // Merge the daily sources into one record per (loc, date):
 //   sales/gc  ← glimpse → salesLedger → labor → qsrActSummary (first with data wins)
 //   promo     ← glimpse (promoAmt/promoPct) → ctrl
-//   discount  ← ctrl (discAmt/discPct)
+//   discount  ← opsCashRows (auto-pulled qsr_cash_sheet, discAmt/discPct) → ctrl (manual, fallback)
 export function buildDailyRecords(ds) {
   if (!ds) return [];
   const map = {};
@@ -43,6 +43,16 @@ export function buildDailyRecords(ds) {
   setSalesGc(ds.qsrActSummaryRows, 'sales', 'gc');
   // Promo — glimpse preferred, else controls.
   for (const r of ds.glimpseRows || []) { const rec = touch(r.loc, r.date); if (!rec) continue; if (rec.promoAmt == null && _num(r.promoAmt) != null) rec.promoAmt = _num(r.promoAmt); if (rec.promoPct == null && _num(r.promoPct) != null) rec.promoPct = _num(r.promoPct); }
+  // Discount — opsCashRows (auto-pulled qsr_cash_sheet, see metric-source.js's discAmt/discPct
+  // chains) preferred, else controls. Mirrors the promo leg's glimpse-then-ctrl pattern: without
+  // this loop, discAmt/discPct only ever came from ctrlRows (manual upload), so a store/date with
+  // no manual Controls upload -- the expected steady state per CLAUDE.md's auto-first rule --
+  // scored an empty discount lever even though the auto-pulled data existed. dispatch-111.md.
+  for (const r of ds.opsCashRows || []) {
+    const rec = touch(r.loc, r.date); if (!rec) continue;
+    if (rec.discAmt == null && _num(r.discAmt) != null) rec.discAmt = _num(r.discAmt);
+    if (rec.discPct == null && _num(r.discPct) != null) rec.discPct = _num(r.discPct);
+  }
   for (const r of ds.ctrlRows || []) {
     const rec = touch(r.loc, r.date); if (!rec) continue;
     if (rec.promoAmt == null && _num(r.promoAmt) != null) rec.promoAmt = _num(r.promoAmt);

@@ -189,4 +189,4 @@ follow-up (the `"(Deactivated)"`-phantom-item finding) — a real, measured prop
   noise; budget 850 KB). `eom-dashboard` chunk (lazy, not in the eager budget): **62.29 → 62.88 KB
   gzip** (+0.59 KB).
 
-**Version:** v5.152 (`src/app/changelog/5.152.js`).
+**Version:** v5.153 (`src/app/changelog/5.153.js`; v5.152 landed concurrently for dispatch #111).
