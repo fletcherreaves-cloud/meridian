@@ -1014,7 +1014,7 @@ function KPITab({review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAut
 }
 
 function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
-  const COL_W = 78;
+  const COL_W = 86; // widened from 78 so the full rating word (e.g. "Needs Improvement") wraps to 2 lines without clipping
   const LABEL_W = 190;
 
   const qMonthMap = {};
@@ -1077,8 +1077,10 @@ function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
               pct:!!m.pctInput, dollar:!!m.dollar,
               style:{width:COL_W-10,fontSize:10,color:TEXT3,background:'transparent',
                 border:`1px dashed ${BDR}`}}),
-            rating!=null&&span({style:{fontSize:9,color:ratingColor(rating),fontWeight:700}},
-              RATING_LABELS[rating]?.slice(0,3)||rating)
+            rating!=null&&span({title:RATING_LABELS[rating]||rating,style:{fontSize:8,lineHeight:1.15,
+              color:ratingColor(rating),fontWeight:700,textAlign:'center',width:'100%',
+              wordBreak:'break-word'}},
+              RATING_LABELS[rating]||rating)
           );
         }),
         // Quarter avg cells
