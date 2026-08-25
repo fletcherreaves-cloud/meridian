@@ -353,6 +353,72 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
   return m;
 }
 
+// Overdue/On-track/Never bucket for a cadenceByLoc[loc] record — the SAME thresholds
+// CadenceMonitor's own per-store status column already uses (8d = Overdue, 14d = critical,
+// no lastWeekly ever this period = Never). Extracted so the top summary tiles (dispatch #98)
+// and CadenceMonitor's subtitle line grade every store identically instead of drifting.
+const cadenceStatusOf = c => c.daysSinceWeekly == null ? 3 : (c.daysSinceWeekly >= 14 ? 2 : c.daysSinceWeekly >= 8 ? 1 : 0);
+
+// Dispatch #98 — Food/Condiment coverage for ONE store's CURRENT weekly attempt, on the same
+// basis cadenceFromOnHand() already computed (no new fetch, no re-derivation from raw rows).
+// A compliant store (lastWeekly set) reports its real weeklySessions counts; a short attempt
+// (missing set) derives counted = total - stillMissing from diagnoseIncompleteCount's own
+// byClass rows (which don't carry `total`, so classTotals — already on the record — supplies
+// it); a store with no attempt this period at all reports 0 counted against its full universe.
+function cycleClassCoverage(c) {
+  if (!c) return null;
+  const totals = c.classTotals || {};
+  const out = {};
+  for (const cls of ['food', 'condiment']) {
+    const total = totals[cls] || 0;
+    let counted = 0;
+    if (c.lastWeekly && c.weeklySessions && c.weeklySessions.length) {
+      counted = (c.weeklySessions[0].counts && c.weeklySessions[0].counts[cls]) || 0;
+    } else if (c.missing) {
+      const row = c.missing.find(b => b.cls === cls);
+      counted = total - (row ? row.count : 0);
+    }
+    out[cls] = { total, counted };
+  }
+  return out;
+}
+
+// Count Cycle's own summary basis (dispatch #98) — the tab's top tiles + By-Class row were
+// rendering EOM's summary/classSummary/inWindow unconditionally, so switching to Count Cycle
+// showed EOM's frozen (often-zero) numbers instead of anything about weekly-count completion.
+// This mirrors the shape EOM's own summary/classSummary use one section down (same {n,label,
+// pct,doneStores,n} class shape) so the render JSX can pick a source array by `mode` without a
+// second render path — but the SOURCE is cadenceByLoc (qsr_onhand-basis, dispatch #97), not
+// r.prog (EOM-window-basis), and "done"/"on track" use cadence's own 8d/98% bars, not EOM's
+// believesDone/90%. Item-weighted like EOM's own avg (owner 2026-08-06 rule: total items
+// counted ÷ total items, not a mean of per-store percentages).
+export function cycleSummaryFor(rows, cadenceByLoc) {
+  const data = (rows || []).map(r => cadenceByLoc[String(r.loc)]).filter(Boolean);
+  const n = data.length;
+  const nOnTrack = data.filter(c => cadenceStatusOf(c) === 0).length;
+  const nOverdue = data.filter(c => cadenceStatusOf(c) >= 1 && c.daysSinceWeekly != null).length;
+  const nNever = data.filter(c => c.daysSinceWeekly == null).length;
+  const classAgg = { food: { total: 0, counted: 0, n: 0, doneStores: 0 }, condiment: { total: 0, counted: 0, n: 0, doneStores: 0 } };
+  let cnt = 0, tot = 0;
+  for (const c of data) {
+    const cov = cycleClassCoverage(c);
+    if (!cov) continue;
+    for (const cls of ['food', 'condiment']) {
+      const cc = cov[cls];
+      if (!cc.total) continue;
+      classAgg[cls].total += cc.total; classAgg[cls].counted += cc.counted; classAgg[cls].n++;
+      if (cc.counted >= cc.total * CLASS_DONE_PCT) classAgg[cls].doneStores++;
+      cnt += cc.counted; tot += cc.total;
+    }
+  }
+  const avg = tot > 0 ? cnt / tot : null;
+  const classSummary = [['food', 'Food · weekly'], ['condiment', 'Condiment · weekly']].map(([k, label]) => {
+    const a = classAgg[k];
+    return { k, label, fob: true, pct: a.total ? a.counted / a.total : null, doneStores: a.doneStores, n: a.n };
+  });
+  return { n, nOnTrack, nOverdue, nNever, avg, classSummary };
+}
+
 function ClassChips({ byClass, uncounted, npDueToday }) {
   // Food/Condiment/Paper are due to 100% by EOD; Non-Product ('N') isn't due until tomorrow — UNLESS
   // today is the last day of the month, when it's due too (owner Notes 38). Muted "tmrw" tag only when
@@ -488,7 +554,7 @@ export function CadenceMonitor({ rows, cadenceByLoc, rawByLoc, fobRows, period, 
   const [open, setOpen] = useState(null);   // loc expanded to its between-count variance windows
   const data = (rows || []).map(r => ({ loc: r.loc, name: r.name, c: cadenceByLoc[String(r.loc)] })).filter(x => x.c);
   if (!data.length) return null;
-  const statusOf = c => c.daysSinceWeekly == null ? 3 : (c.daysSinceWeekly >= 14 ? 2 : c.daysSinceWeekly >= 8 ? 1 : 0);
+  const statusOf = cadenceStatusOf;
   data.sort((a, b) => statusOf(b.c) - statusOf(a.c) || ((b.c.daysSinceWeekly || 0) - (a.c.daysSinceWeekly || 0)) || a.name.localeCompare(b.name));
   const nOverdue = data.filter(x => statusOf(x.c) >= 1 && x.c.daysSinceWeekly != null).length;
   const nNever = data.filter(x => x.c.daysSinceWeekly == null).length;
@@ -1221,6 +1287,57 @@ function sbBucket(r) {
   if (r.prog.believesDone) return 'ready';
   if (((r.prog.earlyPctCounted ?? r.prog.pctCounted) || 0) > 0.01) return 'counting';
   return 'notstarted';
+}
+
+// Dispatch #98 — the four top summary tiles + By-Class row, extracted to their own component
+// so the mode branch that picks EOM-basis (summary/classSummary/inWindow) vs Count Cycle-basis
+// (cycleSummary, cadenceByLoc/qsr_onhand — dispatch #97) numbers is the thing a test renders
+// DIRECTLY, not re-derived from an isolated calc function. Before this fix these two blocks
+// rendered unconditionally off summary/classSummary/inWindow regardless of `mode` — the exact
+// call-site bug this dispatch fixes, per CLAUDE.md's "engine right but not wired in" trap.
+// mode==='eom'/'scoreboard' path is BYTE-FOR-BYTE the pre-fix markup — additive only.
+export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWindow, hasRows }) {
+  const tiles = mode === 'progress'
+    ? [['Stores reporting', cycleSummary.n, 'Stores with on-hand count data this period'],
+       ['On track (weekly)', `${cycleSummary.nOnTrack}/${cycleSummary.n}`, 'Last qualifying Food+Condiment session ≥98% within the last 8 days'],
+       ['Avg weekly F+C complete', pct(cycleSummary.avg), 'Item-weighted Food+Condiment coverage of each store\'s current attempt this period'],
+       ['Overdue (≥8d)', cycleSummary.nNever ? `${cycleSummary.nOverdue} (+${cycleSummary.nNever} never)` : String(cycleSummary.nOverdue), 'Stores with no qualifying full weekly count in ≥8 days; "never" = none on record this period']]
+    : [['Stores reporting', summary.n],
+       ['Believe done (≥90%)', `${summary.done}/${summary.n}`],
+       ['Avg count complete', pct(summary.avg)],
+       ['Count window', inWindow ? 'OPEN' : 'not yet']];
+  const classRow = mode === 'progress' ? cycleSummary.classSummary : classSummary;
+  return h(React.Fragment, null,
+    // summary tiles — EOM/Scoreboard basis (summary/inWindow) UNCHANGED; Count Cycle (mode ===
+    // 'progress') swaps to cycleSummary instead of showing EOM's frozen tiles while a different
+    // tab is selected. Own labels/thresholds per tile — "On track"/"Overdue" reuse
+    // CadenceMonitor's own 8d bar (cadenceStatusOf), not EOM's believesDone/90%; "Count window"
+    // has no EOM-style single open/closed window for a rolling weekly cadence, so it's replaced
+    // with the overdue count the table already flags.
+    div({ style: { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' } },
+      tiles.map(([label, val, ttl], i) =>
+        div({ key: i, title: ttl, style: { flex: '1 1 160px', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: '8px', padding: '12px 14px' } },
+          div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
+          div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text)', marginTop: '4px' } }, String(val))))),
+
+    // Completion BY CLASS (owner req) — Food + Condiment (profit drivers) emphasized; Non-Product
+    // is a last-day class so a low % early is expected. Shown for the count-progress modes.
+    // Count Cycle swaps to cycleSummary.classSummary (Food/Condiment only — the only two classes
+    // weekly cadence ever checks, dispatch #97) instead of EOM's r.prog-basis classSummary
+    // (dispatch #98); same {k,label,fob,pct,doneStores,n} shape so this render logic is untouched.
+    hasRows && div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'stretch' } },
+      span({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', alignSelf: 'center', marginRight: '2px' } }, 'By class:'),
+      classRow.map(c => {
+        const p = c.pct;
+        const col = p == null ? 'var(--text3)' : p >= 0.98 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : (c.k === 'nonproduct' && !inWindow) ? 'var(--text3)' : '#64748b';
+        const title = mode === 'progress'
+          ? `${c.label}: item-weighted current-attempt coverage across stores with data this period — same 98% bar as EOM.`
+          : c.k === 'nonproduct' ? 'Non-Product is counted the LAST day — low early is expected' : c.fob ? 'FOB profit driver — count first' : '';
+        return div({ key: c.k, title, style: { flex: '1 1 130px', border: `1px solid ${c.fob ? 'rgba(245,188,0,.4)' : 'var(--bdr)'}`, borderLeft: `3px solid ${col}`, borderRadius: '8px', padding: '8px 10px', background: c.fob ? 'rgba(245,188,0,.06)' : 'var(--surf2)' } },
+          div({ style: { fontSize: '10px', color: c.fob ? '#f5bc00' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: c.fob ? 700 : 400 } }, c.label + (c.fob ? ' ★' : '')),
+          div({ style: { fontSize: '20px', fontWeight: 700, color: 'var(--text)', marginTop: '2px' } }, p == null ? '—' : pct(p)),
+          div({ style: { fontSize: '10px', color: 'var(--text3)' } }, `${c.doneStores}/${c.n} stores done`));
+      })));
 }
 
 export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
@@ -2262,6 +2379,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     return d >= countWindowStart(period);
   }, [period]);
 
+  // Count Cycle's own summary tiles + By-Class basis (dispatch #98) — cadenceByLoc (qsr_onhand,
+  // dispatch #97), NOT r.prog/summary/classSummary above (EOM-window-basis, wrong question for
+  // a rolling weekly cadence). See cycleSummaryFor's own header comment for why the shape matches.
+  const cycleSummary = useMemo(() => cycleSummaryFor(rows, cadenceByLoc), [rows, cadenceByLoc]);
+
   // ── Spine 1 step 2 (issue #126) — this panel migrates onto PanelChrome + the shared
   // ActionMenus (the pilot named in the issue). The location/patch picker below is
   // DELIBERATELY kept as bespoke markup rather than swapped to the shared LocationSelector:
@@ -2395,28 +2517,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     h(PanelChrome, { location: locationSlot, dateControl: dateControlSlot, exportSlot: exportSlotContent, actions: actionsSlot, tabs: tabsSlot }),
 
-    // summary tiles
-    div({ style: { display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' } },
-      [['Stores reporting', summary.n],
-       ['Believe done (≥90%)', `${summary.done}/${summary.n}`],
-       ['Avg count complete', pct(summary.avg)],
-       ['Count window', inWindow ? 'OPEN' : 'not yet']].map(([label, val], i) =>
-        div({ key: i, style: { flex: '1 1 160px', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: '8px', padding: '12px 14px' } },
-          div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' } }, label),
-          div({ style: { fontSize: '22px', fontWeight: 700, color: 'var(--text)', marginTop: '4px' } }, String(val))))),
-
-    // Completion BY CLASS (owner req) — Food + Condiment (profit drivers) emphasized; Non-Product
-    // is a last-day class so a low % early is expected. Shown for the count-progress modes.
-    rows.length > 0 && div({ style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'stretch' } },
-      span({ style: { fontSize: '10px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', alignSelf: 'center', marginRight: '2px' } }, 'By class:'),
-      classSummary.map(c => {
-        const p = c.pct;
-        const col = p == null ? 'var(--text3)' : p >= 0.98 ? '#4ade80' : p >= 0.5 ? '#f5bc00' : (c.k === 'nonproduct' && !inWindow) ? 'var(--text3)' : '#64748b';
-        return div({ key: c.k, title: c.k === 'nonproduct' ? 'Non-Product is counted the LAST day — low early is expected' : c.fob ? 'FOB profit driver — count first' : '', style: { flex: '1 1 130px', border: `1px solid ${c.fob ? 'rgba(245,188,0,.4)' : 'var(--bdr)'}`, borderLeft: `3px solid ${col}`, borderRadius: '8px', padding: '8px 10px', background: c.fob ? 'rgba(245,188,0,.06)' : 'var(--surf2)' } },
-          div({ style: { fontSize: '10px', color: c.fob ? '#f5bc00' : 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: c.fob ? 700 : 400 } }, c.label + (c.fob ? ' ★' : '')),
-          div({ style: { fontSize: '20px', fontWeight: 700, color: 'var(--text)', marginTop: '2px' } }, p == null ? '—' : pct(p)),
-          div({ style: { fontSize: '10px', color: 'var(--text3)' } }, `${c.doneStores}/${c.n} stores done`));
-      })),
+    h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
 
     // "ready for review" notification banner
     readyForReview.length > 0 && div({
