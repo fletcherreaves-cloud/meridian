@@ -84,6 +84,32 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #132 — Performance Review: wire already-captured yearly targets,
+  add Total Profit, build a Targets editor with scope-hierarchy overrides](dispatch-132.md).**
+  Owner sent 8 asks against one screenshot (delivery wait/complaints/digital+delivery GC-R-D/FOB/
+  total profit/shift cert+leader/headcount all "in yearly targets", plus a general request for an
+  in-app targets editor with company-wide/state/patch/store override). **Key finding: most of this
+  already exists** — `parsers/index.js`'s yearly-targets parser already captures `tMcdWait`,
+  `tDigAppGCRD`, `tMcdGCRD`, `tShiftLeaders`, `tHeadcount`, `tFOBTarget` per store from the
+  uploaded workbook; `review-engine.js`'s metric config just isn't reading most of them (hardcoded
+  `src:'manual'` + a magic-number note instead of `src:'auto', field:'...'`, the pattern the
+  already-working metrics use). Two items genuinely need investigation, not assumption: Complaints/
+  100K and "Shift Certified Managers" don't obviously map to an existing column. Total Profit has
+  no target field at all — interim rule (owner-stated): score it passing whenever positive, until a
+  real target is set via the new editor. FOB's target needs to prefer monthly over yearly (both
+  exist, owner confirmed monthly is authoritative). The new Targets editor is the one genuinely new
+  build — scope hierarchy should reuse the app's EXISTING state/patch/store taxonomy
+  (`LocationSelector`/`org_config`), not invent a new one, and should very likely write to a new
+  overlay table rather than mutating the workbook-sourced `yearly_targets` rows directly (real
+  architecture call, left to the engineer with reasoning required).
+- **📋 (2026-08-25): [Dispatch #131 — Performance Review monthly grid: stop truncating rating
+  labels to 3 letters](dispatch-131.md).** Owner: *"need better clarity on 'nee' and 'bel'... maybe
+  just spell it out."* Root cause confirmed by reading the exact line: NOT a data/abbreviation
+  problem — `RATING_LABELS` already holds the full words ('Exceeds'/'On Target'/'Below'/'Needs
+  Improvement'); `performance-reviews.js:1079-1080` hard-truncates them with `.slice(0,3)` for
+  display inside a narrow 78px month-column cell. Fix is display-only: stop truncating, make the
+  full word fit (wrap, widen the cell, or similar — engineer's call, must be always-visible, not
+  hover-only since this app is touch-first).
 - **📋 (2026-08-25): [Dispatch #130 — Record Day Intelligence: add reporting/print/export
   (+ panel-contract sweep)](dispatch-130.md).** Owner: *"Record days needs reporting abilities and
   print/export/pdf > all formatted per our schema."* Confirmed a real gap, not a broken feature:
