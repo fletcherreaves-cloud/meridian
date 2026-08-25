@@ -84,7 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-25): [Plan — Inventory Control calibration exercise, Notes 69](plan-inventory-control-calibration.md)** —
+- **📋 NEWEST (2026-08-25): [Dispatch #110 — Speed of Service: DT bar, bar-chart conversion, full date range, patch-selector bug fix](dispatch-110.md)** —
+  Owner's Notes 69 batch on `dt-speedofservice.js`. Corrects a mental-model detail: the "By Hour"
+  section is an HTML table with a hand-rolled `<div>` bar, not a Chart.js chart — adding an Avg-DT
+  bar there is a small table-cell change, not chart config. Only one REAL chart in the panel isn't
+  already a bar (`DtTrendChart`, weekly trend, `type:'line'`) — `DtDaypartChart` is already a bar.
+  Date range is genuinely capped at 30/60/90d (confirmed) — swap for the already-shared
+  `DateRangeControl`/`DATE_RANGE_PRESETS` (`PanelControls.js`, already used by Security/Form
+  Completions) instead of building a new one. **Real bug, root-caused**: the weekly trend goes
+  stale on patch selection because `useChart`'s redraw-effect dependency array
+  (`[weeks.join(','), series.length, mode]`) doesn't include the actual filtered series data — in
+  the default `avg` mode neither `weeks` nor `series.length` changes when only the *values* do, so
+  the Chart.js canvas never re-renders. **Explicitly out of scope**: "pick a metric, page adapts" —
+  investigation found this is a rearchitecture (the whole data layer is hardcoded to the DT/station
+  schema, never routed through `metric-source.js`'s generic `METRIC_SOURCES` registry other panels
+  already use), not a bounded feature — noted for a future, separate effort.
+- **📋 (2026-08-25): [Plan — Inventory Control calibration exercise, Notes 69](plan-inventory-control-calibration.md)** —
   Owner-driven exercise, NOT a coding task yet. Owner is manually pulling August-MTD reports
   (on hand/FOB/variance-stat/raw item/detail) and marking every issue they'd flag to a store, to
   calibrate a future "Inventory Control" intelligence feature against their own judgment before any
