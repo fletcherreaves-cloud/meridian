@@ -69,7 +69,7 @@ function renderNavTexts(permFn) {
 // perm flipped from 'security.view' to 'analytics.store' (ordinary panel RBAC, once the panel
 // stopped gating on an identity reveal) -- text content unaffected, only the permission-gate
 // tables below change.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','🎓','Training Retention','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🎯','Targets Editor','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','🎓','Training Retention','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -146,11 +146,13 @@ const HIDDEN_WHEN_DENIED = {
   // to the Scheduling & Labor section -- both new text and new icon join this list.
   'analytics.store': ['3PO Delivery', 'Count Cycle', 'Crew Schedule', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Training Retention', 'Visit Readiness', '✅', '🎓', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
-  // 'Targets Editor' (dispatch #132 item 3) shares its 🎯 icon with 'Planning' (perm
-  // analytics.store), which stays visible on a reviews.customize denial -- so per this file's
-  // own documented rule ("an icon shared with a still-visible item does not disappear"), only
-  // the text drops out, not the icon.
-  'reviews.customize': ['Targets Editor'],
+  // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
+  // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
+  // kind:'hub-tab' in panel-registry.js, same "opens a hub and selects a tab" pattern as
+  // fcst-accuracy/lifelenz-bridge). A reviews.customize denial therefore hides nothing in the
+  // SIDEBAR any more -- the Customize tab itself (inside Performance Reviews) is where that
+  // permission now gates visibility, which this nav-only snapshot doesn't reach.
+  'reviews.customize': [],
   'reviews.view': ['Performance Reviews'],
   // 'Crew Schedule' no longer carries perm:'security.view' as of dispatch #125 (moved to
   // analytics.store, see above) -- 🔒 is unique to 'Security' so it disappears with it.

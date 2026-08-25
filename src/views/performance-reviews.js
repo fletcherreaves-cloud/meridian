@@ -14,6 +14,9 @@ import { hasPermission, getOrgRoles } from '../engine/permissions.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
+// Targets Editor, moved into Customize as a sub-tab by dispatch #135 item 3 (was its own
+// standalone panel-registry nav entry under dispatch #132 — see targets-editor.js's own header).
+import { TargetsEditorSection } from './targets-editor.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -367,9 +370,9 @@ function LogosSection() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // CUSTOMIZE PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
-function CustomizePanel({cfg, onSave, onReset}) {
+function CustomizePanel({cfg, onSave, onReset, ds, initialSection}) {
   const [local, setLocal] = useState(() => JSON.parse(JSON.stringify(cfg)));
-  const [section, setSection] = useState('weights');
+  const [section, setSection] = useState(initialSection || 'weights');
   const [custRole, setCustRole] = useState('GM');
   const [custCat, setCustCat]   = useState('rgr');
   const [saved,  setSaved]  = useState(false);
@@ -441,6 +444,9 @@ function CustomizePanel({cfg, onSave, onReset}) {
     {key:'org',    label:'Organization'},
     {key:'weights', label:'Weights'},
     {key:'thresholds', label:'Rating Thresholds'},
+    // Targets Editor (dispatch #132 item 3), moved in here by dispatch #135 item 3 — "this
+    // does not need it's own panel, should be inside Customize on Perf Review dashboard".
+    {key:'targets', label:'Targets'},
     {key:'competencies', label:'Competencies'},
     {key:'logos', label:'Logos'},
   ];
@@ -480,6 +486,7 @@ function CustomizePanel({cfg, onSave, onReset}) {
       section==='org'        && h(OrgSection, {}),
       section==='weights'   && h(WeightsSection, {local, set}),
       section==='thresholds'&& h(ThresholdsSection, {local, set}),
+      section==='targets' && h(TargetsEditorSection, {ds}),
       section==='competencies' && h(CompetenciesSection, {local, set, custRole, setCustRole, custCat, setCustCat}),
       section==='logos' && h(LogosSection, {}),
     )
@@ -2366,8 +2373,8 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
-export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin', orgRoles}) {
-  const [tab, setTab]       = useState('reviews');
+export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin', orgRoles, initialTab, initialCustomizeSection}) {
+  const [tab, setTab]       = useState(initialTab || 'reviews');
   const [cfg, setCfg]       = useState(() => getReviewConfig());
   const [reviews, setReviews] = useState(() => getReviews());
   const [editing, setEditing] = useState(null);
@@ -2418,6 +2425,6 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
             onDelete:refresh})
     ),
     tab==='customize' && div({style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
-      h(CustomizePanel,{cfg, onSave:handleSaveCfg, onReset:handleResetCfg})),
+      h(CustomizePanel,{cfg, onSave:handleSaveCfg, onReset:handleResetCfg, ds, initialSection:initialCustomizeSection})),
   );
 }
