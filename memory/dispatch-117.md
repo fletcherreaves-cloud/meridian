@@ -31,14 +31,28 @@ started mid-pull, hence the ~4% partial capture) or Aug 6–7 (fully missed). Th
 sat wrong in `lifelenz_schedule` for 20 days with nothing to correct them, because the daily
 sync's own 3-day safety window moved past them within days of the outage ending.
 
-**✅ Already fixed as a DATA backfill, outside this dispatch — do not redo.** Triggered
-`lifelenz-pull.yml` via `workflow_dispatch` with `start_date=2026-08-05` on 2026-08-25 to
-re-pull and correct Aug 5–7 (and idempotently re-confirm everything after). Verify it landed
-before assuming the *specific* Aug 5–7 numbers are still wrong — but the CODE gap below is real
-regardless of whether this one incident is now backfilled, because the underlying failure mode
-(a multi-day outage whose recovery run's fixed safety window doesn't reach back far enough) is
-not novel — CLAUDE.md already documents an earlier 6-day LifeLenz outage that went unnoticed for
-lack of alerting. It will recur.
+**⚠️ CORRECTION (2026-08-25, same day) — the backfill attempt FAILED, Aug 5–7 is still wrong.**
+This section originally said the data was "already fixed" after triggering `lifelenz-pull.yml`
+via `workflow_dispatch` with `start_date=2026-08-05`. That run (id `32849614844`) **failed** —
+confirmed by reading its actual job log, not just its conclusion. Two separate auth paths both
+broke: the direct `LIFELENZ_TOKEN` failed validation (`422`), and the Playwright fallback's
+entire IDM auth flow (`idm.lifelenz.com`) is currently returning `500` on every ROPC/REST
+candidate and rendering a blank page (`<html><head></head><body></body></html>`, no visible
+login form) when navigated directly. This is a **separate, currently-live** LifeLenz auth problem
+— today's regular 10:25 UTC scheduled run succeeded, so something changed in the ~2.5 hours
+before this 12:48 UTC manual run. Do not retry blindly; this needs the owner's manual token
+refresh per the documented runbook (`memory/lifelenz-session.md` — DevTools → Network → any
+`us01-connect.lifelenz.com` request → copy `X-Auth-Token` → update the `LIFELENZ_TOKEN` GitHub
+Secret) before any re-pull, backfill or otherwise, can succeed. **So: Aug 5–7's `sales`/
+`fcst_sales` values in `lifelenz_schedule` are still wrong right now** (partial capture on Aug 5,
+`NULL` on Aug 6–7, all 27 stores) — this is unrelated to whether the CODE fix below (part B)
+ships; do not assume production data is clean when writing or testing this dispatch's fix.
+
+The CODE gap below is real regardless of when the data gets backfilled, because the underlying
+failure mode (a multi-day outage whose recovery run's fixed safety window doesn't reach back far
+enough, plus — now confirmed twice — the Playwright fallback itself being unreliable) is not
+novel. CLAUDE.md already documents an earlier 6-day LifeLenz outage that went unnoticed for lack
+of alerting. It will recur, and the Accuracy panel needs to stop rendering nonsense when it does.
 
 ## Scope — the code-side defensive fix
 
