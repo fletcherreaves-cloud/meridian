@@ -27,6 +27,11 @@ const _normLoc = l => String(parseInt(String(l ?? '').replace(/\D/g, ''), 10) ||
 const _num = v => (typeof v === 'number' && isFinite(v)) ? v : (v != null && !isNaN(+v) ? +v : null);
 const _ms = d => (d instanceof Date ? d.getTime() : new Date(String(d)).getTime());
 const clamp01 = x => Math.max(0, Math.min(1, x));
+// Dispatch #118 -- shared by analyzeGradedVisits' `freq.daysSinceLast` and
+// computeVisitReadiness's per-store `lastVisit`, so both compute "days since" the exact
+// same way instead of two inline copies drifting apart. Exported so the panel (which
+// receives an ms timestamp, not a Date) can reuse it too.
+export const daysSince = ms => (ms == null || isNaN(ms)) ? null : Math.round((Date.now() - ms) / 864e5);
 
 // SMG rating fields may be stored as a fraction (0.95) or a percent (95). Normalize
 // to a percent so fixed 0-100 targets compare correctly.
@@ -651,7 +656,7 @@ export function analyzeGradedVisits(gradedVisits, opts = {}) {
     return {
       store, n: vs.length,
       avgGapDays: gaps.length ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : null,
-      daysSinceLast: days.length ? Math.round((Date.now() - days[days.length - 1]) / 864e5) : null,
+      daysSinceLast: days.length ? daysSince(days[days.length - 1]) : null,
       passRate: vs.length ? vs.filter(v => v.pass).length / vs.length : null,
       lastType,
       overdueAt: overdueThresholdDays(lastType),
