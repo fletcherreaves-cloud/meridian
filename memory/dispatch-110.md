@@ -147,3 +147,109 @@ for whatever the generalized version's chart rendering looks like.
   chart) once both land.
 - **Do not change `loadDtHistory`'s signature without checking every existing call site** — it's
   a shared loader; a signature change ripples.
+
+## Resolution (v5.151, 2026-08-25)
+
+All four items shipped in `src/views/dt-speedofservice.js` (+ `src/lib/supabase.js` for item 3).
+Skipped nothing in scope; the "pick a metric, page adapts" item stayed explicitly out, per this
+dispatch's own scoping.
+
+**Item 1 — By-Hour Avg-DT bar + resize.** Added a second hand-rolled `<div>` bar to the Avg DT
+`<td>`, mirroring the existing Trans bar's `Math.round(v/max*60)` sizing and `dtColor()` fill
+(new `maxAvg = Math.max(1, ...hourData.map(r => r.avg||0))` alongside the existing `maxTrans`).
+Store Ranking / By Hour `flex` basis rebalanced from the old ~2:1 split (`'2 1 400px'` /
+`'1 1 220px'`) to ~3:2 (`'3 1 380px'` / `'2 1 300px'`) so By Hour has room for two bars per row.
+
+**Item 2 — DtTrendChart line→bar.** Worked through the design trade-off the dispatch flagged
+rather than flipping the `type` string: the single-series `'avg'` mode now renders as
+`type:'bar'` (matching `DtDaypartChart`'s existing treatment, per the owner's "use the bar
+throughout"); the multi-series `'store'`/`'patch'` modes deliberately stay `type:'line'` —
+grouped bars across the 15+ stores/patches this panel can show in scope would be unreadable at
+the panel's width, and nothing in the owner's ask specifically targeted those two modes. The
+`weeks`/`series` `useMemo` is completely untouched (pure rendering change); reference lines get
+an explicit `type:'line'` dataset override in bar mode, since Chart.js mixed-chart rendering
+requires it once the base chart type is `'bar'` (a dataset with no `type` inherits the base
+chart's type, which would otherwise turn the dashed 200s/240s threshold lines into more bars).
+
+**Item 3 — full date-range control.** Swapped the hardcoded `PERIODS=[30d,60d,90d]` `<select>`
+for `h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange })`,
+matching `security-panel.js`/`forms-panel.js`'s existing adoption pattern exactly. `loadDtHistory`
+in `src/lib/supabase.js` is now dual-mode: it accepts either the original bare day count
+(byte-identical behavior — `new Date(Date.now() - days*86400000)`) or a resolved `{s,e}` object
+(the exact shape `DateRangeControl`'s `onChange`/`resolveDatePreset` already produce), branching
+on `typeof range === 'object'`. Checked every call site before changing the signature, per the
+dispatch's own instruction: the panel is the ONLY production caller (a plain grep across `src/`
+confirms it), and `src/__tests__/dt-history-pagination.test.js`'s 5 calls all pass a bare number
+and exercise the unchanged numeric branch — none needed editing. The upper bound (`endDt`) is
+applied via `_pagedParallel`'s existing `extraFilter` hook (`q.gt('dt_trans_cnt',0).lte('dt',
+endDt)`) rather than a new loader parameter, since that hook already existed for exactly this
+kind of one-off additional filter. Also fixed a latent bug this change surfaced: `midDt` (the
+early/late trend-split midpoint) used to be `Date.now() - (days/2)*86400000`, which silently
+assumed the loaded range always ended *today* — true for every fixed preset, but not for a
+custom range with an end date in the past. It now derives from the *selected* range's own
+midpoint (`(new Date(s).getTime() + new Date(e).getTime()) / 2`), correct for every preset and
+for custom ranges alike.
+
+**Item 4 — the root-caused redraw bug.** Confirmed the dispatch's own root cause by reproducing
+it (see Verification below) rather than trusting the write-up. Fixed by extending `useChart`'s
+dependency array from `[weeks.join(','), series.length, mode]` to also include a content
+signature — `series.map(s => s.key + ':' + s.data.join(',')).join('|')` — so any change to the
+actual plotted values, not just the week-count or series-count, re-fires the Chart.js rebuild.
+Verified against all three trend modes, not just `'avg'` (see below).
+
+**Ratchet side-effect (item 1 + 2 together):** the two new alpha-tinted bar colors introduced by
+this dispatch (`c + 'b3'` for the new avg-mode bars, `dtColor(r.avg) + '66'` for the new By-Hour
+Avg-DT bar) would have pushed `src/__tests__/ratchet-color-alpha-concat.test.js`'s R4 ceiling
+(93 color+hex-suffix concat sites) to 95. Routed both through `withAlpha()`
+(`src/views/patch-heatmap.js`) instead, per that ratchet's own stated fix — functionally
+identical for a hex-literal color (which `dtColor()` always returns here), and correct if
+`dtColor()` is ever extended to return a `var()` token. This pulls in `patch-heatmap.js` as an
+import for one helper function; Rollup places it in its own small shared chunk
+(`patch-heatmap-*.js`, ~9.7 KB / ~3.2 KB gzip) rather than duplicating or inlining it, loaded
+only when the Speed of Service panel actually opens — not an entry-chunk cost.
+
+### Verification (measured, not asserted)
+
+This sandbox cannot reach live Supabase for `qsr_daily_activity` (RLS-restricted, per CLAUDE.md's
+standing note), so "render the real panel" here means this repo's own established pattern for
+that situation (e.g. `dispatch-107-yearly-projections-panel.test.js`): `react-dom/client` +
+`happy-dom`, with `loadDtHistory` mocked to synthetic rows and `chart.js/auto` mocked to CAPTURE
+every `Chart` construction (happy-dom has no real canvas 2D context, so the real Chart.js library
+cannot actually draw). New file: `src/__tests__/dispatch-110-sos-panel.test.js`, 6 tests, all
+against the real `DTSpeedOfServicePanel` component:
+
+- Item 3: confirms all 7 `DateRangeControl` presets (7D/14D/28D/30D/60D/90D/180D) + "Custom…"
+  render, and the old "30 Days"/"60 Days"/"90 Days" labels are gone.
+- Item 1: confirms every By-Hour table row carries TWO bar `<div>`s (`height:6px`), not one.
+- Item 2: confirms the avg-mode chart config is `type:'bar'`, its `'Avg DT'` dataset inherits
+  that type with a per-bar `backgroundColor` array (not one line color), and its two ref-line
+  datasets carry an explicit `type:'line'` override. A second test confirms `'store'` mode stays
+  `type:'line'` with one dataset per store in scope.
+- Item 4 (the real regression test): two real store locs from two different default
+  `supervisorGroups` patches — 3708 (Ardmore, "Robert Spencer") tuned to a constant 150s avg DT,
+  5183 (Chickasha, "Krystiana Langford") tuned to 250s — across two IDENTICAL weeks, so a filter
+  switch changes ONLY the series values while both of the old buggy dependencies stay constant
+  (`series.length` is always 1 in avg mode; `weeks.join(',')` is the same two Mondays for both
+  stores) — the exact shape this dispatch describes. Asserts the chart's plotted data changes from
+  `[200,200]` (all-scope weighted average) to `[150,150]` (3708-only) after switching the
+  store filter. A second case repeats the same switch in `'store'`/`'patch'` modes.
+
+**Confirmed this test is not a placebo, per "would this verification still pass if reverted?"**:
+temporarily reverted the dependency-array fix to the pre-fix
+`[weeks.join(','), series.length, mode]` and reran the suite — only the item-4 test failed (stale
+`[200,200]` instead of the correct `[150,150]`), i.e. it genuinely reproduces the reported bug and
+would have caught it before this dispatch. Restored the real fix; full file green again
+afterward.
+
+Full suite: 226 test files / 2355 tests, all green (up from the pre-dispatch baseline of 225
+files / 2349 tests — the +1 file / +6 tests is this dispatch's own new test). `npm run build`
+clean. Entry chunk: 1,567.92 KB / 456.79 KB gzip (pre-dispatch) → 1,568.13 KB / 456.86 KB gzip
+(post-dispatch) — a +0.21 KB / +0.07 KB gzip delta, effectively noise (`dt-speedofservice.js` is
+already a lazy panel via `lazyPanel()`; nothing in this dispatch adds a static import to `App.js`).
+
+### Not done / explicitly out of scope
+
+- The "pick a metric, page adapts" rearchitecture — per this dispatch's own "Not in scope"
+  section, untouched.
+- Did not sweep other panels for the same `useChart`-style dependency-array shape; this fix is
+  scoped to `dt-speedofservice.js`'s `DtTrendChart` only, per the dispatch's own bounded scope.
