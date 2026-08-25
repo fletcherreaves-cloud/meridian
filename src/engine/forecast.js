@@ -844,6 +844,19 @@ function getWxAdj(wIdx,loc,date,ws,empirical,ds){
   return Math.max(-.10,Math.min(.03,adj));
 }
 // MODEL HEALTH SCORE — 0 to 100 per store
+// CANONICAL implementation (dispatch #41, 2026-08-25). This used to be one of two independently-
+// maintained 0-100 scorers in this file — `computeModelHealth` below was the other, feeding
+// ModelHealthBadge while this one fed at-a-glance.js/store-analytics.js. Reconciled: this stays
+// canonical (true-zero component floors, 6W→4W→full MAPE-window priority), and computeModelHealth
+// is now a thin adapter over this function (see its own header) — both call sites see zero change.
+// Measured before reconciling (throwaway fixture harness, not committed — see
+// memory/dispatch-41.md ## Resolution for the numbers): on identical inputs the two functions
+// disagreed by up to 17 points on a stale-calibration case and by 25 points on a drifting-MAPE
+// case, and — independent of that disagreement — THIS function alone already had the
+// floor-masking bug the dispatch flagged: a store with perfect Calibration/Freshness/Sample but a
+// catastrophic 25-30% MAPE (Accuracy 0/25) still weighted-summed to 75/100, a green "Healthy"
+// grade, because three healthy components diluted one true failure. The weakest-link gate below
+// fixes that directly — it did not require picking one function's rubric over the other's.
 function modelHealthScore(loc, ds, settings) {
   // New/ramp stores (recentOnly flag + no DI calibration yet) are exempt from
   // health scoring — they cannot satisfy calibration or MAPE requirements by
@@ -866,10 +879,19 @@ function modelHealthScore(loc, ds, settings) {
   } else {
     const dsc = di.runDate ? Math.floor((today-new Date(di.runDate).getTime())/864e5) : 999;
     let cp = dsc>30?15:dsc>14?22:30;
-    if(di.settingsFp && di.settingsFp !== settings._fp) cp=Math.max(0,cp-10);
+    // Settings-fingerprint check — fixed for real (dispatch #41). This used to compare
+    // di.settingsFp against settings._fp, a field never assigned anywhere in the app (grepped
+    // the whole src tree), so the -10 penalty fired on EVERY calibrated store unconditionally.
+    // computeModelHealth had the mirror-image bug (compared against settings._settingsFp,
+    // also never assigned, so its penalty never fired). Fixed by computing the CURRENT
+    // settings' fingerprint the same way backtest.js's calibrateStore already stamps di.settingsFp
+    // (JSON.stringify of the same two calibration-relevant fields), so the comparison is real.
+    const _curSettingsFp = JSON.stringify({lyOutlierThreshold:settings.lyOutlierThreshold, opsNorm:settings.opsNorm});
+    const fpChanged = di.settingsFp && di.settingsFp !== _curSettingsFp;
+    if(fpChanged) cp=Math.max(0,cp-10);
     score+=cp;
     reasons.push({cat:'Calibration',pts:cp,max:30,
-      msg:cp===30?'Current and matched':dsc>30?'Stale ('+dsc+'d) — re-run Dialed-In':'Settings changed — re-run recommended'});
+      msg:fpChanged?'Settings changed — re-run recommended':cp===30?'Current and matched':dsc>30?'Stale ('+dsc+'d) — re-run Dialed-In':dsc+'d ago'});
   }
   // 2. DATA FRESHNESS (25 pts)
   const _locLab=locRows(ds&&ds.laborByLoc,(ds&&ds.laborRows)||[],loc);
@@ -881,14 +903,19 @@ function modelHealthScore(loc, ds, settings) {
   reasons.push({cat:'Data Freshness',pts:fp,max:25,
     msg:fp>=20?'Current ('+daysOld+'d)':rows.length?daysOld+'d old — refresh recommended':'No data loaded'});
   // 3. MAPE ACCURACY (25 pts) — use best available short-window MAPE, not full-period
+  // mp/isDrifting hoisted to function scope (not just this block) — the weakest-link gate
+  // below needs both: mp===0 is one of the gate's OR conditions, and a drifting store is
+  // held out of a green grade even when mp itself still scores decently.
+  let mp=0, isDrifting=false;
   if(di&&(di.mape6w!=null||di.mape4w!=null||di.mape!=null)){
     // Prefer 6W MAPE (most operationally relevant), fall back to 4W then full
     const m = di.mape6w!=null ? di.mape6w : di.mape4w!=null ? di.mape4w : di.mape;
     const m2=di.mape2w; const m6=di.mape6w;
-    let mp=m<5?25:m<8?20:m<12?13:m<18?6:0;
-    if(m2!=null&&m6!=null&&m2>m6+5) mp=Math.max(0,mp-8);
+    mp=m<5?25:m<8?20:m<12?13:m<18?6:0;
+    isDrifting=m2!=null&&m6!=null&&m2>m6+5;
+    if(isDrifting) mp=Math.max(0,mp-8);
     score+=mp;
-    const drift=m2!=null&&m6!=null&&m2>m6+5?' (⚠ drifting)':'';
+    const drift=isDrifting?' (⚠ drifting)':'';
     const mLabel=di.mape6w!=null?'6W MAPE':di.mape4w!=null?'4W MAPE':'Full MAPE';
     reasons.push({cat:'Accuracy',pts:mp,max:25,msg:mp>=20?m.toFixed(2)+'% '+mLabel+drift:m.toFixed(2)+'% '+mLabel+' — recalibrate'+drift});
   } else {
@@ -899,14 +926,52 @@ function modelHealthScore(loc, ds, settings) {
   const sp=samp>=300?20:samp>=150?15:samp>=50?10:samp>=20?4:0;
   score+=sp;
   reasons.push({cat:'Sample Size',pts:sp,max:20,msg:samp+' data points'+(sp>=15?' (strong)':sp>=8?' (adequate)':' (limited)')});
-  const grade=score>=75?{label:'Healthy',color:'#10b981',emoji:'🟢'}:
-              score>=50?{label:'Fair',color:'#f59e0b',emoji:'🟡'}:
-                        {label:'Needs Attention',color:'#ef4444',emoji:'🔴'};
+
+  // ── Weakest-link override gate (dispatch #41, step 2) ──────────────────────────────────────
+  // On top of the weighted sum, not a 5th weighted bucket. A single catastrophic component must
+  // not be diluted by three healthy ones — measured live in scenario F of the pre-fix divergence
+  // harness: Calibration 30/30 + Freshness 25/25 + Sample 20/20 + Accuracy a true 0/25 still
+  // weighted-summed to 75/100, a green "Healthy" grade, for a store whose forecast is measurably
+  // wrong 25-30% of the time. SLA-scoring precedent for this shape: min(hard-gate,
+  // weighted-average), not a replacement for the weighted core.
+  // Three conditions are full failures and cap the grade at red outright: never calibrated, data
+  // critically stale (>45d — roughly double the top Freshness cutoff), or Accuracy itself scored
+  // a true 0. A 4th — MAPE drift (2W meaningfully worse than 6W) — is a leading indicator the
+  // Accuracy number alone hasn't caught up to yet, not a proven failure, so it only holds the
+  // grade out of green (caps at yellow) rather than forcing red.
+  const neverCalibrated=!di;
+  const dataCriticallyStale=daysOld>45;
+  const accuracyIsZero=mp===0;
+  const hardFail=neverCalibrated||dataCriticallyStale||accuracyIsZero;
+  const rawLabel=score>=75?'Healthy':score>=50?'Fair':'Needs Attention';
+  let grade=score>=75?{label:'Healthy',color:'#10b981',emoji:'🟢'}:
+             score>=50?{label:'Fair',color:'#f59e0b',emoji:'🟡'}:
+                       {label:'Needs Attention',color:'#ef4444',emoji:'🔴'};
+  // displayScore: the weighted total, clamped to agree with the gated grade when the gate
+  // overrides it. Every consumer of this function's return value that buckets by `.score`
+  // thresholds instead of reading `.grade` directly (at-a-glance.js's checklist item and its
+  // district green/yellow/red tally both do — `s<50`, `score>=75`) needs the NUMBER itself to
+  // land in the right band, or the gate would only ever show up in the two spots
+  // (store-analytics.js's confidence bar, ModelHealthBadge) that read `.grade` as a string.
+  // `reasons[].pts` — the individual component breakdown users actually see broken out — stays
+  // the honest unclamped weighted math; only this single summary number is capped, matching the
+  // SLA-scoring precedent this dispatch is grounded in (`min(hard-gate, weighted-average)`).
+  let displayScore=score;
+  let gateReason=null;
+  if(hardFail && rawLabel!=='Needs Attention'){
+    gateReason=neverCalibrated?'Never calibrated.':dataCriticallyStale?'Data '+daysOld+'d stale (>45d).':'Accuracy scored 0 — MAPE at or above the failing threshold.';
+    grade={label:'Needs Attention',color:'#ef4444',emoji:'🔴'};
+    displayScore=Math.min(score,49);
+  } else if(isDrifting && rawLabel==='Healthy'){
+    gateReason='MAPE is drifting (2W meaningfully worse than 6W) — held out of Healthy pending recalibration.';
+    grade={label:'Fair',color:'#f59e0b',emoji:'🟡'};
+    displayScore=Math.min(score,74);
+  }
   const top=reasons.filter(r=>r.pts<r.max*0.5).sort((a,b)=>b.max-a.max)[0];
-  const statement=score>=75?'Calibrated and current — projections can be trusted for scheduling.':
-    score>=50?'Usable with caution. '+((top&&top.msg)||''):
-    'Needs attention before committing projections. '+((top&&top.msg)||'');
-  return{score,grade,reasons,statement,samples:samp,dataDaysOld:daysOld};
+  const statement=grade.label==='Healthy'?'Calibrated and current — projections can be trusted for scheduling.':
+    grade.label==='Fair'?'Usable with caution. '+(gateReason||(top&&top.msg)||''):
+    'Needs attention before committing projections. '+(gateReason||(top&&top.msg)||'');
+  return{score:displayScore,grade,reasons,statement,samples:samp,dataDaysOld:daysOld,gated:!!gateReason,gateReason};
 }
 
 function compute6wk(loc,ds,wb){
@@ -1701,11 +1766,30 @@ function forecastDay(loc,date,ds,settings,casc,tgt,horizon,forceModel){
     modelUsed: cal ? 'di' : (_assignedModel==='dow'||_assignedModel==='simple' ? 'dow' : _assignedModel)};
 }
 
+// Dispatch #41 step 4 — give a red Model Health grade a real consequence. When the canonical
+// modelHealthScore() grades a store red ("Needs Attention"), the store's DISPLAYED default
+// projection switches to the Simple/trailing model (T3M/T6W/T3W median — forecastDay's 'simple'
+// branch) instead of whatever engineered model triggered the red grade. That family is the one
+// this project's own v4.483 27-store backtest already proved most robust, so it's the reasonable
+// fallback rather than continuing to display a model the health score just said not to trust.
+// Scoped deliberately narrow: this only picks forecastDay's forceModel argument for the two range
+// functions below, which is what feeds the store's displayed projection (store-analytics.js's
+// StoreDash). It does NOT touch getModelAssignment, saveModelOverride, or any Model Assignment
+// backtest/override data — a caller that explicitly passes its own forceModel (the Forecast
+// Accuracy Report, backtest.js) bypasses getModelAssignment entirely already and never reaches
+// this gate. Computed ONCE per range call (not per day) — modelHealthScore does an O(rows) scan,
+// and a display range can cover many days.
+function _redGateForceModel(loc,ds,settings){
+  const h=modelHealthScore(loc,ds,settings);
+  return (h&&h.grade&&h.grade.label==='Needs Attention')?'simple':undefined;
+}
+
 function forecastRange(loc,startDate,endDate,ds,settings){
   const t=ds?ds.targets[loc]||DEFAULT_TARGETS[loc]||{}:DEFAULT_TARGETS[loc]||{};
   const casc={};const days=[];
+  const _fm=_redGateForceModel(loc,ds,settings);
   let cur=new Date(startDate);
-  while(cur<=endDate){days.push(forecastDay(loc,new Date(cur),ds,settings,casc,t));cur=addD(cur,1);}
+  while(cur<=endDate){days.push(forecastDay(loc,new Date(cur),ds,settings,casc,t,undefined,_fm));cur=addD(cur,1);}
   return days;
 }
 
@@ -1713,12 +1797,13 @@ function forecastRange(loc,startDate,endDate,ds,settings){
 function forecastRangeAsync(loc,startDate,endDate,ds,settings,onChunk,onDone){
   const t=ds?ds.targets[loc]||DEFAULT_TARGETS[loc]||{}:DEFAULT_TARGETS[loc]||{};
   const casc={};
+  const _fm=_redGateForceModel(loc,ds,settings);
   const dates=[];let cur=new Date(startDate);
   while(cur<=endDate){dates.push(new Date(cur));cur=addD(cur,1);}
   const CHUNK=14;let i=0;const results=[];
   function processChunk(){
     const end=Math.min(i+CHUNK,dates.length);
-    for(;i<end;i++) results.push(forecastDay(loc,dates[i],ds,settings,casc,t));
+    for(;i<end;i++) results.push(forecastDay(loc,dates[i],ds,settings,casc,t,undefined,_fm));
     if(onChunk) onChunk([...results],i,dates.length);
     if(i<dates.length) setTimeout(processChunk,0);
     else if(onDone) onDone(results);
@@ -1862,114 +1947,56 @@ function getDIRecommendation(r) {
     detail:'MAPE consistent. DI calibration reasonable.'};
 }
 
-// MODEL HEALTH SCORE — 0-100 per store
+// MODEL HEALTH SCORE — 0-100 per store — THIN ADAPTER (dispatch #41, 2026-08-25)
 // Tells you instantly: "Can I trust this forecast?"
 // Green ≥75 = Trust it   Yellow 50-74 = Use with judgment   Red <50 = Needs work
+//
+// Used to be a second, independently-maintained scorer with its own copy of the whole 30/25/25/20
+// rubric — same weights and cutoffs as modelHealthScore above by coincidence of a shared origin
+// commit, but its own component floors that could never reach true 0 (Calibration/Freshness/MAPE/
+// Sample floored at 6/3/5/3 respectively once a store had ever had any data — see modelHealthScore's
+// header for the measured consequence) and a mirror-image dead-field bug on the settings
+// fingerprint (compared against settings._settingsFp — also never assigned anywhere in the app, so
+// this function's fingerprint penalty never fired, opposite of modelHealthScore's always-fired bug).
+// Reconciled by calling the canonical modelHealthScore(loc, ds, settings) and reshaping its result
+// into this function's existing return shape. Zero behavior difference for at-a-glance.js/
+// store-analytics.js (unchanged, canonical directly); model-health-badge.js's ModelHealthBadge now
+// renders the SAME numbers store-analytics.js's confidence bar does, on the same screen.
+// Argument order (loc, settings, ds) is kept exactly as before — NOT (loc, ds, settings) like the
+// canonical function — because that was always the swapped order every real call site already uses;
+// changing it here would just move the "which order" foot-gun into this file instead of removing it.
 function computeModelHealth(loc, settings, ds) {
-  const _masgn2 = DEFAULT_MODEL_ASSIGNMENTS[loc];
-  if(_masgn2&&_masgn2.recentOnly&&!(settings.dialedIn&&settings.dialedIn[loc])){
-    return{total:null,grade:'blue',gradeLabel:'New Store',gradeColor:'#64748b',
-      components:{cal:null,fresh:null,mape:null,sample:null},
-      notes:{cal:'New/ramp-up store',fresh:'',mape:'',sample:''},
-      statement:'New or recently opened store — calibration not yet applicable.',newStore:true};
+  const h = modelHealthScore(loc, ds, settings);
+  if (h.newStore) {
+    return {
+      total: null, grade: 'blue', gradeLabel: 'New Store', gradeColor: '#64748b',
+      components: { cal: null, fresh: null, mape: null, sample: null },
+      notes: { cal: 'New/ramp-up store', fresh: '', mape: '', sample: '' },
+      statement: h.statement, newStore: true,
+    };
   }
-  const cal = settings.dialedIn && settings.dialedIn[loc];
-  const dataRows = (ds && ds.laborRows || []).filter(r => r.loc === loc && r.sales > 0);
-
-  // ── Component 1: Calibration status (30 pts) ──────────────────
-  let calScore = 0;
-  let calNote = '';
-  if (!cal) {
-    calScore = 0; calNote = 'Not calibrated — run Dialed-In';
-  } else {
-    const daysSinceCal = cal.runDate
-      ? Math.floor((Date.now() - new Date(cal.runDate)) / 864e5) : 99;
-    const fpChanged = settings._settingsFp && cal.settingsFp && settings._settingsFp !== cal.settingsFp;
-    if (daysSinceCal <= 7 && !fpChanged) { calScore = 30; calNote = 'Calibrated recently'; }
-    else if (daysSinceCal <= 21 && !fpChanged) { calScore = 22; calNote = 'Calibrated '+daysSinceCal+'d ago'; }
-    else if (daysSinceCal <= 42) { calScore = 14; calNote = 'Calibration aging ('+daysSinceCal+'d)'; }
-    else { calScore = 6; calNote = 'Calibration stale ('+daysSinceCal+'d) — recalibrate'; }
-    if (fpChanged) { calScore = Math.max(0, calScore - 10); calNote += ' · settings changed'; }
-  }
-
-  // ── Component 2: Data freshness (25 pts) ─────────────────────
-  let freshScore = 0;
-  let freshNote = '';
-  if (!dataRows.length) {
-    freshScore = 0; freshNote = 'No data loaded';
-  } else {
-    const latestDate = new Date(Math.max(...dataRows.map(r => r.date)));
-    const daysSinceData = Math.floor((Date.now() - latestDate) / 864e5);
-    if (daysSinceData <= 3) { freshScore = 25; freshNote = 'Data current'; }
-    else if (daysSinceData <= 10) { freshScore = 18; freshNote = 'Data '+daysSinceData+'d old'; }
-    else if (daysSinceData <= 21) { freshScore = 10; freshNote = 'Data '+daysSinceData+'d old — update soon'; }
-    else { freshScore = 3; freshNote = 'Data '+daysSinceData+'d old — needs update'; }
-  }
-
-  // ── Component 3: MAPE stability (25 pts) ─────────────────────
-  let mapeScore = 0;
-  let mapeNote = '';
-  if (!cal) {
-    mapeScore = 0; mapeNote = 'Run calibration for accuracy data';
-  } else {
-    const mape6w = cal.mape6w, mape4w = cal.mape4w, mape2w = cal.mape2w, mapeAll = cal.mape;
-    const bestMape = mape2w != null ? mape2w : mape4w != null ? mape4w : mapeAll;
-    const isDrifting = mape2w != null && mape6w != null && mape2w > mape6w + 5;
-    const isImproving = mape2w != null && mape6w != null && mape2w < mape6w - 2;
-    if (bestMape != null) {
-      if (bestMape < 5) { mapeScore = 25; mapeNote = 'MAPE excellent ('+bestMape.toFixed(2)+'%)'; }
-      else if (bestMape < 8) { mapeScore = 20; mapeNote = 'MAPE good ('+bestMape.toFixed(2)+'%)'; }
-      else if (bestMape < 12) { mapeScore = 13; mapeNote = 'MAPE fair ('+bestMape.toFixed(2)+'%)'; }
-      else { mapeScore = 5; mapeNote = 'MAPE high ('+bestMape.toFixed(2)+'%) — check events'; }
-      if (isDrifting) { mapeScore = Math.max(0, mapeScore - 8); mapeNote += ' · drifting ⚠'; }
-      if (isImproving) { mapeNote += ' · improving ▼'; }
-    } else {
-      mapeScore = 8; mapeNote = 'MAPE computing...';
-    }
-  }
-
-  // ── Component 4: Sample size (20 pts) ────────────────────────
-  let sampleScore = 0;
-  let sampleNote = '';
-  const samples = cal ? (cal.samples || 0) : dataRows.length;
-  if (samples >= 180) { sampleScore = 20; sampleNote = samples+' days of history'; }
-  else if (samples >= 90) { sampleScore = 15; sampleNote = samples+' days (good)'; }
-  else if (samples >= 42) { sampleScore = 8; sampleNote = samples+' days (growing)'; }
-  else { sampleScore = 3; sampleNote = samples+' days (limited)'; }
-
-  const total = calScore + freshScore + mapeScore + sampleScore;
-  const grade = total >= 75 ? 'green' : total >= 50 ? 'yellow' : 'red';
-  const gradeLabel = total >= 75 ? 'Trusted' : total >= 50 ? 'Caution' : 'Needs Attention';
-  const gradeColor = total >= 75 ? '#10b981' : total >= 50 ? 'var(--warn)' : 'var(--crit)';
-
-  // ── Confidence Statement (one auto-generated sentence) ────────
-  const cal_part = calScore >= 22 ? 'calibrated' : 'calibration aging';
-  const data_part = freshScore >= 18 ? 'data current' : 'data needs refresh';
-  const mape_part = mapeScore >= 20 ? 'high accuracy' : mapeScore >= 13 ? 'acceptable accuracy' : 'accuracy needs work';
-  const drift_part = cal && cal.mape2w != null && cal.mape6w != null && cal.mape2w > cal.mape6w + 5 ? ' Model is drifting — recalibrate.' : '';
-
-  let statement = '';
-  if (total >= 75) {
-    statement = 'Model is healthy and can be trusted for scheduling and projections. ' +
-      mapeNote + (drift_part || '');
-  } else if (total >= 50) {
-    statement = 'Model is usable with some caution. ' + calNote + '. ' + mapeNote +
-      '. ' + (drift_part || freshNote) + '.';
-  } else {
-    const biggest = [
-      {s:calScore, note:calNote},
-      {s:freshScore, note:freshNote},
-      {s:mapeScore, note:mapeNote},
-      {s:sampleScore, note:sampleNote}
-    ].sort((a,b)=>a.s-b.s)[0];
-    statement = 'Model needs attention before use. Primary issue: ' + biggest.note + '.';
-  }
-
+  // reasons[].cat → this function's fixed 4 keys. modelHealthScore's reasons array is the single
+  // source of both the points and the human-readable note per component.
+  const byCat = {};
+  for (const r of h.reasons) byCat[r.cat] = r;
+  const grade = h.grade.label === 'Healthy' ? 'green' : h.grade.label === 'Fair' ? 'yellow' : 'red';
+  const gradeLabel = h.grade.label === 'Healthy' ? 'Trusted' : h.grade.label === 'Fair' ? 'Caution' : 'Needs Attention';
+  const gradeColor = grade === 'green' ? '#10b981' : grade === 'yellow' ? 'var(--warn)' : 'var(--crit)';
   return {
-    total, grade, gradeLabel, gradeColor,
-    components: { cal: calScore, fresh: freshScore, mape: mapeScore, sample: sampleScore },
-    notes: { cal: calNote, fresh: freshNote, mape: mapeNote, sample: sampleNote },
-    statement,
+    total: h.score, grade, gradeLabel, gradeColor,
+    components: {
+      cal: byCat['Calibration'] ? byCat['Calibration'].pts : 0,
+      fresh: byCat['Data Freshness'] ? byCat['Data Freshness'].pts : 0,
+      mape: byCat['Accuracy'] ? byCat['Accuracy'].pts : 0,
+      sample: byCat['Sample Size'] ? byCat['Sample Size'].pts : 0,
+    },
+    notes: {
+      cal: byCat['Calibration'] ? byCat['Calibration'].msg : '',
+      fresh: byCat['Data Freshness'] ? byCat['Data Freshness'].msg : '',
+      mape: byCat['Accuracy'] ? byCat['Accuracy'].msg : '',
+      sample: byCat['Sample Size'] ? byCat['Sample Size'].msg : '',
+    },
+    statement: h.statement,
   };
 }
 
