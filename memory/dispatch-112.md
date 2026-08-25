@@ -158,3 +158,149 @@ correct item list (not just a correct count).
   — flag your reasoning in the Resolution even if you do end up picking the simplest one.
 - **Do not show a misleading Paper uncounted count when Paper isn't actually due yet** — respect the
   mid-month gating (`paperExpected`/`paperMissing`), don't just always show `active-counted`.
+
+## Resolution (2026-08-25, v5.156)
+
+All four items shipped in `src/views/eom-dashboard.js` (`cadenceFromOnHand()`/`CadenceMonitor`) +
+one one-line export added to `src/engine/count-cycle.js`. New tests:
+`src/__tests__/dispatch-112-count-cadence.test.js` (10 tests, all render/exercise the actual
+consumers, not isolated engine calls). Full suite 2393/2393 passing (231 files) including the
+pre-existing dispatch-97/dispatch-98 suites unchanged. Build clean. Entry gzip 456.87 → 456.88 KB,
+eager-payload 528.01 → 528.02 KB (budget 850 KB) — noise-level; `eom-dashboard`'s own lazy chunk
+grew 65.20 → 65.65 KB gzip.
+
+### Item 1 — count-day population: measured, then fixed
+
+Measured LIVE **before** touching any code (service-role key, `qsr_onhand`, period `2026-08`,
+single-period-scoped to match the real app's `loadQsrOnHand({period})` call, all 27 stores — see
+"data caveat" below for why single-period-scoping mattered): the old `weeklyDone`-only basis
+populated `detectedWeekdayName` for **2/27 stores (7.4%)**. Broadened `dayFreq`'s input from
+`weeklyDays` (`weeklyDone`-only) to `dayDetectionSessions` (any `touchedWeekly` session — a real
+Food/Condiment attempt, no 98% requirement) and re-measured: **27/27 (100%)**, every one of the 25
+newly-populated stores hand-checked against real session dates for an obvious weekday pattern (e.g.
+store 6972: Thu 07/30, 08/06, 08/13, 08/20 — a clean weekly Thursday cadence no session there ever
+crossed 98% to surface). Status grading (`weeklyDone`/`lastWeekly`/`daysSinceWeekly`/Overdue,
+`nWeekly` for the "This window" column) is byte-for-byte unchanged — verified by keeping `weeklyDays`
+as a separate variable from the new `dayDetectionSessions`, not repurposing it.
+
+**Data caveat that nearly produced a false measurement:** the first pass combined `qsr_onhand`'s
+two live periods (2026-07 + 2026-08, 14,547 rows total) into one `rows` array, which **doubled**
+`classTotals` (the table's PK is `loc+period+wrin`, so the same item gets a fresh row per period) —
+every session then read ~45–52% coverage and the whole exercise would have measured a phantom "0%
+compliance district-wide" that had nothing to do with count-day detection. Caught by checking how
+the real app actually calls `loadQsrOnHand` (single-period) before trusting the first measurement;
+re-scoped to one period and re-measured. Recorded here because it's exactly the kind of
+data-scoping trap this dispatch's own "measure it, don't reason about it" bar exists to catch, and
+because it fed directly into the finding below.
+
+**A second, larger finding surfaced by the same corrected measurement, reported but NOT acted on
+(out of scope for this dispatch):** even single-period-scoped, **0/27 stores** currently have a
+session crossing the 98% Food+Condiment bar at all in the live 2026-08 data — every real weekly
+session tops out around 45–52% coverage of each class's active-item universe. That means "Last full
+count" (`lastWeekly`) currently reads blank for literally every store in production, independent of
+anything in this dispatch. This is dispatch #97's own grading (explicitly out of scope to change
+here per this dispatch's "Do NOT"), so it is not touched, but it's worth a look separately — a
+98% bar that 0/27 real stores clear may be measuring something other than what it was calibrated
+against (dispatch #97 measured coverage on a 2026-08 snapshot too; whether the active-item universe
+has grown since, or whether classTotals is picking up extra rows, is unconfirmed and untouched here).
+
+### Item 2 — "Last Count": literal reading picked, with live evidence
+
+New `lastCount` field = `max(date)` across every graded session for that store, no size/quality
+filter — the most literal reading of "even if incomplete." Measured live against the two existing
+candidates: `lastAttempt` (size-priority pick, used today for the "still uncounted since" text) and
+`cycleCompliance`'s `lastAny` (chronologically last non-spot session) — **19/27 real stores
+disagreed among the three.** Concrete example: store 6972, `lastAttempt` = `lastAny` = 08-20, but
+the store genuinely touched inventory again on 08-25 — neither existing field surfaces that. Chose
+the literal max-date reading because the owner's own phrasing ("even if incomplete") describes
+exactly that case, and because the use case (a manager glancing at the table to know "when did this
+store last touch inventory at all") is answered by recency, not by attempt size or session-quality
+filtering. `lastAttempt`/`lastAny` are unchanged and still used for their own existing purposes
+(the missing-item "since X" text now uses `lastCount` instead — see item 4 below for why).
+
+### Item 3 — Food/Condiment reused an existing helper the dispatch didn't name; Paper needed a real deviation from the dispatch's own suggested implementation
+
+**Food/Condiment:** rather than re-deriving `total - counted` a third time, `uncountedFood`/
+`uncountedCondiment` call dispatch #98's own `cycleClassCoverage()` (already in this file, already
+tested) directly on the record just built. One real bug caught before shipping: `cycleClassCoverage`
+reads "class absent from the `missing` array" as "that class was fully covered" — true only when the
+array came from an actual Food/Condiment diagnosis. Once `missing` became the item-4 COMBINED array
+(Food/Condiment + Paper), a Paper-only entry would make it look like Food/Condiment were fully
+counted even when neither had ever been touched. Fixed by passing the food/condiment-only local
+`missing` into `cycleClassCoverage`, not the combined field — regression-guarded by a dedicated test
+(a store with zero Food/Condiment activity and only a Paper gap must still show its true Food/
+Condiment uncounted counts, not 0).
+
+**Paper — implemented as suggested, measured, found genuinely wrong, fixed differently:** the
+dispatch's own writeup suggested sourcing Paper's uncounted count from `cycleCompliance()`'s
+`perClassCounted()` (`active - counted`). Implemented it exactly that way first, then — per this
+session's "a reviewer's/dispatch's root cause is a hypothesis, reproduce it before trusting it"
+standing rule — measured it against all 7 real `paperMissing=true` stores in the live 2026-08 data
+before shipping, and found it produces genuinely wrong numbers in two reproducible ways:
+
+1. **Cross-period leakage.** `perClassCounted()`'s "most recent session touching Paper" has no
+   month boundary — it walks every session ever seen in the input rows. Live example: store 43701's
+   last Paper touch was **07-31** (a July session); it has touched zero Paper items in August. The
+   subtraction formula read this as "1 of 76 already counted" (borrowing July's tiny stray-touch
+   count) instead of the true answer for the current period: 0 of 76.
+2. **Multi-session undercounting.** Paper counting can legitimately span more than one date within
+   a period — a single-session pick (whether by recency, as `perClassCounted` does, or by size)
+   only ever sees ONE of those dates. Live example: store 38609 counted 16 Paper items on 08-13 and
+   13 more (disjoint items) on 08-20; `perClassCounted` (recency-picked) only reflects the 08-20
+   session, understating real progress (29/74 counted) as 13/74.
+3. **A third issue found investigating the above:** `diagnoseIncompleteCount()` (the engine already
+   reused for Food/Condiment's item list) has no `active`/`recipeItem` filtering of its own — run
+   unfiltered on a store's Paper rows, its `byClass` count came out ABOVE that store's own
+   active-Paper universe on several live stores (e.g. store 34222: active=71, unfiltered diag
+   count=93-96) — the classic Topic-3/Topic-6 legacy-item universe mismatch dispatch16 (#374) had
+   already solved for `count-cycle.js`'s own `isActive()`, just not exposed for reuse here.
+
+**Fix:** `uncountedPaper` and the Paper missing-item list now come from `diagnoseIncompleteCount()`
+(still the same already-reused engine, not a new one) windowed at the **current period's start**
+(not any single session's date) and pre-filtered to rows where `cls==='Paper' && isActive(r)`.
+`isActive` was exported from `count-cycle.js` (one line, `const` → `export const`, no behavior
+change for any existing consumer) rather than re-derived a second time. Windowing at period-start
+means every item's own current `last_counted` is evaluated independently against one fixed boundary
+— naturally unions every session within the period (fixes #2) and never reaches into a prior one
+(fixes #1) — and the active-only pre-filter fixes #3. Re-verified against the same 7 live stores:
+every result correctly bounded by that store's own active-Paper universe (previously several
+weren't), and the two live examples above (43701, 38609) now read 76/76 outstanding and 45/74
+outstanding respectively — the correct cumulative answers.
+
+`cycleCompliance()`'s `paperMissing` **gate** (is Paper due and unsatisfied at all right now) is
+untouched — this deviation only changes which number answers "how many, and which ones" once the
+gate says yes. The mid-month-Paper detection algorithm itself (`satisfiesMidPaper`/`paperExpected`/
+`paperThisMonth`) is not reimplemented anywhere in this change.
+
+Both live-measured bugs are reproduced as dedicated unit tests (`does not count a PRIOR-period Paper
+touch...`, `unions Paper progress across multiple sessions...`) so a future revert of the fix would
+fail them directly, not just an isolated engine-function assertion.
+
+Hand-verified against raw `qsr_onhand` rows (independent of any of this session's code) for one real
+store per class with a genuine gap: store 5183/Food (120 active, 83 counted on the picked session →
+37 uncounted, confirmed against the raw per-date breakdown), store 33222/Condiment (37 active, 34
+counted → 3 uncounted), store 43701/Paper (76 active, 0 counted in August → 76 uncounted, matching
+the cross-period-leakage fix above).
+
+### Item 4 — drilldown
+
+Confirmed by rendering the actual `CadenceMonitor` with a real Paper-missing fixture and expanding
+the row: the existing `c.missing.map(...)` render loop needed no changes at all — it already had no
+class-specific logic, exactly as the dispatch predicted, and Paper's row (added by item 3, gated on
+`paperMissing`) renders with the correct item list, not just a count. One deliberate wording change:
+the "Still uncounted since X" header now reads off `lastCount` (item 2) instead of the Food/
+Condiment-specific `lastAttempt`, since a store's ONLY gap this period can now be Paper, for which
+`lastAttempt` is often stale or `null`.
+
+### What's genuinely new vs. reused, for a quick audit
+
+- **Reused unchanged:** `detectSessions()`, `cycleCompliance()`'s `paperMissing` gate,
+  `sessionQualities()`/`satisfiesMidPaper` (indirectly, via `paperMissing`), dispatch #98's
+  `cycleClassCoverage()`, `diagnoseIncompleteCount()` (already used for Food/Condiment, now also
+  used for Paper).
+- **New, small, additive:** `count-cycle.js`'s `isActive` export (one line). `cadenceFromOnHand`'s
+  `lastCount`, `paperMissing`, `uncountedFood`, `uncountedCondiment`, `uncountedPaper` fields.
+  `CadenceMonitor`'s two new columns + the `fcpChip`/`UncountedFCP` render helpers.
+- **Deviated from the dispatch's own suggested implementation, with live measurement to back it:**
+  Paper's uncounted-count/item-list source (`diagnoseIncompleteCount` + period-start window +
+  `isActive` filter, instead of `perClassCounted`'s `active - counted`), for the three reasons above.
