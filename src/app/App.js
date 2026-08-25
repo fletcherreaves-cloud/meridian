@@ -204,6 +204,10 @@ const TimePunchesPanel = lazyPanel(() => import('../views/time-punches-panel.js'
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
 // lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
 const ScheduleRetentionSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionSection })));
+// Dispatch #141: cross-store Patch/Operator/Org/State rollup ("who is driving this") — a
+// separate hub tab next to Training Retention, same lazy-per-tab pattern, same source file
+// (shares the METRICS/formatter/Supabase-marks plumbing — see that file's dispatch #141 header).
+const ScheduleRetentionRollupSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionRollupSection })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
 // #214/#207 batch-2: inventory.js is 76KB and was the last static import of a panel-sized
@@ -392,6 +396,9 @@ const SCHED_TABS = [
   { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
   { id: 'allocation', label: 'Labor Allocation', icon: '⚖️', perm: 'analytics.store' },
   { id: 'retention', label: 'Training Retention', icon: '🎓', perm: 'analytics.store' },
+  // Dispatch #141 — "who is driving this": Patch/Operator/Org/State rollup of every marked
+  // store's own before/after workshop delta, alongside (not replacing) the per-store report.
+  { id: 'retention-rollup', label: 'Retention Rollup', icon: '📊', perm: 'analytics.store' },
   { id: 'skills',    label: 'Skills',          icon: '🎓', perm: 'analytics.store' },
 ];
 // Exported (like lazyPanel above) so dispatch #140's hub-tab render test can mount the REAL hub
@@ -410,6 +417,7 @@ export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onC
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
     tab === 'allocation' ? h(LaborAllocationPanel, common) :
     tab === 'retention' ? h(ScheduleRetentionSection, common) :
+    tab === 'retention-rollup' ? h(ScheduleRetentionRollupSection, common) :
                           h(SkillsMatrixPanel, common);
   // Dispatch #55 Part B: same tab-pill-bar markup that used to sit inline in this hub's own
   // hand-rolled header, now relocated (unchanged) into RoutePanelShell's headerExtra slot.
@@ -2742,6 +2750,8 @@ function App() {
         // Scheduling & Labor hub and lands on the Training Retention tab, same "select a tab,
         // route to the hub" pattern as sched-summary above (and #135's targets-editor redirect).
         if(modal==='sched-retention')perm('analytics.store')&&(setSchedTab('retention'),goRoute('sched-hub'));
+        // dispatch #141 — same pattern, lands on the new Retention Rollup tab.
+        if(modal==='sched-retention-rollup')perm('analytics.store')&&(setSchedTab('retention-rollup'),goRoute('sched-hub'));
         if(modal==='dicompare')      perm('analytics.forecasting')&&goRoute('dicompare');
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         // fcst-accuracy / lifelenz-bridge CONVERTED to hub-tab (dispatch #106 Phase B) -- same

@@ -524,6 +524,80 @@ export async function deleteTargetOverride(id) {
 
 const SCOPE_TYPES_LOCAL = ['company', 'state', 'patch', 'store'];
 
+// ── Schedule Retention workshop-week marks (dispatch #141) ────────────────────
+// One row per store — see supabase/schema-dispatch-141-retention-marks.sql for the full
+// rationale. Replaces schedule-retention.js's pre-#141 localStorage-only mark
+// (mf_sched_retention_mark), which was invisible across devices/sessions and made a
+// cross-store rollup meaningless (a store marked from a different device silently read as
+// "no workshop week"). Same missing-table degrade shape as loadTargetOverrides/
+// loadYearlyTargets above — logs a clear warning and returns an empty/no-op result rather than
+// throwing, so the app (and the pre-existing per-store report, which still has its own
+// localStorage fast-path) keeps working before the owner runs the migration.
+// A table-missing error, measured LIVE against this project (2026-08-25, curl'd directly): a
+// freshly-unrun migration here returns PostgREST's schema-cache-miss shape
+// (`code:'PGRST205', message:"Could not find the table 'public.sched_retention_marks'..."`),
+// NOT the classic Postgres `42P01`/"relation … does not exist" every OTHER missing-table check
+// in this file (loadTargetOverrides/loadYearlyTargets/etc.) matches on. Both branches already
+// degrade safely (return [] / no-op either way), so nothing was silently broken — but only the
+// PGRST205-aware check below actually logs the specific "run the migration" message instead of
+// falling through to a generic warning. Scoped to this table's own three functions only; the
+// other 14 call sites are pre-existing and unrelated to this dispatch.
+function _isMissingTable(error) {
+  return !!error && (error.code === '42P01' || error.code === 'PGRST205' || /relation .* does not exist/i.test(error.message || ''));
+}
+
+export async function loadRetentionMarks() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('sched_retention_marks').select('*');
+  if (error || !data) {
+    if (error && _isMissingTable(error)) {
+      console.error('[sched_retention_marks] Table does not exist in Supabase. Run supabase/schema-dispatch-141-retention-marks.sql in your Supabase SQL editor.');
+    } else if (error) {
+      console.warn('[sched_retention_marks] load error:', error.message);
+    }
+    return [];
+  }
+  return data.map(r => ({ loc: r.loc, weekKey: r.week_key, updatedAt: r.updated_at }));
+}
+
+// Upsert (mark) or delete (unmark, weekKey falsy) one store's workshop-week mark. `loc` is the
+// unpadded store number (schedule-retention.js's _normLoc() convention) — the table's own
+// primary key, so this always overwrites any prior mark for the same store rather than
+// appending a second row (matching the UI's existing mark/unmark toggle semantics, one mark per
+// store at a time).
+export async function saveRetentionMark(loc, weekKey) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const l = String(loc || '');
+  if (!l) return { error: 'loc is required' };
+  if (!weekKey) return deleteRetentionMark(l);
+  const uid = (await supabase.auth.getUser())?.data?.user?.id;
+  const row = { loc: l, week_key: weekKey, updated_at: new Date().toISOString(), updated_by: uid || null };
+  const { error } = await supabase.from('sched_retention_marks').upsert(row, { onConflict: 'loc' });
+  if (error) {
+    if (_isMissingTable(error)) {
+      console.error('[sched_retention_marks] Table does not exist in Supabase. Run supabase/schema-dispatch-141-retention-marks.sql in your Supabase SQL editor.');
+    } else {
+      console.error('[sched_retention_marks] save error:', error.message);
+    }
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
+export async function deleteRetentionMark(loc) {
+  if (!supabase) return { error: 'Supabase not configured' };
+  const { error } = await supabase.from('sched_retention_marks').delete().eq('loc', String(loc || ''));
+  if (error) {
+    if (_isMissingTable(error)) {
+      console.error('[sched_retention_marks] Table does not exist in Supabase. Run supabase/schema-dispatch-141-retention-marks.sql in your Supabase SQL editor.');
+    } else {
+      console.error('[sched_retention_marks] delete error:', error.message);
+    }
+    return { error: error.message };
+  }
+  return { error: null };
+}
+
 // ── SMG FullScale persistence ─────────────────────────────────────────────────
 // rows: array of { loc, year, month, reportStart, reportEnd, osatTop2, osat5, osatAvg,
 //                  osatB2B, accuracyB2B, dtProblem, overallProblem }
