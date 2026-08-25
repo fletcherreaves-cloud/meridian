@@ -209,6 +209,14 @@ export const PANELS = [
   // now open perf-reviews and select Customize > Targets instead of a standalone panel.
   { id:'targets-editor', label:'Targets Editor', icon:'🎯', perm:'reviews.customize', kind:'hub-tab', section:'people' },
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
+  // Time Punches (dispatch #138) -- real qsr_punch_times clock punches (shift+meal), the pull's
+  // own output had NO UI anywhere until this panel (owner: "where do i find the time punches").
+  // Companion to 'crew-schedule' just above (same section:'people', same route:true, same
+  // ordinary panel RBAC -- perm:'analytics.store' backstopped by the table's own accessible_locs
+  // RLS, supabase/schema-qsr-punch-times.sql) -- deliberately NOT a stricter gate, since this data
+  // class is un-tokenized by the same owner directive (dispatch #126) that un-tokenized Crew
+  // Schedule Lookup (dispatch #125). Names render directly, no reveal-click step.
+  { id:'time-punches', label:'Time Punches', icon:'🕐', perm:'analytics.store', kind:'nav', section:'people', route:true },
   // Dispatch #77 -- gated on analytics.district (a general leaderboard, not a Security panel;
   // must NOT inherit security.view), kind:'test-kitchen' with its real eventual section:'analytics'
   // set from day one, per the standing rule (promotion is a `kind:` flip only, dispatch #61).
