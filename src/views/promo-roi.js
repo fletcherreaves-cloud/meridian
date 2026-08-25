@@ -55,8 +55,8 @@ function LeverSection({ title, icon, data, marginRate }) {
       statCard('Gross-profit Δ / day', f$(d.grossProfitDelta), d.grossProfitDelta >= 0 ? '#10b981' : '#ef4444'),
     ) : null,
 
-    rows.length ? h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden', maxHeight: 300, overflowY: 'auto' } },
-      h('table', { style: { width: '100%', borderCollapse: 'collapse' } },
+    rows.length ? h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden', maxHeight: 300, overflowY: 'auto', overflowX: 'auto' } },
+      h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse' } },
         h('thead', null, h('tr', null, th('Store'), th('Days', 1), th('Lift %', 1), th('Sales/day', 1), th('Give-away/day', 1), th('GP Δ/day', 1), th('Verdict', 1))),
         h('tbody', null, rows.map(s => h('tr', { key: s.loc, style: { borderTop: '.5px solid var(--bdr)' } },
           td(sName(s.loc)),
