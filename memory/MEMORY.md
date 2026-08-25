@@ -84,7 +84,21 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **📋 NEWEST (2026-08-25): [Dispatch #110 — Speed of Service: DT bar, bar-chart conversion, full date range, patch-selector bug fix](dispatch-110.md)** —
+- **📋 NEWEST (2026-08-25): morning backlog sweep — 3 items dispatched, all pre-verified ready (no owner input needed)** —
+  [Dispatch #98](dispatch-98.md) (Inventory Control summary tiles are EOM-only, don't swap to
+  Count Cycle's own data when that tab is active — brief already written when #97 landed, never
+  picked up; re-verified the root cause is still accurate against current
+  `eom-dashboard.js` line-for-line before dispatching), [Dispatch #41](dispatch-41.md) (two
+  independently-maintained Model Health Score implementations in `forecast.js` disagree — one
+  floors failing components to true 0, the other can't go below ~17/100 even for a store dead 900
+  days, both render on the same screen at once — fully-researched brief from 2026-08-20, re-verified
+  line numbers/function signatures unchanged before dispatching), and [Dispatch #111](dispatch-111.md)
+  (Promo/Discount ROI's discount lever sources `discAmt`/`discPct` from `ctrlRows` manual upload
+  only, never an auto stream — confirmed live in `promo-roi.js`'s row-builder; `metric-source.js`
+  already has the correct `opsCashRows`-first chain sitting unused; flagged as still-open in
+  `finding-promo-roi-denominator-bias-2026-08-23.md` after that finding's separate bias bug was
+  already fixed). All three engineers spawned in parallel, isolated worktrees.
+- **📋 (2026-08-25): [Dispatch #110 — Speed of Service: DT bar, bar-chart conversion, full date range, patch-selector bug fix](dispatch-110.md)** —
   Owner's Notes 69 batch on `dt-speedofservice.js`. Corrects a mental-model detail: the "By Hour"
   section is an HTML table with a hand-rolled `<div>` bar, not a Chart.js chart — adding an Avg-DT
   bar there is a small table-cell change, not chart config. Only one REAL chart in the panel isn't
