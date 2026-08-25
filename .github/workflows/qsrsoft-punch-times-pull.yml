@@ -1,0 +1,86 @@
+name: QSRSoft Punch Times Pull
+
+# Dispatch #124: endpoint confirmed via a live owner capture (memory/finding-qsrsoft-time-
+# punches-endpoint-2026-08-21.md) but NOT live-verified from the engineer session that wrote this
+# script (no QSRSoft credentials in that sandbox — see the script header's own note). mapRow()/
+# extractRows()/assertNoDeniedSelectCols() are unit-tested against realistic fixture data
+# (src/__tests__/qsrsoft-punch-times-pull.test.js), not a real response. Before trusting the first
+# scheduled run's output, run this once via workflow_dispatch and spot-check the resulting
+# qsr_punch_times rows — and, per the PII-safety discipline this whole dispatch is built around,
+# spot-check by querying geid/timestamps ONLY, never anything that would require re-requesting a
+# name or ssn field.
+
+on:
+  schedule:
+    # 10:30 UTC — 30 min after the DAR/eBOS/Register-Audit 10:00 UTC cadence, staggered so this
+    # one-store-per-call pull (up to ~27x the request count of an all-stores-in-one-call pull for
+    # the same window) doesn't pile onto the same minute as three other QSRSoft pulls.
+    - cron: '30 10 * * *'
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Max days of history on initial run (default: 90)'
+        required: false
+        default: '90'
+      days_recent:
+        description: 'Rolling re-pull window in days (default: 4)'
+        required: false
+        default: '4'
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date to pull an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      stores:
+        description: 'Subset of NSNs, comma-separated. Default: all 27.'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Punch Times
+        run: node scripts/qsrsoft-punch-times-pull.mjs
+        env:
+          VITE_SUPABASE_URL:           ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:   ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:            ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:            ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_PUNCH_DAYS_BACK:     ${{ github.event.inputs.days_back   || '90' }}
+          QSRSOFT_PUNCH_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '4'  }}
+          QSRSOFT_PUNCH_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
+          QSRSOFT_PUNCH_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
+          QSRSOFT_PUNCH_STORES:        ${{ github.event.inputs.stores      || ''   }}
+          QSRSOFT_PUNCH_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: punch-times-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

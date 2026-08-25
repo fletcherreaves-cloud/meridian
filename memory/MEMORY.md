@@ -1080,6 +1080,16 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   space grown over time, not several systems** (correcting my own speculation in the G=2 note), and
   `emp_id` is almost certainly the `geid` — a real person key for Phase 2, with an authoritative
   name↔geid mapping. Badge (`event_details`) remains a **separate** namespace.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #124 implementation — the geid/emp_id space CONFIRMED live, boundary NOT confirmed](dispatch-124-punch-times-implementation.md)** —
+  Built the punch-times pull (`scripts/qsrsoft-punch-times-pull.mjs`, `qsr_punch_times` table).
+  Independently re-measured the finding's "almost certainly" geid/`audit_rows.emp_id` claim live
+  against 1000 rows each (not the finding's one-store-one-day sample) — **confirmed**, digit-length
+  bands match closely across 6/7/8/9-digit values. That does NOT license tokenizing `geid`
+  directly as dispatch #123's `emp_token` (a different, name-keyed space) — resolved via
+  `geid → qsr_employee_tenure.full_employee_name → get_or_create_employee_token()`, nullable,
+  `geid` as the always-present fallback join key. Business-day boundary left explicitly
+  unconfirmed (no live QSRSoft credentials this session) — table stores raw timestamps, no `dt`
+  column, no assumption baked in.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`service/statistics` — the one that supersedes `dt-timer`](finding-qsrsoft-service-statistics-endpoint-2026-08-21.md)** —
   Richest of the four service captures. **Build service-times work on this, not `dt-timer`** — it has
   the same DT segments *plus* a `*Trans` denominator per metric, a `*Masked` data-quality count,
