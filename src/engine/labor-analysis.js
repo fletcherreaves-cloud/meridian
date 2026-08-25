@@ -113,7 +113,7 @@ export function analyzeSheet(inputRows = [], isFL = () => false) {
 // never a mean of daily ratios. Rate/Labor$ come from the daily Labor % × that
 // day's forecast sales (the schedule carries no rate column).
 
-import { weekStartOf } from '../utils/date.js';
+import { weekStartOf, businessDate } from '../utils/date.js';
 
 // Week start (local) of the week containing `d`, at 00:00 — HONOURING the configured
 // week-start setting rather than assuming Monday.
@@ -148,6 +148,10 @@ export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = ne
   const wsIso = _isoDay(wsDate);
   const weDate = new Date(wsDate); weDate.setDate(weDate.getDate() + 7);
   const weIso = _isoDay(weDate);
+  // The CURRENT in-progress business day (4am-4am ABC cutover, per the shared helper —
+  // see CLAUDE.md's "business day runs 4am→4am"). Needed below to exclude today's
+  // labor_pct from the weekly $ aggregate (dispatch #133).
+  const todayIso = businessDate(asOf);
 
   const acc = {};
   for (const r of rows || []) {
@@ -166,6 +170,24 @@ export function deriveBand1FromSchedule(rows = [], { weekStart = null, asOf = ne
     // stored it as 21.5 rather than 0.215.
     let lp = _n(r.laborPct);
     if (lp != null && Math.abs(lp) > 1.5) lp = lp / 100;
+    // Dispatch #133 (2026-08-25, live-verified against real lifelenz_schedule rows for
+    // Duncan-Hwy 81/#29760, Elgin/#33222, Durant/#5985): the CURRENT in-progress business
+    // day's labor_pct is not a finished-day ratio. LifeLenz appears to compute it
+    // intraday (cost accrued so far ÷ sales accrued so far) while the day is still open —
+    // measured raw values of 14147, 9153.54 and 2899.52 for "today" on those three stores
+    // (vs. a normal 18-31 range on every other day that same week), while the 4 stores that
+    // rendered a sane 18-22% simply had labor_pct still NULL for today (LifeLenz hadn't
+    // posted anything yet). Multiplying an intraday ratio by the day's FULL forecast sales
+    // (fs) is the same "two atoms, two boundaries" scope mismatch the 2026-08-05 fix caught
+    // at the week grain, one level more granular (within-day). Recomputing the three
+    // affected stores' weekly Labor % by hand with today's laborDol excluded reproduced the
+    // owner-reported figures almost exactly (Duncan 1911.73%→~1912%, Elgin 1225.21%→~1225%,
+    // Durant 397.86%→~398%), confirming this is the mechanism, not a coincidence.
+    // Fix: treat today's labor_pct as not-yet-covered, the same as a future day's null —
+    // it will post as a real finished-day ratio once the business day closes (tomorrow's
+    // pull). fs/hoursFcst/hoursSched (legitimate forecast/schedule data, not the intraday
+    // actual ratio) are UNAFFECTED and still sum normally for today.
+    if (iso === todayIso) lp = null;
     // hoursSchedForPct mirrors laborDol/salesForPct's day-coverage EXACTLY, so rate (below)
     // divides $ by the hours that actually have $ behind them — not the full week's hours,
     // which would dilute rate toward $0/hr on the same partial-week days that used to inflate

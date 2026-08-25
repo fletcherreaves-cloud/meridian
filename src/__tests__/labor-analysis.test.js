@@ -194,6 +194,86 @@ describe('labor-analysis — weekly Band-1 from daily LifeLenz schedule', () => 
     const row = analyzeStore(r);
     expect(row.scheduledLaborD).toBeCloseTo(0.21 * 10000 * 2, 1);   // = the 2 covered days' real $
   });
+
+  // Dispatch #133 (2026-08-25): the CURRENT in-progress business day's labor_pct is an
+  // intraday snapshot from LifeLenz (cost accrued so far ÷ sales accrued so far while the
+  // day is still open), NOT a finished-day ratio. Multiplying it by the day's FULL forecast
+  // sales is the same day-vs-week scope mismatch the 2026-08-05 fix caught one level up —
+  // just within a single day instead of within the week. Live-verified against real
+  // lifelenz_schedule rows (service-role read, 2026-08-25): today's raw labor_pct was 14147
+  // for Duncan-Hwy 81/#29760 (vs. 18-23 every other day that week), and hand-reproducing the
+  // pre-fix math from those exact rows landed at laborPctActual≈19.12 (1912%), matching the
+  // owner-reported 1911.73% almost exactly — confirming this is the real mechanism.
+  describe('the CURRENT in-progress business day\'s labor_pct is excluded, not multiplied by full-day sales (dispatch #133)', () => {
+    const today = new Date('2026-07-22T12:00:00Z'); // "today" = 2026-07-22 (Wed), mid-week
+
+    it('a garbage intraday value on TODAY does not blow the week past reality', () => {
+      const rows = [
+        mk('0029760', '2026-07-20', { laborPct: 0.21 }),
+        mk('0029760', '2026-07-21', { laborPct: 0.21 }),
+        mk('0029760', '2026-07-22', { laborPct: 14147 }),   // TODAY — real Duncan-Hwy 81 value
+        mk('0029760', '2026-07-23', { laborPct: null }),    // not yet posted (future)
+        mk('0029760', '2026-07-24', { laborPct: null }),
+        mk('0029760', '2026-07-25', { laborPct: null }),
+        mk('0029760', '2026-07-26', { laborPct: null }),
+      ];
+      const o = deriveBand1FromSchedule(rows, { weekStart: '2026-07-20', asOf: today });
+      const r = o.rows['29760'];
+      expect(r.salesFcst).toBeCloseTo(70000, 6);                 // full week still counted for sales
+      // Only the 2 REAL prior days feed laborDol — today's 14147 contributes nothing,
+      // exactly as if LifeLenz hadn't posted a value for it yet (same as tomorrow's days).
+      expect(r.laborPctActual).toBeCloseTo((0.21 * 10000 * 2) / 70000, 6); // ≈ 6%
+      expect(r.laborPctActual).toBeLessThan(1);                  // never a >100% headline number
+      expect(r.laborPctCoverage).toBeCloseTo(2 / 7, 6);           // today does NOT count as covered
+      expect(r.rate).toBeCloseTo((0.21 * 10000 * 2) / 420, 6);    // hours also exclude today's $-less day
+    });
+
+    it('reproduces the owner-reported Duncan-Hwy 81 figures from the real captured rows and lands sane after the fix', () => {
+      // Real lifelenz_schedule rows for loc 0029760, week of 2026-08-19 (live-verified via
+      // service-role read, 2026-08-25). Only fcstSales/laborPct vary here — the fix touches
+      // laborDol/salesForPct only, not the hours/GC fields — so the rest of `mk`'s defaults
+      // are fine stand-ins.
+      const asOfNow = new Date('2026-08-25T12:00:00Z'); // today = 2026-08-25
+      const rows = [
+        mk('0029760', '2026-08-19', { fcstSales: 15776.8, laborPct: 23.32 }),
+        mk('0029760', '2026-08-20', { fcstSales: 16658,   laborPct: 21.15 }),
+        mk('0029760', '2026-08-21', { fcstSales: 17877.3, laborPct: 21.71 }),
+        mk('0029760', '2026-08-22', { fcstSales: 17439.4, laborPct: 22.22 }),
+        mk('0029760', '2026-08-23', { fcstSales: 15217.9, laborPct: 22.27 }),
+        mk('0029760', '2026-08-24', { fcstSales: 14488.7, laborPct: 23.42 }),
+        mk('0029760', '2026-08-25', { fcstSales: 15049.9, laborPct: 14147 }), // TODAY — the corrupted value
+      ];
+      const o = deriveBand1FromSchedule(rows, { weekStart: '2026-08-19', asOf: asOfNow, orgTargetFor: () => 0.215 });
+      const r = o.rows['29760'];
+      // Pre-fix this store rendered ~1911.73% (owner report). Post-fix it should land near
+      // the other 6 days' own 18-23% range, not >100%.
+      expect(r.laborPctActual).toBeCloseTo(0.1932, 3);
+      expect(r.laborPctActual).toBeLessThan(0.30);
+      expect(r.laborPctActual).toBeGreaterThan(0.10);
+    });
+
+    it('boundary regression (2026-08-05 case): today already NULL is a no-op — still under-states, never over-states', () => {
+      // If LifeLenz simply hasn't posted anything for today yet (the ORIGINAL 2026-08-05
+      // shape — no garbage value, just nothing), the todayIso check is a no-op: lp was
+      // already null. Coverage/Labor % must behave identically to the pre-existing
+      // partial-week test above, proving the fix doesn't change that established "safe
+      // direction" behaviour.
+      const rows = [
+        mk('0020475', '2026-07-20', { laborPct: 0.21 }),
+        mk('0020475', '2026-07-21', { laborPct: 0.21 }),
+        mk('0020475', '2026-07-22', { laborPct: null }),   // today — not posted, same as future days
+        mk('0020475', '2026-07-23', { laborPct: null }),
+        mk('0020475', '2026-07-24', { laborPct: null }),
+        mk('0020475', '2026-07-25', { laborPct: null }),
+        mk('0020475', '2026-07-26', { laborPct: null }),
+      ];
+      const o = deriveBand1FromSchedule(rows, { weekStart: '2026-07-20', asOf: today });
+      const r = o.rows['20475'];
+      expect(r.laborPctActual).toBeCloseTo((0.21 * 10000 * 2) / 70000, 6);
+      expect(r.laborPctActual).toBeLessThan(1);
+      expect(r.laborPctCoverage).toBeCloseTo(2 / 7, 6);
+    });
+  });
 });
 
 // #153 defect 3: laborTargetOrg (column L) on a MANUAL/gap-filled row used to come straight
