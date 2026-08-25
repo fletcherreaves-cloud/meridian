@@ -64,7 +64,7 @@
 //     the same store/day once real punch rows exist in this table — left as an explicit open item,
 //     not assumed either way.
 //
-// 🎯 IDENTITY RESOLUTION (geid vs. audit_rows.emp_id vs. dispatch #123's emp_token) — resolved,
+// 🎯 IDENTITY RESOLUTION (geid vs. audit_rows.emp_id vs. employee_name/emp_token) — resolved,
 // not guessed. Independently measured in this session against LIVE production data (not just the
 // finding's one-store-one-day sample):
 //   node -e queried qsr_employee_tenure.geid (1000 rows, populated by the employee-roster pull —
@@ -80,27 +80,31 @@
 //   contradiction. This CONFIRMS, on live data far broader than the finding's one-store-one-day
 //   sample, that geid and audit_rows.emp_id are the same identifier space.
 //
-//   BUT that is NOT the same thing as dispatch #123's join key. #123's own spec (memory/
-//   dispatch-123.md) tokenizes via employee NAME through get_or_create_employee_token() — its
-//   emp_token lives in a NAME-keyed space, not a geid-keyed one. Storing tokenize(geid) directly
-//   would silently create a SEPARATE, wrong token per person from #123's, breaking any future
-//   schedule↔punch join by person. Resolved here by NOT tokenizing geid directly:
-//     geid  → look up qsr_employee_tenure (loc, geid) → full_employee_name (already populated,
-//             owner-approved storage, dispatch #57) → getOrCreateToken(name) → emp_token, landing
-//             in the EXACT SAME name-keyed vault space #123 will use.
-//   emp_token is therefore NULLABLE — a geid with no matching qsr_employee_tenure row (e.g. an
-//   employee who separated before ever appearing in an active-only roster pull) has no name to
-//   tokenize and gets emp_token=null; geid itself is never null and is the reliable fallback join
-//   key. geid is stored either way, so nothing is lost if the name-resolution step ever fails.
-//   ⚠️ KNOWN LIMITATION, stated plainly rather than silently assumed away: this only produces the
-//   SAME emp_token as #123's LifeLenz-side tokenization if the two systems spell the same
-//   employee's name identically after btrim() (get_or_create_employee_token's own normalization —
-//   exact string match, not fuzzy). That has not been verified (#123 doesn't exist in this repo
-//   yet, so there is nothing to compare against) — a QSRSoft "Last, First" vs. a LifeLenz
-//   "First Last" would silently produce two different tokens for the same person. Flag this for
-//   whoever builds the punch-wiring follow-up dispatch: verify name-format parity between the two
-//   sources before relying on emp_token equality across them; geid is the space that IS
-//   independently confirmed and should be the fallback/cross-check either way.
+// 🔓 DISPATCH #126 (2026-08-25) — un-tokenization. Owner, directly, after this pull shipped
+// tokenized: "there is no reason to hide names for scheduling and punch times > everyone can see
+// this data as-is." This is a POLICY reversal only — the resolution PATH is unchanged and does
+// NOT touch the risky endpoint (people/time-punches-matched) or its SELECT_COLS/DENIED_SELECT_COLS
+// guard at all:
+//   geid → look up qsr_employee_tenure (loc, geid) → full_employee_name (already populated,
+//          owner-approved storage, dispatch #57) → stored DIRECTLY as qsr_punch_times.employee_name.
+// employee_name is NULLABLE — a geid with no matching qsr_employee_tenure row (e.g. an employee
+// who separated before ever appearing in an active-only roster pull) has no name to resolve and
+// gets employee_name=null; geid itself is never null and remains the reliable fallback join key.
+//
+// emp_token KEPT (not dropped), additive alongside employee_name — dispatch #126 explicitly left
+// this a documented choice, no wrong answer. Reasoning: it costs nothing extra (same tenure-name
+// lookup already fetched to populate employee_name; getOrCreateToken() is only called once per
+// DISTINCT resolved name, exactly as before), it is harmless to leave populated, and it keeps a
+// stable join key available in case a future consumer wants to cross-reference this table against
+// another name-keyed vault entry (e.g. dispatch #125's LifeLenz-side data, if that side also keeps
+// emp_token) without a fragile exact-string name match across two independently-formatted sources.
+// ⚠️ KNOWN LIMITATION, stated plainly rather than silently assumed away: emp_token here only
+// matches dispatch #125's LifeLenz-side token for the SAME person if the two systems spell that
+// employee's name identically after btrim() (get_or_create_employee_token's own normalization —
+// exact string match, not fuzzy). Not verified — a QSRSoft "Last, First" vs. a LifeLenz
+// "First Last" would silently produce two different tokens for the same person. employee_name (and
+// geid, which IS independently confirmed as a stable space) are the fields to rely on directly;
+// treat cross-source emp_token equality as unverified until checked.
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Auth — tried in order (matches every other QSRSoft pull in this repo, post-#312):
@@ -252,13 +256,15 @@ const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_
   ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
-// ── Identity resolution: geid → qsr_employee_tenure.full_employee_name → emp_token ─────────────
-// See the file header's "IDENTITY RESOLUTION" comment for the full reasoning. Batches ONE query
-// per DISTINCT (loc, geid) pair in this batch (not per row), then ONE getOrCreateToken() RPC call
-// per distinct name resolved — same "batch by distinct entity, not by row" discipline
-// identity-vault.js's tokenizeRows() already uses.
-export async function resolveEmpTokens(supabaseClient, rows) {
-  const map = new Map(); // `${loc}|${geid}` -> emp_token (or explicitly absent)
+// ── Identity resolution: geid → qsr_employee_tenure.full_employee_name → {employee_name,
+// emp_token} ─────────────────────────────────────────────────────────────────────────────────
+// See the file header's "IDENTITY RESOLUTION" comment for dispatch #126's full reasoning.
+// Batches ONE query per DISTINCT (loc, geid) pair in this batch (not per row), then ONE
+// getOrCreateToken() RPC call per distinct name resolved — same "batch by distinct entity, not by
+// row" discipline identity-vault.js's tokenizeRows() already uses. employee_name is now the
+// primary result; emp_token is kept alongside it (dispatch #126, documented choice — see header).
+export async function resolveEmployeeIdentity(supabaseClient, rows) {
+  const map = new Map(); // `${loc}|${geid}` -> { employeeName, empToken } (either may be null; absent = no tenure row)
   const pairs = [...new Set(rows.filter(r => r.loc && r.geid).map(r => `${r.loc}|${r.geid}`))];
   if (!supabaseClient || !pairs.length) return map;
 
@@ -270,43 +276,46 @@ export async function resolveEmpTokens(supabaseClient, rows) {
     .in('loc', locs)
     .in('geid', geids);
   if (error) {
-    console.warn('[punch-pull] qsr_employee_tenure lookup failed (emp_token will stay null this run):', error.message);
+    console.warn('[punch-pull] qsr_employee_tenure lookup failed (employee_name/emp_token will stay null this run):', error.message);
     return map;
   }
 
   const nameFor = new Map((data || []).map(t => [`${t.loc}|${t.geid}`, t.full_employee_name]));
-  const nameCache = new Map(); // name -> token, so a name shared by two geids costs one RPC call
+  const tokenCache = new Map(); // name -> token, so a name shared by two geids costs one RPC call
   for (const pair of pairs) {
     const name = (nameFor.get(pair) || '').trim();
-    if (!name) continue; // no tenure record for this geid -- emp_token stays null, geid is the fallback key
-    if (!nameCache.has(name)) {
-      nameCache.set(name, await getOrCreateToken(supabaseClient, name));
+    if (!name) continue; // no tenure record for this geid -- employee_name/emp_token stay null, geid is the fallback key
+    if (!tokenCache.has(name)) {
+      tokenCache.set(name, await getOrCreateToken(supabaseClient, name));
     }
-    const token = nameCache.get(name);
-    if (token) map.set(pair, token);
+    map.set(pair, { employeeName: name, empToken: tokenCache.get(name) || null });
   }
   return map;
 }
 
 async function saveRows(rows) {
   if (!rows.length) return 0;
-  const tokenMap = await resolveEmpTokens(supabase, rows);
+  const identityMap = await resolveEmployeeIdentity(supabase, rows);
   const upsert = rows
     .filter(r => r.loc && r.geid && r.startDateTime) // punch_type/start_date_time/geid/loc form the PK -- see schema comment
-    .map(r => ({
-      loc:              r.loc,
-      geid:             r.geid,
-      emp_token:        tokenMap.get(`${r.loc}|${r.geid}`) ?? null,
-      punch_type:       r.punchType,
-      is_paid_break:    r.isPaidBreak,
-      start_date_time:  r.startDateTime,
-      end_date_time:    r.endDateTime,
-      in_modified:      r.inModified,
-      out_modified:     r.outModified,
-      job_title_code:   r.jobTitleCode,
-      badge_type:       r.badgeType,
-      updated_at:       new Date().toISOString(),
-    }));
+    .map(r => {
+      const identity = identityMap.get(`${r.loc}|${r.geid}`);
+      return {
+        loc:              r.loc,
+        geid:             r.geid,
+        employee_name:    identity?.employeeName ?? null,
+        emp_token:        identity?.empToken ?? null,
+        punch_type:       r.punchType,
+        is_paid_break:    r.isPaidBreak,
+        start_date_time:  r.startDateTime,
+        end_date_time:    r.endDateTime,
+        in_modified:      r.inModified,
+        out_modified:     r.outModified,
+        job_title_code:   r.jobTitleCode,
+        badge_type:       r.badgeType,
+        updated_at:       new Date().toISOString(),
+      };
+    });
   const CHUNK = 500;
   let saved = 0;
   for (let i = 0; i < upsert.length; i += CHUNK) {
