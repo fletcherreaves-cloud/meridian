@@ -40,7 +40,7 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { detectSessions, cycleCompliance } from '../engine/count-cycle.js';
+import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
 import { dowOf } from '../utils/date.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 
@@ -362,32 +362,44 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
       } catch { missing = null; }
     }
 
-    // Dispatch #112 item 3/4 — Paper's uncounted count + missed-item list, sourced from
-    // cycleCompliance()'s own perClassCounted() (active - counted) and paperMissing gate, NOT
-    // reimplemented here. Unlike Food/Condiment above, Paper's due-ness follows its own floating
-    // mid-month cadence (paperExpected/paperMissing — independent of whether the store hit its
-    // Food+Condiment weekly bar), so it is gated separately: a Paper uncounted count/list only
-    // ever shows when cycleCompliance says Paper is actually due and not yet satisfied this
-    // month — never a misleading 0 or a stale count outside that window.
+    // Dispatch #112 item 3/4 — Paper's uncounted count + missed-item list. The GATE (is Paper
+    // even due right now) is fully reused from cycleCompliance()'s own paperMissing, exactly as
+    // instructed — that mid-month-Paper detection (satisfiesMidPaper/paperExpected/
+    // paperThisMonth) is NOT reimplemented here. Unlike Food/Condiment above, Paper's due-ness
+    // follows its own floating mid-month cadence, independent of the Food+Condiment weekly bar,
+    // so it's gated separately: a Paper uncounted count/list only ever shows when cycleCompliance
+    // says Paper is actually due and not yet satisfied this month — never a misleading 0 or a
+    // stale count outside that window.
+    //
+    // The COUNT/item-list itself does NOT reuse perClassCounted()'s active-minus-counted, though
+    // the dispatch's own writeup suggested it — measured live (2026-08-25, real qsr_onhand, 7
+    // paperMissing=true stores) and found perClassCounted's pure-recency "most recent session
+    // touching Paper, whatever its size" pick two real ways wrong for a "how much is left"
+    // number: (a) CROSS-PERIOD LEAKAGE — it has no month boundary, so a store that touched Paper
+    // last period but not at all this period (e.g. loc 43701: last Paper touch 07-31, nothing in
+    // 08) reads as partially counted instead of 0/76 for the current period; (b) MULTI-SESSION
+    // UNDERCOUNTING — Paper counting can legitimately span more than one date within a period
+    // (e.g. loc 38609: 16 items on 08-13 + 13 more on 08-20), and a single-session pick (by
+    // recency OR by size) only ever sees one of those dates, understating real progress by the
+    // other session's items entirely. diagnoseIncompleteCount(), windowed at the CURRENT period's
+    // start, evaluates each item's OWN last_counted independently, so it naturally unions every
+    // session within the period and never reaches back into a prior one — both bugs measured
+    // fixed against the same 7 live stores (e.g. 38609's true progress: 29/74, the 16+13 union).
+    // Pre-filtered to isActive() (count-cycle.js, now exported for this reuse) because
+    // diagnoseIncompleteCount has no active/recipeItem filtering of its own — unfiltered, its
+    // byClass counts ran ABOVE the store's own active-Paper universe on several live stores.
     const cc = complianceByLoc[loc] || null;
-    const paperClass = cc && cc.perClass ? cc.perClass.Paper : null;   // {active, counted, date}
     const paperMissing = !!(cc && cc.paperMissing);
-    const uncountedPaper = paperMissing && paperClass
-      ? Math.max(0, (paperClass.active || 0) - (paperClass.counted || 0)) : null;
-    let paperMissingRow = null;
+    let paperMissingRow = null, uncountedPaper = null;
     if (paperMissing) {
       try {
-        // Windowed off the last session that touched Paper at all this period (mirrors the
-        // Food/Condiment lastAttempt.date pattern above); falls back to the mid-month due date
-        // (the 12th, matching cycleCompliance's own dayNum>=12 gate) when Paper hasn't been
-        // touched this period at all.
-        const paperWindowStart = paperClass && paperClass.date
-          ? new Date(paperClass.date + 'T00:00:00') : new Date(`${curPeriod}-12T00:00:00`);
-        const diag = diagnoseIncompleteCount(storeRows, {
-          period: curPeriod, asOf, windowStart: paperWindowStart,
+        const paperActiveRows = storeRows.filter(r => r.cls === 'Paper' && isActiveOnHand(r));
+        const diag = diagnoseIncompleteCount(paperActiveRows, {
+          period: curPeriod, asOf, windowStart: new Date(`${curPeriod}-01T00:00:00`),
         });
         paperMissingRow = (diag.byClass || []).find(b => b.cls === 'paper') || null;
-      } catch { paperMissingRow = null; }
+        uncountedPaper = paperMissingRow ? paperMissingRow.count : 0;
+      } catch { paperMissingRow = null; uncountedPaper = null; }
     }
     const combinedMissing = [...(missing || []), ...(paperMissingRow ? [paperMissingRow] : [])];
 
