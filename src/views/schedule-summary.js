@@ -30,7 +30,9 @@ const combColor = v => v == null ? 'var(--text3)' : (v > FIXED_FLOOR_COMBINED_MA
 
 // Per-station hours+cost breakdown table (LifeLenz per-job pull). jobRows = the
 // store's per-role rows for this week (already aggregated cloud-side).
-function StationBreakdown({ jobRows }) {
+// Exported (dispatch #134) so the Schedule Retention report reuses this exact table for its
+// per-week expandable detail instead of a second per-station renderer.
+export function StationBreakdown({ jobRows }) {
   if (!jobRows || !jobRows.length) return null;
   const rows = jobRows.slice().sort((a, b) => (b.hours || 0) - (a.hours || 0));
   const tot = rows.reduce((t, r) => { t.hours += r.hours || 0; t.cost += r.cost || 0; t.ot += r.otHours || 0; t.sh += r.nShifts || 0; return t; }, { hours: 0, cost: 0, ot: 0, sh: 0 });

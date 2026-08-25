@@ -116,6 +116,32 @@ export function computeScheduleRollup(schedRows, locs, range) {
   return band;
 }
 
+// computeStoreWeeks(schedRows, loc, range) → [{weekKey, weekStart, ...rollup()}, …], oldest→newest
+// — dispatch #134's Schedule Retention report. A "very small wrapper" around rollup() (per the
+// dispatch's own instruction): same per-row extraction, same dollar-weighting, same everything —
+// just grouped down to ONE store across an arbitrary multi-week period instead of computing every
+// store for a single current week (computeScheduleSummary's job, unchanged, below). A week
+// belongs to the period when its Wed-anchored weekStart falls in [range.s, range.e] (inclusive) —
+// the LifeLenz business week is the atomic comparison unit here (never truncated mid-week), so
+// membership is decided at the week level, not by filtering individual days out of a week that's
+// otherwise in scope. range = { s, e } inclusive ISO date strings, or omit either bound for open-
+// ended. Returns [] when no week in schedRows for this store falls in range.
+export function computeStoreWeeks(schedRows, loc, range) {
+  const locN = _normLoc(loc);
+  const s = range?.s, e = range?.e;
+  const rows = (schedRows || []).filter(r => r && r.date && _normLoc(r.loc) === locN
+    && (r.fcstSales != null || r.schVLH != null || r.projVLH != null));
+  const byWeek = {};
+  for (const r of rows) {
+    const wk = _wkKey(r.date);
+    (byWeek[wk] || (byWeek[wk] = [])).push(r);
+  }
+  return Object.keys(byWeek)
+    .filter(wk => (!s || wk >= s) && (!e || wk <= e))
+    .sort((a, b) => a.localeCompare(b)) // oldest -> newest: chronological, left-to-right before/after reading
+    .map(wk => ({ weekKey: wk, weekStart: weekStartOf(wk + 'T12:00:00'), ...rollup(locN, byWeek[wk]) }));
+}
+
 // computeScheduleSummary(schedRows) → { weeks:[{weekStart, weekKey, stores:[…], district}], … }
 // Weeks newest-first; stores sorted by scheduled-vs-forecast gap (most over first).
 export function computeScheduleSummary(schedRows, opts = {}) {
