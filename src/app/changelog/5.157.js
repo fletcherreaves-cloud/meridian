@@ -38,8 +38,12 @@ export default {version:'5.157', date:'2026-08-25', changes:[
   + 'the only thing missing. Per-class uncounted counts and the Paper item list hand-verified against '
   + 'raw qsr_onhand rows for real stores with a genuine gap in each class (5183/Food, 33222/'
   + 'Condiment, 43701/Paper).\n\n'
+  + 'Panel-contract standing rule (2026-08-25): since this dispatch was already widening '
+  + 'CadenceMonitor\'s table 5 -> 7 columns, also wrapped it in the shared `overflowX:\'auto\'` + '
+  + '`width:\'max-content\'`/`minWidth` scroll pattern (it had neither before) so it scrolls on '
+  + 'mobile instead of clipping -- verified against `scroll-table-width.test.js`\'s ratchet.\n\n'
   + '10 new tests (src/__tests__/dispatch-112-count-cadence.test.js); full suite 2393/2393 passing '
   + '(231 files) including the pre-existing dispatch-97/98 suites unchanged; build clean. Entry gzip '
-  + '456.87 -> 456.88 KB, eager-payload 528.01 -> 528.02 KB (budget 850 KB) -- noise-level. '
+  + '456.87 -> 456.89 KB, eager-payload 528.01 -> 528.03 KB (budget 850 KB) -- noise-level. '
   + 'Full resolution: memory/dispatch-112.md Resolution section.',
 ]};
