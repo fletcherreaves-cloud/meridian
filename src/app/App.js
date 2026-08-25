@@ -2915,7 +2915,7 @@ function App() {
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false),
       onOpenStoreConfig:()=>{setShowDataManager(false);setShowStoreVlhConfig(true);}}),
     showStoreVlhConfig&&h(StoreVlhConfigPanel,{onClose:()=>setShowStoreVlhConfig(false)}),
-    showPromoRoi&&h(PromoRoiPanel,{ds,onClose:()=>setShowPromoRoi(false)}),
+    showPromoRoi&&h(PromoRoiPanel,{ds,userEvents,onClose:()=>setShowPromoRoi(false)}),
     showVisitReady&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{setShowVisitReady(false);setVisitReadyInit(null);}}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
