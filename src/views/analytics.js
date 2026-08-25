@@ -3080,6 +3080,31 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   },[fobRowsEff,allTargets,selLoc,selMonth,fobActiveLocs]);
   const auditResult=React.useMemo(()=>fobAudit(metrics),[metrics]);
 
+  // Dispatch #129 — lifted out of the on-screen IIFE (was recomputed inline in JSX) so the print
+  // report below can reuse the EXACT same top-8 list rather than re-deriving it a second time —
+  // same reasoning as this file's own "never average an average" / single-source-of-truth rule.
+  // Ranked list of (component, store) pairs by dollar impact above target; top 8, same as screen.
+  const rootCauseItems=React.useMemo(()=>{
+    if(!metrics||selLoc!=='all') return [];
+    const items=[];
+    FOB_COMP.filter(c=>c.lower&&c.actionable!==false&&!c.sep&&!c.isTotal&&metrics[c.key]).forEach(c=>{
+      const lb=metrics[c.key].locBreakdown||[];
+      lb.forEach(l=>{
+        if(l.diff>c.threshold&&l.dollar>0){
+          items.push({comp:c,loc:l.loc,diff:l.diff,dollar:l.dollar,pct:l.pct,tgt:l.tgt});
+        }
+      });
+    });
+    items.sort((a,b)=>b.dollar-a.dollar);
+    return items.slice(0,8);
+  },[metrics,selLoc]);
+
+  // Dispatch #129 — same lift as rootCauseItems above, for the Waste-Entry Discipline list.
+  const worstDiscipline=React.useMemo(()=>{
+    if(selLoc!=='all'||!discipline) return [];
+    return [...discipline].filter(d=>d.totalMissing>0).sort((a,b)=>b.estImpact-a.estImpact).slice(0,8);
+  },[selLoc,discipline]);
+
   const pFmt=v=>v==null?'—':(v>=0?'+':'')+(v*100).toFixed(2)+'%';
   const pFmtA=v=>v==null?'—':(v*100).toFixed(2)+'%';
   const dFmt=v=>v==null?'—':'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3087,21 +3112,28 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     if(lower){return diffPct>0.005?'#ef4444':diffPct>0.001?'#f59e0b':'#10b981';}
     return Math.abs(diffPct)<0.001?'var(--text)':'var(--text2)';
   };
-  const statusBadge=(c,m)=>{
+  // Dispatch #129 — pulled the branching out of statusBadge (below) into a plain data function so
+  // the print report can reuse the SAME Over/Watch/OK verdict as the on-screen badge instead of
+  // re-deriving it; statusBadge just wraps this in the identical span it always rendered.
+  const statusInfo=(c,m)=>{
     if(!m||!m[c.key]) return null;
-    if(m[c.key].actual==null) return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:600,
-      background:'rgba(148,163,184,.12)',color:'#94a3b8',border:'.5px solid rgba(148,163,184,.25)'},title:'Not in the cloud feed — upload an Operations Report for this metric'},'— No data');
-    if(c.actionable===false) return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:600,
-      background:'rgba(148,163,184,.12)',color:'#94a3b8',border:'.5px solid rgba(148,163,184,.25)'}},'— Reference');
+    if(m[c.key].actual==null) return {label:'— No data',fontWeight:600,
+      bg:'rgba(148,163,184,.12)',color:'#94a3b8',border:'.5px solid rgba(148,163,184,.25)',
+      title:'Not in the cloud feed — upload an Operations Report for this metric'};
+    if(c.actionable===false) return {label:'— Reference',fontWeight:600,
+      bg:'rgba(148,163,184,.12)',color:'#94a3b8',border:'.5px solid rgba(148,163,184,.25)'};
     const{diffPct}=m[c.key];
     const bad=c.lower?diffPct>c.threshold:false;
     const warn=c.lower?diffPct>0&&diffPct<=c.threshold:false;
-    if(bad)return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:700,
-      background:'rgba(239,68,68,.12)',color:'#ef4444',border:'.5px solid rgba(239,68,68,.3)'}},'⚠ Over');
-    if(warn)return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:700,
-      background:'rgba(245,158,11,.12)',color:'#f59e0b',border:'.5px solid rgba(245,158,11,.3)'}},'△ Watch');
-    return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:700,
-      background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'✓ OK');
+    if(bad) return {label:'⚠ Over',fontWeight:700,bg:'rgba(239,68,68,.12)',color:'#ef4444',border:'.5px solid rgba(239,68,68,.3)'};
+    if(warn) return {label:'△ Watch',fontWeight:700,bg:'rgba(245,158,11,.12)',color:'#f59e0b',border:'.5px solid rgba(245,158,11,.3)'};
+    return {label:'✓ OK',fontWeight:700,bg:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'};
+  };
+  const statusBadge=(c,m)=>{
+    const info=statusInfo(c,m);
+    if(!info) return null;
+    return span({style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,fontWeight:info.fontWeight,
+      background:info.bg,color:info.color,border:info.border},title:info.title},info.label);
   };
 
   const monthLabel=m=>{if(!m)return'—';const[y,mo]=m.split('-');return new Date(+y,+mo-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});};
@@ -3184,6 +3216,103 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
     ].filter(Boolean);
   };
 
+  // Dispatch #129 — full, unscrolled print report. Before #116 (this same day) wrapped the KPI
+  // cards + Root-Cause Priority Matrix + Waste-Entry Discipline + Contributors table in one shared
+  // overflowY:'auto' region for mobile viewing, a bare window.print() would have been the only
+  // affordance to print this content. Rather than depend on how a specific browser's print engine
+  // reflows a scrolled, position:fixed overlay — which varies by browser/device and is exactly the
+  // failure mode dispatch #122 (Events & Tags) built a scroll-independent print report to avoid —
+  // this builds the printable HTML straight from the SAME already-computed data (metrics,
+  // rootCauseItems, worstDiscipline) the screen renders from, via this repo's existing
+  // ExportDropdown 'HTML Report / Print' pattern (extraHTML prop — see RankingView/EventCalendar's
+  // identical use in store-dash.js). That guarantees the FULL current result set every time,
+  // regardless of scroll position, viewport height, or print-engine quirks.
+  //
+  // Colors here are literal hex/rgba, not var(--...) tokens: this opens in a blank window with no
+  // meridian.css loaded (ExportDropdown's toHTML() writes a fully self-contained <style>). Severity
+  // is carried primarily by TEXT color and a left-border accent rather than a background fill —
+  // browsers do not print background colors by default (print-color-adjust defaults to 'economy',
+  // confirmed live via Chromium print-media emulation; meridian.css sets print-color-adjust nowhere)
+  // — so a report that relied on the on-screen rgba background tints for Over/Watch/OK would print
+  // mostly blank/white for most users, which is arguably the more literal reading of the owner's
+  // "needs print formatting applied" ask than a clipped scroll region.
+  const fobPrintHTML=()=>{
+    if(!metrics) return '<p>No FOB data for the current selection.</p>';
+    const esc2=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const scopeLabel=selLoc==='all'?'All Locations':selLoc==='ok'?'MCDOK — OK':selLoc==='fl'?'Emerald Arches — FL':sNameC(selLoc);
+    const tc=metrics.pLFoodPct,fob=metrics.fobPct,bfood=metrics.baseFoodPct;
+    const aboveCount=FOB_COMP.filter(c=>c.lower&&metrics[c.key]&&metrics[c.key].diffPct>0.001).length;
+    const kpis=[
+      {label:'Total Food Cost',val:pFmtA(tc.actual),
+       sub:tc.actual==null?'needs Ops Report':tc.diffPct>0?'▲ '+pFmt(tc.diffPct)+' vs target':'✓ '+pFmt(Math.abs(tc.diffPct))+' under',
+       col:tc.actual==null?'#94a3b8':fCol(tc.diffPct,true)},
+      {label:'Food Over Base',val:pFmtA(fob.actual),sub:fob.diffPct>0?'▲ '+pFmt(fob.diffPct)+' vs target':'✓ '+pFmt(Math.abs(fob.diffPct))+' under',col:fCol(fob.diffPct,true)},
+      {label:'Base Food',val:pFmtA(bfood.actual),
+       sub:bfood.target>0?(bfood.diffPct>0?'▲ '+pFmt(bfood.diffPct)+' vs target':'✓ '+pFmt(Math.abs(bfood.diffPct))+' under'):'No target set',
+       col:bfood.target>0?fCol(bfood.diffPct,true):'#94a3b8'},
+      {label:'Components Over Target',val:aboveCount+' / '+FOB_COMP.filter(c=>c.lower).length,sub:'categories above threshold',
+       col:aboveCount>3?'#ef4444':aboveCount>1?'#f59e0b':'#10b981'},
+      {label:'Net Sales (Period)',val:'$'+(metrics.totalSales/1000).toFixed(0)+'K',sub:metrics.locCount+' location'+(metrics.locCount!==1?'s':'')+' · '+metrics.rowCount+' records',col:'#3730a3'},
+    ];
+    const kpiHTML='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">'+
+      kpis.map(k=>'<div style="flex:1 1 150px;min-width:150px;border:1px solid #ccc;border-left:4px solid '+k.col+';border-radius:4px;padding:8px 12px">'+
+        '<div style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#666">'+esc2(k.label)+'</div>'+
+        '<div style="font-size:15px;font-weight:700;color:'+k.col+'">'+esc2(k.val)+'</div>'+
+        '<div style="font-size:8px;color:#666;margin-top:2px">'+esc2(k.sub)+'</div></div>').join('')+
+      '<div style="flex:1 1 150px;min-width:150px;border:1px solid #ccc;border-left:4px solid '+(auditResult&&auditResult.pass?'#10b981':'#f59e0b')+';border-radius:4px;padding:8px 12px">'+
+        '<div style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:#666">Self-Audit</div>'+
+        '<div style="font-size:15px;font-weight:700;color:'+(auditResult&&auditResult.pass?'#10b981':'#f59e0b')+'">'+
+        (auditResult?(auditResult.pass?'✓ Audited':'⚠ '+(auditResult.checks||[]).filter(c=>!c.ok).length+' check(s)'):'—')+'</div></div>'+
+      '</div>';
+
+    const matrixHTML=rootCauseItems.length?
+      '<h2 style="font-size:13px;color:#991b1b;margin:18px 0 4px">🎯 Root-Cause Priority Matrix — Top Coaching Opportunities</h2>'+
+      '<p style="font-size:9px;color:#666;margin:0 0 8px">Ranked by dollar impact above target. Excludes Base Food (largely outside store control).</p>'+
+      '<table style="border-collapse:collapse;width:100%;font-size:10px;margin-bottom:16px">'+
+      '<thead><tr>'+['#','Store','Component','% Over','$ Over'].map(l=>'<th style="border:1px solid #ddd;padding:4px 8px;background:#fef2f2;font-size:8px;text-transform:uppercase;text-align:left">'+l+'</th>').join('')+'</tr></thead>'+
+      '<tbody>'+rootCauseItems.map((item,i)=>'<tr style="background:'+(i%2?'#fff':'#fffafa')+'">'+
+        '<td style="border:1px solid #eee;padding:4px 8px;color:#666">'+(i+1)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;font-weight:600">'+esc2(sName(item.loc))+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px">'+esc2(item.comp.icon)+' '+esc2(item.comp.label)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;color:#991b1b;text-align:right">'+(item.diff*100).toFixed(2)+'% over</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;color:#991b1b;font-weight:700;text-align:right">$'+Math.round(item.dollar).toLocaleString()+'</td>'+
+        '</tr>').join('')+'</tbody></table>' : '';
+
+    const disciplineHTML=worstDiscipline.length?
+      '<h2 style="font-size:13px;color:#92400e;margin:18px 0 4px">📋 Waste-Entry Discipline</h2>'+
+      '<p style="font-size:9px;color:#666;margin:0 0 8px">'+(disciplineSum?disciplineSum.storesWithMissing+' store'+(disciplineSum.storesWithMissing!==1?'s':'')+' missing entries · est $'+Math.round(disciplineSum.totalEstImpact).toLocaleString()+' landing in Unexplained':'')+
+      ' — missing Raw/Completed waste entries vs. each store\'s own submission pattern over the last 14 days.</p>'+
+      '<table style="border-collapse:collapse;width:100%;font-size:10px;margin-bottom:16px">'+
+      '<thead><tr>'+['Store','Detail','Missing','Est. $'].map(l=>'<th style="border:1px solid #ddd;padding:4px 8px;background:#fffbeb;font-size:8px;text-transform:uppercase;text-align:left">'+l+'</th>').join('')+'</tr></thead>'+
+      '<tbody>'+worstDiscipline.map((d,i)=>'<tr style="background:'+(i%2?'#fff':'#fffdf5')+'">'+
+        '<td style="border:1px solid #eee;padding:4px 8px;font-weight:600">'+esc2(sName(d.loc))+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;color:#666">'+esc2([d.raw&&d.raw.missingCount>0?d.raw.missingCount+' raw':null,d.completed&&d.completed.missingCount>0?d.completed.missingCount+' completed':null].filter(Boolean).join(' · ')||'—')+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;color:#92400e;font-weight:700;text-align:right">'+d.totalMissing+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;color:#9a3412;font-weight:700;text-align:right">~$'+Math.round(d.estImpact).toLocaleString()+'</td>'+
+        '</tr>').join('')+'</tbody></table>' : '';
+
+    const contribRows=FOB_COMP.filter(c=>metrics[c.key]).map(c=>{
+      const m=metrics[c.key];
+      const info=statusInfo(c,metrics)||{label:'',color:'#666'};
+      const diffCol=fCol(m.diffPct,c.lower);
+      return '<tr style="background:'+(c.isTotal?'#f0f4ff':'#fff')+'">'+
+        '<td style="border:1px solid #eee;padding:4px 8px;font-weight:'+(c.isTotal?700:500)+'">'+esc2(c.icon)+' '+esc2(c.label)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;text-align:right">'+pFmtA(m.target)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;text-align:right;font-weight:'+(c.isTotal?700:500)+'">'+pFmtA(m.actual)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;text-align:right;color:#666">'+dFmt(m.actualDollar)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;text-align:right;color:'+diffCol+';font-weight:700">'+(m.diffPct>0?'▲ ':m.diffPct<-0.0005?'▼ ':'')+pFmt(m.diffPct)+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;text-align:right;color:'+diffCol+';font-weight:700">'+(m.diffDollar<0?'+':m.diffDollar>0?'-':'')+(m.diffDollar!==0?dFmt(m.diffDollar):'—')+'</td>'+
+        '<td style="border:1px solid #eee;padding:4px 8px;text-align:center;color:'+info.color+';font-weight:700">'+esc2(info.label)+'</td>'+
+        '</tr>';
+    }).join('');
+    const contribHTML='<h2 style="font-size:13px;color:#1a2332;margin:18px 0 4px">Contributors — '+esc2(scopeLabel)+' · '+esc2(monthLabel(selMonth))+'</h2>'+
+      '<table style="border-collapse:collapse;width:100%;font-size:10px">'+
+      '<thead><tr>'+['Category','Target %','Actual %','Actual $','Diff %','Diff $','Status'].map(l=>'<th style="border:1px solid #ddd;padding:4px 8px;background:#f5f5f7;font-size:8px;text-transform:uppercase;text-align:left">'+l+'</th>').join('')+'</tr></thead>'+
+      '<tbody>'+contribRows+'</tbody></table>';
+
+    return kpiHTML+matrixHTML+disciplineHTML+contribHTML;
+  };
+
   // dispatch #88 item 1, follow-up (owner-reported 2026-08-24): the qsrFobRows!==null guard on
   // the auto-select effect fixed the race's END state (selMonth now always lands on the cloud
   // stream's real newest month), but this loading gate only fired on TRULY empty data --
@@ -3245,7 +3374,14 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
             h('option',{value:'fl'},'Emerald Arches — FL ('+flLocs.length+')'),
             allLocs.map(l=>h('option',{key:l,value:l},sNameC(l))))),
         div({style:{marginLeft:'auto',display:'flex',gap:6}},
-          btn({className:'btn btn-sm',onClick:()=>window.print(),title:'Print / Save as PDF',style:{fontSize:'9px'}},'🖨 Print'),
+          // Dispatch #129: the standalone 🖨 Print button (native window.print()) is removed —
+          // it printed whatever happened to be scrolled into view inside #116's shared
+          // overflowY:'auto' region, not the full KPI cards + Root-Cause Matrix + Waste-Entry
+          // Discipline + Contributors table. ExportDropdown's "HTML Report / Print" (extraHTML
+          // below) replaces it: same pattern as EventCalendar/RankingView elsewhere in this file,
+          // builds the printable page from the already-computed data, not the scrolled DOM, so it
+          // always contains the FULL current result set regardless of scroll position. CSV/JSON
+          // (the `rows` below) are unchanged.
           h(ExportDropdown,{
             title:'FOB Analysis — '+(selLoc==='all'?'All Locations':selLoc==='ok'?'MCDOK (OK)':selLoc==='fl'?'Emerald Arches (FL)':(STORE_NAMES[selLoc]||selLoc))+(selMonth?' · '+selMonth:''),
             filename:'fob_analysis_'+(selMonth||'all')+'_'+new Date().toISOString().slice(0,10),
@@ -3258,6 +3394,7 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
               'MOP %': s.mopPct!=null?((s.mopPct*100).toFixed(2)+'%'):'—',
               'Kiosk %': s.kioskPct!=null?((s.kioskPct*100).toFixed(2)+'%'):'—',
             })):[]),
+            extraHTML:fobPrintHTML(),
           }),
           btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
       ),
@@ -3275,20 +3412,10 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
       // ── KPI cards ──────────────────────────────────────────────────
       kpiCards(),
       // ── Root-Cause Priority Matrix ──────────────────────────────────
-      metrics&&selLoc==='all'&&(()=>{
-        // Build ranked list of (component, store) pairs by dollar impact above target
-        const items=[];
-        FOB_COMP.filter(c=>c.lower&&c.actionable!==false&&!c.sep&&!c.isTotal&&metrics[c.key]).forEach(c=>{
-          const lb=metrics[c.key].locBreakdown||[];
-          lb.forEach(l=>{
-            if(l.diff>c.threshold&&l.dollar>0){
-              items.push({comp:c,loc:l.loc,diff:l.diff,dollar:l.dollar,pct:l.pct,tgt:l.tgt});
-            }
-          });
-        });
-        items.sort((a,b)=>b.dollar-a.dollar);
-        if(!items.length) return null;
-        const top=items.slice(0,8);
+      // Dispatch #129: reuses the rootCauseItems memo above (was recomputed inline here) so the
+      // print report builds from the exact same top-8 list, not a second derivation of it.
+      rootCauseItems.length>0&&(()=>{
+        const top=rootCauseItems;
         return div({style:{margin:'0 16px 0',borderRadius:'var(--r)',border:'.5px solid rgba(239,68,68,.25)',background:'rgba(239,68,68,.04)',padding:'10px 14px',flexShrink:0}},
           div({style:{fontSize:'10px',fontWeight:700,color:'var(--crit)',marginBottom:8}},'🎯 Root-Cause Priority Matrix — Top Coaching Opportunities'),
           div({style:{fontSize:'8.5px',color:'var(--text3)',marginBottom:8}},'Ranked by dollar impact above target. Excludes Base Food (largely outside store control). Fix these first to close FOB fastest.'),
@@ -3312,7 +3439,8 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
           background:'rgba(244,63,94,.06)',padding:'8px 14px',fontSize:'9px',color:'var(--crit)',flexShrink:0}},
           '⚠ Waste-entry discipline check failed to load from the cloud stream — try reopening this panel.');
         if(!disciplineSum||!disciplineSum.totalMissing) return null; // no derivable gaps — nothing to flag, not a claim every store is perfect
-        const worst=[...discipline].filter(d=>d.totalMissing>0).sort((a,b)=>b.estImpact-a.estImpact).slice(0,8);
+        // Dispatch #129: reuses the worstDiscipline memo above instead of re-deriving it here.
+        const worst=worstDiscipline;
         return div({style:{margin:'0 16px 0',borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.25)',background:'rgba(245,158,11,.04)',padding:'10px 14px',flexShrink:0}},
           div({style:{fontSize:'10px',fontWeight:700,color:'#f59e0b',marginBottom:4,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
             '📋 Waste-Entry Discipline',

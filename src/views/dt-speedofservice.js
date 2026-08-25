@@ -2,8 +2,14 @@
 import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { loadDtHistory } from '../lib/supabase.js';
-import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGETS } from '../constants.js';
 import { DateRangeControl, DATE_RANGE_PRESETS, resolveDatePreset } from '../components/PanelControls.js';
+// Dispatch #128 Part 1 -- the DT number below used to sum raw dt_untilserve/dt_trans_cnt
+// directly, which is NOT the reconciled OEPE-without-park formula (#183/#185, r=0.9958 against a
+// real QSRSoft Service report) that tOepe (the per-store target used in Part 2) was calibrated
+// against. oepeSeconds is the one shared, already-reconciled definition -- reused here, not
+// re-derived, matching graded-visits.js and supabase.js's loadQsrActSummary.
+import { oepeSeconds } from '../utils/oepe.js';
 // withAlpha (not string-concat) for any NEW alpha-tinted color -- R4 ratchet
 // (src/__tests__/ratchet-color-alpha-concat.test.js) caps color+hex-suffix concatenation sites in
 // src/ and requires new alpha tints go through this helper instead (safe for both hex-literal and
@@ -15,16 +21,96 @@ const div  = (p,...c) => h('div',  p, ...c);
 const span = (p,...c) => h('span', p, ...c);
 const btn  = (p,...c) => h('button', p, ...c);
 
-const DT_GREEN = 200; // seconds — on target
-const DT_AMB   = 240; // seconds — caution
+const DT_GREEN = 200; // seconds — fallback band when no per-store target exists (Beverage today)
+const DT_AMB   = 240; // seconds — fallback band's caution threshold (DT_GREEN + 40s buffer)
 
 const fmtDT = (s) => s == null || isNaN(s) ? '—' : Math.round(s) + 's';
 
-const dtColor = (s) =>
-  s == null ? 'var(--text3)' : s < DT_GREEN ? '#10b981' : s < DT_AMB ? '#f59e0b' : '#ef4444';
+// Dispatch #128 Part 2 -- green/amber thresholds now take an explicit (green, amber) pair instead
+// of the flat module constants, so callers can pass a per-store, per-station target. Default
+// params keep every pre-existing flat-threshold call site byte-identical.
+const dtColor = (s, green = DT_GREEN, amber = DT_AMB) =>
+  s == null ? 'var(--text3)' : s < green ? '#10b981' : s < amber ? '#f59e0b' : '#ef4444';
 
-const dtBg = (s) =>
-  s == null ? 'transparent' : s < DT_GREEN ? 'rgba(16,185,129,.08)' : s < DT_AMB ? 'rgba(245,158,11,.08)' : 'rgba(239,68,68,.08)';
+const dtBg = (s, green = DT_GREEN, amber = DT_AMB) =>
+  s == null ? 'transparent' : s < green ? 'rgba(16,185,129,.08)' : s < amber ? 'rgba(245,158,11,.08)' : 'rgba(239,68,68,.08)';
+
+// Dispatch #128 -- station → per-store target field, confirmed via src/lib/supabase.js's own
+// derivation comments (not guessed): DT→tOepe (location-intel.js's existing oepeTgt=t.tOepe||240
+// precedent), Front Counter→tR2p ("R2P (Receipt to Print, sec) = (fc_untilserve −
+// fc_untilclosedrawer) ÷ fc_trans_cnt"), Kitchen/MFY→tKvst ("KVS Time per GC (seconds) = total MFY
+// serve time ÷ total MFY transaction count"). Beverage has no per-store target (owner-confirmed) →
+// null. tKvsu (KVS *utilization*, a 0-1 fraction) is deliberately NOT used anywhere here — a
+// different metric class, not a seconds-based speed threshold.
+const TARGET_FIELD = { dt: 'tOepe', fc: 'tR2p', kitchen: 'tKvst', bev: null };
+const STATION_SHORT = { dt: 'DT', fc: 'FC', kitchen: 'Kitchen', bev: 'Bev' };
+
+// Per-store, per-station green/amber bands. Green < target, amber < target+40 (reusing the
+// existing 40s amber buffer, just relocated per-store per-station), red >= target+40. Falls back
+// to the flat DT_GREEN/DT_AMB bands (same 40s relationship) when the station has no target field
+// (Beverage) or this store is missing that field in DEFAULT_TARGETS — hasTarget:false marks that
+// fallback so callers can render it as a visually distinct "not a calibrated target" state.
+function stationBands(stationKey, loc) {
+  const field = TARGET_FIELD[stationKey];
+  const t = field ? DEFAULT_TARGETS[loc]?.[field] : null;
+  const green = t != null ? t : DT_GREEN;
+  return { green, amber: green + 40, hasTarget: t != null };
+}
+
+// Scope-level bands for aggregates that span multiple stores (the district "by station" summary,
+// the "By Hour" breakdown) — no single store's target applies, so this averages the target field
+// across the stores actually in scope. Falls back to the flat bands when the station has no
+// target field or none of the in-scope stores carry one.
+function scopeBands(stationKey, locs) {
+  const field = TARGET_FIELD[stationKey];
+  const vals = field ? locs.map(l => DEFAULT_TARGETS[l]?.[field]).filter(v => v != null) : [];
+  if (!vals.length) return { green: DT_GREEN, amber: DT_AMB, hasTarget: false };
+  const green = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return { green, amber: green + 40, hasTarget: true };
+}
+
+// Dispatch #128 Part 3 -- one field mapping shared by stationData, hourData/daypartData, and
+// DtTrendChart, so "which raw columns feed which station" is defined exactly once. DT additionally
+// carries store/held (dt_untilstore/dt_heldtime) — the two extra components oepeSeconds needs;
+// the other three stations keep their existing untilserve/trans_cnt-only sourcing (dispatch's own
+// instruction: "reuse that field mapping, don't re-derive it" — FC/Kitchen's own R2P/KVS-time
+// formulas are a different, out-of-scope fix).
+const STATION_FIELDS = [
+  { key:'dt',      label:'Drive-Thru',    icon:'🚗', us:['dt_untilserve'], store:['dt_untilstore'], held:['dt_heldtime'], cnt:['dt_trans_cnt'] },
+  { key:'fc',      label:'Front Counter', icon:'🧾', us:['fc_untilserve'], cnt:['fc_trans_cnt'] },
+  { key:'kitchen', label:'Kitchen (MFY)', icon:'🍔', us:['mfy1_untilserve','mfy2_untilserve'], cnt:['mfy1_trans_cnt','mfy2_trans_cnt'] },
+  { key:'bev',     label:'Beverage',      icon:'🥤', us:['bev_untilserve'], cnt:['bev_trans_cnt'] },
+];
+
+// Turn summed components into a seconds value for one station. DT uses the shared, reconciled
+// oepeSeconds() (Part 1's fix); the other stations keep the pre-existing raw Σus/Σcnt/1000 ratio
+// (their own R2P/KVS-time formula corrections are out of this dispatch's scope).
+function stationAvgSec(stationKey, sums) {
+  if (stationKey === 'dt') {
+    return oepeSeconds({ dt_untilserve: sums.us, dt_untilstore: sums.store, dt_heldtime: sums.held, dt_trans_cnt: sums.cnt });
+  }
+  return sums.cnt > 0 ? sums.us / sums.cnt / 1000 : null;
+}
+
+// Gauge-style color bar (dispatch #128 Part 2): 0 → red-threshold scale, green/amber/red zones,
+// a marker at the current value. hasTarget:false (no per-store target — Beverage today, or a
+// store missing that field) renders a dashed border + "(default)" label so a guessed band never
+// looks as trustworthy as a real per-store target.
+function StationGauge({ value, green, amber, hasTarget, width = 100, height = 6 }) {
+  const scaleMax = amber; // "0 → red-threshold" per the dispatch's own gauge spec
+  const pct = v => Math.max(0, Math.min(100, (v / scaleMax) * 100));
+  const greenPct = pct(green), amberPct = pct(amber);
+  const markerPct = value == null ? null : pct(value);
+  return div({ style:{ display:'flex', alignItems:'center', gap:4 }},
+    div({ style:{ position:'relative', width, height, borderRadius:3, flexShrink:0,
+      background:`linear-gradient(to right, #10b981 0%, #10b981 ${greenPct}%, #f59e0b ${greenPct}%, #f59e0b ${amberPct}%, #ef4444 ${amberPct}%, #ef4444 100%)`,
+      border: hasTarget ? '.5px solid var(--bdr)' : '1px dashed var(--bdr2)' }},
+      markerPct != null && div({ style:{ position:'absolute', top:-2, bottom:-2,
+        left:`calc(${markerPct}% - 1px)`, width:2, background:'var(--text)', borderRadius:1 }}),
+    ),
+    !hasTarget && span({ style:{ fontSize:'7px', color:'var(--text3)', fontStyle:'italic', whiteSpace:'nowrap' }}, '(default)'),
+  );
+}
 
 const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS  = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
@@ -75,17 +161,20 @@ function useChart(canvasRef, buildFn, deps) {
 
 // ── Trend chart (weekly aggregation) ─────────────────────────────────────────
 // mode: 'avg' = single weighted district/scope line; 'store' = one line per store;
-// 'patch' = one line per patch. Every line is Σuntilserve/Σtrans/1000 within its
-// group per Mon–Sun week (weighted — never an average of daily averages).
-function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
+// 'patch' = one line per patch. Every line sums the SELECTED station's raw components within its
+// group per Mon–Sun week, then applies that station's formula once (weighted — never an average
+// of daily averages; DT's formula is oepeSeconds, Part 1's fix). station selects which of
+// STATION_FIELDS' column mappings feeds the reducer (dispatch #128 Part 3).
+function DtTrendChart({ rows, activeLocs, label, mode = 'avg', station = 'dt' }) {
   const ref = React.useRef(null);
+  const fields = STATION_FIELDS.find(f => f.key === station) || STATION_FIELDS[0];
+  const bands = scopeBands(station, activeLocs);
 
   const { weeks, series } = React.useMemo(() => {
     const bySeries = {}, weekSet = new Set();
     for (const r of rows) {
       const loc = String(parseInt(r.loc, 10));
       if (!activeLocs.includes(loc)) continue;
-      if (!r.dt_untilserve || !r.dt_trans_cnt) continue;
       const d = new Date(r.dt + 'T00:00:00');
       const day = d.getDay();
       d.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // Monday of week
@@ -93,28 +182,39 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
       weekSet.add(wk);
       const sk = mode === 'store' ? loc : mode === 'patch' ? (locPatch(loc) || 'Other') : 'all';
       const bs = (bySeries[sk] = bySeries[sk] || {});
-      const cell = (bs[wk] = bs[wk] || { us: 0, cnt: 0 });
-      cell.us += r.dt_untilserve; cell.cnt += r.dt_trans_cnt;
+      const cell = (bs[wk] = bs[wk] || { us: 0, store: 0, held: 0, cnt: 0 });
+      for (const k of fields.us)  cell.us  += r[k] || 0;
+      for (const k of fields.cnt) cell.cnt += r[k] || 0;
+      for (const k of (fields.store || [])) cell.store += r[k] || 0;
+      for (const k of (fields.held  || [])) cell.held  += r[k] || 0;
     }
     const weeks = [...weekSet].sort();
     const series = Object.entries(bySeries).map(([key, wkMap]) => ({
       key,
       name: mode === 'store' ? (STORE_NAMES[key] || key) : mode === 'patch' ? key : label,
-      data: weeks.map(w => wkMap[w] && wkMap[w].cnt > 0 ? Math.round(wkMap[w].us / wkMap[w].cnt / 1000 * 10) / 10 : null),
+      data: weeks.map(w => {
+        if (!wkMap[w] || wkMap[w].cnt <= 0) return null;
+        const v = stationAvgSec(station, wkMap[w]);
+        return v == null ? null : Math.round(v * 10) / 10;
+      }),
       totalCnt: Object.values(wkMap).reduce((a, v) => a + v.cnt, 0),
     })).sort((a, b) => b.totalCnt - a.totalCnt);
     return { weeks, series };
-  }, [rows, activeLocs.join(','), mode, label]);
+  }, [rows, activeLocs.join(','), mode, label, station]);
 
   useChart(ref, canvas => {
     if (!weeks.length) return null;
     const labels = weeks.map(w => new Date(w + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' }));
+    const green = Math.round(bands.green), amber = Math.round(bands.amber);
     // type param (dispatch #110 item 2): 'avg' mode's single ref lines need an explicit
     // type:'line' override once the base chart is type:'bar' (Chart.js mixed-chart requirement --
     // a dataset with no type inherits the base chart's type). 'store'/'patch' modes keep the base
     // chart type:'line', so their ref lines are left exactly as before (no explicit type needed).
+    // isRef (dispatch #128) replaces the old label-text regex match for "is this a reference
+    // line, hide it from legend/tooltip" -- a real dataset property instead of pattern-matching a
+    // label whose text is now variable (the store's own target, not a fixed 200/240).
     const refLine = (val, color, lbl, asType) => ({
-      label: lbl, data: labels.map(() => val), ...(asType ? { type: asType } : null),
+      label: lbl, data: labels.map(() => val), isRef: true, ...(asType ? { type: asType } : null),
       borderColor: color, borderWidth: 1, borderDash: [4, 4],
       pointRadius: 0, fill: false, tension: 0, spanGaps: true,
     });
@@ -127,17 +227,17 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
       // design note). weeks/series themselves are untouched above -- this is rendering only.
       chartType = 'bar';
       const data = series[0]?.data || [];
-      const barColors = data.map(v => v == null ? '#60a5fa' : dtColor(v));
+      const barColors = data.map(v => v == null ? '#60a5fa' : dtColor(v, bands.green, bands.amber));
       datasets = [
-        refLine(DT_GREEN, 'rgba(16,185,129,.4)', '🟢 200s target', 'line'),
-        refLine(DT_AMB,   'rgba(239,68,68,.35)',  '🔴 240s caution', 'line'),
-        { label: 'Avg DT', data, backgroundColor: barColors.map(c => withAlpha(c, 'b3')), borderRadius: 3, order: 1 },
+        refLine(green, 'rgba(16,185,129,.4)', `🟢 ${green}s target`, 'line'),
+        refLine(amber, 'rgba(239,68,68,.35)',  `🔴 ${amber}s caution`, 'line'),
+        { label: `Avg ${STATION_SHORT[station]}`, data, backgroundColor: barColors.map(c => withAlpha(c, 'b3')), borderRadius: 3, order: 1 },
       ];
     } else {
       chartType = 'line';
       datasets = [
-        refLine(DT_GREEN, 'rgba(16,185,129,.35)', '200s'),
-        refLine(DT_AMB,   'rgba(239,68,68,.3)',    '240s'),
+        refLine(green, 'rgba(16,185,129,.35)', `${green}s`),
+        refLine(amber, 'rgba(239,68,68,.3)',    `${amber}s`),
         ...series.map((s, i) => {
           const c = SERIES_COLORS[i % SERIES_COLORS.length];
           return { label: s.name, data: s.data, borderColor: c, backgroundColor: c + '22',
@@ -154,9 +254,9 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
         plugins: {
           legend: { display: mode !== 'avg', position: 'bottom',
             labels: { color:'#94a3b8', font:{ size:9 }, boxWidth:10, padding:6,
-              filter: it => !/^(200s|240s)$/.test(it.text) } },
+              filter: it => !datasets[it.datasetIndex]?.isRef } },
           tooltip: { ...TT, callbacks: {
-            label: c => /^(🟢 200s target|🔴 240s caution|200s|240s)$/.test(c.dataset.label) ? null : `${c.dataset.label}: ${c.raw}s`,
+            label: c => datasets[c.datasetIndex]?.isRef ? null : `${c.dataset.label}: ${c.raw}s`,
           }},
         },
         scales: {
@@ -172,26 +272,29 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
   // even though series[0].data genuinely changed. seriesSig is a content signature -- every
   // datapoint of every series, not just their count -- so ANY value change (any mode) re-fires the
   // redraw. Verified against all three modes, not just 'avg' (see dispatch-110.md Resolution).
-  }, [weeks.join(','), series.length, mode, series.map(s => s.key + ':' + s.data.join(',')).join('|')]);
+  // station/bands.green added (dispatch #128) so a station switch (Part 3) also re-fires.
+  }, [weeks.join(','), series.length, mode, station, bands.green, series.map(s => s.key + ':' + s.data.join(',')).join('|')]);
 
   if (!weeks.length) return null;
   return div({ style:{ height: mode === 'avg' ? 160 : 220 }}, h('canvas', { ref }));
 }
 
 // ── Daypart bar chart ─────────────────────────────────────────────────────────
-function DtDaypartChart({ daypartData }) {
+// station-aware (dispatch #128 Part 3) -- daypartData is already computed for whichever station
+// is selected (see hourData below); green/amber colors the bars against that station's scope band.
+function DtDaypartChart({ daypartData, green = DT_GREEN, amber = DT_AMB, stationShort = 'DT' }) {
   const ref = React.useRef(null);
   useChart(ref, canvas => {
     if (!daypartData.length) return null;
     const labels = daypartData.map(d => d.label);
     const data   = daypartData.map(d => d.avg != null ? Math.round(d.avg * 10) / 10 : null);
-    const colors = data.map(v => v < DT_GREEN ? 'rgba(16,185,129,.7)' : v < DT_AMB ? 'rgba(245,158,11,.7)' : 'rgba(239,68,68,.7)');
+    const colors = data.map(v => v == null ? 'rgba(148,163,184,.5)' : v < green ? 'rgba(16,185,129,.7)' : v < amber ? 'rgba(245,158,11,.7)' : 'rgba(239,68,68,.7)');
     return new Chart(canvas, {
       type: 'bar',
       data: {
         labels,
         datasets: [{
-          label: 'Avg DT by daypart',
+          label: `Avg ${stationShort} by daypart`,
           data,
           backgroundColor: colors,
           borderRadius: 3,
@@ -201,7 +304,7 @@ function DtDaypartChart({ daypartData }) {
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { ...TT, callbacks: { label: c => `Avg DT: ${c.raw}s` }},
+          tooltip: { ...TT, callbacks: { label: c => `Avg ${stationShort}: ${c.raw}s` }},
         },
         scales: {
           x: { ...AX },
@@ -209,7 +312,7 @@ function DtDaypartChart({ daypartData }) {
         },
       },
     });
-  }, [daypartData]);
+  }, [daypartData, green, amber, stationShort]);
   if (!daypartData.length) return null;
   return div({ style:{ height:130 }}, h('canvas', { ref }));
 }
@@ -235,6 +338,10 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   const [sortCol,   setSortCol]   = React.useState('avg');
   const [sortDir,   setSortDir]   = React.useState(1); // 1=asc (fast first), -1=desc
   const [trendMode, setTrendMode] = React.useState('avg'); // 'avg' | 'store' | 'patch'
+  // Dispatch #128 Part 3 -- which station drives Store Ranking + the trend/daypart charts. The
+  // "Speed of Service by Station" boxes double as this selector (click to switch), so every
+  // station gets DT's full interactive treatment, not just static avg boxes.
+  const [station,   setStation]   = React.useState('dt'); // 'dt' | 'fc' | 'kitchen' | 'bev'
   const [loading,   setLoading]   = React.useState(true);
   const [rows,      setRows]      = React.useState([]);
 
@@ -270,70 +377,87 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     return new Date((sMs + eMs) / 2).toISOString().slice(0, 10);
   }, [dateRange.s, dateRange.e]);
 
+  // Dispatch #128 Parts 1 & 3 -- per-store speed for the SELECTED station (Store Ranking table).
+  // DT's total/early/late sums now carry store/held too, so the avg/trend below run through
+  // oepeSeconds (Part 1's fix) instead of a raw Σus/Σcnt ratio; FC/Kitchen/Beverage keep their
+  // existing untilserve/trans_cnt-only sourcing via the shared STATION_FIELDS/stationAvgSec.
   const storeData = React.useMemo(() => {
+    const fields = STATION_FIELDS.find(f => f.key === station) || STATION_FIELDS[0];
     const map = {};
     for (const r of rows) {
       const loc = String(parseInt(r.loc, 10));
       if (!activeLocs.includes(loc)) continue;
-      if (!map[loc]) map[loc] = { totalUs: 0, totalCnt: 0, earlyUs: 0, earlyCnt: 0, lateUs: 0, lateCnt: 0 };
-      map[loc].totalUs  += r.dt_untilserve || 0;
-      map[loc].totalCnt += r.dt_trans_cnt  || 0;
-      if (r.dt < midDt) { map[loc].earlyUs += r.dt_untilserve || 0; map[loc].earlyCnt += r.dt_trans_cnt || 0; }
-      else              { map[loc].lateUs  += r.dt_untilserve || 0; map[loc].lateCnt  += r.dt_trans_cnt || 0; }
+      if (!map[loc]) map[loc] = {
+        total: { us:0, store:0, held:0, cnt:0 },
+        early: { us:0, store:0, held:0, cnt:0 },
+        late:  { us:0, store:0, held:0, cnt:0 },
+      };
+      const d = map[loc];
+      const bucket = r.dt < midDt ? d.early : d.late;
+      for (const target of [d.total, bucket]) {
+        for (const k of fields.us)  target.us  += r[k] || 0;
+        for (const k of fields.cnt) target.cnt += r[k] || 0;
+        for (const k of (fields.store || [])) target.store += r[k] || 0;
+        for (const k of (fields.held  || [])) target.held  += r[k] || 0;
+      }
     }
     return Object.entries(map).map(([loc, d]) => {
-      const avg   = d.totalCnt > 0 ? d.totalUs  / d.totalCnt  / 1000 : null;
-      const early = d.earlyCnt > 0 ? d.earlyUs  / d.earlyCnt  / 1000 : null;
-      const late  = d.lateCnt  > 0 ? d.lateUs   / d.lateCnt   / 1000 : null;
+      const avg   = d.total.cnt > 0 ? stationAvgSec(station, d.total) : null;
+      const early = d.early.cnt > 0 ? stationAvgSec(station, d.early) : null;
+      const late  = d.late.cnt  > 0 ? stationAvgSec(station, d.late)  : null;
       const trend = (early != null && late != null) ? late - early : null; // negative = improving
-      return { loc, avg, trans: d.totalCnt, trend };
+      return { loc, avg, trans: d.total.cnt, trend };
     });
-  }, [rows, activeLocs, midDt]);
+  }, [rows, activeLocs, midDt, station]);
 
-  // Per-station district speed-of-service — where the bottleneck actually is.
-  // Kitchen combines both MFY make-lines. Each avg is Σuntilserve/Σtrans/1000 s.
-  // Stations run on different scales (a counter serve is far shorter than a DT
-  // window cycle), so we show each on its own — the point is trend + which
+  // Per-station district speed-of-service — where the bottleneck actually is, and the panel's
+  // station selector (dispatch #128 Part 3 -- these boxes are now clickable, not static). Kitchen
+  // combines both MFY make-lines. DT's avg is oepeSeconds (Part 1); the other three keep their
+  // existing Σuntilserve/Σtrans/1000 s. Stations run on different scales (a counter serve is far
+  // shorter than a DT window cycle), so we show each on its own — the point is trend + which
   // station is dragging, not a like-for-like race between them.
   const stationData = React.useMemo(() => {
-    const acc = [
-      { key:'dt',      label:'Drive-Thru',    icon:'🚗', us:['dt_untilserve'],                     cnt:['dt_trans_cnt'] },
-      { key:'fc',      label:'Front Counter', icon:'🧾', us:['fc_untilserve'],                     cnt:['fc_trans_cnt'] },
-      { key:'kitchen', label:'Kitchen (MFY)', icon:'🍔', us:['mfy1_untilserve','mfy2_untilserve'], cnt:['mfy1_trans_cnt','mfy2_trans_cnt'] },
-      { key:'bev',     label:'Beverage',      icon:'🥤', us:['bev_untilserve'],                    cnt:['bev_trans_cnt'] },
-    ].map(d => ({ ...d, sumUs:0, sumCnt:0 }));
+    const sums = STATION_FIELDS.map(f => ({ f, us:0, store:0, held:0, cnt:0 }));
     for (const r of rows) {
       const loc = String(parseInt(r.loc, 10));
       if (!activeLocs.includes(loc)) continue;
-      for (const a of acc) {
-        for (const k of a.us)  a.sumUs  += r[k] || 0;
-        for (const k of a.cnt) a.sumCnt += r[k] || 0;
+      for (const s of sums) {
+        for (const k of s.f.us)  s.us  += r[k] || 0;
+        for (const k of s.f.cnt) s.cnt += r[k] || 0;
+        for (const k of (s.f.store || [])) s.store += r[k] || 0;
+        for (const k of (s.f.held  || [])) s.held  += r[k] || 0;
       }
     }
-    return acc.map(a => ({ key:a.key, label:a.label, icon:a.icon,
-      avg: a.sumCnt > 0 ? a.sumUs / a.sumCnt / 1000 : null, cnt:a.sumCnt }));
+    return sums.map(s => ({ key:s.f.key, label:s.f.label, icon:s.f.icon,
+      avg: stationAvgSec(s.f.key, s), cnt:s.cnt }));
   }, [rows, activeLocs]);
 
+  // By-hour breakdown for the SELECTED station (feeds both the "By Hour" table and, via
+  // daypartData below, DtDaypartChart -- dispatch #128 Part 3).
   const hourData = React.useMemo(() => {
+    const fields = STATION_FIELDS.find(f => f.key === station) || STATION_FIELDS[0];
     const map = {};
     for (const r of rows) {
       const loc = String(parseInt(r.loc, 10));
       if (!activeLocs.includes(loc)) continue;
       const slot = r.hour_slot;
-      if (!map[slot]) map[slot] = { totalUs: 0, totalCnt: 0 };
-      map[slot].totalUs  += r.dt_untilserve || 0;
-      map[slot].totalCnt += r.dt_trans_cnt  || 0;
+      if (!map[slot]) map[slot] = { us:0, store:0, held:0, cnt:0 };
+      const d = map[slot];
+      for (const k of fields.us)  d.us  += r[k] || 0;
+      for (const k of fields.cnt) d.cnt += r[k] || 0;
+      for (const k of (fields.store || [])) d.store += r[k] || 0;
+      for (const k of (fields.held  || [])) d.held  += r[k] || 0;
     }
     return Object.entries(map)
       .map(([slot, d]) => ({
         slot,
         label: HOUR_LABELS[slot] || slot,
-        avg: d.totalCnt > 0 ? d.totalUs / d.totalCnt / 1000 : null,
-        trans: d.totalCnt,
+        avg: d.cnt > 0 ? stationAvgSec(station, d) : null,
+        trans: d.cnt,
       }))
       .filter(r => r.avg != null)
       .sort((a, b) => a.slot.localeCompare(b.slot));
-  }, [rows, activeLocs]);
+  }, [rows, activeLocs, station]);
 
   // Daypart aggregation (Breakfast / Lunch / PM / Dinner / Late Night)
   const daypartData = React.useMemo(() => {
@@ -394,6 +518,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   const rangeLabel = DATE_RANGE_PRESETS.find(p => p.id === dateRange.id)?.label
     || `${dateRange.s} – ${dateRange.e}`;
 
+  // Dispatch #128 Part 2/3 -- scope-level bands (target averaged across activeLocs) for the
+  // aggregate views (by-station boxes, weekly trend, daypart, By Hour); Store Ranking colors each
+  // row against that STORE's own band via stationBands(station, loc) instead.
+  const bands      = scopeBands(station, activeLocs);
+  const shortLabel = STATION_SHORT[station];
+
   return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460,
     display:'flex', flexDirection:'column', paddingTop:20 }},
     div({ style:{ flex:'0 0 20px', cursor:'pointer' }, onClick:onClose }),
@@ -408,7 +538,9 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
         div({ style:{ flex:1 }},
           div({ style:{ fontSize:'14px', fontWeight:800, color:'var(--text)' }}, 'Speed of Service'),
           div({ style:{ fontSize:'9px', color:'var(--text3)' }},
-            'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · DT thresholds green <200s · amber <240s · red ≥240s'),
+            'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · ' +
+            'DT/FC/Kitchen thresholds are each store\'s own target (tOepe/tR2p/tKvst) +40s amber buffer · ' +
+            'Beverage has no target yet — shown as a dashed "(default)" band'),
         ),
         h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),
         h('select', { value:orgFilter, onChange:e=>setOrgFilter(e.target.value), style:selStyle },
@@ -442,8 +574,8 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
 
             // ── Summary cards ─────────────────────────────────────
             div({ style:{ display:'flex', gap:10, flexWrap:'wrap' }},
-              h(SummaryCard, { label:'District Avg DT', value:fmtDT(districtAvg),
-                color:dtColor(districtAvg), sub:`${totalTrans.toLocaleString()} transactions` }),
+              h(SummaryCard, { label:`District Avg ${shortLabel}`, value:fmtDT(districtAvg),
+                color:dtColor(districtAvg, bands.green, bands.amber), sub:`${totalTrans.toLocaleString()} transactions` }),
               bestStore  && h(SummaryCard, { label:'Fastest Store',  value:sNameC(bestStore.loc),  color:'#10b981', sub:fmtDT(bestStore.avg)  }),
               worstStore && h(SummaryCard, { label:'Needs Attention', value:sNameC(worstStore.loc), color:'#ef4444', sub:fmtDT(worstStore.avg) }),
               bestDp     && h(SummaryCard, { label:'Fastest Daypart', value:bestDp.label,           color:'#10b981', sub:fmtDT(bestDp.avg)     }),
@@ -451,25 +583,37 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
             ),
 
             // ── Speed of Service by station ───────────────────────
-            // Where the bottleneck is: DT window vs front counter vs kitchen
-            // make-line vs beverage. Each station on its own scale.
-            stationData.some(s => s.avg != null) && div({ style:{ background:'var(--surf2)',
+            // Where the bottleneck is: DT window vs front counter vs kitchen make-line vs
+            // beverage. Each station on its own scale. Dispatch #128 Part 3 -- these boxes are
+            // now the panel's station SELECTOR (click to switch DT/FC/Kitchen/Beverage; the
+            // selected one drives Store Ranking + the trend/daypart charts below), not static
+            // avg boxes with nothing to click into. Each carries a Part 2 gauge against the
+            // scope-averaged per-store target for that station (real target for DT/FC/Kitchen,
+            // the flagged "(default)" fallback band for Beverage).
+            div({ style:{ background:'var(--surf2)',
               border:'.5px solid var(--bdr)', borderRadius:'var(--r)', padding:'10px 12px' }},
               div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)', marginBottom:8 }},
-                'Speed of Service by Station — avg order-to-serve'),
+                'Speed of Service by Station — click a station to drill in'),
               div({ style:{ display:'flex', gap:10, flexWrap:'wrap' }},
-                ...stationData.map(s => div({ key:s.key, style:{ flex:'1 1 120px', minWidth:120,
-                  background:'var(--surf)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)',
-                  padding:'8px 10px' }},
-                  div({ style:{ fontSize:'9px', color:'var(--text3)', fontWeight:700,
-                    textTransform:'uppercase', letterSpacing:'.4px', marginBottom:3 }},
-                    s.icon + ' ' + s.label),
-                  div({ style:{ fontSize:'17px', fontWeight:800, fontFamily:'var(--mono)',
-                    color: s.key === 'dt' ? dtColor(s.avg) : 'var(--text)' }},
-                    s.avg != null ? fmtDT(s.avg) : '—'),
-                  div({ style:{ fontSize:'8px', color:'var(--text3)', marginTop:2 }},
-                    s.cnt > 0 ? s.cnt.toLocaleString() + ' orders' : 'no data')
-                ))
+                ...stationData.map(s => {
+                  const sBands = scopeBands(s.key, activeLocs);
+                  const selected = station === s.key;
+                  return div({ key:s.key, onClick:()=>setStation(s.key), role:'button', tabIndex:0,
+                    onKeyDown:e=>{ if (e.key==='Enter'||e.key===' ') setStation(s.key); },
+                    style:{ flex:'1 1 130px', minWidth:130, cursor:'pointer',
+                      background:'var(--surf)', borderRadius:'var(--r)', padding:'8px 10px',
+                      border: selected ? '1.5px solid #60a5fa' : '.5px solid var(--bdr)' }},
+                    div({ style:{ fontSize:'9px', color: selected ? '#60a5fa' : 'var(--text3)', fontWeight:700,
+                      textTransform:'uppercase', letterSpacing:'.4px', marginBottom:3 }},
+                      s.icon + ' ' + s.label),
+                    div({ style:{ fontSize:'17px', fontWeight:800, fontFamily:'var(--mono)',
+                      color: dtColor(s.avg, sBands.green, sBands.amber), marginBottom:4 }},
+                      s.avg != null ? fmtDT(s.avg) : '—'),
+                    h(StationGauge, { value:s.avg, green:sBands.green, amber:sBands.amber, hasTarget:sBands.hasTarget }),
+                    div({ style:{ fontSize:'8px', color:'var(--text3)', marginTop:3 }},
+                      s.cnt > 0 ? s.cnt.toLocaleString() + ' orders' : 'no data')
+                  );
+                })
               )
             ),
 
@@ -484,11 +628,11 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                 : 'one line per patch';
               return div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)', padding:'10px 12px' }},
                 div({ style:{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }},
-                  div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `Weekly DT Trend (${rangeLabel})`),
+                  div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `Weekly ${shortLabel} Trend (${rangeLabel})`),
                   span({ style:{ fontSize:'8px', color:'var(--text3)' }}, modeSub),
                   div({ style:{ display:'flex', gap:4, marginLeft:'auto' }},
                     modeBtn('avg', 'Avg'), modeBtn('store', 'By store'), modeBtn('patch', 'By patch'))),
-                h(DtTrendChart, { rows, activeLocs, label: trendLabel, mode: trendMode }),
+                h(DtTrendChart, { rows, activeLocs, label: trendLabel, mode: trendMode, station }),
               );
             })(),
 
@@ -496,8 +640,8 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
             div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)',
               padding:'10px 12px' }},
               div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)', marginBottom:6 }},
-                'Avg DT by Daypart'),
-              h(DtDaypartChart, { daypartData }),
+                `Avg ${shortLabel} by Daypart`),
+              h(DtDaypartChart, { daypartData, green:bands.green, amber:bands.amber, stationShort:shortLabel }),
             ),
 
             // ── Store table + Hour breakdown ──────────────────────
@@ -511,13 +655,13 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                 borderRadius:'var(--r)', overflow:'hidden' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
                   fontSize:'10px', fontWeight:800, color:'var(--text)' }},
-                  `Store Ranking — ${sorted.length} stores`),
+                  `Store Ranking — ${shortLabel} — ${sorted.length} stores`),
                 h('table', { style:{ width:'100%', borderCollapse:'collapse' }},
                   h('thead', null,
                     h('tr', null,
                       h('th', { style:{ ...thS('name'), textAlign:'left', cursor:'default' }}, 'Store'),
                       h('th', { style:thS('avg'),   onClick:()=>thClick('avg')   },
-                        'Avg DT ' + (sortCol==='avg'   ? (sortDir===1?'↑':'↓') : '')),
+                        `Avg ${shortLabel} ` + (sortCol==='avg'   ? (sortDir===1?'↑':'↓') : '')),
                       h('th', { style:thS('trans'), onClick:()=>thClick('trans') },
                         'Trans '  + (sortCol==='trans' ? (sortDir===1?'↑':'↓') : '')),
                       h('th', { style:thS('trend'), onClick:()=>thClick('trend') },
@@ -526,6 +670,10 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                   ),
                   h('tbody', null,
                     ...sorted.map(s => {
+                      // Dispatch #128 Part 2 -- this store's OWN target (tOepe/tR2p/tKvst),
+                      // not the flat district constant. hasTarget:false (Beverage, or a store
+                      // missing the field) falls back to the flat band and flags it visually.
+                      const sBands = stationBands(station, s.loc);
                       const trendStr = s.trend == null ? '—'
                         : (s.trend < 0 ? '▲ ' : '▼ ') + Math.abs(s.trend).toFixed(1) + 's';
                       const trendColor = s.trend == null ? 'var(--text3)'
@@ -533,12 +681,16 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                       const trendTitle = s.trend == null ? '' : s.trend < 0
                         ? `${Math.abs(s.trend).toFixed(1)}s faster vs first half of period`
                         : `${Math.abs(s.trend).toFixed(1)}s slower vs first half of period`;
-                      return h('tr', { key:s.loc, style:{ borderTop:'.5px solid var(--bdr)', background:dtBg(s.avg) }},
+                      return h('tr', { key:s.loc, style:{ borderTop:'.5px solid var(--bdr)', background:dtBg(s.avg, sBands.green, sBands.amber) }},
                         h('td', { style:{ padding:'5px 10px', fontSize:'10px', color:'var(--text)', fontWeight:600 }},
                           sNameC(s.loc)),
-                        h('td', { style:{ padding:'5px 10px', fontSize:'10px', textAlign:'right',
-                          fontWeight:700, color:dtColor(s.avg), fontVariantNumeric:'tabular-nums' }},
-                          fmtDT(s.avg)),
+                        h('td', { style:{ padding:'5px 10px', fontSize:'10px', textAlign:'right' }},
+                          div({ style:{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }},
+                            h(StationGauge, { value:s.avg, green:sBands.green, amber:sBands.amber, hasTarget:sBands.hasTarget, width:56 }),
+                            span({ style:{ fontWeight:700, color:dtColor(s.avg, sBands.green, sBands.amber),
+                              fontVariantNumeric:'tabular-nums' }}, fmtDT(s.avg)),
+                          )
+                        ),
                         h('td', { style:{ padding:'5px 10px', fontSize:'9px', textAlign:'right',
                           color:'var(--text3)' }}, s.trans.toLocaleString()),
                         h('td', { style:{ padding:'5px 10px', fontSize:'9px', textAlign:'right',
@@ -553,12 +705,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
               div({ style:{ flex:'2 1 300px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
                 borderRadius:'var(--r)', overflow:'hidden' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
-                  fontSize:'10px', fontWeight:800, color:'var(--text)' }}, 'By Hour — ' + trendLabel),
+                  fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `By Hour — ${shortLabel} — ` + trendLabel),
                 h('table', { style:{ width:'100%', borderCollapse:'collapse' }},
                   h('thead', null,
                     h('tr', null,
                       h('th', { style:{ ...thS('hour'), textAlign:'left', cursor:'default' }}, 'Hour'),
-                      h('th', { style:thS('hour_avg') }, 'Avg DT'),
+                      h('th', { style:thS('hour_avg') }, `Avg ${shortLabel}`),
                       h('th', { style:thS('hour_cnt') }, 'Trans'),
                     )
                   ),
@@ -566,21 +718,23 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                     ...hourData.map(r =>
                       h('tr', { key:r.slot, style:{ borderTop:'.5px solid var(--bdr)' }},
                         h('td', { style:{ padding:'4px 10px', fontSize:'9px', color:'var(--text3)' }}, r.label),
-                        // Dispatch #110 item 1 -- Avg DT bar, matching the existing trans bar's
+                        // Dispatch #110 item 1 -- Avg bar, matching the existing trans bar's
                         // treatment (same hand-rolled <div> sizing convention + dtColor fill).
+                        // Colored against the scope band (bands), not per-store -- this table
+                        // aggregates every store in scope, so no single target applies.
                         h('td', { style:{ padding:'4px 6px 4px 0', fontSize:'9px', textAlign:'right' }},
                           div({ style:{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:4 }},
-                            span({ style:{ fontWeight:700, color:dtColor(r.avg), fontVariantNumeric:'tabular-nums' }},
+                            span({ style:{ fontWeight:700, color:dtColor(r.avg, bands.green, bands.amber), fontVariantNumeric:'tabular-nums' }},
                               fmtDT(r.avg)),
                             div({ style:{ height:6, width:Math.round(r.avg / maxAvg * 60),
-                              background:withAlpha(dtColor(r.avg), '66'), borderRadius:2, flexShrink:0 }}),
+                              background:withAlpha(dtColor(r.avg, bands.green, bands.amber), '66'), borderRadius:2, flexShrink:0 }}),
                           )
                         ),
                         h('td', { style:{ padding:'4px 6px 4px 0', fontSize:'8px', textAlign:'right' }},
                           div({ style:{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:4 }},
                             span({ style:{ color:'var(--text3)' }}, r.trans.toLocaleString()),
                             div({ style:{ height:6, width:Math.round(r.trans / maxTrans * 60),
-                              background:dtColor(r.avg)+'66', borderRadius:2, flexShrink:0 }}),
+                              background:dtColor(r.avg, bands.green, bands.amber)+'66', borderRadius:2, flexShrink:0 }}),
                           )
                         ),
                       )
@@ -592,9 +746,12 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
 
             // Footer note
             div({ style:{ fontSize:'7.5px', color:'var(--text3)', paddingTop:4 }},
-              `DT Until Serve = cumulative time from order at speaker to food delivery. ` +
-              `Avg = sum(dt_untilserve) / sum(dt_trans_cnt) / 1000 seconds. ` +
-              `Weekly trend aggregates Mon–Sun. Store trend = 2nd half of period vs 1st half (▲ faster, ▼ slower).`
+              `DT = order at speaker to food delivery, minus parked/held time (oepeSeconds — the ` +
+              `same reconciled formula tOepe is calibrated against, #183/#185). FC/Kitchen/Beverage ` +
+              `= sum(station untilserve) / sum(station trans_cnt) / 1000 seconds. Green/amber/red ` +
+              `bands are each store's own target (tOepe/tR2p/tKvst) +40s amber buffer; Beverage has ` +
+              `no target yet and shows a dashed "(default)" band. Weekly trend aggregates Mon–Sun. ` +
+              `Store trend = 2nd half of period vs 1st half (▲ faster, ▼ slower).`
             ),
           )
     )

@@ -24,11 +24,21 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 // Langford"). 3708 is tuned to a constant 150s avg DT (fast/green), 5183 to a constant 250s
 // avg DT (slow/red) -- deliberately DIFFERENT so an org/store filter switch changes the
 // computed values, not just which locs are summed over the same total.
+//
+// Dispatch #128 Part 1 -- the panel's DT number now runs through oepeSeconds() (dt_untilserve -
+// dt_untilstore - dt_heldtime, over dt_trans_cnt), not a raw dt_untilserve/dt_trans_cnt ratio.
+// dt_untilstore is set to a constant 10s/order "park" component and dt_heldtime to 0, so
+// oepeSeconds still resolves to exactly avgSec (10s added to dt_untilserve, then subtracted back
+// out) -- every one of this file's pre-existing avgSec-based assertions stays valid unchanged.
+// dt_untilstore must be > 0 (oepeSeconds' own null-guard for "no gap data") -- 0 would make every
+// avg null instead of the old raw-ratio value.
+const PARK_SEC = 10;
 const rows = [];
 function addRow(loc, dt, hourSlot, avgSec, cnt) {
   rows.push({
     loc, dt, hour_slot: hourSlot,
-    dt_untilserve: avgSec * 1000 * cnt, dt_trans_cnt: cnt,
+    dt_untilserve: (avgSec + PARK_SEC) * 1000 * cnt, dt_untilstore: PARK_SEC * 1000 * cnt, dt_heldtime: 0,
+    dt_trans_cnt: cnt,
     fc_untilserve: 0, fc_trans_cnt: 0, mfy1_untilserve: 0, mfy1_trans_cnt: 0,
     mfy2_untilserve: 0, mfy2_trans_cnt: 0, bev_untilserve: 0, bev_trans_cnt: 0,
   });
@@ -73,9 +83,12 @@ async function flush(container, maxTicks = 15) {
 }
 // DtTrendChart configs specifically, NOT DtDaypartChart -- both charts share this file and
 // DtDaypartChart's single dataset is labeled "Avg DT by daypart", which also contains the
-// substring "DT", so filtering on that alone (over-)matches both charts. The 200s/240s
-// reference-line datasets are unique to DtTrendChart (DtDaypartChart has none), so require one.
-const trendConfigs = () => chartCalls.filter(c => c.data?.datasets?.some(d => /^(200s|240s|🟢 200s target|🔴 240s caution)$/.test(d.label || '')));
+// substring "DT", so filtering on that alone (over-)matches both charts. The reference-line
+// datasets (isRef:true) are unique to DtTrendChart (DtDaypartChart has none), so require one.
+// Dispatch #128 -- was a `/200s|240s/` label-text regex; the ref lines' VALUES are now each
+// store's own target (not a fixed 200/240), so isRef (a real dataset property DtTrendChart sets,
+// not pattern-matched display text) is the only stable way to identify them.
+const trendConfigs = () => chartCalls.filter(c => c.data?.datasets?.some(d => d.isRef));
 
 describe('Dispatch #110 -- Speed of Service panel', () => {
   let container, root;
@@ -138,7 +151,9 @@ describe('Dispatch #110 -- Speed of Service panel', () => {
     expect(Array.isArray(avgDs.backgroundColor)).toBe(true); // per-bar dtColor fill, not one line color
     // Ref lines need an explicit type:'line' override now that the base chart is type:'bar'
     // (Chart.js mixed-chart requirement) -- verifies this wasn't a blind type-string flip.
-    const refLines = cfg.data.datasets.filter(d => /200s|240s/.test(d.label));
+    // Dispatch #128 -- filters on isRef (not label text: the ref lines' values are now this
+    // scope's own averaged tOepe, not a fixed 200/240).
+    const refLines = cfg.data.datasets.filter(d => d.isRef);
     expect(refLines.length).toBe(2);
     for (const rl of refLines) expect(rl.type).toBe('line');
   });
@@ -150,7 +165,7 @@ describe('Dispatch #110 -- Speed of Service panel', () => {
     await flush(container);
     const cfg = trendConfigs().slice(-1)[0];
     expect(cfg.type).toBe('line');
-    expect(cfg.data.datasets.filter(d => d.label !== '200s' && d.label !== '240s').length).toBe(2); // one per store in scope
+    expect(cfg.data.datasets.filter(d => !d.isRef).length).toBe(2); // one per store in scope
   });
 
   it('item 4 (root-caused bug): switching the store/patch filter in avg mode visibly redraws the chart with the NEW values', async () => {
@@ -191,7 +206,7 @@ describe('Dispatch #110 -- Speed of Service panel', () => {
     await flush(container);
     const before = trendConfigs().slice(-1)[0];
     // 2 patches in scope (Robert Spencer for 3708, Krystiana Langford for 5183).
-    expect(before.data.datasets.filter(d => d.label !== '200s' && d.label !== '240s').length).toBe(2);
+    expect(before.data.datasets.filter(d => !d.isRef).length).toBe(2);
 
     const orgSelect = [...container.querySelectorAll('select')].find(s =>
       [...s.querySelectorAll('option')].some(o => o.value === '5183'));
@@ -199,7 +214,7 @@ describe('Dispatch #110 -- Speed of Service panel', () => {
     await flush(container);
 
     const after = trendConfigs().slice(-1)[0];
-    const nonRef = after.data.datasets.filter(d => d.label !== '200s' && d.label !== '240s');
+    const nonRef = after.data.datasets.filter(d => !d.isRef);
     expect(nonRef.length).toBe(1); // scoped to a single store -> a single patch series remains
     expect(nonRef[0].data).toEqual([250, 250]);
   });

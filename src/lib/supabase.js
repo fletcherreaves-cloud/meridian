@@ -1999,7 +1999,11 @@ export async function loadDtHistory(range = 90) {
   // both the head-count query and the fetchAll fallback path via the new extraFilter param.
   return _pagedParallel({
     table: 'qsr_daily_activity',
-    select: 'loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
+    // dt_untilstore/dt_heldtime added (dispatch #128) — dt-speedofservice.js's DT number was
+    // summing raw dt_untilserve/dt_trans_cnt directly instead of the shared, reconciled
+    // oepeSeconds() (src/utils/oepe.js), which needs these two extra components to subtract
+    // parked/held time. This is the only production call site for loadDtHistory (verified above).
+    select: 'loc,dt,hour_slot,dt_untilserve,dt_untilstore,dt_heldtime,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
     gteCol: 'dt', gteVal: startDt,
     extraFilter: q => { const qq = q.gt('dt_trans_cnt', 0); return endDt ? qq.lte('dt', endDt) : qq; },
     orderCol: 'dt', ascending: true, extraOrder: ['loc', 'hour_slot'],
