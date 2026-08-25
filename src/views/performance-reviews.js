@@ -2238,7 +2238,7 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
             div({style:{fontSize:12}},'Create your first performance review using the button above.'))
         : div(null,
             // Table header
-            div({style:{display:'grid',gridTemplateColumns:'200px 120px 120px 80px 90px 100px 80px',
+            div({style:{display:'grid',gridTemplateColumns:'200px 120px 120px 80px 90px 160px 80px',
               gap:0,padding:'8px 16px',background:S2,borderBottom:`1px solid ${BDR}`,
               fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px'}},...[
               'Name','Role','Store','Period','Score','Status',''].map((h,i)=>span({key:i},h))
@@ -2246,7 +2246,7 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
             ...filtered.map(r => {
               const score = getScore(r);
               return div({key:r.id,
-                style:{display:'grid',gridTemplateColumns:'200px 120px 120px 80px 90px 100px 80px',
+                style:{display:'grid',gridTemplateColumns:'200px 120px 120px 80px 90px 160px 80px',
                   gap:0,padding:'10px 16px',borderBottom:`1px solid ${BDR}`,alignItems:'center',
                   cursor:'pointer',transition:'background .1s'},
                 onClick:()=>onOpen(r),
