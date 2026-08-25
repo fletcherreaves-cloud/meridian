@@ -3,6 +3,12 @@ import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { loadDtHistory } from '../lib/supabase.js';
 import { STORE_NAMES, sNameC, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
+import { DateRangeControl, DATE_RANGE_PRESETS, resolveDatePreset } from '../components/PanelControls.js';
+// withAlpha (not string-concat) for any NEW alpha-tinted color -- R4 ratchet
+// (src/__tests__/ratchet-color-alpha-concat.test.js) caps color+hex-suffix concatenation sites in
+// src/ and requires new alpha tints go through this helper instead (safe for both hex-literal and
+// var() colors; a raw `+'66'` silently drops on a var() color per #351/#368).
+import { withAlpha } from './patch-heatmap.js';
 
 const h = React.createElement;
 const div  = (p,...c) => h('div',  p, ...c);
@@ -49,12 +55,6 @@ const DAYPARTS = [
   { id:'pm',        label:'PM',        hours:['14:00','15:00','16:00'] },
   { id:'dinner',    label:'Dinner',    hours:['17:00','18:00','19:00','20:00'] },
   { id:'late',      label:'Late Night',hours:['21:00','22:00','23:00','00:00'] },
-];
-
-const PERIODS = [
-  { id: '30d',  label: '30 Days',  days: 30  },
-  { id: '60d',  label: '60 Days',  days: 60  },
-  { id: '90d',  label: '90 Days',  days: 90  },
 ];
 
 // ── Chart.js helpers ─────────────────────────────────────────────────────────
@@ -109,22 +109,32 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
   useChart(ref, canvas => {
     if (!weeks.length) return null;
     const labels = weeks.map(w => new Date(w + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' }));
-    const refLine = (val, color, lbl) => ({
-      label: lbl, data: labels.map(() => val),
+    // type param (dispatch #110 item 2): 'avg' mode's single ref lines need an explicit
+    // type:'line' override once the base chart is type:'bar' (Chart.js mixed-chart requirement --
+    // a dataset with no type inherits the base chart's type). 'store'/'patch' modes keep the base
+    // chart type:'line', so their ref lines are left exactly as before (no explicit type needed).
+    const refLine = (val, color, lbl, asType) => ({
+      label: lbl, data: labels.map(() => val), ...(asType ? { type: asType } : null),
       borderColor: color, borderWidth: 1, borderDash: [4, 4],
       pointRadius: 0, fill: false, tension: 0, spanGaps: true,
     });
-    let datasets;
+    let chartType, datasets;
     if (mode === 'avg') {
+      // Owner: "use the bar throughout... visually impactful." Single-series avg mode converts
+      // to bars, matching DtDaypartChart's existing bar treatment (dispatch #110 item 2) -- the
+      // multi-series store/patch modes below are deliberately left as lines (grouped bars across
+      // 15+ stores/patches per week would be unreadable at this panel's width; see dispatch's own
+      // design note). weeks/series themselves are untouched above -- this is rendering only.
+      chartType = 'bar';
       const data = series[0]?.data || [];
-      const ptColors = data.map(v => v == null ? '#60a5fa' : v < DT_GREEN ? '#10b981' : v < DT_AMB ? '#f59e0b' : '#ef4444');
+      const barColors = data.map(v => v == null ? '#60a5fa' : dtColor(v));
       datasets = [
-        refLine(DT_GREEN, 'rgba(16,185,129,.4)', '🟢 200s target'),
-        refLine(DT_AMB,   'rgba(239,68,68,.35)',  '🔴 240s caution'),
-        { label: 'Avg DT', data, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.08)',
-          borderWidth: 2.5, tension: 0.35, fill: true, pointBackgroundColor: ptColors, pointBorderColor: ptColors, pointRadius: 4, spanGaps: true },
+        refLine(DT_GREEN, 'rgba(16,185,129,.4)', '🟢 200s target', 'line'),
+        refLine(DT_AMB,   'rgba(239,68,68,.35)',  '🔴 240s caution', 'line'),
+        { label: 'Avg DT', data, backgroundColor: barColors.map(c => withAlpha(c, 'b3')), borderRadius: 3, order: 1 },
       ];
     } else {
+      chartType = 'line';
       datasets = [
         refLine(DT_GREEN, 'rgba(16,185,129,.35)', '200s'),
         refLine(DT_AMB,   'rgba(239,68,68,.3)',    '240s'),
@@ -136,7 +146,7 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
       ];
     }
     return new Chart(canvas, {
-      type: 'line',
+      type: chartType,
       data: { labels, datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -155,7 +165,14 @@ function DtTrendChart({ rows, activeLocs, label, mode = 'avg' }) {
         },
       },
     });
-  }, [weeks.join(','), series.length, mode]);
+  // Dispatch #110 item 4 (root-caused bug fix): the old deps [weeks.join(','), series.length, mode]
+  // omitted the actual filtered VALUES. In 'avg' mode series always has exactly one entry and
+  // weeks (the set of week-starts with any qualifying row) usually doesn't change across a patch
+  // switch either, so neither dep changed and the canvas kept the previous patch's stale bars/line
+  // even though series[0].data genuinely changed. seriesSig is a content signature -- every
+  // datapoint of every series, not just their count -- so ANY value change (any mode) re-fires the
+  // redraw. Verified against all three modes, not just 'avg' (see dispatch-110.md Resolution).
+  }, [weeks.join(','), series.length, mode, series.map(s => s.key + ':' + s.data.join(',')).join('|')]);
 
   if (!weeks.length) return null;
   return div({ style:{ height: mode === 'avg' ? 160 : 220 }}, h('canvas', { ref }));
@@ -210,7 +227,10 @@ function SummaryCard({ label, value, sub, color }) {
 
 // ── Main panel ───────────────────────────────────────────────────────────────
 export function DTSpeedOfServicePanel({ stores, onClose }) {
-  const [period,    setPeriod]    = React.useState('90d');
+  // Dispatch #110 item 3 -- was a hardcoded PERIODS=[30d,60d,90d] <select>; now the shared
+  // DateRangeControl (7/14/28/30/60/90/180 presets + custom start/end), matching security-panel.js/
+  // forms-panel.js's own adoption. Default unchanged in spirit (was 90d).
+  const [dateRange, setDateRange] = React.useState(() => resolveDatePreset('90d'));
   const [orgFilter, setOrgFilter] = React.useState('all');
   const [sortCol,   setSortCol]   = React.useState('avg');
   const [sortDir,   setSortDir]   = React.useState(1); // 1=asc (fast first), -1=desc
@@ -218,15 +238,13 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   const [loading,   setLoading]   = React.useState(true);
   const [rows,      setRows]      = React.useState([]);
 
-  const days = PERIODS.find(p => p.id === period)?.days || 90;
-
   React.useEffect(() => {
     setLoading(true);
-    loadDtHistory(days).then(data => {
+    loadDtHistory({ s: dateRange.s, e: dateRange.e }).then(data => {
       setRows(data || []);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [days]);
+  }, [dateRange.s, dateRange.e]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const activeLocs = React.useMemo(() => {
@@ -243,9 +261,14 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     return base;
   }, [stores, orgFilter]);
 
+  // Midpoint of the SELECTED range (was "now - days/2", implicitly assuming the range always
+  // ends today -- no longer true once custom start/end dates are selectable). Early/late halves
+  // stay symmetric around whatever [s,e] window is actually loaded.
   const midDt = React.useMemo(() => {
-    return new Date(Date.now() - (days / 2) * 86400000).toISOString().slice(0, 10);
-  }, [days]);
+    const sMs = new Date(dateRange.s + 'T00:00:00').getTime();
+    const eMs = new Date(dateRange.e + 'T00:00:00').getTime();
+    return new Date((sMs + eMs) / 2).toISOString().slice(0, 10);
+  }, [dateRange.s, dateRange.e]);
 
   const storeData = React.useMemo(() => {
     const map = {};
@@ -357,6 +380,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     border:'.5px solid var(--bdr)', borderRadius:'var(--r)', color:'var(--text)', colorScheme:'dark', cursor:'pointer' };
 
   const maxTrans = Math.max(1, ...hourData.map(r => r.trans));
+  const maxAvg   = Math.max(1, ...hourData.map(r => r.avg || 0));
 
   // Label for trend chart tooltip
   const trendLabel = orgFilter === 'all' ? 'District avg'
@@ -364,6 +388,11 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
     : orgFilter === 'ok' ? 'Oklahoma avg'
     : orgFilter.startsWith('__patch__') ? orgFilter.slice(9).split(' ')[0] + ' Patch'
     : (STORE_NAMES[orgFilter] || orgFilter);
+
+  // Display label for the selected date range -- preset label when one applies, else the
+  // explicit start–end (covers 'custom' and any preset whose catalog entry moved/renamed).
+  const rangeLabel = DATE_RANGE_PRESETS.find(p => p.id === dateRange.id)?.label
+    || `${dateRange.s} – ${dateRange.e}`;
 
   return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460,
     display:'flex', flexDirection:'column', paddingTop:20 }},
@@ -381,8 +410,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
           div({ style:{ fontSize:'9px', color:'var(--text3)' }},
             'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · DT thresholds green <200s · amber <240s · red ≥240s'),
         ),
-        h('select', { value:period, onChange:e=>setPeriod(e.target.value), style:selStyle },
-          ...PERIODS.map(p => h('option', { key:p.id, value:p.id }, p.label))),
+        h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),
         h('select', { value:orgFilter, onChange:e=>setOrgFilter(e.target.value), style:selStyle },
           h('option', { value:'all' }, 'All Stores'),
           h('option', { value:'fl'  }, 'Florida'),
@@ -456,7 +484,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                 : 'one line per patch';
               return div({ style:{ background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:'var(--r)', padding:'10px 12px' }},
                 div({ style:{ display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap' }},
-                  div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `Weekly DT Trend (${period})`),
+                  div({ style:{ fontSize:'10px', fontWeight:800, color:'var(--text)' }}, `Weekly DT Trend (${rangeLabel})`),
                   span({ style:{ fontSize:'8px', color:'var(--text3)' }}, modeSub),
                   div({ style:{ display:'flex', gap:4, marginLeft:'auto' }},
                     modeBtn('avg', 'Avg'), modeBtn('store', 'By store'), modeBtn('patch', 'By patch'))),
@@ -476,7 +504,10 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
             div({ style:{ display:'flex', gap:12, alignItems:'flex-start', flexWrap:'wrap' }},
 
               // Store ranking table
-              div({ style:{ flex:'2 1 400px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
+              // Dispatch #110 item 1 -- was flex:'2 1 400px' / By Hour flex:'1 1 220px' (a ~2:1
+              // split). By Hour now carries two bars per row (Avg DT + Trans) instead of one, so
+              // it needs more room; rebalanced to a ~3:2 split rather than the old ~2:1.
+              div({ style:{ flex:'3 1 380px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
                 borderRadius:'var(--r)', overflow:'hidden' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
                   fontSize:'10px', fontWeight:800, color:'var(--text)' }},
@@ -519,7 +550,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
               ),
 
               // Hour-of-day breakdown
-              div({ style:{ flex:'1 1 220px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
+              div({ style:{ flex:'2 1 300px', background:'var(--surf2)', border:'.5px solid var(--bdr)',
                 borderRadius:'var(--r)', overflow:'hidden' }},
                 div({ style:{ padding:'8px 12px', borderBottom:'.5px solid var(--bdr)',
                   fontSize:'10px', fontWeight:800, color:'var(--text)' }}, 'By Hour — ' + trendLabel),
@@ -535,9 +566,16 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
                     ...hourData.map(r =>
                       h('tr', { key:r.slot, style:{ borderTop:'.5px solid var(--bdr)' }},
                         h('td', { style:{ padding:'4px 10px', fontSize:'9px', color:'var(--text3)' }}, r.label),
-                        h('td', { style:{ padding:'4px 10px', fontSize:'9px', textAlign:'right',
-                          fontWeight:700, color:dtColor(r.avg), fontVariantNumeric:'tabular-nums' }},
-                          fmtDT(r.avg)),
+                        // Dispatch #110 item 1 -- Avg DT bar, matching the existing trans bar's
+                        // treatment (same hand-rolled <div> sizing convention + dtColor fill).
+                        h('td', { style:{ padding:'4px 6px 4px 0', fontSize:'9px', textAlign:'right' }},
+                          div({ style:{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:4 }},
+                            span({ style:{ fontWeight:700, color:dtColor(r.avg), fontVariantNumeric:'tabular-nums' }},
+                              fmtDT(r.avg)),
+                            div({ style:{ height:6, width:Math.round(r.avg / maxAvg * 60),
+                              background:withAlpha(dtColor(r.avg), '66'), borderRadius:2, flexShrink:0 }}),
+                          )
+                        ),
                         h('td', { style:{ padding:'4px 6px 4px 0', fontSize:'8px', textAlign:'right' }},
                           div({ style:{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:4 }},
                             span({ style:{ color:'var(--text3)' }}, r.trans.toLocaleString()),
