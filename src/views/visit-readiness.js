@@ -5,7 +5,7 @@
 // coaches the right stores before the (mostly unannounced) visit. Transparent: every
 // score shows its driving metrics (actual vs the store's own target).
 import * as React from 'react';
-import { computeVisitReadiness, analyzeGradedVisits, srcMeta } from '../engine/visit-readiness.js';
+import { computeVisitReadiness, analyzeGradedVisits, srcMeta, daysSince } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase, fmtMetric } from './visit-readiness-report.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 
@@ -127,14 +127,43 @@ export function Bar({ score, w = 60 }) {
     h('div', { style: { width: (score == null ? 0 : Math.max(2, score)) + '%', height: '100%', background: scoreColor(score) } }));
 }
 
+// Dispatch #118 -- fixed widths shared between StoreListHeader and every StoreRow's own
+// columns, so the header cells sit directly above the data they label instead of drifting.
+const STORE_SCORE_W = 44;
+const STAT_COL_W = 58;
+const STATS = [['speed', 'Speed'], ['accuracy', 'Accuracy'], ['quality', 'Quality'], ['leadership', 'Leadership']];
+const DAYS_SINCE_W = 64;
+const CHEVRON_W = 14;
+
+// One stat's bar + score, stacked vertically -- paired with StoreListHeader's matching
+// STAT_COL_W column so Speed/Accuracy/Quality/Leadership are named ONCE, in the header,
+// instead of repeating an inline label on every single row (dispatch #118).
+function StatCol({ sc }) {
+  return h('div', { style: { width: STAT_COL_W, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 } },
+    h(Bar, { score: sc, w: 54 }),
+    h('span', { style: { fontFamily: 'var(--mono)', fontSize: 10, color: scoreColor(sc) } }, sc == null ? '—' : Math.round(sc)));
+}
+
+// Real header row for the main per-store list -- reuses the exact fixed widths StoreRow's
+// own columns use below, so each header cell sits directly over its matching data column at
+// any wrap width (dispatch #118; the list previously had no header at all).
+function StoreListHeader() {
+  const label = { fontSize: 9, fontWeight: 800, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em' };
+  return h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, padding: '6px 12px', flexWrap: 'wrap', background: 'var(--surf2)', borderBottom: '.5px solid var(--bdr)' } },
+    h('div', { style: { ...label, width: STORE_SCORE_W, textAlign: 'center' } }, 'Score'),
+    h('div', { style: { ...label, flex: 1, minWidth: 150 } }, 'Store'),
+    h('div', { style: { display: 'flex', gap: 8 } },
+      ...STATS.map(([key, l]) => h('div', { key, style: { ...label, width: STAT_COL_W, textAlign: 'center' } }, l))),
+    h('div', { style: { ...label, width: DAYS_SINCE_W, textAlign: 'center' } }, 'Days since visit'),
+    h('div', { style: { width: CHEVRON_W } }));
+}
+
 function StoreRow({ s, expanded, onToggle }) {
   const b = BAND[s.band]; const fs = FS[s.fsFlag];
-  const sub = (label, sc) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'var(--text3)' } },
-    h('span', { style: { width: 62, textAlign: 'right' } }, label), h(Bar, { score: sc, w: 54 }),
-    h('span', { style: { fontFamily: 'var(--mono)', color: scoreColor(sc), width: 26 } }, sc == null ? '—' : Math.round(sc)));
+  const dsl = daysSince(s.lastVisit?.ms);
   return h('div', { style: { borderTop: '.5px solid var(--bdr)' } },
     h('div', { onClick: onToggle, style: { display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', cursor: 'pointer', flexWrap: 'wrap' } },
-      h('div', { style: { width: 44, textAlign: 'center' } },
+      h('div', { style: { width: STORE_SCORE_W, textAlign: 'center' } },
         h('div', { style: { fontSize: 19, fontWeight: 900, fontFamily: 'var(--mono)', color: b.c, lineHeight: 1 } }, Math.round(s.readiness)),
         h('div', { style: { fontSize: 7, color: 'var(--text3)', textTransform: 'uppercase' } }, 'ready')),
       h('div', { style: { flex: 1, minWidth: 150 } },
@@ -150,10 +179,11 @@ function StoreRow({ s, expanded, onToggle }) {
           h('span', { style: { fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, color: fs.c, background: fs.c + '18' } }, fs.l),
           s.coverage < 1 && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, (s.coverage * 100).toFixed(2) + '% data'),
           s.lastVisit && h('span', { style: { fontSize: 9, color: 'var(--text3)' } }, `last ${s.lastVisit.type || 'visit'} ${s.lastVisit.score.toFixed(2)}%${s.lastVisit.pass === false ? ' ✗' : ''}`))),
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-        sub('Speed', s.subs.speed.score), sub('Accuracy', s.subs.accuracy.score),
-        sub('Quality', s.subs.quality.score), sub('Leadership', s.subs.leadership.score)),
-      h('span', { style: { color: 'var(--text3)', fontSize: 11 } }, expanded ? '▲' : '▼')),
+      h('div', { style: { display: 'flex', gap: 8 } },
+        ...STATS.map(([key]) => h(StatCol, { key, sc: s.subs[key].score }))),
+      h('div', { style: { width: DAYS_SINCE_W, textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: 'var(--text2)' } },
+        dsl == null ? '—' : dsl + 'd'),
+      h('span', { style: { width: CHEVRON_W, textAlign: 'center', color: 'var(--text3)', fontSize: 11 } }, expanded ? '▲' : '▼')),
     expanded && h('div', { style: { padding: '4px 12px 12px 56px' } },
       h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 9 } },
         s.why && h('div', { style: { flex: 1, fontSize: 11, color: 'var(--text)', lineHeight: 1.5, padding: '8px 10px', background: b.c + '10', border: '.5px solid ' + b.c + '33', borderRadius: 6 } },
@@ -418,13 +448,22 @@ export function VisitPatterns({ ds, locs }) {
       // channel getting worse and a channel getting shopped more are different problems).
       renderChannelByYear(a.channelByYear, pr, prCol),
       a.freq.length ? h('div', { style: { marginTop: 14 } },
-        h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store (visits · avg days between · days since last · pass)'),
+        h('div', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Frequency by store'),
         // Dispatch #73 -- the amber threshold is now per-instrument (CFV/EcoSure/RGR run on
         // different program cadences), computed from each store's OWN last-visit type via
         // f.overdueAt, not a flat 60-day constant that fired on 87% of on-cadence stores.
         // Labeled here so the colour's meaning isn't left for the reader to guess.
         h('div', { style: { fontSize: 8.5, color: 'var(--text3)', marginBottom: 4, fontStyle: 'italic' } },
           'Amber = days since last visit exceeds 2x that store’s own instrument cadence (CFV ~242d, EcoSure ~364d, RGR ~730d) -- roughly the 90th percentile of real gaps, not a fixed schedule, since McDonald’s controls visit timing.'),
+        // Dispatch #118 -- a real header row, reusing the exact widths/gap the data rows use
+        // below (flex:1 store name, width:24/42/42/40), instead of naming the columns once in
+        // this now-removed caption.
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 9, fontWeight: 800, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', paddingBottom: 3, marginBottom: 3, borderBottom: '.5px solid var(--bdr)' } },
+          h('span', { style: { flex: 1 } }, 'Store'),
+          h('span', { style: { width: 24, textAlign: 'right' } }, 'Visits'),
+          h('span', { style: { width: 42, textAlign: 'right' } }, 'Avg gap'),
+          h('span', { style: { width: 42, textAlign: 'right' } }, 'Since last'),
+          h('span', { style: { width: 40, textAlign: 'right' } }, 'Pass')),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
           ...a.freq.map(f => h('div', { key: f.store, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 } },
             h('span', { style: { flex: 1, color: 'var(--text2)' } }, sName(f.store)),
@@ -579,6 +618,7 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
           h(CalibrationCard, { cal: res.calibration }),
 
           h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
+            h(StoreListHeader),
             res.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
 
           h(VisitPatterns, { ds, locs }),
