@@ -2144,10 +2144,18 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
               driftStores.length>0&&div({style:{display:'flex',gap:4,flexWrap:'wrap'}},
                 driftStores.slice(0,4).map(({s,d})=>{
                   const col=d.status==='recalibrate'?'var(--crit)':'var(--warn)';
+                  // dispatch #127: was sNameC(s.loc).split(' ').pop() — last-whitespace-word
+                  // truncation. Measured against real STORE_NAMES it's inconsistent (a name with
+                  // no space, e.g. "Ardmore-Broadway", returns the WHOLE name; "Durant-US Hwy
+                  // 70/22" returns the meaningless fragment "70/22"; "Defuniak Springs" returns
+                  // "Springs") and, worse, ambiguous — two different stores ("Ardmore-Broadway"
+                  // and "Ardmore-Cooper/12th") can share a truncated word. Show the real name and
+                  // let CSS ellipsis truncate consistently; the full name is still in `title`.
                   return span({key:s.loc,title:(STORE_NAMES[s.loc]||s.loc)+' — MAPE drift: '+d.mape2w.toFixed(2)+'% (2wk) vs '+d.mape6w.toFixed(2)+'% (6wk)',
                     style:{fontSize:'8px',padding:'1px 5px',borderRadius:3,background:col+'22',
-                      color:col,border:'.5px solid '+col+'44',fontWeight:600,cursor:'default'}},
-                    sNameC(s.loc).split(' ').pop()+' ⚠')})
+                      color:col,border:'.5px solid '+col+'44',fontWeight:600,cursor:'default',
+                      maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+                    sNameC(s.loc)+' ⚠')})
               )
             );
           })(),
@@ -2158,20 +2166,32 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
             (()=>{
               const maxS=Math.max(...weeklyTrend.map(w=>w.sales).filter(x=>x>0))||1;
               const bw=34,gap=6,tot=weeklyTrend.length;
-              const svgW=tot*(bw+gap)-gap, svgH=60;
+              const svgW=tot*(bw+gap)-gap;
+              // dispatch #127: reproduced at 375px width — the old fixed y-coordinates
+              // (date label y=54 fontSize6, vs-LY% label y=58 fontSize8, svgH=60, CSS
+              // height:76) put the date and vs-LY% labels' glyph boxes only 4 SVG units
+              // apart, well inside each other's ascent/descent — they visibly overlapped on
+              // EVERY bar, independent of container width or preserveAspectRatio (measured:
+              // it's a fixed-coordinate spacing bug, not a responsive-scaling one). The
+              // tallest bar's value label also bled above y=0 into the section header via
+              // overflow:'visible'. Rebuilt with named vertical bands that give each label
+              // enough room for its own font size, and an explicit aspectRatio (instead of a
+              // hardcoded CSS height) so the rendered box always matches the viewBox — no
+              // stretch/letterbox distortion regardless of container width or bar count.
+              const padTop=12,barMaxH=40,baseline=padTop+barMaxH,dateY=baseline+8,vsLYY=baseline+19,svgH=vsLYY+6;
               return h('svg',{viewBox:'0 0 '+(svgW+4)+' '+svgH,
-                style:{width:'100%',height:76,overflow:'visible'}},
+                style:{width:'100%',height:'auto',aspectRatio:(svgW+4)+'/'+svgH,overflow:'visible'}},
                 weeklyTrend.map((wk,i)=>{
-                  const barH=Math.max(3,Math.round((wk.sales/maxS)*44));
-                  const x=i*(bw+gap)+2, y=48-barH;
+                  const barH=Math.max(3,Math.round((wk.sales/maxS)*barMaxH));
+                  const x=i*(bw+gap)+2, y=baseline-barH;
                   const clr=wk.vsLY==null?'var(--text3)':wk.vsLY>=0?'#10b981':wk.vsLY>-.05?'var(--warn)':'var(--crit)';
                   return h('g',{key:i},
                     h('rect',{x,y,width:bw,height:barH,rx:2,style:{fill:clr},fillOpacity:.8}),
                     wk.sales>0&&h('text',{x:x+bw/2,y:y-2,textAnchor:'middle',fontSize:'9',fontWeight:'700',style:{fill:'var(--text)'}},
                       '$'+(wk.sales/1000).toFixed(0)+'K'),
-                    h('text',{x:x+bw/2,y:54,textAnchor:'middle',fontSize:'6',style:{fill:'var(--text2)'}},
+                    h('text',{x:x+bw/2,y:dateY,textAnchor:'middle',fontSize:'6',style:{fill:'var(--text2)'}},
                       wk.label||'—'),
-                    wk.vsLY!=null&&h('text',{x:x+bw/2,y:58,textAnchor:'middle',fontSize:'8',fontWeight:'600',
+                    wk.vsLY!=null&&h('text',{x:x+bw/2,y:vsLYY,textAnchor:'middle',fontSize:'8',fontWeight:'600',
                       fill:wk.vsLY>=0?'#10b981':'var(--crit)'},
                       (wk.vsLY>=0?'+':'')+((wk.vsLY*100).toFixed(2))+'%')
                   );
