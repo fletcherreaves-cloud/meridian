@@ -1877,9 +1877,23 @@ export async function loadHourlyProjectionAccuracy(startDate, endDate, loc = nul
 // where the bottleneck is (DT window vs front counter vs kitchen make-line vs
 // beverage), not just the drive-thru. Values are milliseconds; avg = Σuntilserve
 // / Σtrans / 1000 seconds. Filtered to hours with drive-thru activity.
-export async function loadDtHistory(days = 90) {
+// Dispatch #110 item 3 -- `range` now accepts EITHER the original bare day count (unchanged
+// behavior: trailing N days ending "now") OR a resolved {s,e} ISO-date object, the shape
+// DateRangeControl's onChange/resolveDatePreset already produce (src/components/PanelControls.js)
+// -- so dt-speedofservice.js's swap to the shared full-preset-range control needs no separate
+// loader. Checked before changing this signature: the panel (src/views/dt-speedofservice.js) is
+// the ONLY production call site; src/__tests__/dt-history-pagination.test.js's 5 calls all pass a
+// bare number and are unaffected by the dual-mode branch below (numeric path is byte-identical to
+// the pre-existing single-arg behavior).
+export async function loadDtHistory(range = 90) {
   if (!supabase) return [];
-  const startDt = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  let startDt, endDt = null;
+  if (range && typeof range === 'object') {
+    startDt = range.s;
+    endDt = range.e || null;
+  } else {
+    startDt = new Date(Date.now() - range * 86400000).toISOString().slice(0, 10);
+  }
   // PARALLEL pagination (dispatch #88 item 2) — this read is at HOUR-SLOT granularity
   // (dt-speedofservice.js's hourData/daypartData both aggregate by hour_slot, so the daily
   // rollup view qsr_daily_activity_daily does NOT apply here — measured by reading what the
@@ -1903,7 +1917,7 @@ export async function loadDtHistory(days = 90) {
     table: 'qsr_daily_activity',
     select: 'loc,dt,hour_slot,dt_untilserve,dt_trans_cnt,fc_untilserve,fc_trans_cnt,mfy1_untilserve,mfy1_trans_cnt,mfy2_untilserve,mfy2_trans_cnt,bev_untilserve,bev_trans_cnt',
     gteCol: 'dt', gteVal: startDt,
-    extraFilter: q => q.gt('dt_trans_cnt', 0),
+    extraFilter: q => { const qq = q.gt('dt_trans_cnt', 0); return endDt ? qq.lte('dt', endDt) : qq; },
     orderCol: 'dt', ascending: true, extraOrder: ['loc', 'hour_slot'],
     pageSize: 1000, label: 'dtHistory',
   });
