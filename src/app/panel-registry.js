@@ -92,11 +92,9 @@ export const PANELS = [
   // LifeLenzBridgePanel as-is, no logic duplicated into it). Takes fcst-accuracy's old tkOrder
   // slot (5) since it's the primary of the two merged reports. kind:'test-kitchen' — same
   // status either former entry had, not a promotion.
-  // ⚠️ Label is a PROPOSAL, not owner-confirmed. The dispatch names "Forecast Reports" or
-  // "Forecasting Center" as candidates and explicitly asks for owner confirmation before
-  // shipping either — this picks "Forecast Reports" (shorter, matches the existing 'reports'
-  // section id's naming register) but flags it here and in the PR/commit rather than treating
-  // it as decided. See memory/dispatch-106.md's Resolution section.
+  // Label "Forecast Reports" — owner-confirmed 2026-08-24 ("Forecast Reports > approved"),
+  // choosing it over the dispatch's other candidate, "Forecasting Center". Not a proposal
+  // anymore; do not re-open the naming question. See memory/dispatch-106.md's Resolution section.
   { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },

@@ -1,9 +1,7 @@
 // @ts-nocheck
 // ── FORECAST REPORTS (dispatch #106 Phase B) ──────────────────────────────────────────────
-// "Forecast Reports" is a PROPOSED name for this merged parent category, not owner-confirmed —
-// the dispatch names "Forecast Reports" or "Forecasting Center" as candidates and asks that the
-// final choice be confirmed with the owner rather than picked unilaterally. Flagging this
-// clearly rather than presenting it as decided; see memory/dispatch-106.md's Resolution section.
+// "Forecast Reports" — owner-confirmed 2026-08-24 ("Forecast Reports > approved"), chosen over
+// the dispatch's other candidate, "Forecasting Center". See memory/dispatch-106.md's Resolution.
 //
 // Merges ForecastAccuracyPanel (src/views/analytics.js) and LifeLenzBridgePanel ("MBI vs
 // LifeLenz Accuracy", src/features/lifelenz.js — renamed + given a real date-range control by
