@@ -84,6 +84,23 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #138 — Time Punches: a real panel to view
+  qsr_punch_times](dispatch-138.md).** Owner: *"where do i find the time punches"* — there was
+  nowhere. Confirmed by grep: zero files under `src/views` reference `qsr_punch_times` or a
+  punch-times loader, even though the pull (dispatch #124, un-tokenized by #126) has been
+  running with real data (132,350 rows, 81,846 with a resolved name). Build a companion panel to
+  `crew-schedule-panel.js` (same `RoutePanelShell`/`LocationSelector`/un-tokenized-name shape,
+  same ordinary RBAC), plus a new `loadPunchTimes()` loader (none exists). Two real design
+  questions flagged for the engineer: no business-day `dt` column on this table (apply
+  `businessDate()` explicitly if bucketing by day), and `punch_type:'meal'` rows should visually
+  pair with their enclosing shift punch, not list as a sibling shift.
+- **✅ RESOLVED (2026-08-25): Dispatch #137 merged** — Crew Schedule names were showing as
+  "Employee #12345" district-wide; root-caused (not guessed) to a rejected GraphQL argument on
+  the LifeLenz roster query (every fetch failing) plus a separate Postgres upsert-conflict bug
+  silently zeroing most stores' saved rows. Fixed both in `scripts/lifelenz-pull.mjs`, validated
+  against the LIVE LifeLenz API before merge (dispatched the real sync workflow on the fix
+  branch): saved rows went from 472/13688 (0 resolved names) to 13101/13692 (~all resolved).
+  PR #745, v5.172. Full writeup: `dispatch137-crew-schedule-names-broken-roster-2026-08-25.md`.
 - **📋 (2026-08-25): [Dispatch #136 — Speed of Service print/export + Record Day location picker,
   print/export, and recent-record highlighting](dispatch-136.md).** Two small, independent asks on
   panels already touched this session, bundled for one engineer: (1) `dt-speedofservice.js` gets
