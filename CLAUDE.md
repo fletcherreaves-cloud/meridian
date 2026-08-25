@@ -277,6 +277,20 @@ real read-scoped credential exists (see `memory/dispatch-89.md` item 4, an open 
 It does not currently let the agent read tenant data. **Do not re-raise the egress question; do not
 claim tenant-table read access without a fresh, credential-and-observation-named measurement.**
 
+🟢 **SUPERSEDED 2026-08-25 (dispatch #133) — `SUPABASE_SERVICE_ROLE_KEY` now reads tenant data.**
+Independently measured twice (dispatch #133's engineer session, then re-confirmed directly by the
+PM session in this same conversation) via the identical `apikey`+`Authorization: Bearer` curl
+recipe above, against `lifelenz_schedule`: `content-range: 0-0/15172` (real rows, real count) and
+real row content returned (`loc`, `date`, `sales`, `labor_pct`, …). A deliberately wrong column
+name returned `42703`, not `*/0` or silence — the same three-way calibration this file's own
+2026-08-24 measurement used, so this isn't a fluke read. **This does not mean every agent session
+already has it** — CLAUDE.md's own "an agent session's environment is fixed at container start"
+rule (Dev Rules, below) means a session that started before the owner's key rotation/whatever
+changed access will still see the old (broken) behavior; a session started after will see this.
+**Always re-measure per-session before trusting either claim** — don't assume this note means
+*your* current session can read tenant data, and don't assume the 2026-08-24 `*/0` table above
+still describes the live key. State the observation your own session got, not this note's.
+
 ⚠️ **Pending user action:**
 - ✅ **RESOLVED (2026-08-03):** `forecast_snapshots`, `smart_target_adjustments`, `sage_prompts`, `sage_prompt_runs` all confirmed to already exist in Supabase (verified via service-role read), already carry `tenant_id`, and are already tenant-scoped (anon key gets zero rows on all four). No SQL to run — do not re-raise. The 3 email-report tables are also already created.
 - ✅ **RESOLVED (verified 2026-08-06):** **SAGE RBAC redeploy** — confirmed LIVE via `supabase functions list`: `sage-chat` is at version 11, last deployed 2026-07-31 18:13 CDT, which postdates both the RBAC commit (v4.494, 07-23) and the promo-ROI tool commit (v4.500, 07-24) — both are in production. Do not re-raise.
