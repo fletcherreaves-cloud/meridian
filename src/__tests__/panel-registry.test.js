@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the thirteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134)', () => {
-    // Ratchet, not a ceiling: adding a fourteenth route panel is a real routing change (a new
+  it('is exactly the twelve panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134, minus #140)', () => {
+    // Ratchet, not a ceiling: adding a thirteenth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -209,10 +209,13 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // ModalShell+iframe to a real route (ten -> eleven), and dispatch #123 added 'crew-schedule'
     // (Crew Schedule Lookup) as route:true from day one, per the owner's own explicit ask for a
     // URL page (eleven -> twelve). Dispatch #134 added 'sched-retention' (Training Retention
-    // report) as route:true from day one, per its own explicit ask (twelve -> thirteen).
+    // report) as route:true from day one, per its own explicit ask (twelve -> thirteen). Dispatch
+    // #140 item 1 then moved it into the Scheduling & Labor hub as a tab (kind:'hub-tab'), the
+    // same "route:true -> hub-tab" demotion #106 did for fcst-accuracy/lifelenz-bridge above --
+    // net back down to twelve, same shape as that precedent, not a new kind of change.
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub', 'sched-retention',
+      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub',
     ]);
   });
 

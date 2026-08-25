@@ -69,7 +69,12 @@ function renderNavTexts(permFn) {
 // perm flipped from 'security.view' to 'analytics.store' (ordinary panel RBAC, once the panel
 // stopped gating on an identity reveal) -- text content unaffected, only the permission-gate
 // tables below change.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','🎓','Training Retention','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-08-25 for dispatch #140 item 1: 'sched-retention' (Training Retention)
+// moved from a standalone kind:'nav' sidebar entry into the Scheduling & Labor hub as a tab
+// (kind:'hub-tab', same demotion #106 did for fcst-accuracy/lifelenz-bridge) -- 'Training
+// Retention' and its unique 🎓 icon drop out of the sidebar snapshot entirely, same as
+// 'sched-summary'/'labor-analytics' render nowhere today.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -143,8 +148,11 @@ const HIDDEN_WHEN_DENIED = {
   // 🗓 (and 'Crew Schedule' itself) go back to disappearing when analytics.store is denied, same
   // as any icon with no other owner.
   // dispatch #134 (2026-08-25) added 'Training Retention' (perm analytics.store, unique 🎓 icon)
-  // to the Scheduling & Labor section -- both new text and new icon join this list.
-  'analytics.store': ['3PO Delivery', 'Count Cycle', 'Crew Schedule', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Training Retention', 'Visit Readiness', '✅', '🎓', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // to the Scheduling & Labor section, joining this list; dispatch #140 item 1 (same day) moved
+  // it into the hub as a kind:'hub-tab' tab, so it renders nowhere in the sidebar any more --
+  // both 'Training Retention' and '🎓' drop back out, same as 'Sched Summary'/'Scheduling' (the
+  // OTHER hub-tab siblings) never appeared here either.
+  'analytics.store': ['3PO Delivery', 'Count Cycle', 'Crew Schedule', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
@@ -174,12 +182,13 @@ describe('AppSidebar permission gates survive the Job B section-driven render', 
   });
 
   it('denying analytics.store hides a whole empty section header too (Scheduling & Labor has no other-permission member)', () => {
-    // sched-hub and sched-retention (dispatch #134) are the only Scheduling & Labor nav members,
-    // BOTH gated on analytics.store -- denying it should make the "Scheduling & Labor" header
-    // itself vanish (panelsForSection returns [], renderSection returns null), not leave a bare
-    // empty header behind. A section-driven nav that only hid children would fail this exact
-    // case, and a pure-registry test could not see it either way -- this is the render-based
-    // check that can.
+    // sched-hub is the ONLY Scheduling & Labor nav member (sched-retention, dispatch #134,
+    // moved into the hub as a tab under dispatch #140 item 1 and no longer renders in the
+    // sidebar at all) -- gated on analytics.store, so denying it should make the "Scheduling &
+    // Labor" header itself vanish (panelsForSection returns [], renderSection returns null), not
+    // leave a bare empty header behind. A section-driven nav that only hid children would fail
+    // this exact case, and a pure-registry test could not see it either way -- this is the
+    // render-based check that can.
     const shown = renderNavTexts(x => x !== 'analytics.store');
     expect(shown).not.toContain('Scheduling & Labor');
     // Operations, by contrast, keeps a member (EOM Supervisor, perm analytics.district) --

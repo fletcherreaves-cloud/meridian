@@ -197,7 +197,10 @@ const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ 
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
 const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
-const ScheduleRetentionPanel = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionPanel })));
+// Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
+// content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
+// lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
+const ScheduleRetentionSection = lazyPanel(() => import('../views/schedule-retention.js').then(m => ({ default: m.ScheduleRetentionSection })));
 const DeliveryMixPanel = lazyPanel(() => import('../views/delivery-mix.js').then(m => ({ default: m.DeliveryMixPanel })));
 const AboveStoreOnePager = lazyPanel(() => import('../views/above-store-onepager.js').then(m => ({ default: m.AboveStoreOnePager })));
 // #214/#207 batch-2: inventory.js is 76KB and was the last static import of a panel-sized
@@ -376,15 +379,23 @@ function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, 
 // Notes 24 IA merge (companion to the Planning hub): one "Scheduling" entry tabbing
 // across the labor/scheduling panels — Labor Analytics, Scheduling, Weekly Schedule
 // Summary, Labor Analysis, Employee Skills — each lazily mounted in `embedded` mode.
+// Dispatch #140 item 1 added 'retention' (Training Retention, formerly the standalone
+// sched-retention route) — same shape, ScheduleRetentionSection ignores the `embedded`/
+// `settings`/`onClose` members of `common` it doesn't use, same as e.g. SkillsMatrixPanel does.
 const SCHED_TABS = [
   { id: 'analytics', label: 'Labor Analytics', icon: '👷', perm: 'analytics.labor' },
   { id: 'scheduling', label: 'Scheduling',     icon: '📋', perm: 'analytics.store' },
   { id: 'summary',   label: 'Schedule Summary', icon: '🗓', perm: 'analytics.store' },
   { id: 'analysis',  label: 'Labor Analysis',  icon: '🧮', perm: 'analytics.store' },
   { id: 'allocation', label: 'Labor Allocation', icon: '⚖️', perm: 'analytics.store' },
+  { id: 'retention', label: 'Training Retention', icon: '🎓', perm: 'analytics.store' },
   { id: 'skills',    label: 'Skills',          icon: '🎓', perm: 'analytics.store' },
 ];
-function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose }) {
+// Exported (like lazyPanel above) so dispatch #140's hub-tab render test can mount the REAL hub
+// -- same "would this verification still pass if reverted" standing rule dispatch16 sets: a test
+// that only imported ScheduleRetentionSection directly could pass unchanged with the SCHED_TABS
+// wiring deleted.
+export function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose }) {
   const allowed = SCHED_TABS.filter(t => !perm || perm(t.perm));
   const first = (allowed[0] && allowed[0].id) || 'scheduling';
   const [tab, setTab] = useState(initialTab && allowed.some(t => t.id === initialTab) ? initialTab : first);
@@ -395,6 +406,7 @@ function SchedulingHubPanel({ ds, stores, settings, initialTab, perm, onClose })
     tab === 'summary'   ? h(ScheduleSummaryPanel, common) :
     tab === 'analysis'  ? h(LaborAnalysisPanel, common) :
     tab === 'allocation' ? h(LaborAllocationPanel, common) :
+    tab === 'retention' ? h(ScheduleRetentionSection, common) :
                           h(SkillsMatrixPanel, common);
   // Dispatch #55 Part B: same tab-pill-bar markup that used to sit inline in this hub's own
   // hand-rolled header, now relocated (unchanged) into RoutePanelShell's headerExtra slot.
@@ -2723,7 +2735,10 @@ function App() {
         if(modal==='promo-roi')      perm('analytics.store')&&setShowPromoRoi(true);
         if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
-        if(modal==='sched-retention')perm('analytics.store')&&goRoute('sched-retention');
+        // 'sched-retention' — dispatch #140 item 1: no longer its own route; opens the
+        // Scheduling & Labor hub and lands on the Training Retention tab, same "select a tab,
+        // route to the hub" pattern as sched-summary above (and #135's targets-editor redirect).
+        if(modal==='sched-retention')perm('analytics.store')&&(setSchedTab('retention'),goRoute('sched-hub'));
         if(modal==='dicompare')      perm('analytics.forecasting')&&goRoute('dicompare');
         if(modal==='model-assign')   perm('analytics.forecasting')&&setShowModelAssign(true);
         // fcst-accuracy / lifelenz-bridge CONVERTED to hub-tab (dispatch #106 Phase B) -- same
@@ -2915,7 +2930,6 @@ function App() {
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
-      routePanel==='sched-retention'&&h(ScheduleRetentionPanel,{stores,ds,onClose:()=>goRoute(null)}),
       routePanel==='fob-analysis'&&h(RoutePanelShell,{
         title:'Food Cost',
         icon:'🥗',

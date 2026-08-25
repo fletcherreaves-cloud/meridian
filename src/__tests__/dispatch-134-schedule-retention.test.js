@@ -1,19 +1,27 @@
 // @vitest-environment happy-dom
 // @ts-nocheck
 // Dispatch #134 — Schedule Retention report: computeStoreWeeks() reconciliation + the pure
-// narrative/aggregation logic behind ScheduleRetentionPanel, PLUS a real call-site render test
+// narrative/aggregation logic behind ScheduleRetentionSection, PLUS a real call-site render test
 // (same standing rule security-panel.test.js/crew-schedule-panel.test.js cite, from #366 — a
 // test that only imports the engine can't tell "built" from "built but never wired in"). Per
 // the dispatch's verification bar: numbers must reconcile EXACTLY (not approximately) against
 // what the existing all-stores Schedule Summary panel computes for the same store/week, and the
 // smart-analysis text must change when the underlying weekly figures change (not a fabricated
 // or generic string).
+//
+// Dispatch #140 renamed the exported component ScheduleRetentionPanel -> ScheduleRetentionSection
+// (content-only, no own RoutePanelShell/onClose — it now renders as a Scheduling & Labor hub
+// tab, see dispatch-140-schedule-retention-hub.test.js for the real hub-tab render) and broadened
+// its LocationSelector from mode:'store' (a flat pill list) to mode:'progressive' (State -> Patch
+// -> Store), so the component-wiring tests below now click through that hierarchy instead of a
+// single flat store pill. Store 6838 (Defuniak Springs, FL) is INV_ORG_COORDS-seeded under
+// State 'FL' / Patch 'Brad Denley'.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { computeScheduleSummary, computeStoreWeeks } from '../engine/schedule-summary.js';
-import { aggregateSpan, splitWeeksAtMark, buildNarrative, buildPrintHTML, ScheduleRetentionPanel } from '../views/schedule-retention.js';
+import { aggregateSpan, splitWeeksAtMark, buildNarrative, buildPrintHTML, defaultWeekRange, ScheduleRetentionSection } from '../views/schedule-retention.js';
 
 // Week B is the EXACT fixture from src/__tests__/schedule-summary.test.js (DeFuniak Springs,
 // week of Wed Jul 22 -> Tue Jul 28 2026, reconciled to a real LifeLenz screenshot) — reused
@@ -249,7 +257,25 @@ async function flush(container, maxTicks = 10) {
   }
 }
 
-describe('ScheduleRetentionPanel — real render, real click, real numbers', () => {
+// Navigates the broadened mode:'progressive' LocationSelector (State -> Patch -> Store) down to
+// store 6838's pill and clicks it — replaces the old single flat-pill click now that dispatch
+// #140 item 4 broadened the selector.
+async function pickStore6838(container) {
+  const stateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'FL');
+  expect(stateBtn, 'FL state pill not found').toBeTruthy();
+  await act(async () => { stateBtn.click(); });
+  await flush(container);
+  const patchBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Brad Denley');
+  expect(patchBtn, 'Brad Denley patch pill not found').toBeTruthy();
+  await act(async () => { patchBtn.click(); });
+  await flush(container);
+  const storePill = [...container.querySelectorAll('button')].find(b => /6838/.test(b.textContent));
+  expect(storePill, 'store pill not found once its Patch is selected').toBeTruthy();
+  await act(async () => { storePill.click(); });
+  await flush(container);
+}
+
+describe('ScheduleRetentionSection — real render, real click, real numbers', () => {
   let container, root;
   beforeEach(() => {
     container = document.createElement('div');
@@ -262,36 +288,44 @@ describe('ScheduleRetentionPanel — real render, real click, real numbers', () 
   });
 
   it('empty state prompts for a location before any store is picked', async () => {
-    await act(async () => { root.render(React.createElement(ScheduleRetentionPanel, { ds: { schedRows: [], jobHours: [] }, stores: [{ loc: '6838' }], onClose: () => {} })); });
+    await act(async () => { root.render(React.createElement(ScheduleRetentionSection, { ds: { schedRows: [], jobHours: [] }, stores: [{ loc: '6838' }] })); });
     await flush(container);
     expect(container.textContent).toMatch(/pick a location/i);
   });
 
-  it('clicking the store pill renders the SAME reconciled Week B figures as computeStoreWeeks — proves the engine is actually wired to the screen, not just importable', async () => {
-    await act(async () => { root.render(React.createElement(ScheduleRetentionPanel, { ds: { schedRows: ALL_ROWS, jobHours: [] }, stores: [{ loc: '6838' }], onClose: () => {} })); });
+  it('picking State -> Patch -> Store renders the SAME reconciled Week B figures as computeStoreWeeks — proves the engine is actually wired to the screen, not just importable', async () => {
+    await act(async () => { root.render(React.createElement(ScheduleRetentionSection, { ds: { schedRows: ALL_ROWS, jobHours: [] }, stores: [{ loc: '6838' }] })); });
     await flush(container);
-
-    const storePill = [...container.querySelectorAll('button')].find(b => /6838/.test(b.textContent));
-    expect(storePill, 'store pill not found — LocationSelector mode:\'store\' should render one per store').toBeTruthy();
-    await act(async () => { storePill.click(); });
-    await flush(container);
+    await pickStore6838(container);
 
     // Week B's exact reconciled figures (see the top-level fixture + the LifeLenz-screenshot
-    // test above) must appear on screen verbatim once the store is selected.
+    // test above) must appear on screen verbatim once the store is selected. Both weeks fall
+    // inside the default trailing week-range window (all 4 fixture weeks < 12), so no range
+    // adjustment is needed for them to show.
     expect(container.textContent).toMatch(/24\.50%/);          // Week B Labor %
     expect(container.textContent).toMatch(/\$89,851/);         // Week B Sales Forecast (rounded)
-    expect(container.textContent).toContain('Training Retention');
     // The smart-analysis headline is present and non-generic (contains a real computed number).
-    const n = buildNarrative(computeStoreWeeks(ALL_ROWS, '6838', { s: '2026-07-01', e: '2026-08-31' }), null);
+    const n = buildNarrative(computeStoreWeeks(ALL_ROWS, '6838', {}), null);
     expect(container.textContent).toContain(n.headline.replace(/^[^\w]+/, '').slice(0, 15));
   });
 
+  it('dropped the "worth a follow-up coaching visit" editorial tail from the on-screen narrative (dispatch #140 item 2)', async () => {
+    // Reuse the worse-post-workshop fixture from the buildNarrative describe block above —
+    // guarantees a regression ("worsened") headline actually renders on screen.
+    const worsePost = toRows(LOC, weekDays('2026-07-29', 230, 190, 12000, 29.50, 1000));
+    const rows = [...toRows(LOC, WEEK_B_DAYS), ...worsePost];
+    await act(async () => { root.render(React.createElement(ScheduleRetentionSection, { ds: { schedRows: rows, jobHours: [] }, stores: [{ loc: '6838' }] })); });
+    await flush(container);
+    await pickStore6838(container);
+
+    expect(container.textContent).toMatch(/worsened/i);
+    expect(container.textContent).not.toMatch(/coaching visit/i);
+  });
+
   it('clicking "Days ▾" on a week reveals that week\'s daily grid (per-week inspect, not always-on for every column)', async () => {
-    await act(async () => { root.render(React.createElement(ScheduleRetentionPanel, { ds: { schedRows: ALL_ROWS, jobHours: [] }, stores: [{ loc: '6838' }], onClose: () => {} })); });
+    await act(async () => { root.render(React.createElement(ScheduleRetentionSection, { ds: { schedRows: ALL_ROWS, jobHours: [] }, stores: [{ loc: '6838' }] })); });
     await flush(container);
-    const storePill = [...container.querySelectorAll('button')].find(b => /6838/.test(b.textContent));
-    await act(async () => { storePill.click(); });
-    await flush(container);
+    await pickStore6838(container);
 
     expect(container.textContent).not.toMatch(/Daily detail/i);
     const dayBtn = [...container.querySelectorAll('button')].find(b => /Days\s*▾/.test(b.textContent));
@@ -299,5 +333,37 @@ describe('ScheduleRetentionPanel — real render, real click, real numbers', () 
     await act(async () => { dayBtn.click(); });
     await flush(container);
     expect(container.textContent).toMatch(/Daily detail/i);
+  });
+
+  it('picking a Patch (broader than a single store) shows a "pick a store" empty state, not a per-store view (dispatch #140 item 4)', async () => {
+    await act(async () => { root.render(React.createElement(ScheduleRetentionSection, { ds: { schedRows: ALL_ROWS, jobHours: [] }, stores: [{ loc: '6838' }] })); });
+    await flush(container);
+    const stateBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'FL');
+    await act(async () => { stateBtn.click(); });
+    await flush(container);
+    const patchBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Brad Denley');
+    await act(async () => { patchBtn.click(); });
+    await flush(container);
+
+    expect(container.textContent).toMatch(/pick a store/i);
+    expect(container.textContent).not.toMatch(/24\.50%/);
+  });
+});
+
+describe('defaultWeekRange — trailing-window default, in whole business weeks (dispatch #140 item 3)', () => {
+  const storeWeeks = computeStoreWeeks(ALL_ROWS, LOC, {}); // all 4 fixture weeks, oldest -> newest
+
+  it('windows to the trailing `count` weeks when more are available than the default', () => {
+    const r = defaultWeekRange(storeWeeks, 2);
+    expect(r).toEqual({ startKey: '2026-07-29', endKey: '2026-08-05' });
+  });
+
+  it('spans everything when fewer weeks exist than the requested count', () => {
+    const r = defaultWeekRange(storeWeeks, 12);
+    expect(r).toEqual({ startKey: '2026-07-15', endKey: '2026-08-05' });
+  });
+
+  it('returns null bounds for an empty weeks list', () => {
+    expect(defaultWeekRange([], 12)).toEqual({ startKey: null, endKey: null });
   });
 });
