@@ -84,6 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⚠️ POLICY REVERSAL (2026-08-25): [Dispatch #125 — un-tokenize Crew Schedule names, rework
+  PR #725 before merge](dispatch-125.md) + [Dispatch #126 — un-tokenize Punch Times names,
+  follow-up to merged PR #724](dispatch-126.md).** Owner, directly, after #123/#124 shipped built
+  around the identity-vault: *"there is no reason to hide names for scheduling and punch times >
+  everyone can see this data as-is."* **This supersedes the tokenization requirement in #123/#124
+  below for THESE TWO FEATURES ONLY** — the identity-vault pattern itself, and its use elsewhere
+  (Register Audit, Security panel's reveal-gated findings), is unchanged; this was a scope call
+  specific to crew-schedule/punch-time data, not a repeal of the vault. #125: store the resolved
+  name directly instead of `emp_token` in `lifelenz_shift_assignments`, drop the panel's
+  click-to-reveal gate, re-decide RBAC (recommended: ordinary panel RBAC, not the identity-reveal-
+  specific gate). #126: resolve `qsr_punch_times.employee_name` via the existing
+  `qsr_employee_tenure` join (**not** by widening the risky punch endpoint's `SELECT_COLS` — that
+  SSN guard is unrelated and stays exactly as strict), plus a backfill for rows already collected
+  under PR #724 in production. If you're picking up #123 or #124's original text below, read
+  #125/#126 FIRST — the "route through the identity vault" instruction in both original dispatches
+  no longer applies to what they shipped.
 - **🔴 NEW FEATURE, PII-SENSITIVE (2026-08-25): [Dispatch #123 — Crew Schedule Lookup: search an
   employee, see their upcoming schedule](dispatch-123.md) + [Dispatch #124 — actual punch times,
   backend pull only](dispatch-124.md)** — owner explored "can we see actual crew/manager
