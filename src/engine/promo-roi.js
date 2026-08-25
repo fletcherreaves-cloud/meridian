@@ -3,16 +3,44 @@
 // Answers "are our promos and discounts paying for themselves?" without a raw
 // correlation (which conflates volume with lift and gets biased when promos are
 // deployed on already-slow days). Method: a quasi-experimental MATCHED-DAY
-// comparison per store — split each store's days into promo-heavy vs promo-light
-// at that store's median intensity, compare WITHIN each day-of-week (controls for
-// the weekly pattern), and measure the sales / guest lift against the margin given
-// up. This is association-with-controls, not a randomized trial — labeled as a
-// directional readout, not proof.
+// comparison per store — split each store's days into promo-tagged vs promo-
+// untagged, compare WITHIN each day-of-week (controls for the weekly pattern),
+// and measure the sales / guest lift against the margin given up. This is
+// association-with-controls, not a randomized trial — labeled as a directional
+// readout, not proof.
+//
+// ⚠️ dispatch-113.md / memory/finding-promo-roi-denominator-bias-2026-08-23.md —
+// READ BOTH IN FULL before touching the split logic below. Two prior attempts
+// (percentage-of-sales split, then absolute-dollar split) both split on a
+// variable that is itself a function of that day's SALES OUTCOME (give-away
+// dollars scale with traffic), so both were selection-on-the-outcome and both
+// were measured biased -- in OPPOSITE directions -- even at a true effect of
+// exactly zero (percentage split: -0.1%; dollar split: +16.5%, 27/27 "pays").
+// The fix here is NOT a third intensity split. It is a different SPLIT
+// VARIABLE entirely: whether a real, EXOGENOUS org_events 'promo' tag covers
+// that (loc, date) -- a national marketing-calendar window McDonald's corporate
+// sets months ahead, verified (2026-08-25, org_events query against production)
+// to be independent of any single store's day-to-day sales: all 756 promo-type
+// rows in production carry entered_by:'lto-import', method:'bulk upload', and
+// match data/marketing-calendars/2025-opnad-retail-windows.json's program names
+// and dates exactly, applied identically across all 27 stores. That is a
+// calendar fact, not a same-day-derived number -- it cannot inherit the "spend
+// scales with traffic" bias no matter how strongly real give-away dollars do,
+// because it never reads give-away dollars or sales at all.
+//
+// No equivalent exogenous signal exists for the DISCOUNT lever (register-level
+// comps/overrides are reactive, not corporate-scheduled -- org_events has no
+// 'discount' event type). Per the finding's own explicit fallback, that lever
+// now honestly reports "cannot determine" (empty byStore, a stated reason)
+// rather than reusing an endogenous split a third time.
 
-import { mean, median } from '../utils/stats.js';
+import { mean } from '../utils/stats.js';
 
 const _normLoc = l => String(parseInt(String(l ?? '').replace(/\D/g, ''), 10) || '');
 const _dateKey = d => { const t = d instanceof Date ? d : new Date(String(d)); return t.getFullYear() + '-' + (t.getMonth() + 1) + '-' + t.getDate(); };
+// Zero-padded ISO 'YYYY-MM-DD' -- MUST match org_events' date_start/date_end format exactly
+// (unlike _dateKey above, which is a loose internal merge key and is NOT zero-padded).
+const _isoKey = d => { const t = d instanceof Date ? d : new Date(String(d)); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); };
 const _dow = d => { const t = d instanceof Date ? d : new Date(String(d)); return t.getDay(); };
 const _num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
 
@@ -63,49 +91,85 @@ export function buildDailyRecords(ds) {
   return Object.values(map);
 }
 
-// Per-store matched-day lift for one lever (promo or discount).
-// opts: { intensityField, spendField, marginRate=0.35, minDays=24, minPerCell=2 }
-// Returns { byStore:[…], district:{…}, marginRate }.
-export function matchedLift(records, opts = {}) {
-  // ⚠️ Default is the DOLLAR field, never the percentage. Splitting on promoPct/discPct
-  // (give-away / sales) puts the outcome in the denominator of the splitting variable and
-  // biases every store negative -- see memory/finding-promo-roi-denominator-bias-2026-08-23.md.
-  // A caller that omits intensityField must not silently get the biased behaviour back; that is
-  // exactly how this bug would return.
-  const intensityField = opts.intensityField || 'promoAmt';
+// ── Exogenous promo-tag coverage ────────────────────────────────────────────
+// Build, from the client's per-day event map (mf_events shape: { loc: { 'YYYY-MM-DD': entry } },
+// the same shape orgEventsToDayMap() in events-import.js produces and App.js hydrates from
+// org_events on load), the set of dates each store carries a REAL exogenous promo-calendar tag.
+//
+// Restricted to ORG-SOURCED entries only (`ev.orgSourced`). Verified 2026-08-25 against
+// production: every org_events row with event_type='promo' today (756 rows, all 27 stores) was
+// written by a single bulk import (entered_by:'lto-import', method:'bulk upload') of the national
+// OPNAD marketing calendar (data/marketing-calendars/2025-opnad-retail-windows.json) -- dates
+// McDonald's corporate sets months ahead, identical across every store, verifiably NOT derived
+// from any store's own sales. A hand-typed same-day tag via Calendar Manager is NOT restricted
+// to org-sourced entries by that flag alone; excluding non-org-sourced entries here is
+// deliberate -- a GM could in principle tag "promo" retroactively after noticing a good day,
+// which would reopen exactly the endogeneity this fix closes. If the owner starts hand-tagging
+// promo days as a matter of course, this filter should be revisited against fresh provenance
+// evidence, not loosened on assumption.
+//
+// Returns { tagged: {loc: Set<'YYYY-MM-DD'>}, covStart: {loc: 'YYYY-MM-DD'}, covEnd: {loc: ...} }.
+// covStart/covEnd is each store's own KNOWN calendar window (earliest/latest tagged date) -- a
+// date outside it is UNKNOWN, not "no promo running", and matchedLift below must never treat an
+// unknown day as a light/control day (see the coverage-window note there).
+export function promoTagCoverage(userEvents) {
+  const tagged = {}, covStart = {}, covEnd = {};
+  for (const [loc, dayMap] of Object.entries(userEvents || {})) {
+    for (const [dk, ev] of Object.entries(dayMap || {})) {
+      if (!ev || !ev.orgSourced) continue;
+      const isPromo = ev.type === 'promo' || (Array.isArray(ev.tags) && ev.tags.some(t => t && t.type === 'promo'));
+      if (!isPromo) continue;
+      (tagged[loc] || (tagged[loc] = new Set())).add(dk);
+      if (!covStart[loc] || dk < covStart[loc]) covStart[loc] = dk;
+      if (!covEnd[loc] || dk > covEnd[loc]) covEnd[loc] = dk;
+    }
+  }
+  return { tagged, covStart, covEnd };
+}
+
+// Per-store matched-day lift for one lever, split by EXOGENOUS calendar-tag membership
+// (dispatch-113.md) rather than same-day intensity. opts: { spendField, marginRate=0.35,
+// minDays=24, minPerCell=2 }. tagCoverage: promoTagCoverage()'s return shape (or the "always
+// empty" shape below for a lever with no exogenous signal, e.g. discount).
+// Returns { byStore:[…], district:{…}, marginRate, nCandidates, reason? }.
+export function matchedLift(records, tagCoverage, opts = {}) {
   const spendField = opts.spendField || 'promoAmt';
   const marginRate = opts.marginRate != null ? opts.marginRate : 0.35;
   const minDays = opts.minDays != null ? opts.minDays : 24;
   const minPerCell = opts.minPerCell != null ? opts.minPerCell : 2;
+  const { tagged = {}, covStart = {}, covEnd = {} } = tagCoverage || {};
 
-  // group records by loc
+  // Group by loc, restricted to that loc's OWN known calendar-coverage window. A record whose
+  // date falls outside [covStart[loc], covEnd[loc]] carries no calendar information at all --
+  // excluded entirely rather than defaulted to "light" (see promoTagCoverage's doc comment).
+  // A loc with no coverage at all (covStart[loc] undefined -- no exogenous tag ever seen for it,
+  // e.g. every store for the discount lever today) contributes nothing and is not a candidate.
   const byLoc = {};
   for (const r of records) {
     if (!(r.sales > 0)) continue;
-    if (_num(r[intensityField]) == null) continue;
-    (byLoc[r.loc] || (byLoc[r.loc] = [])).push(r);
+    const lo = covStart[r.loc], hi = covEnd[r.loc];
+    if (!lo || !hi) continue;
+    const dk = _isoKey(r.date);
+    if (dk < lo || dk > hi) continue;
+    (byLoc[r.loc] || (byLoc[r.loc] = [])).push({ r, dk });
   }
-  // Every loc with at least one valid intensity record -- the candidate pool before minDays/
-  // minPerCell trim it down further. A dollar-based split scores fewer stores than a percentage
-  // split (lumpier values leave more DOW cells under minPerCell) -- that drop is a real,
-  // disclosed trade-off (finding-promo-roi-denominator-bias-2026-08-23.md), so the caller can
-  // surface "N of M stores scored" instead of silently shrinking the table.
   const nCandidates = Object.keys(byLoc).length;
+  if (!nCandidates) {
+    return { byStore: [], district: null, marginRate, nCandidates: 0, reason: 'no_exogenous_tag_data' };
+  }
 
   const byStore = [];
   for (const loc of Object.keys(byLoc)) {
     const rows = byLoc[loc];
     if (rows.length < minDays) continue;
-    const med = median(rows.map(r => r[intensityField]));
-    if (med == null) continue;
+    const tagSet = tagged[loc] || new Set();
 
-    // day-of-week cells: heavy (> median) vs light (≤ median). Strict-above keeps
-    // the mass of low-intensity days on the light side (and cleanly separates
-    // promo days from no-promo days when the median sits at the low end).
+    // day-of-week cells: tagged (real calendar promo window covers this date) vs untagged
+    // (inside the SAME known calendar window, just not covered by any tag).
     const cells = {};
-    for (const r of rows) {
+    for (const { r, dk } of rows) {
       const c = cells[r.dow] || (cells[r.dow] = { heavy: [], light: [] });
-      (r[intensityField] > med ? c.heavy : c.light).push(r);
+      (tagSet.has(dk) ? c.heavy : c.light).push(r);
     }
     let wSum = 0, exSales = 0, exGc = 0, exSpend = 0, baseSales = 0, nCells = 0;
     for (const dow of Object.keys(cells)) {
@@ -136,7 +200,6 @@ export function matchedLift(records, opts = {}) {
       : 'neutral';
     byStore.push({
       loc, nDays: rows.length, nCells,
-      medianIntensity: med,
       extraSalesPerDay, extraGcPerDay, extraSpendPerDay,
       liftSalesPct, grossProfitDelta, verdict,
     });
@@ -153,22 +216,37 @@ export function matchedLift(records, opts = {}) {
   } : null;
 
   byStore.sort((a, b) => (a.grossProfitDelta) - (b.grossProfitDelta)); // worst ROI first (coach these)
-  return { byStore, district, marginRate, nCandidates };
+  return { byStore, district, marginRate, nCandidates, coverage: { covStart, covEnd } };
 }
 
-// Convenience: both levers at once.
-export function computePromoDiscountRoi(ds, opts = {}) {
+// An always-empty tag-coverage map, for a lever with no exogenous signal at all today (discount:
+// org_events has no 'discount' event type -- register-level comps/overrides are reactive, not
+// corporate-scheduled, so no calendar fact could ever tell us "a discount was going to happen
+// here" before the day did). Passed explicitly rather than reusing the promo map, so
+// matchedLift's "no candidates" result is honest ("no signal exists"), not an accident of one
+// lever borrowing another's calendar.
+const NO_EXOGENOUS_SIGNAL = { tagged: {}, covStart: {}, covEnd: {} };
+
+// Convenience: both levers at once. userEvents is the client's mf_events per-day map (App.js
+// state, already hydrated from org_events -- see promoTagCoverage's doc comment); pass null/
+// undefined when unavailable (e.g. a caller with no calendar loaded) and the promo lever
+// degrades to the same honest "cannot determine" result as discount, rather than throwing.
+export function computePromoDiscountRoi(ds, userEvents, opts = {}) {
   const marginRate = opts.marginRate != null ? opts.marginRate : 0.35;
   const records = buildDailyRecords(ds);
+  const promoCov = promoTagCoverage(userEvents);
   return {
     nRecords: records.length,
     marginRate,
-    // memory/finding-promo-roi-denominator-bias-2026-08-23.md -- splitting on the PERCENTAGE
-    // (give-away / sales) makes sales the denominator of the splitting variable, so the split
-    // sorts on sales before sales is ever compared: selection on the outcome, biased negative
-    // regardless of the true effect. Split on absolute give-away DOLLARS instead -- independent
-    // of sales, so the heavy/light split isn't secretly a low-sales/high-sales split.
-    promo: matchedLift(records, { intensityField: 'promoAmt', spendField: 'promoAmt', marginRate }),
-    discount: matchedLift(records, { intensityField: 'discAmt', spendField: 'discAmt', marginRate }),
+    // dispatch-113.md -- split by whether a REAL, exogenous org_events 'promo' tag (the national
+    // marketing calendar, set months ahead by McDonald's corporate) covers that date, not by
+    // same-day promo-dollar intensity. See this file's top-of-file comment for why every
+    // intensity-based split (percentage OR dollar) was structurally endogenous.
+    promo: matchedLift(records, promoCov, { spendField: 'promoAmt', marginRate }),
+    // No exogenous discount-timing signal exists in this data model -- see NO_EXOGENOUS_SIGNAL.
+    // Distinct reason from a promo lever that simply has no coverage for the LOADED data (which
+    // could be fixed by tagging/loading a broader window): here nothing could ever fix it short
+    // of a genuinely new, verified-exogenous discount-timing source, so the UI copy must say so.
+    discount: { ...matchedLift(records, NO_EXOGENOUS_SIGNAL, { spendField: 'discAmt', marginRate }), reason: 'no_signal_exists' },
   };
 }

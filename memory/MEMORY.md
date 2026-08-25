@@ -84,6 +84,29 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #119 — Mobile: wide tables clipped with no horizontal scroll (Promo/Discount ROI + a ratchet)](dispatch-119.md)** —
+  Owner: *"Throughout environment > need to add side scroll to be able to see all data on mobile.
+  Reference Promo Discount ROI."* Confirmed real: `promo-roi.js`'s results table container leaves
+  the horizontal axis effectively `hidden` (shorthand `overflow:'hidden'` + only `overflowY`
+  overridden) around a `width:'100%'` table — wide rows clip on mobile with no way to scroll to
+  them. Fixes that panel, and adds a ratchet test (mirroring the existing
+  `ratchet-modal-backdrop-bypass.test.js`) for the same anti-pattern app-wide, seeded from a real
+  measurement on the fix branch — NOT the ~13-file loose grep this dispatch's own investigation
+  produced (explicitly flagged as an unverified heuristic, not a count to copy into a `CEILING`).
+- **📋 (2026-08-25): [Dispatch #118 — Visit Readiness: Days-Since-Last-Visit column + real column headers](dispatch-118.md)** —
+  Owner: *"add a column as well for Days since last visit... put the column headers over the
+  actual columns."* `src/views/visit-readiness.js` has two lists with this problem: the main
+  `StoreRow` list has no header row at all (each row repeats its own Speed/Accuracy/Quality/
+  Leadership labels inline) and no days-since-last-visit figure despite `s.lastVisit.ms` already
+  being on every store object; the Frequency-by-store block already computes `daysSinceLast` but
+  only names its columns in a plain-text caption, not real header cells. Presentation-only —
+  scoring/aggregation math untouched.
+- **📚 Standing rule added (2026-08-25): [Panel contract is now a per-dispatch opportunistic
+  check](panel-contract.md)** — owner: *"as we work in each panel, let's get the close (x) button
+  standardized... date pickers and location selectors... continue with the url page migration
+  while we are in there."* CLAUDE.md's Dev Rules now points here. Current numbers: hand-rolled-
+  backdrop ratchet `CEILING=77` (was 78); `route:true` adoption 13/101 panels (expected to stay
+  low for a long time, not a gap to close in one pass).
 - **🔴 NEWEST (2026-08-25): [Dispatch #113 — HIGH PRIORITY: Promo/Discount ROI's methodology is endogenous, currently live and misleading](dispatch-113.md)** —
   `matchedLift()` splits days by promo/discount dollar intensity — a variable that is itself a
   function of that day's sales (spend scales with traffic) — so at a TRUE effect of 0% it reports
@@ -96,6 +119,19 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   bias-2026-08-23.md` is the authoritative writeup — already self-corrected once after an earlier
   "fix" made the bias worse, not better, in a realistic simulation. Regression bar: must not
   regress on that same realistic (spend-scales-with-traffic) simulation.
+- **📋 (2026-08-25): [Dispatch #117 — MBI vs LifeLenz Accuracy: guard against implausible LifeLenz actuals](dispatch-117.md)** —
+  Owner's live ask (mobile screenshot): a week showed LFZ variance **+3665.94%** on one day and
+  **"—"** on two others, with the week's `LFZ avg |var|` reading a nonsensical **734.38%**. Root
+  cause measured directly against production Supabase: `lifelenz_schedule.sales` for Aug 5 is
+  ~4% of forecast (partial capture) and `NULL` for Aug 6–7 (fully missed) across all 27 stores —
+  caused by a real 4-day pull outage (`lifelenz-pull.yml` runs Aug 7–10 all `conclusion:"failure"`,
+  matching the documented monthly-token-expiry pattern), whose Aug 11 manual recovery run's
+  default 3-day `LIFELENZ_SAFETY_DAYS` window never reached back far enough to re-pull Aug 5–7.
+  **Already backfilled as a data fix** (triggered `workflow_dispatch` with
+  `start_date=2026-08-05` directly, 2026-08-25 — do not redo). This dispatch is the remaining
+  CODE gap: `runAccuracy`/`groupAccByWeek` (`lifelenz.js`) treat any nonzero LifeLenz actual as
+  ground truth with no plausibility guard, so the next multi-day outage (this isn't the first —
+  CLAUDE.md already documents an earlier 6-day one) will reproduce the same misleading UI.
 - **📋 (2026-08-25): [Dispatch #116 — FOB Analysis: mobile users can't see the Contributors table below the fold](dispatch-116.md)** —
   `FOBAnalysisPanel` (`analytics.js`) stacks the title bar + KPI cards + Root-Cause Priority Matrix
   (up to 8 rows) + Waste-Entry Discipline (up to 8 rows) as fixed-height (`flexShrink:0`) blocks
