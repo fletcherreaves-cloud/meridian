@@ -37,11 +37,13 @@ vi.mock('../lib/supabase.js', () => ({
 import {
   securityPanelAccess, verdictState, groupFindingsBySubject, scopeMatches, SecurityPanel,
   classifySubjectTrend, buildDecisionSentence, windowEndInRange, ruleShortTag,
+  scopeToSelectorValue, selectorValueToScope, latestWindowEnd, sortFindingsForDisplay,
 } from '../views/security-panel.js';
 // dispatch #100 -- resolveDatePreset lets the render tests below compute a REAL, wall-clock-
 // anchored {s,e} the same way the panel's own DateRangeControl preset buttons do, instead of
 // hardcoding dates that would drift stale against "today."
 import { resolveDatePreset } from '../components/PanelControls.js';
+import { INV_ORG_COORDS } from '../constants.js';
 
 // ── Pure logic ────────────────────────────────────────────────────────────────────────────────
 
@@ -235,7 +237,7 @@ describe('buildDecisionSentence() — the plain-language line beside (never inst
   });
 });
 
-describe('scopeMatches() — All -> State -> Org -> Store hierarchy', () => {
+describe('scopeMatches() — All -> State -> Patch -> Store hierarchy (dispatch #120 -- Org replaced by Patch)', () => {
   it('"all" matches every loc', () => {
     expect(scopeMatches('0000001', { level: 'all' })).toBe(true);
     expect(scopeMatches('0000001', null)).toBe(true);
@@ -245,13 +247,63 @@ describe('scopeMatches() — All -> State -> Org -> Store hierarchy', () => {
     expect(scopeMatches('0000002', { level: 'store', value: '0000001' })).toBe(false);
   });
 
-  // dispatch #100 -- 'org' and 'store' were already implemented in scopeMatches (the gap was the
-  // pill UI never offering them), so these two assertions were already true before this dispatch.
-  // Kept here anyway so scopeMatches' own full 4-level contract is asserted in one place.
-  it('"org" matches every store in the same org (real INV_ORG_COORDS mapping: FL -> emerald, OK -> mcdok)', () => {
-    expect(scopeMatches('6178', { level: 'org', value: 'emerald' })).toBe(true); // Chipley, FL
-    expect(scopeMatches('3708', { level: 'org', value: 'emerald' })).toBe(false); // Ardmore, OK
+  it('"state" matches every store in the same state (real INV_ORG_COORDS mapping)', () => {
+    expect(scopeMatches('6178', { level: 'state', value: 'FL' })).toBe(true); // Chipley, FL
+    expect(scopeMatches('3708', { level: 'state', value: 'FL' })).toBe(false); // Ardmore, OK
+    expect(scopeMatches('3708', { level: 'state', value: 'OK' })).toBe(true);
+  });
+
+  // dispatch #120 -- 'org' (state==='FL'?'emerald':'mcdok') is REMOVED: it was 1:1 redundant with
+  // 'state' for this business (CLAUDE.md's canonical mapping), never a second independent
+  // dimension. 'patch' (org.sup, the real supervisor field) replaces it with a genuinely finer
+  // grain -- two same-state/same-org stores can have DIFFERENT supervisors, which 'state'/'org'
+  // could never isolate. 3708 and 5183 are both OK/mcdok but have different sup values.
+  it('"patch" matches only stores under the same supervisor -- finer than the old org tier, not a renamed copy of it', () => {
+    expect(scopeMatches('3708', { level: 'patch', value: 'Robert Spencer' })).toBe(true);
+    expect(scopeMatches('5183', { level: 'patch', value: 'Robert Spencer' })).toBe(false); // same org/state as 3708, different sup
+    expect(scopeMatches('5183', { level: 'patch', value: 'Krystiana Langford' })).toBe(true);
+  });
+
+  it('an unrecognized scope level falls through to true (matches everything) -- same permissive-default behavior "org" itself used to rely on before removal', () => {
     expect(scopeMatches('3708', { level: 'org', value: 'mcdok' })).toBe(true);
+  });
+});
+
+// dispatch #120 -- confirms the redundancy claim itself, not just the new code: the OLD org
+// mapping (state==='FL' ? 'emerald' : 'mcdok', scopeMatches' own pre-#120 formula) and the
+// SURVIVING 'state' level produce the IDENTICAL store set for every real store in INV_ORG_COORDS.
+// This is the regression check the dispatch asked for -- selecting "FL" via the old mechanism
+// scopes to the same stores the new State tier alone reaches -- computed independently of
+// scopeMatches (which no longer implements the old formula) so it can't trivially pass by testing
+// itself.
+describe('dispatch #120 -- Org-tier removal is a true no-op: old org mapping === new state-only scoping, for every real store', () => {
+  it('every store\'s old-org-formula result matches scopeMatches(state) for both orgs, across the whole real INV_ORG_COORDS estate', () => {
+    const locs = Object.keys(INV_ORG_COORDS);
+    expect(locs.length).toBeGreaterThan(20); // sanity: this is the real ~27-store estate, not an empty fixture
+    for (const loc of locs) {
+      const oldOrg = INV_ORG_COORDS[loc].state === 'FL' ? 'emerald' : 'mcdok';
+      const newStateMatchesFL = scopeMatches(loc, { level: 'state', value: 'FL' });
+      const newStateMatchesOK = scopeMatches(loc, { level: 'state', value: 'OK' });
+      expect(newStateMatchesFL).toBe(oldOrg === 'emerald');
+      expect(newStateMatchesOK).toBe(oldOrg === 'mcdok');
+    }
+  });
+});
+
+describe('scopeToSelectorValue() / selectorValueToScope() — the {level,value} <-> {level,id} boundary translation (dispatch #120, panel-contract.md §3)', () => {
+  it('"all" round-trips both ways', () => {
+    expect(scopeToSelectorValue({ level: 'all' })).toEqual({ level: 'all', id: null });
+    expect(scopeToSelectorValue(null)).toEqual({ level: 'all', id: null });
+    expect(selectorValueToScope({ level: 'all', id: null })).toEqual({ level: 'all' });
+    expect(selectorValueToScope(null)).toEqual({ level: 'all' });
+  });
+  it('state/patch/store round-trip value <-> id', () => {
+    expect(scopeToSelectorValue({ level: 'state', value: 'OK' })).toEqual({ level: 'state', id: 'OK' });
+    expect(selectorValueToScope({ level: 'state', id: 'OK' })).toEqual({ level: 'state', value: 'OK' });
+    expect(scopeToSelectorValue({ level: 'patch', value: 'Robert Spencer' })).toEqual({ level: 'patch', id: 'Robert Spencer' });
+    expect(selectorValueToScope({ level: 'patch', id: 'Robert Spencer' })).toEqual({ level: 'patch', value: 'Robert Spencer' });
+    expect(scopeToSelectorValue({ level: 'store', value: '3708' })).toEqual({ level: 'store', id: '3708' });
+    expect(selectorValueToScope({ level: 'store', id: '3708' })).toEqual({ level: 'store', value: '3708' });
   });
 });
 
@@ -980,20 +1032,26 @@ describe('SecurityPanel — dispatch #56 Part D: subject history, shape, and cor
   });
 });
 
-// dispatch #100 -- Org and Store pills render through the real SecurityPanel and actually change
-// what's visible, not just "the pill renders" (standing rule: a test exercising only scopeMatches
-// in isolation can't tell a real fix from one whose pill row was never wired up -- exactly the gap
-// this dispatch closes). Real loc numbers from constants.js' own INV_ORG_COORDS, not synthetic
-// '0000001'-style fixture locs, so the org split is checked against the actual live mapping.
-describe('SecurityPanel — dispatch #100: Org and Store pills reach scopeMatches through the real UI', () => {
+// dispatch #120 -- the progressive LocationSelector (replacing the old flat State/Org/Store pill
+// row) renders through the real SecurityPanel and actually changes what's visible, not just "the
+// selector renders" (standing rule: a test exercising only scopeMatches in isolation can't tell a
+// real fix from one whose selector was never wired up). Real loc numbers from constants.js' own
+// INV_ORG_COORDS, not synthetic '0000001'-style fixture locs, so the state/patch split is checked
+// against the actual live mapping. 3708 and 5183 are both OK -- and were both 'mcdok' under the
+// now-removed Org tier -- but sit under DIFFERENT supervisors (Robert Spencer / Krystiana
+// Langford), which is exactly the finer-grained capability the Patch tier adds.
+describe('SecurityPanel — dispatch #120: progressive LocationSelector (State -> Patch -> Store) reaches scopeMatches through the real UI', () => {
   let container, root;
   const RULES = [{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'desc', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'act' }];
-  // 3708 = Ardmore-Broadway, OK -> MCDOK. 5183 = Chickasha, OK -> MCDOK. 6178 = Chipley, FL -> Emerald Arches.
+  // 3708 = Ardmore-Broadway, OK, sup Robert Spencer. 5183 = Chickasha, OK, sup Krystiana Langford.
+  // 6178 = Chipley, FL, sup Brad Denley.
   const FINDINGS = [
     { empToken: 'tok-ardmore', wrin: null, loc: '3708', ruleId: 'CASH-001', pass: true, value: 10, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
     { empToken: 'tok-chickasha', wrin: null, loc: '5183', ruleId: 'CASH-001', pass: true, value: 8, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
     { empToken: 'tok-chipley', wrin: null, loc: '6178', ruleId: 'CASH-001', pass: true, value: 12, thresholdUsed: 5, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
   ];
+  const btnByText = (text) => [...container.querySelectorAll('button')].find(b => b.textContent === text);
+  const click = async (b) => { await act(async () => { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); };
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -1007,60 +1065,89 @@ describe('SecurityPanel — dispatch #100: Org and Store pills reach scopeMatche
     container.remove();
   });
 
-  it('before selecting any pill, all three real stores render unfiltered (baseline for the assertions below)', async () => {
+  it('before selecting any pill, all three real stores render unfiltered, and there is no flat ~30-pill Org/Store row any more (the mobile-usability bug this dispatch fixes)', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
     expect(container.textContent).toMatch(/Store 3708/);
     expect(container.textContent).toMatch(/Store 5183/);
     expect(container.textContent).toMatch(/Store 6178/);
+    // The old Org pills are gone entirely -- not renamed, removed (see scopeMatches' own comment).
+    expect(btnByText('MCDOK')).toBeFalsy();
+    expect(btnByText('Emerald Arches')).toBeFalsy();
+    // Progressive mode: only the State tier (+ "All Locations") shows before any State is picked
+    // -- Patch and Store pills for 3708/5183/6178 are NOT all on screen at once.
+    expect(btnByText('All Locations')).toBeTruthy();
+    expect(btnByText('OK')).toBeTruthy();
+    expect(btnByText('FL')).toBeTruthy();
+    expect(btnByText('Robert Spencer')).toBeFalsy();
+    expect(btnByText('3708 — Ardmore-Broadway')).toBeFalsy();
   });
 
-  it('the MCDOK Org pill filters to exactly the OK stores (3708, 5183), excluding the FL store (6178)', async () => {
+  it('picking the OK State pill filters to exactly the OK stores (3708, 5183), excluding the FL store (6178) -- same store set the old MCDOK Org pill reached', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
-    const mcdokBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'MCDOK');
-    expect(mcdokBtn).toBeTruthy();
-    await act(async () => { mcdokBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await click(btnByText('OK'));
     expect(container.textContent).toMatch(/Store 3708/);
     expect(container.textContent).toMatch(/Store 5183/);
     expect(container.textContent).not.toMatch(/Store 6178/);
+    // Picking OK reveals ITS Patch tier -- both supervisors, since both have an OK store present.
+    expect(btnByText('Robert Spencer')).toBeTruthy();
+    expect(btnByText('Krystiana Langford')).toBeTruthy();
   });
 
-  it('the Emerald Arches Org pill filters to exactly the FL store (6178), excluding both OK stores', async () => {
+  it('picking the FL State pill filters to exactly the FL store (6178), excluding both OK stores -- same store set the old Emerald Arches Org pill reached', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
-    const emeraldBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Emerald Arches');
-    expect(emeraldBtn).toBeTruthy();
-    await act(async () => { emeraldBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await click(btnByText('FL'));
     expect(container.textContent).toMatch(/Store 6178/);
     expect(container.textContent).not.toMatch(/Store 3708/);
     expect(container.textContent).not.toMatch(/Store 5183/);
   });
 
-  it('a Store pill filters to EXACTLY that store, excluding a sibling in the same org', async () => {
+  it('the Patch tier is a genuinely finer scope than the old Org tier -- Robert Spencer isolates 3708 from 5183, though both are OK/mcdok', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
-    // Store pills carry the store name too (matching the shared LocationSelector's own label
-    // convention, PanelControls.js's storeLabel) -- click on the real label, not the bare loc.
-    const storeBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '3708 — Ardmore-Broadway');
-    expect(storeBtn).toBeTruthy();
-    await act(async () => { storeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await click(btnByText('OK'));
+    await click(btnByText('Robert Spencer'));
     expect(container.textContent).toMatch(/Store 3708/);
-    expect(container.textContent).not.toMatch(/Store 5183/); // same org (MCDOK), still excluded
+    expect(container.textContent).not.toMatch(/Store 5183/); // same state AND same old org -- only Patch can separate these
+    expect(container.textContent).not.toMatch(/Store 6178/);
+    // Picking the Patch reveals its Store tier.
+    expect(btnByText('3708 — Ardmore-Broadway')).toBeTruthy();
+  });
+
+  it('the other Patch under the same state isolates the sibling store instead', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    await click(btnByText('OK'));
+    await click(btnByText('Krystiana Langford'));
+    expect(container.textContent).toMatch(/Store 5183/);
+    expect(container.textContent).not.toMatch(/Store 3708/);
     expect(container.textContent).not.toMatch(/Store 6178/);
   });
 
-  it('"All" and per-State pills still behave exactly as before -- additive, not a rewrite', async () => {
+  it('a Store pill (reached via State -> Patch) filters to EXACTLY that store', async () => {
     await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
     await flush(container);
-    const okBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'OK');
-    expect(okBtn).toBeTruthy();
-    await act(async () => { okBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await click(btnByText('OK'));
+    await click(btnByText('Robert Spencer'));
+    // Store pills carry the store name too (matching the shared LocationSelector's own label
+    // convention, PanelControls.js's storeLabel) -- click on the real label, not the bare loc.
+    const storeBtn = btnByText('3708 — Ardmore-Broadway');
+    expect(storeBtn).toBeTruthy();
+    await click(storeBtn);
     expect(container.textContent).toMatch(/Store 3708/);
-    expect(container.textContent).toMatch(/Store 5183/);
+    expect(container.textContent).not.toMatch(/Store 5183/);
     expect(container.textContent).not.toMatch(/Store 6178/);
-    const allBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'All');
-    await act(async () => { allBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  });
+
+  it('"All Locations" resets back to unfiltered after a State/Patch/Store selection', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    await click(btnByText('OK'));
+    await click(btnByText('Robert Spencer'));
+    expect(container.textContent).not.toMatch(/Store 5183/);
+    await click(btnByText('All Locations'));
     expect(container.textContent).toMatch(/Store 3708/);
     expect(container.textContent).toMatch(/Store 5183/);
     expect(container.textContent).toMatch(/Store 6178/);
@@ -1134,6 +1221,31 @@ describe('SecurityPanel — dispatch #100: date-range control filters on windowE
     await flush(container);
     expect(container.textContent).toMatch(/Findings with a window ending:/);
   });
+
+  // dispatch #120's verification bar -- confirm the fetch effect never depends on dateRange
+  // through the real component, not just by reading loadSecurityFindings' call signature (it
+  // takes no date argument at all, so a signature check alone can't catch an added dependency
+  // that re-triggers the SAME no-arg call a second time). loadSecurityFindings is called exactly
+  // once for the whole test regardless of how many date-range interactions happen after mount --
+  // if `dateRange` were ever added to that effect's dependency array, each click below would add
+  // another call.
+  it('changing the date-range control (preset, then All dates) never re-triggers loadSecurityFindings -- it only re-filters already-loaded findings client-side', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    expect(loadSecurityFindingsMock).toHaveBeenCalledTimes(1);
+    const preset90 = [...container.querySelectorAll('button')].find(b => b.textContent === '90D');
+    await act(async () => { preset90.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadSecurityFindingsMock).toHaveBeenCalledTimes(1);
+    const preset7 = [...container.querySelectorAll('button')].find(b => b.textContent === '7D');
+    await act(async () => { preset7.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadSecurityFindingsMock).toHaveBeenCalledTimes(1);
+    const allDatesBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'All dates');
+    await act(async () => { allDatesBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(loadSecurityFindingsMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 // dispatch #100 follow-up -- the rule-filter pill row shows a short descriptor on EVERY rule pill
@@ -1189,5 +1301,187 @@ describe('SecurityPanel — dispatch #100 follow-up: rule pills carry a short de
     const ruleBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'CASH-001 · Cash drawer over/short');
     await act(async () => { ruleBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(container.textContent).toMatch(/d1/); // the full description fixture text
+  });
+});
+
+// dispatch #120 -- findings-readability pure helpers (latestWindowEnd, sortFindingsForDisplay).
+// See sortFindingsForDisplay's own header comment in security-panel.js for why a table+sort was
+// chosen over a click-through to an "actual event" view (RegisterAuditTab does not qualify).
+describe('latestWindowEnd()', () => {
+  it('returns the max windowEnd across a group\'s verdicts', () => {
+    const group = { verdicts: [{ windowEnd: '2026-08-01' }, { windowEnd: '2026-08-28' }, { windowEnd: '2026-07-15' }] };
+    expect(latestWindowEnd(group)).toBe('2026-08-28');
+  });
+  it('returns "" (never null/undefined) when no verdict has a windowEnd', () => {
+    expect(latestWindowEnd({ verdicts: [] })).toBe('');
+    expect(latestWindowEnd({ verdicts: [{ windowEnd: null }] })).toBe('');
+    expect(latestWindowEnd({})).toBe('');
+  });
+});
+
+describe('sortFindingsForDisplay()', () => {
+  // Deliberately NOT pre-sorted by any of the columns under test, so a passing "sorts by X" case
+  // can't be an accidental no-op on already-sorted input.
+  const groups = [
+    { key: 'b', subjectType: 'emp', empToken: 'tok-bob', flaggedCount: 1, verdicts: [{ ruleId: 'CASH-002', windowEnd: '2026-08-10' }] },
+    { key: 'a', subjectType: 'emp', empToken: 'tok-alice', flaggedCount: 2, verdicts: [{ ruleId: 'CASH-001', windowEnd: '2026-08-28' }] },
+    { key: 'c', subjectType: 'emp', empToken: 'tok-carol', flaggedCount: 0, verdicts: [{ ruleId: 'CASH-003', windowEnd: '2026-07-01' }] },
+  ];
+  it('the default ("signals","desc") is a TRUE no-op -- returns the SAME array reference, never re-deriving groupFindingsBySubject\'s own tie-break', () => {
+    expect(sortFindingsForDisplay(groups, 'signals', 'desc')).toBe(groups);
+    expect(sortFindingsForDisplay(groups, null, null)).toBe(groups);
+  });
+  it('sorting by "signals" ascending DOES re-sort -- only the desc case is the no-op', () => {
+    expect(sortFindingsForDisplay(groups, 'signals', 'asc').map(g => g.key)).toEqual(['c', 'b', 'a']); // 0 < 1 < 2
+  });
+  it('sorts by subject (empToken/wrin) ascending and descending', () => {
+    expect(sortFindingsForDisplay(groups, 'subject', 'asc').map(g => g.key)).toEqual(['a', 'b', 'c']); // tok-alice < tok-bob < tok-carol
+    expect(sortFindingsForDisplay(groups, 'subject', 'desc').map(g => g.key)).toEqual(['c', 'b', 'a']);
+  });
+  it('sorts by rule (lowest ruleId among a group\'s verdicts) ascending', () => {
+    expect(sortFindingsForDisplay(groups, 'rule', 'asc').map(g => g.key)).toEqual(['a', 'b', 'c']); // CASH-001 < 002 < 003
+  });
+  it('sorts by window (latest windowEnd) ascending and descending', () => {
+    expect(sortFindingsForDisplay(groups, 'window', 'desc').map(g => g.key)).toEqual(['a', 'b', 'c']); // 08-28 > 08-10 > 07-01
+    expect(sortFindingsForDisplay(groups, 'window', 'asc').map(g => g.key)).toEqual(['c', 'b', 'a']);
+  });
+  it('never mutates the input array', () => {
+    const before = [...groups];
+    sortFindingsForDisplay(groups, 'subject', 'asc');
+    expect(groups).toEqual(before);
+  });
+});
+
+// dispatch #120 -- the table renders through the real panel (standing rule: a test exercising
+// only sortFindingsForDisplay in isolation can't tell a real fix from one whose header clicks
+// were never wired to onSort). Inventory domain, not cash: a wrin subject's heading renders
+// directly as text ("Item WRIN") with no reveal click needed, so row order is readable from
+// textContent alone -- an emp subject would render an identical "🔒 reveal" placeholder for every
+// row regardless of token, which can't distinguish row order.
+describe('SecurityPanel — dispatch #120: findings render as a real, sortable <table>', () => {
+  let container, root;
+  const INV_RULES = [{ ruleId: 'INV-001', domain: 'inventory', method: 'Item TvA variance rate vs. expected usage', description: 'd', baselineType: 'store', logicType: 'z-score', active: true, investigationAction: 'a' }];
+  // All three flag on the same single rule (flaggedCount ties at 1) -- default order falls to
+  // worstValue descending, deliberately set ZULU > MIKE > ECHO so it differs from every other
+  // sort the test below exercises (subject-alpha gives ECHO/MIKE/ZULU).
+  const INV_FINDINGS = [
+    { empToken: null, wrin: 'ZULU-001', loc: '0000001', ruleId: 'INV-001', pass: true, value: 90, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: null, wrin: 'MIKE-002', loc: '0000001', ruleId: 'INV-001', pass: true, value: 50, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+    { empToken: null, wrin: 'ECHO-003', loc: '0000001', ruleId: 'INV-001', pass: true, value: 30, thresholdUsed: 20, windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [] },
+  ];
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(INV_FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(INV_RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+    loadQsrVarianceStatMock.mockReset().mockResolvedValue([]); // no descr -> falls back to "Item WRIN"
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  const rowOrder = (container) => [...container.querySelectorAll('tbody tr')]
+    .map(tr => (tr.textContent.match(/ZULU-001|MIKE-002|ECHO-003/) || [])[0])
+    .filter(Boolean);
+
+  it('renders real <table>/<thead>/<th>/<tbody> markup, not a hand-rolled flex list', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(container.querySelector('table')).toBeTruthy();
+    expect(container.querySelector('thead')).toBeTruthy();
+    expect(container.querySelectorAll('th').length).toBeGreaterThanOrEqual(4);
+    expect(container.querySelectorAll('tbody tr').length).toBe(3);
+  });
+
+  it('defaults to the pre-existing signal/worstValue order: ZULU, MIKE, ECHO', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    expect(rowOrder(container)).toEqual(['ZULU-001', 'MIKE-002', 'ECHO-003']);
+  });
+
+  it('clicking the Subject column header re-sorts ascending (ECHO, MIKE, ZULU) through the real UI', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const invTab = [...container.querySelectorAll('button')].find(b => b.textContent === '📦 Inventory');
+    await act(async () => { invTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await flush(container);
+    const subjectTh = [...container.querySelectorAll('th')].find(t => t.textContent.startsWith('Subject'));
+    expect(subjectTh).toBeTruthy();
+    await act(async () => { subjectTh.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(rowOrder(container)).toEqual(['ECHO-003', 'MIKE-002', 'ZULU-001']);
+    // Clicking the SAME header again flips direction back to descending.
+    await act(async () => { subjectTh.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(rowOrder(container)).toEqual(['ZULU-001', 'MIKE-002', 'ECHO-003']);
+  });
+});
+
+// dispatch #120's verification bar -- rendered at a real mobile viewport with the FULL real
+// 27-store dataset (constants.js' own INV_ORG_COORDS, not a 2-3-store fixture), confirming the
+// location scope no longer puts every State/Org/Store pill on screen simultaneously. happy-dom
+// does not lay out CSS flex-wrap, so wrapped-row pixel geometry can't be asserted here -- what
+// IS asserted, and what the dispatch's actual bug was, is the STRUCTURAL fix: before any
+// selection, only "All Locations" + the State tier render (not all 27 store pills at once), and
+// even after drilling to a Patch, the Store tier shown is bounded to that one patch's stores, far
+// below the full 27.
+describe('SecurityPanel — dispatch #120: full 27-store dataset at a mobile viewport (390x844), no flat 30+-pill dump', () => {
+  let container, root;
+  const RULES = [{ ruleId: 'CASH-001', domain: 'cash', method: 'Cash drawer over/short rate', description: 'd', baselineType: 'personal', logicType: 'ratio', active: true, investigationAction: 'a' }];
+  const ALL_LOCS = Object.keys(INV_ORG_COORDS);
+  const FINDINGS = ALL_LOCS.map((loc, i) => ({
+    empToken: 'tok-' + loc, wrin: null, loc, ruleId: 'CASH-001', pass: true, value: 10 + i, thresholdUsed: 5,
+    windowStart: '2026-08-01', windowEnd: '2026-08-28', computedAt: '2026-08-29T10:00:00Z', baselineContext: {}, explanation: [],
+  }));
+  let origW, origH;
+  beforeEach(() => {
+    origW = window.innerWidth; origH = window.innerHeight;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 844 });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    loadSecurityFindingsMock.mockReset().mockResolvedValue(FINDINGS);
+    loadSecurityRulesMock.mockReset().mockResolvedValue(RULES);
+    loadGmIdentityRevealEnabledMock.mockReset().mockResolvedValue(true);
+  });
+  afterEach(() => {
+    act(() => { root.unmount(); });
+    container.remove();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: origW });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: origH });
+  });
+
+  it('sanity: the real estate has more than 20 stores (this is the ~27-store dataset, not a small fixture)', () => {
+    expect(ALL_LOCS.length).toBeGreaterThan(20);
+  });
+
+  it('before any selection, the location scope shows only "All Locations" + the State tier -- zero individual store pills, regardless of viewport', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const storeLabelBtns = [...container.querySelectorAll('button')].filter(b => /^\d+ — /.test(b.textContent));
+    expect(storeLabelBtns.length).toBe(0);
+    const stateBtns = [...container.querySelectorAll('button')].filter(b => b.textContent === 'OK' || b.textContent === 'FL');
+    expect(stateBtns.length).toBe(2); // just the two real states -- not one pill per store
+  });
+
+  it('after drilling State -> Patch, the revealed Store tier is bounded to that one patch, never all 27 at once', async () => {
+    await act(async () => { root.render(React.createElement(SecurityPanel, { userRole: 'admin', onClose: vi.fn() })); });
+    await flush(container);
+    const okBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'OK');
+    await act(async () => { okBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const patchBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Robert Spencer');
+    expect(patchBtn).toBeTruthy();
+    await act(async () => { patchBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const storeLabelBtns = [...container.querySelectorAll('button')].filter(b => /^\d+ — /.test(b.textContent));
+    expect(storeLabelBtns.length).toBeGreaterThan(0);
+    expect(storeLabelBtns.length).toBeLessThan(10); // one supervisor's patch, nowhere near all 27
   });
 });
