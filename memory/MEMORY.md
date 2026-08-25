@@ -84,6 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **⚠️ POLICY REVERSAL (2026-08-25): [Dispatch #125 — un-tokenize Crew Schedule names, rework
+  PR #725 before merge](dispatch-125.md) + [Dispatch #126 — un-tokenize Punch Times names,
+  follow-up to merged PR #724](dispatch-126.md).** Owner, directly, after #123/#124 shipped built
+  around the identity-vault: *"there is no reason to hide names for scheduling and punch times >
+  everyone can see this data as-is."* **This supersedes the tokenization requirement in #123/#124
+  below for THESE TWO FEATURES ONLY** — the identity-vault pattern itself, and its use elsewhere
+  (Register Audit, Security panel's reveal-gated findings), is unchanged; this was a scope call
+  specific to crew-schedule/punch-time data, not a repeal of the vault. #125: store the resolved
+  name directly instead of `emp_token` in `lifelenz_shift_assignments`, drop the panel's
+  click-to-reveal gate, re-decide RBAC (recommended: ordinary panel RBAC, not the identity-reveal-
+  specific gate). #126: resolve `qsr_punch_times.employee_name` via the existing
+  `qsr_employee_tenure` join (**not** by widening the risky punch endpoint's `SELECT_COLS` — that
+  SSN guard is unrelated and stays exactly as strict), plus a backfill for rows already collected
+  under PR #724 in production. If you're picking up #123 or #124's original text below, read
+  #125/#126 FIRST — the "route through the identity vault" instruction in both original dispatches
+  no longer applies to what they shipped.
 - **🔴 NEW FEATURE, PII-SENSITIVE (2026-08-25): [Dispatch #123 — Crew Schedule Lookup: search an
   employee, see their upcoming schedule](dispatch-123.md) + [Dispatch #124 — actual punch times,
   backend pull only](dispatch-124.md)** — owner explored "can we see actual crew/manager
@@ -1092,6 +1108,32 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   space grown over time, not several systems** (correcting my own speculation in the G=2 note), and
   `emp_id` is almost certainly the `geid` — a real person key for Phase 2, with an authoritative
   name↔geid mapping. Badge (`event_details`) remains a **separate** namespace.
+- **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [Dispatch #124 implementation — the geid/emp_id space CONFIRMED live, boundary NOT confirmed](dispatch-124-punch-times-implementation.md)** —
+  Built the punch-times pull (`scripts/qsrsoft-punch-times-pull.mjs`, `qsr_punch_times` table).
+  Independently re-measured the finding's "almost certainly" geid/`audit_rows.emp_id` claim live
+  against 1000 rows each (not the finding's one-store-one-day sample) — **confirmed**, digit-length
+  bands match closely across 6/7/8/9-digit values. That does NOT license tokenizing `geid`
+  directly as dispatch #123's `emp_token` (a different, name-keyed space) — resolved via
+  `geid → qsr_employee_tenure.full_employee_name → get_or_create_employee_token()`, nullable,
+  `geid` as the always-present fallback join key. Business-day boundary left explicitly
+  unconfirmed (no live QSRSoft credentials this session) — table stores raw timestamps, no `dt`
+  column, no assumption baked in.
+  🔓 **Partially superseded by dispatch #126** — the identity-resolution PATH above is unchanged,
+  but the resolved name is now stored directly (`qsr_punch_times.employee_name`) instead of being
+  tokenized away by default; see `dispatch-126.md` below.
+- **[Dispatch #126 — reverse identity-vault tokenization for punch times, owner-directed](dispatch-126.md)**
+  — Owner, directly, after #124 shipped tokenized-only: *"there is no reason to hide names for
+  scheduling and punch times > everyone can see this data as-is."* Added `qsr_punch_times.
+  employee_name` (nullable, primary resolved-identity column), populated via the SAME
+  `geid → qsr_employee_tenure.full_employee_name` join #124 already ran, storing the name directly
+  instead of tokenizing it. `emp_token` KEPT (not dropped, no wrong answer either way per the
+  dispatch) — additive, harmless, potential cross-reference key. **Does NOT touch** the punch
+  endpoint's `SELECT_COLS`/`DENIED_SELECT_COLS`/`assertNoDeniedSelectCols()` guard — that SSN/name
+  denylist on `people/time-punches-matched` is a separate, unrelated risk and stays exactly as
+  strict. One-time backfill SQL written (in `supabase/schema-qsr-punch-times.sql`) for rows already
+  collected in production — NOT run from the agent sandbox (no live Supabase credential available),
+  handed off for the owner or a future session with `SUPABASE_SERVICE_ROLE_KEY` to execute.
+  Companion dispatch #125 covers the same reversal on the LifeLenz/crew-schedule side, separately.
 - **⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐⭐ [`service/statistics` — the one that supersedes `dt-timer`](finding-qsrsoft-service-statistics-endpoint-2026-08-21.md)** —
   Richest of the four service captures. **Build service-times work on this, not `dt-timer`** — it has
   the same DT segments *plus* a `*Trans` denominator per metric, a `*Masked` data-quality count,
