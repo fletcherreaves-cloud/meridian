@@ -383,13 +383,25 @@ export async function saveYearlyTargets(targets, year, source = 'upload') {
     tpph_target:              t.tTpph          ?? null,
     labor_pct:                t.tLabor         ?? null,
     fob_target_pct:           t.tFOBTarget     ?? null,
+    // Dispatch #142 items 1-3 — previously parsed by parseYearlyTargets() but never
+    // persisted (see supabase/schema-dispatch-142-sales-labor-targets.sql for the full
+    // measured root-cause writeup). If this migration hasn't run yet on the target project,
+    // the upsert below retries once WITHOUT these two keys so the rest of the workbook still
+    // saves — never a hard failure of the whole upload.
+    prod_sales:               t.tProdSales     ?? null,
+    crew_labor_pct:           t.tCrewLabor     ?? null,
     source,
     updated_at: new Date().toISOString(),
   }));
   if (!rows.length) return { saved: 0, errors: [] };
-  const { error } = await supabase
+  let { error } = await supabase
     .from('yearly_targets')
     .upsert(rows, { onConflict: 'loc,year' });
+  if (error && error.code === '42703') {
+    console.error('[yearly_targets] prod_sales/crew_labor_pct column missing — run supabase/schema-dispatch-142-sales-labor-targets.sql in your Supabase SQL editor to persist Sales/Labor targets (dispatch #142). Saving the rest of the workbook without them for now.');
+    const fallbackRows = rows.map(({ prod_sales, crew_labor_pct, ...rest }) => rest);
+    ({ error } = await supabase.from('yearly_targets').upsert(fallbackRows, { onConflict: 'loc,year' }));
+  }
   if (error) {
     if (error.message?.includes('relation') || error.code === '42P01') {
       console.error('[yearly_targets] Table does not exist in Supabase. Run supabase/schema-yearly-targets.sql in your Supabase SQL editor.');
@@ -455,6 +467,12 @@ function _yearlyRowToTargets(r) {
     tTpph:          r.tpph_target,
     tLabor:         r.labor_pct,
     tFOBTarget:     r.fob_target_pct,
+    // Dispatch #142 items 1-3 — see saveYearlyTargets' own comment. `r.prod_sales`/
+    // `r.crew_labor_pct` are simply undefined on a row from a project that hasn't run the
+    // migration yet; _stripNullTargets (every caller) already drops undefined/null keys, so
+    // this is safe to add unconditionally on the load side.
+    tProdSales:     r.prod_sales,
+    tCrewLabor:     r.crew_labor_pct,
     _year:          r.year,
     _source:        r.source,
   };
