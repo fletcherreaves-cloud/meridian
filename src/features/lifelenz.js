@@ -597,9 +597,30 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerT
         const lfz=lfzByDate[dk]||null;
         const mbi=mbiByDate[dk]||null;
         if(!lfz&&!mbi) continue;
-        const lfzVarPct=(lfz&&lfz.actual>0)?(lfz.forecast-lfz.actual)/lfz.actual*100:null;
+        // Dispatch #117 plausibility guard, LifeLenz leg only: a multi-day LifeLenz pull outage
+        // can leave a date with a small NONZERO `sales` (a mid-outage partial capture) rather
+        // than the null a full miss produces -- null already renders "-" gracefully, but a
+        // partial actual sails past the old `actual>0` guard and produces a nonsensical
+        // variance. Real incident (2026-08-05, measured directly against prod Supabase):
+        // actual $475 vs forecast $17,885 (ratio 0.027) -> lfzVarPct +3665.94%, which then
+        // poisoned the whole week's avgLfzAbsVar (734.38%) by plain-averaging with 4-5 normal
+        // days. Floor: actual/forecast < 0.15. Chosen from real day-to-day variability, not
+        // guessed -- this store chain's normal daily ratio band (see this function's own
+        // production measurement, 2026-07-20..2026-08-24 excl. the outage) is 0.88-1.03; even a
+        // genuinely bad LifeLenz forecast miss lands nowhere near 15% of itself, because the
+        // forecast is a same-store trailing model, not an unrelated guess. A true near-total
+        // closure (e.g. a hurricane) could also read under 0.15 and get flagged here too --
+        // treated as an acceptable false positive, since "no plausible LFZ number for this day"
+        // is a truthful thing to show either way, and it's far rarer than a pull artifact. This
+        // does NOT catch a real day where LifeLenz's forecast was simply wrong (actual stays a
+        // plausible fraction of a bad forecast) -- only actuals implausible enough to be an
+        // incomplete pull, per the dispatch's explicit "don't suppress a bad forecast" scope.
+        const LFZ_PLAUSIBILITY_FLOOR = 0.15;
+        const lfzRatio = (lfz&&lfz.actual>0&&lfz.forecast>0) ? lfz.actual/lfz.forecast : null;
+        const lfzImplausible = lfzRatio!=null && lfzRatio<LFZ_PLAUSIBILITY_FLOOR;
+        const lfzVarPct=(lfz&&lfz.actual>0&&!lfzImplausible)?(lfz.forecast-lfz.actual)/lfz.actual*100:null;
         const mbiVarPct=(mbi&&mbi.actual>0)?(mbi.forecast-mbi.actual)/mbi.actual*100:null;
-        days.push({date:new Date(dt), lfz, mbi, lfzVarPct, mbiVarPct});
+        days.push({date:new Date(dt), lfz, mbi, lfzVarPct, mbiVarPct, lfzImplausible});
       }
       setAccResult({loc, start:s, end:e, days});
     }catch(err){
@@ -1014,8 +1035,12 @@ function LifeLenzBridgePanel({stores, ds, settings, userEvents, onClose, headerT
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
                         d.lfz?fmtPlain$(d.lfz.actual):'—'),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
-                        color:d.lfzVarPct==null?'var(--text3)':Math.abs(d.lfzVarPct)<5?'#10b981':Math.abs(d.lfzVarPct)<10?'#f59e0b':'#ef4444'}},
-                        d.lfzVarPct!=null?fmtPct(d.lfzVarPct):'—'),
+                        fontSize:d.lfzImplausible?'7.5px':undefined,
+                        color:d.lfzImplausible?'#f59e0b':d.lfzVarPct==null?'var(--text3)':Math.abs(d.lfzVarPct)<5?'#10b981':Math.abs(d.lfzVarPct)<10?'#f59e0b':'#ef4444'},
+                        title:d.lfzImplausible?'Actual is under 15% of forecast -- treated as an incomplete LifeLenz pull, not a real closed day (dispatch #117)':undefined},
+                        // dispatch #117: a plausibility-guarded partial actual gets its own
+                        // label, distinct from '—' (which still means "no LFZ record at all").
+                        d.lfzImplausible?'⚠ Incomplete':(d.lfzVarPct!=null?fmtPct(d.lfzVarPct):'—')),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
                         d.mbi?fmtPlain$(d.mbi.forecast):'—'),
                       h('td',{style:{padding:'4px 6px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text2)'}},
