@@ -84,6 +84,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #133 — Labor Analysis: absurd Labor % on the in-progress current
+  week](dispatch-133.md).** Owner: *"any chance we can work out the calculations to account for
+  an in-progress week."* Screenshot shows most stores at 200-1900% Labor % on the current
+  (in-progress) week. **A related fix already exists** (`deriveBand1FromSchedule`, 2026-08-05,
+  divides by full-week `salesFcst` instead of partial-coverage `salesForPct` specifically so an
+  incomplete week UNDER-states rather than OVER-states cost) — today's symptom is the *opposite*
+  of what that fix should produce, so this is either a different code path or a NEW, day-level
+  version of the same "two atoms, different boundaries" mistake: if LifeLenz computes today's
+  (in-progress day's) `labor_pct` as an intraday ratio (cost-so-far ÷ sales-so-far), multiplying
+  it by the FULL day's forecast sales would inflate that one day enough to blow up the whole
+  week's sum. Dispatch requires pulling real rows for an affected store before fixing — explicitly
+  do not guess from the code alone, per the standing measure-first rule.
 - **📋 (2026-08-25): [Dispatch #132 — Performance Review: wire already-captured yearly targets,
   add Total Profit, build a Targets editor with scope-hierarchy overrides](dispatch-132.md).**
   Owner sent 8 asks against one screenshot (delivery wait/complaints/digital+delivery GC-R-D/FOB/
