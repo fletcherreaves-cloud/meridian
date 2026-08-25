@@ -96,6 +96,14 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   bias-2026-08-23.md` is the authoritative writeup — already self-corrected once after an earlier
   "fix" made the bias worse, not better, in a realistic simulation. Regression bar: must not
   regress on that same realistic (spend-scales-with-traffic) simulation.
+- **📋 (2026-08-25): [Dispatch #116 — FOB Analysis: mobile users can't see the Contributors table below the fold](dispatch-116.md)** —
+  `FOBAnalysisPanel` (`analytics.js`) stacks the title bar + KPI cards + Root-Cause Priority Matrix
+  (up to 8 rows) + Waste-Entry Discipline (up to 8 rows) as fixed-height (`flexShrink:0`) blocks
+  above the one scrollable region (`flex:1,overflowY:'auto'`, the Contributors table), inside an
+  ancestor with `overflow:'hidden'`. On a short mobile viewport the fixed stack alone can exceed
+  the available height, squeezing the table to near-zero with no way to scroll to it — exactly the
+  owner-reported symptom. Owner offered two acceptable fixes (expandable-on-click sections, or
+  simply making the column scrollable) and said this doesn't have to jump the queue.
 - **📋 (2026-08-25): [Dispatch #112 — Weekly Count Cadence: count-day population, Last Count column, per-class F/C/P uncounted columns, full-class drilldown](dispatch-112.md)** —
   Owner's live ask on `CadenceMonitor`/`cadenceFromOnHand` (`eom-dashboard.js`). Found
   `count-cycle.js`'s `cycleCompliance()` already computes most of what's needed — real, tested
