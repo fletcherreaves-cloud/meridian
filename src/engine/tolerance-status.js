@@ -44,7 +44,21 @@ export const TOL_METRICS = [
   {id:'crewlbr', cat:'labor', l:'Crew Labor %',        offKey:'tCrewLabor',unit:'%', lowerBetter:true,  tol:.02},
   {id:'actvsNd', cat:'labor', l:'Act vs Need (hrs)',   offKey:null,       unit:'hr',  lowerBetter:false, tol:2},
   // FOB
-  {id:'baseFd',  cat:'fob',   l:'Base Food %',           offKey:'tFOBBase',  unit:'%',  lowerBetter:true,  tol:.005},
+  // Dispatch #115: offKey was tFOBBase, but the cloud-side current value (totalBaseFood,
+  // ~21-24% of sales -- QSRSoft's "Base Food" line on the Food-Over-Base report, a broad
+  // theoretical/recipe-costed basis) and tFOBBase (~3.8-4.6% -- the yearly workbook's narrow
+  // "Base Food %" variance-tolerance target, paired correctly with the MANUAL fobRows.baseFoodPct
+  // side of this same metric) are two differently-scaled quantities that happen to share a label.
+  // Live-measured (27 stores, memory/dispatch-115.md Resolution): totalBaseFood/sales +
+  // (compWaste+rawWaste+condiment+empMeal+statVar+unexplained)/sales reconstructs P&L Total Food
+  // Cost % to within ~0.5pp on every store -- confirming totalBaseFood is the THEORETICAL portion
+  // of total food cost, not the narrow variance component tFOBBase names. No existing target field
+  // represents that theoretical-base quantity (tFOBTotal is the closest by magnitude but is the
+  // P&L ACTUAL total, not the theoretical base -- comparing against it still misses by a uniform
+  // ~4-5pp on every store, the same systematic-not-real-signal failure mode). offKey:null per this
+  // file's own established convention (see actvsNd/disc/cashOS/etc. above) -- renders the current
+  // value with no false status color, rather than compared against a definitionally wrong number.
+  {id:'baseFd',  cat:'fob',   l:'Base Food %',           offKey:null,  unit:'%',  lowerBetter:true,  tol:.005},
   {id:'fob',     cat:'fob',   l:'FOB (Over Base) %',     offKey:'tFOBTarget',unit:'%',  lowerBetter:true,  tol:.01},
   {id:'fobTot',  cat:'fob',   l:'Total Food Cost %',     offKey:'tFOBTotal', unit:'%',  lowerBetter:true,  tol:.005},
   {id:'compW',   cat:'fob',   l:'Comp Waste %',          offKey:'tCompWaste',unit:'%',  lowerBetter:true,  tol:.001},
