@@ -126,8 +126,9 @@ describe('sage-chat: fetchAllRows call sites impose a total order', () => {
 
   it('finds every paginated tool query (guards against the scan silently matching nothing)', () => {
     // daily_activity, lifelenz, labor_summary (qsr_labor_summary + qsr_daily_activity_rollup,
-    // dispatch #90), forecast_snapshots, glimpse, ctrl_rows
-    expect(calls.length).toBe(7);
+    // dispatch #90), forecast_snapshots, glimpse, qsr_cash_sheet (opsCash auto-first discount
+    // sourcing, dispatch-111.md), ctrl_rows
+    expect(calls.length).toBe(8);
   });
 
   it.each(calls.map((c, i) => [i, c]))('call %i orders its query', (_i, call) => {

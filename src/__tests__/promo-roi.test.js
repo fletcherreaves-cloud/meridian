@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment happy-dom
+// happy-dom is needed for the "renders the actual panel" describe block below (dispatch-111.md's
+// verification bar: exercise src/views/promo-roi.js, not just the engine in isolation). Safe for
+// every other test in this file -- they're plain data/logic assertions with no DOM dependency.
+import { describe, it, expect, afterEach } from 'vitest';
+import * as React from 'react';
+import { createRoot } from 'react-dom/client';
+import { act } from 'react';
 import { buildDailyRecords, matchedLift, computePromoDiscountRoi } from '../engine/promo-roi.js';
+import { PromoRoiPanel } from '../views/promo-roi.js';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 // Build ~12 weeks of daily glimpse rows for one store. Promo-heavy is assigned by
 // ALTERNATING WEEK (not by weekday), so every day-of-week has both heavy and light
@@ -34,6 +44,89 @@ describe('promo-roi — buildDailyRecords', () => {
     expect(recs[0].sales).toBe(12000);
     expect(recs[0].promoAmt).toBe(400);
     expect(recs[0].discAmt).toBe(150); // joined despite zero-padded loc
+  });
+});
+
+// dispatch-111.md — discAmt/discPct used to be sourced ONLY from ds.ctrlRows (manual upload),
+// with no auto-pulled fallback (unlike the promo leg, which already tries ds.glimpseRows first).
+// A store/date with no manual Controls upload -- the expected steady state per CLAUDE.md's
+// auto-first rule -- scored an empty discount lever even with real ds.opsCashRows data. These
+// fixtures exercise the opsCashRows path specifically, which the suite above never did (every
+// existing discAmt/discPct case only ever populated ctrlRows -- invisible to this exact bug).
+describe('promo-roi — buildDailyRecords sources discount auto-first (opsCashRows -> ctrlRows)', () => {
+  it('populates discAmt/discPct from ds.opsCashRows when there is NO ctrlRows upload at all', () => {
+    const date = new Date(2026, 3, 1);
+    const ds = {
+      glimpseRows: [{ loc: '3708', date, allNetSales: 12000, gc: 1100, promoAmt: 400, promoPct: 0.03 }],
+      opsCashRows: [{ loc: '3708', date, discAmt: 150, discPct: 0.012 }],
+      // ctrlRows intentionally absent -- reproduces the steady-state gap from dispatch-111.md.
+    };
+    const recs = buildDailyRecords(ds);
+    expect(recs.length).toBe(1);
+    expect(recs[0].discAmt).toBe(150);
+    expect(recs[0].discPct).toBe(0.012);
+  });
+
+  it('opsCashRows wins over ctrlRows when both cover the same loc/date (auto-first, first-writer-wins)', () => {
+    const date = new Date(2026, 3, 1);
+    const ds = {
+      opsCashRows: [{ loc: '3708', date, discAmt: 150, discPct: 0.012 }],
+      ctrlRows: [{ loc: '0003708', date, discAmt: 999, discPct: 0.5 }], // manual, should lose
+    };
+    const recs = buildDailyRecords(ds);
+    expect(recs[0].discAmt).toBe(150);
+    expect(recs[0].discPct).toBe(0.012);
+  });
+
+  it('still falls back to ctrlRows on a loc/date opsCashRows does not cover (additive, not a replacement)', () => {
+    const dateA = new Date(2026, 3, 1), dateB = new Date(2026, 3, 2);
+    const ds = {
+      opsCashRows: [{ loc: '3708', date: dateA, discAmt: 150, discPct: 0.012 }],
+      ctrlRows: [{ loc: '0003708', date: dateB, discAmt: 80, discPct: 0.007 }],
+    };
+    const recs = buildDailyRecords(ds).sort((a, b) => a.date - b.date);
+    expect(recs.length).toBe(2);
+    expect(recs[0].discAmt).toBe(150); // opsCashRows day
+    expect(recs[1].discAmt).toBe(80);  // ctrlRows fallback day, untouched by the fix
+  });
+
+  it('a pre-existing ctrlRows-only fixture (no opsCashRows at all) still resolves exactly as before', () => {
+    const date = new Date(2026, 3, 1);
+    const ds = { ctrlRows: [{ loc: '0003708', date, discAmt: 150, discPct: 0.012 }] };
+    const recs = buildDailyRecords(ds);
+    expect(recs[0].discAmt).toBe(150);
+    expect(recs[0].discPct).toBe(0.012);
+  });
+});
+
+function makeStoreDiscOnly(loc, { liftPerHeavyDay, spendHeavy, spendLight = 20, base = 10000 }) {
+  const rows = [];
+  for (let i = 0; i < 84; i++) {
+    const date = new Date(2026, 3, 1 + i);
+    const heavy = Math.floor(i / 7) % 2 === 0;
+    const dowBase = base + date.getDay() * 300;
+    const sales = dowBase + (heavy ? liftPerHeavyDay : 0);
+    rows.push({ loc, date, allNetSales: sales, gc: Math.round(sales / 10) });
+  }
+  return rows;
+}
+
+// Full pipeline (buildDailyRecords -> matchedLift, via computePromoDiscountRoi) on data that
+// mirrors real steady-state: an auto-pulled sales stream + opsCashRows discount data, with NO
+// manual ctrlRows upload anywhere in the fixture.
+describe('promo-roi — computePromoDiscountRoi discount leg scores stores from opsCashRows alone', () => {
+  it('scores a store with sales from glimpseRows and discount from opsCashRows, zero ctrlRows', () => {
+    const glimpseRows = makeStoreDiscOnly('100', { liftPerHeavyDay: 500, spendHeavy: 0 });
+    const opsCashRows = [];
+    for (let i = 0; i < 84; i++) {
+      const date = new Date(2026, 3, 1 + i);
+      const heavy = Math.floor(i / 7) % 2 === 0;
+      opsCashRows.push({ loc: '100', date, discAmt: heavy ? 300 : 50, discPct: heavy ? 0.03 : 0.005 });
+    }
+    const out = computePromoDiscountRoi({ glimpseRows, opsCashRows }, { marginRate: 0.35 });
+    const s = out.discount.byStore.find(x => x.loc === '100');
+    expect(s).toBeTruthy(); // would be undefined pre-fix -- no ctrlRows means no discAmt at all
+    expect(s.nDays).toBe(84);
   });
 });
 
@@ -189,5 +282,43 @@ describe('promo-roi — computePromoDiscountRoi', () => {
     expect(out.discount).toBeTruthy();
     expect(out.nRecords).toBe(84);
     expect(out.marginRate).toBe(0.35);
+  });
+});
+
+// dispatch-111.md verification bar: render the ACTUAL panel (src/views/promo-roi.js), not just
+// the engine function in isolation -- catches the class of bug where the engine is fixed but the
+// consumer's wiring to it is broken/reverted (CLAUDE.md's "would this verification still pass if
+// the change were reverted" rule).
+describe('promo-roi — PromoRoiPanel renders a discount row sourced purely from ds.opsCashRows', () => {
+  let container, root;
+  afterEach(() => {
+    if (root) act(() => root.unmount());
+    if (container) container.remove();
+    container = null; root = null;
+  });
+
+  it('shows a scored Discounts row when ds has opsCashRows data and NO ctrlRows at all', () => {
+    const glimpseRows = [];
+    const opsCashRows = [];
+    for (let i = 0; i < 84; i++) {
+      const date = new Date(2026, 3, 1 + i);
+      const heavy = Math.floor(i / 7) % 2 === 0;
+      const dowBase = 10000 + date.getDay() * 300;
+      const sales = dowBase + (heavy ? 500 : 0);
+      glimpseRows.push({ loc: '3708', date, allNetSales: sales, gc: Math.round(sales / 10) });
+      opsCashRows.push({ loc: '3708', date, discAmt: heavy ? 300 : 50, discPct: heavy ? 0.03 : 0.005 });
+    }
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root.render(React.createElement(PromoRoiPanel, { ds: { glimpseRows, opsCashRows }, onClose: () => {} })); });
+
+    // Pre-fix this would render the "Not enough daily data with a discounts signal yet" empty
+    // state for the Discounts section, since discAmt/discPct were never populated without ctrlRows.
+    expect(container.textContent).toMatch(/Discounts/i);
+    expect(container.textContent).not.toMatch(/Not enough daily data with a discounts signal/i);
+    // loc 3708 resolves through STORE_NAMES -- confirms a real per-store row rendered, not just
+    // the section header.
+    expect(container.textContent).toMatch(/Ardmore-Broadway/);
   });
 });
