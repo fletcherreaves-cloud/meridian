@@ -121,3 +121,15 @@ rule):**
   opportunistically alongside close button / date picker / location selector / routing, even
   though (unlike those four) it doesn't yet have a dedicated shared component to convert to —
   just `overflowX:'auto'` on the actual scroll container, verified at a real mobile viewport.
+- **Print/export — added 2026-08-25, owner-stated: "let's add print export options anytime we
+  build something unless there truly is no need for it."** A sixth opportunistic check, same
+  posture as the other five: when a dispatch already touches a panel that shows tabular/
+  reportable data and has no export mechanism, add one (reuse `ExportDropdown` + the full-content
+  printable-HTML pattern established across dispatches #122/#129/#134/#136 — never bare
+  `window.print()` against a scrolled container, see #129's own viewport-clipping finding). Not a
+  mandate to retrofit every panel in one pass. Measured 2026-08-25 (dispatch #139's sweep): only
+  5/56 `src/views` panels import `ExportDropdown`; ~15 more have their own bespoke print/export
+  (own `window.print()`/CSV/HTML-blob download — not gaps); **~17 panels have no print/export
+  mechanism at all** despite tabular data — `at-a-glance.js`, `signals.js`, `security-panel.js`,
+  `patch-heatmap.js`, and `crew-schedule-panel.js` are the highest-value gaps if a future dispatch
+  wants to close specific ones deliberately, rather than opportunistically.

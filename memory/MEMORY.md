@@ -84,6 +84,28 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-25): [Dispatch #139 — Supervisor patch data has two sources of truth; the static
+  one is stale ("Mary missing in Crew Schedule")](dispatch-139.md).** Confirmed root cause by
+  reading the code: `src/constants.js`'s `INV_ORG_COORDS[loc].sup` is a static, hardcoded
+  supervisor-per-store map (all FL stores still `sup:'Brad Denley'`) — separate from the LIVE,
+  Settings-editable, time-aware `supervisorGroups()`/`orgAssignments()` system that a new
+  supervisor ("Mary") actually gets written to. `src/components/PanelControls.js`'s
+  `buildLocationHierarchy()`/`LocationSelector` (used by Crew Schedule Lookup + 8 other panels)
+  builds its Patch tier ENTIRELY from the stale static map — that's why Mary is real in Settings
+  but invisible everywhere a `LocationSelector` patch tier is used. Confirmed blast radius via a
+  full-repo sweep: `PanelControls.js`/`security-panel.js`/`smg-voice.js` are fully static (never
+  show Mary); `analytics.js`/`labor-tools.js`/`store-dash.js` read live-first but silently fall
+  back to static (miss Mary only for stores not yet in a live assignment row); 8+ other panels
+  already correctly read live data (good precedent to copy). **Two related, larger findings from
+  the same sweep, deliberately NOT bundled into this dispatch (logged as backlog, not yet
+  dispatched — see below):** (1) only 9/56 `src/views` panels use the standardized
+  `LocationSelector` component; most of the other 47 already read live supervisor data correctly
+  via their own ad-hoc pills/selects, so this is a DRY/consistency gap, not a correctness one. (2)
+  Only 5/56 panels import `ExportDropdown`; ~15 more have their own bespoke print/export
+  mechanism; **~17 panels have no print/export at all** despite showing tabular/reportable data —
+  `at-a-glance.js`, `signals.js`, `security-panel.js`, and `dt-speedofservice.js` (pre-#136) are
+  the highest-value gaps. Owner has asked for print/export by default on future panel work going
+  forward; retrofitting the existing 17 is a separate, larger effort than this dispatch.
 - **📋 (2026-08-25): [Dispatch #138 — Time Punches: a real panel to view
   qsr_punch_times](dispatch-138.md).** Owner: *"where do i find the time punches"* — there was
   nowhere. Confirmed by grep: zero files under `src/views` reference `qsr_punch_times` or a
