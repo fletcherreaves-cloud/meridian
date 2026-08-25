@@ -60,6 +60,14 @@ export const PANELS = [
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analysis' },
+  // Crew Schedule Lookup (dispatch #123) -- search an employee, see their upcoming schedule.
+  // perm:'security.view' reused deliberately (same nav-gate as 'security' below) -- static gate
+  // only, the REAL tier (admin/supervisor always; manager only with org_config.gm_identity_
+  // reveal_enabled) is enforced live by src/views/crew-schedule-panel.js's own permission check
+  // (crewSchedulePanelAccess, same shape as security-panel.js's securityPanelAccess) AND by the
+  // table's own RLS (supabase/schema-lifelenz-shift-assignments.sql) -- never treat perm alone
+  // as sufficient for a manager, same standing rule as 'security' below.
+  { id:'crew-schedule', label:'Crew Schedule', icon:'🗓', perm:'security.view', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
   { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations' },

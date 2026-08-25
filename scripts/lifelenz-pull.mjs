@@ -16,6 +16,9 @@
 //   LIFELENZ_SAFETY_DAYS — always re-pull this many days back for corrections (default: 3)
 //   LIFELENZ_DAYS_FWD    — days of future schedule data to pull (default: 14)
 //   LIFELENZ_DEBUG       — set to '1' to log raw API responses
+//   LIFELENZ_SKIP_JOBS   — set to '1' to skip the per-station (lifelenz_job_hours) pull
+//   LIFELENZ_SKIP_SHIFT_ASSIGNMENTS — set to '1' to skip the per-employee shift pull
+//                          (lifelenz_shift_assignments — Crew Schedule Lookup, dispatch #123)
 
 import { chromium } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
@@ -24,11 +27,17 @@ import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 // Zero-drift: the SAME per-station rollup the client uses (src/engine). The pull
 // pre-aggregates ShiftsForSchedulePeriod → per-role hours/cost so the client just
 // reads the rollup (raw shifts are never stored).
-import { rollupShiftsByRole } from '../src/engine/lifelenz-shift-jobs.js';
+// shiftsForEmployeeSchedule (dispatch #123, Crew Schedule Lookup) — same source, per-SHIFT
+// instead of rolled up. See the pullShiftAssignments() section below.
+import { rollupShiftsByRole, shiftsForEmployeeSchedule } from '../src/engine/lifelenz-shift-jobs.js';
+// dispatch #123's own non-negotiable rule: an employee name is NEVER written to a table raw.
+// Same mechanism scripts/qsrsoft-register-audit-pull.mjs already uses for audit_rows.emp_token.
+import { tokenizeRows } from '../src/engine/identity-vault.js';
 
 const BASE         = 'https://us01-connect.lifelenz.com';
 const BUSINESS_ID  = '01979dbf-a166-759b-8702-aba9915c578e';
 const SKIP_JOBS    = process.env.LIFELENZ_SKIP_JOBS === '1'; // escape hatch for the per-job pull
+const SKIP_SHIFT_ASSIGNMENTS = process.env.LIFELENZ_SKIP_SHIFT_ASSIGNMENTS === '1'; // escape hatch, dispatch #123
 const DAYS_BACK    = parseInt(process.env.LIFELENZ_DAYS_BACK    || '30', 10);
 const SAFETY_DAYS  = parseInt(process.env.LIFELENZ_SAFETY_DAYS  || '3',  10);
 const DAYS_FWD     = parseInt(process.env.LIFELENZ_DAYS_FWD     || '14', 10);
@@ -699,9 +708,14 @@ function locFromName(name) {
 // is [ShiftTypeEnum!] — a String!/[String!] mismatch makes the server reject the query.
 // includePayRates is NOT a shifts() argument; it only gates the earnings field via an
 // @include directive, so we request earnings plain (the owner token is authorized for it).
+// shiftStartTime/shiftEndTime added under dispatch #123 (Crew Schedule Lookup) — these were NOT
+// requested before (the per-station rollup this query originally existed for has no use for a
+// time), but they are real fields on this same Shift node: confirmed via the owner's live
+// 2026-07-24 DevTools capture of this exact query (memory/project-lifelenz-schedule-jobs.md line
+// 33 — `{ id, shiftStartTime, shiftEndTime, shiftType, assignedEmploymentId, ... }`), not a guess.
 const SHIFTS_QUERY = `query ShiftsForSchedulePeriod($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!, $shiftType: [ShiftTypeEnum!], $after: String) {
   shifts(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, shiftType: $shiftType, after: $after) {
-    edges { node { id shiftType assignedEmploymentId scheduleId isAbsent pivotMetrics { businessRoleId jobTitleId earnings seconds payType } } }
+    edges { node { id shiftType assignedEmploymentId scheduleId isAbsent shiftStartTime shiftEndTime pivotMetrics { businessRoleId jobTitleId earnings seconds payType } } }
     pageInfo { endCursor hasNextPage }
   }
 }`;
@@ -740,6 +754,64 @@ async function fetchShiftsForSchedule(token, scheduleId, weekStart) {
       throw new Error('GraphQL errors: ' + JSON.stringify(json.errors).slice(0, 300));
     }
     const conn = json?.data?.shifts;
+    const batch = conn?.edges || [];
+    edges.push(...batch);
+    const pi = conn?.pageInfo;
+    after = pi && pi.hasNextPage ? pi.endCursor : null;
+  } while (after && ++guard < 50);
+  return edges;
+}
+
+// ── GetSchedulableEmploymentsForPeriod — roster (employmentId → name), dispatch #123 ──────────
+// Confirmed real endpoint + response shape from the owner's live 2026-07-24 DevTools capture
+// (memory/project-lifelenz-schedule-jobs.md, endpoint #8): `employmentsInScheduleTimeRange.edges
+// [].node` (Employment) carries `computedName`/`firstName`/`lastName` keyed by `id`, which IS
+// the same id `shifts.assignedEmploymentId` points at ("employmentId → name → label
+// ShiftsForSchedulePeriod shifts by person" — the doc's own words). This is the answer to
+// dispatch #123's "is a name field reachable from assignedEmploymentId" investigation: YES, via
+// this query — not an assumption, a real captured response, cited above. See this dispatch's PR
+// body for why that capture stands in for a fresh introspection run (no LIFELENZ_TOKEN was
+// available in the sandbox that wrote this).
+//
+// PII-MINIMIZATION, deliberately: the real Employment type also carries dateOfBirth (a MINOR
+// flag), schoolId, email, and full pay-rate history (employmentRate/employmentRates) — none of
+// that is requested here. Only `id computedName firstName lastName` — the minimum needed to
+// resolve a name, mirroring dispatch #124's own "never request a PII field you don't need"
+// discipline for a completely different endpoint, same principle.
+const EMPLOYMENTS_QUERY = `query GetSchedulableEmploymentsForPeriod($businessId: ID!, $scheduleId: ID!, $startDateTime: ISO8601DateTime!, $endDateTime: ISO8601DateTime!, $after: String) {
+  employmentsInScheduleTimeRange(businessId: $businessId, scheduleId: $scheduleId, startDateTime: $startDateTime, endDateTime: $endDateTime, includePayRates: false, includeEmploymentAvailability: false, includeEmploymentContracts: false, includeSharedSchedule: true, after: $after) {
+    edges { node { id computedName firstName lastName } }
+    pageInfo { endCursor hasNextPage }
+  }
+}`;
+
+// Fetch the roster ONCE per schedule for the whole pull window [start,end] (an employee's name
+// doesn't change week to week, so unlike fetchShiftsForSchedule this is not called per-week).
+async function fetchEmploymentsForSchedule(token, scheduleId, start, end) {
+  const startISO = `${toISO(start)}T00:00:00.000Z`;
+  const endISO   = `${toISO(end)}T00:00:00.000Z`;
+  const edges = [];
+  let after = null, guard = 0;
+  do {
+    const body = {
+      operationName: 'GetSchedulableEmploymentsForPeriod',
+      variables: { businessId: BUSINESS_ID, scheduleId, startDateTime: startISO, endDateTime: endISO, after },
+      query: EMPLOYMENTS_QUERY,
+    };
+    const resp = await fetch(`${GQL_URL}?GetSchedulableEmploymentsForPeriod`, {
+      method: 'POST',
+      headers: { ...apiHeaders(token, scheduleId), 'X-Version': '1.75.50', 'X-User-Journey': 'Display Schedule Week' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error(`GraphQL ${resp.status}: ${t.slice(0, 200)}`);
+    }
+    const json = await resp.json();
+    if (json.errors && json.errors.length) {
+      throw new Error('GraphQL errors: ' + JSON.stringify(json.errors).slice(0, 300));
+    }
+    const conn = json?.data?.employmentsInScheduleTimeRange;
     const batch = conn?.edges || [];
     edges.push(...batch);
     const pi = conn?.pageInfo;
@@ -799,6 +871,91 @@ async function pullJobHours(token, schedules, start, end) {
     }
   }
   console.log(`[job-hours] ✓ ${saved}/${total} role-rows saved${gqlFailed ? ' (some fetches failed — see first warning)' : ''}`);
+  return saved;
+}
+
+// ── Per-employee shift assignments — Crew Schedule Lookup (dispatch #123) ─────────────────────
+// One row per COMMITTED SHIFT per employee (not the weekly per-station rollup above). Powers
+// the Crew Schedule panel's "search an employee, see their upcoming schedule." Fully best-effort
+// (same posture as pullJobHours): any failure logs and moves on, never costs the already-
+// committed CSV/per-job pulls that ran before it. Escape hatch: LIFELENZ_SKIP_SHIFT_ASSIGNMENTS=1.
+async function upsertShiftAssignmentRows(loc, rows) {
+  if (!rows.length) return 0;
+  // dispatch #123's non-negotiable rule: a raw employee name is NEVER written to this table.
+  // Tokenize BEFORE upsert -- ONE RPC call per DISTINCT name in this store's batch (not per
+  // row), the same batching discipline identity-vault.js's own header documents and
+  // qsrsoft-register-audit-pull.mjs's saveAuditRows() already uses for audit_rows.emp_token.
+  const named = rows.filter(r => r.name);
+  const tokenMap = await tokenizeRows(supabase, named, 'name');
+  const now = new Date().toISOString();
+  const upsert = rows.map(r => ({
+    loc, shift_id: r.shiftId, date: r.date,
+    shift_start: r.startISO, shift_end: r.endISO,
+    assigned_employment_id: r.employmentId,
+    // emp_token only -- NEVER r.name itself. A shift whose employee has no roster match (roster
+    // fetch failed, or genuinely no name field) gets emp_token:null and is still fully usable by
+    // the panel via assigned_employment_id as an opaque display key ("Employee #12345"), per
+    // dispatch #123's explicit graceful-degradation instruction.
+    emp_token: r.name ? (tokenMap.get(r.name.trim()) ?? null) : null,
+    business_role_id: r.businessRoleId, role_name: r.roleName,
+    category: r.category, code: r.code, job_title: r.jobTitle,
+    is_absent: r.isAbsent, schedule_id: r.scheduleId,
+    updated_at: now,
+  }));
+  const CHUNK = 500;
+  let saved = 0;
+  for (let i = 0; i < upsert.length; i += CHUNK) {
+    const { error } = await supabase.from('lifelenz_shift_assignments')
+      .upsert(upsert.slice(i, i + CHUNK), { onConflict: 'loc,shift_id' });
+    if (error) { console.warn('[shift-assignments] save error:', error.message); }
+    else saved += Math.min(CHUNK, upsert.length - i);
+  }
+  return saved;
+}
+
+async function pullShiftAssignments(token, schedules, start, end) {
+  const weeks = weeksInRange(start, end);
+  console.log(`[shift-assignments] pulling ${weeks.length} week(s) × ${schedules.length} store(s)…`);
+  let total = 0, saved = 0, gqlFailed = false, rosterFailed = false;
+  for (const schedule of schedules) {
+    const scheduleId = schedule.id || schedule.scheduleId;
+    const loc = locFromName(schedule.name || schedule.scheduleName || scheduleId);
+    if (!loc) continue;
+
+    // Roster fetched ONCE per store for the whole pull window (see fetchEmploymentsForSchedule).
+    // Best-effort: a roster failure degrades every shift at this store to ID-only rows
+    // (emp_token:null, assigned_employment_id kept) rather than blocking the shift rows.
+    let rosterMap = new Map();
+    try {
+      const edges = await fetchEmploymentsForSchedule(token, scheduleId, start, end);
+      const nodes = edges.map(e => e.node).filter(n => n && n.id);
+      rosterMap = new Map(nodes.map(n => [n.id, n]));
+      if (edges.length && !rosterMap.size) {
+        // Real signal the query-shape has drifted since the 2026-07-24 capture this dispatch's
+        // evidence relies on -- surfaced loudly, not silently swallowed.
+        console.warn(`[shift-assignments] roster returned ${edges.length} node(s) with no usable id for ${schedule.name} -- check EMPLOYMENTS_QUERY field names against a fresh capture`);
+      }
+    } catch (e) {
+      if (!rosterFailed) { console.warn(`[shift-assignments] roster fetch failed (${schedule.name}): ${e.message} -- degrading to ID-only rows`); rosterFailed = true; }
+    }
+
+    let storeRows = [];
+    for (const wk of weeks) {
+      try {
+        const edges = await fetchShiftsForSchedule(token, scheduleId, wk);
+        storeRows.push(...shiftsForEmployeeSchedule({ edges }, { scheduleId, roster: rosterMap }));
+      } catch (e) {
+        if (!gqlFailed) { console.warn(`[shift-assignments] fetch failed (${schedule.name} wk ${toISO(wk)}): ${e.message}`); gqlFailed = true; }
+      }
+    }
+    if (storeRows.length) {
+      const n = await upsertShiftAssignmentRows(loc, storeRows);
+      total += storeRows.length; saved += n;
+      const named = storeRows.filter(r => r.name).length;
+      console.log(`  [shift-assignments] ${loc}: ${n} shift-rows saved (${named}/${storeRows.length} with a resolved name)`);
+    }
+  }
+  console.log(`[shift-assignments] ✓ ${saved}/${total} shift-rows saved${gqlFailed ? ' (some shift fetches failed — see first warning)' : ''}${rosterFailed ? ' (some roster fetches failed — see first warning)' : ''}`);
   return saved;
 }
 
@@ -961,6 +1118,20 @@ async function main() {
       await pullJobHours(token, schedules, start, end);
     } catch (e) {
       console.warn('[job-hours] pull failed (non-fatal):', e.message);
+    }
+  }
+
+  // 5. Per-employee shift assignments (Crew Schedule Lookup, dispatch #123) -- additive,
+  //    best-effort, never fatal. Runs LAST, after the CSV pull and pullJobHours both already
+  //    committed, for the same reason each of those is wrapped independently: a failure here
+  //    can never cost the ones that ran before it.
+  if (SKIP_SHIFT_ASSIGNMENTS) {
+    console.log('[shift-assignments] skipped (LIFELENZ_SKIP_SHIFT_ASSIGNMENTS=1)');
+  } else {
+    try {
+      await pullShiftAssignments(token, schedules, start, end);
+    } catch (e) {
+      console.warn('[shift-assignments] pull failed (non-fatal):', e.message);
     }
   }
 }
