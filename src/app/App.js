@@ -774,7 +774,7 @@ function App() {
   const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
-  const [showFcstRef,         setShowFcstRef]         = useState(false);
+  // showFcstRef — Dispatch #121: replaced by routePanel==='fcst-ref' (see routePanel above).
   // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy', then dispatch #106
   // Phase B folded that route into routePanel==='forecast-reports' (see routePanel above).
   const [showDtSoS,       setShowDtSoS]       = useState(false);
@@ -2568,7 +2568,7 @@ function App() {
   const anyModalOpen = showNews||showAIScan||showAbout||showAttention||showAudit||showBrief||
     showAboveStore||showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
-    showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||showFcstRef||
+    showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
@@ -2607,7 +2607,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);setShowRanking(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowFcstRef(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
@@ -2619,6 +2619,7 @@ function App() {
       // sched-hub/perf-reviews/fob-analysis/fob-eom/eom-dashboard/count-cycle — Dispatch #55 Part
       // B: removed from this sweep, same reasoning as the routePanel check above (they're
       // routePanel now, caught by the early return, no showX left to reset).
+      // fcst-ref — Dispatch #121: same reasoning, added to the routePanel set above.
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -2711,7 +2712,7 @@ function App() {
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='security')       perm('security.view')&&setShowSecurity(true);
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
-        if(modal==='fcst-ref')       perm('analytics.forecasting')&&setShowFcstRef(true);
+        if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
         if(modal==='forecast-audit') perm('analytics.forecasting')&&selStore&&setShowAudit(true);
         if(modal==='revintel')       perm('analytics.store')&&setShowRevIntel(true);
@@ -2891,7 +2892,23 @@ function App() {
         title:'End of Month',
         icon:'📋',
         onBack:()=>goRoute(null),
-      }, h(FOBEOMPanel,{stores,ds,settings,onClose:()=>goRoute(null)}))
+      }, h(FOBEOMPanel,{stores,ds,settings,onClose:()=>goRoute(null)})),
+      // fcst-ref — Dispatch #121: converted from a small ModalShell+iframe (maxWidth:1100) to a
+      // real route, per memory/panel-contract.md's standing "convert while you're in here"
+      // rule + the owner's explicit ask. Underlying content stays the static iframed HTML file
+      // (public/forecast-reference.html) — only the shell changed. "Open Full Page" (which used
+      // to open the same file in a bare tab, no app chrome) is dropped: the panel itself is now
+      // a shareable app URL (?panel=fcst-ref), so a second "open it elsewhere" affordance was
+      // redundant. "Download PDF" (print the iframe) is kept — still a genuinely different action.
+      routePanel==='fcst-ref'&&h(RoutePanelShell,{
+        title:'📐 Forecasting Reference',
+        subtitle:'All calculation formulas, model weights, and calibration parameters',
+        onBack:()=>goRoute(null),
+        bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
+        headerExtra:h('button',{onClick:()=>{const f=document.getElementById('fcst-ref-frame');if(f)f.contentWindow.print();},
+          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
+          '⬇ Download PDF'),
+      }, h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff',width:'100%',minHeight:'78vh'}}))
     )  // close main content scroll area
     )  // close right panel flex-col
 
@@ -3001,21 +3018,8 @@ function App() {
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
-    showFcstRef&&h(ModalShell,{
-      title:'📐 Forecasting Reference',
-      subtitle:'All calculation formulas, model weights, and calibration parameters',
-      onClose:()=>setShowFcstRef(false),closeOnBackdrop:true,maxWidth:1100,zIndex:Z.nested,
-      bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
-      headerExtra:div({style:{display:'flex',gap:6}},
-        h('button',{onClick:()=>{const f=document.getElementById('fcst-ref-frame');if(f)f.contentWindow.print();},
-          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
-          '⬇ Download PDF'),
-        h('button',{onClick:()=>window.open('/forecast-reference.html','_blank'),
-          style:{background:'var(--surf2)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',padding:'5px 14px',cursor:'pointer',color:'var(--text)',fontSize:'11px',fontWeight:600}},
-          '↗ Open Full Page'))
-    },
-      h('iframe',{id:'fcst-ref-frame',src:'/forecast-reference.html',style:{flex:1,border:'none',background:'#fff',width:'100%'}})
-    ),
+    // showFcstRef ModalShell — Dispatch #121: converted to routePanel==='fcst-ref' (see the
+    // routePanel gate above, near fob-eom) using RoutePanelShell instead.
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false),onCoachingSaved:refreshCoachingCycles}),
