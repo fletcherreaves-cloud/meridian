@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the ten panels converted so far (Dispatch27 + Dispatch #55 Part B + #106)', () => {
-    // Ratchet, not a ceiling: adding an eleventh route panel is a real routing change (a new
+  it('is exactly the eleven panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121)', () => {
+    // Ratchet, not a ceiling: adding a twelfth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -204,9 +204,11 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // adding lifelenz-bridge ("MBI vs LifeLenz Accuracy") as its own route:true entry; dispatch
     // #106 Phase B (same day) merged it AND fcst-accuracy into one new route:true entry,
     // 'forecast-reports' (ForecastReportsPanel, an internal-tab shell over both), converting
-    // both former entries to kind:'hub-tab' -- net eleven -> ten.
+    // both former entries to kind:'hub-tab' -- net eleven -> ten. Dispatch #121 (2026-08-25)
+    // converted 'fcst-ref' (Forecasting Reference) from a small ModalShell+iframe to a real
+    // route -- ten -> eleven.
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'count-cycle', 'dicompare', 'eom-dashboard', 'fob-analysis', 'fob-eom',
+      'count-cycle', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
       'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub',
     ]);
   });
