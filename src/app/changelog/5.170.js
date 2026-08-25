@@ -1,0 +1,27 @@
+// @ts-nocheck
+export default {version:'5.170', date:'2026-08-25', changes:[
+  'New: Schedule Retention report (Labor & Scheduling > Training Retention, dispatch #134) — a '
+  + 'permanent, per-location report to check whether a store retained training from a schedule '
+  + 'workshop. Pick a store + a period and see every LifeLenz business week in it side by side: '
+  + 'Labor %, Sched vs Fcst hours, TPMH, Fixed/Floor %, and once a week posts real numbers, its '
+  + 'actual sales + actual labor % (the "bonus" ask needed zero new data work — those fields are '
+  + 'already actual-weighted in the existing rollup() engine, unchanged).\n\n'
+  + 'Built entirely by REUSING src/engine/schedule-summary.js\'s rollup() — the exact function '
+  + 'the all-stores Schedule Summary panel already computes per store per week with — via one new '
+  + 'small wrapper, computeStoreWeeks(), so every number reconciles exactly (verified by direct '
+  + 'deep-equality against computeScheduleSummary\'s own per-store output, not approximately).\n\n'
+  + 'A plain-language "smart analysis" line states whether Labor %, hours, TPMH and Fixed+Floor % '
+  + 'improved/held/worsened since a marked (or default-midpoint) workshop week, computed from the '
+  + 'real dollar-weighted deltas — never a fabricated string, verified to change when the '
+  + 'underlying weeks change. Includes an inline Labor % trend sparkline, a per-week expandable '
+  + 'daily grid + per-station breakdown (reusing schedule-summary.js\'s existing StationBreakdown '
+  + 'component), and print/export via the established ExportDropdown "HTML Report / Print" '
+  + 'pattern (dispatch #122/#129) so the printed report always contains the full period, not '
+  + 'whatever happened to be scrolled into view.\n\n'
+  + 'A real, permanent, route:true (`?panel=sched-retention`) nav entry — Scheduling & Labor > '
+  + 'Training Retention — deep-linkable from day one. The existing all-stores Schedule Summary '
+  + 'panel is unchanged.\n\n'
+  + 'Full suite 2566/2566 passing (242 files, up from 2542/241 on main); build clean; eager '
+  + 'payload 534.86/850 KB gzip (up from baseline 534.68 KB — the new panel itself lazy-loads as '
+  + 'a separate 13.84 KB / 5.19 KB gzip chunk).',
+]};
