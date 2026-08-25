@@ -107,9 +107,10 @@ export function applyTargetOverrides(baseTargets, overridesIndex, loc) {
 }
 
 // Registry of fields the Targets editor (src/views/targets-editor.js) exposes. Scoped to what
-// THIS dispatch is actually about, per its own "ship real coverage for these first, not a
-// placeholder shell" instruction — extending coverage later is adding one row here, the UI and
-// data model underneath are already generic.
+// dispatch #132 was actually about, then extended by dispatch #135 to the REST of
+// DEFAULT_REVIEW_CONFIG's `src:'manual'` metrics the owner explicitly asked to add — extending
+// coverage further later is adding one row here, the UI and data model underneath are already
+// generic.
 //
 // `reviewKey` cross-references review-engine.js's DEFAULT_REVIEW_CONFIG metric key, and `field`
 // is the exact key REVIEW_METRIC_TARGET_FIELD maps that metric's target from — so this table and
@@ -132,11 +133,55 @@ export const TARGET_OVERRIDE_FIELDS = [
   { field: 'tFOBTarget', reviewKey: 'foodOB', label: 'FOB % Target', unit: 'pct',
     note: 'Workbook-sourced (yearly or monthly targets — monthly already wins when both exist). The review\'s '
       + 'Food-Over-Base $ target is this % × the month\'s sales.' },
+  // ── Dispatch #135 item 2 — re-verified, not just re-asserted (owner explicitly disputed #132's
+  // "no workbook source" finding for these two). Re-checked parseYearlyTargets/parseMonthlyTargets
+  // (src/parsers/index.js) header-by-header, the live production yearly_targets/monthly_targets
+  // Supabase schema+data (service-role query, 2026-08-25), and supabase/schema-yearly-targets.sql's
+  // own "Full column capture" column list. Neither table has a Total-Profit column, confirming
+  // #132's finding stands for that one. Complaints is more nuanced — see its note below.
   { field: 'tTotalProfitTarget', reviewKey: 'totalProfit', label: 'Total Profit vs Target ($)', unit: 'usd',
-    note: 'No workbook source exists for this. Until an override is set (at any scope), Total Profit scores on '
-      + 'the interim rule: positive actual = passing, non-positive = not passing.' },
+    note: 'No column for this exists in yearly_targets or monthly_targets (parser + live production schema '
+      + 're-checked 2026-08-25 — zero "profit" hits in src/parsers/index.js, and the real Supabase table columns '
+      + 'confirm it). A DIFFERENT owner workbook, MFR_Performance_Review_ver_4.xlsm ("Metric Scoring" sheet, '
+      + 'audited memory/perf-review-excel-audit.md), does define real Total Profit RATING BANDS (±0.42%/1.30%) — '
+      + 'likely what "found in targets" refers to — but that is a scoring-threshold definition, not a per-store '
+      + 'target VALUE, and is out of this dispatch\'s scope (see that file\'s open "align to Excel bands" item). '
+      + 'Until an override is set here (at any scope), Total Profit scores on the interim rule: positive actual = '
+      + 'passing, non-positive = not passing.' },
   { field: 'tComplaintsTarget', reviewKey: 'complaints', label: 'Complaint Contacts /100K', unit: 'num',
-    note: 'No workbook source: the yearly workbook\'s "1-800 Contacts" column is a raw per-store COUNT target, '
-      + 'not a /100K rate, and no guest-count-normalized actual is captured anywhere in the app yet — set an '
-      + 'interim numeric target here rather than reusing that count.' },
+    note: 'The yearly workbook DOES carry a real, live column here — "1-800 Contacts" (t1800Contacts / '
+      + 'contacts_1800 in Supabase; memory/qsrsoft-report-catalog.md records a real district value, LY 223.3 → '
+      + '2026 target 197.0) — so the owner is right that something under this name is "in Yearly Targets". But '
+      + 'it is a raw per-store COUNT target (plain parseFloat, no guest-count normalization anywhere near it), '
+      + 'not the /100K RATE this review metric scores, and no guest-count-normalized actual is captured anywhere '
+      + 'in the app either — re-checked 2026-08-25, unchanged from #132. Set an interim /100K target here rather '
+      + 'than reusing the raw count.' },
+  // ── Dispatch #135 item 1 — the REST of DEFAULT_REVIEW_CONFIG's src:'manual' metrics, now
+  // explicitly requested by the owner. Investigated the same way as totalProfit/complaints above,
+  // not assumed override-only: re-read parseYearlyTargets/parseMonthlyTargets in full (2026-08-25)
+  // for EPB2B/FS Audits/EcoSure/FS Tablet/Shift Verifications/Retention — zero header matches for
+  // any of the six. performance-reviews.js's own SRC() lines (Customize → Reviews help text)
+  // independently confirm each ACTUAL comes from a system other than the targets workbook (SMG
+  // FullScale, QSRSoft SimpleThink Forms, EcoSure visit-report emails, Squaddle/Jolt, Pace Portal,
+  // QSRSoft shift-verification records, manual observation) — none of those systems' values flow
+  // into yearly_targets/monthly_targets either. All six are genuinely override-only.
+  { field: 'tEPB2BTarget', reviewKey: 'epb2b', label: 'EPB2B (Pace Portal, %)', unit: 'pct',
+    note: 'No workbook target column (checked both parsers). Actual is sourced from SMG FullScale, "Experienced '
+      + 'a Problem (Yes) → 1-rating %" (see performance-reviews.js SRC notes). Override-only.' },
+  { field: 'tFSAuditsTarget', reviewKey: 'fsAudits', label: 'FS Audits Completed', unit: 'pct',
+    note: 'No workbook target column. Actual is sourced from QSRSoft SimpleThink → Forms → Completed Forms '
+      + '(filtered by manager/supervisor). Override-only.' },
+  { field: 'tFSEcoSureTarget', reviewKey: 'fsEcoSure', label: 'Food Safety EcoSure (%)', unit: 'pct',
+    note: 'No workbook target column. Actual is sourced from EcoSure visit reports (email) — see also '
+      + 'memory/finding-ecosure-propel-api-2026-08-22.md for the Propel API sample now available for the '
+      + 'separate Visit Readiness engine; that is real-visit ACTUAL data, not a workbook TARGET. Override-only.' },
+  { field: 'tFSTabletTarget', reviewKey: 'fsTablet', label: 'FS Completion T-60 (%)', unit: 'pct',
+    note: 'No workbook target column. Actual is sourced from the Squaddle or Jolt app. Override-only.' },
+  { field: 'tShiftVerifTarget', reviewKey: 'shiftVerif', label: '# Shift Verifications by GM', unit: 'num',
+    note: 'No workbook target column. Actual is sourced from QSRSoft shift-verification records — performance-'
+      + 'reviews.js\'s own SRC note flags this as "not currently used by this org." Override-only.' },
+  { field: 'tRetentionTarget', reviewKey: 'retention', label: 'Execution of Retention Prg.', unit: 'pct',
+    note: 'No workbook target column. Actual is a manual Y/N judgment call ("observed execution") — '
+      + 'memory/perf-review-excel-audit.md records this as a subjective/participation metric the owner flagged '
+      + 'as possibly optional, not tied to a hard number. Override-only.' },
 ];
