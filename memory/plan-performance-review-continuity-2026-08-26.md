@@ -428,11 +428,13 @@ data-entry noise silently fragmenting someone's real review.
 Roughly independent pieces, ordered by dependency, sized to fit the project's one-engineer-at-a-
 time dispatch practice:
 
-0. **🔴 Standalone security fix, do this regardless of sequencing on anything else below:** close
-   the wide-open `reviews` RLS write policies (decision #6, gap #1) — `authenticated write`/
-   `authenticated update` currently let any logged-in user insert or overwrite any review row.
-   This is a live gap today, independent of the rest of the redesign, and per CLAUDE.md's own
-   security-finding posture ("take the safer fix") shouldn't wait on the bigger rebuild.
+0. **🔴 Live security gap, deliberately held for the full redesign — owner decision, 2026-08-26,
+   not an oversight.** `reviews` RLS write policies (decision #6, gap #1) currently let any
+   authenticated account insert/overwrite any review row. Offered an immediate small interim fix
+   (restrict to the 3 known roles + fix the `'supervisor'`/`'area_supervisor'` string bug) vs.
+   holding for the real hierarchy system. **Owner chose to hold** — fix it once, correctly, as
+   part of item #1 below, rather than twice. Means this gap stays live until that phase ships;
+   that's accepted, not unnoticed.
 1. **Role/level system — build the real thing, not a reconciliation.** Decision #6 found that
    `permissions.js`'s `DEFAULT_ROLES` (admin/area_supervisor/manager, 3 tiers), the `reviews` RLS
    policies (which don't even match those 3 role ids correctly), and the review-role ladder
