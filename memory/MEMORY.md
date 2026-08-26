@@ -84,6 +84,26 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.194): fix a second real bug found live minutes after v5.193
+  shipped — `area_supervisor`'s stale pre-#148 level made it outrank OM.** `area_supervisor`
+  already EXISTED in the org's persisted role list (not missing), so v5.193's
+  `mergeMissingDefaultRoles()` correctly left it alone — but it was still at its pre-ladder
+  **Level 3**, while dispatch #148 had re-leveled it to **Level 5** as part of the real ladder.
+  The stale level survived and made Area Supervisor outrank OM (Level 4) in Roles & Permissions —
+  backwards from the real AS → OM → DO → VP → Owner chain. Caught two ways in the same live
+  session: a screenshot showing "Area Supervisor · Level 3" tied with DO, and the owner
+  independently spotting "ops mgr and supervisor are reversed" from the real-world reporting
+  structure. Fix: new `reconcileLadderLevels()` — corrects ONLY the `level` field for the 7
+  official ladder role ids to their canonical `DEFAULT_ROLES` value (label/color/permissions and
+  any real customization on them are left untouched); `admin`/`manager` are excluded by design,
+  matching #148's explicit "kept exactly as it was" decision for those two utility roles. Also:
+  the orphaned custom `owner_0nct` role from v5.193's writeup was deleted live by the owner via
+  the Roles & Permissions "Delete" button once the deploy caught up — closed, no further action.
+  256/256 test files, 2779/2779 tests (+4 new). Build clean, entry chunk 474.62→474.69 KB gzip
+  (+0.07 KB). **Lesson for next session: after any role-system change, actually look at Roles &
+  Permissions with real production data, not just DEFAULT_ROLES in isolation** — both v5.193's and
+  v5.194's bugs were invisible to every unit test (which all construct roles from scratch) and
+  only surfaced against the org's real, years-old persisted `org_config` row.
 - **✅ SHIPPED (2026-08-26, v5.193): fix a real live bug found while verifying dispatch #151 in
   production — a persisted org-configured role list was masking dispatch #148's entire 7-rung
   ladder.** Confirmed via a live screenshot of the User Management panel: the role dropdown only
