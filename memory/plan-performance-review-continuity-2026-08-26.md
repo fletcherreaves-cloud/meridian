@@ -153,7 +153,24 @@ GM/AM/DM/SM/AS/OM) and the RBAC role list (CLAUDE.md: Developer/Admin/Owner/VP/D
 GM/Office Staff) are two separate, only-partially-aligned taxonomies (e.g. "Supervisor" in RBAC ≈
 "AS" in ROLE_KEYS; "OM" only exists in ROLE_KEYS). **Building one unified ladder both taxonomies
 map onto is required new infrastructure**, not a config tweak — flagging this now so it's not
-discovered mid-dispatch.
+discovered mid-dispatch. **✅ Built — see dispatch #148, shipped v5.189**: `permissions.js`'s
+`DEFAULT_ROLES` now has the real 7-rung ladder (`owner`→`vp`→`do`→`om`→`area_supervisor`→`gm`→
+`sm_am_dm`) plus a pure `levelsAbove(roleId, aboveRoleId, ladder)` resolver, not yet wired into
+review UI/RLS — that wiring is this section's own remaining work (build-sequencing item #2).
+
+**The lock/override UI mechanism itself — owner's exact words, captured here so it isn't lost to
+chat history:** *"lock actual results from editing when imported. You could provisionally allow
+someone in a higher user role to manually update and correct, but require a reason to do so. Could
+be accomplished using a dropdown for Inaccurate Data, Incomplete Data, or Something Else
+(Explanation required)."* So: every `src:'auto'` KPI actual cell in `performance-reviews.js`'s
+`KPIGrid` becomes read-only by default; an authorized overrider (per the levelsAbove-gated
+hierarchy, PLUS the unconditional Admin/Developer escape hatch, decision #6-C) gets an
+override affordance that opens a small form: new value + a **reason dropdown with exactly three
+options — "Inaccurate Data" / "Incomplete Data" / "Something Else" (free-text explanation
+required when "Something Else" is picked)** — before the override is accepted. Every override
+event should append to a durable audit trail (who/when/old value/new value/reason), matching the
+same discipline decision #6's "assignment-record audit trail" recommendation already asks for
+elsewhere in this plan — don't build two different audit-log shapes for the same underlying need.
 
 ### 5. Job-title-code → review-role mapping: MEASURED, not designed from guesses
 Owner: *"The job title code can be deciphered to know exactly what level role they are within some
