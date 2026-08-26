@@ -173,6 +173,29 @@ both nonzero-rate) is the one wrinkle — GM-bucketed but hourly-tracked, presum
 pay arrangement layered on a still-functionally-GM role; leave it bucketed as GM, don't let it leak
 into the AM/DM split.
 
+**✅ REFINED 2026-08-26 — owner confirmed the code-45 handling, then added a real scenario that
+needed a design answer.** *"Regardless if a GM has an hourly rate or not, if they're labeled to
+GM, they should be reviewed as a GM"* — confirms code 45 stays GM, as above, full stop, on the
+code alone. But: *"perhaps a GM in training might be assigned that way, and wouldn't necessarily
+be fully responsible for their own store — in that circumstance it should be optional as to if
+they're reviewed as more of an assistant manager or department manager versus a general manager...
+make that an optional selection on the review itself... This would cover doing what's right for
+the individual at the time."*
+
+**This doesn't change the architecture — it's the clearest possible confirmation of it, and it
+generalizes the point beyond just AM/DM.** The suggested role (from the job-title code, whatever
+it says — GM included) pre-fills the review's role field; **the person setting up the review can
+always override it manually for that one review**, exactly matching the "spot decision, not a
+rigid formula" shape from the promotion/transfer research above (decision #3B) — a GM-in-training
+reviewed under the AM/DM framework for now is the same kind of judgment call as a promoted
+manager's segment scoring, just without an actual store/role change having happened yet. **No new
+mechanism needed for this specific case: `NewReviewForm`'s existing Role dropdown
+(`performance-reviews.js`) already lets a reviewer pick any of the 6 `ROLE_KEYS` freely when
+creating a review** — the only new work is pre-filling that dropdown's default from the roster
+suggestion (per decision #5's design) rather than leaving it hardcoded to `'GM'`
+(`const [role, setRole] = useState('GM')` today), while leaving the dropdown itself exactly as
+freely editable as it already is.
+
 **✅ RESOLVED 2026-08-26 — the bigger point, and it changes the design: the roster pull is a
 SUGGESTION source, never the authority, especially above GM.** Owner: *"all of the names for the
 people in supervisory or above roles, you will also find their names in one of the stores['] data.
