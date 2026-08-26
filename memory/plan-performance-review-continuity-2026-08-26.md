@@ -263,35 +263,37 @@ Stress-tested the design above rather than re-summarizing it. Four real gaps nee
 decision (asked directly, answers to be recorded here); the rest are minor enough to record a
 default recommendation now and revisit only if wrong in practice.
 
-### Needs a decision
+### Resolved 2026-08-26 (owner decisions on all 4)
 
-**A) Backfill — does 2026 itself get segmented, or does clean tracking start at build time?**
-It's currently August. If someone transferred stores or got promoted in March, does v1 retroactively
-reconstruct that from `qsr_employee_tenure`'s own `store_start_date`/`job_title_code_start_date`
-history so THIS year's review is correctly segmented, or does segment tracking only start capturing
-moves from whenever this ships forward, treating Jan–ship-date as one unsplit segment on whatever
-assignment was true at ship time? Real practical difference for how correct this year's first real
-reviews are.
+**A) Backfill — ✅ RESOLVED: backfill 2026 from real history.** Reconstruct actual store/role
+segments for the whole current year from `qsr_employee_tenure`'s own `store_start_date`/
+`job_title_code_start_date` history, not a clean-slate start at ship time. This year's first real
+reviews need to be correctly segmented from day one, not just going forward — real build scope,
+not a nice-to-have.
 
-**B) Termination / departure — does a review auto-finalize, and does someone leaving clear them
-from the new-manager panel?** Not discussed yet. `qsr_employee_tenure` has `termination_entry_date`.
-Without a rule, a terminated GM could sit "open" indefinitely, and if they left the review-eligible
-role without leaving the company (e.g. a voluntary step-down), they'd keep surfacing on the
-new-manager panel for a role they no longer hold.
+**B) Termination / departure — ✅ RESOLVED, with a specific mechanism, not the plain auto-clear I
+proposed.** Owner: *"Do the auto finalize but require approval in the ability to override it. The
+approval and potential override should come from a job title code qualified to perform the review
+or above."* So: a departure (`termination_entry_date` set, or a detected role change out of
+GM/AM/DM/SM/AS/OM) **auto-finalizes the review provisionally and auto-clears the person from the
+new-manager panel immediately** — no manual step needed to get the routine case out of the way.
+But that auto-finalize is **not a silent, unreviewable lock**: whoever is qualified to review that
+role (the person's normal reviewer per the relative-hierarchy ladder — decision #4 — or anyone
+above them) can approve it as final or reopen/override it, e.g. if the departure record was wrong,
+or they want to add closing commentary first. **This reuses the exact same reviewer-hierarchy
+mechanism already designed for locked actuals — not a second authorization system.**
 
-**C) Root override escape hatch — does the Owner/Developer role always retain override authority,
-independent of the computed hierarchy distance?** The relative-hierarchy rule (decision #4) is
-computed from a ladder that doesn't exist yet — if that ladder has a bug or a gap (e.g. a vacant
-reviewer slot, see below), an implicit-only assumption that "the owner can always fix it" could
-turn out false in a specific edge case. Worth stating as an explicit, unconditional rule rather
-than leaving it to fall out of the ladder correctly by construction.
+**C) Root override escape hatch — ✅ RESOLVED: yes, explicit unconditional rule.** Admin/Developer
+can always override a locked actual, full stop, independent of whatever the computed hierarchy
+ladder says — a safety valve so a ladder bug or a vacant reviewer slot can never lock out the
+people actually responsible for data integrity. Build this as a hard-coded OR alongside the
+relative-hierarchy check, not something that has to fall out of the ladder being correct.
 
-**D) Auto-detected role/store changes from noisy roster data — auto-split, or require confirmation
-first?** The roster pull can churn for reasons that aren't a real move (a payroll correction, a
-job-code data-entry fix). If the assignment model watches `qsr_employee_tenure` and auto-creates a
-new scoring segment on any code/store change, a data hiccup could silently fragment someone's
-review into spurious segments. Recommend: a detected change proposes a new segment, shown for
-confirmation (or auto-dismissed if it self-corrects within a few days), never silently applied.
+**D) Auto-detected role/store changes from noisy roster data — ✅ RESOLVED: propose, require
+confirmation.** A detected code/store change from the roster pull surfaces as a pending suggestion;
+a person confirms it (or it's dismissed, e.g. if it self-corrects within a few days) before the
+review actually splits into a new segment. Protects against payroll corrections or job-code
+data-entry noise silently fragmenting someone's real review.
 
 ### Recorded as a default — minor enough not to block on, revisit if wrong in practice
 
@@ -323,16 +325,24 @@ Roughly independent pieces, ordered by dependency, sized to fit the project's on
 time dispatch practice:
 
 1. **Lock auto-populated actuals + reason-required override**, gated by the relative-hierarchy
-   rule (fixes a real live bug; needs the hierarchy ladder from #4 above as a prerequisite, or can
-   ship first with the old flat "Admin+Developer+DO" gate and be upgraded once the ladder lands).
-2. **Person/role/store effective-dated assignment model**, extending `orgAssignments()`'s pattern —
-   foundational; #3, #5 (new-manager panel), and the promotion/transfer scoring all depend on it.
+   rule PLUS the unconditional Admin/Developer override (resolved item C above) — build both
+   checks together, not the ladder alone. Fixes a real live bug; needs the hierarchy ladder from
+   #4 as a prerequisite, or can ship first with a flat "Admin+Developer+DO" gate and be upgraded
+   once the ladder lands.
+2. **Person/role/store effective-dated assignment model**, extending `orgAssignments()`'s pattern
+   — foundational; #3, #5, #6 (new-manager panel), and the promotion/transfer scoring all depend
+   on it. **Includes the 2026 backfill (resolved item A)** — reconstructing this year's real
+   segments from `qsr_employee_tenure` history is part of this phase, not a later add-on.
 3. **Data model restructure**: per-person yearly review records replacing per-half records, with
    the Q1-Q4 + H1/H2 + full-year rollup view.
-4. **Promotion/transfer segmented scoring**, built on #2 and #3.
-5. **New-manager notification panel**, built on #2 — covers all six roles from the start (GM/AM/
+4. **Promotion/transfer segmented scoring**, built on #2 and #3, including the propose-then-
+   confirm flow for roster-detected changes (resolved item D) — never a silent auto-split.
+5. **Departure handling**: auto-finalize + auto-clear from the new-manager panel on
+   `termination_entry_date`/a detected role exit, reviewable/reopenable by the person's normal
+   reviewer or above (resolved item B) — reuses #1's hierarchy mechanism, built after it.
+6. **New-manager notification panel**, built on #2 — covers all six roles from the start (GM/AM/
    DM/SM via roster-code suggestion, AS/OM via the assignment record directly).
-6. **Job-code→role Supabase config table**, feeding #5 and #2's role detection.
+7. **Job-code→role Supabase config table**, feeding #6 and #2's role detection.
 
 ## Sources (web research, section 3B)
 - [HR's guide to mid-year performance reviews | QuickBooks Blog](https://quickbooks.intuit.com/r/manage-employees/mid-year-performance-reviews-guide/)
