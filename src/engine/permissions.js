@@ -294,12 +294,29 @@ export function canOverrideLockedActual(callerRoleId, reviewRole, ladder) {
 }
 
 // ── Persistence ────────────────────────────────────────────────────────────────
+// getOrgRoles()/syncOrgRolesFromSupabase() always PREFERRED a persisted role list wholesale over
+// DEFAULT_ROLES -- correct for a genuinely org-configured list, but it means any org that
+// persisted a role list BEFORE dispatch #148 added the 7-rung ladder (vp/do/om/gm/sm_am_dm/owner)
+// never sees any of those new roles appear anywhere -- confirmed live 2026-08-26: production's
+// persisted 'org_roles' predates #148 and only ever had admin/area_supervisor/manager (+ a stray
+// custom 'owner_0nct' role a user had added by hand as a stand-in before #148 shipped the real
+// 'owner' id -- unassignable to any profile since #148's CHECK constraint doesn't allow that id;
+// confirmed zero live profiles use it). mergeMissingDefaultRoles() closes this additively --
+// appends any DEFAULT_ROLES id missing from the persisted list, never touches or reorders an
+// existing persisted entry (including that stray custom role, left for the org to clean up on its
+// own via the Roles & Permissions tab) -- so the next ladder addition doesn't repeat this masking.
+export function mergeMissingDefaultRoles(roles) {
+  const have = new Set(roles.map(r => r.id));
+  const missing = DEFAULT_ROLES.filter(r => !have.has(r.id)).map(r => ({ ...r, permissions: { ...r.permissions } }));
+  return missing.length ? [...roles, ...missing] : roles;
+}
+
 export function getOrgRoles() {
   try {
     const raw = localStorage.getItem(ORG_ROLES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed) && parsed.length) return mergeMissingDefaultRoles(parsed);
     }
   } catch {}
   return DEFAULT_ROLES.map(r => ({ ...r, permissions: { ...r.permissions } }));
@@ -314,8 +331,9 @@ export async function syncOrgRolesFromSupabase(sb) {
   try {
     const { data } = await sb.from('org_config').select('data').eq('key', 'org_roles').maybeSingle();
     if (data?.data && Array.isArray(data.data) && data.data.length) {
-      saveOrgRoles(data.data);
-      return data.data;
+      const merged = mergeMissingDefaultRoles(data.data);
+      saveOrgRoles(merged);
+      return merged;
     }
   } catch {}
   return null;

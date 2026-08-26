@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_ROLES, ROLE_PERMISSION_TEMPLATES, ALL_PERMISSION_KEYS,
   levelsAbove, getRoleById, hasPermission, canManageRole, defaultPermissionsForLevel,
-  REVIEW_ROLE_TO_LADDER, canOverrideLockedActual,
+  REVIEW_ROLE_TO_LADDER, canOverrideLockedActual, mergeMissingDefaultRoles,
 } from '../engine/permissions.js';
 
 // The 7 rungs the plan doc's decision #4 (sharpened by #6) names explicitly, bottom to top:
@@ -232,5 +232,53 @@ describe('permissions.js — canOverrideLockedActual', () => {
   it('defaults to DEFAULT_ROLES when no ladder is supplied', () => {
     expect(canOverrideLockedActual('om', 'GM')).toBe(true);
     expect(canOverrideLockedActual('area_supervisor', 'GM')).toBe(false);
+  });
+});
+
+// A live production bug found 2026-08-26 (during dispatch #151 verification): a persisted
+// org-configured role list saved BEFORE dispatch #148 added the 7-rung ladder never picked up
+// any of the new roles (vp/do/om/gm/sm_am_dm/owner) -- getOrgRoles()/syncOrgRolesFromSupabase()
+// always preferred the persisted list wholesale, silently masking every ladder id missing from
+// it. mergeMissingDefaultRoles() is the additive fix.
+describe('mergeMissingDefaultRoles()', () => {
+  it('appends every DEFAULT_ROLES id missing from a stale persisted list, leaving existing entries untouched', () => {
+    const stale = [
+      { id: 'admin', label: 'Admin', level: 1, color: '#f59e0b', system: true, permissions: {} },
+      { id: 'area_supervisor', label: 'Area Supervisor', level: 3, color: '#3b82f6', system: false, permissions: {} },
+      { id: 'manager', label: 'Manager', level: 4, color: '#22c55e', system: false, permissions: {} },
+      // A stray custom role a user added by hand before #148 shipped the real 'owner' id --
+      // must survive untouched (never deduped/renamed/removed by the merge).
+      { id: 'owner_0nct', label: 'Owner', level: 2, color: '#ef4444', system: false, permissions: {} },
+    ];
+    const merged = mergeMissingDefaultRoles(stale);
+
+    // Every DEFAULT_ROLES id now present.
+    const mergedIds = merged.map(r => r.id);
+    for (const r of DEFAULT_ROLES) expect(mergedIds).toContain(r.id);
+
+    // Every original entry survives byte-for-byte at its original position, including the stray
+    // custom role -- the merge only ever appends, never edits or removes.
+    expect(merged.slice(0, stale.length)).toEqual(stale);
+
+    // Newly-appended entries are real DEFAULT_ROLES objects (not references -- independently
+    // mutable), for every ladder id the stale list didn't already have.
+    for (const id of ['vp', 'do', 'om', 'gm', 'sm_am_dm', 'owner']) {
+      const appended = merged.find(r => r.id === id);
+      const canonical = DEFAULT_ROLES.find(r => r.id === id);
+      expect(appended).toEqual(canonical);
+    }
+  });
+
+  it('is a no-op when the persisted list already has every DEFAULT_ROLES id', () => {
+    const full = DEFAULT_ROLES.map(r => ({ ...r, permissions: { ...r.permissions } }));
+    const merged = mergeMissingDefaultRoles(full);
+    expect(merged).toEqual(full);
+    expect(merged.length).toBe(DEFAULT_ROLES.length);
+  });
+
+  it('never mutates the DEFAULT_ROLES module-level constant', () => {
+    const before = JSON.stringify(DEFAULT_ROLES);
+    mergeMissingDefaultRoles([{ id: 'admin', label: 'Admin', level: 1, color: '#000', system: true, permissions: {} }]);
+    expect(JSON.stringify(DEFAULT_ROLES)).toBe(before);
   });
 });
