@@ -105,10 +105,6 @@ that half.
   answer.
 - **Per-STORE call** (`locationId`) — a full-estate pull is **27 calls**, same shape as the
   EcoSure CEV endpoint. Reuse the existing hierarchy-node map; no new store enumeration needed.
-- **`rowsPerPage` cap untested above 5** (the UI's own page size) — the EcoSure visit-list
-  endpoint capped a requested `rowsPerPage=50` at 20 despite the ask, so **any client must page
-  until `results.length` reaches `totalCount`, never trust a large `rowsPerPage` value** —
-  assume the same caution here until directly tested.
 - **`timeFrame=1` is confirmed = "YTD" among a real 5-option set, but the other 4 values are
   still uncaptured.** Owner-captured (2026-08-26) screenshot of the Timeframe dropdown: **YTD,
   Baseline YTD, Trailing 3 Months, Baseline Trailing 3 Months, History** — YTD was the option
@@ -128,6 +124,36 @@ that half.
   and reads what comes back.
 - **Only `CLOSED` was observed** — whether `caseStatus` has other values (open/pending) and
   whether those should count toward the metric is unconfirmed.
+
+## 💡 Proposed resolution for "no single-month Timeframe" — a recommendation, not a decision
+
+Raised to the owner 2026-08-26; his response was *"not sure yet how we resolve that"* — genuinely
+open, not something to default into. Recorded here as the PM's recommendation for whenever he
+decides, not as settled design:
+
+**Pull the widest window once (`History`), store every case with its own `receivedDate`, and
+bucket into whatever calendar month a review needs by filtering the STORED data — never by asking
+Propel for "just this month."** This is the same "pull wide, filter by period at read time"
+shape Meridian already uses for other cloud streams (e.g. auto-first metric sourcing across DAR/
+Glimpse/Sales Ledger), not a new pattern. Concretely, this means a new Supabase table (with
+`tenant_id`+RLS per the standing "new stream" checklist), an on-demand Playwright pull (same
+persistent-profile design as EcoSure, a Sync button, never scheduled), and `autoPopulateKPIs`
+filtering that table's rows by whichever date field is authoritative into the review's month —
+matching how `metricAvg(ds, loc, range, ...)` already filters other per-day sources by a date
+range today.
+
+**Two sub-questions still need the owner's call, not a default:**
+- Which date field is authoritative for "which month does this complaint count against" —
+  `receivedDate` (when the case was logged) or `incidentDate` (when it actually happened)? They
+  can differ by a day or more in the sample.
+- Whether `History` genuinely returns everything with no floor, or is itself capped somewhere
+  (unconfirmed) — if it's capped, a store's oldest history could still be unreachable and a
+  narrower "pull `Trailing 3 Months`/`Baseline Trailing 3 Months` on a rolling cadence instead of
+  one big `History` pull" design might be safer regardless.
+
+**This is real scope, not a quick fix** — matches the EcoSure endpoint's own build complexity
+(on-demand pull + new table + Sync button), not something to build opportunistically alongside a
+smaller dispatch. Hold until the owner has time to think it through.
 
 ## What remains open before any pull is built
 
