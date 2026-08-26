@@ -257,6 +257,66 @@ along the way, not gates.)*
    exactly one Supervisor, or can that vary by store the way the store-supervisor assignment
    already does?).
 
+## Second-pass gap review (2026-08-26) — owner asked "what else are we missing"
+
+Stress-tested the design above rather than re-summarizing it. Four real gaps need an owner
+decision (asked directly, answers to be recorded here); the rest are minor enough to record a
+default recommendation now and revisit only if wrong in practice.
+
+### Needs a decision
+
+**A) Backfill — does 2026 itself get segmented, or does clean tracking start at build time?**
+It's currently August. If someone transferred stores or got promoted in March, does v1 retroactively
+reconstruct that from `qsr_employee_tenure`'s own `store_start_date`/`job_title_code_start_date`
+history so THIS year's review is correctly segmented, or does segment tracking only start capturing
+moves from whenever this ships forward, treating Jan–ship-date as one unsplit segment on whatever
+assignment was true at ship time? Real practical difference for how correct this year's first real
+reviews are.
+
+**B) Termination / departure — does a review auto-finalize, and does someone leaving clear them
+from the new-manager panel?** Not discussed yet. `qsr_employee_tenure` has `termination_entry_date`.
+Without a rule, a terminated GM could sit "open" indefinitely, and if they left the review-eligible
+role without leaving the company (e.g. a voluntary step-down), they'd keep surfacing on the
+new-manager panel for a role they no longer hold.
+
+**C) Root override escape hatch — does the Owner/Developer role always retain override authority,
+independent of the computed hierarchy distance?** The relative-hierarchy rule (decision #4) is
+computed from a ladder that doesn't exist yet — if that ladder has a bug or a gap (e.g. a vacant
+reviewer slot, see below), an implicit-only assumption that "the owner can always fix it" could
+turn out false in a specific edge case. Worth stating as an explicit, unconditional rule rather
+than leaving it to fall out of the ladder correctly by construction.
+
+**D) Auto-detected role/store changes from noisy roster data — auto-split, or require confirmation
+first?** The roster pull can churn for reasons that aren't a real move (a payroll correction, a
+job-code data-entry fix). If the assignment model watches `qsr_employee_tenure` and auto-creates a
+new scoring segment on any code/store change, a data hiccup could silently fragment someone's
+review into spurious segments. Recommend: a detected change proposes a new segment, shown for
+confirmation (or auto-dismissed if it self-corrects within a few days), never silently applied.
+
+### Recorded as a default — minor enough not to block on, revisit if wrong in practice
+
+- **Exact-tie transfer month** (a transfer on day 15/16 of a 30/31-day month): later assignment
+  wins on an exact tie. Simple, deterministic, matches "the most recent thing that happened" intuition.
+- **Vacant reviewer slot** (a GM's Supervisor position is empty when an override is needed): walk
+  up the ladder to the next filled level above, rather than blocking the override entirely.
+- **Concurrent multi-store GM** (the acknowledged rare case from decision #2): score as one
+  dollar-weighted composite across both stores for any month held concurrently, not as two
+  sequential segments — matches the standing "never average averages, dollar-weight aggregates"
+  rule (CLAUDE.md, Roadmap) rather than inventing a different aggregation just for this case.
+- **New-manager panel: first-ever review vs. simply not-yet-reviewed-this-year** — both trigger on
+  "zero reviews this year," but the panel should visually distinguish them (e.g. "🆕 New to role"
+  vs. "⏰ Due this year") using `job_code_start_date` recency, since they're different urgency
+  levels even though the underlying query condition is the same.
+- **Assignment-record audit trail**: every `{person, role, loc, start}` row also carries who set it
+  and whether it came from the roster suggestion as-is or was manually corrected — same discipline
+  as the actuals override log (decision #4's mechanism), since a wrong assignment silently
+  misattributes an entire segment's scoring, and it needs to be traceable to fix.
+- **Overlapping same-store assignments during a handoff** (outgoing GM training incoming GM for a
+  week, both technically "at" the store): the assignment model still resolves to exactly one
+  active assignment per store per date (latest start wins, same as `orgAssignments()` today) — the
+  cutover is whatever date someone enters as the new assignment's `start`, not a blended overlap
+  period. Simplest option; a real fuzzier handoff week just picks a single effective date.
+
 ## Suggested build sequencing (not yet dispatched — for discussion)
 
 Roughly independent pieces, ordered by dependency, sized to fit the project's one-engineer-at-a-
