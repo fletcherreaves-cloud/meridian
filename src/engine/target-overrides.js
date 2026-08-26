@@ -188,4 +188,16 @@ export const TARGET_OVERRIDE_FIELDS = [
     note: 'No workbook target column. Actual is a manual Y/N judgment call ("observed execution") — '
       + 'memory/perf-review-excel-audit.md records this as a subjective/participation metric the owner flagged '
       + 'as possibly optional, not tied to a hard number. Override-only.' },
+  // ── Dispatch #145 — EAP. Investigated the same way as the rows above: re-checked
+  // parseYearlyTargets in full, no column maps to "overall problem" (or any EAP-shaped concept)
+  // anywhere in the yearly workbook. Unlike the six rows above, EAP's ACTUAL is real and
+  // auto-sourced (SMG FullScale `overall_problem`, wired in review-engine.js's autoPopulateKPIs)
+  // — only the TARGET side is override-only. ead is NOT here: its target is real and
+  // workbook-sourced (REVIEW_METRIC_TARGET_FIELD.ead = 'tVoiceEAD'), so it needs no override
+  // entry, matching the same reviewKey/REVIEW_METRIC_TARGET_FIELD sync rule this file's own
+  // header comment describes (and target-overrides.test.js checks in the other direction).
+  { field: 'tEAPTarget', reviewKey: 'eap', label: 'EAP — Experienced A Problem (%)', unit: 'pct',
+    note: 'No workbook target column (checked parseYearlyTargets in full — nothing maps to "overall problem"). '
+      + 'Actual is real and auto-sourced from SMG FullScale, Overall section, "Experienced a Problem (Yes)" — '
+      + 'the OVERALL question, not the B2B-qualified one epb2b above uses. Override-only until the owner sets one.' },
 ];

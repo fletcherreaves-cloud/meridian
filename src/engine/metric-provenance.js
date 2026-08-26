@@ -50,6 +50,10 @@ export const METRIC_PROVENANCE = {
   osat:       { label: 'OSAT (5★ pass %)', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: true,
     inputs: ['# 5★ responses', '# total responses'],
     formula: 'OSAT = 5★ responses ÷ total responses (only a 5★ counts as a pass)', grain: 'monthly · per store' },
+  eap:        { label: 'EAP (Experienced A Problem %)', system: 'SMG VOICE', report: 'FullScale scorecard', table: 'smg_fullscale', composed: false,
+    inputs: ['overall_problem'],
+    formula: 'EAP = the FullScale report\'s Overall-section "Experienced a Problem (Yes)" % (dispatch #145) — not the '
+      + 'B2B-qualified version epb2b uses', grain: 'monthly · per store' },
   salesVsLY:  { label: 'Sales vs LY %', system: 'Meridian-derived', report: 'DAR / Labor (matched-day)', table: 'qsr_daily_activity', composed: true,
     inputs: ['current-day product sales', 'same-day last-year product sales (matched days only)'],
     formula: 'Sales vs LY % = (Σ current − Σ LY) ÷ Σ LY over MATCHED days only (a day counts only if it has both current and LY data) — never compares a full current window to a partial LY', grain: 'daily → range · per store' },

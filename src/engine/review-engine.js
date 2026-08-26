@@ -53,6 +53,46 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'fsAudits',   label:'FS Audits Completed',        weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% of target audits completed' },
       { key:'fsEcoSure',  label:'Food Safety EcoSure (%)',    weight:0.10, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'% score vs target' },
       { key:'fsTablet',   label:'FS Completion T-60 (%)',     weight:0.05, better:'higher', unit:'pct', scored:true,  t:[0,-0.10,-0.20],   src:'manual',              pctInput:true, note:'Tablet completion %' },
+      // Dispatch #145 — EAP and EAD. OSAT B2B and EPB2B are BOTH deliberately excluded from
+      // this pass (owner-held pending his own investigation into osat_b2b_pct — see
+      // memory/dispatch-145.md); epb2b above is untouched.
+      //
+      // Weight math (stated explicitly per the dispatch's own instruction not to silently
+      // change the category balance): the 10 existing scored RGR metrics above already sum to
+      // 0.95, not 1.00 (measured: .20+.10+.10+.10+.10+.10+.05+.05+.10+.05 — secondSide is
+      // scored:false and excluded), a pre-existing gap unrelated to this dispatch. Rather than
+      // rescaling all 10 unrelated weights (a much bigger, unrequested judgment call) or
+      // silently leaving the category further off, eap+ead are sized to exactly close that
+      // 0.05 gap (0.03+0.02) — no existing metric's weight changes, and RGR's scored total
+      // lands at exactly 1.00. Both are scored:true, not scored:false/reference-only like
+      // secondSide: missingReviewTargets() (below) only flags scored metrics, and this
+      // dispatch's own verification bar requires EAP to be flagged there when no override
+      // target is set — scored:false would silently defeat that.
+      //
+      // EAP (Experienced A Problem — overall, SMG FullScale): a problem-RATE (lower = better),
+      // same family as the existing epb2b metric just above (both derive from the same
+      // FullScale "Experienced a Problem" question; EAP is the overall section, epb2b the B2B
+      // one) — NOT the same shape as osat (a higher-is-better satisfaction %). The dispatch
+      // suggested matching osat's thresholds "same 0-1 problem-rate family," but osat itself is
+      // not a problem rate; epb2b is the closer real analog in this same category, so EAP's
+      // t-band is modeled on epb2b's (t:[-0.02,0.02,0.04]) rather than osat's (t:[0.05,0,-0.05],
+      // wrong direction for this metric). No live EAP target data exists yet to calibrate a
+      // different band against, so epb2b's existing, already-shipped band is the most defensible
+      // starting point. Target: override-only (no yearly-workbook column) — see
+      // target-overrides.js's tEAPTarget entry.
+      { key:'eap', label:'EAP — Experienced A Problem (%)', weight:0.03, better:'lower', unit:'pct', scored:true, t:[-0.02,0.02,0.04], src:'auto', field:'overallProblem', pctInput:true, note:'Auto from SMG FullScale (Overall section — "Experienced a Problem" %). Lower = better. Target is override-only; no yearly-workbook column exists for this (dispatch #145)' },
+      // EAD (Voice Execute As Designed): target is real, already parsed (parseYearlyTargets →
+      // t.tVoiceEAD → yearly_targets.voice_ead_pct), wired below via REVIEW_METRIC_TARGET_FIELD.
+      // Actual has NO data source anywhere in the codebase — confirmed by
+      // kpi-registry.test.js's existing guard ("deliberately excludes the yearly-workbook-only
+      // fields with no actual source"), which already covers voiceEAD; re-verified here, not
+      // re-derived. performance-reviews.js's own SRC note says the actual would come from Pace
+      // Portal (not yet ingested) — same manual/override-only state epb2b is already in.
+      // Conservative t-band: reused verbatim from fsAudits/fsEcoSure/fsTablet just above
+      // (t:[0,-0.10,-0.20], higher=better) — the established shape this category already uses
+      // for a %-completion metric with no live actual to calibrate against, rather than
+      // inventing new numbers with nothing to validate them.
+      { key:'ead', label:'Voice EAD — Execute As Designed (%)', weight:0.02, better:'higher', unit:'pct', scored:true, t:[0,-0.10,-0.20], src:'manual', pctInput:true, note:'Target auto from yearly workbook (Voice EAD). Actual has no data source anywhere in the app (would come from Pace Portal, not yet ingested) — enter manually, same state as EPB2B (dispatch #145)' },
     ],
     sales: [
       { key:'salesVsTgt', label:'Sales vs. Monthly Target',   weight:0.70, better:'higher', unit:'pct', scored:true,  t:[0.05,0,-0.05],    src:'auto', field:'sales', tgtField:'salesTgt', dollar:true, note:'Auto from Labor Analysis' },
@@ -468,6 +508,7 @@ export function blankMonthKPIs(year, month) {
     r2p:null,r2pTgt:null, delivWait:null,delivWaitTgt:null, kvs:null,kvsTgt:null,
     secondSide:null,secondSideTgt:null, complaints:null,complaintsTgt:null,
     fsAudits:null,fsAuditsTgt:null, fsEcoSure:null,fsEcoSureTgt:null, fsTablet:null,fsTabletTgt:null,
+    eap:null,eapTgt:null, ead:null,eadTgt:null,
     salesVsTgt:null,salesVsTgtTgt:null, digitalGC:null,digitalGCTgt:null, delivGC:null,delivGCTgt:null,
     foodOB:null,foodOBTgt:null, labor:null,laborTgt:null,
     opSupplies:null,opSuppliesTgt:null, totalProfit:null,totalProfitTgt:null,
@@ -777,6 +818,19 @@ export const REVIEW_METRIC_TARGET_FIELD = {
   // specific evidence (real actual-data source found, just not a workbook TARGET).
   epb2b: 'tEPB2BTarget', fsAudits: 'tFSAuditsTarget', fsEcoSure: 'tFSEcoSureTarget',
   fsTablet: 'tFSTabletTarget', shiftVerif: 'tShiftVerifTarget', retention: 'tRetentionTarget',
+  // Dispatch #145 — ead: real, already-parsed yearly-workbook target (parseYearlyTargets's
+  // voiceEAD → t.tVoiceEAD → yearly_targets.voice_ead_pct).
+  ead: 'tVoiceEAD',
+  // eap: the dispatch's own text says "eap gets NO entry here (no workbook target)" — but
+  // that's not what totalProfit/complaints (the exact pattern it points at, just above) do:
+  // both map here to their OWN override-field name, not a workbook column, and
+  // target-overrides.test.js enforces every TARGET_OVERRIDE_FIELDS row (bar foodOB) has a
+  // matching entry here. Without one, an eap override could never auto-fill mo.eapTgt at all
+  // (the loop below only walks THIS map) — the override option would exist in the Targets
+  // editor and do nothing. Verified against the real code/test rather than the dispatch text
+  // (CLAUDE.md "measure it, don't reason about it"); followed the actual totalProfit/complaints
+  // pattern instead, which is what "follow the exact pattern" already meant.
+  eap: 'tEAPTarget',
 };
 
 // Merged official targets for a loc: DEFAULT_TARGETS < yearly (ds.targets) < monthly
@@ -1024,6 +1078,11 @@ export function autoPopulateKPIs(review, ds) {
     if (sr) {
       // osat5 = 5-star only; McDonald's counts only 5 as a pass (1-4 = fail)
       if (sr.osat5 != null) mo.osat = sr.osat5;
+      // Dispatch #145 — EAP actual. overallProblem is the in-app field name parseSMGFullScale
+      // emits (raw Supabase column: overall_problem); confirmed via src/lib/supabase.js's
+      // loadSmgFullscale() mapping, not assumed from the raw column name. EAD gets no actual
+      // wiring here — none exists (see the metric's own comment above).
+      if (sr.overallProblem != null) mo.eap = sr.overallProblem;
     }
 
     // Target auto-fill from the official targets (Notes 32 A) — fill each mapped metric's
