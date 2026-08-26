@@ -131,9 +131,10 @@ Raised to the owner 2026-08-26; his response was *"not sure yet how we resolve t
 open, not something to default into. Recorded here as the PM's recommendation for whenever he
 decides, not as settled design:
 
-**Pull the widest window once (`History`), store every case with its own `receivedDate`, and
-bucket into whatever calendar month a review needs by filtering the STORED data — never by asking
-Propel for "just this month."** This is the same "pull wide, filter by period at read time"
+**Pull the widest window once (`History`), store every case with its own `incidentDate` (the
+owner's working answer to which date is authoritative, see below), and bucket into whatever
+calendar month a review needs by filtering the STORED data — never by asking Propel for "just
+this month."** This is the same "pull wide, filter by period at read time"
 shape Meridian already uses for other cloud streams (e.g. auto-first metric sourcing across DAR/
 Glimpse/Sales Ledger), not a new pattern. Concretely, this means a new Supabase table (with
 `tenant_id`+RLS per the standing "new stream" checklist), an on-demand Playwright pull (same
@@ -142,10 +143,12 @@ filtering that table's rows by whichever date field is authoritative into the re
 matching how `metricAvg(ds, loc, range, ...)` already filters other per-day sources by a date
 range today.
 
-**Two sub-questions still need the owner's call, not a default:**
-- Which date field is authoritative for "which month does this complaint count against" —
-  `receivedDate` (when the case was logged) or `incidentDate` (when it actually happened)? They
-  can differ by a day or more in the sample.
+**One sub-question owner-answered (2026-08-26, hedged — "pretty sure it is incident date"):**
+`incidentDate` (when the complaint actually happened) is the field to bucket by, not
+`receivedDate` (when the case was logged) — treat as the working assumption, not fully certain
+per the owner's own hedge; confirm if it matters for a real number someone will act on.
+
+**One sub-question still open:**
 - Whether `History` genuinely returns everything with no floor, or is itself capped somewhere
   (unconfirmed) — if it's capped, a store's oldest history could still be unreachable and a
   narrower "pull `Trailing 3 Months`/`Baseline Trailing 3 Months` on a rolling cadence instead of
