@@ -84,6 +84,31 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ RESOLVED (2026-08-26): Op Supplies target-field label fixed** — was declared `src:'manual'`
+  in `review-engine.js`'s RGR metric config despite `autoPopulateKPIs` already unconditionally
+  filling it from the real, auto-pulled eBOS stream (`qsr_ebos_daily.ops_purchases`) — a stale
+  label hiding the UI's "★auto" indicator, not a missing pipeline. Owner confirmed: *"Op supplies
+  we actually already have through the ebos pull."* Fixed directly (PR #757, v5.179), no dispatch
+  needed — metadata-only, no computation change.
+- **⚠️ OPEN QUESTION (2026-08-26): EPB2B's real data source is disputed, do not wire without
+  resolving.** Owner suggested this morning it might already be in `smg_fullscale` (which does
+  have plausible `dt_problem`/`overall_problem` columns, live-checked). But `memory/notes-32-
+  queue.md` and `memory/backlog-master-2026-08-19.md` both record this SAME owner's prior intel
+  (2026-08-19) that EPB2B is sourced from **Pace Portal — a different, not-yet-ingested site**,
+  "likely manual for now." Two different sources, three weeks apart, from the same person —
+  flagged back to the owner rather than guessing which is current; do not dispatch this one until
+  resolved, and do not silently keep the older Pace Portal claim as newly-decided information.
+- **📋 (2026-08-26): [Dispatch #143 — Print/export for the 3 highest-value gaps: At A Glance,
+  Signals, Security Panel](dispatch-143.md)** and **[Dispatch #144 — Convert the 4 panels with
+  real correctness exposure (not just cosmetic inconsistency) to the standard
+  LocationSelector](dispatch-144.md).** Both owner-approved for today while traveling. #143 is
+  scoped to 3 of the ~17 print/export-less panels found in yesterday's sweep — the highest-value
+  ones, not all 17, to keep each dispatch a size one engineer can finish and verify well. #144 is
+  scoped to the 4 panels (`analytics.js`/`labor-tools.js`/`store-dash.js`/`smg-voice.js`) that
+  dispatch #139 flagged as having a real (if narrow) static-data-fallback gap even after its live-
+  source fix, not the full 47-panel cosmetic sweep — converting them to `LocationSelector` removes
+  the fallback path entirely rather than just standardizing the UI. Both instruct re-reading
+  current `main` first since #139 may have already closed part of the gap in some of these files.
 - **📋 (2026-08-25): [Dispatch #142 — Performance Review: Sales/Labor targets bypass the official
   cascade, Voice OSAT never wired despite real data, yearly-target decimal display, re-confirm
   Complaints](dispatch-142.md).** Screenshot showed monthly Sales scored "Exceeds" against a
