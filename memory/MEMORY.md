@@ -84,6 +84,27 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.191): [Dispatch #150 — Performance Review continuity Phase 3a:
+  effective-dated assignment graph + 2026 backfill](dispatch-150.md).** Third build phase, data
+  layer only (Phase 3b — wiring into `reviews` RLS — is a separate later dispatch). Extends
+  `staff_assignments` (previously a stub, zero code references anywhere) into a real general
+  reports-to graph: `{person, role, target_type: 'store'|'person', target, start}`. New
+  `src/engine/assignment-graph.js` generalizes `constants.js`'s `whoRan()`/`orgAssignments()`
+  "latest start ≤ date wins" rule — `resolveScope()` (recursive person→stores union, matching the
+  plan doc's AS/OM/DO mixed-level shape exactly) and `whoOversees()` (the inverse, store→chain of
+  people), both cycle-safe (`AssignmentCycleError`, never hangs). New
+  `scripts/backfill-staff-assignments-2026.mjs` reconstructs this year's real history from
+  `qsr_employee_tenure`. **Two real design decisions made and documented, not guessed:** (1)
+  `person` (text: a geid or a supervisor name string) replaces the old `profile_id` uuid FK —
+  most people this graph describes have no Meridian login at all, mirroring how `review.geid`
+  already solves the identical problem elsewhere; (2) `end_date` is kept but NOT consulted by
+  resolution — matches `orgAssignments()`'s own documented start-only convention, confirmed by
+  reading that function's header comment as instructed rather than guessed. **⚠️ NOT YET APPLIED
+  TO PRODUCTION** — exact SQL sent to the owner directly (also in PR #802's body). 256/256 test
+  files, 2763/2763 tests (main baseline 2717, +46 net new, zero regressions). Build clean, entry
+  chunk **unchanged** at 474.36 KB gzip (nothing new statically imported into any UI panel).
+  Verified independently in a fresh worktree before merging — every diff read in full, both
+  claimed numbers reproduced exactly.
 - **✅ SHIPPED (2026-08-26, v5.190): [Dispatch #149 — Performance Review continuity Phase 2: lock
   auto-populated actuals, reason-required override](dispatch-149.md).** Second build phase
   (`plan-performance-review-continuity-2026-08-26.md`, item #2), built on #148's role ladder.
