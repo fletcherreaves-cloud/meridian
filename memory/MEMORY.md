@@ -84,6 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.181): Dispatch #144 merged — 2 of the 4 named panels converted to
+  LocationSelector** (PR #765). Independently verified before merge: fresh worktree merge onto
+  `origin/main`, full suite **2645/2645 passing**, `npm run build` clean (entry gzip 468.39 KB,
+  eager 539.57 KB — matches the PR's claimed +0.01 KB). The engineer's central claim — that
+  `labor-tools.js`/`store-dash.js` needed NO change because dispatch #139 already fixed their
+  live-data resolution, and because their "group by"/"rank by" controls are multi-mode grouping
+  dimensions (Company/Org/Operator/Patch; Stores/Patch/Operator/State — all groups render at
+  once) rather than single-scope pickers `LocationSelector` could represent — was independently
+  confirmed: `git show c54237e -- src/views/labor-tools.js` and `-- src/views/store-dash.js` both
+  show #139 already switched them to live `supervisorGroups()`/`supervisorOf()`; current `main`
+  still reads `supervisorGroups()` live at `labor-tools.js:1476` (`INV_ORG_COORDS` only as a
+  per-store fallback, not the primary source). `analytics.js`/`smg-voice.js`'s conversions to a
+  real `LocationSelector` (with UI-boundary translation helpers, `orgFilterToSelectorValue`/
+  `filterToSelectorValue`) confirmed present in the diff. Scope was genuinely narrower than the
+  dispatch's original framing — the PR flagged (not fixed) one adjacent stale-snapshot bug in
+  `store-dash.js`'s separate `OrgView` "By Patch" tab, worth a future dispatch, not touched here.
 - **✅ SHIPPED (2026-08-26, v5.180): Dispatch #143 merged — print/export for At A Glance,
   Signals, Security Panel** (PR #762). Independently verified before merge: fresh worktree merge
   of `origin/claude/dispatch-143-print-export-sweep` onto `origin/main`, full suite **2645/2645
