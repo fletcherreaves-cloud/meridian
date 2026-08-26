@@ -84,6 +84,29 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.185, direct fix, no dispatch): Delivery Wait target root-caused
+  and fixed — a merged-header split column, not a missing-data gap as first suspected.** Owner
+  sent a live screenshot: `yearly_targets`'s "McDelivery Restaurant Wait Time" is a MERGED
+  2-column header — the header text sits on the LEFT column, which holds a literal `<` for every
+  row; the real mm:ss value is one column to the right (*"It's in a split column so its the one
+  to the right of '<'"*). `parseYearlyTargets` was reading the `<` column itself
+  (`parseFloat('<')` = NaN), exactly matching the null-for-all-27-stores result measured live the
+  day before. Fixed: reads the value column, converts mm:ss (or h:mm:ss) → seconds via the
+  already-existing `hmsToSec` helper (`src/engine/people-reports.js`) — reused, not reinvented —
+  matching `restaurantTimeSec`'s (the ACTUAL side's) scale.
+  **Same message, same session: "let's wire in Star Rating as well."** Found the same bug family
+  — McDelivery Star Rating values are written as `">4.5"` (comparison prefix in one cell), so
+  plain `parseFloat` also returned NaN there. Fixed the parse, and added McDelivery Star Rating
+  as a new RGR metric: target real and now-fixed (`tMcdStars` → `yearly_targets.mcd_star_rating`),
+  actual manual (no data source exists anywhere in the app), `scored:false` — same reasoning
+  v5.184's 2nd Side Healthy Usage used (no live actuals to calibrate a threshold band against).
+  **`kpi-registry.test.js`'s stale guard updated, not worked around** — it asserted `mcdStars`
+  had no picker entry, written before this metric existed; `KPI_REGISTRY`'s own "flattens every
+  default-review metric" test already requires the opposite (any `DEFAULT_REVIEW_CONFIG` metric
+  is unconditionally picker-visible by design), so the old assertion was structurally
+  contradicted, not just outdated.
+  New parser tests (`yearly-targets-parser.test.js`) reproduce the exact merged-header/`>`-prefix
+  layout from the live screenshot. Full suite 2662/2662; build clean, +0.22 KB gzip.
 - **✅ SHIPPED (2026-08-26, v5.184, direct fix, no dispatch): Retention Rollup's "Labor % Δ" was
   100x too big — owner caught it live within minutes of #146 shipping real data.** A
   "22.02% → 21.75%" Before→Since pair (0.27pp) was rendering as "-27.43pp". Root cause: `laborPct`
