@@ -79,18 +79,128 @@ create table if not exists public.reviews (
   updated_at     timestamptz default now()
 );
 
--- ── Staff assignments (optional, for location tracking from 7th notes) ────────
--- Track which manager/supervisor was responsible for which store during each period.
--- Enables accurate review attribution when someone transfers between locations.
+-- ── Review overrides (dispatch #149, 2026-08-26) ───────────────────────────────
+-- Performance Review continuity, Phase 2: src:'auto' KPI actuals inside a review's `data` JSONB
+-- are locked (read-only in the app) so autoPopulateKPIs (review-engine.js) can keep refreshing
+-- them freely on every run without ever silently destroying a manual correction (the bug this
+-- dispatch fixes — see review-engine.js's own header comment on that function). A correction is
+-- instead an APPEND-ONLY record here: one row per override event, never updated or deleted
+-- (no UPDATE/DELETE policy is defined below — RLS with zero matching policies denies by
+-- default), so the table IS its own audit trail. The effective actual for a (review, month,
+-- metric) cell = the most recent row here for that triple if one exists, else whatever's in
+-- reviews.data (resolved client-side by applyReviewOverrides(), review-engine.js).
+--
+-- Per the plan doc's "Recommended data-shape approach": this is a real, row-level thing RLS can
+-- gate cleanly, which a plain policy on `reviews` (one giant JSONB blob) cannot do for a single
+-- key inside it.
+create table if not exists public.review_overrides (
+  id                 uuid primary key default gen_random_uuid(),
+  review_id          text not null references public.reviews(id) on delete cascade,
+  month              integer not null check (month between 1 and 12),
+  metric_key         text not null,
+  value              numeric not null,
+  previous_value     numeric,                 -- audit trail only; resolution never reads this back
+  reason             text not null check (reason in ('inaccurate_data', 'incomplete_data', 'something_else')),
+  note               text,
+  -- 'something_else' requires a real explanation -- mirrors review-engine.js's
+  -- validateOverrideInput() so a client that skips the JS check still can't get past the DB.
+  constraint review_overrides_note_required_check
+    check (reason <> 'something_else' or (note is not null and length(trim(note)) > 0)),
+  -- Who/when are set BY THE DATABASE, not supplied by the client -- a caller cannot spoof another
+  -- user's identity or role on an override record.
+  overridden_by      uuid references public.profiles(id) default auth.uid(),
+  overridden_by_role text default public.get_my_role(),
+  overridden_at      timestamptz not null default now()
+);
+
+-- ── Staff assignments — general reports-to graph (dispatch #150, 2026-08-26) ──────────────────
+-- Performance Review continuity, Phase 3a (data layer only — memory/dispatch-150.md,
+-- memory/plan-performance-review-continuity-2026-08-26.md decision #2). Was a stub — "track
+-- which manager/supervisor was responsible for which store" — with ZERO code references
+-- anywhere in src/; this dispatch is what finally wires it up, generalized from a single
+-- store-only column to a full {person, role, target, start} reports-to graph: an Area
+-- Supervisor's target is several STORES, an Ops Manager's target is several AS's (i.e. other
+-- PEOPLE), a District Operator's targets can be a MIX of OMs/AS's/stores directly. Resolution
+-- (recursive union at a point in time) lives in src/engine/assignment-graph.js — read that
+-- file's header comment for the full algorithm and identity-space notes.
+--
+-- Two real design decisions this dispatch had to make (not specified by the dispatch itself —
+-- documented here AND in the PR body):
+--
+-- 1. `person` (text) REPLACES the old `profile_id` (uuid FK to profiles). Most people this graph
+--    needs to describe — GM/AM/DM/SM, most AS/OM/DO — do NOT hold a Meridian login (a `profiles`
+--    row) at all; review-engine.js's own `reviews.data.geid` field already keys a reviewed
+--    person by their QSRSoft `geid`, not a profile_id, for exactly this reason. So `person` holds
+--    EITHER a `geid` (roster-sourced GM/AM/DM/SM rows, matching review.geid) OR a plain
+--    supervisor NAME STRING (AS/OM/DO rows seeded from src/constants.js's existing
+--    orgAssignments()/DEF_SETTINGS.supervisorGroups, which has never had anything richer than a
+--    name for a supervisor identity) — never a uuid. The old profile_id FK is dropped, not kept
+--    alongside, to avoid two parallel "who is this row about" answers. A later dispatch mapping
+--    an authenticated login (auth.uid() -> profiles.id) onto a `person` value in this graph
+--    (needed for Phase 3b's RLS work) is real, un-built future work, not solved here.
+-- 2. `end_date` is KEPT (untouched) but is NOT consulted by the resolution engine. orgAssignments()
+--    — the exact pattern this dispatch was told to generalize, not reinvent — is explicitly a
+--    "start-only model: the next assignment implicitly ends the prior one" (its own header
+--    comment, src/constants.js). Extending that SAME rule here means a person's assignment to a
+--    target ends the moment a NEWER row names the same target, with no need to read `end_date` at
+--    all — resolveScope()/currentHolderOfTarget() never look at it. `end_date` stays as an
+--    optional/advisory field only (e.g. a known departure date, useful to the future
+--    auto-finalize-on-departure feature in the plan doc's decision #6-B), never load-bearing for
+--    "who holds this target right now." Full reasoning in this dispatch's PR body.
 create table if not exists public.staff_assignments (
   id          uuid default gen_random_uuid() primary key,
-  profile_id  uuid references public.profiles(id) on delete cascade,
-  store_loc   text not null,
+  person      text not null,                -- geid (GM/AM/DM/SM) or supervisor name (AS/OM/DO) — see header
+  role        text not null
+                check (role in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor',
+                                 'gm', 'sm_am_dm', 'manager')),   -- DEFAULT_ROLES ladder id, not review-engine.js ROLE_KEYS — see PR body
+  target_type text not null check (target_type in ('store', 'person')),
+  target      text not null,                -- a store loc code (target_type='store') or another row's `person` value (target_type='person')
   start_date  date not null,
-  end_date    date,                         -- null = currently assigned
+  end_date    date,                         -- advisory only — NOT consulted by resolution, see header
   notes       text,
-  created_at  timestamptz default now()
+  created_at  timestamptz default now(),
+  constraint staff_assignments_unique unique (person, role, target_type, target, start_date)
 );
+
+-- Dispatch #150 (2026-08-26): the ALTER path for the LIVE production table — `create table if
+-- not exists` above is a no-op once the table already exists (same lesson dispatch #148 already
+-- learned the hard way for `profiles`). Idempotent: safe to re-run. This session has no live
+-- Supabase access from which to confirm the table is actually empty in production (it very
+-- likely is — zero code references anywhere in src/ means nothing has ever written to it — but
+-- "very likely" is not a measurement); see this dispatch's PR body for exactly what a human
+-- should verify before/after running this block, and why the NOT NULL enforcement below is
+-- split into a separate, clearly-flagged final step rather than folded into the ADD COLUMN
+-- statements themselves.
+alter table public.staff_assignments add column if not exists person text;
+update public.staff_assignments set person = profile_id::text where person is null and profile_id is not null;
+alter table public.staff_assignments add column if not exists role text;
+alter table public.staff_assignments add column if not exists target_type text;
+update public.staff_assignments set target_type = 'store' where target_type is null;
+alter table public.staff_assignments add column if not exists target text;
+update public.staff_assignments set target = store_loc where target is null and store_loc is not null;
+
+alter table public.staff_assignments drop constraint if exists staff_assignments_role_check;
+alter table public.staff_assignments add constraint staff_assignments_role_check
+  check (role in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'sm_am_dm', 'manager'));
+alter table public.staff_assignments drop constraint if exists staff_assignments_target_type_check;
+alter table public.staff_assignments add constraint staff_assignments_target_type_check
+  check (target_type in ('store', 'person'));
+alter table public.staff_assignments drop constraint if exists staff_assignments_unique;
+alter table public.staff_assignments add constraint staff_assignments_unique
+  unique (person, role, target_type, target, start_date);
+
+alter table public.staff_assignments drop constraint if exists staff_assignments_profile_id_fkey;
+alter table public.staff_assignments drop column if exists profile_id;
+alter table public.staff_assignments drop column if exists store_loc;
+
+-- ⚠️ Run this final step ONLY after confirming (see PR body) there are no live rows left with a
+-- null `person`/`target_type`/`target` — i.e. every pre-existing row (expected: zero) had a
+-- profile_id/store_loc value the UPDATE statements above could actually backfill from. `role`
+-- has NO legacy source column at all, so any pre-existing row needs it set by hand first.
+-- alter table public.staff_assignments alter column person set not null;
+-- alter table public.staff_assignments alter column target_type set not null;
+-- alter table public.staff_assignments alter column target set not null;
+-- alter table public.staff_assignments alter column role set not null;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
@@ -102,6 +212,48 @@ create table if not exists public.staff_assignments (
 create or replace function public.get_my_role()
 returns text language sql security definer stable as $$
   select role from public.profiles where id = auth.uid();
+$$;
+
+-- ── Reviewer-hierarchy ladder helpers (dispatch #149, 2026-08-26) ──────────────
+-- SQL-side mirrors of two JS mappings (src/engine/permissions.js) so the review_overrides RLS
+-- insert policy, below, can enforce the SAME hierarchy-distance rule the client UI already
+-- checks via canOverrideLockedActual()/levelsAbove() — this is the actual enforcement boundary;
+-- the client check only mirrors it for the UI. NOT auto-generated from the JS source — this is
+-- exactly the SQL/JS de-sync risk the plan doc's "Recommended data-shape approach" section
+-- flags for a trigger-based approach; it applies here too, just to two small lookup functions
+-- instead of a trigger. If DEFAULT_ROLES' levels or REVIEW_ROLE_TO_LADDER ever change, update
+-- both functions in the SAME commit or authorization silently drifts between client and server.
+create or replace function public.role_level(role_id text)
+returns integer language sql immutable as $$
+  select case role_id
+    when 'owner'           then 1
+    when 'admin'           then 1
+    when 'vp'               then 2
+    when 'do'               then 3
+    when 'manager'          then 3
+    when 'om'               then 4
+    when 'area_supervisor'  then 5
+    when 'gm'               then 6
+    when 'sm_am_dm'         then 7
+    else null
+  end;
+$$;
+
+-- Maps a review's ROLE_KEYS value (review-engine.js: GM/AM/DM/SM/AS/OM) to the ladder id
+-- role_level() above understands. AM/DM/SM all collapse onto 'sm_am_dm' — same functional rung,
+-- split by pay classification (plan doc decision #5), matching permissions.js's
+-- REVIEW_ROLE_TO_LADDER exactly.
+create or replace function public.review_role_to_ladder(review_role text)
+returns text language sql immutable as $$
+  select case review_role
+    when 'GM' then 'gm'
+    when 'AM' then 'sm_am_dm'
+    when 'DM' then 'sm_am_dm'
+    when 'SM' then 'sm_am_dm'
+    when 'AS' then 'area_supervisor'
+    when 'OM' then 'om'
+    else null
+  end;
 $$;
 
 -- ── profiles RLS ──────────────────────────────────────────────────────────────
@@ -180,22 +332,66 @@ create policy "reviews: authenticated update" on public.reviews
 create policy "reviews: admin delete" on public.reviews
   for delete using (get_my_role() = 'admin');
 
+-- ── review_overrides RLS (dispatch #149, 2026-08-26) ────────────────────────────
+alter table public.review_overrides enable row level security;
+
+drop policy if exists "review_overrides: read via parent review" on public.review_overrides;
+drop policy if exists "review_overrides: hierarchy-gated insert" on public.review_overrides;
+
+-- Read access mirrors whatever the `reviews` policies above already grant on the PARENT review
+-- — this subquery is itself subject to `reviews`' own RLS (Postgres does not bypass RLS on a
+-- referenced table just because the reference is inside another table's policy), so it can never
+-- grant override-history visibility a caller doesn't already have on the review itself. No
+-- separate hierarchy check is duplicated here on purpose — one visibility rule, not two.
+create policy "review_overrides: read via parent review" on public.review_overrides
+  for select using (
+    exists (select 1 from public.reviews r where r.id = review_overrides.review_id)
+  );
+
+-- THE real enforcement boundary for "who may override a locked actual" (dispatch-149.md's exact
+-- mechanism): levelsAbove(reviewedRole, callerRole) >= 2 on the reviewer-hierarchy ladder, PLUS
+-- an unconditional admin/owner escape hatch — identical rule to permissions.js's
+-- canOverrideLockedActual(), which the client UI uses only to decide whether to SHOW the
+-- override affordance at all; this policy is what actually stops a bypass of that UI (e.g. a
+-- direct REST call). No update/delete policy exists below on purpose — with RLS enabled and zero
+-- matching policies, both are denied by default, keeping this table a true append-only audit
+-- trail (an override is corrected by adding a NEW row, never by editing an old one).
+create policy "review_overrides: hierarchy-gated insert" on public.review_overrides
+  for insert with check (
+    get_my_role() in ('admin', 'owner')
+    or exists (
+      select 1 from public.reviews r
+      where r.id = review_overrides.review_id
+        and public.role_level(public.review_role_to_ladder(r.data->>'role')) is not null
+        and public.role_level(get_my_role()) is not null
+        and public.role_level(public.review_role_to_ladder(r.data->>'role')) - public.role_level(get_my_role()) >= 2
+    )
+  );
+
 -- ── staff_assignments RLS ─────────────────────────────────────────────────────
 alter table public.staff_assignments enable row level security;
 
--- Users can see their own assignments; supervisors/admins see all
--- (dispatch #148, 2026-08-26: same 'supervisor' -> 'area_supervisor' string fix as reviews RLS
--- above -- this table's own write policy is otherwise unchanged; it's out of this dispatch's
--- scope, which extends `staff_assignments` per the plan doc's later build-sequencing item #3.)
+-- Dispatch #150 (2026-08-26): the old "own assignments" clause (`profile_id = auth.uid()`) is
+-- gone because `profile_id` is gone — `person` (its replacement) usually holds a geid or a
+-- supervisor name string, not the caller's own uuid, so "is this row about me" has no defined
+-- answer yet (mapping a logged-in user onto their own `person` identity in this graph is real,
+-- un-built Phase 3b work — see the CREATE TABLE header comment above). Read access is therefore
+-- ADMIN/AREA_SUPERVISOR ONLY for now, same role check the write policy below already used —
+-- narrower than before for a non-admin/non-AS caller (previously: nothing, since `profile_id`
+-- was never populated by any code path either — this is a behavior change in principle, not in
+-- practice, on a table with zero writers to date).
+drop policy if exists "assignments: own or above" on public.staff_assignments;
 create policy "assignments: own or above" on public.staff_assignments
   for select using (
-    profile_id = auth.uid() or
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid() and p.role in ('area_supervisor', 'admin')
     )
   );
 
+-- (dispatch #148, 2026-08-26: same 'supervisor' -> 'area_supervisor' string fix as reviews RLS
+-- above.) Unchanged by dispatch #150 — references only profiles.role, no column this dispatch
+-- renamed.
 create policy "assignments: admin/supervisor write" on public.staff_assignments
   for all using (
     exists (
@@ -210,7 +406,16 @@ create policy "assignments: admin/supervisor write" on public.staff_assignments
 create index if not exists reviews_loc_idx  on public.reviews (reviewee_loc);
 create index if not exists reviews_year_idx on public.reviews (review_year, review_half);
 create index if not exists reviews_org_idx  on public.reviews (org);
-create index if not exists assign_profile_idx on public.staff_assignments (profile_id, start_date);
+-- Dispatch #150: profile_id -> person (see staff_assignments' own header comment); the old
+-- index name/definition is dropped and replaced, plus a new index on the target side (needed by
+-- currentHolderOfTarget()/whoOversees() -- src/engine/assignment-graph.js -- which scans "every
+-- row naming this target", the mirror-image query direction from "every row about this person").
+drop index if exists assign_profile_idx;
+create index if not exists assign_person_idx on public.staff_assignments (person, start_date);
+create index if not exists assign_target_idx on public.staff_assignments (target_type, target, start_date);
+-- Dispatch #149: the resolution query is always "every override for one review, newest first
+-- per (month, metric_key)" — see effectiveOverrideFor()/applyReviewOverrides() (review-engine.js).
+create index if not exists review_overrides_review_idx on public.review_overrides (review_id, month, metric_key, overridden_at desc);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- QSRSoft EMAIL INGEST PIPELINE (v4.240+)
