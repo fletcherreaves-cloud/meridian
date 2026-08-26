@@ -84,6 +84,35 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ RESOLVED (2026-08-26): `data/org-structure/Organization_Structure.xlsx` updated to the
+  owner's real 2026-08-25 copy — PM initially got this wrong, corrected after the owner pushed
+  back.** The owner said this session had already made a formula change to the workbook
+  "yesterday"; the PM's first response denied it (checked only `git log`/`git status`, which
+  showed no edit — true, but incomplete: it didn't check session upload/scratch directories). The
+  owner pushed back specifically enough (*"I believe it was yesterday... could've been a spawned
+  runner"*) to warrant a harder look, which found it: a real upload at
+  `/root/.claude/uploads/.../08787628-Organization_Structure.xlsx` (2026-08-25) and three
+  byte-identical scratchpad copies, one genuinely carrying a new cross-sheet formula on the
+  `Locations` sheet (`=IFERROR(INDEX('Scheduling Setup'!$L:$L,MATCH($A3,'Scheduling
+  Setup'!$A:$A,0)),"")`) pulling a real column, **"1st Schedule Week"**, that already existed in
+  the owner's own upload on the `Scheduling Setup` sheet. **Lesson: "I checked git and found
+  nothing" is not the same measurement as "I checked everywhere a prior session could have left
+  work" — a session's own upload/scratch directories are real state that git log doesn't cover.**
+  Owner confirmed this copy is current and OK to commit; now committed, replacing the stale
+  2026-08-23 version. Full detail (including why "1st Schedule Week" is a *better*, self-
+  validating signal than the previously-found "Schedule Workshop" column) in the updated
+  `data/org-structure/README.md`.
+- **📋 (2026-08-26): [Dispatch #146 — Pre-populate Retention Rollup workshop-week marks from the
+  Organization Structure sheet's "1st Schedule Week" column](dispatch-146.md) — REVISED, now READY
+  TO DISPATCH, both prior blockers resolved.** The source column changed from "Schedule Workshop"
+  (a training date) to `Scheduling Setup`'s **"1st Schedule Week"** (the date each store's first
+  live LifeLenz schedule week under the new process actually landed) — a more direct match for
+  what the Retention Rollup's before/since split needs. The "planned vs. confirmed" ambiguity that
+  blocked the original draft is now resolved **empirically, not by assumption**: every store whose
+  "1st Schedule Week" is ≤ today has real, filled-in engagement/notes fields on the same row;
+  every future-dated store has them blank — an airtight correlation across all 20 OK stores. The
+  `date ≤ today` import gate is therefore a confirmed-correct rule. Not yet sent to an engineer —
+  queued behind #145 (PR #767, awaiting verification) per the one-engineer-at-a-time cadence.
 - **✅ SHIPPED (2026-08-26, v5.181): Dispatch #144 merged — 2 of the 4 named panels converted to
   LocationSelector** (PR #765). Independently verified before merge: fresh worktree merge onto
   `origin/main`, full suite **2645/2645 passing**, `npm run build` clean (entry gzip 468.39 KB,

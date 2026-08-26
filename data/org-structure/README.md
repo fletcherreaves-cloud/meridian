@@ -79,3 +79,34 @@ count days, delivery days, risk profiles, counting managers. `memory/data-acquis
 list.md` §D lists graded-visit data as a gap needing a PACE/Propel pull; **scheduled** RGR dates
 are already here. That does not replace actual visit results, but Visit Readiness could know when
 each store's next graded visit falls without any new pull.
+
+## 🆕 2026-08-26 update — real schedule-workshop tracking data, and a cross-sheet formula
+
+**Owner updated this file on 2026-08-25** (uploaded to the PM session, confirmed current
+2026-08-26) with real workshop-tracking columns that did not exist in the 2026-08-23 copy this
+file previously held:
+
+- **`Scheduling Setup` sheet, column L — "1st Schedule Week"**: the date each store's **first live
+  LifeLenz schedule week under the new scheduling process actually landed** — a real, per-store
+  outcome date, not a plan. **Self-validating**: every store whose date is on or before today has
+  real, filled-in `GM Engagement`/`Sched Mgr Engagement`/`Execution Confidence`/`Notes` values
+  (genuine retrospective comments — e.g. "Derek not fully engaged. Appeared asleep a couple
+  times"); every store whose date is still in the future has all four of those fields blank. That
+  correlation is airtight across all 20 OK stores as of 2026-08-26 — treat `1st Schedule Week ≤
+  today` as a reliable "has this actually happened yet" signal, not just a plan date.
+  `Scheduling Setup`'s own **"Date Scheduled"** column (a different, earlier concept — the
+  workshop/training date itself) is a separate, plain-entered value, not derived from this one.
+- **`Locations` sheet, new column "1st Schedule Week"** (added after "Skill Levels Updated") — a
+  **real cross-sheet formula** mirrors the value above onto the main roster sheet:
+  `=IFERROR(INDEX('Scheduling Setup'!$L:$L,MATCH($A3,'Scheduling Setup'!$A:$A,0)),"")`. This was
+  added by an earlier session (2026-08-25), not by the owner directly — the formula's cached
+  value (`<v/>`) is empty in this committed copy since it was written by a library that doesn't
+  recompute Excel's calc chain; it resolves correctly the moment the file is opened in real Excel
+  (or any tool that recalculates), and the underlying source data (`Scheduling Setup`!L) is a
+  plain value, not affected. **For programmatic reads, source `1st Schedule Week` directly from
+  `Scheduling Setup`, not through this formula.**
+
+This is the real answer to "when did the schedule-workshop retention split actually happen for
+each store" — a stronger signal than the `Locations` sheet's "Schedule Workshop" column (the
+training date), which this file previously documented as the retention-marks candidate. See
+`memory/dispatch-146.md` for how this feeds the Retention Rollup's `sched_retention_marks`.
