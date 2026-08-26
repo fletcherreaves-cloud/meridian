@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { loadXLSX } from '../lib/xlsx-lazy.js';
 import { DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
+import { weekStartOf } from '../engine/schedule-summary.js';
 
 // #248 — xlsx lazy-loaded (see lib/xlsx-lazy.js's header for the full rationale). The only
 // direct XLSX.* readers in this file — parseRaw, parseProjectionsFile, sniffSheetType,
@@ -192,6 +193,14 @@ function detectType(filename, wb){
   // Sheet-name fallback: SMG FullScale workbooks always have a "Small Graph",
   // "Large Graph", or "Data Only" sheet (whichever export layout was chosen).
   if(ext==='xlsx'&&wb&&wb.SheetNames&&wb.SheetNames.some(s=>{const l=s.toLowerCase();return l.includes('small graph')||l.includes('large graph')||l.includes('data only');}))return{type:'smg-fullscale',label:'SMG FullScale Report',dr,confidence:'high'};
+  // Organization Structure workbook (dispatch #146) — filename match first.
+  if(ext==='xlsx'&&(fn.includes('organization_structure')||fn.includes('org structure')||fn.includes('org_structure')))return{type:'org-structure',label:'Organization Structure (1st Schedule Week)',dr,confidence:'high'};
+  // Sheet-name fallback: Organization Structure workbooks carry a "Scheduling Setup" sheet with
+  // a "1st Schedule Week" header cell — mirrors the FullScale sheet-name fallback just above.
+  if(ext==='xlsx'&&wb&&wb.Sheets&&wb.Sheets['Scheduling Setup']){
+    const _ssHdr=(XLSX.utils.sheet_to_json(wb.Sheets['Scheduling Setup'],{header:1,defval:null,raw:true})[1])||[];
+    if(_ssHdr.some(c=>String(c||'').toLowerCase().trim()==='1st schedule week'))return{type:'org-structure',label:'Organization Structure (1st Schedule Week)',dr,confidence:'high'};
+  }
   // Mesonet: all-digit filename
   if(/^\d+$/.test(fn)&&(ext==='csv'||ext==='txt'))return{type:'weather',label:'WeatherData (Mesonet)',dr,confidence:'high'};
   // Combined Meridian workbook
@@ -1725,6 +1734,67 @@ function parseLifeLenzLabor(wb) {
 //   col 66 = Accuracy B2B pct
 //   col 88 = DT Problem pct (row0=problem rate, row1=no-problem rate)
 //   col 110= Overall Problem pct
+// ── Organization Structure — "1st Schedule Week" import (dispatch #146) ────────────────
+// Reads Scheduling Setup's OWN "1st Schedule Week" column — NOT the Locations sheet's mirrored
+// copy of the same header, which is a cross-sheet formula (`=IFERROR(INDEX('Scheduling
+// Setup'!$L:$L,...` whose cached value is empty in the committed file (written by a library that
+// doesn't recompute Excel's calc chain). Header row is row 2 (index 1, confirmed live against
+// data/org-structure/Organization_Structure.xlsx); Location is col 0 (numeric NSN), "1st Schedule
+// Week" is col 11 (col L). A handful of stray/orphan rows past the real ~20 stores carry
+// Excel-serial-looking numbers in col 0 with no LocationName (legend rows, e.g. "Setup/Mgr
+// Sched"/"Crew Schedule") — validated against STORE_NAMES so only rows that resolve to a real
+// store are returned. Dates decoded via parseXLDate (reused, not reimplemented, per dispatch).
+// Returns one entry per REAL store row, `scheduleWeekDate: null` when the cell is blank — the
+// upload handler needs that (not a pre-filtered list) to report a "no schedule-week date" count
+// in its post-upload summary (dispatch scope item 3); in the current committed file this bucket
+// is empty (all 20 OK stores have a date), but the shape stays correct if a future copy has gaps.
+function parseOrgStructure(wb) {
+  const ws = wb.Sheets['Scheduling Setup'];
+  if (!ws) { console.warn('[parseOrgStructure] No "Scheduling Setup" sheet found. SheetNames:', wb.SheetNames); return []; }
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  const h = raw[1] || [];
+  const dateCol = fc(h, '1st Schedule Week');
+  if (dateCol < 0) { console.warn('[parseOrgStructure] "1st Schedule Week" column not found on Scheduling Setup.'); return []; }
+  const out = [];
+  for (let i = 2; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row) continue;
+    const locRaw = row[0];
+    if (locRaw == null || locRaw === '') continue;
+    const loc = String(parseInt(locRaw, 10) || '');
+    if (!loc || !STORE_NAMES[loc]) continue; // skip orphan/legend rows that don't resolve to a real store
+    const dv = row[dateCol];
+    const scheduleWeekDate = (dv == null || dv === '') ? null : parseXLDate(dv);
+    out.push({ loc, scheduleWeekDate });
+  }
+  return out;
+}
+
+// ── classifyOrgStructureImport — pure, testable classification for the Retention Rollup
+// pre-populate import (dispatch #146). Kept separate from the actual Supabase writes (App.js's
+// handleFiles) so the date gate and the skip-if-already-marked default can be unit-tested
+// without a Supabase client or a React render.
+// `orgRows`: parseOrgStructure(wb)'s output. `existingMarksByLoc`: {[loc]: weekKey}, from
+// loadRetentionMarks() re-keyed by loc — an existing mark for a store is NEVER overwritten by
+// this import (it may reflect a real on-the-ground correction the sheet doesn't know about).
+// `today`: Date, defaults to now; a row's scheduleWeekDate <= today is the confirmed "has this
+// actually happened" signal (dispatch #146). Returns `toMark` ({loc, weekKey} pairs still needing
+// a saveRetentionMark call) plus the three skip counts for the post-upload summary.
+function classifyOrgStructureImport(orgRows, existingMarksByLoc, today) {
+  const _today = today ? new Date(today) : new Date();
+  _today.setHours(23, 59, 59, 999); // inclusive of "today" itself
+  const toMark = [];
+  let skippedFuture = 0, skippedExisting = 0, noDate = 0;
+  for (const row of (orgRows || [])) {
+    if (!row.scheduleWeekDate) { noDate++; continue; }
+    if (row.scheduleWeekDate > _today) { skippedFuture++; continue; }
+    if (existingMarksByLoc && existingMarksByLoc[row.loc]) { skippedExisting++; continue; }
+    const weekKey = weekStartOf(row.scheduleWeekDate).toISOString().slice(0, 10);
+    toMark.push({ loc: row.loc, weekKey });
+  }
+  return { toMark, skippedFuture, skippedExisting, noDate };
+}
+
 function parseSMGFullScale(wb) {
   // ── Find the sheet that contains store-number rows ─────────────────────────
   // FullScale workbooks have multiple sheets (Small Graph, Large Graph, Data, etc.)
@@ -2268,4 +2338,4 @@ function parsePeopleSkillsWb(wb){
   return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs };
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport };
