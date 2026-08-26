@@ -84,6 +84,33 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.180): Dispatch #143 merged — print/export for At A Glance,
+  Signals, Security Panel** (PR #762). Independently verified before merge: fresh worktree merge
+  of `origin/claude/dispatch-143-print-export-sweep` onto `origin/main`, full suite **2645/2645
+  passing**, `npm run build` clean (entry gzip 468.38 KB, eager 539.56 KB — matches the PR's
+  claimed +0.01 KB), and the diff spot-checked against the PR's specific claims: At A Glance's
+  leaderboard export reads the full `lbData.data` array while the on-screen table caps at
+  `data.slice(0,3)`/`slice(-3)` (`at-a-glance.js:2921`) — export is genuinely uncapped, not just
+  claimed to be; Signals' Scanner export reads `results` (all discovered pairs) not `shown`
+  (`results.slice(0,40)`); Security Panel's export `subjectLabelFor` uses the identical
+  `revealed[group.empToken] || 'This employee'` expression `SubjectRow` already renders
+  (`security-panel.js:646` vs `:808`), and the diff never touches `scopeMatches`/`supervisorOf`
+  (dispatch #139's fix). All confirmed real, not just asserted in the PR body.
+- **⚠️ CORRECTION PENDING (2026-08-26): dispatch #145's OSAT B2B claim is WRONG — do not send to
+  an engineer until this is resolved.** The merged `dispatch-145.md` states OSAT B2B is "fully
+  auto both sides, cleanest of the three" (real actual `smg_fullscale.osat_b2b` 0.88–0.96 range +
+  real target `yearly_targets.osat_b2b_pct`). After writing that, the owner shared a real target
+  screenshot (Yearly Projections → Target Categories → CSAT) showing OSAT B2B targets in the
+  **1.5%–8.5%** range. Direct query of the same 5 stores' `osat_b2b_pct` confirmed real values in
+  that low range (e.g. store 3708: target=0.04) — a **~22x mismatch** against the 0.88–0.96
+  satisfaction-style actual. These are two different concepts sharing a misleading column name.
+  Corrected hypothesis: `osat_b2b_pct` is very likely actually a B2B-specific **problem-rate**
+  target (i.e., possibly EPB2B's real target, hiding under a misleading field name) — meaning
+  satisfaction-style OSAT B2B likely has **no real yearly-workbook target** and needs an override,
+  same as EAP. This was reported to the owner with an explicit question — fold the correction into
+  the dispatch, or hold until the owner looks himself — **not yet answered**. Do not dispatch
+  #145 to an engineer until this resolves; do not treat the merged doc's "cleanest of the three"
+  claim as correct in the meantime.
 - **📋 (2026-08-26): [Dispatch #145 — Performance Review RGR: add EAP, OSAT B2B, EAD as new
   metrics — keep EPB2B untouched](dispatch-145.md).** Resolves the EPB2B open question from
   earlier today: traced the real FullScale report headers baked into
