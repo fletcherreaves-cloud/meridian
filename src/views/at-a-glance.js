@@ -31,6 +31,134 @@ import { worstStream } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
 
+// Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
+// runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
+// its own dedicated lazy wrapper, not behind a click -- would otherwise drag into that same
+// startup path. React.lazy defers the actual import() to first render of the Export control
+// itself, matching the established pattern (record-day.js/dt-speedofservice.js, dispatch #130/#136).
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
+// Local HTML-escaper for the print report only -- same tiny local pattern every print/export
+// builder in this codebase repeats (record-day.js, dt-speedofservice.js, security-panel.js, etc.)
+// rather than a shared import, since it's a two-line function, not a module.
+function escH(s) { return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No data.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(hh=>`<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${escH(hh)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr style="background:${i%2?'#fff':'#fafafa'}">${r.map(c=>`<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${escH(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+
+// ── Store Leaderboard export/print (dispatch #143) ──────────────────────────────────────────────
+// Design call (see PR body): At A Glance is 12 configurable, densely-packed sections -- trying to
+// replicate every one of them in a printable document would produce an illegibly dense page (the
+// dispatch's own warning). The dispatch names exactly what a print/export of this dashboard is
+// FOR: "KPI tiles' current values, the store-ranking table in full (not just what's scrolled into
+// view), and the movers strip." So the report below is a curated one-page SUMMARY -- the numbers
+// an operator would screenshot or hand to someone, not a reproduction of the whole scrollable
+// dashboard -- built from data already computed in AtAGlance's own render (never re-derived, so it
+// can't drift from what's on screen): the district state comment + data freshness, a KPI snapshot
+// row (digital sales mix, model health, sales reconciliation), the FULL movers-strip lists (not
+// just the 2-3 shown inline), and the COMPLETE store leaderboard for whichever metric tab is
+// currently selected (lbData.data -- the on-screen view only renders top3/bottom3 of this same
+// array, so "in full" here means the export/print isn't capped at 3+3 either).
+function leaderboardExportSpec(lbData, scopeStr, rangeStr) {
+  const today = new Date().toISOString().slice(0,10);
+  const {data, fmt, label} = lbData;
+  const rows = data.map((s,i) => ({
+    Rank: i+1, Store: s.name, Org: s.org, [label]: fmt(s.value),
+  }));
+  return {
+    rows, columns: ['Rank','Store','Org',label].map(k=>({key:k,label:k})),
+    title: `At A Glance — Store Leaderboard — ${label} — ${scopeStr} — ${rangeStr}`,
+    filename: `at-a-glance-leaderboard-${label.toLowerCase().replace(/[^a-z0-9]+/g,'-')}-${today}`,
+  };
+}
+
+function buildAtAGlancePrintHtml({ scopeStr, rangeStr, ruleComment, dataAge, latestLab, digitalSec, hlth, salesRecon, moversStrip, lbData }) {
+  const now = new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+  const heroCard = (lbl, val, sub, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${escH(lbl)}</div>
+    <div style="font-size:18px;font-weight:800;color:${color||'#0f172a'};margin-bottom:2px">${escH(val==null?'—':val)}</div>
+    ${sub?`<div style="font-size:10px;color:#6b7280">${escH(sub)}</div>`:''}
+  </div>`;
+  const kpiSection = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${heroCard('Data Freshness', latestLab?latestLab.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'Not loaded', dataAge===0?'today':dataAge+'d ago', dataAge>7?'#ef4444':dataAge>2?'#f59e0b':'#10b981')}
+      ${heroCard('Model Health', hlth.green+' green / '+hlth.yellow+' yellow / '+hlth.red+' red', hlth.red>0?'stores need attention':'trusted', hlth.red>0?'#ef4444':'#10b981')}
+      ${digitalSec ? heroCard('Digital Sales Mix', (digitalSec.digitalPct*100).toFixed(2)+'%', digitalSec.digStoreCount+' of '+digitalSec.storeCount+' stores') : heroCard('Digital Sales Mix','—','no data')}
+      ${salesRecon.count>=2 ? heroCard('Sales Reconciliation', salesRecon.r.ok?'✓ Reconciled':'⚠ Differs '+((salesRecon.r.relative||0)*100).toFixed(2)+'%', 'DAR vs Sales Ledger', salesRecon.r.ok?'#10b981':'#f59e0b') : heroCard('Sales Reconciliation','—','insufficient sources')}
+    </div>`;
+
+  let moversHtml = '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No movers data for today.</p>';
+  if (moversStrip && (moversStrip.up.length || moversStrip.down.length || moversStrip.slowDT.length)) {
+    const moverRows = (label, list, fmtV) => list.length ? `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${escH(label)}</div>` +
+      list.map(r=>`<div style="font-size:12px;padding:3px 0">${escH(STORE_NAMES[r.loc]||r.loc)} <b>${fmtV(r)}</b></div>`).join('') + `</div>` : '';
+    moversHtml = (moversStrip.up.length||moversStrip.down.length ? `<div style="font-size:10px;color:#6b7280;margin-bottom:8px">Sales vs LY · as of ${moversStrip.date.toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${moversStrip.behind} of ${moversStrip.total} stores behind LY</div>`:'') +
+      moverRows('▲ Up vs LY', moversStrip.up, r=>(r.salesVsLYPct>=0?'+':'')+r.salesVsLYPct.toFixed(2)+'%') +
+      moverRows('▼ Down vs LY', moversStrip.down, r=>r.salesVsLYPct.toFixed(2)+'%') +
+      moverRows('🚗 Slowest DT', moversStrip.slowDT, r=>Math.round(r.dt)+'s');
+  }
+
+  const {data, fmt, label, avg} = lbData;
+  const lbRows = data.map((s,i)=>[i+1, escH(s.name), s.org, `<b>${escH(fmt(s.value))}</b>`]);
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>At A Glance — District Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">At A Glance — District Report</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">District Report</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">📊 At A Glance</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${escH(scopeStr)} · ${escH(rangeStr)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+
+  ${reportSection('District State', `<div style="font-size:13px;color:${ruleComment.color==='#10b981'?'#059669':ruleComment.color==='var(--crit)'?'#dc2626':ruleComment.color};line-height:1.6">${escH(ruleComment.text)}</div>`)}
+  ${reportSection('KPI Snapshot', kpiSection)}
+  ${reportSection("Today's Movers", moversHtml)}
+  ${reportSection(`Store Leaderboard — ${escH(label)} (${data.length} stores, district avg ${escH(avg!=null?fmt(avg):'—')})`, reportTable(['Rank','Store','Org',label], lbRows))}
+
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">QSR Forecasting & Analytics · Generated ${now} · CONFIDENTIAL</span>
+  </div>
+</div>
+</body></html>`;
+  return html;
+}
+
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
 const span=(p,...c)=>h('span',p,...c);
@@ -1714,6 +1842,32 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     return{storeProjs,weekDays,wsKey};
   }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,ds?.forecastWeekCache?.length,stores,settings,userEvents]);
 
+  // ── Print / Export (dispatch #143) ──────────────────────────────
+  // Design call: see the module-level comment above leaderboardExportSpec/buildAtAGlancePrintHtml
+  // for why this is a curated summary (state comment + KPI snapshot + full movers + full store
+  // leaderboard), not a reproduction of all 12 configurable dashboard sections. scopeStr reflects
+  // whatever location scope App.js already narrowed `stores` to (the FL/OK pill, or all) — this
+  // panel takes no location scope of its own, so "whatever's currently in view given the active
+  // location scope" is exactly what allLocs/okLocs/flLocs already encode.
+  const scopeStr = React.useMemo(() => {
+    if (!allLocs.length) return 'No Locations';
+    if (flLocs.length === allLocs.length) return 'Florida';
+    if (okLocs.length === allLocs.length) return 'Oklahoma';
+    return `All Locations (${allLocs.length} stores)`;
+  }, [allLocs.length, okLocs.length, flLocs.length]);
+  const rangeStr = dateRange && dateRange.s
+    ? dateRange.s.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' – ' + dateRange.e.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+    : 'This Week';
+
+  const exportSpec = React.useMemo(() => leaderboardExportSpec(lbData, scopeStr, rangeStr), [lbData, scopeStr, rangeStr]);
+
+  const handlePrintReport = React.useCallback(() => {
+    const html = buildAtAGlancePrintHtml({ scopeStr, rangeStr, ruleComment, dataAge, latestLab, digitalSec, hlth, salesRecon, moversStrip, lbData });
+    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+    if (w) { w.document.write(html); w.document.close(); }
+    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+  }, [scopeStr, rangeStr, ruleComment, dataAge, latestLab, digitalSec, hlth, salesRecon, moversStrip, lbData]);
+
   // ── RENDER ────────────────────────────────────────────────────
   // #225: was overflowY:'auto' with onScroll here AND flex:1/overflowY:'auto' on the
   // scroll region below — nested scrollers, and this outer one had no actual content
@@ -1746,14 +1900,24 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
                   title:'Go to Settings → Your Name to personalize your greeting'},
                   '(Add your name in Settings ✎)')))
         ),
-        // Period label — always visible
-        div({style:{fontSize:'10px',padding:'4px 10px',borderRadius:4,
-          background:'rgba(255,255,255,.18)',border:'.5px solid var(--bdr2)',
-          color:'#fff',fontWeight:500,letterSpacing:'.2px',whiteSpace:'nowrap'}},
-          dateRange&&dateRange.s?
-            dateRange.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+
-            ' – '+dateRange.e.toLocaleDateString('en-US',{month:'short',day:'numeric'}):
-            'This Week')
+        // Period label + print/export controls — always visible
+        div({style:{display:'flex',alignItems:'center',gap:6,flexShrink:0}},
+          div({style:{fontSize:'10px',padding:'4px 10px',borderRadius:4,
+            background:'rgba(255,255,255,.18)',border:'.5px solid var(--bdr2)',
+            color:'#fff',fontWeight:500,letterSpacing:'.2px',whiteSpace:'nowrap'}},
+            dateRange&&dateRange.s?
+              dateRange.s.toLocaleDateString('en-US',{month:'short',day:'numeric'})+
+              ' – '+dateRange.e.toLocaleDateString('en-US',{month:'short',day:'numeric'}):
+              'This Week'),
+          // Dispatch #143 — CSV/JSON export (full store leaderboard, current metric tab) + a
+          // curated print report (state + KPI snapshot + full movers + full leaderboard). Hidden
+          // while there's no leaderboard data to export, matching every other panel's convention.
+          !noData&&lbData.data.length>0&&h(React.Suspense,{
+            fallback:btn({className:'btn btn-sm',style:{opacity:.5,fontSize:'9px'},disabled:true},'⬇')},
+            h(LazyExportDropdown,{rows:exportSpec.rows,columns:exportSpec.columns,title:exportSpec.title,filename:exportSpec.filename})),
+          !noData&&lbData.data.length>0&&btn({className:'btn btn-sm',style:{fontSize:'9px',padding:'3px 8px'},
+            onClick:handlePrintReport,title:'Print a district summary report'},'🖨'),
+        )
       ),
 
       // State comment + freshness — hidden when scrolled

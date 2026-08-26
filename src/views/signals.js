@@ -9,11 +9,83 @@ import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-qua
 import { metricAvg } from '../engine/metric-source.js';
 import { STORE_NAMES } from '../constants.js';
 
+// Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
+// otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
+// first render of the Export control itself -- the established pattern (record-day.js/
+// dt-speedofservice.js, dispatch #130/#136).
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
 const h = React.createElement;
 const { useState: uSt, useMemo: uM, useEffect: uE, useCallback: uCB } = React;
 
 const amber = '#f59e0b', grn = '#10b981', red = '#ef4444', muted = '#6b7280', blue = '#60a5fa';
 const surf2 = 'rgba(255,255,255,.04)', bdr = 'rgba(255,255,255,.1)';
+
+// Local HTML-escaper for print reports only -- same tiny local pattern every print/export
+// builder in this codebase repeats (record-day.js, dt-speedofservice.js, security-panel.js, etc.)
+// rather than a shared import, since it's a two-line function, not a module.
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No data.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(hd => `<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${esc(hd)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#fff' : '#fafafa'}">${r.map(c => `<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${esc(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+// Wraps one report's body sections in the same shell every print report in this codebase uses
+// (record-day.js/dt-speedofservice.js/security-panel.js) -- a self-contained document opened via
+// window.open, its own Print button, @media print rules. Never the live app DOM / bare
+// window.print() against a scrolled container.
+function reportShell(title, subtitle, bodyHtml) {
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${esc(title)} — Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">${esc(title)}</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">Signals</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">${esc(title)}</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${esc(subtitle || '')}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+  ${bodyHtml}
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">QSR Forecasting &amp; Analytics · Generated ${now} · CONFIDENTIAL</span>
+  </div>
+</div>
+</body></html>`;
+}
 
 const DOMAINS = [
   { key: null, label: 'All' }, { key: 'service', label: 'Service' }, { key: 'sales', label: 'Sales' },
@@ -787,7 +859,7 @@ function StoreRow({ store, expanded, onToggle }) {
   );
 }
 
-function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
+function LiveOpsTab({ darRows: sharedDarRows, refreshDar, onExportReady }) {
   const todayStr = (()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
   const [date, setDate] = uSt(todayStr);
   const [ownRows, setOwnRows] = uSt([]);
@@ -901,6 +973,13 @@ function LiveOpsTab({ darRows: sharedDarRows, refreshDar }) {
   const num = n => Math.round(n).toLocaleString('en-US');
 
   const colHdr = { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted, textAlign: 'right' };
+
+  // Dispatch #143 -- reports this tab's current data up to the parent for print/export (Signals:
+  // "LiveOps -- whichever tab is active"). stores/planPace/anomalies are already uM-memoized
+  // above (stable references between renders unless their own deps change) and `date` is plain
+  // state, so this combined memo only recomputes when one of them actually changes.
+  const exportData = uM(() => ({ stores, planPace, anomalies, date }), [stores, planPace, anomalies, date]);
+  uE(() => { onExportReady?.(exportData); }, [exportData, onExportReady]);
 
   return h('div', null,
     // Toolbar
@@ -1161,7 +1240,7 @@ function ParkOepeTab({ ds }) {
 }
 
 // ── Auto-Correlation Scanner tab ────────────────────────────────────────────
-function ScannerTab({ ds, onTrack }) {
+function ScannerTab({ ds, onTrack, onExportReady }) {
   const [gran, setGran] = uSt('daily');
   const [minAbsR, setMinAbsR] = uSt(0.4);
   const [scopeLoc, setScopeLoc] = uSt(null);
@@ -1226,8 +1305,22 @@ function ScannerTab({ ds, onTrack }) {
   const rColor = r => { const a = Math.abs(r || 0); return a >= 0.6 ? grn : a >= 0.4 ? amber : muted; };
 
   const SEL = { padding: '4px 8px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#e5e7eb', fontSize: 11, cursor: 'pointer' };
-  const results = scan?.results || [];
+  // Dispatch #143 -- memoized (keyed on `scan` alone) so this array keeps a STABLE reference
+  // across renders while scan itself hasn't changed. `scan?.results || []` inline would mint a
+  // new [] every render whenever scan is null (before any scan has run), which fed straight into
+  // the exportData memo below and would have re-fired its effect (and the parent's setState) on
+  // every render forever.
+  const results = uM(() => scan?.results || [], [scan]);
   const shown = results.slice(0, 40);
+
+  // Dispatch #143 -- reports this tab's current results up to the parent for print/export
+  // (Signals: "Scanner results table... with the underlying numbers present"). Memoized so the
+  // effect only re-fires when the actual scan/config changes, not on every render (shown/results
+  // above are plain consts, not memoized -- a raw array in the dep array below would re-fire every
+  // render and loop with the parent's setState).
+  const exportData = uM(() => ({ results, seeded, gran, minAbsR, scopeLoc, scan }),
+    [results, seeded, gran, minAbsR, scopeLoc, scan]);
+  uE(() => { onExportReady?.(exportData); }, [exportData, onExportReady]);
 
   return h('div', null,
     // Intro
@@ -1548,6 +1641,162 @@ function CsatDriversTab({ ds, onTrack }) {
   );
 }
 
+// ── Print / Export (dispatch #143) ──────────────────────────────────────────────────────────────
+// Reuses this session's established pattern (dispatch #122/#129/#134/#136): a full, scroll-
+// independent printable HTML document + CSV/JSON export (ExportDropdown), scoped to whichever tab
+// is active when triggered -- "Scanner results table, or Signal Lab's configured signals, or
+// LiveOps" per the dispatch, plus Built-in and Graveyard (their data is already computed in the
+// parent's own scope, so covering them costs nothing extra). Every builder below reads the SAME
+// values the tab already renders on screen (displaySignals/activeDefs+labSignals directly; the
+// Scanner/LiveOps tabs' own internal results via the onExportReady callback those two components
+// report through) -- never a second hand-recomputation that could drift from what's on screen.
+
+// ── Built-in tab ──
+function builtinExportSpec(displaySignals, filterDomain, filterLoc) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = displaySignals.map(sig => ({
+    Signal: sig.name, Domain: sig.domain || '—', Strength: sig.r != null ? sig.r.toFixed(3) : '—',
+    'Data Points': sig.n || 0, Status: sig.confirmed ? 'Confirmed' : Math.abs(sig.r || 0) >= 0.30 ? 'Plausible' : 'No effect',
+    Description: sig.description || '',
+  }));
+  const scopeStr = (filterLoc ? (STORE_NAMES?.[filterLoc] || filterLoc) : 'All stores') + (filterDomain ? ` · ${filterDomain}` : '');
+  return { rows, columns: ['Signal', 'Domain', 'Strength', 'Data Points', 'Status', 'Description'].map(k => ({ key: k, label: k })),
+    title: `Signals — Built-in — ${scopeStr}`, filename: `signals-builtin-${today}` };
+}
+function builtinPrintHtml(displaySignals, filterDomain, filterLoc) {
+  const scopeStr = (filterLoc ? (STORE_NAMES?.[filterLoc] || filterLoc) : 'All stores') + (filterDomain ? ` · domain: ${filterDomain}` : ' · all domains');
+  const rows = displaySignals.map(sig => [
+    esc(sig.name),
+    sig.domain ? esc(sig.domain.replace('_', ' ')) : '—',
+    `<b>${sig.r != null ? (sig.r >= 0 ? '+' : '') + sig.r.toFixed(3) : '—'}</b>`,
+    sig.n || 0,
+    sig.confirmed ? '<span style="color:#10b981;font-weight:700">Confirmed</span>' : Math.abs(sig.r || 0) >= 0.30 ? '<span style="color:#f59e0b">Plausible</span>' : 'No effect',
+    esc(sig.description || ''),
+  ]);
+  return reportShell('Built-in Signals', scopeStr,
+    reportSection(`${displaySignals.length} signal${displaySignals.length === 1 ? '' : 's'}`,
+      reportTable(['Signal', 'Domain', 'Strength', 'Data Points', 'Status', 'Description'], rows)));
+}
+
+// ── Signal Lab tab ──
+function labExportSpec(activeDefs, labSignals) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = activeDefs.map(def => {
+    const sig = labSignals[def.id];
+    return {
+      Signal: def.name, 'X Metric': def.xMetric, 'Y Metric': def.yMetric, Granularity: def.granularity || '—',
+      Scope: def.scope || 'district', Strength: sig?.r != null ? sig.r.toFixed(3) : '—', 'Data Points': sig?.n || 0,
+      Status: def.status, Votes: def.votes || 0,
+    };
+  });
+  return { rows, columns: ['Signal', 'X Metric', 'Y Metric', 'Granularity', 'Scope', 'Strength', 'Data Points', 'Status', 'Votes'].map(k => ({ key: k, label: k })),
+    title: `Signals — Signal Lab (${activeDefs.length} configured)`, filename: `signals-lab-${today}` };
+}
+function labPrintHtml(activeDefs, labSignals) {
+  const rows = activeDefs.map(def => {
+    const sig = labSignals[def.id];
+    return [
+      esc(def.name), esc(def.xMetric) + ' → ' + esc(def.yMetric), def.granularity || '—', esc(def.scope || 'district'),
+      `<b>${sig?.r != null ? (sig.r >= 0 ? '+' : '') + sig.r.toFixed(3) : '—'}</b>`, sig?.n || 0,
+      esc(def.status), def.votes || 0,
+    ];
+  });
+  return reportShell('Signal Lab', `${activeDefs.length} custom signal${activeDefs.length === 1 ? '' : 's'} configured`,
+    reportSection('Your signals', reportTable(['Signal', 'X → Y', 'Granularity', 'Scope', 'Strength', 'Data Points', 'Status', 'Votes'], rows)));
+}
+
+// ── Graveyard tab ──
+function graveyardExportSpec(defs) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = defs.map(def => ({
+    Signal: def.name, 'X Metric': def.xMetric, 'Y Metric': def.yMetric,
+    'Last Strength': def.latest_r != null ? def.latest_r.toFixed(3) : '—', 'Last N': def.latest_n || 0,
+  }));
+  return { rows, columns: ['Signal', 'X Metric', 'Y Metric', 'Last Strength', 'Last N'].map(k => ({ key: k, label: k })),
+    title: `Signals — Graveyard (${defs.length} retired)`, filename: `signals-graveyard-${today}` };
+}
+function graveyardPrintHtml(defs) {
+  const rows = defs.map(def => [
+    esc(def.name), esc(def.xMetric) + ' → ' + esc(def.yMetric),
+    def.latest_r != null ? (def.latest_r >= 0 ? '+' : '') + def.latest_r.toFixed(3) : '—', def.latest_n || 0,
+  ]);
+  return reportShell('Signal Graveyard', `${defs.length} retired signal${defs.length === 1 ? '' : 's'}`,
+    reportSection('Retired signals', reportTable(['Signal', 'X → Y', 'Last Strength', 'Last N'], rows)));
+}
+
+// ── Scanner tab -- data lifted from ScannerTab via onExportReady (see that component) ──
+function scannerExportSpec(data) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = (data.results || []).map(r => ({
+    'Metric X': r.xLabel, 'Metric Y': r.yLabel, Strength: r.r != null ? r.r.toFixed(3) : '—', 'Data Points': r.n,
+    'Not a Fluke (FDR)': r.fdrSig ? 'Yes' : 'No', 'Cross-Domain': r.crossDomain ? 'Yes' : 'No', 'Non-Linear': r.divergent ? 'Yes' : 'No',
+  }));
+  const scopeStr = (data.scopeLoc ? (STORE_NAMES?.[data.scopeLoc] || data.scopeLoc) : 'All stores') + ` · ${data.gran} · min strength ${data.minAbsR}`;
+  return { rows, columns: ['Metric X', 'Metric Y', 'Strength', 'Data Points', 'Not a Fluke (FDR)', 'Cross-Domain', 'Non-Linear'].map(k => ({ key: k, label: k })),
+    title: `Signals — Scanner — ${scopeStr}`, filename: `signals-scanner-${today}` };
+}
+function scannerPrintHtml(data) {
+  const scan = data.scan;
+  const scopeStr = (data.scopeLoc ? (STORE_NAMES?.[data.scopeLoc] || data.scopeLoc) : 'All stores') + ` · ${data.gran} granularity · min strength ${data.minAbsR}`;
+  const summary = scan && !scan.error
+    ? `Compared ${scan.tested} pairs across ${scan.metricsUsed} metrics · ${(data.results || []).length} move together strongly · ${scan.fdrCount} unlikely to be a fluke`
+    : 'No scan run yet.';
+  const rows = (data.results || []).map(r => [
+    esc(r.xLabel) + ' &amp; ' + esc(r.yLabel),
+    `<b style="color:${Math.abs(r.r || 0) >= 0.6 ? '#10b981' : Math.abs(r.r || 0) >= 0.4 ? '#f59e0b' : '#6b7280'}">${r.r != null ? (r.r >= 0 ? '+' : '') + r.r.toFixed(3) : '—'}</b>`,
+    r.n,
+    r.fdrSig ? '<span style="color:#10b981">✓ not a fluke</span>' : '',
+    [r.crossDomain && 'different areas', r.divergent && 'not a straight line'].filter(Boolean).join(', ') || '—',
+  ]);
+  const seededRows = (data.seeded || []).filter(s => s.sig?.r != null && (s.sig?.n || 0) >= 5).map(s => [
+    esc(s.name), esc(s.rationale || ''), `<b>${s.sig.r >= 0 ? '+' : ''}${s.sig.r.toFixed(3)}</b>`, s.sig.n,
+  ]);
+  return reportShell('Scanner', scopeStr + ' — ' + summary,
+    reportSection(`Discovered pairs (${(data.results || []).length})`,
+      reportTable(['Metrics', 'Strength', 'Data Points', 'FDR', 'Notes'], rows)) +
+    reportSection(`Predefined signals (${seededRows.length} with data)`,
+      reportTable(['Signal', 'Rationale', 'Strength', 'Data Points'], seededRows)));
+}
+
+// ── LiveOps tab -- data lifted from LiveOpsTab via onExportReady (see that component) ──
+function liveOpsExportSpec(data) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = (data.stores || []).map(s => ({
+    Store: s.storeName, 'Sales Pace %': s.salesPct != null ? s.salesPct.toFixed(2) : '—',
+    'DT Speed (s)': s.dtAvgSec != null ? Math.round(s.dtAvgSec) : '—',
+    'Labor vs Need %': s.laborPct != null ? s.laborPct.toFixed(2) : '—',
+    'Accuracy %': s.accRate != null ? s.accRate.toFixed(2) : '—', Alerts: alertCount(s),
+  }));
+  return { rows, columns: ['Store', 'Sales Pace %', 'DT Speed (s)', 'Labor vs Need %', 'Accuracy %', 'Alerts'].map(k => ({ key: k, label: k })),
+    title: `Signals — Live Ops — ${data.date}`, filename: `signals-liveops-${data.date}` };
+}
+function liveOpsPrintHtml(data) {
+  const rows = [...(data.stores || [])].sort((a, b) => alertCount(b) - alertCount(a) || a.storeName.localeCompare(b.storeName)).map(s => [
+    esc(s.storeName),
+    s.salesPct != null ? `<b style="color:${paceColor(s.salesPct)}">${s.salesPct.toFixed(2)}%</b>` : '—',
+    s.dtAvgSec != null ? `<b style="color:${speedColor(s.dtAvgSec)}">${Math.round(s.dtAvgSec)}s</b>` : '—',
+    s.laborPct != null ? `<b style="color:${laborColor(s.laborPct)}">${s.laborPct.toFixed(2)}%</b>` : '—',
+    s.accRate != null ? `<b style="color:${accColor(s.accRate)}">${s.accRate.toFixed(2)}%</b>` : '—',
+    alertCount(s) || '—',
+  ]);
+  const p = data.planPace;
+  const heroCard = (label, val, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
+    <div style="font-size:18px;font-weight:800;color:${color || '#0f172a'}">${esc(val)}</div>
+  </div>`;
+  const heroSection = p ? `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${heroCard('Pace vs Plan ($)', p.pacePct != null ? p.pacePct.toFixed(2) + '%' : '—', p.pacePct != null ? (p.pacePct >= 100 ? '#10b981' : p.pacePct >= 95 ? '#f59e0b' : '#ef4444') : null)}
+      ${p.hasGC ? heroCard('Pace vs Plan (GC)', p.gcPacePct != null ? p.gcPacePct.toFixed(2) + '%' : '—', p.gcPacePct != null ? (p.gcPacePct >= 100 ? '#10b981' : p.gcPacePct >= 95 ? '#f59e0b' : '#ef4444') : null) : ''}
+      ${heroCard('Projected EOD', '$' + Math.round(p.projectedEOD).toLocaleString('en-US'))}
+      ${heroCard('Full-Day Plan', '$' + Math.round(p.fullProj).toLocaleString('en-US'))}
+    </div>` : '';
+  const anomalyRows = (data.anomalies || []).map(a => [esc(STORE_NAMES?.[a.key] || `Store ${a.key}`), a.slot, (a.pace >= 100 ? '+' : '') + Math.round(a.pace - 100) + '%']);
+  return reportShell('Live Ops', `${data.date} · ${(data.stores || []).length} stores`,
+    (heroSection ? reportSection('District Pace vs Plan', heroSection) : '') +
+    reportSection('Store Status', reportTable(['Store', 'Sales Pace', 'DT Speed', 'Labor vs Need', 'Accuracy', 'Alerts'], rows)) +
+    (anomalyRows.length ? reportSection('Baseline Anomalies', reportTable(['Store', 'Hour Slot', 'vs Mean'], anomalyRows)) : ''));
+}
+
 export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar }) {
   const [tab, setTab] = uSt('liveops');
   const [expanded, setExpanded] = uSt(null);
@@ -1649,6 +1898,37 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     color: active ? (danger ? red : amber) : muted,
   });
 
+  // Dispatch #143 -- print/export, scoped to whichever tab is currently active. Scanner/LiveOps
+  // report their own current data up via onExportReady (those tabs' internal state isn't lifted
+  // here otherwise); Built-in/Signal Lab/Graveyard read directly from state already computed in
+  // this component's own scope. exportSpec/printHtml are null on a tab with no export builder
+  // (Projection Accuracy/Park×OEPE/CSAT Drivers) or before a tab has reported data yet (Scanner
+  // before a scan has run, LiveOps before its first fetch) -- the toolbar below hides itself then.
+  const [scannerData, setScannerData] = uSt(null);
+  const [liveOpsData, setLiveOpsData] = uSt(null);
+
+  const exportSpec = uM(() => {
+    if (tab === 'builtin') return displaySignals.length ? builtinExportSpec(displaySignals, filterDomain, filterLoc) : null;
+    if (tab === 'lab') return activeDefs.length ? labExportSpec(activeDefs, labSignals) : null;
+    if (tab === 'graveyard') { const defs = localDefs.filter(d => d.status === 'graveyard'); return defs.length ? graveyardExportSpec(defs) : null; }
+    if (tab === 'scanner') return scannerData && scannerData.results.length ? scannerExportSpec(scannerData) : null;
+    if (tab === 'liveops') return liveOpsData && liveOpsData.stores.length ? liveOpsExportSpec(liveOpsData) : null;
+    return null;
+  }, [tab, displaySignals, filterDomain, filterLoc, activeDefs, labSignals, localDefs, scannerData, liveOpsData]);
+
+  const handlePrintReport = uCB(() => {
+    let html = null;
+    if (tab === 'builtin') html = builtinPrintHtml(displaySignals, filterDomain, filterLoc);
+    else if (tab === 'lab') html = labPrintHtml(activeDefs, labSignals);
+    else if (tab === 'graveyard') html = graveyardPrintHtml(localDefs.filter(d => d.status === 'graveyard'));
+    else if (tab === 'scanner' && scannerData) html = scannerPrintHtml(scannerData);
+    else if (tab === 'liveops' && liveOpsData) html = liveOpsPrintHtml(liveOpsData);
+    if (!html) return;
+    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+    if (w) { w.document.write(html); w.document.close(); }
+    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+  }, [tab, displaySignals, filterDomain, filterLoc, activeDefs, labSignals, localDefs, scannerData, liveOpsData]);
+
   return h('div', { style: { padding: 16, maxWidth: 920, margin: '0 auto' } },
     promoteTarget && h(PromoteModal, { def: promoteTarget.def, sig: promoteTarget.sig, onConfirm: confirmPromote, onCancel: () => setPromoteTarget(null) }),
 
@@ -1671,8 +1951,19 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
     ),
 
+    // Dispatch #143 -- print/export toolbar for the active tab. Hidden entirely when the active
+    // tab has no export builder or no data yet (exportSpec is null) -- matches every other panel's
+    // "hide until there's something to export" convention.
+    exportSpec && h('div', { style: { display: 'flex', gap: 8, marginBottom: 16, justifyContent: 'flex-end' } },
+      h(React.Suspense, {
+        fallback: h('button', { style: { fontSize: 11, padding: '5px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, opacity: .5 }, disabled: true }, '⬇ Export') },
+        h(LazyExportDropdown, { rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename }),
+      ),
+      h('button', { onClick: handlePrintReport, style: { fontSize: 11, padding: '5px 12px', borderRadius: 6, border: `1px solid ${bdr}`, background: 'transparent', color: muted, cursor: 'pointer' } }, '🖨 Print Report'),
+    ),
+
     // ── LIVE OPS TAB ─────────────────────────────────────────────────────────
-    tab === 'liveops' && h(LiveOpsTab, { darRows, refreshDar }),
+    tab === 'liveops' && h(LiveOpsTab, { darRows, refreshDar, onExportReady: setLiveOpsData }),
 
     // ── PROJECTION ACCURACY TAB ──────────────────────────────────────────────
     tab === 'projacc' && h(ProjectionAccuracyTab, { stores: availLocs }),
@@ -1736,7 +2027,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     ),
 
     // ── SCANNER TAB ───────────────────────────────────────────────────────────
-    tab === 'scanner' && h(ScannerTab, { ds, onTrack: handleNewSignal }),
+    tab === 'scanner' && h(ScannerTab, { ds, onTrack: handleNewSignal, onExportReady: setScannerData }),
 
     // ── CSAT DRIVERS TAB ──────────────────────────────────────────────────────
     tab === 'csat' && h(CsatDriversTab, { ds, onTrack: handleNewSignal }),

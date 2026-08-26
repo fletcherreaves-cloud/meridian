@@ -40,10 +40,23 @@ import {
 // decision recorded there.
 import { DateRangeControl, DATE_RANGE_PRESETS, LocationSelector } from '../components/PanelControls.js';
 
+// Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module this already-lazyPanel()'d
+// panel (App.js) would otherwise drag into ITS OWN chunk on every open, before Export is ever
+// clicked. React.lazy defers the actual import() to first render of the Export control itself,
+// matching the established pattern (record-day.js/dt-speedofservice.js, dispatch #130/#136).
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
+
+// Local HTML-escaper for the print report only -- same tiny local pattern every print/export
+// builder in this codebase repeats (record-day.js, dt-speedofservice.js, analytics.js, etc.)
+// rather than a shared import, since it's a two-line function, not a module.
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
 // ── Pure logic — exported and tested independently of any rendering ─────────────────────────────
 
@@ -766,6 +779,162 @@ function RuleDirectoryRow({ rule: r }) {
   );
 }
 
+// ── Print / Export (dispatch #143) ──────────────────────────────────────────────────────────────
+// Reuses this session's established pattern (dispatch #122/#129/#134/#136): a full, scroll-
+// independent printable HTML document built straight from the SAME `sortedGroups` the on-screen
+// table renders (never a second hand-copy that could drift), plus a CSV/JSON export via the
+// shared ExportDropdown. Both are scoped to whatever domain/location-scope/rule/min-signals/
+// date-range filter is currently active -- exporting `groups`/`sortedGroups`, not the unfiltered
+// `findings` array.
+//
+// Privacy: identity reveal is a deliberate, logged action (RevealName / the bulk-reveal effect
+// above) -- an export must never surface a name that hasn't already been revealed on screen. Both
+// builders below use the exact same `subjectLabel` derivation SubjectRow already uses (revealed
+// token -> name, else the generic "This employee"), so an export never leaks more than the current
+// view already shows.
+function scopeLabel(scope) {
+  if (!scope || scope.level === 'all') return 'All Locations';
+  if (scope.level === 'state') return scope.value;
+  if (scope.level === 'patch') return scope.value + ' Patch';
+  if (scope.level === 'store') return STORE_NAMES[scope.value] || scope.value;
+  return 'All Locations';
+}
+
+// Same subjectLabel logic SubjectRow renders (dispatch #56 Part C's item-name heading, dispatch
+// #46 §B's generic un-revealed fallback) -- kept in one place so print/export can't drift from
+// what's on screen. itemInfoFor(group) resolves the (loc,wrin,period) -> {descr,cls} lookup the
+// panel already loads on-demand for the inventory domain.
+function subjectLabelFor(group, revealed, itemInfoFor) {
+  if (group.subjectType === 'emp') return revealed[group.empToken] || 'This employee';
+  const item = itemInfoFor ? itemInfoFor(group) : null;
+  const itemName = item?.descr || null;
+  return itemName ? `${itemName} (${group.wrin}, store ${group.loc})` : `Item ${group.wrin} (store ${group.loc})`;
+}
+
+// One row per subject (matches the on-screen grouping) -- the Rules column flattens every verdict
+// chip into "RULE: Verdict" pairs, semicolon-joined, so the CSV still carries which rule(s) said
+// what without exploding into one row per verdict.
+function findingsExportSpec({ groups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const scopeStr = scopeLabel(scope);
+  const rangeStr = dateRange && (dateRange.s || dateRange.e) ? `${dateRange.s || '…'} – ${dateRange.e || '…'}` : 'All dates';
+  const rows = groups.map(g => ({
+    Signals: g.flaggedCount,
+    Subject: subjectLabelFor(g, revealed, itemInfoFor),
+    Store: 'Store ' + g.loc,
+    Rules: g.verdicts.map(v => {
+      const state = verdictState(v.pass, v.lifecycleCategory);
+      return v.ruleId + ': ' + (VERDICT_META[state]?.label || state);
+    }).join('; '),
+    'Window End': latestWindowEnd(g) || '—',
+  }));
+  return {
+    rows,
+    columns: ['Signals', 'Subject', 'Store', 'Rules', 'Window End'].map(k => ({ key: k, label: k })),
+    title: `Security Findings — ${RULE_DOMAIN_LABEL[domain] || domain} — ${scopeStr}` +
+      (ruleFilter ? ` — ${ruleFilter}` : '') + (minSignals > 1 ? ` — ${minSignals}+ signals` : '') + ` — ${rangeStr}`,
+    filename: `security-findings-${domain}-${today}`,
+  };
+}
+
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No findings match the current filters.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(h => `<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#fff' : '#fafafa'}">${r.map(c => `<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${esc(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+
+// Full findings report -- same `groups` the table renders, plus the active filter summary as
+// text (domain/scope/rule/min-signals/date-range) so a printed page is self-describing about what
+// it does and doesn't include, matching the dispatch's "a filtered/scoped view's export reflects
+// that scope, not an unfiltered dump" verification bar.
+function buildSecurityPrintHtml({ groups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange, newestBatch }) {
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const scopeStr = scopeLabel(scope);
+  const rangeStr = dateRange && (dateRange.s || dateRange.e) ? `${dateRange.s || '…'} – ${dateRange.e || '…'}` : 'All dates';
+
+  const rows = groups.map(g => [
+    `<b>${g.flaggedCount}</b>`,
+    esc(subjectLabelFor(g, revealed, itemInfoFor)),
+    'Store ' + esc(g.loc),
+    g.verdicts.map(v => {
+      const state = verdictState(v.pass, v.lifecycleCategory);
+      const meta = VERDICT_META[state];
+      return `<span style="color:${meta.color};font-weight:600">${esc(v.ruleId)}: ${esc(meta.label)}</span>`;
+    }).join('<br>'),
+    esc(latestWindowEnd(g) || '—'),
+  ]);
+
+  const flaggedTotal = groups.reduce((a, g) => a + g.flaggedCount, 0);
+  const multiSignal = groups.filter(g => g.flaggedCount >= 2).length;
+
+  const heroCard = (label, val, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
+    <div style="font-size:20px;font-weight:800;color:${color || '#0f172a'}">${esc(val)}</div>
+  </div>`;
+  const heroSection = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${heroCard('Subjects Flagged', groups.length)}
+      ${heroCard('Total Signals', flaggedTotal, '#ef4444')}
+      ${heroCard('2+ Signal Convergence', multiSignal, multiSignal > 0 ? '#ef4444' : '#0f172a')}
+      ${heroCard('Latest Batch', newestBatch ? new Date(newestBatch).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—')}
+    </div>`;
+
+  const filterLine = `Domain: ${RULE_DOMAIN_LABEL[domain] || domain} &nbsp;·&nbsp; Scope: ${esc(scopeStr)} &nbsp;·&nbsp; ` +
+    `Rule filter: ${esc(ruleFilter || 'All')} &nbsp;·&nbsp; Min signals: ${minSignals}+ &nbsp;·&nbsp; Window ending: ${esc(rangeStr)}`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Security Findings — Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">Security Findings — Report</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">Loss Prevention Report</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">🔒 Security Findings</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${filterLine}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+
+  ${reportSection('Summary', heroSection)}
+  ${reportSection('Findings — ' + groups.length + ' subject' + (groups.length === 1 ? '' : 's'),
+    reportTable(['Signals', 'Subject', 'Store', 'Rules', 'Window End'], rows))}
+
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">CONFIDENTIAL — Loss Prevention · Generated ${now}</span>
+  </div>
+</div>
+</body></html>`;
+  return html;
+}
+
 // The panel body. `ds`/`stores` unused today (Phase 1 has no cross-panel data dependency beyond
 // its own on-demand loads, per dispatch #43's "on-demand, not eager at startup" requirement --
 // auditRows was deliberately pulled OUT of the eager startup batch under #191, and this must not
@@ -935,6 +1104,31 @@ export function SecurityPanel({ userRole, onClose }) {
   // INV_ORG_COORDS knows about, same store universe the old hand-rolled storeLocs pill row used.
   const _stores = React.useMemo(() => Object.keys(INV_ORG_COORDS).map(loc => ({ loc })), []);
 
+  // Dispatch #143 -- CSV/JSON export (ExportDropdown) + full print report, both built from
+  // `sortedGroups` -- the exact filtered/sorted rows the table below renders -- so print/export
+  // always matches the active domain/scope/rule/min-signals/date-range filter, never an
+  // unfiltered dump. itemInfoFor resolves the same (loc,wrin,period) item-name lookup SubjectRow
+  // uses for the inventory domain, so an item's product name (not just its WRIN) prints/exports
+  // too, once resolved.
+  const itemInfoFor = React.useCallback(g => {
+    if (domain !== 'inventory') return null;
+    const ik = inventoryItemKey(g, domainRuleIds);
+    return ik ? itemInfo[ik.key] : null;
+  }, [domain, domainRuleIds, itemInfo]);
+
+  const exportSpec = React.useMemo(() => findingsExportSpec({
+    groups: sortedGroups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange,
+  }), [sortedGroups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange]);
+
+  const handlePrintReport = React.useCallback(() => {
+    const html = buildSecurityPrintHtml({
+      groups: sortedGroups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange, newestBatch,
+    });
+    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+    if (w) { w.document.write(html); w.document.close(); }
+    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+  }, [sortedGroups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange, newestBatch]);
+
   // Dispatch #50 Part A -- owner: "scroll not working in the modal." Root cause: a flex item's
   // default min-height is 'auto' (content-based), not 0, so a flex column refuses to shrink below
   // its own content. This root div has NO overflow set (visible), so it never gets the CSS spec's
@@ -960,7 +1154,23 @@ export function SecurityPanel({ userRole, onClose }) {
         onClick: () => setShowLegend(s => !s),
         style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
       }, '❓ Legend'),
-      newestBatch && span({ style: { marginLeft: showLegend ? 0 : 'auto', fontSize: 10.5, color: 'var(--text3)' } }, `Latest batch: ${fDateTime(newestBatch)}`),
+      // Dispatch #143 -- CSV/JSON export + full print report, both scoped to the currently
+      // filtered/sorted findings table (sortedGroups) via exportSpec/handlePrintReport above.
+      // Hidden until there's something to export, matching every other panel's convention.
+      permState === 'allowed' && dataState === 'loaded' && sortedGroups.length > 0 && div({
+        style: { marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' } },
+        h(React.Suspense, {
+          fallback: h('button', { style: { fontSize: 11, padding: '4px 10px', borderRadius: 999, border: '1px solid var(--bdr)', background: 'none', color: 'var(--text3)', opacity: .5 }, disabled: true }, '⬇ Export') },
+          h(LazyExportDropdown, {
+            rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename,
+          }),
+        ),
+        btn({
+          onClick: handlePrintReport,
+          style: { fontSize: 11, color: 'var(--text3)', background: 'none', border: '1px solid var(--bdr)', borderRadius: 999, padding: '4px 10px', cursor: 'pointer' },
+        }, '🖨 Print Report'),
+      ),
+      newestBatch && span({ style: { fontSize: 10.5, color: 'var(--text3)' } }, `Latest batch: ${fDateTime(newestBatch)}`),
     ),
     // dispatch #120 -- location scope, on its own row: the shared LocationSelector in
     // mode:'progressive' (dispatch #104), replacing the hand-rolled All/State/Org/Store pill row
