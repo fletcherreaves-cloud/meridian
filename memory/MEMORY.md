@@ -84,6 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-26): [Dispatch #145 — Performance Review RGR: add EAP, OSAT B2B, EAD as new
+  metrics — keep EPB2B untouched](dispatch-145.md).** Resolves the EPB2B open question from
+  earlier today: traced the real FullScale report headers baked into
+  `src/__tests__/smg-fullscale-dataonly.test.js` and found the report's actual "Experienced a
+  Problem (Yes)" question is the OVERALL section (no B2B qualifier), already parsed into
+  `smg_fullscale.overall_problem`, live with real data, never wired to a review metric — that's a
+  NEW metric the owner named **EAP**, not a rename of the existing `epb2b` key (owner: keep EPB2B
+  exactly as-is, dormant, for if a real B2B-specific source shows up later). Two more real,
+  verified findings alongside it: **OSAT B2B** has both a live actual (`smg_fullscale.osat_b2b`)
+  AND a live target (`yearly_targets.osat_b2b_pct`) already — fully auto, cleanest of the three.
+  **EAD** (Voice Execute As Designed) has a real, already-parsed target
+  (`yearly_targets.voice_ead_pct`) but a pre-existing guard test
+  (`kpi-registry.test.js`) already documents it has NO actual-data source anywhere in the
+  codebase (Pace Portal, not yet ingested) — wire the target now, leave the actual manual, same
+  as EPB2B. Dispatch explicitly warns against silently changing RGR's category weight balance
+  when adding 3 new weighted metrics — a real scoring decision, not mechanical.
 - **✅ RESOLVED (2026-08-26): Op Supplies target-field label fixed** — was declared `src:'manual'`
   in `review-engine.js`'s RGR metric config despite `autoPopulateKPIs` already unconditionally
   filling it from the real, auto-pulled eBOS stream (`qsr_ebos_daily.ops_purchases`) — a stale
