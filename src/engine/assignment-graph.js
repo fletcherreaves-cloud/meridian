@@ -139,3 +139,31 @@ export function whoOversees(loc, date, rows) {
   }
   return chain;
 }
+
+// Dispatch #151 (Performance Review continuity, Phase 3b) — thin client-side wrapper around
+// whoOversees(), NOT a second implementation of the chain-walk, for UI gating: "does `person`
+// have any oversight relationship to `loc` as of `date`" (e.g. deciding whether to render a
+// review edit affordance at all, before the user attempts a write RLS will reject).
+//
+// This is the JS-side sibling of the SQL function public.person_oversees_loc()
+// (supabase/schema.sql) that the new `reviews` RLS policies actually enforce with. THEY CAN
+// DRIFT if one changes without the other — same caution dispatch #149 flagged for
+// role_level()/review_role_to_ladder() mirroring permissions.js. Two deliberate differences from
+// the SQL version, both because a client-side gating check has different failure requirements
+// than an RLS predicate evaluated per-row on every query:
+//   - The SQL function depth-caps the walk (returns false past 10 rungs) because an RLS
+//     predicate can't throw per-row without breaking every query touching a cyclic record. This
+//     JS function has no such constraint, so it reuses whoOversees() as-is (no depth cap) and
+//     simply catches AssignmentCycleError -> false, rather than re-deriving a capped walk.
+//   - A malformed/unknown `person` still safely returns false here (whoOversees() never throws
+//     for "nobody assigned"/"unknown person" -- it throws only on an actual cycle).
+export function personOversees(person, loc, date, rows) {
+  const want = _key(person);
+  if (!want) return false;
+  try {
+    return whoOversees(loc, date, rows).some(r => _key(r.person) === want);
+  } catch (e) {
+    if (e instanceof AssignmentCycleError) return false;
+    throw e;
+  }
+}
