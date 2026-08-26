@@ -9,6 +9,14 @@ import * as React from 'react';
 import { computeScheduleSummary, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from '../engine/schedule-summary.js';
 import { STORE_NAMES } from '../constants.js';
 
+// Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
+// otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
+// first render of the Export control itself -- established pattern (dispatch #122/#129/#134/
+// #136/#143).
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
 const _normLoc = l => String(parseInt(String(l ?? '').replace(/\D/g, ''), 10) || '');
@@ -68,6 +76,115 @@ export function StationBreakdown({ jobRows }) {
           tdc(tot.hours > 0 ? '$' + (tot.cost / tot.hours).toFixed(2) : '—')))));
 }
 
+// ── Print / Export (dispatch #147) ───────────────────────────────────────────
+// Same local-helper pattern every print/export builder in this codebase repeats (signals.js/
+// record-day.js/dt-speedofservice.js/security-panel.js) -- a full, scroll-independent printable
+// HTML document opened via window.open, never bare window.print() against this panel's scrolled
+// body. Scoped to the currently selected week (wkIdx) -- the "all-store band" is the top-level
+// table; StationBreakdown's own per-store drill-down is left out here (it's a click-to-expand
+// detail, not part of the band itself), and its signature is untouched per this dispatch's own
+// "do not touch" rule (schedule-retention.js reuses it exactly as-is).
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No data.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(hd => `<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${esc(hd)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#fff' : '#fafafa'}">${r.map(c => `<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${esc(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+function reportShell(title, subtitle, bodyHtml) {
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${esc(title)} — Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">${esc(title)}</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">Meridian</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">${esc(title)}</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${esc(subtitle || '')}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+  ${bodyHtml}
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">QSR Forecasting &amp; Analytics · Generated ${now} · CONFIDENTIAL</span>
+  </div>
+</div>
+</body></html>`;
+}
+function openPrintReport(html) {
+  const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+  if (w) { w.document.write(html); w.document.close(); }
+  else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+}
+
+const COLS = ['Store', 'Sales Fcst', 'GC Fcst', 'Labor %', 'Sched', 'Forecast', 'Over/Under', 'TPMH', 'Fixed %', 'Floor %', 'F+F %'];
+function weekScheduleExportSpec(wk) {
+  const today = new Date().toISOString().slice(0, 10);
+  const wkLabel = 'Wk of ' + (wk.weekStart.getMonth() + 1) + '/' + wk.weekStart.getDate();
+  const rows = wk.stores.map(s => ({
+    Store: sName(s.loc), 'Sales Fcst': f$(s.fcstSales), 'GC Fcst': (s.fcstGC || 0).toLocaleString(),
+    'Labor %': pct(s.laborPct), Sched: hm(s.schedHrs), Forecast: hm(s.fcstHrs),
+    'Over/Under': (s.hrsDiff >= 0 ? '+' : '') + hm(s.hrsDiff), TPMH: s.tpmh == null ? '—' : s.tpmh.toFixed(2),
+    'Fixed %': fracPct(s.fixedLaborPct), 'Floor %': fracPct(s.floorLaborPct), 'F+F %': fracPct(s.combinedFixedFloorPct),
+  }));
+  return { rows, columns: COLS.map(k => ({ key: k, label: k })),
+    title: `Weekly Schedule Summary — ${wkLabel}`, filename: `schedule-summary-${wk.weekKey || today}` };
+}
+function weekSchedulePrintHtml(wk) {
+  const d = wk.district;
+  const wkLabel = 'Wk of ' + (wk.weekStart.getMonth() + 1) + '/' + wk.weekStart.getDate();
+  const heroCard = (label, val, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
+    <div style="font-size:18px;font-weight:800;color:${color || '#0f172a'}">${esc(val)}</div>
+  </div>`;
+  const dColor = c => c === 'amber' ? '#f59e0b' : c === 'blue' ? '#2563eb' : c === 'red' ? '#ef4444' : '#10b981';
+  const heroSection = d ? `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      ${heroCard('Labor % Sales', pct(d.laborPct))}
+      ${heroCard('Sched vs Fcst', (d.hrsDiff >= 0 ? '+' : '') + hm(d.hrsDiff), d.hrsDiff == null ? null : dColor(d.hrsDiff > 0.5 ? 'amber' : d.hrsDiff < -0.5 ? 'blue' : 'green'))}
+      ${heroCard('Fixed % (hrs)', fracPct(d.fixedLaborPct))}
+      ${heroCard('Fixed+Floor %', fracPct(d.combinedFixedFloorPct), d.combinedFixedFloorPct != null && d.combinedFixedFloorPct > FIXED_FLOOR_COMBINED_MAX ? dColor('red') : null)}
+    </div>` : '';
+  const rows = wk.stores.map(s => [
+    esc(sName(s.loc)), f$(s.fcstSales), (s.fcstGC || 0).toLocaleString(), pct(s.laborPct), hm(s.schedHrs), hm(s.fcstHrs),
+    `<b style="color:${s.hrsDiff == null ? '#6b7280' : s.hrsDiff > 0.5 ? '#f59e0b' : s.hrsDiff < -0.5 ? '#2563eb' : '#10b981'}">${(s.hrsDiff >= 0 ? '+' : '') + hm(s.hrsDiff)}</b>`,
+    s.tpmh == null ? '—' : s.tpmh.toFixed(2), fracPct(s.fixedLaborPct), fracPct(s.floorLaborPct),
+    `<b style="color:${s.combinedFixedFloorPct != null && s.combinedFixedFloorPct > FIXED_FLOOR_COMBINED_MAX ? '#ef4444' : '#10b981'}">${fracPct(s.combinedFixedFloorPct)}</b>`,
+  ]);
+  return reportShell('Weekly Schedule Summary', `${wkLabel} · ${wk.stores.length} store${wk.stores.length === 1 ? '' : 's'}`,
+    (heroSection ? reportSection('District', heroSection) : '') +
+    reportSection('All Stores', reportTable(COLS, rows)) +
+    reportSection('Notes', '<p style="font-size:11px;color:#6b7280;line-height:1.6">Over/Under = Scheduled − Forecast hours (amber = over, blue = under). Labor % is dollar-weighted across the week. Fixed % and Floor % are each segment\'s scheduled hours ÷ total scheduled hours — target 10–15% each; F+F % is the combined share and must stay ≤25%.</p>'));
+}
+
 function StoreRow({ s, expanded, onToggle, jobRows }) {
   const td = (c, col, mono) => h('td', { style: { textAlign: 'right', padding: '6px 8px', fontSize: 11, fontFamily: mono ? 'var(--mono)' : 'inherit', color: col || 'var(--text)', whiteSpace: 'nowrap' } }, c);
   return h(React.Fragment, null,
@@ -119,6 +236,13 @@ export function ScheduleSummaryPanel({ ds, onClose, embedded }) {
   const wk = res.weeks[wkIdx];
   const d = wk?.district;
 
+  // Dispatch #147 -- print/export, scoped to the currently selected week. Hidden until a week
+  // has data (exportSpec null).
+  const exportSpec = useMemo(() => wk && wk.stores.length ? weekScheduleExportSpec(wk) : null, [wk]);
+  const handlePrintReport = React.useCallback(() => {
+    if (wk && wk.stores.length) openPrintReport(weekSchedulePrintHtml(wk));
+  }, [wk]);
+
   const th = t => h('th', { style: { textAlign: 'right', padding: '6px 8px', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', position: 'sticky', top: 0, background: 'var(--surf2)' } }, t);
   const stat = (label, val, col) => h('div', { style: { flex: '1 1 96px', minWidth: 88, background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '8px 12px' } },
     h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 } }, label),
@@ -138,6 +262,14 @@ export function ScheduleSummaryPanel({ ds, onClose, embedded }) {
           h('button', { onClick: () => setWkIdx(i => Math.min(res.weeks.length - 1, i + 1)), disabled: wkIdx >= res.weeks.length - 1, style: navBtn }, '‹'),
           h('span', { style: { fontSize: 11, fontWeight: 700, minWidth: 96, textAlign: 'center' } }, 'Wk of ' + (wk.weekStart.getMonth() + 1) + '/' + wk.weekStart.getDate()),
           h('button', { onClick: () => setWkIdx(i => Math.max(0, i - 1)), disabled: wkIdx <= 0, style: navBtn }, '›')),
+        // Dispatch #147 -- print/export toolbar for the currently selected week.
+        exportSpec && h('div', { style: { display: 'flex', gap: 6 } },
+          h(React.Suspense, {
+            fallback: h('button', { className: 'btn btn-sm', style: { opacity: .5 }, disabled: true }, '⬇ Export') },
+            h(LazyExportDropdown, { rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename }),
+          ),
+          h('button', { className: 'btn btn-sm', onClick: handlePrintReport }, '🖨 Print Report'),
+        ),
         !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
 
       h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
