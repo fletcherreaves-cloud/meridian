@@ -84,6 +84,28 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.193): fix a real live bug found while verifying dispatch #151 in
+  production — a persisted org-configured role list was masking dispatch #148's entire 7-rung
+  ladder.** Confirmed via a live screenshot of the User Management panel: the role dropdown only
+  showed Admin/Owner/Area Supervisor/Manager — `vp`/`do`/`om`/`gm`/`sm_am_dm`/the real `owner`
+  were all missing. Root cause: `getOrgRoles()`/`syncOrgRolesFromSupabase()` (`permissions.js`)
+  always preferred a persisted `org_config`/localStorage role list **wholesale** over
+  `DEFAULT_ROLES`, so any org (this one included) that had already persisted a role list before
+  #148 shipped the ladder never saw any new ladder id appear anywhere — confirmed live: production's
+  persisted `org_roles` row predates #148 and only ever had `admin`/`area_supervisor`/`manager`
+  plus one stray custom role (`owner_0nct`, level 2, user-created by hand before #148 shipped the
+  real `owner` id at level 1 — **unassignable to any profile** since #148's CHECK constraint
+  doesn't allow that id; confirmed live via service-role query that zero profiles use it). Fix:
+  new `mergeMissingDefaultRoles()` — additive only, appends any `DEFAULT_ROLES` id missing from a
+  persisted list, never touches/reorders/removes an existing entry (the stray custom role survives
+  untouched, left for the org to clean up on its own via Roles & Permissions) — so the NEXT ladder
+  addition doesn't repeat this masking either. Small, well-understood, confirmed zero live
+  profiles affected before pushing — fixed and pushed directly to `main` (v5.193) rather than a
+  full dispatch cycle, per this project's standing practice for this class of fix. 256/256 test
+  files, 2775/2775 tests (+3 new). Build clean, entry chunk 474.54→474.62 KB gzip (+0.08 KB).
+  **Not yet resolved, the org's own call:** whether/how to clean up the orphaned `owner_0nct` role
+  via the Roles & Permissions UI, and whether to migrate any of that role's old permission-toggle
+  customizations onto the real `owner` role if they mattered.
 - **✅ SHIPPED (2026-08-26, v5.192): [Dispatch #151 — Performance Review continuity Phase 3b: wire
   the assignment graph into `reviews` RLS](dispatch-151.md).** Fourth build phase — closes the RLS
   wiring dispatch #150 deliberately deferred, and the write-scoping gap dispatch #148 explicitly
