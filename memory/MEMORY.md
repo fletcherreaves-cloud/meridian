@@ -84,6 +84,18 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.182): Dispatch #145 merged — EAP and EAD added to Performance
+  Review RGR** (PR #767). Independently verified before merge: fresh worktree merge onto
+  `origin/main`, full suite **2645/2645 passing**, `npm run build` clean (entry gzip 468.88 KB,
+  eager 540.06 KB — matches the PR's claimed +0.49 KB). Weight math independently re-summed from
+  `main`'s actual pre-change metric list (oepe .20+osat .10+epb2b .10+r2p .10+delivWait .10+kvs
+  .10+complaints .05+fsAudits .05+fsEcoSure .10+fsTablet .05 = **0.95**, confirmed), so eap
+  (.03) + ead (.02) genuinely closes the gap to exactly 1.00 rather than being asserted. `epb2b`
+  confirmed untouched (no diff on its own line); grepped the full diff for `osatB2B` — the only
+  hit is the changelog text stating none was added. The engineer's one deviation from the
+  dispatch's literal text (adding `eap: 'tEAPTarget'` to `REVIEW_METRIC_TARGET_FIELD` despite the
+  dispatch saying not to) checked out — `totalProfit`/`complaints`, the pattern the dispatch
+  itself pointed at, both have such an entry, and `target-overrides.test.js` enforces the sync.
 - **✅ RESOLVED (2026-08-26): `data/org-structure/Organization_Structure.xlsx` updated to the
   owner's real 2026-08-25 copy — PM initially got this wrong, corrected after the owner pushed
   back.** The owner said this session had already made a formula change to the workbook
