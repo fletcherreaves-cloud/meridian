@@ -20,9 +20,148 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import { loadDailySales } from '../lib/supabase.js';
 
+// Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
+// otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
+// first render of the Export control itself -- established pattern (dispatch #122/#129/#134/
+// #136/#143).
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
+
+// ── Print / Export (dispatch #147) ───────────────────────────────────────────
+// Same local-helper pattern every print/export builder in this codebase repeats
+// (signals.js/record-day.js/dt-speedofservice.js/security-panel.js) rather than a shared
+// import -- a two-line escaper + table/section/shell builders, not a module. A full,
+// scroll-independent printable HTML document opened via window.open, never bare
+// window.print() against this panel's scrolled body.
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No data.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(hd => `<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${esc(hd)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#fff' : '#fafafa'}">${r.map(c => `<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${esc(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+function reportShell(title, subtitle, bodyHtml) {
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${esc(title)} — Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">${esc(title)}</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">Meridian</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">${esc(title)}</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${esc(subtitle || '')}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+  ${bodyHtml}
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">QSR Forecasting &amp; Analytics · Generated ${now} · CONFIDENTIAL</span>
+  </div>
+</div>
+</body></html>`;
+}
+function openPrintReport(html) {
+  const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+  if (w) { w.document.write(html); w.document.close(); }
+  else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+}
+
+// Sales Pace view -- full store-by-store table exactly as rendered (model.rows + subtotals),
+// for the currently selected year.
+function salesExportSpec(model, year) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = model.rows.map(r => ({
+    Store: storeNm(r.loc), 'Annual Target': money(r.annual), 'YTD Actual': money(r.ytdActual),
+    'YTD vs Plan': r.ytdVsPct == null ? '—' : pctFmt(r.ytdVsPct), 'Proj Full Year': money(r.projFY),
+    'FY vs Target': r.fyVsPct == null ? '—' : pctFmt(r.fyVsPct),
+  }));
+  return { rows, columns: ['Store', 'Annual Target', 'YTD Actual', 'YTD vs Plan', 'Proj Full Year', 'FY vs Target'].map(k => ({ key: k, label: k })),
+    title: `Yearly Projections — Sales Pace — ${year}`, filename: `yearly-projections-sales-${year}-${today}` };
+}
+function salesPrintHtml(model, year) {
+  const rowHtml = r => [
+    esc(storeNm(r.loc)), money(r.annual), money(r.ytdActual),
+    r.ytdVsPct == null ? '—' : `<b style="color:${r.ytdVsPct >= 0 ? '#10b981' : r.ytdVsPct >= -3 ? '#f59e0b' : '#ef4444'}">${(r.ytdVsPct >= 0 ? '+' : '') + pctFmt(r.ytdVsPct)}</b>`,
+    `<b>${money(r.projFY)}</b>`,
+    r.fyVsPct == null ? '—' : `<b style="color:${r.fyVsPct >= 0 ? '#10b981' : r.fyVsPct >= -3 ? '#f59e0b' : '#ef4444'}">${(r.fyVsPct >= 0 ? '+' : '') + pctFmt(r.fyVsPct)}</b>`,
+  ];
+  const rows = model.rows.map(rowHtml);
+  const subRow = (label, s) => s ? [`<b>${esc(label)} (${s.n})</b>`, `<b>${money(s.annual)}</b>`, `<b>${money(s.ytdActual)}</b>`,
+    s.ytdVsPct == null ? '—' : `<b>${(s.ytdVsPct >= 0 ? '+' : '') + pctFmt(s.ytdVsPct)}</b>`, `<b>${money(s.projFY)}</b>`,
+    s.fyVsPct == null ? '—' : `<b>${(s.fyVsPct >= 0 ? '+' : '') + pctFmt(s.fyVsPct)}</b>`] : null;
+  [['Oklahoma', model.sub.ok], ['Florida', model.sub.fl], ['Grand Total', model.sub.grand]].forEach(([label, s]) => {
+    const r = subRow(label, s); if (r) rows.push(r);
+  });
+  return reportShell('Yearly Projections — Sales Pace', `${year} · ${model.rows.length} store${model.rows.length === 1 ? '' : 's'}`,
+    reportSection('Annual target vs actual product sales', reportTable(['Store', 'Annual Target', 'YTD Actual', 'YTD vs Plan', 'Proj Full Year', 'FY vs Target'], rows)) +
+    reportSection('Notes', '<p style="font-size:11px;color:#6b7280;line-height:1.6">Annual Target = Σ of the 12 official monthly sales targets for ' + year + '. YTD vs Plan compares YTD actual against the plan for the same elapsed period (current month prorated by day). Proj Full Year = actual banked so far + remaining plan. Subtotals are dollar-weighted, never an average of percentages.</p>'));
+}
+
+// Target Categories view -- the currently active category tab's full store-by-store table
+// (byLoc/rows/ok/fl lifted up from TargetCategoriesView via onExportReady, since that
+// component owns the category tab state -- same lifting pattern signals.js uses for its
+// Scanner/LiveOps tabs).
+function targetsExportSpec(data, year) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { active, rows, byLoc } = data;
+  const cols = ['Store', ...active.fields.map(f => f.l)];
+  const out = rows.map(loc => {
+    const o = { Store: storeNm(loc) };
+    active.fields.forEach(f => { o[f.l] = f.fmt((byLoc[loc] || {})[f.k]); });
+    return o;
+  });
+  return { rows: out, columns: cols.map(k => ({ key: k, label: k })),
+    title: `Yearly Projections — ${active.label} Targets — ${year}`, filename: `yearly-projections-${active.key}-${year}-${today}` };
+}
+function targetsPrintHtml(data, year) {
+  const { active, rows, byLoc, ok, fl } = data;
+  const catAgg = (locs, field) => {
+    const vals = locs.map(l => byLoc[l] && byLoc[l][field.k]).filter(v => v != null && !Number.isNaN(v));
+    if (!vals.length) return null;
+    return field.agg === 'sum' ? vals.reduce((a, b) => a + b, 0) : vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+  const bodyRows = rows.map(loc => [esc(storeNm(loc)), ...active.fields.map(f => f.fmt((byLoc[loc] || {})[f.k]))]);
+  [['Oklahoma', ok], ['Florida', fl], ['Grand Total', rows]].forEach(([label, locs]) => {
+    if (locs.length) bodyRows.push([`<b>${esc(label)} (${locs.length})</b>`, ...active.fields.map(f => `<b>${f.fmt(catAgg(locs, f))}</b>`)]);
+  });
+  return reportShell(`Yearly Projections — ${active.label} Targets`, `${year} · ${rows.length} store${rows.length === 1 ? '' : 's'}`,
+    reportSection(active.icon + ' ' + active.label, reportTable(['Store', ...active.fields.map(f => f.l)], bodyRows)) +
+    reportSection('Notes', '<p style="font-size:11px;color:#6b7280;line-height:1.6">Values are the per-store annual targets from the uploaded yearly targets workbook for ' + year + '. District subtotals sum headcount-style targets and average rate/time targets. Monthly targets, when set for the same store/field, supersede these in Performance Review and elsewhere.</p>'));
+}
 
 const ALL_LOCS = Object.keys(STORE_NAMES);
 const FL_LOCS = new Set(ALL_LOCS.filter(l => getStoreOrg(l) === 'emerald'));
@@ -122,8 +261,8 @@ function aggregate(rows) {
 // Sales view's data model: ds.allYearlyTargets[year] (Supabase-persisted, Part 1),
 // with ds.targets (flattened "most recent year", may include a same-session upload
 // not yet round-tripped through Supabase) preferred for the current calendar year.
-function TargetCategoriesView({ ds, year, thisYear }) {
-  const { useState, useMemo } = React;
+function TargetCategoriesView({ ds, year, thisYear, onExportReady }) {
+  const { useState, useMemo, useEffect } = React;
   const [cat, setCat] = useState(YEARLY_CATS[0].key);
 
   const byLoc = useMemo(() => {
@@ -138,8 +277,13 @@ function TargetCategoriesView({ ds, year, thisYear }) {
 
   const rows = useMemo(() => ALL_LOCS.map(locNum).filter(loc => byLoc[loc] && Object.keys(byLoc[loc]).length > 0)
     .sort((a, b) => storeNm(a).localeCompare(storeNm(b))), [byLoc]);
-  const ok = rows.filter(l => !FL_LOCS.has(l));
-  const fl = rows.filter(l => FL_LOCS.has(l));
+  // ok/fl must be memoized off `rows` -- a plain filter() here produced a fresh array
+  // reference every render, which the onExportReady effect below depends on, which set
+  // parent state every render, which re-rendered this component: an infinite loop that
+  // hung any test exercising this view (confirmed: dispatch-107-yearly-projections-panel
+  // .test.js never returned).
+  const ok = useMemo(() => rows.filter(l => !FL_LOCS.has(l)), [rows]);
+  const fl = useMemo(() => rows.filter(l => FL_LOCS.has(l)), [rows]);
 
   const active = YEARLY_CATS.find(c => c.key === cat) || YEARLY_CATS[0];
   const catAgg = (locs, field) => {
@@ -147,6 +291,13 @@ function TargetCategoriesView({ ds, year, thisYear }) {
     if (!vals.length) return null;
     return field.agg === 'sum' ? vals.reduce((a, b) => a + b, 0) : vals.reduce((a, b) => a + b, 0) / vals.length;
   };
+
+  // Dispatch #147 -- lift the currently-active category's full data up to the parent panel for
+  // print/export, since this component owns the category-tab state (same lifting pattern
+  // signals.js uses for its Scanner/LiveOps tabs via onExportReady).
+  useEffect(() => {
+    onExportReady?.(rows.length ? { active, rows, byLoc, ok, fl } : null);
+  }, [active, rows, byLoc, ok, fl, onExportReady]);
 
   const th = { padding: '6px 9px', fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', color: 'var(--text3)', borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', background: 'var(--surf2)', position: 'sticky', top: 0 };
   const td = { padding: '5px 9px', fontSize: 11, borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap', textAlign: 'right', fontFamily: 'var(--mono)' };
@@ -184,13 +335,16 @@ function TargetCategoriesView({ ds, year, thisYear }) {
 }
 
 export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded }) {
-  const { useState, useMemo, useEffect } = React;
+  const { useState, useMemo, useEffect, useCallback } = React;
   const now = new Date();
   const thisYear = now.getFullYear();
   const [year, setYear] = useState(thisYear);
   const [view, setView] = useState('sales');    // 'sales' | 'targets'
   const [actuals, setActuals] = useState({});   // {loc: {month: sales}}
   const [loading, setLoading] = useState(true);
+  // Dispatch #147 -- the Target Categories view's active-category data, lifted up from
+  // TargetCategoriesView (which owns the category-tab state) for print/export.
+  const [targetsData, setTargetsData] = useState(null);
 
   // Pull daily product sales spanning the selected year → sum by (loc, month).
   useEffect(() => {
@@ -253,6 +407,18 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
 
   const stepBtn = (label, dy) => h('button', { onClick: () => setYear(y => y + dy), style: { padding: '1px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' } }, label);
 
+  // Dispatch #147 -- print/export, scoped to whichever view is active. Sales Pace reads model
+  // (computed right here); Target Categories reads targetsData, lifted up from
+  // TargetCategoriesView above. Null while there's nothing to export yet -- the toolbar hides.
+  const exportSpec = useMemo(() => {
+    if (view === 'sales') return model.rows.length ? salesExportSpec(model, year) : null;
+    return targetsData ? targetsExportSpec(targetsData, year) : null;
+  }, [view, model, year, targetsData]);
+  const handlePrintReport = useCallback(() => {
+    if (view === 'sales') { if (model.rows.length) openPrintReport(salesPrintHtml(model, year)); return; }
+    if (targetsData) openPrintReport(targetsPrintHtml(targetsData, year));
+  }, [view, model, year, targetsData]);
+
   const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };
   const CARD = embedded ? { flex: 1, minHeight: 0, background: 'var(--surf)', width: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { flex: 1, background: 'var(--surf)', maxWidth: 1000, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' };
   return div({ style: OUTER },
@@ -271,17 +437,26 @@ export function YearlyProjectionsPanel({ ds, stores, settings, onClose, embedded
             : 'Real yearly-targets workbook categories (OEPE/CSAT/Digital/People/Labor-FOB), per store, for ' + year + '.')),
         !embedded && h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
       // View toggle: Sales Pace vs Target Categories
-      div({ style: { display: 'flex', gap: 0, borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf)' } },
+      div({ style: { display: 'flex', gap: 0, alignItems: 'center', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf)', flexWrap: 'wrap' } },
         [['sales', '💵 Sales Pace'], ['targets', '🎯 Target Categories']].map(([k, label]) =>
           h('button', { key: k, onClick: () => setView(k),
             style: { padding: '8px 16px', fontSize: 11, fontWeight: 700, border: 'none',
               borderBottom: view === k ? '2px solid var(--amber)' : '2px solid transparent',
               background: 'transparent', color: view === k ? 'var(--amber)' : 'var(--text3)', cursor: 'pointer' } },
-            label))),
+            label)),
+        // Dispatch #147 -- print/export toolbar for the active view. Hidden when there's
+        // nothing to export yet (exportSpec null).
+        exportSpec && div({ style: { display: 'flex', gap: 6, marginLeft: 'auto', padding: '0 10px' } },
+          h(React.Suspense, {
+            fallback: h('button', { className: 'btn btn-sm', style: { opacity: .5 }, disabled: true }, '⬇ Export') },
+            h(LazyExportDropdown, { rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename }),
+          ),
+          h('button', { className: 'btn btn-sm', onClick: handlePrintReport }, '🖨 Print Report'),
+        )),
       // Body
       div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px' } },
         view === 'targets'
-          ? h(TargetCategoriesView, { ds, year, thisYear })
+          ? h(TargetCategoriesView, { ds, year, thisYear, onExportReady: setTargetsData })
           : [
         loading
           ? div({ key: 'load', style: { textAlign: 'center', padding: '48px', color: 'var(--text3)', fontSize: 12 } }, 'Loading ' + year + ' actuals…')
