@@ -113,18 +113,94 @@ create table if not exists public.review_overrides (
   overridden_at      timestamptz not null default now()
 );
 
--- ── Staff assignments (optional, for location tracking from 7th notes) ────────
--- Track which manager/supervisor was responsible for which store during each period.
--- Enables accurate review attribution when someone transfers between locations.
+-- ── Staff assignments — general reports-to graph (dispatch #150, 2026-08-26) ──────────────────
+-- Performance Review continuity, Phase 3a (data layer only — memory/dispatch-150.md,
+-- memory/plan-performance-review-continuity-2026-08-26.md decision #2). Was a stub — "track
+-- which manager/supervisor was responsible for which store" — with ZERO code references
+-- anywhere in src/; this dispatch is what finally wires it up, generalized from a single
+-- store-only column to a full {person, role, target, start} reports-to graph: an Area
+-- Supervisor's target is several STORES, an Ops Manager's target is several AS's (i.e. other
+-- PEOPLE), a District Operator's targets can be a MIX of OMs/AS's/stores directly. Resolution
+-- (recursive union at a point in time) lives in src/engine/assignment-graph.js — read that
+-- file's header comment for the full algorithm and identity-space notes.
+--
+-- Two real design decisions this dispatch had to make (not specified by the dispatch itself —
+-- documented here AND in the PR body):
+--
+-- 1. `person` (text) REPLACES the old `profile_id` (uuid FK to profiles). Most people this graph
+--    needs to describe — GM/AM/DM/SM, most AS/OM/DO — do NOT hold a Meridian login (a `profiles`
+--    row) at all; review-engine.js's own `reviews.data.geid` field already keys a reviewed
+--    person by their QSRSoft `geid`, not a profile_id, for exactly this reason. So `person` holds
+--    EITHER a `geid` (roster-sourced GM/AM/DM/SM rows, matching review.geid) OR a plain
+--    supervisor NAME STRING (AS/OM/DO rows seeded from src/constants.js's existing
+--    orgAssignments()/DEF_SETTINGS.supervisorGroups, which has never had anything richer than a
+--    name for a supervisor identity) — never a uuid. The old profile_id FK is dropped, not kept
+--    alongside, to avoid two parallel "who is this row about" answers. A later dispatch mapping
+--    an authenticated login (auth.uid() -> profiles.id) onto a `person` value in this graph
+--    (needed for Phase 3b's RLS work) is real, un-built future work, not solved here.
+-- 2. `end_date` is KEPT (untouched) but is NOT consulted by the resolution engine. orgAssignments()
+--    — the exact pattern this dispatch was told to generalize, not reinvent — is explicitly a
+--    "start-only model: the next assignment implicitly ends the prior one" (its own header
+--    comment, src/constants.js). Extending that SAME rule here means a person's assignment to a
+--    target ends the moment a NEWER row names the same target, with no need to read `end_date` at
+--    all — resolveScope()/currentHolderOfTarget() never look at it. `end_date` stays as an
+--    optional/advisory field only (e.g. a known departure date, useful to the future
+--    auto-finalize-on-departure feature in the plan doc's decision #6-B), never load-bearing for
+--    "who holds this target right now." Full reasoning in this dispatch's PR body.
 create table if not exists public.staff_assignments (
   id          uuid default gen_random_uuid() primary key,
-  profile_id  uuid references public.profiles(id) on delete cascade,
-  store_loc   text not null,
+  person      text not null,                -- geid (GM/AM/DM/SM) or supervisor name (AS/OM/DO) — see header
+  role        text not null
+                check (role in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor',
+                                 'gm', 'sm_am_dm', 'manager')),   -- DEFAULT_ROLES ladder id, not review-engine.js ROLE_KEYS — see PR body
+  target_type text not null check (target_type in ('store', 'person')),
+  target      text not null,                -- a store loc code (target_type='store') or another row's `person` value (target_type='person')
   start_date  date not null,
-  end_date    date,                         -- null = currently assigned
+  end_date    date,                         -- advisory only — NOT consulted by resolution, see header
   notes       text,
-  created_at  timestamptz default now()
+  created_at  timestamptz default now(),
+  constraint staff_assignments_unique unique (person, role, target_type, target, start_date)
 );
+
+-- Dispatch #150 (2026-08-26): the ALTER path for the LIVE production table — `create table if
+-- not exists` above is a no-op once the table already exists (same lesson dispatch #148 already
+-- learned the hard way for `profiles`). Idempotent: safe to re-run. This session has no live
+-- Supabase access from which to confirm the table is actually empty in production (it very
+-- likely is — zero code references anywhere in src/ means nothing has ever written to it — but
+-- "very likely" is not a measurement); see this dispatch's PR body for exactly what a human
+-- should verify before/after running this block, and why the NOT NULL enforcement below is
+-- split into a separate, clearly-flagged final step rather than folded into the ADD COLUMN
+-- statements themselves.
+alter table public.staff_assignments add column if not exists person text;
+update public.staff_assignments set person = profile_id::text where person is null and profile_id is not null;
+alter table public.staff_assignments add column if not exists role text;
+alter table public.staff_assignments add column if not exists target_type text;
+update public.staff_assignments set target_type = 'store' where target_type is null;
+alter table public.staff_assignments add column if not exists target text;
+update public.staff_assignments set target = store_loc where target is null and store_loc is not null;
+
+alter table public.staff_assignments drop constraint if exists staff_assignments_role_check;
+alter table public.staff_assignments add constraint staff_assignments_role_check
+  check (role in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'sm_am_dm', 'manager'));
+alter table public.staff_assignments drop constraint if exists staff_assignments_target_type_check;
+alter table public.staff_assignments add constraint staff_assignments_target_type_check
+  check (target_type in ('store', 'person'));
+alter table public.staff_assignments drop constraint if exists staff_assignments_unique;
+alter table public.staff_assignments add constraint staff_assignments_unique
+  unique (person, role, target_type, target, start_date);
+
+alter table public.staff_assignments drop constraint if exists staff_assignments_profile_id_fkey;
+alter table public.staff_assignments drop column if exists profile_id;
+alter table public.staff_assignments drop column if exists store_loc;
+
+-- ⚠️ Run this final step ONLY after confirming (see PR body) there are no live rows left with a
+-- null `person`/`target_type`/`target` — i.e. every pre-existing row (expected: zero) had a
+-- profile_id/store_loc value the UPDATE statements above could actually backfill from. `role`
+-- has NO legacy source column at all, so any pre-existing row needs it set by hand first.
+-- alter table public.staff_assignments alter column person set not null;
+-- alter table public.staff_assignments alter column target_type set not null;
+-- alter table public.staff_assignments alter column target set not null;
+-- alter table public.staff_assignments alter column role set not null;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY
@@ -295,19 +371,27 @@ create policy "review_overrides: hierarchy-gated insert" on public.review_overri
 -- ── staff_assignments RLS ─────────────────────────────────────────────────────
 alter table public.staff_assignments enable row level security;
 
--- Users can see their own assignments; supervisors/admins see all
--- (dispatch #148, 2026-08-26: same 'supervisor' -> 'area_supervisor' string fix as reviews RLS
--- above -- this table's own write policy is otherwise unchanged; it's out of this dispatch's
--- scope, which extends `staff_assignments` per the plan doc's later build-sequencing item #3.)
+-- Dispatch #150 (2026-08-26): the old "own assignments" clause (`profile_id = auth.uid()`) is
+-- gone because `profile_id` is gone — `person` (its replacement) usually holds a geid or a
+-- supervisor name string, not the caller's own uuid, so "is this row about me" has no defined
+-- answer yet (mapping a logged-in user onto their own `person` identity in this graph is real,
+-- un-built Phase 3b work — see the CREATE TABLE header comment above). Read access is therefore
+-- ADMIN/AREA_SUPERVISOR ONLY for now, same role check the write policy below already used —
+-- narrower than before for a non-admin/non-AS caller (previously: nothing, since `profile_id`
+-- was never populated by any code path either — this is a behavior change in principle, not in
+-- practice, on a table with zero writers to date).
+drop policy if exists "assignments: own or above" on public.staff_assignments;
 create policy "assignments: own or above" on public.staff_assignments
   for select using (
-    profile_id = auth.uid() or
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid() and p.role in ('area_supervisor', 'admin')
     )
   );
 
+-- (dispatch #148, 2026-08-26: same 'supervisor' -> 'area_supervisor' string fix as reviews RLS
+-- above.) Unchanged by dispatch #150 — references only profiles.role, no column this dispatch
+-- renamed.
 create policy "assignments: admin/supervisor write" on public.staff_assignments
   for all using (
     exists (
@@ -322,7 +406,13 @@ create policy "assignments: admin/supervisor write" on public.staff_assignments
 create index if not exists reviews_loc_idx  on public.reviews (reviewee_loc);
 create index if not exists reviews_year_idx on public.reviews (review_year, review_half);
 create index if not exists reviews_org_idx  on public.reviews (org);
-create index if not exists assign_profile_idx on public.staff_assignments (profile_id, start_date);
+-- Dispatch #150: profile_id -> person (see staff_assignments' own header comment); the old
+-- index name/definition is dropped and replaced, plus a new index on the target side (needed by
+-- currentHolderOfTarget()/whoOversees() -- src/engine/assignment-graph.js -- which scans "every
+-- row naming this target", the mirror-image query direction from "every row about this person").
+drop index if exists assign_profile_idx;
+create index if not exists assign_person_idx on public.staff_assignments (person, start_date);
+create index if not exists assign_target_idx on public.staff_assignments (target_type, target, start_date);
 -- Dispatch #149: the resolution query is always "every override for one review, newest first
 -- per (month, metric_key)" — see effectiveOverrideFor()/applyReviewOverrides() (review-engine.js).
 create index if not exists review_overrides_review_idx on public.review_overrides (review_id, month, metric_key, overridden_at desc);
