@@ -62,7 +62,14 @@ export const DEFAULT_REVIEW_CONFIG = {
     profit: [
       { key:'foodOB',     label:'Food Over Base $ vs Target', weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'fobDollar', dollar:true, note:'Auto from FOB report; target = workbook FOB% (monthly-preferred) × the month\'s sales — dispatch #132 item 5' },
       { key:'labor',      label:'Labor % vs Target',          weight:0.35, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'laborPct', tgtField:'laborTgt', pctInput:true, note:'Auto from Labor Analysis' },
-      { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'manual', dollar:true,           note:'$ vs budget target' },
+      // Was src:'manual' with no field — a stale label, not the real behavior: autoPopulateKPIs
+      // (below, "Op Supplies actual = Σ the month's daily op-supplies purchases") already
+      // unconditionally fills mo.opSupplies from the real auto-pulled eBOS stream
+      // (qsr_ebos_daily.ops_purchases, dispatch #99), so a manual entry here was always being
+      // silently overwritten — the UI's "★auto" indicator (performance-reviews.js) just wasn't
+      // showing it, misleading a manager into thinking their manual entry mattered. Owner
+      // confirmed 2026-08-26: "Op supplies we actually already have through the ebos pull."
+      { key:'opSupplies', label:'Op Supplies vs Budget ($)',  weight:0.15, better:'lower',  unit:'pct', scored:true,  t:[-0.05,0.05,0.10], src:'auto', field:'opSupplies', dollar:true, note:'Auto: eBOS Op Supplies purchases (cloud) vs workbook budget target' },
       // positiveOnly (dispatch #132 item 6, owner-stated interim rule): "should be set to
       // anything positive (for now)". No workbook column feeds a real dollar target for this,
       // so until one is set via the Targets editor (tTotalProfitTarget override, any scope),
