@@ -84,6 +84,26 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **🎯 (2026-08-26): [Complaints has a real API — `finding-complaints-propel-api-2026-08-26.md`
+  ](finding-complaints-propel-api-2026-08-26.md).** Owner captured this live (logged into Propel,
+  "a minute" between other things) — `propel.mcd.com/api/customer-care?...
+  action=getCustomerCareRestaurantCaseList` returns per-store complaint cases: issue code/subcode
+  (Service/Quality/Unspecified → Received Wrong Ingredients, Speed of Service, etc.), incident/
+  received dates, status, customer comments. **Store 3708 alone: 60 cases YTD** — the first real
+  measured complaint volume Meridian has ever had. This is the ACTUAL-side source Performance
+  Review's `complaints` metric (Complaint Contacts/100K) has never had (`src:'manual'`, confirmed
+  still true) — the target side was already settled override-only (dispatch #132/#135, no real
+  workbook column). **Not wired up yet — three real blockers, not guessed at:** (1) what the
+  "/100K" denominator actually normalizes against (owner input needed), (2) `timeFrame=1`'s
+  meaning is inferred from the UI (showed YTD) but unconfirmed against other dropdown values,
+  (3) same SSO+MFA constraint as EcoSure — any real pull needs the identical on-demand
+  Playwright+persistent-profile design already established and owner-approved for that endpoint,
+  not a quick auto-pull. Auth mechanism, hierarchy-node identity chain, and the "page until
+  `results.length===totalCount`, don't trust `rowsPerPage`" caution are all directly reused from
+  `finding-ecosure-propel-api-2026-08-22.md` — confirmed the same host/auth, not re-derived.
+  **The owner's raw capture (including a live session cookie and full customer complaint text)
+  was NOT committed** — the finding file keeps only the endpoint shape, header names, and
+  paraphrased examples, matching the EcoSure file's own security discipline.
 - **📋 (2026-08-26): [Dispatch #147 — Print/export for Yearly Projections, Schedule Summary,
   Promo/Discount ROI](dispatch-147.md).** Owner unavailable (teaching a scheduling class),
   approved opportunistic work. Re-swept `src/views/`: 9/57 panels now have `ExportDropdown`.
