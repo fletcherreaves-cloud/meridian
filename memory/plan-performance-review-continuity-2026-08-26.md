@@ -149,37 +149,68 @@ distinguish DM from SM for review routing. **A new, review-specific code map is 
 repurpose `DEFAULT_JOB_BUCKETS` for this,** its existing consumers (`shiftCertifiedByLoc`,
 headcount composition) need the coarser grouping and shouldn't be disturbed.
 
-**⚠️ Real gap, needs an owner decision before this can be built — AM/AS/OM have ZERO
-representation anywhere in `qsr_employee_tenure`, active or terminated, all-time.** Three
-possibilities, and I can't tell which from the data alone:
-1. This franchise doesn't currently use "Assistant Manager" as a title distinct from "Department
-   Manager" — the DM codes above may already BE what functions as AM day-to-day, and review-role
-   `AM` may need to fold into the `DM` code set (or vice versa — rename one).
-2. AM/AS/OM headcount is genuinely zero right now (no one currently holds those exact titles) —
-   plausible for OM/AS (above-store roles, see next point) but less likely for AM.
-3. AM is tracked under a code not yet seen because no current employee holds it.
+**✅ RESOLVED 2026-08-26 — AM vs DM (owner clarification + a second live measurement).** Owner:
+*"Assistant managers are typically salary positions in our industry whereas department managers
+are typically hourly positions in our industry — functionality wise I would view them similar, if
+not the same."* So AM and DM are the same functional job in this org's KPI framework, split by pay
+classification, not by a distinct job-title code — which is exactly why no separate "AM" code
+exists. **Measured the DM-coded population's `hourly_pay_rate` to check this is a usable signal,
+and it is:**
 
-**AS and OM are structurally different from AM — they're above-store, multi-location roles (per
-decision #2 above), so they would never appear in `qsr_employee_tenure` at all** — that table is
-one row per person per HOME location. AS/OM assignment needs to come from the same
-effective-dated org-assignment mechanism as store-level roles (`orgAssignments()`'s own model,
-extended), not from the roster pull. **Also worth checking `643`'s garbage description
-("2000-11-02" where a job title description should be)** — a real, small data-quality bug in
-either the source system or the pull/parse path, one row, not urgent but worth a `grep` when
-someone's in that code next.
+| code | description | hourly_pay_rate seen |
+|---|---|---|
+| 845 | DEPARTMENT MANAGER I | 0 (1 of 1) |
+| 846 | DEPARTMENT MANAGER II | 0 (3 of 3) |
+| 10001 | DEPT MGR I W/ CREW PUNCHES | 0, 0, 15.25 (mixed) |
+| 20107 | DEPT MGR III W/ CREW PUNCHES | 18.50 |
+
+For comparison, code 641 (GENERAL MANAGER) is 0/null on all 24 active rows (cleanly salaried, as
+expected), and 647 (Cert. Swing Mgr.) is nonzero on all 180 (cleanly hourly) — so `hourly_pay_rate`
+is a real, working salaried/hourly signal in this data, not noise. **Rule for the code→role
+mapping: a DM-coded employee (845/846/10001/20107) with `hourly_pay_rate` 0/null suggests
+review-role `AM`; nonzero suggests `DM`.** Code 45 ("GENERAL MANAGER W/ MGR PUNCHES," 2 people,
+both nonzero-rate) is the one wrinkle — GM-bucketed but hourly-tracked, presumably a punch-based
+pay arrangement layered on a still-functionally-GM role; leave it bucketed as GM, don't let it leak
+into the AM/DM split.
+
+**✅ RESOLVED 2026-08-26 — the bigger point, and it changes the design: the roster pull is a
+SUGGESTION source, never the authority, especially above GM.** Owner: *"all of the names for the
+people in supervisory or above roles, you will also find their names in one of the stores['] data.
+I'm just not sure what they'll be labeled as — they could be labeled as GM's or even something
+different. So in this case, we will have to override or use our app environment to dictate what
+their position titles actually are."* Confirms: an AS/OM/DO person still has a home-store roster
+row (matching this table's "one row per person per home location" shape), but that row's
+`job_title_code` can be stale/wrong for them specifically — e.g. still reading GM months after a
+promotion, because nothing require QSRSoft's own code to be updated on an above-store promotion.
+
+**This settles the architecture, not just the AM/DM split: `qsr_employee_tenure`'s job-title code
+pre-fills a suggested role (feeding the "select from a dropdown or prepopulate" UI from the
+original ask); the app's own effective-dated person-assignment record — the same extension of
+`orgAssignments()` already planned in decision #2 above — is the single authoritative source once
+set, editable by an admin at any time.** No blocking gap remains: GM/DM/AM/SM all get a real,
+measured suggestion rule; AS/OM/DO get no roster suggestion at all (expected — above-store roles
+were never going to have one) and go straight to manual assignment, which the design already
+required for their multi-location assignments regardless.
+
+**Also worth checking `643`'s garbage description ("2000-11-02" where a job title description
+should be)** — a real, small data-quality bug in either the source system or the pull/parse path,
+one row, not urgent but worth a `grep` when someone's in that code next.
 
 **One clean small addition, not yet built: a Supabase-backed code→role config table** (owner's own
 suggestion — "an additional SQL table"), matching the existing `org_config` pattern
 (CLAUDE.md: "Org config... is configurable in Supabase `org_config` table — not hard-coded — to
-support future multi-org deployments"). Store the GM/DM/SM mapping there once AM/AS/OM is
-resolved, not hardcoded in JS, so a future job-code change or a second tenant's different codes
-don't need a redeploy.
+support future multi-org deployments"). Store the GM/DM(hourly)/AM(salaried)/SM mapping there, not
+hardcoded in JS, so a future job-code change or a second tenant's different codes don't need a
+redeploy. This table only ever feeds the suggestion/pre-fill step — the app's own assignment
+record stays authoritative regardless of what this table says.
 
 ## What this unlocks once built
 - Full-year review view (the original ask — "how do I see Nick Rice's review in entirety").
 - The "new manager needs a review" notification panel (previously-agreed design: active + zero
-  reviews this year + review-eligible job bucket) — now buildable for GM/DM/SM immediately; AM/AS/
-  OM blocked on the gap above.
+  reviews this year + review-eligible job bucket) — buildable for ALL SIX roles now: GM/AM/DM/SM
+  get a real roster-code suggestion (AM vs DM split by `hourly_pay_rate`), AS/OM surface through
+  the app's own assignment record instead of a roster suggestion (expected for above-store roles,
+  not a blocker).
 - Locked/auto-populated actuals with a required-reason override, gated by the relative-hierarchy
   rule — a real, currently-live bug fix on its own: `autoPopulateKPIs` (review-engine.js) today
   unconditionally overwrites `mo[key]` for every `src:'auto'` metric on every run (confirmed by
@@ -189,13 +220,15 @@ don't need a redeploy.
 
 ## Open items — need an owner decision before dispatching build work
 
-1. **AM/AS/OM job-code gap (above).** Blocks the code→role map and therefore the new-manager
-   notification panel for those three roles. GM/DM/SM can proceed without waiting on this.
-2. **Confirm "no real review data to lose" still holds** before any schema change ships — a quick
+*(The AM/AS/OM job-code gap that previously sat here as item 1 is resolved — see decision #5
+above. Nothing below blocks starting the build sequence; these are confirmations to get right
+along the way, not gates.)*
+
+1. **Confirm "no real review data to lose" still holds** before any schema change ships — a quick
    re-check immediately before the restructure lands, since time has passed since the quote above.
-3. **The day-weighted transfer-scoring "v2" block** (section 3A) — proposed as non-blocking future
+2. **The day-weighted transfer-scoring "v2" block** (section 3A) — proposed as non-blocking future
    work, confirm that's an acceptable sequencing.
-4. **The unified reviewer-hierarchy ladder** (section 4) is new infrastructure nobody has asked
+3. **The unified reviewer-hierarchy ladder** (section 4) is new infrastructure nobody has asked
    for elsewhere in the app yet — confirm the GM→AS/Supervisor→OM→DO→VP→Owner/OO chain above
    reads correctly against how this org actually works day to day (e.g., does every GM report to
    exactly one Supervisor, or can that vary by store the way the store-supervisor assignment
@@ -214,8 +247,8 @@ time dispatch practice:
 3. **Data model restructure**: per-person yearly review records replacing per-half records, with
    the Q1-Q4 + H1/H2 + full-year rollup view.
 4. **Promotion/transfer segmented scoring**, built on #2 and #3.
-5. **New-manager notification panel**, built on #2 (and blocked on the AM/AS/OM gap for full
-   coverage — GM/DM/SM only until resolved).
+5. **New-manager notification panel**, built on #2 — covers all six roles from the start (GM/AM/
+   DM/SM via roster-code suggestion, AS/OM via the assignment record directly).
 6. **Job-code→role Supabase config table**, feeding #5 and #2's role detection.
 
 ## Sources (web research, section 3B)
