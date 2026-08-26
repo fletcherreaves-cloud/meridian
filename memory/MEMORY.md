@@ -84,6 +84,30 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.190): [Dispatch #149 — Performance Review continuity Phase 2: lock
+  auto-populated actuals, reason-required override](dispatch-149.md).** Second build phase
+  (`plan-performance-review-continuity-2026-08-26.md`, item #2), built on #148's role ladder.
+  Real fix, not a null-check: `autoPopulateKPIs` (review-engine.js) unconditionally overwriting
+  every `src:'auto'` actual on every run is **correct** behavior (freshest cloud data always) —
+  the actual bug was a correction had nowhere else to live. Fixed by giving corrections a
+  separate, append-only home: new `review_overrides` table/localStorage cache, resolved ONCE via
+  `applyReviewOverrides()` and handed to every consumer (scoring, `KPIGrid` display, print
+  exports) so none of them need their own override-awareness. `src:'auto'` actual cells are now
+  locked (read-only) with a pencil affordance opening the exact 3-option reason form the owner
+  specified (Inaccurate Data / Incomplete Data / Something Else, explanation required for the
+  third) — gated by `canOverrideLockedActual()` (`levelsAbove >= 2` PLUS unconditional
+  admin/owner). **Real enforcement, not just client-side**: new `review_overrides` RLS insert
+  policy mirrors the identical hierarchy rule server-side via two new SQL functions
+  (`role_level`/`review_role_to_ladder`) — flagged, real SQL/JS de-sync risk if either side
+  changes without the other. `overridden_by`/`overridden_by_role` are DB-set (`default
+  auth.uid()`/`get_my_role()`), so a caller can't spoof identity on an override record. No
+  UPDATE/DELETE policy exists — the table is a true append-only audit trail by construction.
+  **⚠️ NOT YET APPLIED TO PRODUCTION** — exact SQL sent to the owner directly (also in PR #799's
+  body and `schema.sql`'s new comments). 254/254 test files, 2717/2717 tests (main baseline
+  2680+, zero regressions), including a real DOM-rendered `KPIGrid` test and a regression test
+  proving why the old field-edit approach couldn't work. Build clean, entry chunk 473.38→474.36
+  KB gzip (+0.98 KB). Verified independently in a fresh worktree before merging (every diff read
+  in full, both claimed numbers reproduced exactly).
 - **✅ SHIPPED (2026-08-26, v5.189): [Dispatch #148 — Performance Review continuity Phase 1: real
   7-rung role/level system](dispatch-148.md).** First build phase of the Performance Review
   redesign (`plan-performance-review-continuity-2026-08-26.md`, build-sequencing item #1).
