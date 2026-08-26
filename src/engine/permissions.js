@@ -301,14 +301,38 @@ export function canOverrideLockedActual(callerRoleId, reviewRole, ladder) {
 // persisted 'org_roles' predates #148 and only ever had admin/area_supervisor/manager (+ a stray
 // custom 'owner_0nct' role a user had added by hand as a stand-in before #148 shipped the real
 // 'owner' id -- unassignable to any profile since #148's CHECK constraint doesn't allow that id;
-// confirmed zero live profiles use it). mergeMissingDefaultRoles() closes this additively --
-// appends any DEFAULT_ROLES id missing from the persisted list, never touches or reorders an
-// existing persisted entry (including that stray custom role, left for the org to clean up on its
-// own via the Roles & Permissions tab) -- so the next ladder addition doesn't repeat this masking.
+// confirmed zero live profiles use it, and deleted). mergeMissingDefaultRoles() closes this
+// additively -- appends any DEFAULT_ROLES id missing from the persisted list, never touches or
+// reorders an existing persisted entry -- so the next ladder addition doesn't repeat this masking.
 export function mergeMissingDefaultRoles(roles) {
   const have = new Set(roles.map(r => r.id));
   const missing = DEFAULT_ROLES.filter(r => !have.has(r.id)).map(r => ({ ...r, permissions: { ...r.permissions } }));
   return missing.length ? [...roles, ...missing] : roles;
+}
+
+// The 7 rungs dispatch #148 defined the real ladder over -- see DEFAULT_ROLES' own "7-rung
+// review-hierarchy ladder" comment above. 'admin'/'manager' are DELIBERATELY excluded (kept
+// "exactly as they were", per that same file-header note) -- their level never gets reconciled.
+const LADDER_ROLE_IDS = new Set(['owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'sm_am_dm']);
+
+// A second, real bug found live alongside the masking one above (2026-08-26): 'area_supervisor'
+// already existed in production's persisted role list BEFORE #148 (level 3, its pre-ladder
+// value) -- mergeMissingDefaultRoles() correctly left it untouched since it wasn't MISSING, but
+// #148 re-leveled area_supervisor to 5 as part of the real ladder, so the stale persisted level
+// silently survived and made Area Supervisor outrank OM (level 4) -- backwards from the intended
+// AS -> OM -> DO -> VP -> Owner reporting chain, confirmed live via the Roles & Permissions panel
+// (Area Supervisor showed Level 3, tied with DO, above OM's Level 4). Unlike label/color/
+// permissions (which may be real org customizations, left alone), `level` is structurally
+// load-bearing for every levelsAbove()/canOverrideLockedActual() ladder-distance calculation, so
+// it is reconciled to the canonical DEFAULT_ROLES value for the 7 official ladder ids ONLY --
+// 'admin'/'manager' keep whatever level they were persisted with, matching #148's explicit design.
+export function reconcileLadderLevels(roles) {
+  return roles.map(r => {
+    if (!LADDER_ROLE_IDS.has(r.id)) return r;
+    const canonical = DEFAULT_ROLES.find(d => d.id === r.id);
+    if (!canonical || r.level === canonical.level) return r;
+    return { ...r, level: canonical.level };
+  });
 }
 
 export function getOrgRoles() {
@@ -316,7 +340,7 @@ export function getOrgRoles() {
     const raw = localStorage.getItem(ORG_ROLES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) return mergeMissingDefaultRoles(parsed);
+      if (Array.isArray(parsed) && parsed.length) return reconcileLadderLevels(mergeMissingDefaultRoles(parsed));
     }
   } catch {}
   return DEFAULT_ROLES.map(r => ({ ...r, permissions: { ...r.permissions } }));
@@ -331,7 +355,7 @@ export async function syncOrgRolesFromSupabase(sb) {
   try {
     const { data } = await sb.from('org_config').select('data').eq('key', 'org_roles').maybeSingle();
     if (data?.data && Array.isArray(data.data) && data.data.length) {
-      const merged = mergeMissingDefaultRoles(data.data);
+      const merged = reconcileLadderLevels(mergeMissingDefaultRoles(data.data));
       saveOrgRoles(merged);
       return merged;
     }

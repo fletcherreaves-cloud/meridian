@@ -9,6 +9,7 @@ import {
   DEFAULT_ROLES, ROLE_PERMISSION_TEMPLATES, ALL_PERMISSION_KEYS,
   levelsAbove, getRoleById, hasPermission, canManageRole, defaultPermissionsForLevel,
   REVIEW_ROLE_TO_LADDER, canOverrideLockedActual, mergeMissingDefaultRoles,
+  reconcileLadderLevels,
 } from '../engine/permissions.js';
 
 // The 7 rungs the plan doc's decision #4 (sharpened by #6) names explicitly, bottom to top:
@@ -280,5 +281,74 @@ describe('mergeMissingDefaultRoles()', () => {
     const before = JSON.stringify(DEFAULT_ROLES);
     mergeMissingDefaultRoles([{ id: 'admin', label: 'Admin', level: 1, color: '#000', system: true, permissions: {} }]);
     expect(JSON.stringify(DEFAULT_ROLES)).toBe(before);
+  });
+});
+
+// A second real production bug found the same day, alongside the masking one above: a persisted
+// role list can already contain a ladder id (so mergeMissingDefaultRoles() correctly leaves it
+// alone -- it isn't missing) but at a STALE pre-#148 level. Confirmed live: area_supervisor
+// persisted at level 3 (its pre-ladder value) made it outrank OM (level 4) -- backwards from the
+// real AS -> OM -> DO -> VP -> Owner chain. reconcileLadderLevels() is the fix.
+describe('reconcileLadderLevels()', () => {
+  it('corrects a stale level for a ladder role id to the canonical DEFAULT_ROLES value', () => {
+    const stale = [
+      { id: 'admin', label: 'Admin', level: 1, color: '#f59e0b', system: true, permissions: {} },
+      // Pre-#148 level (3) -- canonical is 5. This is the exact live bug: AS outranking OM.
+      { id: 'area_supervisor', label: 'Area Supervisor', level: 3, color: '#3b82f6', system: false, permissions: {} },
+      { id: 'om', label: 'OM (Ops Manager)', level: 4, color: '#0ea5e9', system: true, permissions: {} },
+    ];
+    const fixed = reconcileLadderLevels(stale);
+    const as = fixed.find(r => r.id === 'area_supervisor');
+    const om = fixed.find(r => r.id === 'om');
+    expect(as.level).toBe(5); // canonical DEFAULT_ROLES value
+    expect(om.level).toBe(4);
+    expect(om.level).toBeLessThan(as.level); // OM correctly outranks AS again (lower = more authority)
+    // Non-level fields on the corrected role are untouched -- only `level` is reconciled.
+    expect(as.label).toBe('Area Supervisor');
+    expect(as.color).toBe('#3b82f6');
+  });
+
+  it('never touches admin or manager, even when their level differs from DEFAULT_ROLES -- both are excluded by design', () => {
+    const roles = [
+      { id: 'admin', label: 'Admin', level: 1, color: '#f59e0b', system: true, permissions: {} },
+      // manager's persisted level (4) differs from DEFAULT_ROLES' (3) in production too --
+      // deliberately NOT reconciled, since #148 kept manager "exactly as it was".
+      { id: 'manager', label: 'Manager', level: 4, color: '#22c55e', system: false, permissions: {} },
+    ];
+    const fixed = reconcileLadderLevels(roles);
+    expect(fixed).toEqual(roles); // byte-for-byte unchanged
+  });
+
+  it('is a no-op for a role whose level already matches DEFAULT_ROLES, and for an unrecognized custom role id', () => {
+    const roles = [
+      { id: 'gm', label: 'GM (General Manager)', level: 6, color: '#14b8a6', system: true, permissions: {} },
+      { id: 'some_custom_role', label: 'Custom', level: 9, color: '#000', system: false, permissions: {} },
+    ];
+    expect(reconcileLadderLevels(roles)).toEqual(roles);
+  });
+
+  it('composes with mergeMissingDefaultRoles() to fully repair a stale pre-#148 persisted list', () => {
+    const staleProduction = [
+      { id: 'admin', label: 'Admin', level: 1, color: '#f59e0b', system: true, permissions: {} },
+      { id: 'area_supervisor', label: 'Area Supervisor', level: 3, color: '#3b82f6', system: false, permissions: {} },
+      { id: 'manager', label: 'Manager', level: 4, color: '#22c55e', system: false, permissions: {} },
+    ];
+    const repaired = reconcileLadderLevels(mergeMissingDefaultRoles(staleProduction));
+    const byId = Object.fromEntries(repaired.map(r => [r.id, r]));
+    // Every DEFAULT_ROLES ladder id present, at its canonical level.
+    for (const r of DEFAULT_ROLES) {
+      if (r.id === 'admin' || r.id === 'manager') continue;
+      expect(byId[r.id]).toBeTruthy();
+      expect(byId[r.id].level).toBe(r.level);
+    }
+    // manager keeps its persisted (stale) level -- excluded by design, not a bug in this composition.
+    expect(byId.manager.level).toBe(4);
+    // The full reporting chain is now correctly ordered, lower level = more authority.
+    expect(byId.om.level).toBeLessThan(byId.area_supervisor.level);
+    expect(byId.do.level).toBeLessThan(byId.om.level);
+    expect(byId.vp.level).toBeLessThan(byId.do.level);
+    expect(byId.owner.level).toBeLessThan(byId.vp.level);
+    expect(byId.area_supervisor.level).toBeLessThan(byId.gm.level);
+    expect(byId.gm.level).toBeLessThan(byId.sm_am_dm.level);
   });
 });
