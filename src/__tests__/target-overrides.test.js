@@ -157,7 +157,7 @@ describe('the 6 dispatch #135 fields are present and resolve through the real ca
       'tEPB2BTarget', 'tFSAuditsTarget', 'tFSEcoSureTarget',
       'tFSTabletTarget', 'tShiftVerifTarget', 'tRetentionTarget',
     ]));
-    expect(TARGET_OVERRIDE_FIELDS.length).toBe(14); // 8 (dispatch #132) + 6 (dispatch #135 item 1)
+    expect(TARGET_OVERRIDE_FIELDS.length).toBe(15); // 8 (dispatch #132) + 6 (dispatch #135 item 1) + 1 (dispatch #145: eap)
   });
   it('a company-wide EPB2B override resolves through mergedTargetsForLoc with no other source', () => {
     const ds = { targetOverrides: indexTargetOverrides([{ scope_type: 'company', scope_id: 'ALL', field: 'tEPB2BTarget', value: 0.02 }]) };
