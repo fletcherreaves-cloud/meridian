@@ -158,6 +158,35 @@ discovered mid-dispatch. **✅ Built — see dispatch #148, shipped v5.189**: `p
 `sm_am_dm`) plus a pure `levelsAbove(roleId, aboveRoleId, ladder)` resolver, not yet wired into
 review UI/RLS — that wiring is this section's own remaining work (build-sequencing item #2).
 
+**✅ RESOLVED 2026-08-26 — dispatch #148's own flagged open question (admin/manager: collapse into
+owner/gm, or stay separate?) is answered: stay separate, exactly as shipped, no code change
+needed.** Owner: *"Admin should remain [separate from Owner]... I can always assign an owner
+admin, but could also assign a trusted different role"* — i.e. `admin` and `owner` are two real,
+independently-assignable roles on purpose, so the SAME real person (or a delegate) can hold full
+operational access (`admin`) without necessarily being `owner` (top-of-ladder), and a trusted
+person can be handed a narrower role instead of either. This is precisely what dispatch #148
+already did by leaving `admin`/`manager` untouched rather than guessing a collapse — **confirms the
+shipped code is correct as-is, nothing to change here.** Same logic applies to `manager`→`gm`:
+owner confirmed that collapse is fine for existing accounts, **but also wants the sub-GM rung
+(`sm_am_dm`) genuinely assignable too, not just a flat manager→GM mapping** — also already true of
+the shipped ladder (`sm_am_dm` is its own real rung, not folded into `gm`). No further code work
+needed on this specific point; it was a documentation/confirmation gap, not a build gap.
+
+**⚠️ NEW real requirement surfaced in the same exchange — a person needs to be able to hold
+MULTIPLE roles at once, not just one.** Owner: *"allowing multiple roles to be selected at one time
+for a person, I am good with that."* This is genuinely new scope, not something dispatch #148
+built or was asked to — `profiles.role` is a single text column today, `get_my_role()` (SQL) and
+`levelsAbove()` (JS) both assume one role per person. Real-world driver: the owner himself already
+holds Owner + Admin + Developer simultaneously (CLAUDE.md's own org context says so), and the
+"assign a trusted different role" scenario above implies other people may too. **Scoped as its own
+follow-up dispatch, not folded into the in-flight #149** (which depends on `levelsAbove()`'s
+current single-role shape and is already running) — rough shape for whoever picks it up:
+`profiles.role` → `profiles.roles text[]` (or a join table), `get_my_role()` → a `get_my_roles()`
+set-returning function with every RLS `= 'x'` check becoming `'x' = any(get_my_roles())`, and
+`levelsAbove`/any hierarchy check resolving authority from a person's MOST SENIOR held role (lowest
+`level` number) rather than assuming a single value. Needs its own careful RLS migration — flag
+for a dedicated dispatch once #149 lands, do not rush it into the current one.
+
 **The lock/override UI mechanism itself — owner's exact words, captured here so it isn't lost to
 chat history:** *"lock actual results from editing when imported. You could provisionally allow
 someone in a higher user role to manually update and correct, but require a reason to do so. Could
@@ -519,6 +548,10 @@ time dispatch practice:
 9. **Email/notification wiring** (decision #7) — genuinely new (no existing email infrastructure
    anywhere in the app, confirmed). Placed last per the owner's own sequencing; hooks onto
    `transitionReview()`'s existing status changes once everything above it is real.
+10. **Multi-role-per-person support** (decision #4/#6's resolution above) — `profiles.role`
+    (single value) → `profiles.roles` (multi-value), `get_my_role()`/RLS/`levelsAbove()` all need
+    to resolve authority from a SET of held roles, not one. Needs its own careful RLS migration;
+    do not fold into #2 (already in flight when this was scoped) or any earlier item.
 
 ## Sources (web research, section 3B)
 - [HR's guide to mid-year performance reviews | QuickBooks Blog](https://quickbooks.intuit.com/r/manage-employees/mid-year-performance-reviews-guide/)
