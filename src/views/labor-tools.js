@@ -40,7 +40,7 @@ const PT_SCORE_KEY   = 'mf_period_scoreboard';
 // importing this whole (large, otherwise lazy-loaded) panel module — that mistake
 // cost ~25KB gzip on the main entry chunk the first time it was tried. Imported above.
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
-import { metricAvg, metricSeries } from '../engine/metric-source.js';
+import { metricAvg, metricSeries, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
@@ -278,7 +278,7 @@ function DARDaypartPanel({stores, ds, settings, onClose}) {
 // PRODUCT MIX DASHBOARD  (v186)
 // Family group sales breakdown, discount exposure, mix shift analysis.
 function ProductMixPanel({stores, ds, settings, onClose}) {
-  const {useState:uSt, useMemo:uM} = React;
+  const {useState:uSt, useMemo:uM, useEffect:uE} = React;
   const [sortBy,  setSortBy]  = uSt('units');
 
   // ── Cloud (dispatch #114) ────────────────────────────────────────────────
@@ -288,8 +288,39 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
   // below (manual upload: per-file, lifetime-cumulative, no store/date grain).
   // Auto/emailed-first standing rule (CLAUDE.md): cloud is primary whenever it
   // has data; manual is last-resort fill, kept as a separate tab (additive).
+  // pmixRows is LAZY_FILL_SOURCES-only (metric-source.js), never eager at
+  // startup, and reached ONLY via an explicit ensureLazyFill('pmixRows') call
+  // -- same "load on open" contract as auditRows/wasteRows (analytics.js).
+  // This panel is the on-demand trigger; without it ds.pmixRows never
+  // populates no matter how much qsr_product_mix has in Supabase, and the
+  // panel reads its own permanently-empty state as "the auto-pull hasn't
+  // landed rows yet," which is false. Confirmed 2026-08-26: qsr_product_mix
+  // had 2.5M rows, fresh through the prior day, while this panel showed
+  // "No Cloud Product Mix Data" -- labor-tools.js never imported
+  // ensureLazyFill at all.
+  const [pmixPending, setPmixPending] = uSt(true);
+  const [pmixFailed,  setPmixFailed]  = uSt(false);
+  uE(() => {
+    const stillPending = ensureLazyFill('pmixRows');
+    setPmixPending(stillPending);
+    if (!stillPending) { setPmixFailed(isLazyFillError('pmixRows')); return; }
+    const id = setInterval(() => {
+      if (!isLazyFillPending('pmixRows')) {
+        setPmixPending(false); setPmixFailed(isLazyFillError('pmixRows')); clearInterval(id);
+      }
+    }, 300);
+    return () => clearInterval(id);
+  }, []);
   const hasCloudPMix  = !!(ds.pmixRows && ds.pmixRows.length);
   const hasManualPMix = !!(ds.pmixData && Object.keys(ds.pmixData).length);
+  // hasCloudPMix is always false at this initializer's mount-time evaluation
+  // (pmixRows is lazy-loaded, see above) -- so in practice this has always
+  // defaulted to 'manual' on first open. Deliberately left as-is (dispatch-
+  // 114-product-mix-cloud.test.js encodes it): a store with real manual data
+  // already uploaded shouldn't be hidden behind a loading/empty Cloud tab.
+  // The actual bug this fix addresses is that Cloud never worked even when
+  // the user clicked it themselves -- ensureLazyFill above is that fix; once
+  // it resolves, clicking (or already being on) the Cloud tab shows real data.
   const [dataSrc, setDataSrc] = uSt(hasCloudPMix ? 'cloud' : 'manual');
 
   const pmixDate = r => r.date instanceof Date ? r.date : new Date(r.date);
@@ -428,7 +459,7 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
         ...['cloud','manual'].map(s=>btn({key:s,className:'btn btn-sm',
           style:{fontSize:'8.5px',background:dataSrc===s?'var(--adim)':'transparent',
             color:dataSrc===s?'var(--amber)':'var(--text3)'},onClick:()=>setDataSrc(s)},
-          s==='cloud'?('☁ Cloud'+(hasCloudPMix?'':' (none)')):('📁 Manual'+(hasManualPMix?'':' (none)')))),
+          s==='cloud'?('☁ Cloud'+(pmixPending?' (loading…)':hasCloudPMix?'':' (none)')):('📁 Manual'+(hasManualPMix?'':' (none)')))),
         span({style:{fontSize:'8px',color:'var(--text3)'}},'Sort:'),
         ...['units','disc','pct'].map(s=>btn({key:s,className:'btn btn-sm',
           style:{fontSize:'8.5px',background:sortBy===s?'var(--adim)':'transparent',
@@ -457,6 +488,13 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
         pmixErrors.map(e=>div({key:e.name,style:{fontSize:'9.5px',color:'var(--amber)',lineHeight:1.6}},
           span({style:{fontWeight:700}},e.name+': '),e.error))
       ),
+      (dataSrc==='cloud'&&pmixPending)?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
+        flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},
+        div({style:{fontSize:36}},'☁'),
+        div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'Loading Product Mix…'),
+        div({style:{fontSize:'10px',textAlign:'center',maxWidth:380,lineHeight:1.7}},
+          'Pulling qsr_product_mix from Supabase (loaded on open, not at startup).')
+      ):
       !activeHasData?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
         flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},
         div({style:{fontSize:36}},'🍔'),
@@ -464,9 +502,11 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
           dataSrc==='cloud'?'No Cloud Product Mix Data':'No Product Mix Data Loaded'),
         div({style:{fontSize:'10px',textAlign:'center',maxWidth:380,lineHeight:1.7}},
           dataSrc==='cloud'
-            ? (hasCloudPMix
-              ? 'No product-mix rows for '+(cloudLoc?sNameC(cloudLoc):'this store')+' in the selected range. Try a wider range or another store.'
-              : 'The auto-pull hasn\'t landed any qsr_product_mix rows yet. Check the Manual tab, or Data Manager for the pull\'s sync status.')
+            ? (pmixFailed
+              ? 'The cloud read failed. Try reopening this panel, or check Data Manager for the pull\'s sync status.'
+              : hasCloudPMix
+                ? 'No product-mix rows for '+(cloudLoc?sNameC(cloudLoc):'this store')+' in the selected range. Try a wider range or another store.'
+                : 'The auto-pull hasn\'t landed any qsr_product_mix rows yet. Check the Manual tab, or Data Manager for the pull\'s sync status.')
             : 'Load Product Mix files (Product_Mix_YYYYMMDD_to_YYYYMMDD_[store].xlsx) to see menu analytics.')
       ):
       div({style:{flex:1,overflowY:'auto',padding:'12px 16px'}},
