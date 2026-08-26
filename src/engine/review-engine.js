@@ -40,7 +40,7 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'r2p',        label:'R2P Front Counter (sec)',    weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'r2p',        note:'Target = store R2P target (sec)' },
       { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'auto', field:'restaurantTimeSec', note:'Auto: McDelivery 3PO Restaurant Time (cloud) vs store target' },
       { key:'kvs',        label:'KVS Time (sec)',             weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-3,3,6],          src:'auto', field:'kvst',       note:'Target = store KVS target (sec)' },
-      { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'manual',              pctInput:true, note:'Not scored — reference only' },
+      { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'auto', field:'kvsHealthy', pctInput:true, note:'Not scored — reference only. Auto from KVS Healthy Usage (cloud-first, manual Ops upload fallback); target from yearly workbook "Healthy Use 2nd Side"' },
       // Dispatch #132 item 2, investigated (NOT wired to t1800Contacts): the yearly workbook's
       // "1-800 Contacts" column is a raw per-store COUNT target, not a /100K rate — confirmed by
       // reading parseYearlyTargets() (src/parsers/index.js), which parses it with a plain
@@ -768,6 +768,11 @@ export function computeScoreBreakdown(review, cfg) {
 // (optionally seed from Smart Targets)" cases surfaced by missingReviewTargets().
 export const REVIEW_METRIC_TARGET_FIELD = {
   oepe: 'tOepe', r2p: 'tR2p', kvs: 'tKvst',
+  // secondSide: real, already-parsed yearly-workbook target (parseYearlyTargets's kvsu ->
+  // t.tKvsu -> yearly_targets.kvs_usage_pct, "Healthy Use 2nd Side" / "KVS Usage" column) —
+  // owner-confirmed 2026-08-26 ("Target available in yearly targets under Healthy Use 2nd
+  // Side"). Metric stays scored:false; this only lets the target auto-fill.
+  secondSide: 'tKvsu',
   // labor: was 'tLabor' — the field labor-basis.js's own LABOR_BASIS_FIELDS comment names
   // as "legacy... static only, no monthly path — the field the bug graded on" (issue #153).
   // #153 already moved every OTHER labor-target consumer onto resolveLaborTarget()'s
@@ -1030,10 +1035,17 @@ export function autoPopulateKPIs(review, ds) {
     const r2pAvg   = metricAvg(ds, loc, range, 'r2p');
     const kvsAvg   = metricAvg(ds, loc, range, 'kvst');
     const laborAvg = metricAvg(ds, loc, range, 'laborPct');
+    // 2nd Side Healthy Usage (owner, 2026-08-26: "we need to populate it as well") — same
+    // metricAvg auto-first pattern as kvsAvg just above, reading the already-registered
+    // 'kvsHealthy' source (metric-source.js: glimpse/opsService/qsrActSummary cloud streams,
+    // manual ds.opsRows.kvsu last). Left scored:false per the owner's own note; this only
+    // populates the Act/Tgt values, doesn't turn scoring on.
+    const secondSideAvg = metricAvg(ds, loc, range, 'kvsHealthy');
     if (oepeAvg  != null) mo.oepe  = oepeAvg;
     if (r2pAvg   != null) mo.r2p   = r2pAvg;
     if (kvsAvg   != null) mo.kvs   = kvsAvg;
     if (laborAvg != null) mo.labor = laborAvg;
+    if (secondSideAvg != null) mo.secondSide = secondSideAvg;
     if (fr.length) {
       const fd = sum(fr,'fobDollar');
       if (fd!=null) mo.foodOB = fd;

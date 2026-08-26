@@ -715,7 +715,7 @@ export function ScheduleRetentionRollupSection({ ds, stores, settings }) {
           rows: rows.map(r => ({
             [dimDef.label]: r.group, Stores: r.storeCount,
             'Labor % Before': r.pre.laborPct == null ? '' : pct(r.pre.laborPct), 'Labor % Since': r.post.laborPct == null ? '' : pct(r.post.laborPct),
-            'Labor % Δ (pp)': r.laborPctDelta == null ? '' : (r.laborPctDelta * 100).toFixed(2),
+            'Labor % Δ (pp)': r.laborPctDelta == null ? '' : r.laborPctDelta.toFixed(2),
             'Sched-Fcst Hrs/Wk Before': r.pre.hrsDiffAvgPerWeek == null ? '' : r.pre.hrsDiffAvgPerWeek.toFixed(1),
             'Sched-Fcst Hrs/Wk Since': r.post.hrsDiffAvgPerWeek == null ? '' : r.post.hrsDiffAvgPerWeek.toFixed(1),
             'TPMH Before': r.pre.tpmh == null ? '' : r.pre.tpmh.toFixed(2), 'TPMH Since': r.post.tpmh == null ? '' : r.post.tpmh.toFixed(2),
@@ -736,7 +736,7 @@ export function ScheduleRetentionRollupSection({ ds, stores, settings }) {
             h('td', { style: { padding: '6px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' } }, (i === 0 && r.laborPctDelta != null ? '🏆 ' : '') + r.group),
             td(r.storeCount),
             td(r.pre.laborPct == null || r.post.laborPct == null ? '—' : pct(r.pre.laborPct) + ' → ' + pct(r.post.laborPct)),
-            td(r.laborPctDelta == null ? '—' : (r.laborPctDelta >= 0 ? '+' : '') + (r.laborPctDelta * 100).toFixed(2) + 'pp', { color: _lpDeltaColor(r.laborPctDelta), fontWeight: 700 }),
+            td(r.laborPctDelta == null ? '—' : (r.laborPctDelta >= 0 ? '+' : '') + r.laborPctDelta.toFixed(2) + 'pp', { color: _lpDeltaColor(r.laborPctDelta), fontWeight: 700 }),
             td(r.hrsDiffDelta == null ? '—' : (r.hrsDiffDelta >= 0 ? '+' : '') + r.hrsDiffDelta.toFixed(1) + ' hrs/wk'),
             td(r.tpmhDelta == null ? '—' : (r.tpmhDelta >= 0 ? '+' : '') + r.tpmhDelta.toFixed(2)),
             h('td', { style: { textAlign: 'left', padding: '6px 8px', fontSize: 10.5, color: _lpDeltaColor(r.laborPctDelta), whiteSpace: 'nowrap' } }, _lpVerdict(r.laborPctDelta)),
