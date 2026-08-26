@@ -19,6 +19,14 @@ import * as React from 'react';
 import { computePromoDiscountRoi } from '../engine/promo-roi.js';
 import { STORE_NAMES } from '../constants.js';
 
+// Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
+// otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
+// first render of the Export control itself -- established pattern (dispatch #122/#129/#134/
+// #136/#143).
+const LazyExportDropdown = React.lazy(() =>
+  import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
+);
+
 const h = React.createElement;
 const f$ = n => (n == null ? '—' : (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString());
 const fPct = n => (n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%');
@@ -106,6 +114,121 @@ function statCard(label, val, col) {
     h('div', { style: { fontSize: 16, fontWeight: 800, fontFamily: 'var(--mono)', color: col || 'var(--text)' } }, val));
 }
 
+// ── Print / Export (dispatch #147) ───────────────────────────────────────────
+// Same local-helper pattern every print/export builder in this codebase repeats (signals.js/
+// record-day.js/dt-speedofservice.js/security-panel.js) -- a full, scroll-independent printable
+// HTML document opened via window.open, never bare window.print() against this panel's scrolled
+// body. Covers both levers' full verdict tables at whatever incremental-margin assumption is
+// currently set (marginPct is already baked into `roi` by the time these read it).
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function reportTable(headers, rows) {
+  if (!rows.length) return '<p style="color:#9ca3af;font-size:12px;padding:8px 0">No data.</p>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr>${headers.map(hd => `<th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #e5e7eb;background:#f8fafc">${esc(hd)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((r, i) => `<tr style="background:${i % 2 ? '#fff' : '#fafafa'}">${r.map(c => `<td style="padding:5px 10px;border-bottom:1px solid #f1f5f9;color:#111">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function reportSection(title, bodyHtml) {
+  return `<div style="padding:20px 32px;border-top:1px solid #e5e7eb">
+    <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:12px">${esc(title)}</div>
+    ${bodyHtml}
+  </div>`;
+}
+function reportShell(title, subtitle, bodyHtml) {
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${esc(title)} — Report</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#111;font-size:13px}
+  @media print{
+    body{background:white}
+    .no-print{display:none!important}
+    .page{box-shadow:none!important;margin:0!important;border-radius:0!important;max-width:100%!important}
+  }
+</style>
+</head><body>
+<div class="no-print" style="background:#1e293b;padding:12px 24px;display:flex;align-items:center;gap:12px">
+  <span style="color:#f59e0b;font-weight:800;font-size:16px">Meridian</span>
+  <span style="color:#94a3b8;font-size:13px">${esc(title)}</span>
+  <button onclick="window.print()" style="margin-left:auto;background:#f59e0b;border:none;color:#000;padding:7px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">🖨 Print / Save as PDF</button>
+  <button onclick="window.close()" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:7px 14px;border-radius:6px;cursor:pointer">Close</button>
+</div>
+<div class="page" style="max-width:1000px;margin:24px auto;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);overflow:hidden">
+  <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%);padding:28px 32px;color:white">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:11px;letter-spacing:.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px">Meridian</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-.5px">${esc(title)}</div>
+        <div style="margin-top:8px;font-size:12px;color:#94a3b8">${esc(subtitle || '')}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#94a3b8">Generated</div>
+        <div style="font-size:16px;font-weight:700;color:#f59e0b">${now}</div>
+      </div>
+    </div>
+  </div>
+  ${bodyHtml}
+  <div style="padding:12px 32px;background:#0f172a;display:flex;justify-content:space-between;align-items:center">
+    <span style="color:#f59e0b;font-weight:800;font-size:14px">Meridian</span>
+    <span style="color:#475569;font-size:11px">QSR Forecasting &amp; Analytics · Generated ${now} · CONFIDENTIAL</span>
+  </div>
+</div>
+</body></html>`;
+}
+function openPrintReport(html) {
+  const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
+  if (w) { w.document.write(html); w.document.close(); }
+  else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+}
+
+const LEVER_COLS = ['Store', 'Days', 'Lift %', 'Sales/day', 'Give-away/day', 'GP Δ/day', 'Verdict'];
+function leverExportRows(data) {
+  return (data?.byStore || []).map(s => ({
+    Store: sName(s.loc), Days: s.nDays, 'Lift %': fPct(s.liftSalesPct), 'Sales/day': f$(s.extraSalesPerDay),
+    'Give-away/day': f$(s.extraSpendPerDay), 'GP Δ/day': f$(s.grossProfitDelta), Verdict: (VERDICT[s.verdict] || VERDICT['n/a']).label,
+  }));
+}
+function promoRoiExportSpec(roi, marginPct) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = [
+    ...leverExportRows(roi.promo).map(r => ({ Lever: 'Promotions', ...r })),
+    ...leverExportRows(roi.discount).map(r => ({ Lever: 'Discounts', ...r })),
+  ];
+  return { rows, columns: ['Lever', ...LEVER_COLS].map(k => ({ key: k, label: k })),
+    title: `Promo / Discount ROI — ${marginPct}% incremental margin`, filename: `promo-discount-roi-${today}` };
+}
+function leverPrintRows(data) {
+  return (data?.byStore || []).map(s => [
+    esc(sName(s.loc)), s.nDays, `<b style="color:${s.liftSalesPct >= 0 ? '#10b981' : '#ef4444'}">${fPct(s.liftSalesPct)}</b>`,
+    f$(s.extraSalesPerDay), `<span style="color:#b45309">${f$(s.extraSpendPerDay)}</span>`,
+    `<b style="color:${s.grossProfitDelta >= 0 ? '#10b981' : '#ef4444'}">${f$(s.grossProfitDelta)}</b>`,
+    (() => { const m = VERDICT[s.verdict] || VERDICT['n/a']; return `<span style="font-weight:800;color:${m.col}">${m.label}</span>`; })(),
+  ]);
+}
+function promoRoiPrintHtml(roi, marginPct, covWindow) {
+  const leverSummary = (title, data) => {
+    const dst = data?.district;
+    if (!dst || !(data?.byStore || []).length) return reportSection(title, '<p style="font-size:11px;color:#6b7280;line-height:1.6">' + (NO_DATA_COPY[data?.reason]?.text || 'Not enough data.') + '</p>');
+    const m = VERDICT[dst.verdict] || VERDICT['n/a'];
+    const heroCard = (label, val, color) => `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:#6b7280;text-transform:uppercase;margin-bottom:5px">${esc(label)}</div>
+      <div style="font-size:18px;font-weight:800;color:${color || '#0f172a'}">${esc(val)}</div>
+    </div>`;
+    const hero = `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+      ${heroCard('District verdict', m.label, m.col)}
+      ${heroCard('Sales lift / heavy day', f$(dst.extraSalesPerDay), dst.extraSalesPerDay >= 0 ? '#10b981' : '#ef4444')}
+      ${heroCard('Give-away / heavy day', f$(dst.extraSpendPerDay), '#b45309')}
+      ${heroCard('Gross-profit Δ / day', f$(dst.grossProfitDelta), dst.grossProfitDelta >= 0 ? '#10b981' : '#ef4444')}
+    </div>`;
+    return reportSection(title, hero + reportTable(LEVER_COLS, leverPrintRows(data)));
+  };
+  return reportShell('Promo / Discount ROI', `${marginPct}% incremental margin${covWindow ? ' · calendar coverage ' + covWindow : ''}`,
+    leverSummary('🎉 Promotions', roi.promo) +
+    leverSummary('🏷️ Discounts', roi.discount) +
+    reportSection('Methodology', '<p style="font-size:11px;color:#6b7280;line-height:1.6">Matched-day design: tagged days (a real national promo-calendar window) are compared against untagged days within the same day-of-week, so the split controls for the weekly pattern. GP Δ/day = sales lift × incremental margin − extra give-away. This is a directional screen (association with controls), not a randomized trial.</p>'));
+}
+
 export function PromoRoiPanel({ ds, userEvents, onClose }) {
   const { useState, useMemo } = React;
   const [marginPct, setMarginPct] = useState(35);
@@ -114,6 +237,14 @@ export function PromoRoiPanel({ ds, userEvents, onClose }) {
   const covWindow = cov && Object.keys(cov.covStart || {}).length
     ? [...new Set(Object.values(cov.covStart))].sort()[0] + ' → ' + [...new Set(Object.values(cov.covEnd))].sort().slice(-1)[0]
     : null;
+
+  // Dispatch #147 -- print/export, covering both levers' full verdict tables at the currently
+  // set incremental-margin assumption. Hidden until there's enough data for either lever.
+  const hasExportable = roi && ((roi.promo?.byStore || []).length || (roi.discount?.byStore || []).length);
+  const exportSpec = useMemo(() => hasExportable ? promoRoiExportSpec(roi, marginPct) : null, [hasExportable, roi, marginPct]);
+  const handlePrintReport = React.useCallback(() => {
+    if (hasExportable) openPrintReport(promoRoiPrintHtml(roi, marginPct, covWindow));
+  }, [hasExportable, roi, marginPct, covWindow]);
 
   return h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
     h('div', { style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
@@ -127,6 +258,14 @@ export function PromoRoiPanel({ ds, userEvents, onClose }) {
         h('span', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)' } }, 'Incremental margin'),
         h('input', { type: 'range', min: 10, max: 60, step: 5, value: marginPct, onChange: e => setMarginPct(+e.target.value), style: { width: 90 } }),
         h('span', { style: { fontSize: 11, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--amber)', width: 34 } }, marginPct + '%'),
+        // Dispatch #147 -- print/export toolbar, both levers at the current margin setting.
+        exportSpec && h('div', { style: { display: 'flex', gap: 6 } },
+          h(React.Suspense, {
+            fallback: h('button', { className: 'btn btn-sm', style: { opacity: .5 }, disabled: true }, '⬇ Export') },
+            h(LazyExportDropdown, { rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename }),
+          ),
+          h('button', { className: 'btn btn-sm', onClick: handlePrintReport }, '🖨 Print Report'),
+        ),
         h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
       // Body
       h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
