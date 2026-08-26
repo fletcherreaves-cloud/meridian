@@ -84,6 +84,23 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.186, direct fix, no dispatch): `store-dash.js`'s "By Patch" tab
+  fixed — the last leftover from dispatch #144.** #144's own PR body flagged this exact call site
+  (`OrgView`'s supervisor grouping) as still reading `settings.supervisorGroups` — the same
+  save-time-snapshot bug #139 fixed everywhere else — but out of that dispatch's named scope.
+  Picked up directly: swapped for live `supervisorGroups()`, mirroring #139's established pattern
+  exactly (no design decision needed). New test reassigns a real store via `setLiveAssignments`
+  (same repro `dispatch-139-supervisor-patch-live-source.test.js` uses) and confirms the "By
+  Patch" tab shows the new supervisor — no existing test had ever rendered this tab's populated
+  state. Full suite 2663/2663; build clean.
+  **⚠️ Complaints/Propel — flagged to the owner, cannot be advanced solo.** Owner said this
+  morning *"The complaints are on the propel site"* — checked `memory/` for prior research
+  (none exists) and confirmed via `finding-ecosure-propel-api-2026-08-22.md`'s own hard-won
+  conclusion that `propel.mcd.com` is SSO+MFA-gated: *"headless/unattended SSO authentication is
+  impossible."* Every prior Propel capture (EcoSure, CFV, RGR) required the owner to be logged in
+  and share the request/screenshot — same constraint applies here. Holding until the owner
+  captures whatever screen holds complaints data in Propel; not something to guess at or attempt
+  solo.
 - **✅ SHIPPED (2026-08-26, v5.185, direct fix, no dispatch): Delivery Wait target root-caused
   and fixed — a merged-header split column, not a missing-data gap as first suspected.** Owner
   sent a live screenshot: `yearly_targets`'s "McDelivery Restaurant Wait Time" is a MERGED
