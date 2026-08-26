@@ -6,6 +6,7 @@ import * as React from 'react';
 import { INV_ORG_COORDS, supervisorOf } from '../constants';
 import { escapeHtml as esc } from '../utils/fmt';
 import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
+import { LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
 
@@ -46,32 +47,36 @@ function orgDesc(orgFilter, storeSel, nameOf) {
   return orgFilter; // patch (supervisor)
 }
 
-// App-standard filter bar: All / OK / FL / patch pills (amber, per analytics)
-// + a Store dropdown. `locs` = every loc in the active tab's data.
-function VoiceFilterBar({ locs, orgFilter, setOrgFilter, storeSel, setStoreSel, nameOf }) {
+// LocationSelector value <-> (orgFilter, storeSel) at the UI boundary (dispatch #144, panel-
+// contract.md section 3) — orgFilter/storeSel stay this panel's existing state shape (org/patch
+// SCOPE for district roll-ups, separate store DRILL for the comment feed), translated to/from
+// LocationSelector's single {level,id} value the way report-subscriptions.js's
+// scopeToSelectorValue/selectorValueToScope does.
+function filterToSelectorValue(orgFilter, storeSel) {
+  if (storeSel && storeSel !== 'all') return { level: 'store', id: storeSel };
+  if (!orgFilter || orgFilter === 'all') return { level: 'all', id: null };
+  if (orgFilter === 'ok') return { level: 'state', id: 'OK' };
+  if (orgFilter === 'fl') return { level: 'state', id: 'FL' };
+  return { level: 'patch', id: orgFilter }; // supervisor patch
+}
+
+// App-standard filter (LocationSelector, progressive: All → State → Patch → Store — dispatch
+// #144). `locs` = every loc in the active tab's data; `storeNames` = {loc: name} for the label.
+function VoiceFilterBar({ locs, orgFilter, setOrgFilter, storeSel, setStoreSel, storeNames }) {
   const present = [...new Set((locs || []).map(_normLoc))];
   if (present.length <= 1) return null;
-  const hasOK = present.some(l => _orgOf(l).state === 'OK');
-  const hasFL = present.some(l => _orgOf(l).state === 'FL');
-  const patches = [...new Set(present.map(l => _supOf(l)).filter(Boolean))].sort();
-  const filters = ['all', ...(hasOK ? ['ok'] : []), ...(hasFL ? ['fl'] : []), ...patches];
-  const storeOpts = present.filter(l => orgMatch(orgFilter, l)).sort((a, b) => +a - +b);
-
-  const fLabel = f => f === 'all' ? 'All' : f === 'ok' ? '🟠 OK' : f === 'fl' ? '🔵 FL' : f.split(' ').slice(-1)[0];
-  const pill = f => h('button', { key: f, onClick: () => { setOrgFilter(f); if (storeSel !== 'all' && !orgMatch(f, storeSel)) setStoreSel('all'); },
-    style: { padding: '3px 9px', borderRadius: 99, fontSize: 9, cursor: 'pointer',
-      border: '.5px solid ' + (orgFilter === f ? 'rgba(245,158,11,.4)' : 'var(--bdr)'),
-      background: orgFilter === f ? 'var(--adim,rgba(245,158,11,.12))' : 'transparent',
-      color: orgFilter === f ? 'var(--amber,#f59e0b)' : 'var(--text2)', whiteSpace: 'nowrap' } }, fLabel(f));
+  const voiceStores = present.map(l => ({ loc: l }));
+  const value = filterToSelectorValue(orgFilter, storeSel);
+  const onChange = v => {
+    if (!v || v.level === 'all') { setOrgFilter('all'); setStoreSel('all'); return; }
+    if (v.level === 'state') { setOrgFilter(v.id === 'OK' ? 'ok' : v.id === 'FL' ? 'fl' : 'all'); setStoreSel('all'); return; }
+    if (v.level === 'patch') { setOrgFilter(v.id); setStoreSel('all'); return; }
+    if (v.level === 'store') { setStoreSel(v.id); return; } // orgFilter already narrowed by the ancestor state/patch click
+  };
 
   return h('div', { style: { padding: '6px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0 } },
     h('span', { style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', color: 'var(--text3)' } }, 'Filter:'),
-    ...filters.map(pill),
-    h('select', { value: storeSel, onChange: e => setStoreSel(e.target.value),
-      style: { marginLeft: 4, fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer' } },
-      h('option', { value: 'all' }, `All stores (${storeOpts.length})`),
-      storeOpts.map(l => h('option', { key: l, value: l }, `${l} — ${nameOf ? nameOf(l) : l}`)),
-    ),
+    h(LocationSelector, { stores: voiceStores, invOrgCoords: INV_ORG_COORDS, storeNames, mode: 'progressive', value, onChange }),
   );
 }
 
@@ -972,6 +977,14 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
     const r = rows.find(r => String(parseInt(r.loc, 10) || r.loc) === n && r.storeName);
     return (r && r.storeName) || loc;
   }, [stores, rows]);
+  // {loc: name} for LocationSelector's storeLabel (dispatch #144) — same fallback order as
+  // nameOf above (stores prop first, then a row's storeName), just precomputed as a map.
+  const storeNamesMap = React.useMemo(() => {
+    const m = {};
+    (stores || []).forEach(s => { if (s && s.loc != null) m[String(parseInt(s.loc, 10) || s.loc)] = s.name; });
+    rows.forEach(r => { const k = String(parseInt(r.loc, 10) || r.loc); if (!m[k] && r.storeName) m[k] = r.storeName; });
+    return m;
+  }, [stores, rows]);
   // Comments in the active org scope — every comment-tab aggregate derives from
   // this so the district average recomputes for the filtered level. The store
   // dropdown (storeSel) narrows the comment FEED only, not the district roll-up.
@@ -1096,7 +1109,7 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
         bf.error ? ` · save error: ${bf.error}` : ''),
 
       // ── Shared filter bar (All / OK / FL / patch + store dropdown) ───────────
-      h(VoiceFilterBar, { locs: scopeLocs, orgFilter, setOrgFilter, storeSel, setStoreSel, nameOf }),
+      h(VoiceFilterBar, { locs: scopeLocs, orgFilter, setOrgFilter, storeSel, setStoreSel, storeNames: storeNamesMap }),
 
       // ── Body: Performance tab ────────────────────────────────────────────────
       tab === 'performance' && h('div', { style: { display: 'flex', flex: 1, overflow: 'hidden', flexDirection: 'column' } },

@@ -8,6 +8,7 @@ import { businessDate, lastClosedBusinessDay, acknowledge, pruneAcks, partitionA
 import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
+import { LocationSelector } from '../components/PanelControls.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
@@ -2220,6 +2221,24 @@ function StoreVlhConfigPanel({onClose}) {
 // Filter by Org (All / OK / FL) or by Supervisor patch.
 // Each store card links to the full store dashboard via onSelectStore callback.
 // ─────────────────────────────────────────────────────────────────────────────
+// orgFilter stays a plain string ('all'|'ok'|'fl'|<supervisor name>|'store:<loc>') — that's the
+// existing persisted/state shape here — so LocationSelector's {level,id} value is only a UI-layer
+// translation at the boundary (dispatch #144, panel-contract.md section 3; pattern from
+// report-subscriptions.js's scopeToSelectorValue/selectorValueToScope).
+const orgFilterToSelectorValue = (f) => {
+  if (f==='all') return {level:'all', id:null};
+  if (f==='ok') return {level:'state', id:'OK'};
+  if (f==='fl') return {level:'state', id:'FL'};
+  if (String(f).startsWith('store:')) return {level:'store', id:f.slice(6)};
+  return {level:'patch', id:f};
+};
+const selectorValueToOrgFilter = (v) => {
+  if (!v || v.level==='all') return 'all';
+  if (v.level==='state') return v.id==='OK' ? 'ok' : v.id==='FL' ? 'fl' : 'all';
+  if (v.level==='patch') return v.id;
+  if (v.level==='store') return v.id ? 'store:'+v.id : 'all';
+  return 'all';
+};
 function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore, onClose}) {
   const {useState:uSt, useMemo:uM} = React;
   const [orgFilter, setOrgFilter] = uSt('all');
@@ -2229,19 +2248,6 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
   const [showNarrative, setShowNarrative] = uSt(false);
   const toggleExp = (loc) => setExpanded(p=>({...p,[loc]:!p[loc]}));
 
-  // ── Supervisor patches (for filter buttons) ────────────────────────────────
-  // dispatch #139 — patch resolves LIVE (supervisorOf/whoRan) first; s.sup (buildStore already
-  // resolves this live too, per #363) then INV_ORG_COORDS.sup are just the fallback chain for a
-  // loc the live timeline doesn't cover, never the primary source.
-  const supPatches = uM(()=>{
-    const seen=new Set(), patches=[];
-    (stores||[]).forEach(s=>{
-      const sup=supervisorOf(s.loc,s.sup||(INV_ORG_COORDS[s.loc]||{}).sup)||'';
-      if(sup&&!seen.has(sup)){seen.add(sup);patches.push(sup);}
-    });
-    return patches.sort();
-  },[stores]);
-
   // ── Tier classification ────────────────────────────────────────────────────
   const tiered = uM(()=>{
     const _t0=performance.now();
@@ -2249,6 +2255,7 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
     const filtFn = orgFilter==='all' ? ()=>true
       : orgFilter==='ok' ? s=>(INV_ORG_COORDS[s.loc]||{}).state==='OK'
       : orgFilter==='fl' ? s=>(INV_ORG_COORDS[s.loc]||{}).state==='FL'
+      : orgFilter.startsWith('store:') ? s=>s.loc===orgFilter.slice(6)
       : s=>(supervisorOf(s.loc,s.sup)||'')===orgFilter; // supervisor filter (dispatch #139 — live-first)
 
     const out = valid.filter(filtFn).map(s=>{
@@ -2508,13 +2515,11 @@ function DistrictPriorityBrief({stores, ds, settings, userEvents, onSelectStore,
             (ds&&ds.loaded?' · '+((stores||[]).filter(s=>s.findings).length)+' stores with data':' · Load data to generate'))
         ),
         div({style:{display:'flex',gap:3,flexWrap:'wrap',alignItems:'center'}},
-          ...(['all','ok','fl',...supPatches].map(f=>btn({key:f,
-            style:{padding:'3px 9px',borderRadius:99,fontSize:'8.5px',cursor:'pointer',
-              border:'.5px solid '+(orgFilter===f?'rgba(245,158,11,.4)':'var(--bdr)'),
-              background:orgFilter===f?'var(--adim)':'transparent',
-              color:orgFilter===f?'var(--amber)':'var(--text2)'},
-            onClick:()=>setOrgFilter(f)},
-            f==='all'?'All':'OK'===f?'🟠 OK':'FL'===f?'🔵 FL':f.split(' ').slice(-1)[0])))
+          h(LocationSelector,{
+            stores, invOrgCoords:INV_ORG_COORDS, storeNames:STORE_NAMES, mode:'progressive',
+            value:orgFilterToSelectorValue(orgFilter),
+            onChange:v=>setOrgFilter(selectorValueToOrgFilter(v)),
+          })
         ),
         div({style:{display:'flex',gap:6,alignItems:'center'}},
           btn({className:'btn btn-sm',style:{fontSize:'9px',background:'rgba(96,165,250,.1)',border:'.5px solid rgba(96,165,250,.3)',color:'#60a5fa'},

@@ -1,0 +1,26 @@
+// @ts-nocheck
+export default {version:'5.181', date:'2026-08-26', changes:[
+  'Dispatch #144: converted the 4 panels dispatch #139 flagged as still carrying a raw '
+  + '`INV_ORG_COORDS` scope-picker (not the shared `LocationSelector`) to the standard component — '
+  + 'District Priority Brief (analytics.js) and the SMG VOICE filter bar (smg-voice.js) now use '
+  + '`LocationSelector` (`mode:\'progressive\'`) in place of their hand-rolled All/OK/FL/patch pill '
+  + 'rows; each keeps its existing string-based scope state (`orgFilter`, and smg-voice.js\'s paired '
+  + '`orgFilter`+`storeSel`) and translates at the UI boundary per panel-contract.md section 3 '
+  + '(scopeToSelectorValue/selectorValueToScope, the report-subscriptions.js pattern) rather than '
+  + 'migrating the panel\'s persisted/stored scope shape to match the component.\n\n'
+  + 'Re-read labor-tools.js\'s Org Summary and store-dash.js\'s Rankings before touching either: '
+  + 'dispatch #139 already switched both call sites\' patch resolution off the static '
+  + '`INV_ORG_COORDS.sup`/`settings.supervisorGroups` snapshot onto the live `supervisorOf()`/'
+  + '`whoRan()` timeline, so the correctness gap dispatch #144 named for them was already closed. '
+  + 'No further change: their "Group by: Company/Org/Operator/Patch" and "Rank by: Stores/Patch/'
+  + 'Operator/State" controls are grouping-DIMENSION selectors — every store bucketed and shown '
+  + 'simultaneously by the chosen dimension — not a single-scope picker, and `LocationSelector`\'s '
+  + 'All→State→Patch→Store value shape has no Operator or Company tier to represent 2 of each '
+  + 'panel\'s 4 modes. Swapping either in would have silently dropped Operator/Company grouping, '
+  + 'not converted the picker; store-dash.js\'s separate Org View "By Patch" tab (settings.'
+  + 'supervisorGroups, still a save-time snapshot) is a genuine adjacent gap but was never in '
+  + 'dispatch #144\'s named scope, so it is left alone here and flagged for a future dispatch.\n\n'
+  + 'Scope-selector UI only — no metric/aggregation logic touched in any of the 4 files.\n\n'
+  + 'Full suite 2645/2645 passing (248 files, flat vs main); build clean; entry 468.39 KB gzip '
+  + '(468.38 KB on main, +0.01 KB); eager payload 539.57/850 KB gzip (539.56 KB on main, +0.01 KB).',
+]};
