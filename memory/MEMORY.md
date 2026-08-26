@@ -84,6 +84,54 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📐 (2026-08-26): [Performance Review "yearly continuity" — full design synthesis,
+  `plan-performance-review-continuity-2026-08-26.md`](plan-performance-review-continuity-2026-08-26.md).**
+  Owner-driven redesign, started from "how do I see Nick Rice's H1+H2 review together." **Not yet
+  dispatched to an engineer — plan only, awaiting owner read-through before build work starts.**
+  Confirmed decisions: reviews become **per-person, per-YEAR records** (not per-half — real
+  restructure, no migration needed, zero real review data exists yet); **the review follows the
+  PERSON** via a new effective-dated `{person, role, loc, start}` assignment model, extending
+  `constants.js`'s existing `orgAssignments()`/`whoRan()` supervisor-org pattern rather than
+  inventing a new one; **promotion/transfer scoring splits into segments** (majority-of-month for
+  a mid-month store transfer, matching the owner's own historical practice; each role held scored
+  against its own KPI framework, not a blended formula — backed by actual HR-industry research,
+  not just recommended); **override authority for locked auto-populated actuals is a RELATIVE
+  hierarchy** ("2 levels above the reviewed person's own reviewer"), which requires new
+  infrastructure — a unified role ladder — since `ROLE_KEYS` (review roles) and the RBAC role list
+  don't currently map onto each other. **Job-title-code→review-role mapping is MEASURED, not
+  guessed**: live-pulled from `qsr_employee_tenure` (service-role key) — GM/DM/SM map cleanly to
+  real codes; AM has no distinct code (owner-confirmed: same job as DM, split by
+  `hourly_pay_rate` 0/null vs nonzero — verified against real rows); AS/OM/DO have zero roster
+  representation by design (above-store roles) and the roster pull is **never authoritative**
+  for them regardless — owner confirmed even GM-coded roster rows can be stale for someone
+  promoted above store level, so the app's own assignment record is the single source of truth
+  everywhere, with the roster code only ever a pre-fill suggestion. Also flags a real, currently
+  live, unrelated-to-this-plan bug: `autoPopulateKPIs` (review-engine.js) unconditionally
+  overwrites every `src:'auto'` actual value on every run — a manual correction someone makes
+  today gets silently clobbered the next time the review opens. Full suggested build sequencing
+  (6 phases) is in the doc.
+- **🐛 (2026-08-26, v5.187/v5.188): Two real bugs found and shipped in the same session — one was
+  making every full `vitest run` this session hang indefinitely.** Dispatch #147's own
+  `TargetCategoriesView` (yearly-projections.js) had an infinite-render-loop: its new
+  `onExportReady` effect depended on `ok`/`fl`, which were unmemoized `.filter()` calls (fresh
+  array reference every render, unlike the memoized `rows`/`byLoc` beside them) — every render
+  re-triggered the effect, which called a parent `setState`, which re-rendered, forever. This is
+  why every `npx vitest run --exclude ...` attempt this session died with an endless stream of
+  happy-dom `AbortError` teardown noise and no summary line, which looked like environment/
+  container flakiness (multiple container restarts, stray overlapping processes) until isolating
+  each of the 5 changed test files individually found the one that never returned
+  (`dispatch-107-yearly-projections-panel.test.js`, >120s vs. ~6s for the others). Fixed with
+  `useMemo(...,[rows])`. **Full suite immediately dropped from "never completes" to 49.96s,
+  2663/2663 passing** — verified twice more (independent fresh-worktree merges for both #147 and
+  the second fix below), consistently ~50s. Second, unrelated bug found the same session,
+  owner-reported: **Product Mix Dashboard's Cloud tab always showed "No Cloud Product Mix Data"**
+  despite `qsr_product_mix` genuinely having 2.5M+ fresh rows (confirmed live, service-role read).
+  `ProductMixPanel` (labor-tools.js) never called `ensureLazyFill('pmixRows')` — `pmixRows` is a
+  `LAZY_FILL_SOURCES` entry (dispatch17 #292 wired the loader into `configureLazyFill` but,
+  per that dispatch's own PR body, deliberately shipped with "no panel consumer yet" — that
+  consumer was never actually built until now) — so `ds.pmixRows` stayed permanently empty no
+  matter what Supabase held. Fixed with the same `ensureLazyFill`/`isLazyFillPending`/
+  `isLazyFillError` pattern `analytics.js`'s waste-discipline/audit-register panels already use.
 - **🎯 (2026-08-26, updated same day): [Complaints has a real API — `finding-complaints-propel-
   api-2026-08-26.md`](finding-complaints-propel-api-2026-08-26.md) — the `/100K` denominator is
   now confirmed.** Owner captured this live (logged into Propel, "a minute" between other things)
@@ -113,13 +161,17 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   **The owner's raw capture (including a live session cookie and full customer complaint text)
   was NOT committed** — the finding file keeps only the endpoint shape, header names, and
   paraphrased examples, matching the EcoSure file's own security discipline.
-- **📋 (2026-08-26): [Dispatch #147 — Print/export for Yearly Projections, Schedule Summary,
-  Promo/Discount ROI](dispatch-147.md).** Owner unavailable (teaching a scheduling class),
-  approved opportunistic work. Re-swept `src/views/`: 9/57 panels now have `ExportDropdown`.
-  Filtered the gap list to 3 real, dense, currently-registered panels — explicitly checked and
-  excluded `performance-reviews.js` (already has a mature custom print system,
-  `printReview`/`printCheckpoint`/`printBlankForm`, not a gap) rather than assuming from the
-  `ExportDropdown` grep alone. Dispatched to an engineer.
+- **✅ SHIPPED (2026-08-26, v5.187): [Dispatch #147 — Print/export for Yearly Projections,
+  Schedule Summary, Promo/Discount ROI](dispatch-147.md).** Owner unavailable (teaching a
+  scheduling class), approved opportunistic work. Re-swept `src/views/`: 9/57 panels now have
+  `ExportDropdown`. Filtered the gap list to 3 real, dense, currently-registered panels —
+  explicitly checked and excluded `performance-reviews.js` (already has a mature custom print
+  system, `printReview`/`printCheckpoint`/`printBlankForm`, not a gap) rather than assuming from
+  the `ExportDropdown` grep alone. Two background engineer attempts on this each stalled mid-run
+  (completed real, on-pattern implementation work but returned without finishing verification/
+  commit/push) — PM took over the wrap-up directly, found and fixed the infinite-loop bug this
+  same PR had introduced (see the entry above), then verified in an independent fresh worktree
+  before merging.
 - **✅ SHIPPED (2026-08-26, v5.186, direct fix, no dispatch): `store-dash.js`'s "By Patch" tab
   fixed — the last leftover from dispatch #144.** #144's own PR body flagged this exact call site
   (`OrgView`'s supervisor grouping) as still reading `settings.supervisorGroups` — the same
