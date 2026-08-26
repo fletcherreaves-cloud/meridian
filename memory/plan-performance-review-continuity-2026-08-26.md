@@ -1,0 +1,224 @@
+---
+name: plan-performance-review-continuity-2026-08-26
+description: Full design synthesis for the Performance Review "yearly continuity" rebuild — per-person yearly records replacing the current H1/H2-only data model, effective-dated role/store assignments driving auto-populate, promotion/transfer scoring, relative-hierarchy override authority for locked actuals, and a real job-title-code-to-review-role map grounded in measured live data. Captures every owner decision from the 2026-08-26 conversation plus what's still genuinely open.
+sensitivity: open
+metadata:
+  node_type: memory
+  type: plan
+---
+
+# Performance Review continuity — full design synthesis (2026-08-26)
+
+Owner-originated. Started from a real usability problem (Nick Rice set up for H1, it's August,
+no way to see his review "in entirety" including H2) and grew into a full redesign conversation
+across several exchanges (some lost to two container restarts — this doc is the durable record
+so that never costs real answers again).
+
+## Decisions confirmed by the owner — build to these, not to my defaults
+
+### 1. Data model: reviews become per-person, per-YEAR records (not per-half)
+Direct quote: *"the reviews should be per person per year... I'm not saying we need to lose the H1
+and H2 more so that they should be rolled up into the entire year review... quarterly roll ups to
+include the mid year and end of year so I'd still wanna see all 4/4 individually plus a six month
+half first half year review and a second six month second half year review."*
+
+This is **the real restructure**, not my originally-recommended "additive rollup view" — that
+recommendation is superseded. One review record per (person, year), containing:
+- Q1/Q2/Q3/Q4 scored individually (as today, just no longer split across two top-level records)
+- H1 (mid-year) roll-up = Q1+Q2
+- H2 (end-of-year) roll-up = Q3+Q4
+- A full-year overall
+
+**No migration burden — confirmed:** *"There are currently no reviews in the system that have to
+be saved as they've all been for testing so I'm not worried about losing that data if we need to
+go a different route."* Every review record that exists today is test data. Safe to redesign the
+schema clean rather than write migration logic, per the owner's own explicit permission — this is
+worth re-confirming immediately before deleting anything, but do not build migration machinery
+that adds real scope for zero real records.
+
+### 2. The review follows the PERSON, not the store
+Direct quote: *"the review should follow the person which will cover any event in which someone
+is promoted to a new role and or transferred to a different location."*
+
+- **GM and below:** always exactly one location at a time. *"There are could be a scenario or GM
+  was overseeing two stores at one time... unusual"* — a real edge case, acknowledged but not the
+  primary design driver.
+- **Supervisor and above:** *"they will always have multiple locations assigned to them"* — this
+  is the NORMAL case at that level, not an edge case.
+- **Effective-dated assignments drive auto-populate:** *"we should also count for in both of these
+  scenarios the effective date of store assignments for all roles. Those dates should play into
+  what matrix auto populate and what results and targets auto populate."*
+
+**This exact shape already exists in the codebase and should be extended, not reinvented** —
+`src/constants.js`'s supervisor-org system (`orgAssignments()`/`whoRan(loc,date)`/`groupsAt(date)`,
+"Supervisor org: effective-dated assignments" section): `{loc, supervisor, start}` rows, "latest
+start ≤ date wins." The person-level assignment model this feature needs is the same shape with
+one more axis — `{person, role, loc, start}` — and should reuse the identical "latest start ≤
+date wins" resolution logic, not a new algorithm. `whoRan()`'s own header comment is explicit that
+this pattern exists specifically so historical rollups stay honest across a mid-history change —
+that is precisely this feature's requirement.
+
+### 3. Promotion / transfer scoring — segment by period, don't force one blended number
+Two related but distinct scenarios, both owner-confirmed as real and both currently unhandled:
+
+**A) Store transfer, same role.** Historical practice, owner's own words: *"it was always awarded
+based on the store data in which the manager worked the majority of the month."* So the existing,
+proven baseline is **majority-of-month wins that month's store attribution** — simplest, matches
+what this owner has actually done by hand for years. Owner is explicitly open to a richer
+day-weighted version (*"account for actual days of month at each location... or have an additional
+scoring block for the period weighted to the number of days — I am open to suggestion here"*).
+**Recommendation: build majority-of-month first** (it's the proven baseline, and it's a simple,
+well-defined resolver — reuse the same "as-of a date" shape as #2 above, just resolved per month
+instead of per point-in-time). Add day-weighted as a v2 "additional scoring block," not a
+blocking requirement for v1 — it adds real complexity (partial-month FOB/labor/OEPE pulls don't
+cleanly apportion by calendar day the way sales dollars do) for a case that, per the owner's own
+description, is not how it's been done historically anyway.
+
+**B) Role promotion (mid-cycle).** This is the harder case — a promotion changes which KPI
+category applies (review-engine.js's `DEFAULT_REVIEW_CONFIG.metrics` differs by role: an AM/DM/SM
+review and a GM review score entirely different metric sets and weights). Owner: *"we also have to
+resolve for when a manager... receives a promotion up or down that would change the metrics of
+their review category and how we merge the two over a review... My recommendation would be to
+research how this is handled as an industry norm."*
+
+**Research done (2026-08-26, web search — see Sources below).** No single formal "blended rating
+formula" exists as an industry standard; the two consistent patterns across HR sources:
+1. **Evaluate against each role's OWN framework for the months actually held in that role** — "the
+   entire performance management cycle can restart if a worker transfers to a new position," i.e.
+   score against the new role's metrics/targets from the promotion date forward, not a hybrid.
+2. **The overall/period rating is a synthesized judgment, not a mechanical average** — explicitly
+   stated in more than one source: *"The overall rating should reflect a holistic view... and does
+   not need to be an average."*
+
+**Recommendation, unifying A and B into one mechanism:** a promotion and a store transfer are the
+same underlying event from the data model's point of view — an assignment-timeline change
+(`{person, role, loc, start}`). Handle both the same way:
+- Split the affected period into segments at each assignment change.
+- Score each segment against **its own role's KPI framework and its own store's targets** (not a
+  blend) — majority-of-month for a mid-month change, per (A).
+- Surface all segments together on the review (e.g. "Jan–Mar: AM @ Store 3708" / "Apr–Jun: GM @
+  Store 5183"), each with its own category scores.
+- The period/overall rollup (H1, H2, full-year) is **not a rigid formula** — compute a
+  provisional weighted number (segment length × segment score) as a starting point, but this is
+  explicitly a "does not need to be an average" judgment call the reviewer can adjust with
+  commentary, matching the HR-source consensus above. Don't over-engineer a formula the sources
+  themselves say shouldn't be mechanical.
+
+### 4. Override authority for locked auto-populated actuals: RELATIVE hierarchy, not a fixed role list
+Supersedes my earlier "Admin + Developer + DO" recommendation. Owner: *"anyone 2 levels above the
+reviewed person. So if a GM is being reviewed then the Supervisor does the review, The OM or DO or
+higher would be the only ones to override a result."*
+
+This requires a **reviewer-chain ladder**, computed generically, not hardcoded per role. From the
+owner's own example the chain reads: `SM/AM/DM → GM → AS/Supervisor → OM → DO → VP → Owner/OO`.
+Override authority for a person at level N = whoever sits at level N+2 or higher in that same
+chain. **This ladder does not exist anywhere in the codebase today** — `ROLE_KEYS` (review roles:
+GM/AM/DM/SM/AS/OM) and the RBAC role list (CLAUDE.md: Developer/Admin/Owner/VP/DO/Supervisor/
+GM/Office Staff) are two separate, only-partially-aligned taxonomies (e.g. "Supervisor" in RBAC ≈
+"AS" in ROLE_KEYS; "OM" only exists in ROLE_KEYS). **Building one unified ladder both taxonomies
+map onto is required new infrastructure**, not a config tweak — flagging this now so it's not
+discovered mid-dispatch.
+
+### 5. Job-title-code → review-role mapping: MEASURED, not designed from guesses
+Owner: *"The job title code can be deciphered to know exactly what level role they are within some
+of those categories, we may need to wire that in along with the table matching up the job title
+code to the job title that goes with it... I believe you already have access to all that data and
+it would just be a matter of an additional SQL table."*
+
+**Confirmed exactly right — I do have that access this session (SUPABASE_SERVICE_ROLE_KEY) and
+pulled the real, live distinct job-title codes from `qsr_employee_tenure` rather than guessing.**
+Measured 2026-08-26, all employment statuses, excluding crew/maintenance/admin codes:
+
+| code | description | n (all-time rows) |
+|---|---|---|
+| 45 | GENERAL MANAGER W/ MGR PUNCHES | 2 |
+| 641 | GENERAL MANAGER | 24 |
+| 643 | **"2000-11-02"** ⚠️ | 1 |
+| 647 | CERT. SWING MGR. | 180 |
+| 845 | DEPARTMENT MANAGER I | 1 |
+| 846 | DEPARTMENT MANAGER II | 3 |
+| 10001 | DEPT MGR I W/ CREW PUNCHES | 3 |
+| 20107 | DEPT MGR III W/ CREW PUNCHES | 1 |
+
+Clean mapping for 3 of 6 review roles: **GM** = {45, 641}. **DM** = {845, 846, 10001, 20107}.
+**SM** = {647} ("Cert. Swing Mgr." = this org's term for shift manager). This is a much finer
+breakdown than `DEFAULT_JOB_BUCKETS`' existing single lumped `shiftMgr` bucket
+(`people-reports.js`) — that bucketer conflates codes 647/845/846/10001/20107 into one "shift
+certified" count for a *different* purpose (headcount composition) and was never meant to
+distinguish DM from SM for review routing. **A new, review-specific code map is needed — do not
+repurpose `DEFAULT_JOB_BUCKETS` for this,** its existing consumers (`shiftCertifiedByLoc`,
+headcount composition) need the coarser grouping and shouldn't be disturbed.
+
+**⚠️ Real gap, needs an owner decision before this can be built — AM/AS/OM have ZERO
+representation anywhere in `qsr_employee_tenure`, active or terminated, all-time.** Three
+possibilities, and I can't tell which from the data alone:
+1. This franchise doesn't currently use "Assistant Manager" as a title distinct from "Department
+   Manager" — the DM codes above may already BE what functions as AM day-to-day, and review-role
+   `AM` may need to fold into the `DM` code set (or vice versa — rename one).
+2. AM/AS/OM headcount is genuinely zero right now (no one currently holds those exact titles) —
+   plausible for OM/AS (above-store roles, see next point) but less likely for AM.
+3. AM is tracked under a code not yet seen because no current employee holds it.
+
+**AS and OM are structurally different from AM — they're above-store, multi-location roles (per
+decision #2 above), so they would never appear in `qsr_employee_tenure` at all** — that table is
+one row per person per HOME location. AS/OM assignment needs to come from the same
+effective-dated org-assignment mechanism as store-level roles (`orgAssignments()`'s own model,
+extended), not from the roster pull. **Also worth checking `643`'s garbage description
+("2000-11-02" where a job title description should be)** — a real, small data-quality bug in
+either the source system or the pull/parse path, one row, not urgent but worth a `grep` when
+someone's in that code next.
+
+**One clean small addition, not yet built: a Supabase-backed code→role config table** (owner's own
+suggestion — "an additional SQL table"), matching the existing `org_config` pattern
+(CLAUDE.md: "Org config... is configurable in Supabase `org_config` table — not hard-coded — to
+support future multi-org deployments"). Store the GM/DM/SM mapping there once AM/AS/OM is
+resolved, not hardcoded in JS, so a future job-code change or a second tenant's different codes
+don't need a redeploy.
+
+## What this unlocks once built
+- Full-year review view (the original ask — "how do I see Nick Rice's review in entirety").
+- The "new manager needs a review" notification panel (previously-agreed design: active + zero
+  reviews this year + review-eligible job bucket) — now buildable for GM/DM/SM immediately; AM/AS/
+  OM blocked on the gap above.
+- Locked/auto-populated actuals with a required-reason override, gated by the relative-hierarchy
+  rule — a real, currently-live bug fix on its own: `autoPopulateKPIs` (review-engine.js) today
+  unconditionally overwrites `mo[key]` for every `src:'auto'` metric on every run (confirmed by
+  reading the code — target fields check `if (mo[slot]==null)` before filling; actual fields do
+  not), so a manual correction someone makes today is silently clobbered the next time the review
+  is opened. This needs fixing regardless of how the rest of this plan lands.
+
+## Open items — need an owner decision before dispatching build work
+
+1. **AM/AS/OM job-code gap (above).** Blocks the code→role map and therefore the new-manager
+   notification panel for those three roles. GM/DM/SM can proceed without waiting on this.
+2. **Confirm "no real review data to lose" still holds** before any schema change ships — a quick
+   re-check immediately before the restructure lands, since time has passed since the quote above.
+3. **The day-weighted transfer-scoring "v2" block** (section 3A) — proposed as non-blocking future
+   work, confirm that's an acceptable sequencing.
+4. **The unified reviewer-hierarchy ladder** (section 4) is new infrastructure nobody has asked
+   for elsewhere in the app yet — confirm the GM→AS/Supervisor→OM→DO→VP→Owner/OO chain above
+   reads correctly against how this org actually works day to day (e.g., does every GM report to
+   exactly one Supervisor, or can that vary by store the way the store-supervisor assignment
+   already does?).
+
+## Suggested build sequencing (not yet dispatched — for discussion)
+
+Roughly independent pieces, ordered by dependency, sized to fit the project's one-engineer-at-a-
+time dispatch practice:
+
+1. **Lock auto-populated actuals + reason-required override**, gated by the relative-hierarchy
+   rule (fixes a real live bug; needs the hierarchy ladder from #4 above as a prerequisite, or can
+   ship first with the old flat "Admin+Developer+DO" gate and be upgraded once the ladder lands).
+2. **Person/role/store effective-dated assignment model**, extending `orgAssignments()`'s pattern —
+   foundational; #3, #5 (new-manager panel), and the promotion/transfer scoring all depend on it.
+3. **Data model restructure**: per-person yearly review records replacing per-half records, with
+   the Q1-Q4 + H1/H2 + full-year rollup view.
+4. **Promotion/transfer segmented scoring**, built on #2 and #3.
+5. **New-manager notification panel**, built on #2 (and blocked on the AM/AS/OM gap for full
+   coverage — GM/DM/SM only until resolved).
+6. **Job-code→role Supabase config table**, feeding #5 and #2's role detection.
+
+## Sources (web research, section 3B)
+- [HR's guide to mid-year performance reviews | QuickBooks Blog](https://quickbooks.intuit.com/r/manage-employees/mid-year-performance-reviews-guide/)
+- [University of Wisconsin–Madison — performance management](https://hr.wisc.edu/?p=18312)
+- [Georgetown University — Annual Performance Management Evaluations](https://hr.georgetown.edu/performancemanagement/annual-performance-review/)
