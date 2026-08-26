@@ -84,6 +84,22 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.183): Dispatch #146 merged — Retention Rollup workshop-week marks
+  now pre-populate from the Organization Structure workbook** (PR #770). Independently verified
+  before merge: fresh worktree merge onto `origin/main`, full suite **2659/2659 passing** (up
+  from 2645, +14 new tests), `npm run build` clean (entry gzip 469.89 KB, eager 541.07 KB —
+  matches the PR's claimed +1.01 KB). Uploading `data/org-structure/Organization_Structure.xlsx`
+  now calls `saveRetentionMark()` for every OK store whose `Scheduling Setup`!"1st Schedule Week"
+  date is ≤ today, skips future-dated rows, and never silently overwrites an existing manual
+  mark. **Independently re-derived the PR's headline claim rather than trusting it** — wrote a
+  fresh script against the real committed file and got the identical split the PR reported: **11
+  marked, 9 skipped-future, 0 no-date** (this differs from dispatch #146's own draft estimate of
+  "~15/~5", which the PR correctly attributed to being computed against a different reference
+  time — the dispatch itself called for re-verifying at build time, and both the engineer and
+  this independent check did). Confirmed via diff: `parseOrgStructure` reads `Scheduling Setup`'s
+  own column (not the `Locations` sheet's formula-cached-empty mirror, exactly as the dispatch
+  warned against), and `schedule-retention.js`'s rollup/aggregation logic has zero diff — this
+  is purely a new import path into the same table the manual UI already writes to.
 - **✅ SHIPPED (2026-08-26, v5.182): Dispatch #145 merged — EAP and EAD added to Performance
   Review RGR** (PR #767). Independently verified before merge: fresh worktree merge onto
   `origin/main`, full suite **2645/2645 passing**, `npm run build` clean (entry gzip 468.88 KB,
