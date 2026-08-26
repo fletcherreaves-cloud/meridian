@@ -263,6 +263,72 @@ hardcoded in JS, so a future job-code change or a second tenant's different code
 redeploy. This table only ever feeds the suggestion/pre-fill step — the app's own assignment
 record stays authoritative regardless of what this table says.
 
+### 6. Cross-login persistence & hierarchy-based visibility — MEASURED, real infrastructure
+already exists, with real gaps in it
+
+Owner: *"comments... need to make sure #DATA is stored safely and can be carried through to
+different logins... I should be able to pull up a review for anyone that I'm responsible for...
+if I'm a DO I should be able to see that."* Checked the actual code rather than assuming either
+"it's fine" or "it's missing" — both are half true.
+
+**✅ Good news: cross-login persistence is ALREADY REAL, not new work.** `review-engine.js` has a
+working `reviews` Supabase table round-trip: `upsertReview()`/`deleteReview()` push the FULL review
+object (including every `comments.*` field — the behavioral-section text the owner is specifically
+asking about) to Supabase on every save (`_pushReview`), and `syncReviewsFromSupabase()` pulls
+every review the current user's RLS grants them into `localStorage` on login. **The full review,
+comments included, already leaves the device it was typed on and follows the user to a different
+login** — this part of the ask is done today, not something this redesign needs to build.
+
+**⚠️ Real gap #1 — write access has NO restriction at the database level, at all, today.**
+`supabase/schema.sql`'s `reviews` RLS: `"reviews: authenticated write"` (INSERT) and `"reviews:
+authenticated update"` (UPDATE) both check only `auth.uid() is not null` — any authenticated user,
+any role, can insert or overwrite ANY review row in the table, including someone else's. This is
+independent of the rest of this plan: it means the "lock imported actuals, gate override by
+hierarchy" design (decision #4) currently has **zero enforcement below the client UI layer** — a
+person who bypassed the app's own screen (or just used the Supabase REST API directly with their
+own logged-in session token) could edit anyone's review today. Worth fixing as its own real
+finding, not bundled silently into a bigger feature.
+
+**⚠️ Real gap #2 — RLS only recognizes 3 roles, and doesn't cover the hierarchy the owner is
+describing.** The `reviews: supervisor read` and `reviews: manager read own locs` policies key off
+`get_my_role()` returning `'admin'`, `'supervisor'`, or `'manager'` — but `src/engine/
+permissions.js`'s actual `DEFAULT_ROLES` are `admin` (level 1), **`area_supervisor`** (level 2,
+not `'supervisor'` — a literal string mismatch against the RLS policy's check), and `manager`
+(level 3). **No DO, OM, VP, or Owner role exists anywhere in the RLS policy or in
+`DEFAULT_ROLES` at all** — a DO-tier login gets zero read access under the current policies unless
+separately flagged `admin`. (Could not find anywhere in `src/` that actually writes
+`profiles.role` — it appears to be set by hand today, e.g. directly in Supabase, not through app
+UI; noting this as measured, not assumed.) **The 8-tier RBAC list CLAUDE.md documents
+(Developer/Admin/Owner/VP/DO/Supervisor/GM/Office Staff) does not match what's actually
+implemented** — `permissions.js`'s own comment says roles are meant to be "org-configurable (not
+hardcoded)," but only 3 are defined, and the review-role ladder (GM/AM/DM/SM/AS/OM, decision #4)
+is a third, still-different taxonomy layered on top of both. **This needs to become one real,
+built role/level system — not a reconciliation of two things that already agree.**
+
+**⚠️ Real gap #3 (smaller) — existing visibility is location-scoped, not hierarchy-scoped.** The
+`supervisor`/`manager` read policies check `reviewee_loc = any(accessible_locs)` — "which stores
+can this login see," not "who reports to this person." That's a reasonable proxy for a flat AS
+patch, but doesn't express "a DO sees everything under their OMs" without also keeping
+`accessible_locs` in sync as a derived superset for every DO/OM login — brittle compared to
+resolving visibility straight from the assignment graph (decision #2's addition) the way access
+should actually be computed.
+
+**✅ Reuse, don't rebuild: `staff_assignments` already exists and is exactly the effective-dated
+assignment concept this whole plan has been designing — currently unused (zero code references
+anywhere in `src/`).** `supabase/schema.sql`: `staff_assignments {id, profile_id, store_loc,
+start_date, end_date, notes}`, with its own comment reading *"Track which manager/supervisor was
+responsible for which store during each period. Enables accurate review attribution when someone
+transfers between locations"* — a stub someone already provisioned for precisely this feature and
+never wired up. **Extend this table (add a `role` column; generalize `store_loc` to support the
+person-or-loc recursive model from decision #2) rather than creating a competing new one.**
+
+**Net effect on scope:** the persistence half of the owner's ask is already solved; the
+visibility/access-control half is real, necessary build work — and it turns out to be the SAME
+work as the hierarchy ladder already planned for override authority (decision #4), just extended
+down to READ access on reviews (and enforced in RLS, not only in the client) rather than a
+separate concern. One role/hierarchy system serves: override authority, review visibility, and
+(per decision #3B/#5's spot-decision mechanism) who's allowed to approve a departure auto-finalize.
+
 ## What this unlocks once built
 - Full-year review view (the original ask — "how do I see Nick Rice's review in entirety").
 - The "new manager needs a review" notification panel (previously-agreed design: active + zero
@@ -291,7 +357,9 @@ along the way, not gates.)*
    for elsewhere in the app yet — confirm the GM→AS/Supervisor→OM→DO→VP→Owner/OO chain above
    reads correctly against how this org actually works day to day (e.g., does every GM report to
    exactly one Supervisor, or can that vary by store the way the store-supervisor assignment
-   already does?).
+   already does?). **Sharpened by decision #6 below: this is more real than "new" — it needs to
+   replace/extend `permissions.js`'s existing 3-tier `DEFAULT_ROLES` (admin/area_supervisor/
+   manager) and fix a live RLS role-string mismatch, not invent a ladder from nothing.**
 
 ## Second-pass gap review (2026-08-26) — owner asked "what else are we missing"
 
@@ -360,25 +428,37 @@ data-entry noise silently fragmenting someone's real review.
 Roughly independent pieces, ordered by dependency, sized to fit the project's one-engineer-at-a-
 time dispatch practice:
 
-1. **Lock auto-populated actuals + reason-required override**, gated by the relative-hierarchy
-   rule PLUS the unconditional Admin/Developer override (resolved item C above) — build both
-   checks together, not the ladder alone. Fixes a real live bug; needs the hierarchy ladder from
-   #4 as a prerequisite, or can ship first with a flat "Admin+Developer+DO" gate and be upgraded
-   once the ladder lands.
-2. **Person/role/store effective-dated assignment model**, extending `orgAssignments()`'s pattern
-   — foundational; #3, #5, #6 (new-manager panel), and the promotion/transfer scoring all depend
-   on it. **Includes the 2026 backfill (resolved item A)** — reconstructing this year's real
-   segments from `qsr_employee_tenure` history is part of this phase, not a later add-on.
-3. **Data model restructure**: per-person yearly review records replacing per-half records, with
+0. **🔴 Standalone security fix, do this regardless of sequencing on anything else below:** close
+   the wide-open `reviews` RLS write policies (decision #6, gap #1) — `authenticated write`/
+   `authenticated update` currently let any logged-in user insert or overwrite any review row.
+   This is a live gap today, independent of the rest of the redesign, and per CLAUDE.md's own
+   security-finding posture ("take the safer fix") shouldn't wait on the bigger rebuild.
+1. **Role/level system — build the real thing, not a reconciliation.** Decision #6 found that
+   `permissions.js`'s `DEFAULT_ROLES` (admin/area_supervisor/manager, 3 tiers), the `reviews` RLS
+   policies (which don't even match those 3 role ids correctly), and the review-role ladder
+   (GM/AM/DM/SM/AS/OM, decision #4) are three different, non-aligned systems today — none of them
+   is the finished GM→AS→OM→DO→VP→Owner ladder this plan needs. This is real new-role
+   infrastructure, not a small unification step — build it first since everything else (override
+   authority, review visibility, departure approval) depends on one real ladder existing.
+2. **Lock auto-populated actuals + reason-required override**, enforced in RLS (not just the
+   client), gated by the relative-hierarchy rule from #1 PLUS the unconditional Admin/Developer
+   override (resolved item C).
+3. **Person/role/store effective-dated assignment model** — extend the existing, currently-unused
+   `staff_assignments` table (decision #6: already shaped for exactly this, add a `role` column
+   and the person-or-loc recursive scope from decision #2) rather than building a new one; also
+   extend `reviews` RLS to grant read access by resolved hierarchy scope, not just `accessible_locs`.
+   Foundational — #4, #6, #7 (new-manager panel), and the promotion/transfer scoring all depend on
+   it. **Includes the 2026 backfill (resolved item A).**
+4. **Data model restructure**: per-person yearly review records replacing per-half records, with
    the Q1-Q4 + H1/H2 + full-year rollup view.
-4. **Promotion/transfer segmented scoring**, built on #2 and #3, including the propose-then-
+5. **Promotion/transfer segmented scoring**, built on #3 and #4, including the propose-then-
    confirm flow for roster-detected changes (resolved item D) — never a silent auto-split.
-5. **Departure handling**: auto-finalize + auto-clear from the new-manager panel on
+6. **Departure handling**: auto-finalize + auto-clear from the new-manager panel on
    `termination_entry_date`/a detected role exit, reviewable/reopenable by the person's normal
-   reviewer or above (resolved item B) — reuses #1's hierarchy mechanism, built after it.
-6. **New-manager notification panel**, built on #2 — covers all six roles from the start (GM/AM/
+   reviewer or above (resolved item B) — reuses #1/#2's hierarchy mechanism, built after it.
+7. **New-manager notification panel**, built on #3 — covers all six roles from the start (GM/AM/
    DM/SM via roster-code suggestion, AS/OM via the assignment record directly).
-7. **Job-code→role Supabase config table**, feeding #6 and #2's role detection.
+8. **Job-code→role Supabase config table**, feeding #7 and #3's role detection.
 
 ## Sources (web research, section 3B)
 - [HR's guide to mid-year performance reviews | QuickBooks Blog](https://quickbooks.intuit.com/r/manage-employees/mid-year-performance-reviews-guide/)
