@@ -434,7 +434,13 @@ time dispatch practice:
    (restrict to the 3 known roles + fix the `'supervisor'`/`'area_supervisor'` string bug) vs.
    holding for the real hierarchy system. **Owner chose to hold** — fix it once, correctly, as
    part of item #1 below, rather than twice. Means this gap stays live until that phase ships;
-   that's accepted, not unnoticed.
+   that's accepted, not unnoticed. **Owner's stated reasoning: "No one else is using the platform
+   right now, so this is safe"** — true today (single-user), but that's a condition, not a
+   permanent fact: **CLAUDE.md's own roadmap already names "multi-user then multi-tenant
+   deployment" and "future plan is to deploy to a second trusted operator in beta"** as a real
+   next step. This deferred fix must land BEFORE that second operator's account exists, not just
+   "eventually" — re-check this item specifically at that point if the full redesign hasn't
+   shipped by then.
 1. **Role/level system — build the real thing, not a reconciliation.** Decision #6 found that
    `permissions.js`'s `DEFAULT_ROLES` (admin/area_supervisor/manager, 3 tiers), the `reviews` RLS
    policies (which don't even match those 3 role ids correctly), and the review-role ladder
