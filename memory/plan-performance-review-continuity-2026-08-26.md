@@ -329,6 +329,38 @@ down to READ access on reviews (and enforced in RLS, not only in the client) rat
 separate concern. One role/hierarchy system serves: override authority, review visibility, and
 (per decision #3B/#5's spot-decision mechanism) who's allowed to approve a departure auto-finalize.
 
+### 7. Approval workflow — VERIFIED intact, must survive the data-model restructure; email/
+notification wiring — a real future need, not built yet
+
+Owner: *"I just wanna make sure we verify and check that originally I have it set up in a staged
+process for different levels of the review meaning in progress approved... sent back for
+review... I don't wanna change that I just wanna make sure that stays intact."*
+
+**✅ VERIFIED, not assumed — this is real, live, fully wired functionality today.**
+`review-engine.js`'s `REVIEW_STATUSES` (`draft` → `submitted` → `approved`/`returned`) and
+`transitionReview(id, newStatus, notes)` aren't just a data shape — checked the actual UI wiring in
+`performance-reviews.js`: `handleTransition()` calls `transitionReview()` on every status change,
+`REVIEW_STATUSES` drives both the status filter dropdown and the on-review status badge, and every
+transition appends to a `statusHistory` array (`{from, to, notes, at}`) — a real audit trail,
+already built, already working. **Nothing here is being changed by this plan.**
+
+**Constraint this puts on build-sequencing item #4 (the data-model restructure):** the new
+per-person-yearly record must carry `status`/`statusHistory` forward exactly as-is — the
+restructure changes how a review is KEYED and SCOPED (per-person-year instead of per-half), not
+its approval-workflow shape. Whoever builds item #4 should treat `REVIEW_STATUSES`/
+`transitionReview`'s contract as fixed, not something the restructure gets to touch.
+
+**Email/notification wiring — confirmed genuinely new, not something already half-built
+somewhere.** Owner: *"the ability to send them emailed reports and notifications would be super
+useful... this would be the first case in point where it'll become a necessity... wire it in
+toward the end of this phase."* Checked `supabase/functions/` for any existing email-sending
+pattern (resend/sendgrid/nodemailer/smtp) to reuse — **zero hits, nothing exists today.** This is
+real new infrastructure when it's built (a Supabase Edge Function + an email provider), not a
+missing wire-up of something already there. **Added to the build sequence as its own item, placed
+near the end per the owner's own sequencing** — natural triggers once built: a `submitted`
+transition emails the reviewer, an `approved`/`returned` transition emails the reviewee, matching
+the exact staged-status model that's already live.
+
 ## What this unlocks once built
 - Full-year review view (the original ask — "how do I see Nick Rice's review in entirety").
 - The "new manager needs a review" notification panel (previously-agreed design: active + zero
@@ -467,6 +499,9 @@ time dispatch practice:
 7. **New-manager notification panel**, built on #3 — covers all six roles from the start (GM/AM/
    DM/SM via roster-code suggestion, AS/OM via the assignment record directly).
 8. **Job-code→role Supabase config table**, feeding #7 and #3's role detection.
+9. **Email/notification wiring** (decision #7) — genuinely new (no existing email infrastructure
+   anywhere in the app, confirmed). Placed last per the owner's own sequencing; hooks onto
+   `transitionReview()`'s existing status changes once everything above it is real.
 
 ## Sources (web research, section 3B)
 - [HR's guide to mid-year performance reviews | QuickBooks Blog](https://quickbooks.intuit.com/r/manage-employees/mid-year-performance-reviews-guide/)
