@@ -58,6 +58,41 @@ date wins" resolution logic, not a new algorithm. `whoRan()`'s own header commen
 this pattern exists specifically so historical rollups stay honest across a mid-history change —
 that is precisely this feature's requirement.
 
+**✅ ADDED 2026-08-26 — the above-store levels form a real nested hierarchy, not a flat list of
+"multiple locations," and there's an imminent live test case.** Owner: *"Area supervisors will be
+assigned to multiple locations. The rolled up data will be used to determine a supervisor's actual
+results based off all the locations."* Then, naming the org's actual near-term plan: **"Ashley
+Podraza, who is currently a supervisor, will be an ops manager for what is currently her patch and
+Robert's patch in Oklahoma beginning within a month or so — that job title will be over more than
+one supervisor, ideally 2 to 4 supervisors, and would be responsible for the metrics in all of
+those stores contained within, same principal rolled up, averages for targets and the stores
+actual results."* And: **"A director of operations would encompass all the locations they are
+assigned to, which would include operations managers, supervisors, and stores."**
+
+So the real shape is **AS (patch of stores) → OM (2–4 AS's patches combined) → DO (whatever mix
+of OMs/AS's/stores is assigned to them)** — and that DO description matters: a DO's direct
+assignments can be a **mix of levels** (some OMs, maybe a standalone AS not yet folded under an
+OM, possibly even a store directly), not a clean uniform 4-tier tree. **The assignment model
+should be a general reports-to graph, not a fixed-depth hierarchy**: a person's effective store
+scope = their own directly-assigned stores UNION the (recursively resolved) scope of every person
+assigned to report to them, all resolved as-of the same date via the identical "latest start ≤
+date wins" rule already established above — so `{person, role, loc-or-person, start}` rows, where
+the "loc-or-person" side can point at either a store OR another person, and scope resolution
+recurses. This generalizes AS/OM/DO with one mechanism instead of three special cases, and the
+Ashley Podraza promotion (real, ~1 month out) becomes the first live test of both the promotion-
+segment machinery (decision #3B) and this recursive scope resolution at ship time or shortly after.
+
+**Rollup math must follow the existing standing rule, not a plain average — "averages" in the
+owner's own phrasing means the right kind, not a naive one.** CLAUDE.md: *"Standing rules: correct
+math, never average averages, dollar-weight aggregates."* An AS/OM/DO's ACTUAL and TARGET for any
+dollar-denominated metric (sales, labor $, FOB $) must be a dollar-weighted rollup across every
+store in their resolved scope (Σ$/Σbasis, matching the FOB tile's own `Σ$/ΣprodSales` pattern
+already in the app — CLAUDE.md's At-A-Glance entry), never an average of each store's own
+percentage. Non-dollar metrics (e.g. a count like Shift-Certified Managers) sum or roll up by
+whatever basis that specific metric already uses elsewhere in the app (`metric-source.js`) — reuse
+the existing metric's own aggregation rule per store, don't invent a second one for the
+above-store rollup.
+
 ### 3. Promotion / transfer scoring — segment by period, don't force one blended number
 Two related but distinct scenarios, both owner-confirmed as real and both currently unhandled:
 
@@ -92,7 +127,8 @@ formula" exists as an industry standard; the two consistent patterns across HR s
 
 **Recommendation, unifying A and B into one mechanism:** a promotion and a store transfer are the
 same underlying event from the data model's point of view — an assignment-timeline change
-(`{person, role, loc, start}`). Handle both the same way:
+(`{person, role, loc-or-person, start}`, generalized per the AS/OM/DO nested-scope addition below
+decision #2). Handle both the same way:
 - Split the affected period into segments at each assignment change.
 - Score each segment against **its own role's KPI framework and its own store's targets** (not a
   blend) — majority-of-month for a mid-month change, per (A).
