@@ -96,37 +96,49 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   `revealed[group.empToken] || 'This employee'` expression `SubjectRow` already renders
   (`security-panel.js:646` vs `:808`), and the diff never touches `scopeMatches`/`supervisorOf`
   (dispatch #139's fix). All confirmed real, not just asserted in the PR body.
-- **⚠️ CORRECTION PENDING (2026-08-26): dispatch #145's OSAT B2B claim is WRONG — do not send to
-  an engineer until this is resolved.** The merged `dispatch-145.md` states OSAT B2B is "fully
-  auto both sides, cleanest of the three" (real actual `smg_fullscale.osat_b2b` 0.88–0.96 range +
-  real target `yearly_targets.osat_b2b_pct`). After writing that, the owner shared a real target
-  screenshot (Yearly Projections → Target Categories → CSAT) showing OSAT B2B targets in the
-  **1.5%–8.5%** range. Direct query of the same 5 stores' `osat_b2b_pct` confirmed real values in
-  that low range (e.g. store 3708: target=0.04) — a **~22x mismatch** against the 0.88–0.96
-  satisfaction-style actual. These are two different concepts sharing a misleading column name.
-  Corrected hypothesis: `osat_b2b_pct` is very likely actually a B2B-specific **problem-rate**
-  target (i.e., possibly EPB2B's real target, hiding under a misleading field name) — meaning
-  satisfaction-style OSAT B2B likely has **no real yearly-workbook target** and needs an override,
-  same as EAP. This was reported to the owner with an explicit question — fold the correction into
-  the dispatch, or hold until the owner looks himself — **not yet answered**. Do not dispatch
-  #145 to an engineer until this resolves; do not treat the merged doc's "cleanest of the three"
-  claim as correct in the meantime.
-- **📋 (2026-08-26): [Dispatch #145 — Performance Review RGR: add EAP, OSAT B2B, EAD as new
-  metrics — keep EPB2B untouched](dispatch-145.md).** Resolves the EPB2B open question from
-  earlier today: traced the real FullScale report headers baked into
-  `src/__tests__/smg-fullscale-dataonly.test.js` and found the report's actual "Experienced a
-  Problem (Yes)" question is the OVERALL section (no B2B qualifier), already parsed into
-  `smg_fullscale.overall_problem`, live with real data, never wired to a review metric — that's a
-  NEW metric the owner named **EAP**, not a rename of the existing `epb2b` key (owner: keep EPB2B
-  exactly as-is, dormant, for if a real B2B-specific source shows up later). Two more real,
-  verified findings alongside it: **OSAT B2B** has both a live actual (`smg_fullscale.osat_b2b`)
-  AND a live target (`yearly_targets.osat_b2b_pct`) already — fully auto, cleanest of the three.
-  **EAD** (Voice Execute As Designed) has a real, already-parsed target
-  (`yearly_targets.voice_ead_pct`) but a pre-existing guard test
+- **✅ RESOLVED (2026-08-26): OSAT B2B/EPB2B correction — owner is investigating it himself,
+  dispatch #145 revised down to EAP + EAD only.** The earlier claim that OSAT B2B was "fully auto
+  both sides, cleanest of the three" was disproven the same day (a real target screenshot showed
+  1.5%–8.5% targets vs. `yearly_targets.osat_b2b_pct`'s live 0.88–0.96 range, a ~22x mismatch —
+  the two are different concepts sharing a misleading column name). Reported to the owner, who
+  answered: *"On the EPB2B I don't think it's a mislabel even if the data looks similar. Let me
+  work through it to figure out what needs to be there and resolve any missing data so there are
+  no questions left — if needed we can pause on that work for now other than doing the ones where
+  there are no questions."* **`dispatch-145.md` has been rewritten to drop OSAT B2B entirely** —
+  it now covers only EAP + EAD (the two metrics with no open question). OSAT B2B and EPB2B both
+  stay untouched pending the owner's own investigation; do not guess at either in the meantime,
+  and do not re-propose OSAT B2B until the owner reports back.
+- **📋 (2026-08-26): [Dispatch #145 — Performance Review RGR: add EAP and EAD as new metrics —
+  OSAT B2B and EPB2B both held](dispatch-145.md).** Traced the real FullScale report headers
+  baked into `src/__tests__/smg-fullscale-dataonly.test.js` and found the report's actual
+  "Experienced a Problem (Yes)" question is the OVERALL section (no B2B qualifier), already
+  parsed into `smg_fullscale.overall_problem`, live with real data, never wired to a review
+  metric — that's a NEW metric the owner named **EAP**, not a rename of the existing `epb2b` key
+  (owner: keep EPB2B exactly as-is, dormant). **EAD** (Voice Execute As Designed) has a real,
+  already-parsed target (`yearly_targets.voice_ead_pct`) but a pre-existing guard test
   (`kpi-registry.test.js`) already documents it has NO actual-data source anywhere in the
   codebase (Pace Portal, not yet ingested) — wire the target now, leave the actual manual, same
   as EPB2B. Dispatch explicitly warns against silently changing RGR's category weight balance
-  when adding 3 new weighted metrics — a real scoring decision, not mechanical.
+  when adding 2 new weighted metrics — a real scoring decision, not mechanical. Not yet sent to
+  an engineer — queued behind #144 per the one-engineer-at-a-time cadence.
+- **📋 (2026-08-26): [Dispatch #146 — Pre-populate Retention Rollup workshop-week marks from the
+  Organization Structure sheet's "Schedule Workshop" column](dispatch-146.md) — DRAFTED, NOT YET
+  DISPATCHED, two open items pending the owner.** Owner, after being told the Retention Rollup was
+  empty because no store had a manual mark yet: *"Mark the scheduled weeks for training I can do
+  that when I'm at the computer, but we also updated the organization structure sheet which
+  already has those weeks on it. Could we not just pre-populate them from that sheet?"* Real,
+  verified finding: `data/org-structure/Organization_Structure.xlsx`'s `Locations` sheet genuinely
+  has a **"Schedule Workshop"** date column, populated for all 20 OK stores (FL blank — no
+  workshop scheduled there yet), live-decoded from the committed file's Excel serials (2026-08-26).
+  Converting a date to the mark's weekKey is trivial (`weekStartOf()`, already exported) and no
+  existing parser/upload path touches this workbook at all — genuinely new work, not a missed
+  wiring. **Two things block sending this to an engineer:** (1) the committed copy is dated
+  2026-08-23 and the owner said he updated it since — need the current file; (2) the sheet has no
+  paired "confirmed occurred" flag for this column (unlike its own "Mobile Training
+  Occurred"/"Scheduled" pair), and several dates in the committed copy are still in the future
+  (e.g. 3708/24471: 2026-09-03) — importing a future-dated mark would create a false before/since
+  split. Dispatch proposes a safe default (skip any date > today at import time) but flags it for
+  owner confirmation rather than assuming.
 - **✅ RESOLVED (2026-08-26): Op Supplies target-field label fixed** — was declared `src:'manual'`
   in `review-engine.js`'s RGR metric config despite `autoPopulateKPIs` already unconditionally
   filling it from the real, auto-pulled eBOS stream (`qsr_ebos_daily.ops_purchases`) — a stale
