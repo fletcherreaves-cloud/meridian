@@ -1,6 +1,6 @@
 ---
 name: finding-complaints-propel-api-2026-08-26
-description: A working Customer Care complaint-case API on propel.mcd.com — per-store complaint cases with issue code/subcode, dates, status and customer comments. Unlocks the actual-data side of Performance Review's Complaint Contacts/100K metric, which has had zero automated source until now.
+description: A working Customer Care complaint-case API on propel.mcd.com — per-store complaint cases with issue code/subcode, dates, status and customer comments. Unlocks the actual-data side of Performance Review's Complaint Contacts/100K metric, which has had zero automated source until now. Denominator confirmed (guest count); Timeframe has no single-month option, so a monthly figure needs a wide pull filtered by date.
 sensitivity: open
 metadata:
   node_type: memory
@@ -89,12 +89,11 @@ workbook's "1-800 Contacts" is a raw count, not a `/100K` rate; target is overri
 `tComplaintsTarget`, `target-overrides.js`). This endpoint is the first real candidate for the
 *actual* side.
 
-**⚠️ Turning a raw case count into a `/100K` RATE needs a guest-count denominator for the same
-period — not yet resolved, and not something to guess at.** `totalCount` (or a filtered subset of
-it) is the numerator; what "100K" normalizes against (guest count for the period? transactions?)
-needs to match whatever the label's own "/100K" convention actually means at this org. Confirm
-with the owner before wiring, same discipline `dispatch-132.md` already applied to this exact
-metric.
+**✅ RESOLVED (owner, 2026-08-26): the `/100K` denominator is guest count.** So the metric is
+`(complaint case count / guest count for the same period) × 100,000` — a real, computable rate
+once the case-count side has a matched period. Guest count itself is already a live Meridian
+metric (multiple DAR/sales-cloud sources feed it elsewhere in the app) — no new pull needed for
+that half.
 
 ## Integration constraints — identical to the EcoSure precedent, reuse that design, don't re-derive it
 
@@ -110,19 +109,33 @@ metric.
   endpoint capped a requested `rowsPerPage=50` at 20 despite the ask, so **any client must page
   until `results.length` reaches `totalCount`, never trust a large `rowsPerPage` value** —
   assume the same caution here until directly tested.
-- **`timeFrame=1` is UNCONFIRMED to mean "YTD"** — it's the value observed while the UI's
-  Timeframe dropdown showed YTD selected, but the mapping itself was not captured. Capture the
-  dropdown's other options (and their resulting `timeFrame=` values) before building anything
-  that needs a specific window (e.g. a trailing-12-months pull, or a single calendar month) —
-  do not assume `1` is the only or the default value.
+- **`timeFrame=1` is confirmed = "YTD" among a real 5-option set, but the other 4 values are
+  still uncaptured.** Owner-captured (2026-08-26) screenshot of the Timeframe dropdown: **YTD,
+  Baseline YTD, Trailing 3 Months, Baseline Trailing 3 Months, History** — YTD was the option
+  highlighted/selected at capture time, corroborating `timeFrame=1` = YTD. **None of these five
+  is a single calendar month** — a real, new problem for wiring a monthly Performance Review
+  figure: there is no "this month" `timeFrame` option to request directly. The likely path is
+  requesting the widest option (`History`, once its numeric value is captured) and filtering
+  client-side by `receivedDate`/`incidentDate` into whatever period a review month needs — same
+  shape as how Meridian already treats other wide-pull-then-filter cloud streams. Capture the
+  remaining 4 values' actual `timeFrame=` numbers (open one at a time, read the resulting
+  request) before building anything.
+- **`rowsPerPage` cap — STILL UNTESTED**, despite being asked about directly (owner's reply was
+  an acknowledgment, not a measurement — do not read it as "confirmed fine"). The EcoSure
+  visit-list endpoint capped a requested `rowsPerPage=50` at 20 despite the ask, so **any client
+  must page until `results.length` reaches `totalCount`, never trust a large `rowsPerPage`
+  value** — assume the same caution here until someone actually requests e.g. `rowsPerPage=100`
+  and reads what comes back.
 - **Only `CLOSED` was observed** — whether `caseStatus` has other values (open/pending) and
   whether those should count toward the metric is unconfirmed.
 
 ## What remains open before any pull is built
 
-1. What does `/100K` normalize against? (owner input needed)
-2. What are `timeFrame`'s other values, and which is the right one for a monthly review period?
-3. Does `rowsPerPage` actually cap, and at what value?
+1. ~~What does `/100K` normalize against?~~ **Answered: guest count.**
+2. Capture the other 4 `timeFrame=` values (Baseline YTD / Trailing 3 Months / Baseline Trailing
+   3 Months / History) and confirm there's genuinely no single-month option — if there isn't,
+   design the wide-pull-then-filter-by-date approach explicitly rather than defaulting into it.
+3. Does `rowsPerPage` actually cap, and at what value? (asked, not yet measured)
 4. Are there `caseStatus` values besides `CLOSED`, and should they be included?
 5. Does a `-` prefixed `issueSubCode` like "Charged - Equipment or Operations Issue" ever appear
    with real encoding quirks (the raw payload used a plain hyphen, not an en-dash, unlike this
