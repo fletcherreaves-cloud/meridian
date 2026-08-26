@@ -84,6 +84,30 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.189): [Dispatch #148 — Performance Review continuity Phase 1: real
+  7-rung role/level system](dispatch-148.md).** First build phase of the Performance Review
+  redesign (`plan-performance-review-continuity-2026-08-26.md`, build-sequencing item #1).
+  `src/engine/permissions.js`'s `DEFAULT_ROLES` extended from the old 3-tier stub (admin/
+  area_supervisor/manager) to the real ladder: `owner`(1) → `vp`(2) → `do`(3) → `om`(4) →
+  `area_supervisor`(5) → `gm`(6) → `sm_am_dm`(7); `admin`/`manager` kept fully unchanged (real live
+  `profiles.role` values depend on those exact strings elsewhere in `src/`). New pure
+  `levelsAbove(roleId, aboveRoleId, ladder)` resolver, not yet wired into any UI (needs the
+  assignment model, later dispatch). Also fixed 2 real `supabase/schema.sql` bugs: a
+  `'supervisor'`/`'area_supervisor'` string mismatch found in **4 places** (including the
+  `profiles.role` CHECK constraint, which never even allowed `'area_supervisor'` as a value —
+  meaning the "supervisor read" reviews policy has likely never matched a real supervisor login),
+  and the live open-write security gap (any authenticated user could insert/overwrite any review
+  row) — tightened to require one of the roles that could plausibly write a review.
+  **⚠️ NOT YET APPLIED TO PRODUCTION SUPABASE — this PR only changed the file in the repo.** The
+  exact SQL to run (and what to verify live afterward) is in dispatch #148's PR body (#794) and
+  `supabase/schema.sql`'s own new comments. Someone needs to actually run it against the live DB.
+  **⚠️ Open question left for the owner, not silently resolved:** should `admin` eventually
+  collapse into `owner` and `manager` into `gm` (closest functional matches), or stay separate
+  utility roles as this dispatch left them? Both are currently untouched precisely because real
+  live role data depends on those id strings — a rename needs an explicit owner decision, not a
+  guess. 252/252 test files, 2680/2680 tests passing (main baseline 2663+, zero regressions);
+  build clean, entry chunk 473.01→473.38 KB gzip (+0.37 KB). Verified independently in a fresh
+  worktree before merging (diff read in full, both claimed numbers reproduced exactly).
 - **📐 (2026-08-26): [Performance Review "yearly continuity" — full design synthesis,
   `plan-performance-review-continuity-2026-08-26.md`](plan-performance-review-continuity-2026-08-26.md).**
   Owner-driven redesign, started from "how do I see Nick Rice's H1+H2 review together." **Not yet
