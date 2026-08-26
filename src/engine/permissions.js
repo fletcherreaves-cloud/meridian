@@ -261,6 +261,38 @@ export function levelsAbove(roleId, aboveRoleId, ladder) {
   return role.level - above.level; // positive = `above` truly outranks `role`
 }
 
+// ── Review-role → ladder mapping (dispatch #149) ───────────────────────────────
+// review-engine.js's ROLE_KEYS (GM/AM/DM/SM/AS/OM) is a distinct, review-specific taxonomy from
+// this file's ladder ids -- AM/DM/SM all collapse onto the single 'sm_am_dm' rung (same
+// functional level, split by pay classification per the plan doc's decision #5), not three
+// separate rungs. Mirrored in SQL by supabase/schema.sql's review_role_to_ladder() function
+// (used by the review_overrides RLS insert policy) -- keep both in sync if either side changes;
+// this is the same de-sync risk the plan doc's "Recommended data-shape approach" section already
+// flags for any SQL-side reimplementation of a JS rule.
+export const REVIEW_ROLE_TO_LADDER = {
+  GM: 'gm', AM: 'sm_am_dm', DM: 'sm_am_dm', SM: 'sm_am_dm', AS: 'area_supervisor', OM: 'om',
+};
+
+// ── Locked-actual override authorization (dispatch #149) ───────────────────────
+// Per memory/plan-performance-review-continuity-2026-08-26.md decision #4, the owner's own
+// worked example: "anyone 2 levels above the reviewed person. So if a GM is being reviewed then
+// the Supervisor does the review, The OM or DO or higher would be the only ones to override a
+// result" -- PLUS an unconditional Admin/Developer override regardless of ladder distance
+// (decision #6-C, "Root override escape hatch... a safety valve so a ladder bug or a vacant
+// reviewer slot can never lock out the people actually responsible for data integrity").
+// `reviewRole` is a review-engine.js ROLE_KEYS value (e.g. 'GM'), NOT a ladder id -- resolved
+// via REVIEW_ROLE_TO_LADDER above before the ladder-distance check. Pure and testable; does not
+// touch RLS -- supabase/schema.sql's review_overrides INSERT policy enforces the identical rule
+// server-side (via its own SQL role_level()/review_role_to_ladder() functions), which is the
+// actual enforcement boundary this client-side check only mirrors for the UI.
+export function canOverrideLockedActual(callerRoleId, reviewRole, ladder) {
+  if (callerRoleId === 'admin' || callerRoleId === 'owner') return true;
+  const ladderRoleId = REVIEW_ROLE_TO_LADDER[reviewRole];
+  if (!ladderRoleId) return false;
+  const diff = levelsAbove(ladderRoleId, callerRoleId, ladder);
+  return diff != null && diff >= 2;
+}
+
 // ── Persistence ────────────────────────────────────────────────────────────────
 export function getOrgRoles() {
   try {

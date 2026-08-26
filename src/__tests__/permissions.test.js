@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_ROLES, ROLE_PERMISSION_TEMPLATES, ALL_PERMISSION_KEYS,
   levelsAbove, getRoleById, hasPermission, canManageRole, defaultPermissionsForLevel,
+  REVIEW_ROLE_TO_LADDER, canOverrideLockedActual,
 } from '../engine/permissions.js';
 
 // The 7 rungs the plan doc's decision #4 (sharpened by #6) names explicitly, bottom to top:
@@ -148,5 +149,88 @@ describe('permissions.js — levelsAbove (N-levels-above resolver)', () => {
           .toBe(j - i);
       }
     }
+  });
+});
+
+// Dispatch #149 — Performance Review continuity, Phase 2: locked auto-populated actuals +
+// reason-required override. Covers REVIEW_ROLE_TO_LADDER (review-engine ROLE_KEYS -> ladder id)
+// and canOverrideLockedActual (the full client-side authorization check: levelsAbove >= 2, PLUS
+// the unconditional admin/owner escape hatch). The real enforcement boundary is
+// supabase/schema.sql's review_overrides RLS insert policy, not unit-testable from vitest — see
+// this dispatch's PR body for what to verify live.
+describe('permissions.js — REVIEW_ROLE_TO_LADDER', () => {
+  it('maps every review-engine ROLE_KEYS value to a real DEFAULT_ROLES id', () => {
+    for (const ladderId of Object.values(REVIEW_ROLE_TO_LADDER)) {
+      expect(getRoleById(ladderId, DEFAULT_ROLES)).not.toBeNull();
+    }
+  });
+
+  it('AM/DM/SM all collapse onto the single sm_am_dm rung (plan doc decision #5)', () => {
+    expect(REVIEW_ROLE_TO_LADDER.AM).toBe('sm_am_dm');
+    expect(REVIEW_ROLE_TO_LADDER.DM).toBe('sm_am_dm');
+    expect(REVIEW_ROLE_TO_LADDER.SM).toBe('sm_am_dm');
+  });
+
+  it('GM/AS/OM each map to their own distinct rung, not sm_am_dm', () => {
+    expect(REVIEW_ROLE_TO_LADDER.GM).toBe('gm');
+    expect(REVIEW_ROLE_TO_LADDER.AS).toBe('area_supervisor');
+    expect(REVIEW_ROLE_TO_LADDER.OM).toBe('om');
+  });
+});
+
+describe('permissions.js — canOverrideLockedActual', () => {
+  // Owner's own worked example (plan doc decision #4): "anyone 2 levels above the reviewed
+  // person. So if a GM is being reviewed then the Supervisor does the review, The OM or DO or
+  // higher would be the only ones to override a result."
+  it('allows OM (2 levels above a GM review) to override', () => {
+    expect(canOverrideLockedActual('om', 'GM', DEFAULT_ROLES)).toBe(true);
+  });
+
+  it('allows DO (3 levels above a GM review, "or higher") to override', () => {
+    expect(canOverrideLockedActual('do', 'GM', DEFAULT_ROLES)).toBe(true);
+  });
+
+  it('NEGATIVE CASE: rejects the direct reviewer (1 level above, area_supervisor) for a GM review', () => {
+    // This is exactly the case the owner's example calls out as NOT sufficient — the GM's own
+    // reviewer (Supervisor/AS) does the review, but does not have override authority.
+    expect(canOverrideLockedActual('area_supervisor', 'GM', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('NEGATIVE CASE: rejects a peer (0 levels — same rung) and rejects someone BELOW', () => {
+    expect(canOverrideLockedActual('gm', 'GM', DEFAULT_ROLES)).toBe(false);
+    expect(canOverrideLockedActual('sm_am_dm', 'GM', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('unconditional admin/owner escape hatch overrides EVEN AT 1 level or 0 levels (decision #6-C)', () => {
+    expect(canOverrideLockedActual('admin', 'GM', DEFAULT_ROLES)).toBe(true);
+    expect(canOverrideLockedActual('owner', 'GM', DEFAULT_ROLES)).toBe(true);
+    // Even directly against the bottom rung, where the ladder distance is enormous anyway --
+    // the point is admin/owner never depend on the ladder math at all.
+    expect(canOverrideLockedActual('admin', 'AM', DEFAULT_ROLES)).toBe(true);
+  });
+
+  it('works across the whole review-role set with the correct 2-levels-above rung for each', () => {
+    // AM/DM/SM -> sm_am_dm (level 7): 2 above is area_supervisor (level 5).
+    expect(canOverrideLockedActual('area_supervisor', 'AM', DEFAULT_ROLES)).toBe(true);
+    expect(canOverrideLockedActual('gm', 'AM', DEFAULT_ROLES)).toBe(false); // only 1 level above
+    // AS -> area_supervisor (level 5): 2 above is do (level 3).
+    expect(canOverrideLockedActual('do', 'AS', DEFAULT_ROLES)).toBe(true);
+    expect(canOverrideLockedActual('om', 'AS', DEFAULT_ROLES)).toBe(false); // only 1 level above
+    // OM -> om (level 4): 2 above is vp (level 2).
+    expect(canOverrideLockedActual('vp', 'OM', DEFAULT_ROLES)).toBe(true);
+    expect(canOverrideLockedActual('do', 'OM', DEFAULT_ROLES)).toBe(false); // only 1 level above
+  });
+
+  it('returns false for an unrecognized review role (no ladder mapping) even for a high caller role', () => {
+    expect(canOverrideLockedActual('vp', 'NOT_A_REAL_ROLE', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('returns false for an unrecognized caller role id that is not admin/owner', () => {
+    expect(canOverrideLockedActual('not_a_real_role', 'GM', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('defaults to DEFAULT_ROLES when no ladder is supplied', () => {
+    expect(canOverrideLockedActual('om', 'GM')).toBe(true);
+    expect(canOverrideLockedActual('area_supervisor', 'GM')).toBe(false);
   });
 });

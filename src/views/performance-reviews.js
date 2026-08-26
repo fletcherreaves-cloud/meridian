@@ -8,9 +8,12 @@ import {
   getTemplates, saveTemplates, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights, syncTemplatesFromSupabase,
   RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS, SHIFT_ATTRIBUTABLE_ROLES,
+  // Dispatch #149 — locked auto-populated actuals + reason-required override.
+  OVERRIDE_REASONS, OVERRIDE_REASON_LABEL, validateOverrideInput, addReviewOverride,
+  getReviewOverrides, syncReviewOverridesFromSupabase, effectiveOverrideFor, applyReviewOverrides,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
-import { hasPermission, getOrgRoles } from '../engine/permissions.js';
+import { hasPermission, getOrgRoles, canOverrideLockedActual, DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
@@ -828,6 +831,14 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [returnNotes, setReturnNotes]       = useState('');
   const [checkMonth, setCheckMonth]         = useState(null);
+  // Dispatch #149 — locked-actual overrides. Loaded per-review (not globally); Supabase is the
+  // durable store, localStorage (getReviewOverrides) is the instant-read cache for this device.
+  const [overrides, setOverrides] = useState(() => getReviewOverrides(review.id));
+  useEffect(() => {
+    let alive = true;
+    syncReviewOverridesFromSupabase(review.id).then(list => { if (alive) setOverrides(list); }).catch(()=>{});
+    return () => { alive = false; };
+  }, [review.id]);
   const reviewOrg  = getStoreOrg(initReview.loc);
   const orgLogo    = getOrgLogo(reviewOrg);
   const orgLabel   = getOrgLabel(reviewOrg);
@@ -879,7 +890,27 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
     }));
   };
 
-  const scores = useMemo(() => computeScores(review, cfg), [review, cfg]);
+  // Dispatch #149 — the RESOLVED review: every src:'auto' actual with an active override shows
+  // that override's value instead of the raw auto-populated one. Computed ONCE here and handed
+  // to every downstream consumer (scoring, KPIGrid display, print exports) so none of them need
+  // their own override-awareness (scope item 3 — "check every call site").
+  const resolvedReview = useMemo(() => applyReviewOverrides(review, overrides), [review, overrides]);
+  const scores = useMemo(() => computeScores(resolvedReview, cfg), [resolvedReview, cfg]);
+
+  // Dispatch #149 — who (if anyone) may override a locked auto-sourced actual on THIS review:
+  // levelsAbove(reviewedRole, callerRole) >= 2 on the org's ladder, PLUS an unconditional
+  // admin/owner escape hatch (canOverrideLockedActual, permissions.js). review.role is a
+  // review-engine ROLE_KEYS value (GM/AM/DM/SM/AS/OM), not a ladder id.
+  const canOverride = canOverrideLockedActual(userRole, review.role, orgRoles || DEFAULT_ROLES);
+
+  const onAddOverride = useCallback((month, metricKey, input) => {
+    const previousValue = resolvedReview.kpis?.months?.[month]?.[metricKey] ?? null;
+    const record = addReviewOverride(review.id, {
+      month, metricKey, value: input.value, reason: input.reason, note: input.note,
+      previousValue, overriddenByRole: userRole,
+    });
+    setOverrides(prev => [...prev, record]);
+  }, [review.id, resolvedReview, userRole]);
 
   const tabs = [
     {key:'kpi',    label:'KPI Results'},
@@ -917,11 +948,11 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
             borderRadius:R,color:TEXT,cursor:'pointer'}},
           ...mths.map(mn=>h('option',{value:mn,key:mn},MONTH_NAMES[mn-1]))
         ),
-        GhostBtn({onClick:()=>printCheckpoint(review,cfg,activeCheckMonth,orgLabel,orgLogo),
+        GhostBtn({onClick:()=>printCheckpoint(resolvedReview,cfg,activeCheckMonth,orgLabel,orgLogo),
           style:{fontSize:11}},'1:1 Checkpoint')
       ),
       GhostBtn({onClick:()=>printBlankForm(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Blank Form'),
-      GhostBtn({onClick:()=>printReview(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
+      GhostBtn({onClick:()=>printReview(resolvedReview,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,disabled:isReadOnly,
         style:{minWidth:80,opacity:isReadOnly?0.45:1,cursor:isReadOnly?'not-allowed':'pointer'}},
         'Save'),
@@ -980,17 +1011,22 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
     TabBar({tabs, active:tab, onSelect:setTab}),
     // Content
     div({style:{flex:1,overflowY:'auto'}},
-      tab==='kpi'     && h(KPITab,     {review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds}),
+      tab==='kpi'     && h(KPITab,     {review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, overrides, canOverride, onAddOverride}),
       tab==='behav'   && h(BehavTab,   {review, cfg, qKeys, bCat, setBCat, setRating, setComment}),
       tab==='devplan' && h(DevPlanTab, {review, setDevPlan, update}),
-      tab==='summary' && h(SummaryTab, {review, cfg, scores, qKeys, mths, update}),
+      tab==='summary' && h(SummaryTab, {review:resolvedReview, cfg, scores, qKeys, mths, update}),
     )
   );
 }
 
 // ── KPI Results Tab ────────────────────────────────────────────────────────────
-function KPITab({review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds}) {
+function KPITab({review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, overrides, canOverride, onAddOverride}) {
+  // RAW months (targets + manual actuals are edited against these — direct edits are never
+  // clobbered by overrides, which only ever apply to src:'auto' actuals). RESOLVED months are
+  // what's actually shown/rated for the "Actual" row of an auto-sourced metric — the effective
+  // value with any active override already applied (dispatch #149).
   const months = review.kpis?.months || {};
+  const resolvedMonths = resolvedReview?.kpis?.months || months;
   const catMets = cfg.metrics[kpiCat] || [];
   const allCats = [...CAT_KEYS];
 
@@ -1019,21 +1055,32 @@ function KPITab({review, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAut
     ),
     // KPI grid for selected category
     div({style:{overflowX:'auto'}},
-      h(KPIGrid, {metrics:catMets, months, mths, qKeys, setMonthKPI, cfg})
-    )
+      h(KPIGrid, {metrics:catMets, months:resolvedMonths, rawMonths:months, mths, qKeys, setMonthKPI, cfg,
+        overrides, canOverride, onAddOverride})
+    ),
+    // Dispatch #149 — audit trail for every override on this review, visible somewhere real
+    // (owner's own bar: "just don't make the audit trail invisible/inaccessible"). Shows across
+    // ALL categories, not just the currently-selected tab, since an override on a metric in
+    // another category shouldn't require guessing which tab to click.
+    h(OverrideHistorySection, {overrides, cfg})
   );
 }
 
-function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
+// Exported for targeted testing (dispatch #149's verification bar) — the locked-actual /
+// override-affordance / resolved-value behavior is covered directly against this component
+// rather than only through the full PerformanceReviewsPanel shell.
+export function KPIGrid({metrics, months, rawMonths, mths, qKeys, setMonthKPI, cfg, overrides, canOverride, onAddOverride}) {
   const COL_W = 86; // widened from 78 so the full rating word (e.g. "Needs Improvement") wraps to 2 lines without clipping
   const LABEL_W = 190;
+  const [overrideDraft, setOverrideDraft] = useState(null); // {month, metricKey, metric, currentValue} | null
 
   const qMonthMap = {};
   for (const q of qKeys) qMonthMap[q] = qMonths(q).filter(m=>mths.includes(m));
 
   const totalWidth = LABEL_W + mths.length * COL_W + qKeys.length * 60 + 4;
 
-  return div({style:{minWidth:totalWidth, userSelect:'none'}},
+  return h(React.Fragment, null,
+  div({style:{minWidth:totalWidth, userSelect:'none'}},
     // Header row
     div({style:{display:'flex',alignItems:'stretch',borderBottom:`2px solid ${BDR}`,
       background:S2,fontSize:10,fontWeight:700,color:TEXT3,letterSpacing:'.3px'}},
@@ -1069,19 +1116,43 @@ function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
         ),
         // Month cells
         ...mths.map(mn => {
-          const mo = months[mn]||{};
+          const mo = months[mn]||{};           // RESOLVED — override value if one is active
+          const rawMo = (rawMonths||months)[mn]||{}; // RAW — last value autoPopulateKPIs wrote
           const actual = mo[m.key];
           const target = mo[m.key+'Tgt'];
           const rating = rateMetric(actual, target, m);
           const bg = rating ? ratingBg(rating) : 'transparent';
           const sc = m.pctInput ? 100 : 1;
+          // Dispatch #149 — src:'auto' actuals are read-only by default (locked). An authorized
+          // overrider gets a pencil affordance that opens the 3-option reason form; everyone
+          // else just sees the resolved (possibly overridden) value, no affordance at all.
+          const isAuto = m.src === 'auto';
+          const ov = isAuto ? effectiveOverrideFor(overrides, mn, m.key) : null;
           return div({key:mn,style:{width:COL_W,minWidth:COL_W,borderRight:`1px solid ${BDR}`,
             background:bg,display:'flex',flexDirection:'column',gap:2,padding:'4px 2px',alignItems:'center'}},
-            h(FormattedNumInput,{key:'a',value:actual!=null?actual*sc:null,
-              onChange:v=>setMonthKPI(mn,m.key,v!=null?v/sc:null),
-              placeholder:m.pctInput?'Act %':m.dollar?'Act $':'Act',
-              pct:!!m.pctInput, dollar:!!m.dollar,
-              style:{width:COL_W-10,background:bg||'var(--surf)'}}),
+            isAuto
+              ? div({style:{position:'relative',width:COL_W-10}},
+                  h(FormattedNumInput,{key:'a',value:actual!=null?actual*sc:null,
+                    onChange:()=>{}, disabled:true,
+                    placeholder:m.pctInput?'Act %':m.dollar?'Act $':'Act',
+                    pct:!!m.pctInput, dollar:!!m.dollar,
+                    style:{width:'100%',background:bg||'var(--surf)',opacity:.85,cursor:'not-allowed'}}),
+                  canOverride && btn({
+                    onClick:()=>setOverrideDraft({month:mn, metricKey:m.key, metric:m,
+                      currentValue: rawMo[m.key], overriddenValue: ov ? ov.value : null}),
+                    title: ov ? 'Overridden — click to change' : 'Auto-sourced (locked) — click to override',
+                    style:{position:'absolute',top:-2,right:-2,width:14,height:14,lineHeight:'14px',
+                      padding:0,border:'none',borderRadius:'50%',background:ov?AMBER:S2,
+                      color:ov?'#000':TEXT3,fontSize:8,cursor:'pointer'}},
+                    '✎')
+                )
+              : h(FormattedNumInput,{key:'a',value:actual!=null?actual*sc:null,
+                  onChange:v=>setMonthKPI(mn,m.key,v!=null?v/sc:null),
+                  placeholder:m.pctInput?'Act %':m.dollar?'Act $':'Act',
+                  pct:!!m.pctInput, dollar:!!m.dollar,
+                  style:{width:COL_W-10,background:bg||'var(--surf)'}}),
+            ov && span({title:`Overridden — ${OVERRIDE_REASON_LABEL[ov.reason]||ov.reason}${ov.note?': '+ov.note:''}`,
+              style:{fontSize:7,color:AMBER,fontWeight:700}},'★ overridden'),
             h(FormattedNumInput,{key:'t',value:target!=null?target*sc:null,
               onChange:v=>setMonthKPI(mn,m.key+'Tgt',v!=null?v/sc:null),
               placeholder:m.pctInput?'Tgt %':m.dollar?'Tgt $':'Tgt',
@@ -1109,6 +1180,117 @@ function KPIGrid({metrics, months, mths, qKeys, setMonthKPI, cfg}) {
         })
       );
     })
+  ),
+  overrideDraft && h(OverrideFormModal, {
+    draft: overrideDraft,
+    onClose: () => setOverrideDraft(null),
+    onSubmit: (input) => {
+      onAddOverride(overrideDraft.month, overrideDraft.metricKey, input);
+      setOverrideDraft(null);
+    },
+  })
+  );
+}
+
+// ── Override form modal (dispatch #149) ────────────────────────────────────────
+// Opened by the pencil affordance on a locked (src:'auto') actual cell. Exactly the 3-option
+// reason dropdown the owner specified, in his own words (plan doc decision #4): "a dropdown for
+// Inaccurate Data, Incomplete Data, or Something Else (Explanation required)."
+function OverrideFormModal({draft, onClose, onSubmit}) {
+  const {metric, month, currentValue, overriddenValue} = draft;
+  const sc = metric.pctInput ? 100 : 1;
+  const fmtCurrent = v => v == null ? '—' : metric.pctInput ? (v*sc).toFixed(2)+'%' : metric.dollar ? '$'+Math.round(v).toLocaleString('en-US') : v;
+  const [value, setValue] = useState(overriddenValue != null ? overriddenValue : currentValue);
+  const [reason, setReason] = useState('');
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+
+  const submit = () => {
+    const v = validateOverrideInput({reason, note});
+    if (!v.ok) { setErr(v.error); return; }
+    if (value == null || value === '' || isNaN(parseFloat(value))) { setErr('Enter a numeric value.'); return; }
+    onSubmit({ value: parseFloat(value), reason, note: note.trim() });
+  };
+
+  return h(ModalShell, {
+    title:`Override — ${metric.label} (${MONTH_NAMES[month-1]})`, icon:'✎', onClose, maxWidth:420,
+    zIndex: Z.nested,
+  },
+    Col({style:{padding:'14px 18px',gap:12}},
+      div({style:{fontSize:11,color:TEXT2}},
+        'Auto-sourced (current) value: ', span({style:{fontWeight:700,color:TEXT}},fmtCurrent(currentValue)),
+        overriddenValue!=null && div({style:{marginTop:4}},
+          'Currently overridden to: ', span({style:{fontWeight:700,color:AMBER}},fmtCurrent(overriddenValue)))
+      ),
+      lbl({style:{display:'flex',flexDirection:'column',gap:4,fontSize:11,color:TEXT2,fontWeight:700}},
+        'New value',
+        inp({type:'number', value: value ?? '', onChange:e=>setValue(e.target.value),
+          style:{padding:'6px 10px',background:'var(--surf)',border:`1px solid ${BDR}`,
+            borderRadius:R,color:TEXT,fontSize:13}})
+      ),
+      lbl({style:{display:'flex',flexDirection:'column',gap:4,fontSize:11,color:TEXT2,fontWeight:700}},
+        'Reason',
+        sel({value:reason, onChange:e=>setReason(e.target.value),
+          style:{padding:'6px 10px',background:'var(--surf)',border:`1px solid ${BDR}`,
+            borderRadius:R,color:TEXT,fontSize:13,cursor:'pointer'}},
+          opt({value:''},'Select a reason…'),
+          ...OVERRIDE_REASONS.map(r=>opt({value:r.value,key:r.value},r.label)))
+      ),
+      reason==='something_else' && lbl({style:{display:'flex',flexDirection:'column',gap:4,fontSize:11,color:TEXT2,fontWeight:700}},
+        'Explanation (required)',
+        ta({value:note, rows:3, onChange:e=>setNote(e.target.value),
+          placeholder:'Explain why this value is being overridden…',
+          style:{padding:'6px 10px',background:'var(--surf)',border:`1px solid ${BDR}`,
+            borderRadius:R,color:TEXT,fontSize:12,resize:'vertical',fontFamily:'var(--sans)'}})
+      ),
+      err && div({style:{fontSize:11,color:'#ef4444'}},err),
+      Row({style:{gap:8,justifyContent:'flex-end',marginTop:4}},
+        GhostBtn({onClick:onClose},'Cancel'),
+        PrimaryBtn({onClick:submit},'Submit Override')
+      )
+    )
+  );
+}
+
+// ── Override history (dispatch #149) ────────────────────────────────────────────
+// A simple, always-accessible audit trail — every override record on this review, newest first.
+// Owner's own bar for this dispatch: "even a simple 'Override history' expandable section is
+// enough... just don't make the audit trail invisible/inaccessible."
+function OverrideHistorySection({overrides, cfg}) {
+  const [open, setOpen] = useState(false);
+  if (!overrides || !overrides.length) return null;
+  const metricLabel = key => {
+    for (const mets of Object.values(cfg.metrics||{})) {
+      const m = (mets||[]).find(x=>x.key===key);
+      if (m) return m.label;
+    }
+    return key;
+  };
+  const sorted = [...overrides].sort((a,b)=> new Date(b.overriddenAt) - new Date(a.overriddenAt));
+  return div({style:{marginTop:16,border:`1px solid ${BDR}`,borderRadius:R}},
+    btn({onClick:()=>setOpen(v=>!v),
+      style:{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',
+        padding:'8px 12px',background:S2,border:'none',borderRadius:R,color:TEXT2,
+        fontSize:11,fontWeight:700,cursor:'pointer'}},
+      span(null, `Override History (${overrides.length})`),
+      span(null, open?'▲':'▼')),
+    open && div({style:{padding:'8px 12px',display:'flex',flexDirection:'column',gap:8}},
+      ...sorted.map(o =>
+        div({key:o.id,style:{padding:'6px 8px',background:'var(--surf)',borderRadius:4,
+          border:`1px solid ${BDR}`,fontSize:11,color:TEXT2}},
+          div({style:{fontWeight:700,color:TEXT}},
+            `${metricLabel(o.metricKey)} — ${MONTH_NAMES[(o.month||1)-1]}`),
+          div(null, `New value: `, span({style:{fontWeight:700}},String(o.value)),
+            o.previousValue!=null && span(null, ` (was ${o.previousValue})`)),
+          div(null, `Reason: ${OVERRIDE_REASON_LABEL[o.reason]||o.reason}`, o.note ? ` — ${o.note}` : ''),
+          div({style:{fontSize:10,color:TEXT3}},
+            // overriddenByRole is a permissions.js ladder id (e.g. 'om'), NOT a ROLE_KEYS value
+            // (e.g. 'OM') — a different taxonomy from the review's own role field, see
+            // permissions.js's REVIEW_ROLE_TO_LADDER note.
+            `${o.overriddenByRole ? (getRoleById(o.overriddenByRole, DEFAULT_ROLES)?.label || o.overriddenByRole) + ' · ' : ''}${new Date(o.overriddenAt).toLocaleString()}`)
+        )
+      )
+    )
   );
 }
 
