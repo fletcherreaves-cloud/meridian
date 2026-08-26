@@ -5,17 +5,31 @@
 
 -- ── Profiles ──────────────────────────────────────────────────────────────────
 -- One row per authenticated user. Automatically created by a trigger on signup.
+-- role check constraint below is kept in sync with src/engine/permissions.js's DEFAULT_ROLES ids
+-- (dispatch #148: the 7-rung reviewer-hierarchy ladder -- owner/vp/do/om/area_supervisor/gm/
+-- sm_am_dm -- plus the pre-existing admin/manager utility roles, kept unchanged/unrenamed).
 create table if not exists public.profiles (
   id               uuid references auth.users on delete cascade primary key,
   name             text,
   email            text,
   role             text not null default 'manager'
-                     check (role in ('admin', 'supervisor', 'manager')),
+                     check (role in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor',
+                                      'gm', 'sm_am_dm', 'manager')),
   -- accessible_locs: null = all stores; array = restrict to these store location codes
   accessible_locs  text[],
   org              text check (org in ('mcdok', 'emerald')),
   created_at       timestamptz default now()
 );
+
+-- Dispatch #148 (2026-08-26): fixes a live 'supervisor' vs 'area_supervisor' string mismatch that
+-- predates this table having ever allowed 'area_supervisor' at all -- the ORIGINAL check
+-- constraint above only permitted ('admin','supervisor','manager'), so this ALTER is required to
+-- actually widen an already-existing production table; editing the CREATE TABLE clause alone does
+-- nothing once the table exists (`create table if not exists` is a no-op on a live install).
+-- Idempotent: safe to re-run.
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'sm_am_dm', 'manager'));
 
 -- Auto-create a profile row whenever a new user signs up
 create or replace function public.handle_new_user()
@@ -112,7 +126,7 @@ create policy "config: authenticated read" on public.org_config
   for select using (auth.uid() is not null);
 
 create policy "config: admin/supervisor write" on public.org_config
-  for all using (get_my_role() in ('admin', 'supervisor'));
+  for all using (get_my_role() in ('admin', 'area_supervisor'));
 
 -- ── reviews RLS ───────────────────────────────────────────────────────────────
 alter table public.reviews enable row level security;
@@ -127,9 +141,12 @@ drop policy if exists "reviews: admin delete"         on public.reviews;
 create policy "reviews: admin all" on public.reviews
   for all using (get_my_role() = 'admin');
 
+-- Dispatch #148 (2026-08-26): fixed string mismatch -- was 'supervisor', but the real role id
+-- (src/engine/permissions.js DEFAULT_ROLES) has always been 'area_supervisor'. This policy has
+-- likely never matched a real logged-in supervisor before this fix.
 create policy "reviews: supervisor read" on public.reviews
   for select using (
-    get_my_role() = 'supervisor' and (
+    get_my_role() = 'area_supervisor' and (
       (select accessible_locs from public.profiles where id = auth.uid()) is null
       or reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid()))
     )
@@ -141,11 +158,24 @@ create policy "reviews: manager read own locs" on public.reviews
     reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid()))
   );
 
+-- Dispatch #148 (2026-08-26): CLOSES A LIVE SECURITY GAP -- these two policies previously checked
+-- only `auth.uid() is not null`, meaning ANY authenticated user, of ANY role, could insert or
+-- overwrite ANY review row (see memory/plan-performance-review-continuity-2026-08-26.md decision
+-- #6 gap #1, build-sequencing item #0 -- deliberately held open for this dispatch to fix
+-- correctly). This is a coarse fix: it requires the caller's role be one of the roles that could
+-- plausibly write a review at all (i.e. every rung of the reviewer-hierarchy ladder except the
+-- bottom rung, sm_am_dm, which is only ever reviewed, never a reviewer). It does NOT yet scope
+-- "can THIS role edit THIS SPECIFIC review" by hierarchy/assignment -- that's later
+-- build-sequencing work (person/store assignment model, item #3) per dispatch-148.md scope.
 create policy "reviews: authenticated write" on public.reviews
-  for insert with check (auth.uid() is not null);
+  for insert with check (
+    get_my_role() in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'manager')
+  );
 
 create policy "reviews: authenticated update" on public.reviews
-  for update using (auth.uid() is not null);
+  for update using (
+    get_my_role() in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'manager')
+  );
 
 create policy "reviews: admin delete" on public.reviews
   for delete using (get_my_role() = 'admin');
@@ -154,12 +184,15 @@ create policy "reviews: admin delete" on public.reviews
 alter table public.staff_assignments enable row level security;
 
 -- Users can see their own assignments; supervisors/admins see all
+-- (dispatch #148, 2026-08-26: same 'supervisor' -> 'area_supervisor' string fix as reviews RLS
+-- above -- this table's own write policy is otherwise unchanged; it's out of this dispatch's
+-- scope, which extends `staff_assignments` per the plan doc's later build-sequencing item #3.)
 create policy "assignments: own or above" on public.staff_assignments
   for select using (
     profile_id = auth.uid() or
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('supervisor', 'admin')
+      where p.id = auth.uid() and p.role in ('area_supervisor', 'admin')
     )
   );
 
@@ -167,7 +200,7 @@ create policy "assignments: admin/supervisor write" on public.staff_assignments
   for all using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and p.role in ('supervisor', 'admin')
+      where p.id = auth.uid() and p.role in ('area_supervisor', 'admin')
     )
   );
 
@@ -1111,7 +1144,7 @@ create index if not exists cash_sheet_daily_date_idx on public.cash_sheet_daily 
 --
 -- Emerald Arches supervisor setup example:
 --   update public.profiles
---     set role = 'supervisor',
+--     set role = 'area_supervisor',
 --         org  = 'emerald',
 --         accessible_locs = array['6178','6838','10034','35242','37566','38609','43701']
 --     where email = 'brad@example.com';
