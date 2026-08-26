@@ -84,6 +84,47 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.192): [Dispatch #151 — Performance Review continuity Phase 3b: wire
+  the assignment graph into `reviews` RLS](dispatch-151.md).** Fourth build phase — closes the RLS
+  wiring dispatch #150 deliberately deferred, and the write-scoping gap dispatch #148 explicitly
+  named this dispatch to fix. New `profiles.person` (text, nullable, admin-set — edited inline in
+  `admin.js` next to the existing role/`accessible_locs` editors) maps a Supabase login onto its
+  identity in the `staff_assignments` graph. New SQL function `person_oversees_loc()` mirrors
+  `whoOversees()`'s chain-walk for use inside RLS (which can't call JS directly — same constraint
+  #149 hit for `levelsAbove`); **deliberately diverges from the JS "throw on cycle" behavior** —
+  depth-capped at 10 rungs, silently returns `false` past the cap rather than throwing, since an
+  RLS predicate can't throw per-row without breaking every query on a malformed record. New JS
+  sibling `personOversees()` (thin wrapper around the existing `whoOversees()`) for client-side UI
+  gating — flagged as a SQL/JS pair that **can drift** if one changes without the other, same
+  caution as #149's ladder mirrors. `reviews` read RLS gets a new **additive** policy (never
+  replaces `accessible_locs` — a profile with no `person` mapping yet, which is every profile
+  today, keeps whatever access it already had); write RLS now routes through one shared
+  `reviews_write_allowed()` combining all three of the dispatch's named options with OR:
+  admin/owner unconditional, real hierarchy relationship via `person_oversees_loc()`, or an
+  `accessible_locs`-based fallback for a caller not yet mapped onto the graph.
+  **A genuine pre-existing bug found and fixed along the way, found by actually running the real
+  schema against a live local Postgres 16 instead of eyeballing it (CLAUDE.md's "measure it, don't
+  reason about it" rule earning its keep again):** the two untouched `"reviews: supervisor read"`/
+  `"reviews: manager read own locs"` policies (unchanged since #148) use
+  `reviewee_loc = any((select accessible_locs from profiles where id = auth.uid()))` — **Postgres
+  always parses a bare `ANY ((subquery))` as the quantified-subquery form, never array-membership**,
+  so this fails outright with `ERROR: operator does not exist: text = text[]` on real Postgres,
+  regardless of what type the subquery returns. Independently reproduced by the PM session too
+  (`select 'a'::text = any((select array['a','b']::text[]));` → identical error; the `::text[]`
+  cast fix resolves it) — **this is almost certainly the exact, previously-unexplained
+  `42883: operator does not exist: text = text[]` error the owner hit and screenshotted earlier
+  this same session** while applying dispatch #148's SQL. Fixed with a minimal `::text[]` cast; **a
+  human still needs to check live whether these two policies currently even exist in production**
+  — if the bug meant they silently failed to install the first time `schema.sql` was pasted in,
+  `area_supervisor`/`manager` logins may have had zero `reviews` read access via that path this
+  whole time (query in PR #805's body). **⚠️ NOT YET APPLIED TO PRODUCTION** — full SQL and the
+  live verification steps (including the specific test to run: map a test profile's `person`,
+  insert a synthetic `staff_assignments` row, confirm read/write access changes exactly as
+  expected, clean up) are in PR #805's body and `schema.sql`'s own new comments. 256/256 test
+  files, 2772/2772 tests (main baseline 2764, +8 net new, zero regressions). Build clean, entry
+  chunk 474.36→474.54 KB gzip (+0.18 KB). Verified independently in a fresh worktree before
+  merging — every diff read in full, the pre-existing-bug claim independently reproduced against a
+  live local Postgres (not just trusted), both claimed test/build numbers reproduced exactly.
 - **✅ SHIPPED (2026-08-26, v5.191): [Dispatch #150 — Performance Review continuity Phase 3a:
   effective-dated assignment graph + 2026 backfill](dispatch-150.md).** Third build phase, data
   layer only (Phase 3b — wiring into `reviews` RLS — is a separate later dispatch). Extends

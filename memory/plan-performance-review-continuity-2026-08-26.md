@@ -529,12 +529,17 @@ time dispatch practice:
 2. **Lock auto-populated actuals + reason-required override**, enforced in RLS (not just the
    client), gated by the relative-hierarchy rule from #1 PLUS the unconditional Admin/Developer
    override (resolved item C).
-3. **Person/role/store effective-dated assignment model** — extend the existing, currently-unused
-   `staff_assignments` table (decision #6: already shaped for exactly this, add a `role` column
-   and the person-or-loc recursive scope from decision #2) rather than building a new one; also
-   extend `reviews` RLS to grant read access by resolved hierarchy scope, not just `accessible_locs`.
-   Foundational — #4, #6, #7 (new-manager panel), and the promotion/transfer scoring all depend on
-   it. **Includes the 2026 backfill (resolved item A).**
+3. **✅ SHIPPED — Person/role/store effective-dated assignment model.** Extended the existing,
+   previously-unused `staff_assignments` table into a real `{person, role, target_type, target,
+   start, end}` reports-to graph + `src/engine/assignment-graph.js` (`resolveScope`/`whoOversees`)
+   — **Phase 3a, dispatch #150, v5.191**, includes the 2026 backfill (resolved item A). **Phase
+   3b, dispatch #151, v5.192**, wires it into `reviews`' actual RLS for real hierarchy-scoped read
+   AND write access, replacing `accessible_locs`-only gating (additive, not a replacement) — also
+   found and fixed a real pre-existing bug in two untouched policies (`ANY(subquery)` Postgres
+   parsing gotcha) blocking their own installation. **Both phases' SQL not yet applied to
+   production** — see dispatch-150.md/dispatch-151.md and their PR bodies (#802/#805) for exact SQL
+   and live verification steps. Foundational — #4, #6, #7 (new-manager panel), and the
+   promotion/transfer scoring all depend on it.
 4. **Data model restructure**: per-person yearly review records replacing per-half records, with
    the Q1-Q4 + H1/H2 + full-year rollup view.
 5. **Promotion/transfer segmented scoring**, built on #3 and #4, including the propose-then-
