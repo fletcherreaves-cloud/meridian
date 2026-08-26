@@ -84,6 +84,39 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-26, v5.184, direct fix, no dispatch): Retention Rollup's "Labor % Δ" was
+  100x too big — owner caught it live within minutes of #146 shipping real data.** A
+  "22.02% → 21.75%" Before→Since pair (0.27pp) was rendering as "-27.43pp". Root cause: `laborPct`
+  is already percent-scale everywhere in `schedule-summary.js`/`schedule-retention.js` (the
+  former's own `// % scale` comment), so `laborPctDelta = b.laborPct - a.laborPct`
+  (`schedule-retention.js:618`) is already in percentage points — the rollup table AND its CSV
+  export both multiplied it by 100 again. The pure `aggregateRetentionRollup()` math was always
+  right (dispatch #141's tests already covered it); only the display layer was wrong, and no
+  existing render test ever populated the table (every dispatch-141 render test hits the empty
+  "no marks" state since Supabase isn't configured in tests) — so this shipped invisibly for
+  weeks and only surfaced the moment #146 gave it real marks to render. Fixed both call sites
+  (`src/views/schedule-retention.js:718,739`); added
+  `src/__tests__/schedule-retention-rollup-labor-delta-scale.test.js`, which mocks
+  `loadRetentionMarks` to actually populate the table (the exact gap that let this ship) and
+  checks the rendered pp text against the Before→Since cell's own values.
+  **Same session, same owner ask: "2nd Side Healthy Usage (%)" now auto-populates.** Owner: *"I
+  know I have 2nd Side Healthy Usage inactive for scoring atm, but we need to populate it as well
+  — it is KVS Usage metric. Target available in yearly targets under Healthy Use 2nd Side."*
+  Found both sides already real and just unwired: the actual reads from `metric-source.js`'s
+  already-registered `kvsHealthy` source (glimpse/opsService/qsrActSummary cloud-first, manual
+  `ds.opsRows.kvsu` fallback) via the same `metricAvg()` pattern the KVS Time metric right above
+  it already uses; the target is `parseYearlyTargets`'s real, already-persisted
+  `yearly_targets.kvs_usage_pct` (`t.tKvsu`), just missing a `REVIEW_METRIC_TARGET_FIELD` entry.
+  Both wired; `scored:false` (reference-only) left exactly as the owner specified — this only
+  fills the numbers, doesn't turn scoring on.
+  **Investigated, NOT fixed: "Delivery Wait (sec)" target.** The wiring (`delivWait: 'tMcdWait'`)
+  is already correct and generic — but live Supabase shows `yearly_targets.mcd_wait_time` is
+  `null` for **all 27 stores**, while neighboring McDelivery columns parsed from the same
+  workbook section (`mcd_gcrd`, `dig_app_gcrd`) are populated for every store. This is a strong
+  signal of a header-name mismatch in `parseYearlyTargets` (checks only 'McDelivery Restaurant
+  Wait Time'/'McDelivery Wait Time'), not a genuine data gap — but confirming the real header
+  text needs the current yearly targets workbook, which isn't in this session. Flagged to the
+  owner, not guessed at.
 - **✅ SHIPPED (2026-08-26, v5.183): Dispatch #146 merged — Retention Rollup workshop-week marks
   now pre-populate from the Organization Structure workbook** (PR #770). Independently verified
   before merge: fresh worktree merge onto `origin/main`, full suite **2659/2659 passing** (up
