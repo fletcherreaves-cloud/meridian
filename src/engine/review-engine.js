@@ -419,6 +419,158 @@ export async function syncReviewsFromSupabase(sb) {
   }
 }
 
+// ── Locked-actual overrides (dispatch #149) ────────────────────────────────────
+// The bug this fixes: autoPopulateKPIs (above) unconditionally overwrites every src:'auto'
+// KPI actual on every run -- and that is now CORRECT, deliberate behavior (always show the
+// freshest cloud data), not a bug, per the plan doc's "Recommended data-shape approach"
+// section. What WAS a bug is that a manual correction had nowhere else to live except that
+// same field, so it got silently destroyed the next re-run. The fix: a manual correction is
+// captured as a separate, append-only OVERRIDE RECORD (this section) instead of being written
+// into kpis.months directly -- it can never be clobbered by autoPopulateKPIs re-running,
+// because that function never touches this storage. The effective actual for display AND
+// scoring = the latest override for that (review, month, metric) if one exists, else whatever
+// autoPopulateKPIs last wrote -- resolved ONCE via applyReviewOverrides() below, so every
+// downstream consumer (KPIGrid, computeScores, computeScoreBreakdown, rateMetric, the print
+// exports) sees the resolved value automatically without its own override-awareness.
+//
+// Authorization for WHO may create an override record lives in permissions.js
+// (canOverrideLockedActual / REVIEW_ROLE_TO_LADDER) and, for real enforcement, in
+// supabase/schema.sql's review_overrides RLS insert policy -- this module only stores/resolves
+// records; it does not itself gate who may call addReviewOverride (the UI and the database both
+// gate that, independently).
+const REVIEW_OVERRIDES_KEY = 'mf_review_overrides_v1'; // { [reviewId]: OverrideRecord[] }
+
+// Exactly the 3 options the owner specified, in his own words (plan doc decision #4): "a
+// dropdown for Inaccurate Data, Incomplete Data, or Something Else (Explanation required)."
+export const OVERRIDE_REASONS = [
+  { value: 'inaccurate_data', label: 'Inaccurate Data' },
+  { value: 'incomplete_data', label: 'Incomplete Data' },
+  { value: 'something_else',  label: 'Something Else' },
+];
+export const OVERRIDE_REASON_LABEL = Object.fromEntries(OVERRIDE_REASONS.map(r => [r.value, r.label]));
+
+// Client-side mirror of schema.sql's review_overrides check constraint (reason must be one of
+// the 3 values; note required when reason is 'something_else') -- validated in both places,
+// neither trusts the other alone (the DB constraint is the real backstop; this is fast UI
+// feedback before a round trip).
+export function validateOverrideInput({ reason, note } = {}) {
+  if (!OVERRIDE_REASONS.some(r => r.value === reason)) return { ok: false, error: 'Select a reason.' };
+  if (reason === 'something_else' && !(note && String(note).trim())) {
+    return { ok: false, error: 'An explanation is required for "Something Else".' };
+  }
+  return { ok: true };
+}
+
+function _allOverrides() {
+  try {
+    const a = JSON.parse(localStorage.getItem(REVIEW_OVERRIDES_KEY) || '{}');
+    return a && typeof a === 'object' && !Array.isArray(a) ? a : {};
+  } catch { return {}; }
+}
+function _saveAllOverrides(all) {
+  try { localStorage.setItem(REVIEW_OVERRIDES_KEY, JSON.stringify(all)); } catch {}
+}
+
+export function getReviewOverrides(reviewId) {
+  return _allOverrides()[reviewId] || [];
+}
+
+// Appends one override record (an audit-trail entry, never mutated once written) for
+// (reviewId, month, metricKey). Throws on invalid input (reason/note) -- callers (the UI form)
+// should validate first via validateOverrideInput for a better error message, but this is the
+// hard backstop so a bad record can never be constructed by any caller, tested or not.
+// previousValue is captured purely for the audit trail (what the resolved cell showed just
+// before this override) -- resolution itself (effectiveOverrideFor) never reads it back, it
+// always uses the LATEST record for a cell.
+export function addReviewOverride(reviewId, { month, metricKey, value, reason, note, previousValue, overriddenByRole } = {}) {
+  const check = validateOverrideInput({ reason, note });
+  if (!check.ok) throw new Error(check.error);
+  if (value == null || !isFinite(value)) throw new Error('Enter a numeric value.');
+  const record = {
+    id: `ov_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    reviewId, month: Number(month), metricKey, value: Number(value),
+    previousValue: previousValue == null ? null : Number(previousValue),
+    reason, note: note ? String(note).trim() : '',
+    overriddenByRole: overriddenByRole || null,
+    overriddenAt: new Date().toISOString(),
+  };
+  const all = _allOverrides();
+  all[reviewId] = [...(all[reviewId] || []), record];
+  _saveAllOverrides(all);
+  if (_sb) _pushOverride(_sb, record);
+  return record;
+}
+
+async function _pushOverride(sb, record) {
+  try {
+    const { error } = await sb.from('review_overrides').insert({
+      review_id: record.reviewId, month: record.month, metric_key: record.metricKey,
+      value: record.value, previous_value: record.previousValue,
+      reason: record.reason, note: record.note || null,
+    });
+    if (error) console.error('Meridian: Supabase override push error', error.message);
+  } catch (e) {
+    console.error('Meridian: Supabase override push failed', e);
+  }
+}
+
+// Pulls every override row the current user's RLS grants them for ONE review into localStorage
+// (scoped per-review, not a global sync — matches how a review is opened one at a time).
+// Defaults to the module-registered client (set via setSupabaseClient), same pattern as the
+// rest of this file's Supabase helpers, but accepts an explicit client for testing.
+export async function syncReviewOverridesFromSupabase(reviewId, sb = _sb) {
+  if (!sb || !reviewId) return getReviewOverrides(reviewId);
+  try {
+    const { data, error } = await sb.from('review_overrides').select('*')
+      .eq('review_id', reviewId).order('overridden_at', { ascending: true });
+    if (error) { console.error('Meridian: Supabase override sync error', error.message); return getReviewOverrides(reviewId); }
+    const mapped = (data || []).map(r => ({
+      id: r.id, reviewId: r.review_id, month: r.month, metricKey: r.metric_key,
+      value: r.value, previousValue: r.previous_value, reason: r.reason, note: r.note || '',
+      overriddenByRole: r.overridden_by_role, overriddenAt: r.overridden_at,
+    }));
+    const all = _allOverrides();
+    all[reviewId] = mapped;
+    _saveAllOverrides(all);
+    return mapped;
+  } catch (e) {
+    console.error('Meridian: Supabase override sync failed', e);
+    return getReviewOverrides(reviewId);
+  }
+}
+
+// The single ACTIVE override for (month, metricKey) — the latest record by overriddenAt.
+// Append-only audit trail: earlier records for the same cell are history, not competing state,
+// so "effective" is always just "most recent."
+export function effectiveOverrideFor(overrides, month, metricKey) {
+  const matches = (overrides || []).filter(o => o.month === month && o.metricKey === metricKey);
+  if (!matches.length) return null;
+  return matches.reduce((latest, o) => (new Date(o.overriddenAt) > new Date(latest.overriddenAt) ? o : latest));
+}
+
+// Resolves the EFFECTIVE review: every (month, metricKey) with an active override has its
+// kpis.months value replaced by the override's value. Call this ONCE per render/score pass and
+// hand the result to every consumer instead of the raw review — this is what closes scope item
+// 3 ("check every call site, don't just fix the input cell") without needing computeScores,
+// computeScoreBreakdown, rateMetric, or the print exports to know overrides exist at all.
+// Never mutates the input; returns the SAME review object (not a copy) when there is nothing to
+// resolve, so callers can cheaply no-op on identity when appropriate.
+export function applyReviewOverrides(review, overrides) {
+  if (!review?.kpis?.months || !overrides || !overrides.length) return review;
+  const latestByCell = {};
+  for (const o of overrides) {
+    const k = o.month + ':' + o.metricKey;
+    if (!latestByCell[k] || new Date(o.overriddenAt) > new Date(latestByCell[k].overriddenAt)) latestByCell[k] = o;
+  }
+  if (!Object.keys(latestByCell).length) return review;
+  const months = JSON.parse(JSON.stringify(review.kpis.months));
+  for (const o of Object.values(latestByCell)) {
+    const mo = months[o.month];
+    if (mo) mo[o.metricKey] = o.value;
+  }
+  return { ...review, kpis: { ...review.kpis, months } };
+}
+
 // Pull org config from Supabase and merge it into localStorage.
 export async function syncConfigFromSupabase(sb, key = 'review_config') {
   if (!sb) return;
@@ -918,6 +1070,13 @@ export function missingReviewTargets(review, cfg, ds) {
   return out;
 }
 
+// Dispatch #149: this function unconditionally overwrites every src:'auto' metric's mo[key] on
+// every run, by design — see the "Locked-actual overrides" section above (near
+// applyReviewOverrides) for the full rationale. A manual correction NEVER goes into mo[key]
+// anymore (KPIGrid makes src:'auto' actual cells read-only); it lives in a separate override
+// record, so this function re-running freely can never destroy one. Do not add a null-check
+// guard here to "fix" the overwrite — that would make the review show stale cloud data instead
+// of the current one, which is the opposite of correct.
 export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;
   const loc = review.loc;
