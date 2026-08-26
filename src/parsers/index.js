@@ -2,6 +2,7 @@
 import { loadXLSX } from '../lib/xlsx-lazy.js';
 import { DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
 import { weekStartOf } from '../engine/schedule-summary.js';
+import { hmsToSec } from '../engine/people-reports.js';
 
 // #248 — xlsx lazy-loaded (see lib/xlsx-lazy.js's header for the full rationale). The only
 // direct XLSX.* readers in this file — parseRaw, parseProjectionsFile, sniffSheetType,
@@ -778,6 +779,10 @@ function parseYearlyTargets(wb){
     digAppPct: fc(h,'Digital App Percent of Sales','Digital App % of Sales','Digital App Percent'),
     digAppGCRD:fc(h,'Digital App (GC/R/D)','Digital App GC/R/D'),
     mcdGCRD:   fc(h,'McDelivery (GC/R/D)','McDelivery GC/R/D'),
+    // "McDelivery Restaurant Wait Time" is a MERGED 2-column header in the real workbook
+    // (owner, 2026-08-26): the header text lands on the LEFT column, which holds a literal "<"
+    // for every row; the actual mm:ss value sits one column to the right. fc() correctly finds
+    // the left (header-text) column — the value read below is deliberately offset +1, not a bug.
     mcdWait:   fc(h,'McDelivery Restaurant Wait Time','McDelivery Wait Time'),
     mcdStars:  fc(h,'McDelivery Star Rating','McDelivery Stars'),
     crewStaff: fc(h,'Crew Staffing Target','Crew Staffing'),
@@ -808,13 +813,19 @@ function parseYearlyTargets(wb){
     // Full column capture — Voice EAD + Digital + McDelivery + staffing/headcount + turnover.
     // %-style → parsePct; counts/times/ratings → parseFloat. Null-safe: only set when present.
     const pf=(c)=>{const v=parseFloat(r[c]);return isNaN(v)?null:v;};
+    // Strips a leading "<"/">" comparison prefix (e.g. the McDelivery Star Rating column's
+    // real value ">4.5") before parseFloat, which otherwise returns NaN on the bare symbol.
+    const pfCmp=(c)=>{const v=parseFloat(String(r[c]==null?'':r[c]).replace(/^[<>]\s*/,''));return isNaN(v)?null:v;};
     if(C.voiceEAD>=0&&parsePct(r[C.voiceEAD])!=null) t.tVoiceEAD=parsePct(r[C.voiceEAD]);
     if(C.contacts1800>=0&&pf(C.contacts1800)!=null)  t.t1800Contacts=pf(C.contacts1800);
     if(C.digAppPct>=0&&parsePct(r[C.digAppPct])!=null) t.tDigAppPct=parsePct(r[C.digAppPct]);
     if(C.digAppGCRD>=0&&pf(C.digAppGCRD)!=null)      t.tDigAppGCRD=pf(C.digAppGCRD);
     if(C.mcdGCRD>=0&&pf(C.mcdGCRD)!=null)            t.tMcdGCRD=pf(C.mcdGCRD);
-    if(C.mcdWait>=0&&pf(C.mcdWait)!=null)            t.tMcdWait=pf(C.mcdWait);
-    if(C.mcdStars>=0&&pf(C.mcdStars)!=null)          t.tMcdStars=pf(C.mcdStars);
+    // Value column is +1 from the matched header (see the "<"-merge comment on C.mcdWait above);
+    // mm:ss (or h:mm:ss) duration string -> seconds, matching restaurantTimeSec's ACTUAL-side
+    // scale (review-engine.js's delivWait metric) via the shared hmsToSec helper.
+    if(C.mcdWait>=0){const wsec=hmsToSec(r[C.mcdWait+1]);if(wsec!=null)t.tMcdWait=wsec;}
+    if(C.mcdStars>=0&&pfCmp(C.mcdStars)!=null)       t.tMcdStars=pfCmp(C.mcdStars);
     if(C.crewStaff>=0&&pf(C.crewStaff)!=null)        t.tCrewStaffing=pf(C.crewStaff);
     if(C.shiftLead>=0&&pf(C.shiftLead)!=null)        t.tShiftLeaders=pf(C.shiftLead);
     if(C.mgrTgt>=0&&pf(C.mgrTgt)!=null)              t.tManagers=pf(C.mgrTgt);

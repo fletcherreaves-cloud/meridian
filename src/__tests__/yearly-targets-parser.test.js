@@ -41,3 +41,31 @@ describe('parseYearlyTargets — Table 1 (Index + Restaurant layout)', () => {
     expect(y['3708'].tKvst).toBe(45);
   });
 });
+
+// Owner-reported (2026-08-26), from a live screenshot of the real workbook: "McDelivery
+// Restaurant Wait Time" is a MERGED 2-column header — the header text lands on the left
+// column, which holds a literal "<" for every row, and the real mm:ss value sits one column
+// to the right ("It's in a split column so its the one to the right of '<'"). Measured live
+// against Supabase the same day: yearly_targets.mcd_wait_time was null for all 27 stores while
+// neighboring McDelivery columns parsed fine — this fixture reproduces exactly that layout so
+// a regression (reading the "<" column again) fails loudly instead of silently going null.
+// McDelivery Star Rating has its own bug in the same section: real values are written as
+// ">4.5" (a comparison prefix + number in ONE cell, not a split column) — plain parseFloat(">4.5")
+// returns NaN.
+describe('parseYearlyTargets — McDelivery Restaurant Wait Time (merged "<" column) + Star Rating (">" prefix)', () => {
+  const aoa = [
+    ['Restaurant', 'OEPE PACE', 'McDelivery (GC/R/D)', 'McDelivery Restaurant Wait Time', null, 'McDelivery Star Rating'],
+    ['3708 - ARDMORE', 140, 61, '<', '03:00', '>4.5'],
+    ['5183 - CHICKASHA', 145, 89, '<', '02:30', '>4.5'],
+  ];
+  const y = parseYearlyTargets(wbFromAOA(aoa));
+
+  it('reads the wait-time VALUE from the column right of the "<" header cell, converted mm:ss -> seconds', () => {
+    expect(y['3708'].tMcdWait).toBe(180);   // 03:00 -> 180s, NOT parseFloat('<') = NaN/undefined
+    expect(y['5183'].tMcdWait).toBe(150);   // 02:30 -> 150s
+  });
+  it('strips the leading ">" on Star Rating before parsing the number', () => {
+    expect(y['3708'].tMcdStars).toBeCloseTo(4.5, 5);
+    expect(y['5183'].tMcdStars).toBeCloseTo(4.5, 5);
+  });
+});

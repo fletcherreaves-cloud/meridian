@@ -41,13 +41,22 @@ describe('KPI_REGISTRY', () => {
     }
   });
 
-  // The audit's OTHER finding (dispatch #109 item #8): tVoiceEAD/t1800Contacts/tMcdStars
-  // have a real TARGET (dispatch #107's yearly workbook) but no actual-data source anywhere
-  // in the codebase (parseTargets is the only place those column headers appear) — the
-  // dispatch explicitly says a metric with only one side wired is worse than a documented
-  // gap, so these must NOT be in the picker.
+  // The audit's OTHER finding (dispatch #109 item #8): t1800Contacts has a real TARGET
+  // (dispatch #107's yearly workbook) but no actual-data source anywhere in the codebase
+  // (parseTargets is the only place that column header appears) — a metric with only one
+  // side wired is worse than a documented gap, so it must NOT be in the picker.
+  // 'voiceEAD' here is a literal string that was NEVER a real review key (dispatch #145 added
+  // this concept under the key 'ead', not 'voiceEAD') — kept in the list because it's still
+  // vacuously true, not because it enforces anything real; do not read its presence as evidence
+  // the exclusion policy still applies to Voice EAD.
+  // 'mcdStars' REMOVED (this dispatch, 2026-08-26) — it now IS a real review metric (target
+  // auto from the yearly workbook, actual manual pending a real source), the exact same
+  // "one side wired, scored:false, picker-visible" shape dispatch #145 already established for
+  // `ead`/`epb2b`. KPI_REGISTRY's own "flattens every default-review metric" test above requires
+  // this — a metric in DEFAULT_REVIEW_CONFIG.metrics is unconditionally picker-visible by
+  // design, so excluding it here would contradict that test, not just this one.
   it('deliberately excludes the yearly-workbook-only fields with no actual source', () => {
-    for (const key of ['voiceEAD', 'contacts1800', 'mcdStars']) {
+    for (const key of ['voiceEAD', 'contacts1800']) {
       expect(kpiByKey(key)).toBeNull();
     }
   });

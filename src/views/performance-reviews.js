@@ -218,6 +218,8 @@ function HelpGuideModal({onClose, zIndex = Z.modal}) {
       SRC('Food Over Base % (FOB)', 'QSRSoft → Operations Report → FOB Section → FOB %'),
       SRC('Voice OSAT',             'SMG FullScale upload → Overall Satisfaction → 5-star % (auto-filled per month from uploaded FullScale report)'),
       SRC('Delivery Wait (sec)',     'QSRSoft → Reports → Sales → McDelivery 3PO → Restaurant Time (cloud-pulled, dispatch #109)'),
+      SRC('McDelivery Star Rating', 'Target auto-fills from the yearly targets workbook ("McDelivery Star Rating"). No actual-data source exists anywhere in the app yet — enter manually if available.'),
+      SRC('2nd Side Healthy Usage (%)', 'Auto from KVS Healthy Usage (cloud-first: Daily Glimpse/OpsService/QSR Act Summary; manual Ops upload fallback). Target auto-fills from the yearly targets workbook ("Healthy Use 2nd Side").'),
       SRC('Digital App GC/R/D',     'QSRSoft → Reports → Digital → Digital App → Digital App GC/R/D (cloud-pulled)'),
       SRC('Delivery GC/R/D',        'QSRSoft → Dashboard → Digital Snapshot → McDelivery row → G/R/D column (cloud-pulled)'),
       SRC('Shift Certified Managers','Altametrics → eHR → Active/LOA Employees → count Cert. Swing Mgr (cloud-pulled, dispatch #109)'),

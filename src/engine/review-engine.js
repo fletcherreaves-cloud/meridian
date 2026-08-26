@@ -39,6 +39,15 @@ export const DEFAULT_REVIEW_CONFIG = {
       { key:'epb2b',      label:'EPB2B (Pace Portal, %)',     weight:0.10, better:'lower',  unit:'pct', scored:true,  t:[-0.02,0.02,0.04], src:'manual',              pctInput:true, note:'Lower EPB2B = better' },
       { key:'r2p',        label:'R2P Front Counter (sec)',    weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-5,5,10],         src:'auto', field:'r2p',        note:'Target = store R2P target (sec)' },
       { key:'delivWait',  label:'Delivery Wait (sec)',        weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-30,0,120],       src:'auto', field:'restaurantTimeSec', note:'Auto: McDelivery 3PO Restaurant Time (cloud) vs store target' },
+      // McDelivery Star Rating (owner, 2026-08-26: "let's wire in Star Rating as well"). No
+      // ACTUAL-data source exists anywhere in the app (no parser/cloud stream emits a star-
+      // rating field) — same state EAD/EPB2B are already in, so this follows their exact
+      // precedent: target real and auto (yearly workbook's "McDelivery Star Rating" column ->
+      // tMcdStars, wired below), actual manual until a real source shows up. scored:false
+      // (reference-only) rather than guessing a weight/threshold allocation with zero live data
+      // to calibrate against — same reasoning secondSide above already used; flip to scored:true
+      // once real actuals exist to validate a threshold band against.
+      { key:'mcdStars',   label:'McDelivery Star Rating',      weight:0.05, better:'higher', unit:'abs', scored:false, t:[0,-0.2,-0.4],     src:'manual',              note:'Not scored — reference only. Target auto from yearly workbook (McDelivery Star Rating); no actual-data source exists yet, enter manually' },
       { key:'kvs',        label:'KVS Time (sec)',             weight:0.10, better:'lower',  unit:'abs', scored:true,  t:[-3,3,6],          src:'auto', field:'kvst',       note:'Target = store KVS target (sec)' },
       { key:'secondSide', label:'2nd Side Healthy Usage (%)', weight:0.05, better:'higher', unit:'pct', scored:false, t:[0.05,-0.05,-0.10],src:'auto', field:'kvsHealthy', pctInput:true, note:'Not scored — reference only. Auto from KVS Healthy Usage (cloud-first, manual Ops upload fallback); target from yearly workbook "Healthy Use 2nd Side"' },
       // Dispatch #132 item 2, investigated (NOT wired to t1800Contacts): the yearly workbook's
@@ -508,7 +517,7 @@ export function blankMonthKPIs(year, month) {
     r2p:null,r2pTgt:null, delivWait:null,delivWaitTgt:null, kvs:null,kvsTgt:null,
     secondSide:null,secondSideTgt:null, complaints:null,complaintsTgt:null,
     fsAudits:null,fsAuditsTgt:null, fsEcoSure:null,fsEcoSureTgt:null, fsTablet:null,fsTabletTgt:null,
-    eap:null,eapTgt:null, ead:null,eadTgt:null,
+    eap:null,eapTgt:null, ead:null,eadTgt:null, mcdStars:null,mcdStarsTgt:null,
     salesVsTgt:null,salesVsTgtTgt:null, digitalGC:null,digitalGCTgt:null, delivGC:null,delivGCTgt:null,
     foodOB:null,foodOBTgt:null, labor:null,laborTgt:null,
     opSupplies:null,opSuppliesTgt:null, totalProfit:null,totalProfitTgt:null,
@@ -773,6 +782,9 @@ export const REVIEW_METRIC_TARGET_FIELD = {
   // owner-confirmed 2026-08-26 ("Target available in yearly targets under Healthy Use 2nd
   // Side"). Metric stays scored:false; this only lets the target auto-fill.
   secondSide: 'tKvsu',
+  // mcdStars: real, already-parsed yearly-workbook target (parseYearlyTargets's mcdStars ->
+  // t.tMcdStars -> yearly_targets.mcd_star_rating), just never wired to a review metric.
+  mcdStars: 'tMcdStars',
   // labor: was 'tLabor' — the field labor-basis.js's own LABOR_BASIS_FIELDS comment names
   // as "legacy... static only, no monthly path — the field the bug graded on" (issue #153).
   // #153 already moved every OTHER labor-target consumer onto resolveLaborTarget()'s
