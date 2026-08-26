@@ -263,7 +263,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -283,7 +283,7 @@ import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurri
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
 import { supplementLaborWithSched } from '../engine/labor-supplement.js';
-import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, parseOrgStructure, classifyOrgStructureImport, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
 import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 // #232 Finding 3: store-dash.js (145 KB raw, plus the chart.js/auto runtime it imports at module
@@ -543,7 +543,7 @@ function DataPolicyBanner() {
 // errored so same-name collisions (browser delivered fewer files than dropped)
 // are obvious.
 function UploadSummaryModal({ report, onClose }) {
-  const { received, loaded, errored, skipped, lines, saveErrs } = report;
+  const { received, loaded, errored, skipped, lines, saveErrs, retentionImport } = report;
   const collision = received > loaded + (errored?.length || 0) + (skipped?.length || 0);
   const row = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--bdr)', fontSize: 12 };
   return h('div', { onClick: e => { if (e.target === e.currentTarget) onClose(); },
@@ -561,6 +561,13 @@ function UploadSummaryModal({ report, onClose }) {
         h('div', { style: { fontWeight: 700, marginBottom: 2 } }, '⚠ Parsed, but NOT saved to the cloud'),
         `These will vanish on reload / other devices. Cause: ${saveErrs.join('; ')}. `,
         /relation|does not exist|schema cache|find the table/i.test(saveErrs.join(' ')) ? 'Run the smg_voice_daypart SQL block in Supabase, then re-upload.' : '') : null,
+      retentionImport && h('div', { style: { fontSize: 11, color: 'var(--text2)', background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: 8, padding: '10px 12px', marginBottom: 12, lineHeight: 1.6 } },
+        h('div', { style: { fontWeight: 700, marginBottom: 4, color: 'var(--text)' } }, '📋 Retention Rollup — workshop weeks pre-populated from Organization Structure'),
+        h('div', null, `✓ ${retentionImport.marked} store${retentionImport.marked === 1 ? '' : 's'} marked`),
+        h('div', null, `⏭ ${retentionImport.skippedFuture} skipped — 1st Schedule Week is still in the future`),
+        h('div', null, `🔒 ${retentionImport.skippedExisting} skipped — already had a manual mark (not overwritten)`),
+        retentionImport.noDate > 0 ? h('div', null, `— ${retentionImport.noDate} had no 1st Schedule Week date in the sheet`) : null,
+        retentionImport.saveErrors > 0 ? h('div', { style: { color: 'var(--crit)' } }, `⚠ ${retentionImport.saveErrors} failed to save — see console`) : null),
       (lines || []).map((l, i) => h('div', { key: i, style: row },
         h('div', { style: { fontWeight: 600 } }, l.label, h('span', { style: { color: 'var(--text3)', fontWeight: 400 } }, `  ·  ${l.files} file${l.files === 1 ? '' : 's'}`)),
         h('div', { style: { color: 'var(--text3)', textAlign: 'right', maxWidth: 220 } }, l.months && l.months.length ? l.months.join(', ') : '—'))),
@@ -2177,6 +2184,7 @@ function App() {
     const loaded=[];
     const _skipped=[]; // period-summary Operations Reports refused (no daily dates)
     const _errored=[]; // files that threw during parse (surfaced in the upload summary)
+    let _retentionImport=null; // Organization Structure "1st Schedule Week" import summary (dispatch #146)
     const _toDs=r=>r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10);
     const _prevDarKeys   =new Set((currentDS.darRows      ||[]).map(r=>r.loc+'|'+_toDs(r)+'|'+(r.hour||'')));
     // Track rows parsed in this upload batch so we always upsert them to Supabase (overwrites stale data for corrected re-uploads)
@@ -2318,6 +2326,33 @@ function App() {
               saveEmployeeSkills(ppl.employees,{rosterLoc,replace:!!rosterLoc}).catch(e=>console.warn('[employee_skills] save error:',e));
             }
             loaded.push({name:file.name,type});
+          } else if(type.type==='org-structure'){
+            // Organization Structure workbook → pre-populate Retention Rollup workshop-week
+            // marks (dispatch #146) from Scheduling Setup's "1st Schedule Week" column — the
+            // date each store's first live LifeLenz schedule week under the new scheduling
+            // process actually landed. Only rows with scheduleWeekDate <= today are marked (a
+            // confirmed "has this actually happened" signal, per dispatch #146's engagement-
+            // field correlation); future-dated rows are never imported. Skip-if-already-marked
+            // by default — a mark set manually from the Training Retention tab is never
+            // silently overwritten by this import (it could reflect a real on-the-ground
+            // correction the sheet doesn't know about).
+            const orgRows=parseOrgStructure(wb);
+            let existingMarks=[];
+            try{ existingMarks=await loadRetentionMarks(); }catch(e){ console.warn('[org-structure] loadRetentionMarks failed:',e); }
+            const _existingByLoc={}; for(const m of existingMarks) _existingByLoc[String(m.loc)]=m.weekKey;
+            const {toMark,skippedFuture,skippedExisting,noDate}=classifyOrgStructureImport(orgRows,_existingByLoc);
+            let marked=0,saveErrors=0;
+            const markedStores=[];
+            for(const {loc,weekKey} of toMark){
+              try{
+                const res=await saveRetentionMark(loc,weekKey);
+                if(res&&res.error){ saveErrors++; console.warn('[org-structure] saveRetentionMark error for',loc,res.error); continue; }
+                marked++; markedStores.push(loc);
+              }catch(e){ saveErrors++; console.warn('[org-structure] saveRetentionMark threw for',loc,e); }
+            }
+            console.log(`[Meridian] Organization Structure: ${marked} marked, ${skippedFuture} skipped (future), ${skippedExisting} skipped (already marked), ${noDate} no date — from ${file.name}`);
+            _retentionImport={marked,skippedFuture,skippedExisting,noDate,saveErrors,markedStores,total:orgRows.length};
+            loaded.push({name:file.name,type:{...type,label:`Organization Structure — ${marked} marked, ${skippedFuture} skipped (future), ${skippedExisting} already marked`}});
           } else {
             // Guard: refuse a period-summary Operations Report (no per-day date
             // column). Daily rows are the source of truth — a period total
@@ -2460,7 +2495,7 @@ function App() {
       // Cloud-save problems (e.g. a missing Supabase table) — parsing succeeds
       // but the data never persists, so the panel only shows the current session.
       const saveErrs=[...new Set(loaded.filter(f=>f.saveErr).map(f=>f.saveErr))];
-      setUploadReport({ received:fileArr.length, loaded:loaded.length, errored:_errored.slice(), skipped:_skipped.slice(), lines, saveErrs });
+      setUploadReport({ received:fileArr.length, loaded:loaded.length, errored:_errored.slice(), skipped:_skipped.slice(), lines, saveErrs, retentionImport:_retentionImport });
     }catch(e){ console.warn('[upload-summary]',e); }
     // ── Persist to IndexedDB (survives refresh) ──────────────────────────
     (async()=>{
