@@ -4,7 +4,7 @@ import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
 import { buildHolidays } from '../utils/holidays.js';
 import { businessDate, lastClosedBusinessDay } from '../engine/swing-feed.js';
-import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS, supervisorOf } from '../constants.js';
+import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, getKB, EVENT_TYPES, INV_ORG_COORDS, supervisorOf, supervisorGroups } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
@@ -2050,7 +2050,11 @@ function OrgView({stores, ds, settings, onSelectStore}) {
   // same way DistrictGrid does, from the ds this component now also receives.
   const priceChanges = useMemo(()=>lastPriceChangeByStore(ds&&ds.pmixRows||[]),[ds&&ds.pmixRows]);
   const operators = settings.operators||{};
-  const supervisors = settings.supervisorGroups||{};
+  // Dispatch #144 flagged this as the one call site its own conversion left behind: settings.
+  // supervisorGroups is a save-time snapshot (stale the moment Settings recomputes it), same bug
+  // #139 fixed everywhere else. Live supervisorGroups() (constants.js, effective-dated via
+  // whoRan/orgAssignments) is the always-current source every already-fixed panel reads.
+  const supervisors = supervisorGroups()||{};
   const byOp = Object.entries(operators).map(([name,locs])=>({name,stores:stores.filter(s=>locs.includes(s.loc))})).filter(g=>g.stores.length>0);
   const bySup = Object.entries(supervisors).map(([name,locs])=>({name,stores:stores.filter(s=>locs.includes(s.loc))})).filter(g=>g.stores.length>0);
   const [view,setView]=useState('operator');
