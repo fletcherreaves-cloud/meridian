@@ -1,7 +1,22 @@
 // Meridian — Permission Engine
 // Roles are org-configurable (not hardcoded). Each role has a level (lower = more authority),
 // a set of permission toggles, and optional metadata. Level 1 roles always bypass all checks.
-
+//
+// Dispatch #148 (Performance Review continuity, Phase 1) — the real 7-rung reviewer-hierarchy
+// ladder, replacing the old 3-tier stub (admin/area_supervisor/manager only). Per
+// memory/plan-performance-review-continuity-2026-08-26.md decision #4 (sharpened by #6), the
+// real ladder a review chain walks is:
+//   SM/AM/DM (one rung, 3 titles) → GM → AS → OM → DO → VP → Owner/Developer (top)
+// `level` continues to mean "lower = more authority" (level 1 = top), consistent with the
+// existing scheme, so `sm_am_dm`=7 (bottom) up through `owner`=1 (top).
+//
+// 'admin' and 'manager' are KEPT UNCHANGED (id, level, permissions, color, system) rather than
+// renamed/collapsed into the new ladder -- flagged as a genuine ambiguity in dispatch-148.md
+// ("unclear yet whether they collapse into GM/Owner or stay distinct utility roles"). Real live
+// profiles.role values already use these exact id strings (schema.sql's `get_my_role()` /
+// `profiles.role` check constraint), so renaming or renumbering them is a live-user-affecting
+// change this dispatch does not have standing to make silently. See this dispatch's PR body for
+// the explicit open question this leaves for the PM.
 const ORG_ROLES_KEY = 'mf_org_roles_v1';
 
 // ── Permission registry ────────────────────────────────────────────────────────
@@ -114,18 +129,137 @@ const MANAGER_PERMS = {
   'security.view':          true,
 };
 
+// ── The 7-rung review-hierarchy ladder (dispatch #148) ─────────────────────────
+// SM/AM/DM (bottom, level 7) → GM → AS (`area_supervisor`, id reused from the old 3-tier stub --
+// same concept, same real profiles.role values) → OM → DO → VP → Owner/Developer (top, level 1).
+const OWNER_PERMS = { ...ADMIN_PERMS };
+
+const VP_PERMS = {
+  'reviews.view':           true,
+  'reviews.create':         true,
+  'reviews.submit':         true,
+  'reviews.approve':        true,
+  'reviews.delete':         false,
+  'reviews.customize':      false,
+  'analytics.dashboard':    true,
+  'analytics.store':        true,
+  'analytics.district':     true,
+  'analytics.labor':        true,
+  'analytics.forecasting':  true,
+  'analytics.brief':        true,
+  'analytics.ai':           true,
+  'analytics.integrity':    true,
+  'data.upload':            true,
+  'settings.view':          true,
+  'settings.edit':          false,
+  'users.manage.all':       false,
+  'users.manage.lower':     true,
+  'security.view':          true,
+};
+
+const DO_PERMS = {
+  ...VP_PERMS,
+  'analytics.integrity':    false,
+};
+
+const OM_PERMS = {
+  ...SUPERVISOR_PERMS,
+  'analytics.integrity':    true,
+};
+
+const GM_PERMS = {
+  'reviews.view':           true,
+  'reviews.create':         true,
+  'reviews.submit':         true,
+  'reviews.approve':        true,   // approves SM/AM/DM reviews for their own store
+  'reviews.delete':         false,
+  'reviews.customize':      false,
+  'analytics.dashboard':    true,
+  'analytics.store':        true,
+  'analytics.district':     false,
+  'analytics.labor':        true,
+  'analytics.forecasting':  false,
+  'analytics.brief':        true,
+  'analytics.ai':           false,
+  'analytics.integrity':    false,
+  'data.upload':            true,
+  'settings.view':          false,
+  'settings.edit':          false,
+  'users.manage.all':       false,
+  'users.manage.lower':     true,
+  'security.view':          true,
+};
+
+const SM_AM_DM_PERMS = {
+  'reviews.view':           true,   // their own review only, at the data layer
+  'reviews.create':         false,
+  'reviews.submit':         false,
+  'reviews.approve':        false,
+  'reviews.delete':         false,
+  'reviews.customize':      false,
+  'analytics.dashboard':    true,
+  'analytics.store':        true,
+  'analytics.district':     false,
+  'analytics.labor':        true,
+  'analytics.forecasting':  false,
+  'analytics.brief':        true,
+  'analytics.ai':           false,
+  'analytics.integrity':    false,
+  'data.upload':            false,
+  'settings.view':          false,
+  'settings.edit':          false,
+  'users.manage.all':       false,
+  'users.manage.lower':     false,
+  'security.view':          true,
+};
+
 export const ROLE_PERMISSION_TEMPLATES = {
-  admin:      ADMIN_PERMS,
-  supervisor: SUPERVISOR_PERMS,
-  manager:    MANAGER_PERMS,
+  admin:           ADMIN_PERMS,
+  owner:           OWNER_PERMS,
+  vp:              VP_PERMS,
+  do:              DO_PERMS,
+  om:              OM_PERMS,
+  area_supervisor: SUPERVISOR_PERMS,
+  gm:              GM_PERMS,
+  sm_am_dm:        SM_AM_DM_PERMS,
+  manager:         MANAGER_PERMS,
 };
 
 // ── Built-in roles ─────────────────────────────────────────────────────────────
+// Ordered top (most authority, level 1) to bottom (least authority, level 7+) for readability;
+// `level` is the field that actually governs authority, not array order.
 export const DEFAULT_ROLES = [
-  { id: 'admin',           label: 'Admin',           level: 1, color: '#f59e0b', system: true,  permissions: ADMIN_PERMS },
-  { id: 'area_supervisor', label: 'Area Supervisor',  level: 2, color: '#3b82f6', system: false, permissions: SUPERVISOR_PERMS },
+  // Pre-existing system/utility roles -- kept exactly as they were (see file-header note).
+  { id: 'admin',           label: 'Admin',            level: 1, color: '#f59e0b', system: true,  permissions: ADMIN_PERMS },
+  // The 7-rung review-hierarchy ladder (new, dispatch #148).
+  { id: 'owner',           label: 'Owner / Developer', level: 1, color: '#f5bc00', system: true,  permissions: OWNER_PERMS },
+  { id: 'vp',              label: 'VP',                level: 2, color: '#8b5cf6', system: true,  permissions: VP_PERMS },
+  { id: 'do',              label: 'DO (District Ops)', level: 3, color: '#6366f1', system: true,  permissions: DO_PERMS },
+  { id: 'om',              label: 'OM (Ops Manager)',  level: 4, color: '#0ea5e9', system: true,  permissions: OM_PERMS },
+  { id: 'area_supervisor', label: 'AS (Area Supervisor)', level: 5, color: '#3b82f6', system: false, permissions: SUPERVISOR_PERMS },
+  { id: 'gm',              label: 'GM (General Manager)', level: 6, color: '#14b8a6', system: true,  permissions: GM_PERMS },
+  { id: 'sm_am_dm',        label: 'SM / AM / DM',      level: 7, color: '#84cc16', system: true,  permissions: SM_AM_DM_PERMS },
+  // Pre-existing system/utility role -- kept exactly as it was (see file-header note).
   { id: 'manager',         label: 'Manager',          level: 3, color: '#22c55e', system: false, permissions: MANAGER_PERMS },
 ];
+
+// ── "N levels above" resolver (dispatch #148) ──────────────────────────────────
+// Pure function: given two role ids and a ladder (an array of role-like objects each carrying
+// `id` and `level`, e.g. DEFAULT_ROLES or a caller-supplied subset), returns how many rungs
+// apart they are on that ladder -- a positive integer if `roleId` sits below `aboveRoleId`
+// (i.e. `aboveRoleId` has more authority / a numerically lower level), or null if either id
+// isn't found in the ladder. Does NOT special-case any role (e.g. the unconditional
+// Admin/Developer "root override" from the plan doc's decision #6-C is a separate, explicit
+// check a caller adds on top of this -- this function only knows about ladder distance).
+// Intentionally standalone and NOT wired into any review-locking/visibility UI yet -- that's
+// later build-sequencing work (person/store assignment model) per dispatch-148.md scope.
+export function levelsAbove(roleId, aboveRoleId, ladder) {
+  const list = ladder || DEFAULT_ROLES;
+  const role  = list.find(r => r.id === roleId);
+  const above = list.find(r => r.id === aboveRoleId);
+  if (!role || !above || role.level == null || above.level == null) return null;
+  return role.level - above.level; // positive = `above` truly outranks `role`
+}
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 export function getOrgRoles() {
@@ -185,11 +319,18 @@ export function canManageRole(myRoleId, targetRoleId, roles) {
   return mine.level < target.level;
 }
 
-// Default permissions for a brand-new role at a given level
+// Default permissions for a brand-new role at a given level. Picks the closest built-in template
+// at or below the requested level (i.e. the least-privileged built-in that's still >= as
+// authoritative) so a new role dropped between two existing rungs gets a sane starting point --
+// extended from a flat 3-way split to match the 7-rung ladder (dispatch #148).
 export function defaultPermissionsForLevel(level) {
   if (level <= 1) return { ...ADMIN_PERMS };
-  if (level <= 2) return { ...SUPERVISOR_PERMS };
-  return { ...MANAGER_PERMS };
+  if (level <= 2) return { ...VP_PERMS };
+  if (level <= 3) return { ...DO_PERMS };
+  if (level <= 4) return { ...OM_PERMS };
+  if (level <= 5) return { ...SUPERVISOR_PERMS };
+  if (level <= 6) return { ...GM_PERMS };
+  return { ...SM_AM_DM_PERMS };
 }
 
 // Generate a unique ID for a new role from its label

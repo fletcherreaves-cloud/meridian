@@ -353,7 +353,9 @@ function RolesTab({ orgRoles, setOrgRoles }) {
         )
       ),
       div({style:{fontSize:10,color:TEXT3}},
-        'Starts with defaults for level ',newLevel<=1?'1 (admin)':newLevel<=2?'2 (supervisor)':'3+ (manager)'),
+        'Starts with defaults for level ',
+        newLevel<=1?'1 (admin/owner)':newLevel<=2?'2 (VP)':newLevel<=3?'3 (DO)':
+        newLevel<=4?'4 (OM)':newLevel<=5?'5 (area supervisor)':newLevel<=6?'6 (GM)':'7+ (SM/AM/DM)'),
       btn({onClick:addRole,disabled:!newLabel.trim(),
         style:{padding:'7px 14px',background:AMBER,color:'#000',border:'none',
           borderRadius:R,fontSize:12,fontWeight:700,cursor:newLabel.trim()?'pointer':'not-allowed',
