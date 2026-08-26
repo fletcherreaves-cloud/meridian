@@ -18,8 +18,23 @@ create table if not exists public.profiles (
   -- accessible_locs: null = all stores; array = restrict to these store location codes
   accessible_locs  text[],
   org              text check (org in ('mcdok', 'emerald')),
+  -- person: dispatch #151 (Performance Review continuity, Phase 3b) — admin-set mapping of this
+  -- login onto its identity in the staff_assignments reports-to graph (a geid for a
+  -- roster-sourced GM/AM/DM/SM role, or a plain supervisor NAME STRING for AS/OM/DO — the SAME
+  -- identity space staff_assignments.person/target already use; see that table's own header
+  -- comment and src/engine/assignment-graph.js's). Manual, not auto-derived — there is no
+  -- reliable Supabase-auth-account -> geid/name link today (confirmed by grep, per
+  -- memory/dispatch-151.md). Nullable: every profile that exists before this dispatch has no
+  -- mapping yet, which is why the RLS policies below are ADDITIVE alongside the pre-existing
+  -- accessible_locs-based ones, not a replacement of them.
+  person           text,
   created_at       timestamptz default now()
 );
+
+-- Dispatch #151 (2026-08-26): the ALTER path for the LIVE production table — same reason as
+-- every prior dispatch's ALTER block in this file (`create table if not exists` above is a
+-- no-op once `profiles` already exists). Idempotent: safe to re-run.
+alter table public.profiles add column if not exists person text;
 
 -- Dispatch #148 (2026-08-26): fixes a live 'supervisor' vs 'area_supervisor' string mismatch that
 -- predates this table having ever allowed 'area_supervisor' at all -- the ORIGINAL check
@@ -135,9 +150,14 @@ create table if not exists public.review_overrides (
 --    supervisor NAME STRING (AS/OM/DO rows seeded from src/constants.js's existing
 --    orgAssignments()/DEF_SETTINGS.supervisorGroups, which has never had anything richer than a
 --    name for a supervisor identity) — never a uuid. The old profile_id FK is dropped, not kept
---    alongside, to avoid two parallel "who is this row about" answers. A later dispatch mapping
---    an authenticated login (auth.uid() -> profiles.id) onto a `person` value in this graph
---    (needed for Phase 3b's RLS work) is real, un-built future work, not solved here.
+--    alongside, to avoid two parallel "who is this row about" answers. ✅ The Phase 3b mapping
+--    this paragraph used to describe as future work is BUILT — dispatch #151 (2026-08-26) adds
+--    `profiles.person` (admin-set, editable in src/views/admin.js) and wires it through
+--    `person_oversees_loc()`/`reviews_write_allowed()` into `reviews`' RLS below. This paragraph
+--    previously said the mapping was "real, un-built future work, not solved here" — that was
+--    true until #151 shipped; leaving it unfixed after would repeat the exact
+--    describes-code-that-no-longer-exists trap CLAUDE.md's `kind:`/`section:` rule already warns
+--    about elsewhere in this project.
 -- 2. `end_date` is KEPT (untouched) but is NOT consulted by the resolution engine. orgAssignments()
 --    — the exact pattern this dispatch was told to generalize, not reinvent — is explicitly a
 --    "start-only model: the next assignment implicitly ends the prior one" (its own header
@@ -256,6 +276,124 @@ returns text language sql immutable as $$
   end;
 $$;
 
+-- ── person_oversees_loc() — SQL mirror of whoOversees() (dispatch #151, 2026-08-26) ────────────
+-- Performance Review continuity, Phase 3b. RLS policies run inside Postgres and cannot call
+-- src/engine/assignment-graph.js's JS functions directly — same constraint dispatch #149 hit for
+-- levelsAbove(), resolved there by writing role_level()/review_role_to_ladder() as parallel SQL
+-- functions; same pattern here for the store->oversight-chain walk whoOversees(loc, date, rows)
+-- does in JS: store -> its current holder -> that holder's current holder -> ... , "latest
+-- start_date <= asof wins" at each rung (currentHolderOfTarget()'s rule, generalized from
+-- src/constants.js's whoRan()). Reads staff_assignments directly.
+--
+-- ⚠️ CYCLE SAFETY DELIBERATELY DIVERGES FROM whoOversees()'s JS BEHAVIOR — documented here, not
+-- silently assumed. whoOversees() throws AssignmentCycleError on a cycle (A reports to B who
+-- reports to A) -- correct for application code, but an RLS policy function cannot throw a
+-- friendly error per-row without breaking every query that touches a cyclic record. So this
+-- function instead caps the walk at a fixed depth (10 -- the real hierarchy is at most 5 rungs:
+-- GM is the store-level leaf so store->GM is not even a hop, then GM->AS->OM->DO->VP->Owner is 5)
+-- and simply STOPS, returning false, if the cap is hit -- a malformed cyclic assignment record
+-- silently fails to grant extra access via this path rather than crashing or hanging every query
+-- against `reviews`. See src/engine/assignment-graph.js's personOversees() for the JS-side
+-- sibling used for client-side UI gating, and that function's own header comment for how IT
+-- diverges from whoOversees() in the opposite direction (no depth cap, catches the thrown error
+-- instead) -- the two are NOT byte-identical and CAN DRIFT if one changes without the other.
+--
+-- SECURITY DEFINER: staff_assignments' own RLS (below) restricts SELECT to admin/area_supervisor
+-- logins only, so a caller of any other role invoking this function through the `reviews` RLS
+-- policies below would see zero staff_assignments rows without this -- same reason get_my_role()
+-- above is SECURITY DEFINER.
+--
+-- Target normalization: store targets are stored UNPADDED (unpadLoc()) by every writer in this
+-- codebase (scripts/backfill-staff-assignments-2026.mjs, src/engine/assignment-graph.js), same
+-- convention reviews.reviewee_loc already uses -- so `loc` and `sa.target` compare directly here,
+-- matching how reviewee_loc = any(accessible_locs) already compares directly elsewhere in this
+-- file with no re-normalization. Not re-deriving unpadLoc()'s parseInt-based normalization in SQL
+-- for a value that is, by construction, already in the same unpadded form on both sides.
+create or replace function public.person_oversees_loc(caller_person text, loc text, asof date default current_date)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  cur_type   text := 'store';
+  cur_target text := loc;
+  holder     text;
+  depth      int  := 0;
+begin
+  if caller_person is null or trim(caller_person) = '' or loc is null then
+    return false;
+  end if;
+
+  loop
+    depth := depth + 1;
+    if depth > 10 then
+      return false;  -- cycle-safety cap -- see header comment above
+    end if;
+
+    select sa.person into holder
+    from public.staff_assignments sa
+    where sa.target_type = cur_type
+      and sa.target = cur_target
+      and sa.start_date <= asof
+    order by sa.start_date desc
+    limit 1;
+
+    if holder is null then
+      return false;  -- nobody currently assigned at this rung
+    end if;
+
+    if trim(holder) = trim(caller_person) then
+      return true;
+    end if;
+
+    cur_type   := 'person';
+    cur_target := holder;
+  end loop;
+end;
+$$;
+
+-- ── reviews_write_allowed() — the shared write-scope check (dispatch #151, 2026-08-26) ─────────
+-- One helper used by BOTH "reviews: authenticated write" (insert) and "reviews: authenticated
+-- update" below, so the three-way OR isn't duplicated (and can't drift) across the two policies.
+-- Implements all three options dispatch-151.md's step 3 named, combined with OR (see this
+-- dispatch's PR body for why all three, not just one):
+--   (a) admin/owner -- unconditional, matching every other override escape hatch this feature has
+--       built so far (review_overrides' hierarchy-gated insert, canOverrideLockedActual client-side).
+--   (b) the caller's profiles.person oversees this specific review's store, per the real
+--       reports-to graph (person_oversees_loc(), above) -- the actual fix for #148's deferred gap:
+--       "does THIS caller have anything to do with THIS SPECIFIC review's store."
+--   (c) a caller with NO person mapping yet (every profile before this dispatch, and any future
+--       profile an admin hasn't gotten to) falls back to the SAME accessible_locs-based scope
+--       check the pre-existing read policies already use, PLUS the original coarse
+--       role-on-the-ladder check dispatch #148 already required -- so a caller who legitimately
+--       has accessible_locs covering the store does not regress just because `person` isn't set.
+create or replace function public.reviews_write_allowed(loc text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    public.get_my_role() in ('admin', 'owner')
+    or exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid()
+        and p.person is not null and trim(p.person) <> ''
+        and public.person_oversees_loc(p.person, loc)
+    )
+    or exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid()
+        and (p.person is null or trim(p.person) = '')
+        and public.get_my_role() in
+          ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'manager')
+        and (p.accessible_locs is null or loc = any(p.accessible_locs))
+    );
+$$;
+
 -- ── profiles RLS ──────────────────────────────────────────────────────────────
 alter table public.profiles enable row level security;
 
@@ -286,6 +424,7 @@ alter table public.reviews enable row level security;
 drop policy if exists "reviews: admin all"            on public.reviews;
 drop policy if exists "reviews: supervisor read"      on public.reviews;
 drop policy if exists "reviews: manager read own locs" on public.reviews;
+drop policy if exists "reviews: hierarchy scope read" on public.reviews;
 drop policy if exists "reviews: authenticated write"  on public.reviews;
 drop policy if exists "reviews: authenticated update" on public.reviews;
 drop policy if exists "reviews: admin delete"         on public.reviews;
@@ -296,38 +435,80 @@ create policy "reviews: admin all" on public.reviews
 -- Dispatch #148 (2026-08-26): fixed string mismatch -- was 'supervisor', but the real role id
 -- (src/engine/permissions.js DEFAULT_ROLES) has always been 'area_supervisor'. This policy has
 -- likely never matched a real logged-in supervisor before this fix.
+--
+-- ⚠️ Dispatch #151 (2026-08-26): fixed a SEPARATE, pre-existing, real bug found while live-testing
+-- THIS dispatch's own new RLS against a real Postgres 16 instance (per CLAUDE.md's "measure it,
+-- don't reason about it" standing rule) -- `x = any((select ...))` is ALWAYS parsed by Postgres's
+-- grammar as the quantified-SUBQUERY form of ANY (comparing x against each ROW the subquery
+-- returns, as a whole value of the subquery's OWN type), never as "is x a member of the array the
+-- subquery returns" -- regardless of what type that subquery actually returns. Confirmed directly
+-- (`create policy` with the ORIGINAL unfixed text fails outright: `ERROR: operator does not exist:
+-- text = text[]`), and confirmed NOT an artifact of the test harness by reproducing the identical
+-- failure with a bare literal (`select 'a'::text = any((select array['a','b']::text[]));`) --
+-- pure Postgres grammar, not this dispatch's stubs. So BOTH of these two policies, exactly as
+-- written before this fix, would fail to even CREATE on a real Postgres/Supabase instance -- this
+-- predates dispatch #151 entirely (unchanged since #148) and is unrelated to this dispatch's own
+-- design, but blocks verifying this dispatch's own additive read policy sits correctly alongside
+-- these two, so it's fixed here rather than left broken one section below new work that depends on
+-- this table's RLS being installable at all. Minimal, isolated fix: an explicit `::text[]` cast
+-- immediately after the subquery's closing paren stops the parser from matching the "ANY
+-- (subquery)" production at all (the next token is no longer a bare `select`), so it falls through
+-- to the array-ANY form instead -- confirmed working the same way. No other change to either
+-- policy's logic. **A human must verify live whether these two policies currently even EXIST in
+-- production** (see this dispatch's PR body) -- if this bug meant they silently failed to create
+-- when the schema was first pasted into the Supabase SQL editor, `area_supervisor`/`manager`
+-- logins may have had ZERO read access to `reviews` via this path (independent of whatever
+-- `accessible_locs`/`person`-hierarchy access this dispatch's own new policy separately grants).
 create policy "reviews: supervisor read" on public.reviews
   for select using (
     get_my_role() = 'area_supervisor' and (
       (select accessible_locs from public.profiles where id = auth.uid()) is null
-      or reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid()))
+      or reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid())::text[])
     )
   );
 
 create policy "reviews: manager read own locs" on public.reviews
   for select using (
     get_my_role() = 'manager' and
-    reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid()))
+    reviewee_loc = any((select accessible_locs from public.profiles where id = auth.uid())::text[])
   );
 
--- Dispatch #148 (2026-08-26): CLOSES A LIVE SECURITY GAP -- these two policies previously checked
--- only `auth.uid() is not null`, meaning ANY authenticated user, of ANY role, could insert or
--- overwrite ANY review row (see memory/plan-performance-review-continuity-2026-08-26.md decision
--- #6 gap #1, build-sequencing item #0 -- deliberately held open for this dispatch to fix
--- correctly). This is a coarse fix: it requires the caller's role be one of the roles that could
--- plausibly write a review at all (i.e. every rung of the reviewer-hierarchy ladder except the
--- bottom rung, sm_am_dm, which is only ever reviewed, never a reviewer). It does NOT yet scope
--- "can THIS role edit THIS SPECIFIC review" by hierarchy/assignment -- that's later
--- build-sequencing work (person/store assignment model, item #3) per dispatch-148.md scope.
-create policy "reviews: authenticated write" on public.reviews
-  for insert with check (
-    get_my_role() in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'manager')
+-- Dispatch #151 (2026-08-26): ADDITIVE hierarchy-scoped read, alongside (not replacing) the two
+-- accessible_locs-based policies above -- multiple PERMISSIVE policies on the same table OR
+-- together in Postgres by default (confirmed: reviews uses no RESTRICTIVE policies anywhere in
+-- this file), so a profile with no `person` mapping yet (every profile before this dispatch, per
+-- profiles' own header comment above) keeps whatever access accessible_locs already granted it --
+-- this policy only ever ADDS visibility, never removes it. Grants SELECT when the caller's
+-- profiles.person is set AND the real reports-to graph (person_oversees_loc(), above) says that
+-- person oversees this review's store -- e.g. a DO sees every review under every OM/AS/store in
+-- their resolved scope without accessible_locs having to be hand-flattened to match.
+create policy "reviews: hierarchy scope read" on public.reviews
+  for select using (
+    exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid()
+        and p.person is not null and trim(p.person) <> ''
+        and public.person_oversees_loc(p.person, reviews.reviewee_loc)
+    )
   );
+
+-- Dispatch #148 (2026-08-26) closed the first half of this gap: these two policies previously
+-- checked only `auth.uid() is not null`, meaning ANY authenticated user, of ANY role, could
+-- insert or overwrite ANY review row. #148's fix was coarse on purpose -- role-on-the-ladder only,
+-- explicitly NOT scoped to "can THIS caller edit THIS SPECIFIC review's store" (that comment
+-- named THIS dispatch, #151, as the fix).
+--
+-- Dispatch #151 (2026-08-26) closes the second half: both policies now go through
+-- reviews_write_allowed() (above), which requires admin/owner OR a real hierarchy relationship to
+-- THIS row's specific reviewee_loc (person_oversees_loc()) OR, for a caller with no `person`
+-- mapping yet, the same accessible_locs-based scope the read policies already use (so a caller
+-- covered by accessible_locs but not yet migrated to the person graph doesn't regress). See this
+-- dispatch's PR body for which of the three options was implemented and why (all three, combined).
+create policy "reviews: authenticated write" on public.reviews
+  for insert with check ( public.reviews_write_allowed(reviewee_loc) );
 
 create policy "reviews: authenticated update" on public.reviews
-  for update using (
-    get_my_role() in ('admin', 'owner', 'vp', 'do', 'om', 'area_supervisor', 'gm', 'manager')
-  );
+  for update using ( public.reviews_write_allowed(reviewee_loc) );
 
 create policy "reviews: admin delete" on public.reviews
   for delete using (get_my_role() = 'admin');
@@ -406,6 +587,12 @@ create policy "assignments: admin/supervisor write" on public.staff_assignments
 create index if not exists reviews_loc_idx  on public.reviews (reviewee_loc);
 create index if not exists reviews_year_idx on public.reviews (review_year, review_half);
 create index if not exists reviews_org_idx  on public.reviews (org);
+-- Dispatch #151: the new RLS policies' own profiles lookup ("what is THIS auth.uid()'s person
+-- value") is already covered by profiles' primary key (id), so this index isn't on that path --
+-- it's for the REVERSE lookup ("which profile maps to this person value"), useful for an
+-- admin-facing "who does person X log in as" query and matching assign_person_idx's role one
+-- table over (staff_assignments.person).
+create index if not exists profiles_person_idx on public.profiles (person);
 -- Dispatch #150: profile_id -> person (see staff_assignments' own header comment); the old
 -- index name/definition is dropped and replaced, plus a new index on the target side (needed by
 -- currentHolderOfTarget()/whoOversees() -- src/engine/assignment-graph.js -- which scans "every

@@ -12,7 +12,8 @@
 // to fix, not a hypothetical one.
 import { describe, it, expect } from 'vitest';
 import {
-  currentHolderOfTarget, directTargetsOf, resolveScope, whoOversees, AssignmentCycleError,
+  currentHolderOfTarget, directTargetsOf, resolveScope, whoOversees, personOversees,
+  AssignmentCycleError,
 } from '../engine/assignment-graph.js';
 
 // ── Fixture: the plan doc's own "mixed levels" example ─────────────────────────────────────
@@ -157,5 +158,63 @@ describe('whoOversees — the inverse direction (store -> who is responsible for
       { person: 'AS1', role: 'area_supervisor', target_type: 'store', target: '3708', start: '' },
     ]).map(r => r.person);
     expect(chain).toEqual(['AS1']);
+  });
+});
+
+// ── personOversees — the JS-side sibling of SQL's person_oversees_loc() (dispatch #151) ────────
+describe('personOversees — client-side UI-gating wrapper around whoOversees()', () => {
+  const rows = mixedLevelGraph();
+
+  it('the store\'s own AS oversees it', () => {
+    expect(personOversees('AS1', '101', '2026-08-01', rows)).toBe(true);
+  });
+
+  it('an OM oversees every store under its AS\'s (a rung further up the chain)', () => {
+    expect(personOversees('OM1', '104', '2026-08-01', rows)).toBe(true);
+    expect(personOversees('OM1', '101', '2026-08-01', rows)).toBe(true); // not just AS2's stores
+  });
+
+  it('a DO oversees stores reached through EITHER branch of a mixed-level assignment', () => {
+    expect(personOversees('DO1', '104', '2026-08-01', rows)).toBe(true); // via OM1 -> AS2
+    expect(personOversees('DO1', '106', '2026-08-01', rows)).toBe(true); // via standalone AS3
+  });
+
+  it('a person with no oversight relationship to the store returns false', () => {
+    expect(personOversees('AS3', '101', '2026-08-01', rows)).toBe(false); // AS3 doesn't oversee AS1's stores
+    expect(personOversees('AS1', '106', '2026-08-01', rows)).toBe(false);
+  });
+
+  it('an unknown/unmapped person returns false, not an error', () => {
+    expect(personOversees('Nobody', '101', '2026-08-01', rows)).toBe(false);
+  });
+
+  it('empty/null person returns false without touching the graph', () => {
+    expect(personOversees('', '101', '2026-08-01', rows)).toBe(false);
+    expect(personOversees(null, '101', '2026-08-01', rows)).toBe(false);
+  });
+
+  it('an unassigned store returns false for anyone', () => {
+    expect(personOversees('AS1', '999999', '2026-08-01', rows)).toBe(false);
+  });
+
+  it('returns false (not a throw) on a cyclic graph — diverges from whoOversees() itself, which throws', () => {
+    const cyclic = [
+      { person: 'A', role: 'om', target_type: 'person', target: 'B', start: '' },
+      { person: 'B', role: 'om', target_type: 'person', target: 'A', start: '' },
+      { person: 'A', role: 'om', target_type: 'store', target: '203', start: '' },
+    ];
+    expect(() => whoOversees('203', '2026-08-01', cyclic)).toThrow(AssignmentCycleError);
+    expect(personOversees('C', '203', '2026-08-01', cyclic)).toBe(false);
+  });
+
+  it('respects "latest start ≤ date wins" the same as whoOversees()', () => {
+    const reassign = [
+      { person: 'Old', role: 'gm', target_type: 'store', target: '3708', start: '' },
+      { person: 'New', role: 'gm', target_type: 'store', target: '3708', start: '2026-07-22' },
+    ];
+    expect(personOversees('Old', '3708', '2026-07-21', reassign)).toBe(true);
+    expect(personOversees('New', '3708', '2026-07-21', reassign)).toBe(false);
+    expect(personOversees('New', '3708', '2026-07-22', reassign)).toBe(true);
+    expect(personOversees('Old', '3708', '2026-07-22', reassign)).toBe(false);
   });
 });

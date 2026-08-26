@@ -57,6 +57,13 @@ function UsersTab({ orgRoles }) {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [editingLocs, setEditingLocs] = useState({});
   const [savingLocs,  setSavingLocs]  = useState({});
+  // Dispatch #151: profiles.person — admin-set mapping onto the staff_assignments reports-to
+  // graph identity space (a geid for a roster-sourced role, or a plain supervisor name string
+  // for AS/OM/DO — see src/engine/assignment-graph.js's header comment). Not auto-derived (no
+  // reliable Supabase-login -> geid/name link exists today); this is the manual editor for it,
+  // following the EXACT same inline-edit pattern as accessible_locs below, per dispatch-151.md.
+  const [editingPerson, setEditingPerson] = useState({});
+  const [savingPerson,  setSavingPerson]  = useState({});
 
   const loadUsers = useCallback(async () => {
     if (!supabase) { setLoading(false); return; }
@@ -87,6 +94,17 @@ function UsersTab({ orgRoles }) {
     setUsers(prev => prev.map(u => u.id === userId
       ? { ...u, accessible_locs: locs.length ? locs : null } : u));
     setEditingLocs(prev => { const n = { ...prev }; delete n[userId]; return n; });
+  };
+
+  const savePerson = async (userId) => {
+    setSavingPerson(prev => ({ ...prev, [userId]: true }));
+    const raw = (editingPerson[userId] || '').trim();
+    const { error: err } = await supabase.from('profiles')
+      .update({ person: raw || null }).eq('id', userId);
+    setSavingPerson(prev => ({ ...prev, [userId]: false }));
+    if (err) { alert('Person mapping update failed: ' + err.message); return; }
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, person: raw || null } : u));
+    setEditingPerson(prev => { const n = { ...prev }; delete n[userId]; return n; });
   };
 
   const sendInvite = async (e) => {
@@ -151,11 +169,13 @@ function UsersTab({ orgRoles }) {
     ),
 
     // Users table
-    div({style:{background:S2,borderRadius:R,border:`1px solid ${BDR}`,overflow:'hidden'}},
-      div({style:{display:'grid',gridTemplateColumns:'1fr 130px 1fr',
+    div({style:{background:S2,borderRadius:R,border:`1px solid ${BDR}`,overflow:'hidden',
+      overflowX:'auto'}},
+      div({style:{display:'grid',gridTemplateColumns:'1fr 110px 1fr 1fr',minWidth:720,
         padding:'8px 14px',borderBottom:`1px solid ${BDR}`,
         fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px',gap:12}},
-        span(null,'User'), span(null,'Role'), span(null,'Accessible Stores (blank = all)')
+        span(null,'User'), span(null,'Role'), span(null,'Accessible Stores (blank = all)'),
+        span(null,'Person (assignment graph)')
       ),
       loading && div({style:{padding:28,textAlign:'center',color:TEXT3,fontSize:12}},'Loading users…'),
       error   && div({style:{padding:14,color:'var(--crit)',fontSize:12}}, error),
@@ -167,8 +187,10 @@ function UsersTab({ orgRoles }) {
         const isSaving  = savingLocs[user.id];
         const roleObj   = sortedRoles.find(r=>r.id===user.role);
         const locsDisplay = (user.accessible_locs||[]).join(', ');
+        const isEditingPerson = editingPerson[user.id] !== undefined;
+        const isSavingPerson  = savingPerson[user.id];
         return div({key:user.id,
-          style:{display:'grid',gridTemplateColumns:'1fr 130px 1fr',
+          style:{display:'grid',gridTemplateColumns:'1fr 110px 1fr 1fr',minWidth:720,
             padding:'12px 14px',gap:12,alignItems:'center',
             borderBottom:idx<users.length-1?`1px solid ${BDR}`:'none',
             background:idx%2===0?'transparent':'rgba(255,255,255,.015)'}},
@@ -221,7 +243,34 @@ function UsersTab({ orgRoles }) {
                     overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
                     locsDisplay||'No stores assigned — click to set'),
                   span({style:{fontSize:10,color:TEXT3,flexShrink:0}},'✎')
-                )
+                ),
+          // Dispatch #151: profiles.person editor — same geid/supervisor-name identity space
+          // staff_assignments.person/target already use (assignment-graph.js header comment).
+          // Free text, admin-set, no roster validation here (a geid isn't locally verifiable
+          // and a supervisor name is deliberately a plain string, per that same header comment).
+          isEditingPerson
+            ? div({style:{display:'flex',gap:6,alignItems:'center'}},
+                inp({value:editingPerson[user.id],placeholder:'geid or supervisor name',
+                  onChange:e=>setEditingPerson(prev=>({...prev,[user.id]:e.target.value})),
+                  style:{flex:1,padding:'5px 8px',background:SURF,
+                    border:`1px solid ${AMBER}`,borderRadius:R,color:TEXT,fontSize:11,outline:'none'}}),
+                btn({onClick:()=>savePerson(user.id),disabled:isSavingPerson,
+                  style:{padding:'4px 9px',background:AMBER,color:'#000',
+                    border:'none',borderRadius:R,fontSize:11,fontWeight:700,
+                    cursor:isSavingPerson?'not-allowed':'pointer',flexShrink:0}},
+                  isSavingPerson?'…':'Save'),
+                btn({onClick:()=>setEditingPerson(prev=>{const n={...prev};delete n[user.id];return n;}),
+                  style:{padding:'4px 9px',background:'none',color:TEXT3,
+                    border:`1px solid ${BDR}`,borderRadius:R,fontSize:11,cursor:'pointer',flexShrink:0}},
+                  'Cancel')
+              )
+            : div({style:{display:'flex',alignItems:'center',gap:6,cursor:'pointer'},
+                onClick:()=>setEditingPerson(prev=>({...prev,[user.id]:user.person||''}))},
+                span({style:{fontSize:11,color:user.person?TEXT2:TEXT3,flex:1,
+                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+                  user.person||'Not mapped — click to set'),
+                span({style:{fontSize:10,color:TEXT3,flexShrink:0}},'✎')
+              )
         );
       })
     )
