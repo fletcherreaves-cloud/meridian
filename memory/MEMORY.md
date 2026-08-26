@@ -84,6 +84,13 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **📋 (2026-08-26): [Dispatch #147 — Print/export for Yearly Projections, Schedule Summary,
+  Promo/Discount ROI](dispatch-147.md).** Owner unavailable (teaching a scheduling class),
+  approved opportunistic work. Re-swept `src/views/`: 9/57 panels now have `ExportDropdown`.
+  Filtered the gap list to 3 real, dense, currently-registered panels — explicitly checked and
+  excluded `performance-reviews.js` (already has a mature custom print system,
+  `printReview`/`printCheckpoint`/`printBlankForm`, not a gap) rather than assuming from the
+  `ExportDropdown` grep alone. Dispatched to an engineer.
 - **✅ SHIPPED (2026-08-26, v5.186, direct fix, no dispatch): `store-dash.js`'s "By Patch" tab
   fixed — the last leftover from dispatch #144.** #144's own PR body flagged this exact call site
   (`OrgView`'s supervisor grouping) as still reading `settings.supervisorGroups` — the same
