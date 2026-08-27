@@ -78,21 +78,70 @@ create table if not exists public.org_config (
 );
 
 -- ── Reviews ───────────────────────────────────────────────────────────────────
--- One row per performance review. The full review object is stored in `data` (JSONB).
--- The scalar columns are for filtering/RLS without having to unpack the JSONB.
+-- One row per PERSON PER YEAR (dispatch #152, Performance Review continuity, Phase 4a) --
+-- previously one row per (person, HALF): H1 and H2 were two completely separate, unrelated rows
+-- for the same person, linked only by a shared id prefix. The full review object is stored in
+-- `data` (JSONB) and now carries all four quarters + both half-year rollups + a full-year rollup
+-- in one record (review-engine.js's blankReview()/computeScores()/computeScoreBreakdown()) --
+-- see memory/dispatch-152.md and memory/plan-performance-review-continuity-2026-08-26.md decision
+-- #1 (owner's own words) for the full design. The scalar columns are for filtering/RLS without
+-- having to unpack the JSONB.
+--
+-- `review_half` is DROPPED -- a row is a full year now, so there is no single half value left to
+-- carry at the row level. Approval status is no longer a single value either (a year isn't
+-- approved as one atomic event; its two halves are, at different points in the year) -- it now
+-- lives PER HALF inside `data.periods.h1`/`data.periods.h2` (`{status, statusHistory,
+-- statusNotes}` each, written by transitionReview(id, half, newStatus, notes)). The scalar
+-- `status` column below stays (nothing needs it removed) but is now populated by
+-- reviewSummaryStatus() (review-engine.js) -- an INFORMATIONAL "whichever half is furthest along"
+-- summary for coarse filtering only. Never resolve real workflow logic from this column; the
+-- authoritative statuses are always `data.periods.h1.status`/`data.periods.h2.status`.
+--
+-- DESIGN DECISION (dispatch-152.md scope item 1, documented here and in the PR body): the
+-- review's person-identity field UNIFIES with the SAME identity space `staff_assignments.person`/
+-- `profiles.person` already use (dispatch #150/#151) -- a new nullable `person` key inside `data`
+-- (no new scalar column needed; RLS keys off `profiles.person`/`staff_assignments`, not this
+-- field). Not auto-derived in this dispatch (same manual-field precedent as `profiles.person`);
+-- `id` falls back to a slugified `name` when it's absent, so no existing call site breaks.
+--
+-- `id` no longer carries an "_H1"/"_H2" suffix (e.g. "ronald_mcdonald_2026", not
+-- "ronald_mcdonald_2026_H1") -- see reviewId()/blankReview() in review-engine.js.
 create table if not exists public.reviews (
-  id             text primary key,           -- e.g. "ronald_mcdonald_2026_H1"
-  data           jsonb not null,             -- complete review object
+  id             text primary key,           -- e.g. "ronald_mcdonald_2026"
+  data           jsonb not null,             -- complete review object (all 4 quarters, both halves, year rollup)
   reviewee_name  text,
   reviewee_loc   text,                       -- store location code, e.g. "3708"
   review_year    integer,
-  review_half    text check (review_half in ('H1', 'H2')),
-  status         text default 'draft',
+  status         text default 'draft',       -- informational summary only -- see header comment above
   org            text,
   owner_id       uuid references public.profiles(id),
   created_at     timestamptz default now(),
   updated_at     timestamptz default now()
 );
+
+-- Dispatch #152 (2026-08-26): the ALTER path for the LIVE production table -- `create table if
+-- not exists` above is a no-op once the table already exists (same lesson every prior dispatch's
+-- ALTER block has already learned). Idempotent: safe to re-run.
+--
+-- ⚠️ Measured live 2026-08-26 via the service-role Supabase REST API (per CLAUDE.md's "measure
+-- it, don't reason about it" standing rule -- the plan doc's "no reviews in the system" claim is
+-- DAYS OLD, not re-verified until now): `reviews` is NOT empty -- 3 rows exist
+-- (stacey_hyatt_2026_H1, gonzales_briann_2026_H1, nick_rice_2026_H1 -- "Nick Rice" is literally
+-- the plan doc's own motivating example, so these are the owner's own review-system test entries,
+-- not real production data). `review_overrides` IS empty (content-range */0). The owner's own
+-- blanket permission ("no reviews... have to be saved... they've all been for testing... not
+-- worried about losing that data") still applies to these 3 rows on that basis, but a human should
+-- positively confirm that before running the DROP below, since the actual count is 3, not 0 as
+-- the plan doc's days-old claim stated. These 3 rows' `data` JSONB is in the OLD shape (half-
+-- scoped, 6 months, top-level `status`) -- the app code in this PR no longer writes or reads that
+-- shape, so they'll simply become inert/unreadable-as-a-real-review once this ships. Recommended:
+-- delete them (see the commented DELETE below) rather than leave old-shaped rows sitting in a
+-- table whose new code no longer understands them.
+alter table public.reviews drop column if exists review_half;
+
+-- OPTIONAL — only run after a human confirms the 3 rows above are still just test data (they were
+-- when measured 2026-08-26; re-confirm, don't assume no time has passed):
+-- delete from public.reviews where id in ('stacey_hyatt_2026_H1', 'gonzales_briann_2026_H1', 'nick_rice_2026_H1');
 
 -- ── Review overrides (dispatch #149, 2026-08-26) ───────────────────────────────
 -- Performance Review continuity, Phase 2: src:'auto' KPI actuals inside a review's `data` JSONB
@@ -585,7 +634,13 @@ create policy "assignments: admin/supervisor write" on public.staff_assignments
 -- INDEXES (performance on common query patterns)
 -- ═══════════════════════════════════════════════════════════════════════════════
 create index if not exists reviews_loc_idx  on public.reviews (reviewee_loc);
-create index if not exists reviews_year_idx on public.reviews (review_year, review_half);
+-- Dispatch #152: dropped the `review_half` column from this index -- a row is a full year now,
+-- so `review_year` alone is the query key (the old composite index becomes a plain single-column
+-- one; if Postgres already has an index literally named reviews_year_idx from before this
+-- dispatch, `create index if not exists` is a no-op and leaves the STALE 2-column definition in
+-- place, so drop it explicitly first).
+drop index if exists reviews_year_idx;
+create index if not exists reviews_year_idx on public.reviews (review_year);
 create index if not exists reviews_org_idx  on public.reviews (org);
 -- Dispatch #151: the new RLS policies' own profiles lookup ("what is THIS auth.uid()'s person
 -- value") is already covered by profiles' primary key (id), so this index isn't on that path --
