@@ -36,6 +36,17 @@ const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
 
 const iso = d => d.toISOString().slice(0, 10);
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// "Aug 1 – Aug 26, 2026" (same year, elides the leading year) / "Dec 28, 2025 – Jan 3, 2026"
+// (year shown on both ends when the range crosses one) — display text for a custom range, not
+// a raw ISO string (dispatch #158 item 1, scope point 3).
+function fmtRangeLabel(s, e) {
+  const ds_ = new Date(s + 'T00:00:00'), de = new Date(e + 'T00:00:00');
+  const sameYear = ds_.getFullYear() === de.getFullYear();
+  const sPart = `${MONTH_NAMES[ds_.getMonth()]} ${ds_.getDate()}` + (sameYear ? '' : `, ${ds_.getFullYear()}`);
+  const ePart = `${MONTH_NAMES[de.getMonth()]} ${de.getDate()}, ${de.getFullYear()}`;
+  return `${sPart} – ${ePart}`;
+}
 const fmtV = (v, fmt) => {
   if (v == null || isNaN(v)) return '—';
   if (fmt === '$') return '$' + Math.round(v).toLocaleString();
@@ -63,6 +74,14 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   const { useState, useMemo, useEffect } = React;
   const [scope, setScope] = useState(initialScope || 'all');
   const [period, setPeriod] = useState(initialPeriod || 'mtd');
+  // Custom date range (dispatch #158 item 1) — {s,e} ISO strings, only consulted when
+  // period==='custom'. Defaults to trailing 7 closed days, same shape one-pager.js's own
+  // rangeMode==='custom' seeds with, so switching into Custom starts from a sane window
+  // instead of an empty/invalid one.
+  const [customRange, setCustomRange] = useState(() => {
+    const e = lastClosedBusinessDay(); const s = new Date(e); s.setDate(s.getDate() - 6);
+    return { s: iso(s), e: iso(e) };
+  });
   // Which panels are visible ("build your own"). A subscription can pin a subset.
   const [panels, setPanels] = useState(() => new Set(
     Array.isArray(initialPanels) && initialPanels.length ? initialPanels.filter(k => ALL_PANEL_KEYS.includes(k)) : ALL_PANEL_KEYS));
@@ -98,8 +117,9 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
     // full-day target, the same distortion documented in schedule-summary.js's normLaborPct.
     if (period === 'mtd') { const lastClosed = lastClosedBusinessDay(); return { s: iso(new Date(y, m, 1)), e: iso(lastClosed), label: 'Month-to-date' }; }
     if (period === 'lastweek') { const e = new Date(now); e.setDate(e.getDate() - 1); const s = new Date(e); s.setDate(s.getDate() - 6); return { s: iso(s), e: iso(e), label: 'Last 7 days' }; }
+    if (period === 'custom') return { s: customRange.s, e: customRange.e, label: fmtRangeLabel(customRange.s, customRange.e) };
     const ls = new Date(y, m - 1, 1), le = new Date(y, m, 0); return { s: iso(ls), e: iso(le), label: 'Last month' };
-  }, [period]);
+  }, [period, customRange]);
 
   const data = useMemo(() => {
     try {
@@ -446,7 +466,13 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
           div({ style: { fontSize: '13px', fontWeight: 800, color: 'var(--text)' } }, 'Above-Store One-Pager'),
           div({ style: { fontSize: '9px', color: 'var(--text3)' } }, scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')')),
         div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-          ...[['mtd', 'MTD'], ['lastweek', 'Last wk'], ['lastmonth', 'Last mo']].map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)' } }, l))),
+          ...[['mtd', 'MTD'], ['lastweek', 'Last wk'], ['lastmonth', 'Last mo'], ['custom', 'Custom']].map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)' } }, l))),
+        period === 'custom' ? div({ style: { display: 'flex', gap: 4, alignItems: 'center' } },
+          h('input', { type: 'date', value: customRange.s, max: customRange.e, onChange: e => e.target.value && setCustomRange(r => ({ ...r, s: e.target.value })),
+            style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } }),
+          span({ style: { fontSize: '9px', color: 'var(--text3)' } }, '→'),
+          h('input', { type: 'date', value: customRange.e, min: customRange.s, onChange: e => e.target.value && setCustomRange(r => ({ ...r, e: e.target.value })),
+            style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } })) : null,
         div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
           ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => btn({ key: v, onClick: () => setScope(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: scope === v ? 'var(--adim)' : 'transparent', color: scope === v ? 'var(--amber)' : 'var(--text3)' } }, l))),
         Object.keys(groups).length ? h('select', { value: scope.startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Supervisor patch', style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
