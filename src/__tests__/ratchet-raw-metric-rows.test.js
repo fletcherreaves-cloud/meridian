@@ -37,7 +37,18 @@ const ROOT = 'src/views';
 // filtering (ctrlRows/laborRows/opsRows/fobRows) out of src/views/store-dash.js into
 // engine/tolerance-status.js, so 3 fewer raw reads remain in src/views/ -- per this test's own
 // remediation instructions ("lower CEILING... this is not a bug in your change").
-const CEILING = 158;
+// Dispatch #156 (2026-08-27): +2 -- OperatorSummaryPanel's new `hasData` empty-data guard
+// (mirroring LaborAnalyticsPanel's already-existing, already-counted `hasData` pattern at
+// this same file's line ~2135, which reads ds.laborRows/ds.ctrlRows for the identical reason)
+// reads ds.laborRows/ds.ctrlRows once each, alongside several non-pattern-matched streams
+// (qsrActSummaryRows/opsLaborRows/glimpseRows/cashRows/fobRows/qsrFobRows), purely to answer
+// "is ANY data loaded at all" for the panel's full-screen empty state. This is an EXISTENCE
+// check, not a metric-VALUE read -- opStats itself still sources every metric value through
+// metricAvg/metricRate (metric-source.js), unchanged. Same category this file's own header
+// comment carves out ("PANELS must not source metrics from raw rows; it was never that raw
+// rows are untouchable anywhere"), and the same category the sibling's pre-existing hasData
+// already established as acceptable within this ratchet's own baseline.
+const CEILING = 160;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 
