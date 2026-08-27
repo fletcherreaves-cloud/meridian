@@ -52,6 +52,7 @@ const LOADERS = {
   cashRows: 'loadCash', salesLedgerRows: 'loadSalesLedger', schedRows: 'loadLifeLenzSchedule',
   opsCashRows: 'loadOpsCashSheet', opsLaborRows: 'loadOpsLaborSummary',
   opsServiceRows: 'loadOpsServiceStats', qsrActSummaryRows: 'loadQsrActSummary',
+  opsSalesMixRows: 'loadOpsSalesMix',
 };
 
 const src = readFileSync(SUPA, 'utf8');

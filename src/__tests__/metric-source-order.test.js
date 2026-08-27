@@ -43,7 +43,7 @@ describe('METRIC_SOURCES — auto-first ordering', () => {
     // above would silently treat it as auto and pass. Force the decision.
     const KNOWN_AUTO = [
       'qsrActSummaryRows', 'glimpseRows', 'cashRows', 'salesLedgerRows',
-      'opsCashRows', 'opsLaborRows', 'opsServiceRows', 'schedRows',
+      'opsCashRows', 'opsLaborRows', 'opsServiceRows', 'opsSalesMixRows', 'schedRows',
       'qsrFobRows',
     ];
     const classified = new Set([...KNOWN_AUTO, ...MANUAL_FED_SOURCES]);

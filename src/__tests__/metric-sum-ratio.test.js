@@ -12,10 +12,10 @@ import { describe, it, expect } from 'vitest';
 import { metricSumRatio, metricAvg, metricRate, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
-  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153)', () => {
+  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165)', () => {
     const keys = rollupCapableMetricKeys().sort();
     expect(keys).toEqual([
-      'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'fobPct', 'laborPct',
+      'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'dtMixPct', 'fobPct', 'laborPct',
       'oepe', 'r2p', 'rawWaste', 'spph', 'statVar', 'tRedAPct', 'tRedBPct', 'tpph',
     ].sort());
   });
@@ -234,6 +234,11 @@ const RATIO_METRIC_ROWS = {
   rawWaste:  { src: 'qsrFobRows',        numField: 'rawWasteAmt',     denField: 'prodSalesAmt' },
   statVar:   { src: 'qsrFobRows',        numField: 'statVarianceAmt', denField: 'prodSalesAmt' },
   spph:      { src: 'qsrActSummaryRows', numField: 'sales',           denField: 'actHrs' },
+  // dispatch #165 -- the redundancy audit's own contained fix: dtMixPct had no auto/API
+  // fallback at all (salesLedgerRows, the emailed stream, was its sole non-manual source).
+  // opsSalesMixRows carries both legs on the same row (qsr_sales_mix, reconciled EXACTLY
+  // against salesLedgerRows on a live shared day -- see loadOpsSalesMix's comment).
+  dtMixPct:  { src: 'opsSalesMixRows',   numField: 'dtSalesAmt',      denField: 'netSalesAmt' },
 };
 
 describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {

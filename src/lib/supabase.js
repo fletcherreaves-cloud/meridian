@@ -2856,7 +2856,22 @@ export const loadOpsServiceStats = async (d = 45) => {
     };
   });
 };
-export const loadOpsSalesMix     = (d = 45) => _loadOpsTable('qsr_sales_mix', d);      // channel sales + ly + ybl
+// channel sales + ly + ybl. camelCase aliases (dispatch #165) — dtSalesAmt/netSalesAmt give
+// metric-source.js's dtMixPct chain a real auto-pulled fallback for a day salesLedgerRows (the
+// emailed sibling, forward-only from 2026-07-01) doesn't cover. Reconciled EXACTLY against
+// salesLedgerRows on a shared day (service-role measured 2026-08-27, store 3708 2026-08-01:
+// dt_sales 8311.22 == net_sales_dthru_amt 8311.22, all_net_sales 11555.94 == net_sales_amt
+// 11555.94) — same underlying QSRSoft report, two independent pull paths. at-a-glance.js's
+// own mixToChannelShape() already maps this table for the Digital Sales tile on the same
+// premise; this gives the SHARED resolver the same fallback instead of only that one panel.
+export const loadOpsSalesMix = async (d = 45) => {
+  const rows = await _loadOpsTable('qsr_sales_mix', d);
+  return rows.map(r => ({
+    ...r,
+    netSalesAmt: r.net_sales_amt != null ? Number(r.net_sales_amt) : null,
+    dtSalesAmt: r.net_sales_dthru_amt != null ? Number(r.net_sales_dthru_amt) : null,
+  }));
+};
 export const loadOpsPeaksSales   = (d = 45) => _loadOpsTable('qsr_peaks_sales', d);    // 3 Peaks daypart sales
 
 export async function loadGlimpse(daysBack = 45) {
