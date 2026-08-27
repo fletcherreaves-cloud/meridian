@@ -84,6 +84,52 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.199): [Dispatch #154 — Performance Review continuity Phase 5a:
+  promotion/transfer segmented scoring](dispatch-154.md).** Eighth build phase, item #5. A
+  manager who transfers stores or is promoted mid-year now scores each period against the role
+  and store that were ACTUALLY true then, not one blended number. New
+  `personAssignmentTimeline()` lives in `assignment-graph.js` (not review-engine.js — pure
+  reports-to-graph data, no scoring concept, keeps resolution logic in one place per #150's own
+  rule), reconstructing a person's own role/store history across a date range with possibly
+  multiple transitions — none of the existing graph functions did this (all resolve one point in
+  time). `resolvePeriodAttribution()` implements majority-of-month (owner's own words: "awarded
+  based on the store data in which the manager worked the majority of the month"), deliberately
+  generalized to also run at the QUARTER grain since `behavioralRatings` has no month-level
+  resolution — the two granularities can legitimately disagree at a shared boundary month,
+  documented as a deliberate schema consequence, not a bug. `computeSegmentScores()`/
+  `computeSegmentedReview()` reuse `computeScores()`'s own scoring math verbatim (extracted
+  `_metricsScoreAcross`/`_behavQuarterScore`/`_avgOfVals` to module level — a pure refactor,
+  proven zero-behavior-change by the full suite passing unchanged). `provisionalSegmentRollup()`
+  weights by segment-length-in-MONTHS (not days — the whole pipeline resolves at monthly/quarterly
+  granularity already, so day-weighting would fabricate false precision), explicitly labeled a
+  starting point for the reviewer to adjust with commentary, never a rigid formula — matching the
+  plan doc's own HR-research conclusion that an overall rating "does not need to be an average."
+  **Two real findings, investigated and documented, not glossed over:**
+  (1) `staff_assignments.role` stores a ladder id, but scoring needs `ROLE_KEYS` — new
+  `LADDER_ROLE_TO_REVIEW_ROLE` resolves `gm`/`area_supervisor`/`om` unambiguously; only the
+  `sm_am_dm` rung is genuinely lossy (AM/DM/SM all collapse onto it) — resolved to `'AM'` as the
+  documented non-arbitrary stand-in (DM/SM have no default competency block at all; the owner's
+  own words already treat AM/DM as interchangeable). A real fix (a job-code config table) is
+  item #8, not this dispatch.
+  (2) **`autoPopulateKPIs` is confirmed NOT segment-aware** — it resolves `review.loc` ONCE for
+  the whole year, so a transferred segment's TARGETS get correctly re-resolved by this dispatch's
+  new code (cheap, since `mergedTargetsForLocMonth` was already loc-parameterized), but its
+  ACTUALS still reflect whichever store `review.loc` currently points to, for every month
+  including ones before the transfer. Explicitly NOT fixed here (real, nontrivial work threading
+  a per-month loc through ~15 lookups, not one of this dispatch's 4 scope items) — flagged
+  prominently in both the code and PR body for whoever picks it up next. A same-store role-only
+  promotion is entirely unaffected (loc never changes).
+  **Phase 5b (UI — surfacing segments, reviewer-adjustable rollup) explicitly NOT built**, flagged
+  as likely combining with #152's own still-pending Phase 4b UI work — both need the same
+  "more than one simple period to display" editor work; `computeSegmentedReview`'s
+  `opts.periodStart`/`periodEnd` hook exists specifically so a future H1/H2-only view needs zero
+  further engine changes. No live Supabase schema change (pure JS reading the already-existing
+  `staff_assignments` table). 260/260 test files, 2835/2835 tests (+22 net new, zero regressions).
+  Build clean, entry chunk 474.95→475.06 KB gzip (+0.11 KB). Verified independently in a fresh
+  worktree before merging — every new function read in full (`personAssignmentTimeline`,
+  `resolvePeriodAttribution`, `computeSegmentScores`, `computeSegmentedReview`,
+  `provisionalSegmentRollup`), confirmed `REVIEW_METRIC_TARGET_FIELD`/`mergedTargetsForLocMonth`
+  are genuinely pre-existing (not invented), both claimed test/build numbers reproduced exactly.
 - **✅ SHIPPED (2026-08-27, v5.198): [Dispatch #153 — fix OEPE/R2P/TPPH blending an
   in-progress business day into "current week" averages](dispatch-153.md).** The bug found by
   the overnight parallel audit of the Leadership One-Pager, now fixed. Root cause: `metricAvg()`

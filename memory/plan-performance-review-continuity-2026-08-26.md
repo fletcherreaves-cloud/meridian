@@ -547,8 +547,13 @@ time dispatch practice:
    period selector, print functions) is separate, later work, not yet built** — the data/engine
    layer is real and tested, but the UI still reads/writes the old half-scoped shape in several
    places (documented in dispatch #152's PR body) until Phase 4b lands.
-5. **Promotion/transfer segmented scoring**, built on #3 and #4, including the propose-then-
-   confirm flow for roster-detected changes (resolved item D) — never a silent auto-split.
+5. **✅ SHIPPED (Phase 5a, data/engine layer) — Promotion/transfer segmented scoring** — dispatch
+   #154, v5.199. Assignment-timeline detection + majority-of-month/quarter attribution +
+   per-segment scoring + provisional rollup, all built on #3/#4. **Phase 5b (UI, and the
+   propose-then-confirm flow for roster-detected changes, resolved item D) is separate, later
+   work, not yet built** — flagged to likely combine with #152's own still-pending Phase 4b UI.
+   `autoPopulateKPIs` confirmed NOT segment-aware (targets correct per-segment, actuals are not) —
+   a real, documented, open follow-on.
 6. **Departure handling**: auto-finalize + auto-clear from the new-manager panel on
    `termination_entry_date`/a detected role exit, reviewable/reopenable by the person's normal
    reviewer or above (resolved item B) — reuses #1/#2's hierarchy mechanism, built after it.
