@@ -84,6 +84,45 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.201): [Dispatch #156 — fix Custom-period panel-blanking bug in
+  `OperatorSummaryPanel`](dispatch-156.md).** Found (documented, not fixed) by dispatch #155's
+  own PR while writing an unrelated test. `OperatorSummaryPanel`'s single top-level gate
+  (`if(!ds||!ds.loaded||opStats.length===0) return <full-panel 'No Data Loaded' screen>`) folded
+  "nothing loaded at all" together with "the selected range resolves zero rows" — since
+  `cStart`/`cEnd` start as `''`, clicking the "Custom" period pill made `opStats` resolve to `[]`
+  *before either date input had a value*, blanking the entire panel (header, Period/Group/Focus/
+  Sort controls, both date inputs) with no way back except closing it entirely. **Confirmed the
+  sibling `LaborAnalyticsPanel` does NOT share this bug** — its own `hasData` gate is independent
+  of `range`/`locStats`, so selecting "Custom" there leaves the controls bar (rendered
+  unconditionally) untouched; an empty result degrades gracefully and locally instead. Fix split
+  `OperatorSummaryPanel`'s gate to match: a range-independent `hasData` check (every stream
+  `opStats` actually reads — `fobRows`/`qsrFobRows` directly, `laborRows`/`ctrlRows`/
+  `qsrActSummaryRows`/`opsLaborRows`/`glimpseRows`/`cashRows` via the `metricAvg`/`metricRate`
+  chains) gates the full-panel empty state; the "zero rows for this period" case now surfaces
+  only inside the results area via the panel's own pre-existing `sortedOps.length===0`
+  placeholder — previously unreachable dead code, now wired up as-is, no new UI string. No
+  behavior change for any non-custom period. `LaborAnalyticsPanel` untouched, confirmed
+  bug-free by direct read, not just restated from #155's test comment.
+  New render-based test (`dispatch-156-operator-summary-custom-period.test.js`) renders the real
+  panel, clicks "Custom", asserts the period pills and both date inputs stay present/interactive
+  — explicitly verified to fail pre-fix (stash/rerun/restore) and pass post-fix, per this
+  project's "would this verification still pass if reverted?" standing rule. Also added a
+  regression guard confirming `LaborAnalyticsPanel` keeps its controls visible on Custom today,
+  protecting the untouched sibling from a future accidental regression.
+  `ratchet-raw-metric-rows.test.js`'s `CEILING` raised 158→160 with a dated justifying comment —
+  the new `hasData` check reads `ds.laborRows`/`ctrlRows` twice, but as an **existence** check
+  (not a metric-value read), the same category `LaborAnalyticsPanel`'s own already-counted
+  `hasData` pattern already established as acceptable within this ratchet's baseline — verified
+  by reading the ratchet's own header comment ("PANELS must not source metrics from raw rows; it
+  was never that raw rows are untouchable anywhere") before accepting the bump.
+  267/267 test files, 2850/2850 tests (main baseline 266/2847). Build clean, entry chunk gzip and
+  eager total byte-identical before/after (475.07/546.44 KB) — zero size impact, as expected for
+  a pure gate restructure. Verified independently in a fresh worktree before merging — the exact
+  `labor-tools.js` diff read in full, the `hasData`/`sortedOps` claims cross-checked directly
+  against the live pre-PR code (confirmed the exact gate line, confirmed `ds.loaded` wasn't used
+  elsewhere so dropping it was safe, confirmed the placeholder already existed), the ratchet bump
+  reasoning independently checked against the ratchet file's own stated rule, both claimed
+  test/build numbers reproduced exactly.
 - **✅ SHIPPED (2026-08-27, v5.200): [Dispatch #155 — extend the OEPE/R2P/TPPH completeness fix
   (dispatch #153) to its other call sites](dispatch-155.md).** Direct follow-up closing out the
   "~12 other call sites" list dispatch #153 explicitly deferred. **Not a blanket conversion** —
