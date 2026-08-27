@@ -6,7 +6,7 @@ import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '..
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
-import { metricAvg } from '../engine/metric-source.js';
+import { metricAvg, metricRate } from '../engine/metric-source.js';
 import { STORE_NAMES } from '../constants.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
@@ -1182,7 +1182,12 @@ function ProjectionAccuracyTab({ stores }) {
 const QUADRANT_COLOR = { A: blue, B: red, C: grn, D: amber };
 const QUADRANT_WINDOW_DAYS = 90; // matches the 90d DAR window issue #181 was measured against
 
-function ParkOepeTab({ ds }) {
+// Exported (dispatch #155) so the metricRate conversion below has a real render-based test —
+// CLAUDE.md's "would this verification still pass if the change were reverted?" rule needs the
+// actual consumer, not just metricRate/metricSumRatio tested in isolation, and this tab was
+// otherwise only reachable through SignalsPanel's own tab-navigation state. Pure presentational
+// component, no behavior change from being independently importable.
+export function ParkOepeTab({ ds }) {
   const result = uM(() => {
     if (!ds || !ds.storeIds?.length) return null;
     const e = new Date(); const s = new Date(e.getTime() - QUADRANT_WINDOW_DAYS * 86400000);
@@ -1190,7 +1195,12 @@ function ParkOepeTab({ ds }) {
     const rows = ds.storeIds.filter(loc => /^\d+$/.test(loc)).map(loc => ({
       loc,
       park: metricAvg(ds, loc, range, 'park'),
-      oepe: metricAvg(ds, loc, range, 'oepe'),
+      // oepe via metricRate, not metricAvg (dispatch #155) — `e` above is literally
+      // `new Date()`, so this range always includes today's still-open business day.
+      // park stays on metricAvg: no `kind:'ratio'` numerator/denominator declared for it in
+      // METRIC_SOURCES (nothing for metricSumRatio to compute), and out of this dispatch's
+      // oepe/r2p/tpph scope regardless.
+      oepe: metricRate(ds, loc, range, 'oepe'),
     }));
     return computeParkOepeQuadrants(rows);
   }, [ds]);

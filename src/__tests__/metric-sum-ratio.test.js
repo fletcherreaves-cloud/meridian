@@ -9,7 +9,7 @@
 // SPPH example -- a low-volume day and a high-volume day with different per-day ratios produce a
 // mean-of-daily figure that diverges from the true Sum/Sum), not just "the function runs."
 import { describe, it, expect } from 'vitest';
-import { metricSumRatio, metricAvg, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
+import { metricSumRatio, metricAvg, metricRate, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
   it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153)', () => {
@@ -411,5 +411,41 @@ describe('metricSumRatio -- r2p (fcUntilServeUs/fcUntilClosedDrawerUs / fcTransC
     expect(perDayR2p[7]).toBeLessThan(minComplete);
     expect(sum.value).toBeGreaterThan(mean);
     expect(sum.value).toBeGreaterThanOrEqual(minComplete - 1);
+  });
+});
+
+// ── Dispatch #155 — metricRate, relocated from one-pager-data.js's private `rateMetric` (dispatch
+// #153) so every app-level call site that reads a ratio metric over a range that can include the
+// current, still-open period shares the exact same fallback logic. Named `metricRate`, not
+// `rateMetric`, to avoid colliding with review-engine.js's unrelated, already-exported
+// `rateMetric(actual, target, metricCfg)` 1-4 scoring function.
+describe('metricRate -- Σ/Σ first, metricAvg fallback only when the rollup has nothing (dispatch #155)', () => {
+  it('prefers metricSumRatio when it can compute -- reuses the uneven-volume fixture above', () => {
+    const ds = {
+      qsrActSummaryRows: [
+        { loc: '1', date: new Date('2026-08-01'), _dtTotal: 20000000, _dtStore: 0, _dtHeldTime: 0, _dtCars: 100 },
+        { loc: '1', date: new Date('2026-08-02'), _dtTotal: 50000000, _dtStore: 0, _dtHeldTime: 0, _dtCars: 1000 },
+      ],
+    };
+    const range = { s: new Date('2026-08-01'), e: new Date('2026-08-02') };
+    const rate = metricRate(ds, '1', range, 'oepe');
+    const sum = metricSumRatio(ds, '1', range, 'oepe');
+    const mean = metricAvg(ds, '1', range, 'oepe');
+    expect(rate).toBeCloseTo(sum.value, 6);
+    expect(rate).not.toBeCloseTo(mean, 1);
+  });
+
+  it('falls back to metricAvg only when metricSumRatio returns null (no day resolves both raw legs)', () => {
+    // Manual Ops Report upload only -- the precomputed oepe field, no DAR raw components at
+    // all, so metricSumRatio has nothing to sum and must return null.
+    const ds = { opsRows: [{ loc: '1', date: new Date('2026-08-01'), oepe: 155 }] };
+    const range = { s: new Date('2026-08-01'), e: new Date('2026-08-01') };
+    expect(metricSumRatio(ds, '1', range, 'oepe')).toBeNull();
+    expect(metricRate(ds, '1', range, 'oepe')).toBeCloseTo(155, 6);
+    expect(metricRate(ds, '1', range, 'oepe')).toBe(metricAvg(ds, '1', range, 'oepe'));
+  });
+
+  it('returns null, same as both underlying functions, when nothing resolves at all', () => {
+    expect(metricRate({}, '1', { s: '2026-08-01', e: '2026-08-01' }, 'oepe')).toBeNull();
   });
 });
