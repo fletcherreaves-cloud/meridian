@@ -826,6 +826,18 @@ function App() {
   const [isDragging, setIsDragging]    = useState(false);
   const dragCounter                    = useRef(0);
   const [sessionRestoring, setSessionRestoring] = useState(false);
+  // Dispatch #159 — true once T1's cloud/auto streams (qsrActSummaryRows, glimpseRows,
+  // opsServiceRows — the exact 3 sources metric-source.js's oepe/r2p/kvst/laborPct chains
+  // check BEFORE the manual opsRows fallback) have actually landed in `ds`, as opposed to
+  // `ds.loaded`, which flips true from the local IDB restore alone and has no dependency on
+  // this Supabase network round-trip. Root cause: Performance Reviews' "Auto-fill from
+  // Uploaded Data" button gated only on `ds?.loaded`, so a click in the window between IDB
+  // restore (near-instant) and T1 landing (a real network fetch, historically 5-20+ seconds)
+  // silently resolved OEPE/R2P/KVS/Labor% for every month with no chance to fall through to
+  // the not-yet-loaded auto streams — only to whatever the ALREADY-IDB-resident manual
+  // ds.opsRows happened to cover, and to nothing at all for months beyond that. See
+  // performance-reviews.js's KPITab `dataReady` prop, threaded from here.
+  const [cloudStreamsReady, setCloudStreamsReady] = useState(false);
 
   // Auto-migrate flat targets → v2 on startup
 
@@ -974,7 +986,9 @@ function App() {
 
   // ── Supabase: register client + sync on mount ──────────────────────────────
   React.useEffect(()=>{
-    if (!supabase) return;
+    // No Supabase client configured (dev/offline) — nothing for T1 to load, so don't leave
+    // cloudStreamsReady permanently false (that would wedge the Auto-fill gate forever).
+    if (!supabase) { setCloudStreamsReady(true); return; }
     setSupabaseClient(supabase);
     // Merge labor rows from Supabase so DI calibration history persists across cache clears and devices
     loadLaborRows().then(sbRows=>{
@@ -1789,6 +1803,11 @@ function App() {
       const _t1Start = _t0;
       await Promise.all([_stMonthlyTargets(), _stYearlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
       _flushDs(); // T1: 5 stages → 1 commit
+      // Dispatch #159 — T1 is exactly the tier carrying qsrActSummaryRows/glimpseRows/
+      // opsServiceRows, so this is the earliest point it's honest to tell a consumer (e.g.
+      // Performance Reviews' Auto-fill button) that those auto-first sources have had their
+      // chance to load, not just that SOME data (IDB) is present.
+      setCloudStreamsReady(true);
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms (tier: ${_tierMs(_t1Start)}ms)`, 'color:#f5bc00;font-weight:700');
       const _t2Start = performance.now();
       const _t2 = Promise.all([
@@ -2991,6 +3010,7 @@ function App() {
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
       routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
+        dataReady:cloudStreamsReady,
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
