@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { describe, it, expect } from 'vitest';
-import { fobByRange, buildOnePagerInputs, buildCurrentState, buildReviewActuals, buildControlsOutliers, summarizeCountStatus } from '../engine/one-pager-data.js';
+import { fobByRange, buildOnePagerInputs, buildCurrentState, buildMetricNow, buildPerLocationRows, buildReviewActuals, buildControlsOutliers, summarizeCountStatus } from '../engine/one-pager-data.js';
 
 const d = s => new Date(s + 'T00:00:00');
 
@@ -158,6 +158,72 @@ describe('buildCurrentState FOB% tile', () => {
     expect(fob.actual).toBeCloseTo(0.05, 6);       // 6000/120000, NOT 6000/7000 (=0.857)
     const sales = rows.find(r => r.key === 'sales');
     expect(sales.actual).toBe(7000);               // window net sales
+  });
+});
+
+// ── Dispatch #153 (2026-08-27) — the actual call sites, not just the metric-source engine
+// (CLAUDE.md's "verification bar must touch the call site" rule: a test that only exercises
+// metricSumRatio directly can't tell "fixed" from "fixed but the panel never switched to it").
+// buildCurrentState/buildMetricNow/buildPerLocationRows must now read oepe/r2p/tpph through
+// the Σnum/Σden rollup (rateMetric → metricSumRatio, falling back to metricAvg only when the
+// rollup can't compute), not metricAvg's mean-of-daily.
+describe('OEPE/R2P Σ/Σ rollup reaches the actual One-Pager call sites (dispatch #153)', () => {
+  // Same uneven-volume shape as engine/metric-source.js's own ROLLUP CAVEAT fixture: a
+  // low-volume day with a fast per-transaction rate, a high-volume day with a slower one.
+  // Raw fields are (ms-equivalent, summed across the day) ÷ 1000 = seconds — real magnitude,
+  // matching the live store-3708 cross-check numbers used in metric-sum-ratio.test.js.
+  const ds = {
+    qsrActSummaryRows: [
+      { loc: '1', date: d('2026-08-01'), _dtTotal: 20000000, _dtStore: 0, _dtHeldTime: 0, _dtCars: 100,
+        _fcServe: 8000000, _fcDrawer: 0, _fcCnt: 40, gc: 100, actHrs: 20 },
+      { loc: '1', date: d('2026-08-02'), _dtTotal: 50000000, _dtStore: 0, _dtHeldTime: 0, _dtCars: 1000,
+        _fcServe: 40000000, _fcDrawer: 0, _fcCnt: 400, gc: 1000, actHrs: 100 },
+    ],
+  };
+  const range = { s: '2026-08-01', e: '2026-08-02' };
+  // Hand-computed expectations, independent of the engine's own internals:
+  // OEPE mean-of-daily = (200 + 50)/2 = 125 ; Σ/Σ = 70000000/1100/1000 = 63.636...
+  const meanOepe = 125, sumOepe = 70000000 / 1100 / 1000;
+  // R2P mean-of-daily = (200 + 100)/2 = 150 ; Σ/Σ = 48000000/440/1000 = 109.09...
+  const meanR2p = 150, sumR2p = 48000000 / 440 / 1000;
+
+  it('buildCurrentState reports the Σ/Σ figure for OEPE and R2P, not the mean-of-daily one', () => {
+    const rows = buildCurrentState(ds, [], ['1'], range);
+    const oepe = rows.find(r => r.key === 'oepe');
+    const r2p = rows.find(r => r.key === 'r2p');
+    expect(oepe.actual).toBeCloseTo(sumOepe, 4);
+    expect(oepe.actual).not.toBeCloseTo(meanOepe, 1);
+    expect(r2p.actual).toBeCloseTo(sumR2p, 4);
+    expect(r2p.actual).not.toBeCloseTo(meanR2p, 1);
+  });
+
+  it('buildCurrentState reports the Σ/Σ figure for TPPH too (already ratio-capable, now switched)', () => {
+    const rows = buildCurrentState(ds, [], ['1'], range);
+    const tpph = rows.find(r => r.key === 'tpph');
+    // gc/actHrs Σ/Σ = (100+1000)/(20+100) = 1100/120 ; mean-of-daily = (5+10)/2 = 7.5
+    expect(tpph.actual).toBeCloseTo(1100 / 120, 4);
+    expect(tpph.actual).not.toBeCloseTo(7.5, 1);
+  });
+
+  it('buildMetricNow reports the Σ/Σ figure for OEPE and R2P', () => {
+    const out = buildMetricNow(ds, [], ['1'], range);
+    expect(out['1'].oepe).toBeCloseTo(sumOepe, 4);
+    expect(out['1'].r2p).toBeCloseTo(sumR2p, 4);
+  });
+
+  it('buildPerLocationRows reports the Σ/Σ figure for OEPE and R2P', () => {
+    const rows = buildPerLocationRows(ds, [], ['1'], range, null);
+    expect(rows[0].oepe).toBeCloseTo(sumOepe, 4);
+    expect(rows[0].r2p).toBeCloseTo(sumR2p, 4);
+  });
+
+  it('falls back to metricAvg when metricSumRatio has nothing to compute (no raw legs, only a manual precomputed field)', () => {
+    // No qsrActSummaryRows raw components at all — only a manual Ops Report upload carrying
+    // the already-precomputed oepe field. metricSumRatio must return null here (no day
+    // resolves both legs), and rateMetric must fall back rather than silently going blank.
+    const manualOnly = { opsRows: [{ loc: '1', date: d('2026-08-01'), oepe: 155 }] };
+    const rows = buildCurrentState(manualOnly, [], ['1'], range);
+    expect(rows.find(r => r.key === 'oepe').actual).toBeCloseTo(155, 4);
   });
 });
 

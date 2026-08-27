@@ -5,7 +5,7 @@
 // (opportunity.js / one-pager.js). Sources metrics through the shared resolvers
 // (metric-source auto-first, DEFAULT_TARGETS) and uses the dashboard's canonical
 // dollar-weighted FOB% (Σ components ÷ Σ prodSales) — never a re-derived formula.
-import { metricSeries, metricAvg } from './metric-source.js';
+import { metricSeries, metricAvg, metricSumRatio } from './metric-source.js';
 import { matchedVsLY } from './vs-ly.js';
 import { computeScheduleRollup, FIXED_FLOOR_SEG_MIN, FIXED_FLOOR_SEG_MAX, FIXED_FLOOR_COMBINED_MAX } from './schedule-summary.js';
 import { resolveLaborTarget } from './labor-basis.js';
@@ -21,6 +21,21 @@ function sumSeries(ds, loc, range, key) {
   let sum = 0, n = 0;
   for (const k in s) { sum += s[k]; n++; }
   return { sum, days: n };
+}
+
+// Dispatch #153 (2026-08-27) — OEPE/R2P/TPPH current-period figures. metricAvg is a flat
+// mean of each day's already-resolved value, so an in-progress "today" (qsr_daily_activity_
+// rollup always carries the full 24-hour_slot shape, future hours zero-filled rather than
+// absent — structurally indistinguishable from a complete day) blends into the "current week"
+// with the SAME weight as a genuinely finished day. metricSumRatio computes the true
+// Σnumerator ÷ Σdenominator instead, so a low-volume in-progress day naturally contributes
+// proportionally less rather than being averaged in as if representative.
+// Falls back to metricAvg ONLY when metricSumRatio has nothing to compute (no day in range
+// resolves both raw legs) — e.g. a store with no DAR rows this period, only a manual Ops
+// Report upload of the precomputed field. Never silently drop a number that used to display.
+function rateMetric(ds, locs, range, key) {
+  const sumRatio = metricSumRatio(ds, locs, range, key);
+  return sumRatio ? sumRatio.value : metricAvg(ds, locs, range, key);
 }
 
 // ── qsr_fob snapshot math (2026-08-03 fix) ─────────────────────────────────────
@@ -189,8 +204,8 @@ export function buildMetricNow(ds, fobRows, locs, range) {
     out[L] = {
       laborPct: metricAvg(ds, loc, range, 'laborPct'),
       fobPct: (fob[L] || {}).fobPct ?? null,
-      oepe: metricAvg(ds, loc, range, 'oepe'),
-      r2p: metricAvg(ds, loc, range, 'r2p'),
+      oepe: rateMetric(ds, loc, range, 'oepe'),
+      r2p: rateMetric(ds, loc, range, 'r2p'),
       kvst: metricAvg(ds, loc, range, 'kvst'),
       gcPerDay: gc.days ? gc.sum / gc.days : null,
     };
@@ -222,8 +237,8 @@ export function buildPerLocationRows(ds, fobRows, locs, range, opp) {
       salesVsLYPct: vsLY.pct != null ? vsLY.pct * 100 : null,
       fobPct: f.fobPct ?? null,       fobTarget: t.tFOBTarget ?? null,
       laborPct: metricAvg(ds, loc, range, 'laborPct'), laborTarget: resolveLaborTarget(t), // #164
-      oepe: metricAvg(ds, loc, range, 'oepe'),         oepeTarget: t.tOepe ?? null,
-      r2p: metricAvg(ds, loc, range, 'r2p'),           r2pTarget: t.tR2p ?? null,
+      oepe: rateMetric(ds, loc, range, 'oepe'),        oepeTarget: t.tOepe ?? null,
+      r2p: rateMetric(ds, loc, range, 'r2p'),          r2pTarget: t.tR2p ?? null,
       oppWk: oppWk,
     };
   });
@@ -429,10 +444,13 @@ export function buildCurrentState(ds, fobRows, locs, range) {
     { key: 'sales',    label: 'Product Sales', actual: totSales, target: null, fmt: '$' },
     { key: 'fobPct',   label: 'FOB %',      actual: totFobProd ? totFob$ / totFobProd : null, target: tgt('tFOBTarget'), fmt: '%', lowerBetter: true },
     { key: 'laborPct', label: 'Labor %',    actual: metricAvg(ds, locs, range, 'laborPct'), target: tgt('tLabor'), fmt: '%', lowerBetter: true },
-    { key: 'oepe',     label: 'OEPE',       actual: metricAvg(ds, locs, range, 'oepe'), target: tgt('tOepe'), fmt: 's', lowerBetter: true },
+    // OEPE/R2P/TPPH use the true Σnum/Σden period rollup (dispatch #153), not a mean of daily
+    // values — an in-progress "today" would otherwise blend in with the same weight as a
+    // finished day and read as an artificially fast/high period figure.
+    { key: 'oepe',     label: 'OEPE',       actual: rateMetric(ds, locs, range, 'oepe'), target: tgt('tOepe'), fmt: 's', lowerBetter: true },
     // R2P + OEPE now derive from the cloud-fresh DAR (fc_ / dt_ timings) when a manual
     // Ops Report / Glimpse hasn't landed — so both populate current-day. TPPH derives from DAR hours.
-    { key: 'r2p',      label: 'R2P',        actual: metricAvg(ds, locs, range, 'r2p'), target: tgt('tR2p'), fmt: 's', lowerBetter: true },
-    { key: 'tpph',     label: 'TPPH',       actual: metricAvg(ds, locs, range, 'tpph'), target: tgt('tTpph'), fmt: 'n' },
+    { key: 'r2p',      label: 'R2P',        actual: rateMetric(ds, locs, range, 'r2p'), target: tgt('tR2p'), fmt: 's', lowerBetter: true },
+    { key: 'tpph',     label: 'TPPH',       actual: rateMetric(ds, locs, range, 'tpph'), target: tgt('tTpph'), fmt: 'n' },
   ];
 }

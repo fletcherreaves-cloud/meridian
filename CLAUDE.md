@@ -569,6 +569,18 @@ actual code — this note nearly caused a duplicate reimplementation.
     `dar-vs-ops-reconciliation.md`'s ~0.01% deltas hold only *"on days with a complete 24 slots"*.
     A short day understates any sales denominator and silently inflates the ratio above it. Check
     `count(hour_slot)` per `(loc, dt)` before trusting a DAR-denominated derivation.
+    **⚠️ `count(hour_slot)==24` does NOT detect an in-progress "today" (dispatch #153,
+    2026-08-27).** That check catches a genuinely SHORT day (a pull that failed partway through).
+    It does not catch a day that is still IN PROGRESS: `qsr_daily_activity_rollup` (fed by
+    `scripts/qsrsoft-dar-pull.mjs`) always carries the full 24-`hour_slot` shape, with hours that
+    haven't happened yet simply zero-filled, not absent — so an in-progress day passes the
+    `count==24` check while still being structurally incomplete. This is what let OEPE/R2P/TPPH
+    blend a 70%-of-plan in-progress day into a "current week" rate-metric average at full weight
+    (`metricAvg`'s mean-of-daily) and have it read as the fastest reading of the whole sampled
+    window — a completeness artifact, not a real result. The fix for a RATE metric with a real
+    numerator/denominator is `metricSumRatio` (`src/engine/metric-source.js`), which sums the raw
+    legs across the range so a low-volume in-progress day naturally contributes proportionally
+    less, rather than checking slot-count at all.
 - **LifeLenz Business ID:** `01979dbf-a166-759b-8702-aba9915c578e`
 - **Supabase URL:** from `VITE_SUPABASE_URL` env var
 - **User:** Fletcher Reaves (fletcher.reaves@mcreaves.com) — owner, developer, primary user. **Pronouns: he/him** (stated 2026-08-10 — use them; don't fall back to they/them)
