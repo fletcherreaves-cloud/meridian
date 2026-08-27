@@ -13,6 +13,8 @@ import { buildOnePager } from '../engine/one-pager.js';
 import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows, buildReviewActuals } from '../engine/one-pager-data.js';
 import { dailyDataFreshness } from '../engine/metric-source.js';
 import { loadQsrFob, loadActionItems, saveOnePager, saveActionItem, updateActionItem } from '../lib/supabase.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
+import { ActionMenu } from '../components/PanelControls.js';
 
 const h = React.createElement;
 const { useState, useEffect, useMemo, useCallback } = React;
@@ -199,30 +201,34 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
     return { managerNames, storeLabel };
   };
 
-  return div({ style: { position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,.55)', overflow: 'auto', padding: 18 }, onClick: onClose },
-    div({ onClick: e => e.stopPropagation(), style: { width: 'min(1040px,100%)', margin: '0 auto', background: 'var(--bg)', border: '1px solid var(--bdr)', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,.5)' } },
-      // Header
-      div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)', flexWrap: 'wrap' } },
-        div({},
-          div({ style: { fontSize: 15, fontWeight: 800, color: 'var(--text)' } },
-            '📋 Leadership One-Pager',
-            span({ style: { marginLeft: 8, fontSize: 11, fontWeight: 800, color: '#111', background: 'var(--accent,#f5bc00)', borderRadius: 5, padding: '1px 6px' }, title: cascadeOf(cascade).label }, cascadeOf(cascade).tag)),
-          div({ style: { fontSize: 11, color: 'var(--text2)', marginTop: 2 } }, `${rLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'} · window ${range.s} → ${range.e}`),
-        ),
-        div({ style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
-          // Cascade pairing (who → whom)
-          h('select', { value: cascade, onChange: e => setCascade(e.target.value), title: 'Cascade level', style: { ...btn, padding: '5px 8px', fontWeight: 700 } },
-            CASCADE_LEVELS.map(c => h('option', { key: c.id, value: c.id }, c.label))),
-          savedNote ? span({ style: { fontSize: 11, color: 'var(--text2)' } }, savedNote) : null,
-          h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
-          h('button', { onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems), style: btn }, '🖨 Print'),
-          h('button', { onClick: () => printBlankOnePager(page, period), style: btn, title: 'Open-ended discussion sheet (auto state, blank sections)' }, '📝 Discussion'),
-          h('button', { onClick: () => printWeeklyReview(page, wkOpts()), style: btn, title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' }, '📋 Weekly Review'),
-          h('button', { onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, { ...wkOpts(), word: true })), style: btn, title: 'Download the filled Weekly Review as an editable Word (.doc)' }, '⬇ Word'),
-          h('button', { onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true, word: true })), style: btn, title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' }, '▫ Blank'),
-          h('button', { onClick: onClose, style: { ...btn, fontWeight: 800 } }, '✕'),
-        ),
-      ),
+  // Dispatch #160 (panel-contract adoption pass) — RoutePanelShell (route:true in
+  // panel-registry.js, "would I ever want to send someone a link to this week's review?" — yes)
+  // replaces the hand-rolled fixed/inset:0/rgba(0,0,0 backdrop+card this used to roll itself
+  // (the exact anti-pattern src/__tests__/ratchet-modal-backdrop-bypass.test.js guards against).
+  // The five print/export buttons (Print/Discussion/Weekly Review/Word filled/Word blank) —
+  // genuine button sprawl, all "produce a document" actions — collapse into one ActionMenu
+  // (dispatch #160 item 4; memory/panel-contract.md section 4's own "3+ grouped actions" bar).
+  // Save stays its own prominent button (a commit action, not an export) and the Cascade
+  // select/tag stay as-is.
+  return h(RoutePanelShell, {
+    title: 'Leadership One-Pager', icon: '📋',
+    subtitle: `${rLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'} · window ${range.s} → ${range.e}`,
+    onBack: onClose,
+    headerExtra: div({ style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
+      span({ style: { fontSize: 11, fontWeight: 800, color: '#111', background: 'var(--accent,#f5bc00)', borderRadius: 5, padding: '1px 6px' }, title: cascadeOf(cascade).label }, cascadeOf(cascade).tag),
+      // Cascade pairing (who → whom)
+      h('select', { value: cascade, onChange: e => setCascade(e.target.value), title: 'Cascade level', style: { ...btn, padding: '5px 8px', fontWeight: 700 } },
+        CASCADE_LEVELS.map(c => h('option', { key: c.id, value: c.id }, c.label))),
+      savedNote ? span({ style: { fontSize: 11, color: 'var(--text2)' } }, savedNote) : null,
+      h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
+      h(ActionMenu, { label: '🖨 Reports', items: [
+        { label: 'Print', onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems) },
+        { label: 'Discussion sheet', onClick: () => printBlankOnePager(page, period), title: 'Open-ended discussion sheet (auto state, blank sections)' },
+        { label: 'Weekly Review', onClick: () => printWeeklyReview(page, wkOpts()), title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' },
+        { label: 'Download Word (filled)', onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, { ...wkOpts(), word: true })), title: 'Download the filled Weekly Review as an editable Word (.doc)' },
+        { label: 'Download Word (blank)', onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true, word: true })), title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' },
+      ] })),
+  },
       // Range controls (Notes 31 #1) — mode pills + anchor/custom dates
       div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
         span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text2)' } }, 'Range:'),
@@ -302,7 +308,6 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
               h('textarea', { value: narrative, onChange: e => setNarrative(e.target.value), placeholder: 'Context, wins, focus for the week…', style: { width: '100%', minHeight: 80, padding: 8, borderRadius: 8, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12.5, resize: 'vertical' } }),
             ),
           ),
-    ),
   );
 }
 

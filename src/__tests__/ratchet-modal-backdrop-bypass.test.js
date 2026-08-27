@@ -35,8 +35,14 @@ const ROOTS = ['src/views', 'src/features'];
 // backdrop/card/close-button was converted to RoutePanelShell as part of its overlay-to-page
 // conversion (routePanel==='count-cycle'). sched-hub/perf-reviews/eom-dashboard's hand-rolled
 // chrome used a different shape (no literal `position:'fixed', inset:0` on one line, or was
-// caught by other means) so they don't move this count.
-const CEILING = 76;
+// caught by other means) so they don't move this count. 77 → 76 (further, undocumented) drop
+// then held until dispatch #160. Lowered 76 → 75 by dispatch #160 (panel-contract adoption
+// pass): above-store-onepager.js's hand-rolled backdrop converted to RoutePanelShell
+// (routePanel==='above-store'). one-pager.js's own hand-rolled backdrop was ALSO converted the
+// same dispatch, but its zIndex:4000 sat between `inset:0,` and `background:'rgba(0,0,0` on that
+// one line, so this regex never counted it in the first place — its removal doesn't move this
+// number, even though it's the same anti-pattern fixed the same way.
+const CEILING = 75;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

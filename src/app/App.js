@@ -729,7 +729,10 @@ function App() {
   const [showEvents, setShowEvents]    = useState(false);
   const [showCalendarManager, setShowCalendarManager] = useState(false);
   const [showEventImpact, setShowEventImpact] = useState(false);
-  const [showAboveStore, setShowAboveStore] = useState(false);
+  // showAboveStore — dispatch #160: replaced by routePanel==='above-store' (see routePanel
+  // above) as part of the panel-contract pass (memory/panel-contract.md item 1/4) —
+  // "would I ever want to send someone a link to this district's rollup?" — yes. aboveStoreInit
+  // stays local App state (not URL-encoded, matching every other routed panel's initialX props).
   const [aboveStoreInit, setAboveStoreInit] = useState(null); // {scope,period,panels} from a saved report
   const [showReportSubs, setShowReportSubs] = useState(false);
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
@@ -776,7 +779,8 @@ function App() {
   },[]);
   const [showAttention, setShowAttention] = useState(false);
   const [showFormsPrint, setShowFormsPrint] = useState(false);
-  const [showLeaderOnePager, setShowLeaderOnePager] = useState(false);
+  // showLeaderOnePager — dispatch #160: replaced by routePanel==='leader-one-pager' (see
+  // routePanel above), same panel-contract pass as showAboveStore above.
   const [showMetricLineage, setShowMetricLineage] = useState(false);
   const [showFormsLibrary, setShowFormsLibrary] = useState(false);
   const [showKB, setShowKB] = useState(false);
@@ -2680,10 +2684,11 @@ function App() {
   // pause — this is the "converting a panel to a route naturally resolves the concern for that
   // panel" case the dispatch names, not a regression of the v4.212 fix for what remains a modal.
   // Dispatch #55 Part B adds sched-hub/perf-reviews/fob-analysis/fob-eom/eom-dashboard/count-cycle
-  // to that same list — same reasoning, same removal.
+  // to that same list — same reasoning, same removal. Dispatch #160 removes above-store/
+  // leader-one-pager the same way (now routePanel==='above-store'/'leader-one-pager').
   const anyModalOpen = showNews||showAIScan||showAbout||showAttention||showAudit||showBrief||
-    showAboveStore||showDistrictLens||showEventImpact||
-    showFormsLibrary||showFormsPrint||showLeaderOnePager||showMetricLineage||
+    showDistrictLens||showEventImpact||
+    showFormsLibrary||showFormsPrint||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
     showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
@@ -2726,9 +2731,9 @@ function App() {
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSignals(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
-      setShowAboveStore(false);setShowDistrictLens(false);setShowEventImpact(false);
+      setShowDistrictLens(false);setShowEventImpact(false);
       setShowFeatureRequests(false);setShowFormsLibrary(false);
-      setShowFormsPrint(false);setShowLeaderOnePager(false);setShowMetricLineage(false);
+      setShowFormsPrint(false);setShowMetricLineage(false);
       setShowPromoRoi(false);setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
       setShowVisitReady(false);setShowNews(false);
@@ -2736,6 +2741,8 @@ function App() {
       // B: removed from this sweep, same reasoning as the routePanel check above (they're
       // routePanel now, caught by the early return, no showX left to reset).
       // fcst-ref — Dispatch #121: same reasoning, added to the routePanel set above.
+      // above-store/leader-one-pager — Dispatch #160: same reasoning, added to the routePanel
+      // set above (routePanel==='above-store'/'leader-one-pager').
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -2863,7 +2870,7 @@ function App() {
         if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
         if(modal==='calendar-manager') perm('analytics.dashboard')&&setShowCalendarManager(true);
         if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
-        if(modal==='above-store')    perm('analytics.district')&&setShowAboveStore(true);
+        if(modal==='above-store')    perm('analytics.district')&&goRoute('above-store');
         if(modal==='my-reports')     perm('analytics.dashboard')&&setShowReportSubs(true);
         if(modal==='channel-intel')  perm('analytics.store')&&setShowChannelIntel(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
@@ -2882,7 +2889,7 @@ function App() {
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
         if(modal==='forms-print')    setShowFormsPrint(true);
-        if(modal==='leader-one-pager') setShowLeaderOnePager(true);
+        if(modal==='leader-one-pager') goRoute('leader-one-pager');
         if(modal==='metric-lineage')   setShowMetricLineage(true);
         if(modal==='forms-library')    setShowFormsLibrary(true);
       }
@@ -3014,6 +3021,15 @@ function App() {
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
+      // above-store/leader-one-pager — Dispatch #160 (panel-contract pass): RoutePanelShell now
+      // lives inside AboveStoreOnePager/OnePagerPanel themselves, same "shell inside the
+      // component" pattern as sched-hub/perf-reviews/eom-dashboard/count-cycle above.
+      // aboveStoreInit stays local App state (My Reports quick-launch pre-scope), not URL-encoded
+      // — matching perf-reviews' initialTab/initialCustomizeSection above.
+      routePanel==='above-store'&&h(AboveStoreOnePager,{ds,settings,userEvents,eventImpact:getEventImpact(),
+        initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
+        onClose:()=>{goRoute(null);setAboveStoreInit(null);}}),
+      routePanel==='leader-one-pager'&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='time-punches'&&h(TimePunchesPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-analysis'&&h(RoutePanelShell,{
@@ -3072,15 +3088,14 @@ function App() {
     showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
     showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,initialScope:calInitScope,onClose:()=>{setShowCalendarManager(false);setCalInitScope(null);}}),
     showEventImpact&&h(EventImpactPanel,{onClose:()=>setShowEventImpact(false)}),
-    showAboveStore&&h(AboveStoreOnePager,{ds,settings,userEvents,eventImpact:getEventImpact(),
-      initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
-      onClose:()=>{setShowAboveStore(false);setAboveStoreInit(null);}}),
+    // showAboveStore — Dispatch #160: moved to the routePanel gate in the main content area
+    // (RoutePanelShell now lives inside AboveStoreOnePager itself; see routePanel==='above-store').
     showReportSubs&&h(ReportSubscriptions,{onClose:()=>setShowReportSubs(false),
       onLaunch:(sub)=>{
         setShowReportSubs(false);
         if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setShowCalendarManager(true); }
         else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); setShowVisitReady(true); }
-        else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); setShowAboveStore(true); }
+        else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
       }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
@@ -3157,7 +3172,8 @@ function App() {
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false),onCoachingSaved:refreshCoachingCycles}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
-    showLeaderOnePager&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>setShowLeaderOnePager(false)}),
+    // showLeaderOnePager — Dispatch #160: moved to the routePanel gate in the main content area
+    // (RoutePanelShell now lives inside OnePagerPanel itself; see routePanel==='leader-one-pager').
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
     // count-cycle — Dispatch #55 Part B: moved to the routePanel gate in the main content area

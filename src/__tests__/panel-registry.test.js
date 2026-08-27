@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the thirteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138, minus #140)', () => {
-    // Ratchet, not a ceiling: adding a fourteenth route panel is a real routing change (a new
+  it('is exactly the fifteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160, minus #140)', () => {
+    // Ratchet, not a ceiling: adding a sixteenth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -214,10 +214,14 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // same "route:true -> hub-tab" demotion #106 did for fcst-accuracy/lifelenz-bridge above --
     // net back down to twelve. Dispatch #138 added 'time-punches' (Time Punches) as route:true
     // from day one, same "would I ever want to send someone a link to this?" reasoning as its
-    // 'crew-schedule' sibling (twelve -> thirteen).
+    // 'crew-schedule' sibling (twelve -> thirteen). Dispatch #160 (panel-contract adoption pass,
+    // memory/panel-contract.md item 4) converted 'above-store' (Above-Store One-Pager) and
+    // 'leader-one-pager' (Leadership One-Pager) -- both genuine "send someone a link to this
+    // rollup/review" destinations, same test the existing thirteen already passed, shell swapped
+    // to RoutePanelShell inside each component (thirteen -> fifteen).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub', 'time-punches',
+      'above-store', 'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
+      'forecast-reports', 'leader-one-pager', 'perf-reviews', 'proj', 'report', 'sched-hub', 'time-punches',
     ]);
   });
 
