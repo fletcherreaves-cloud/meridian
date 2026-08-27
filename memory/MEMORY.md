@@ -84,6 +84,48 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.198): [Dispatch #153 — fix OEPE/R2P/TPPH blending an
+  in-progress business day into "current week" averages](dispatch-153.md).** The bug found by
+  the overnight parallel audit of the Leadership One-Pager, now fixed. Root cause: `metricAvg()`
+  is a flat mean-of-daily-values, and `qsr_daily_activity_rollup` always carries the full
+  24-`hour_slot` shape even mid-day (future hours zero-filled, not absent) — so an in-progress
+  "today" was structurally indistinguishable from a complete day and blended into "this week"
+  with full weight. Live-measured symptom: the week's only day so far sat at 70% of its own
+  projected volume yet read as the fastest OEPE/R2P/TPPH of the whole sampled window.
+  **Fix reuses an already-proven pattern instead of inventing a new completeness mechanism**:
+  `metricSumRatio()` (Σnumerator÷Σdenominator) already existed and was already used by `tpph`;
+  this dispatch extended the SAME `derive.kind:'ratio'` treatment to `oepe`/`r2p`, using raw
+  numerator/denominator legs (`_dtTotal/_dtStore/_dtHeldTime/_dtCars` for OEPE,
+  `_fcServe/_fcDrawer/_fcCnt` for R2P) that were **already being summed per-day** on
+  `qsrActSummaryRows` (confirmed by reading `src/lib/supabase.js` directly, not assumed) — a
+  low-volume in-progress day now naturally contributes proportionally less instead of being
+  averaged in as representative. **The dispatch's own hint had DT/FC backwards** (guessed
+  DT-fields for R2P) — the engineer caught this via live cross-check against the code's own
+  pre-existing, already-reconciled formula comments (r=0.9958 vs a real QSRSoft report) rather
+  than trusting the dispatch, and got it right: OEPE←DT(drive-thru), R2P←FC(front-counter).
+  Live cross-check on a known-complete day: existing formula 124s vs new Σ/Σ chain 124.37s
+  (OEPE), 129.65s vs 129.65s exact (R2P). Before/after on the real 8-day partial-week window:
+  OEPE mean-of-daily 158.13s→Σ/Σ 159.35s, R2P 178.87s→180.94s — the period rollup moves away
+  from the single-day artifact, closer to the 7 complete days' real range (the partial day's own
+  single-day reading is still fastest in isolation — unavoidable, aggregation-independent — the
+  fix is about the PERIOD figure, not making the partial day retroactively complete).
+  `mode:'any'` used deliberately for the new raw-leg metric keys (not `'pos'`) so a genuine
+  $0/zero-held-time day isn't silently dropped from the sum — same zero-discarding class already
+  fixed for park/kvsHealthy (#150/#178). Falls back to `metricAvg` only when `metricSumRatio` has
+  nothing to compute (never silently drops a number that used to display). Added a CLAUDE.md note
+  that `count(hour_slot)==24` does NOT detect an in-progress day (only a genuinely short/failed
+  pull) — closes the exact gap that let this bug go undetected despite that existing guidance.
+  **Scoped correctly, not swept broad**: only the 3 Leadership One-Pager call sites
+  (`buildCurrentState`/`buildMetricNow`/`buildPerLocationRows` in `one-pager-data.js`) were fixed;
+  ~12 other `metricAvg('oepe'/'r2p'/'tpph')` call sites elsewhere (morning-brief, review-engine,
+  at-a-glance, signals, labor-tools ×3, sage, store-dash ×3, attention-now, above-store-onepager)
+  were found and listed as follow-up candidates in the PR body, not touched — real, same-shape
+  bug likely present in some of those too, but out of THIS dispatch's scope; worth a future pass.
+  258/258 test files, 2813/2813 tests (+14 net new). Build clean, entry chunk unchanged at
+  474.95 KB gzip (eager total +0.15 KB). Verified independently in a fresh worktree before
+  merging — every diff read in full (the `metric-source.js`/`one-pager-data.js`/`CLAUDE.md`
+  changes), the raw-leg field claims cross-checked directly against `src/lib/supabase.js`'s real
+  code (not trusted from the PR body), both claimed test/build numbers reproduced exactly.
 - **✅ SHIPPED (2026-08-27, v5.197): [Dispatch #152 — Performance Review continuity Phase 4a:
   per-person-per-YEAR data model + scoring engine](dispatch-152.md).** Sixth build phase — the
   biggest architectural change of the whole redesign series so far. Restructures reviews from
