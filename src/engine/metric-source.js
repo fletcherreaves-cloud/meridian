@@ -258,9 +258,10 @@ export const METRIC_SOURCES = {
   tRedBAmt:  { mode: 'any', srcs: [['opsCashRows', 'tRedBAmt']] },
   cashOSPct: { mode: 'any', direction: 'lower', srcs: [['glimpseRows', 'cashOSPct'], ['cashRows', 'cashOSPct'], ['ctrlRows', 'cashOSPct']],
                derive: { inputs: ['cashOSAmt', 'netSalesAmt'], fn: (a, s) => (s > 0 ? a / s : null), kind: 'ratio' } },
-  // Cash Over/Short $ (dollar, not %) — manual Controls, then emailed Glimpse/Cash Sheet, then
-  // the auto-pulled Operations Report cash-sheet. Closes EOM Supervisor's Cash +/- gap (#52).
-  cashOSAmt: { mode: 'any', srcs: [['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['opsCashRows', 'cashOSAmt'], ['ctrlRows', 'cashOSAmt']] },
+  // Cash Over/Short $ (dollar, not %) — auto-first (dispatch #175): the auto-pulled Operations
+  // Report cash-sheet leads, then emailed Glimpse/Cash Sheet (kept as a fallback for any (loc,
+  // date) the ops-pull hasn't reached yet — correct since #172's fix), then manual Controls last.
+  cashOSAmt: { mode: 'any', srcs: [['opsCashRows', 'cashOSAmt'], ['glimpseRows', 'cashOS'], ['cashRows', 'cashOS'], ['ctrlRows', 'cashOSAmt']] },
   // T-Reds Before/After % — manual Controls, then the cloud-fresh Operations Report cash-sheet
   // (treds $ ÷ net sales, same net-sales-weighted math as discPct). Closes #37 for T-Reds.
   tRedAPct:  { mode: 'any', direction: 'lower', srcs: [['opsCashRows', 'tRedAPct'], ['ctrlRows', 'tRedAPct']],
@@ -295,9 +296,12 @@ export const METRIC_SOURCES = {
   cashlessRefAmt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefAmt'], ['cashRows', 'cashlessRefAmt'], ['ctrlRows', 'cashlessRefAmt']] },
   cashlessRefCnt: { mode: 'any', srcs: [['opsCashRows', 'cashlessRefCnt'], ['cashRows', 'cashlessRefCnt'], ['ctrlRows', 'cashlessRefCnt']] },
 
-  // POS Over $ / count — manual Controls, then emailed Glimpse, then emailed Cash Sheet.
-  posOverAmt:     { mode: 'any', srcs: [['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
-  posOverCnt:     { mode: 'any', srcs: [['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
+  // POS Over $ / count — auto-first (dispatch #175): the auto-pulled Operations Report
+  // cash-sheet leads (loadOpsCashSheet now aliases overring_amt/overring_qty to camelCase),
+  // then emailed Glimpse, then emailed Cash Sheet, then manual Controls last (parseCtrlData
+  // does emit posOverAmt/posOverCnt, confirmed — kept as the final fallback).
+  posOverAmt:     { mode: 'any', srcs: [['opsCashRows', 'posOverAmt'], ['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
+  posOverCnt:     { mode: 'any', srcs: [['opsCashRows', 'posOverCnt'], ['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
 
   // Promo $ / % — manual Controls, then emailed Glimpse. (promoCnt deliberately NOT
   // added: no auto/emailed stream emits it, so a chain would be single-source theatre.)
