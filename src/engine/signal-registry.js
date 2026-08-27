@@ -221,7 +221,104 @@ for (const cat of METRIC_CATEGORIES) {
   }
 }
 
-export function findMetric(key) { return METRIC_FLAT[key] || null; }
+// ── Product Mix items (dynamic per-item metric resolver) ─────────────────────
+// Dispatch #169 (Notes 28 #5, Filet-O-Fish-Fridays). Unlike every category above
+// — Weather, Calendar, Pricing — product mix is per-ITEM, and there is no fixed
+// small list: a 20-date/27-store sample of qsr_product_mix (2026-08-27, 207,966
+// rows, ~89% of one full district-day count so this is not a 1000-row toy)
+// found 699 distinct menuItemNumbers, and the real full-history count is almost
+// certainly higher (a bigger earlier sample of just 1000 rows already found
+// 391). Hand-listing that many as METRIC_CATEGORIES entries would bloat
+// METRIC_FLAT 20x+ and make the Scanner's O(n²) pairwise sweep combinatorially
+// explode. So an item is never a static registry entry — it's a key SHAPE,
+// `pmixItem:<menuItemNumber>`, that findMetric()/extractMetricValues() resolve
+// on the fly, reusing the exact "derived, no static source table" pattern
+// __calendar/__priceEvents already established above.
+//
+// Concentration (same measurement): top 10 items = 25.7% of units sold, top 50
+// = 60.5%, top 100 = 78.1%, top 150 ≈ 87%, top 200 = 91.7%, long tail of 500+
+// items each selling in the single digits over 20 sample-days. This backs the
+// Scanner's item-coverage design below (PMIX_SCANNER_TOP_N) — a bounded top-N
+// by volume captures the overwhelming majority of real signal without sweeping
+// the full 700+-item long tail.
+// How many items (by volume) the Scanner's opt-in item sweep considers — see
+// scanAllPairs's includeItems block below for the full tradeoff writeup.
+export const PMIX_SCANNER_TOP_N = 150;
+
+const PMIX_ITEM_PREFIX = 'pmixItem:';
+export function pmixItemKey(itemCode) { return PMIX_ITEM_PREFIX + itemCode; }
+export function isPmixItemKey(key) { return typeof key === 'string' && key.startsWith(PMIX_ITEM_PREFIX); }
+export function pmixItemCodeFromKey(key) { return isPmixItemKey(key) ? key.slice(PMIX_ITEM_PREFIX.length) : null; }
+
+// item code -> best-known display desc, filled in as pmixItemsIndex() scans real
+// rows. Session-lifetime (not per-ds): an item's display name doesn't change
+// once seen (schema-product-mix.sql: "Never GROUP BY item name/description...
+// desc_ is for display only"), so this only ever improves on a cold-start
+// generic "Item #<code>" label, never goes stale mid-session. Exists because
+// findMetric(key) is called all over signals.js (CSV export, saved-signal list
+// rows) long after the ds that produced the computation is out of scope, so a
+// label lookup can't require ds to be threaded through every call site.
+const _pmixItemLabelCache = new Map();
+
+// Full item catalog for one ds.pmixRows array, sorted by total soldQty desc —
+// the source for both the Signal Lab item picker (search the real list, not a
+// 700-entry <select>) and the Scanner's top-N cap. Memoized by array identity,
+// same WeakMap-per-call pattern as _priceSeriesCache below (pmixRows is a fresh
+// array only when the underlying data actually reloads).
+const _pmixItemsIndexCache = new WeakMap();
+export function pmixItemsIndex(pmixRows) {
+  if (!pmixRows || !pmixRows.length) return [];
+  const cached = _pmixItemsIndexCache.get(pmixRows);
+  if (cached) return cached;
+  const byItem = new Map();
+  for (const r of pmixRows) {
+    if (r.item == null) continue;
+    const code = String(r.item);
+    let e = byItem.get(code);
+    if (!e) { e = { item: code, desc: r.desc || null, familyGroup: r.familyGroup || null, totalSoldQty: 0 }; byItem.set(code, e); }
+    if (r.soldQty != null && !isNaN(r.soldQty)) e.totalSoldQty += r.soldQty;
+    if (!e.desc && r.desc) e.desc = r.desc;
+    if (!e.familyGroup && r.familyGroup) e.familyGroup = r.familyGroup;
+  }
+  const list = Array.from(byItem.values())
+    .map(e => ({ item: e.item, desc: e.desc || `Item #${e.item}`, familyGroup: e.familyGroup, totalSoldQty: e.totalSoldQty }))
+    .sort((a, b) => b.totalSoldQty - a.totalSoldQty);
+  for (const e of list) _pmixItemLabelCache.set(e.item, e.desc);
+  _pmixItemsIndexCache.set(pmixRows, list);
+  return list;
+}
+
+// Synthesizes a metric def for a `pmixItem:<code>` key on the fly — the dynamic
+// equivalent of a hand-written METRIC_CATEGORIES entry.
+//
+// allowZero:true is deliberate (dispatch-169.md #5): "0 Filet-O-Fish sold on a
+// Tuesday" is real, informative signal for a Friday-vs-other-days comparison,
+// not missing data the way a 0 usually is elsewhere in this registry. BUT —
+// measured, not assumed — scripts/qsrsoft-pmix-pull.mjs already filters
+// soldQty<=0 rows out before upsert ("catalog placeholders"), so a true 0-sold
+// day for an item currently never reaches ds.pmixRows as a row at all; it shows
+// up as an ABSENT (loc,date) pair in extractMetricValues below, identical to a
+// day the item wasn't in the catalog feed at all. allowZero:true is still the
+// right setting (it's correct if the pull script's filter ever changes, and
+// it's a no-op cost otherwise) — but it does not currently recover the literal
+// zero-sold day the FR's reasoning was written around. That gap lives in the
+// pull script's ingest filter, not in this resolver, and is out of scope here.
+function synthesizePmixItemMetric(key) {
+  const code = pmixItemCodeFromKey(key);
+  if (code == null) return null;
+  const label = _pmixItemLabelCache.get(code) || `Item #${code}`;
+  return {
+    key, label: `${label} · Sold Qty`, source: '__pmixItem', field: 'soldQty', itemCode: code,
+    granularity: ['daily'], better: 'higher', unit: 'units', allowZero: true,
+    category: 'product_mix', categoryLabel: 'Product Mix (Item)', categoryColor: '#c084fc',
+  };
+}
+
+export function findMetric(key) {
+  if (METRIC_FLAT[key]) return METRIC_FLAT[key];
+  if (isPmixItemKey(key)) return synthesizePmixItemMetric(key);
+  return null;
+}
 
 // ── Concept grouping (scanner de-duplication) ─────────────────────────────────
 // Several metrics measure the SAME underlying quantity — the identical number
@@ -353,6 +450,34 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
     return Object.values(byKey);
   }
 
+  // Product-mix item metrics — dynamic resolver, see pmixItemsIndex/synthesizePmixItemMetric
+  // above. Reading ds.pmixRows here also warms _pmixItemLabelCache as a side effect, so a
+  // label is available for this item everywhere findMetric() is called afterward even if the
+  // Signal Lab item picker itself never ran this session.
+  if (meta.source === '__pmixItem') {
+    if (granularity !== 'daily') return []; // item-level daily only for v1 — same call as pxItemsChanged/pxMeanStepPct above
+    pmixItemsIndex(ds.pmixRows); // warm the label cache
+    const rows = (ds.pmixRows || []).filter(r => String(r.item) === meta.itemCode && (!scopeLoc || _normLoc(r.loc) === _normLoc(scopeLoc)));
+    // Grain is (loc, date, item, price) — NOT (loc, date, item) (schema-product-mix.sql).
+    // Sum sold_qty across price tiers so a real multi-price day (e.g. a promo tier alongside
+    // the regular price) isn't silently truncated to whichever price row happened to come last.
+    const byKey = new Map();
+    for (const r of rows) {
+      if (!r.date) continue;
+      const v = r.soldQty;
+      if (v == null || isNaN(v)) continue;
+      const loc = _normLoc(r.loc);
+      const k = loc + '_' + _dKey(r.date);
+      const prior = byKey.get(k);
+      byKey.set(k, { loc, date: r.date, value: (prior ? prior.value : 0) + v });
+    }
+    const out = Array.from(byKey.values());
+    // allowZero:true means a summed 0 would survive here — see the header comment on
+    // synthesizePmixItemMetric for why that case essentially never occurs today (the pull
+    // script drops soldQty<=0 rows before upsert), documented rather than silently assumed.
+    return meta.allowZero ? out : out.filter(o => o.value !== 0);
+  }
+
   const src = ds[meta.source] || [];
   const rows = scopeLoc ? src.filter(r => _normLoc(r.loc) === _normLoc(scopeLoc)) : src;
 
@@ -473,6 +598,12 @@ export function getConditionLabel(condition, reference, metaMeta) {
 // xCondition/yCondition: 'all'|'high'|'low'|'positive'|'negative'
 // xReference/yReference: 'median'|'average'
 export function computeCustomSignal(def, ds) {
+  // Warm the pmix item label cache BEFORE resolving meta below — findMetric() for a
+  // never-before-seen pmixItem key falls back to a generic "Item #<code>" label until
+  // pmixItemsIndex has scanned a ds.pmixRows carrying its real desc_. Without this, the first
+  // computeCustomSignal call on a fresh item would capture (and return) the generic label even
+  // though extractMetricValues warms the same cache a few lines down — one call too late.
+  if (ds?.pmixRows?.length) pmixItemsIndex(ds.pmixRows);
   const xMeta = findMetric(def.xMetric);
   const yMeta = findMetric(def.yMetric);
   if (!xMeta || !yMeta) return null;
@@ -650,12 +781,35 @@ export function scanAllPairs(ds, opts = {}) {
   const keyFn = gran === 'daily' ? _dKey : _mKey;
 
   // Pre-extract each usable metric once → { loc_period : value }.
+  //
+  // Dispatch #169 fix (measured, not assumed): Calendar (__calendar) and Pricing
+  // (__priceEvents) are DERIVED sources with no backing ds[source] array — that's the whole
+  // point of the "derived, no static source table" pattern (see the header comment above
+  // METRIC_CATEGORIES's calendar block). The presence check below used to be
+  // `const src = ds[m.source]; if (!src || !src.length) continue;` unconditionally, which for
+  // these two sources reads `ds['__calendar']`/`ds['__priceEvents']` — always undefined — and
+  // silently `continue`s past every calFri/calWeekend/calMon/pxDaysSince/pxItemsChanged/
+  // pxMeanStepPct metric, every time. Reproduced directly: scanAllPairs({ laborRows }, ...)
+  // against a dataset with an obvious Fri/Sat/Sun sales pattern returned metricsUsed:2
+  // (sales, gc only) and never surfaced the Friday link the SEEDED_SIGNALS "Friday lift" entry
+  // (which calls computeCustomSignal directly, bypassing this loop) has claimed as an anchor
+  // since v4.533. Calendar/Weather-target coverage is required for THIS dispatch's item×
+  // Calendar/Weather block below to find anything at all, which is what surfaced the bug — but
+  // the bug itself predates and is independent of product-mix items. Fixed here rather than
+  // filed separately per "fix opportunistically when already touching the line."
   const valMap = {};
   for (const cat of METRIC_CATEGORIES) {
     for (const m of cat.metrics) {
       if (!m.granularity.includes(gran)) continue;
-      const src = ds[m.source];
-      if (!src || !src.length) continue;
+      if (m.source === '__calendar') {
+        // No direct source array to gate on — extractMetricValues synthesizes its own
+        // (loc,date) universe from whichever real _CAL_SRC streams are loaded.
+      } else if (m.source === '__priceEvents') {
+        if (!ds.pmixRows || !ds.pmixRows.length) continue;
+      } else {
+        const src = ds[m.source];
+        if (!src || !src.length) continue;
+      }
       const vals = extractMetricValues(m.key, ds, gran, scopeLoc);
       if (vals.length < minN) continue;
       const map = {};
@@ -697,6 +851,58 @@ export function scanAllPairs(ds, opts = {}) {
     }
   }
 
+  // ── Product-mix items — bounded, opt-in-only (dispatch #169 task 4) ──────────
+  // Items are NEVER folded into the general keys[] double loop above. Measured
+  // concentration (pmixItemsIndex's header comment): the top ~150 items by
+  // volume already cover ~87% of units sold, with 500+ more items each
+  // contributing single digits per sample-day — so a full item×everything
+  // sweep would multiply an already-O(n²) sweep by another order of magnitude
+  // to chase a long tail that is mostly noise. Instead: (a) capped to the top
+  // PMIX_SCANNER_TOP_N items by volume, (b) paired ONLY against the
+  // Calendar/Weather metrics already resolved above — never against each other
+  // or the rest of the registry, since "does this item sell more on Fridays /
+  // in the heat" is the actual ask, not "does McChicken volume track Labor %" —
+  // and (c) off by default. opts.includeItems must be explicitly true, so a
+  // plain "Run scan" is byte-for-byte the same sweep as before this dispatch
+  // (see signal-scanner.test.js's regression guard on pair count/timing).
+  let itemsUsed = 0;
+  if (opts.includeItems && gran === 'daily' && ds.pmixRows?.length) {
+    const targetKeys = keys.filter(k => { const cat = findMetric(k).category; return cat === 'calendar' || cat === 'weather'; });
+    if (targetKeys.length) {
+      const topN = opts.itemTopN || PMIX_SCANNER_TOP_N;
+      const items = pmixItemsIndex(ds.pmixRows).slice(0, topN);
+      for (const it of items) {
+        const ik = pmixItemKey(it.item);
+        const vals = extractMetricValues(ik, ds, gran, scopeLoc);
+        if (vals.length < minN) continue;
+        const map = {};
+        for (const v of vals) map[_normLoc(v.loc) + '_' + keyFn(v.date)] = v.value;
+        itemsUsed++;
+        const im = findMetric(ik);
+        for (const tk of targetKeys) {
+          const tmap = valMap[tk];
+          const iter = Object.keys(map).length <= Object.keys(tmap).length ? map : tmap;
+          const pairs = [];
+          for (const k in iter) {
+            const av = tmap[k], bv = map[k];
+            if (av != null && bv != null && !isNaN(av) && !isNaN(bv)) pairs.push({ x: av, y: bv });
+          }
+          if (pairs.length < minN) continue;
+          const r = pearson(pairs);
+          if (r == null) continue;
+          const tm = findMetric(tk);
+          all.push({
+            xKey: tk, yKey: ik, xLabel: tm.label, yLabel: im.label,
+            xCat: tm.categoryLabel, yCat: im.categoryLabel,
+            r, n: pairs.length, p: pValueFromR(r, pairs.length),
+            crossDomain: true,
+            _pairs: pairs,
+          });
+        }
+      }
+    }
+  }
+
   // FDR across the full test space, THEN surface by effect size.
   benjaminiHochberg(all, alpha);
   const results = all
@@ -711,7 +917,8 @@ export function scanAllPairs(ds, opts = {}) {
 
   return {
     granularity: gran, minN, minAbsR, alpha,
-    metricsUsed: keys.length,
+    metricsUsed: keys.length + itemsUsed,
+    itemsUsed,
     tested: all.length,
     fdrCount: all.filter(t => t.fdrSig).length,
     results,
