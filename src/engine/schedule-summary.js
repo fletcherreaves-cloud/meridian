@@ -22,6 +22,18 @@ export function weekStartOf(date) {
 }
 const _wkKey = d => weekStartOf(d).toISOString().slice(0, 10);
 
+// The current LifeLenz business week's date range (Wed→Tue), ISO-string bounds
+// compatible with computeScheduleRollup's range arg. Dispatch #167 -- centralizes the
+// "what week is 'this week'" math in the one file that already owns WEEK_START_DOW/
+// weekStartOf, so callers reusing rollup() elsewhere (Smart Targets, Projections) don't
+// each hand-roll their own Wednesday-anchor arithmetic (CLAUDE.md: "check whether a
+// helper exists before writing one"). `now` is overridable for tests.
+export function currentScheduleWeekRange(now = new Date()) {
+  const ws = weekStartOf(now);
+  const we = new Date(ws); we.setDate(we.getDate() + 6);
+  return { s: ws.toISOString().slice(0, 10), e: we.toISOString().slice(0, 10), weekStart: ws };
+}
+
 // Scheduled / forecast hours for one daily row (hours, decimal). Exported (#348) so
 // every panel reading schedRows derives the same two figures the same way — the
 // Scheduling/Opportunity panel had its own private reimplementation that omitted
