@@ -84,6 +84,56 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.219): [Dispatch #172 — cash-handling field discrepancy root-caused
+  and fixed](dispatch-172.md), PR #863.** Follow-up to dispatch #165's audit
+  (`audit-emailed-stream-redundancy-2026-08-27.md`), which found `glimpseRows.cashOS` reconciling
+  against `qsr_cash_sheet.cash_over_or_short` at only 1/135 (0.7%), `cashRows.cashRefAmt` at 44/135
+  (44%), and `cash_os`/`posOverAmt` at 75-79% — while promo/channel-mix fields from the same
+  streams reconciled at 97-98%+ — and explicitly deferred investigating why. **This dispatch found
+  and fixed THREE independent, narrow, mechanical bugs that fully explain every number in that
+  table — no real data discrepancy, no day-boundary mismatch** (that hypothesis was directly
+  tested and ruled out).
+  1. `daily_glimpse_daily.cash_os`/`cash_os_pct` were **0 on all 1,431 rows in the table's entire
+     history** — `parseDailyGlimpse`'s header candidates (`"Cash Over/Short $"` etc.) never
+     matched the real Daily Glimpse column, confirmed from a real ingested CSV pulled from the
+     `qsr-reports` bucket: it's actually `"Over/Short $"`/`"Over/Short %"`.
+  2. `cash_sheet_daily`'s refund fields + `posOverCnt` were also always 0 — `parseCashSheet`
+     searched singular `"Refund"+"Count/Cnt"` but the real Cash Sheet Extract header (also
+     confirmed from a real CSV) is plural `"Refunds"+"Qty"`.
+  3. The residual mismatch concentrated almost entirely on one date (2026-08-12, 25-26/27
+     stores) — a THIRD bug: a `cash_sheet_extract_weekly_*.csv` rollup file has no per-row Date
+     column (one row per store = the week's total), so `parseCashSheet` falls back to a
+     filename-derived week-start date and the whole week's total ($1,925,318.54 vs a normal
+     ~$260-313K) silently overwrote that week's correct daily row via `upsert(onConflict:
+     loc,date)`. **This exact failure mode already had an explicit skip-guard for
+     `daily-glimpse`** in `scripts/qsrsoft-email-parse.mjs` — `cash-sheet` was simply never added
+     to it. **9 corrupted week-start dates found across the pipeline's full history** (~17% of
+     `cash_sheet_daily`'s rows, 2026-06-24 through 2026-08-19). Sales Ledger's weekly variant was
+     checked and confirmed NOT affected — it carries a real per-row Date column.
+  **Fix**: rollup skip-guard extended from `daily-glimpse`-only to also cover `cash-sheet`; real
+  header names added as primary candidates in both parsers (old candidates kept as fallback, in
+  case QSRSoft ever renames back). New `cash-handling-header-match.test.js` (12 tests) built from
+  real header text observed live — revert-checked (stashing the fix locally reproduced 7/12
+  failures, confirming the tests are load-bearing). Full write-up:
+  `finding-cash-handling-discrepancy-2026-08-27.md`.
+  **Version-collision with #171/#174** (all three branches independently claimed `5.217`, all
+  dispatched from the same pre-#171 `main`) — renumbered to `v5.219` during verification. 290/290
+  test files, 3005/3005 tests. Build clean, eager total 552.58→552.59 KB, 297.41 KB under budget.
+  **⚠️ NOT done — needs an explicit owner go-ahead, not attempted by the PM session either:** the
+  9 already-corrupted historical dates in `cash_sheet_daily` were NOT repaired live. The code fix
+  only stops NEW corruption going forward. The engineer's own attempt at a scoped, read-verified
+  repair (re-parsing only the already-confirmed-correct daily CSVs for the 9 known dates) was
+  **blocked by this environment's own auto-mode permission classifier before any write occurred**
+  — correctly treated as a signal that live production-data mutation is outside an investigation
+  dispatch's authority, not something to route around. The PM session verifying this PR treated
+  that block as a standing boundary too, not something to bypass via a direct Supabase write —
+  this is a genuinely different risk class from the CLAUDE.md backfill standing-authorization rule
+  (which covers PULLING absent history, not OVERWRITING existing live rows). Recommended repair
+  (from the finding doc): `node scripts/qsrsoft-email-parse.mjs --days=70` — verified mechanically
+  safe/idempotent once the guard fix is on `main` (each week's correct daily file re-upserts its
+  correct values, and the now-skipped weekly file no longer follows it to overwrite them) — or a
+  narrower repair scoped to just the 9 known dates. **Needs the owner's explicit go-ahead before
+  anyone runs it.**
 - **✅ SHIPPED (2026-08-27, v5.218): [Dispatch #174 — Performance Review Sales actual
   (`mo.salesVsTgt`) manual-only, silently blanking past July](dispatch-174.md), PR #861.**
   Owner-reported LIVE bug, follow-up to the same symptom #159 was supposed to fix: *"performance
