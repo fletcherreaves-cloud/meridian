@@ -130,7 +130,7 @@ describe('autoPopulateKPIs bug fix — a correction survives re-population', () 
      'actual fields did not) — this pins that autoPopulateKPIs STILL overwrites the raw field ' +
      'unconditionally (by design now, see its own header comment), which is exactly why the ' +
      'override must live somewhere else', () => {
-    const review = blankReview('Jane GM', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('Jane GM', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     const ds = {
       loaded: true,
       laborRows: [{ loc: '3708', date: '2026-01-15', sales: 100000 }],
@@ -155,7 +155,7 @@ describe('autoPopulateKPIs bug fix — a correction survives re-population', () 
   it('THE FIX: a correction stored as an override record survives autoPopulateKPIs re-running, ' +
      'because applyReviewOverrides resolves it AFTER auto-populate, from storage auto-populate ' +
      'never touches', () => {
-    const review = blankReview('Jane GM', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('Jane GM', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     const ds = {
       loaded: true,
       laborRows: [{ loc: '3708', date: '2026-01-15', sales: 100000 }],
@@ -184,13 +184,13 @@ describe('autoPopulateKPIs bug fix — a correction survives re-population', () 
 
 describe('applyReviewOverrides', () => {
   it('returns the SAME review object (identity) when there are no overrides — cheap no-op', () => {
-    const review = blankReview('X', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('X', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     expect(applyReviewOverrides(review, [])).toBe(review);
     expect(applyReviewOverrides(review, null)).toBe(review);
   });
 
   it('patches only the overridden (month, metricKey) cells, leaving every other value untouched', () => {
-    const review = blankReview('X', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('X', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     review.kpis.months[3].oepe = 150;
     review.kpis.months[3].r2p = 40;
     review.kpis.months[4].oepe = 148;
@@ -206,7 +206,7 @@ describe('applyReviewOverrides', () => {
   });
 
   it('resolves to the LATEST override when several exist for the same cell', () => {
-    const review = blankReview('X', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('X', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     review.kpis.months[2].kvs = 20;
     const overrides = [
       { month: 2, metricKey: 'kvs', value: 18, overriddenAt: '2026-01-01T00:00:00Z' },
@@ -216,7 +216,7 @@ describe('applyReviewOverrides', () => {
   });
 
   it('never touches the Tgt sibling field — overrides are actual-only', () => {
-    const review = blankReview('X', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('X', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     review.kpis.months[1].oepe = 150;
     review.kpis.months[1].oepeTgt = 140;
     const resolved = applyReviewOverrides(review, [
@@ -244,7 +244,7 @@ describe('resolved value reaches scoring (rateMetric / computeScores / computeSc
   });
 
   it('computeScores scores the RESOLVED review differently than the raw one when an override exists', () => {
-    const review = blankReview('X', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('X', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     // A bad auto-sourced OEPE reading, far off target, dragging the score down.
     for (const m of [1, 2, 3, 4, 5, 6]) {
       review.kpis.months[m].oepe = 300;
@@ -258,20 +258,24 @@ describe('resolved value reaches scoring (rateMetric / computeScores / computeSc
     const resolved = applyReviewOverrides(review, overrides);
     const resolvedScores = computeScores(resolved, DEFAULT_REVIEW_CONFIG);
 
-    expect(resolvedScores.half.metrics).not.toBe(null);
-    expect(rawScores.half.metrics).not.toBe(null);
-    expect(resolvedScores.half.metrics).toBeGreaterThan(rawScores.half.metrics);
+    expect(resolvedScores.h1.metrics).not.toBe(null);
+    expect(rawScores.h1.metrics).not.toBe(null);
+    expect(resolvedScores.h1.metrics).toBeGreaterThan(rawScores.h1.metrics);
   });
 
   it('computeScoreBreakdown reflects the resolved actual/rating for an overridden month, not the raw one', () => {
-    const review = blankReview('X', 'GM', '3708', 2026, 'H1', DEFAULT_REVIEW_CONFIG);
+    const review = blankReview('X', 'GM', '3708', 2026, DEFAULT_REVIEW_CONFIG);
     review.kpis.months[1].oepe = 300;
     review.kpis.months[1].oepeTgt = 140;
     const resolved = applyReviewOverrides(review, [
       { month: 1, metricKey: 'oepe', value: 132, overriddenAt: '2026-01-01T00:00:00Z' },
     ]);
+    // Dispatch #152: computeScoreBreakdown now returns every period (q1..q4, h1, h2, year) from
+    // one call, keyed the same way computeScores() is — January falls in q1 (and rolls up
+    // through h1/year), so this reads the q1 breakdown, the direct generalization of the old
+    // half-only `bd.categories`.
     const bd = computeScoreBreakdown(resolved, DEFAULT_REVIEW_CONFIG);
-    const rgrCat = bd.categories.find(c => c.key === 'rgr');
+    const rgrCat = bd.q1.categories.find(c => c.key === 'rgr');
     const oepeRow = rgrCat.metrics.find(mm => mm.key === 'oepe');
     const janEntry = oepeRow.monthlyData.find(d => d.month === 1);
     expect(janEntry.actual).toBe(132); // resolved value, not the raw 300

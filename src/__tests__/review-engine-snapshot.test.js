@@ -15,8 +15,12 @@ const mkCfg = (overall) => ({
 
 // A review whose metrics all score 4 (dev = 20-10 = 10 ≥ t4) and whose behavioral
 // ratings are all 2 → so the metrics/behavioral split actually changes the overall.
+// Dispatch #152: a review record spans the full year now — all 12 months + all four
+// behavioral quarters — so this fixture fills all 12 (H2 months carry no data, scoring null
+// for q3/q4, which is fine: this test only exercises h1, the direct generalization of the old
+// half-only fixture).
 const mkReview = (snapshot) => ({
-  role: 'GM', half: 'H1',
+  role: 'GM',
   ...(snapshot ? { templateSnapshot: snapshot } : {}),
   kpis: { months: Object.fromEntries([1, 2, 3, 4, 5, 6].map(m => [m, { m1: 20, m1Tgt: 10 }])) },
   behavioralRatings: { q1: { rgr: [2] }, q2: { rgr: [2] } },
@@ -35,14 +39,14 @@ describe('computeScores template-snapshot isolation', () => {
   it('scores a pre-snapshot review against the live config (back-compat)', () => {
     const live = mkCfg({ metrics: 0.7, behavioral: 0.3 });
     const s = computeScores(mkReview(null), live);
-    expect(s.half.overall).toBeCloseTo(4 * 0.7 + 2 * 0.3, 5); // 3.4
+    expect(s.h1.overall).toBeCloseTo(4 * 0.7 + 2 * 0.3, 5); // 3.4
   });
 
   it('scores against the review snapshot, NOT the (changed) live config', () => {
     const live = mkCfg({ metrics: 0.7, behavioral: 0.3 });
     const snap = mkCfg({ metrics: 0.5, behavioral: 0.5 });
     const s = computeScores(mkReview(snap), live);
-    expect(s.half.overall).toBeCloseTo(4 * 0.5 + 2 * 0.5, 5); // 3.0 — history protected
+    expect(s.h1.overall).toBeCloseTo(4 * 0.5 + 2 * 0.5, 5); // 3.0 — history protected
   });
 });
 
@@ -93,12 +97,61 @@ describe('validateTemplateWeights (hard 100%)', () => {
   });
 });
 
+// Dispatch #152 (Performance Review continuity, Phase 4a) — blankReview is now a full-YEAR
+// builder: no `half` parameter, all 12 months, all four behavioral quarters, no top-level
+// `half` field, and status moves to `periods.h1`/`periods.h2`. These assertions replace the old
+// half-scoped ones rather than leaving them to pass by accident (dispatch's own instruction).
 describe('blankReview', () => {
   it('embeds a deep copy of the template it was built against', () => {
     const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
-    const r = blankReview('Jane Doe', 'GM', '3708', 2026, 'H1', cfg);
+    const r = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
     expect(r.templateSnapshot).toBeTruthy();
     expect(r.templateSnapshot.overall).toEqual({ metrics: 0.6, behavioral: 0.4 });
     expect(r.templateSnapshot).not.toBe(cfg); // deep copy, not a shared reference
+  });
+
+  it('populates all 12 months, not 6', () => {
+    const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
+    const r = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
+    expect(Object.keys(r.kpis.months).map(Number).sort((a, b) => a - b))
+      .toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  it('populates all four behavioral quarters, not two', () => {
+    const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
+    const r = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
+    expect(Object.keys(r.behavioralRatings).sort()).toEqual(['q1', 'q2', 'q3', 'q4']);
+  });
+
+  it('has no top-level `half` field — a record spans the whole year', () => {
+    const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
+    const r = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
+    expect(r.half).toBeUndefined();
+  });
+
+  it('builds a year-only id with no half suffix', () => {
+    const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
+    const r = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
+    expect(r.id).toBe('jane_doe_2026');
+  });
+
+  it('seeds independent draft periods for h1 and h2', () => {
+    const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
+    const r = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
+    expect(r.periods).toEqual({
+      h1: { status: 'draft', statusHistory: [], statusNotes: '' },
+      h2: { status: 'draft', statusHistory: [], statusNotes: '' },
+    });
+  });
+
+  it('defaults `person` to null and unifies the id with a real person value when given', () => {
+    const cfg = mkCfg({ metrics: 0.6, behavioral: 0.4 });
+    const noPerson = blankReview('Jane Doe', 'GM', '3708', 2026, cfg);
+    expect(noPerson.person).toBeNull();
+    expect(noPerson.id).toBe('jane_doe_2026'); // falls back to slugified name
+
+    const withPerson = blankReview('Jane Doe', 'GM', '3708', 2026, cfg, '00012345');
+    expect(withPerson.person).toBe('00012345');
+    expect(withPerson.id).toBe('00012345_2026'); // id follows the unified person identity
   });
 });

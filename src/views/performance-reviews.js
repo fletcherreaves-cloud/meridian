@@ -2504,7 +2504,15 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
 
   const submit = () => {
     if (!name.trim()) { alert('Name is required'); return; }
-    const r = blankReview(name.trim(), role, loc, year, half, cfg);
+    // Dispatch #152 (Performance Review continuity, Phase 4a) dropped blankReview's `half`
+    // parameter -- a review is a full-year record now. This is a MINIMAL crash fix only (the old
+    // 6-arg call would silently shift `half` into the new `cfg` slot, corrupting
+    // templateSnapshot into a raw string and crashing computeScores/computeScoreBreakdown the
+    // first time the new review is opened) -- the H1/H2 picker UI itself, and everything else
+    // about how a review is created, is untouched and stays exactly as broken/unwired as the
+    // dispatch's own scope note says is expected: Phase 4b (a later dispatch) replaces this whole
+    // form with a period-less creation flow.
+    const r = blankReview(name.trim(), role, loc, year, cfg);
     r.geid = (showMgr && geid) ? Number(geid) : null;
     onCreate(r);
   };
