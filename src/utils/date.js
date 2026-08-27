@@ -59,7 +59,17 @@ function setWeekStartDay(d){ _weekStartDay = (d!==undefined?d:3); }
  */
 function weekStartOf(date, wsd){
   const startDay = (wsd!==undefined?wsd:_weekStartDay);
-  const d = sodOf(date instanceof Date ? date : new Date(date));
+  // A bare 'YYYY-MM-DD' string (exactly what an <input type="date"> hands back) parses as
+  // UTC midnight; every timezone behind UTC (every US zone) then reads getDay()/getDate()
+  // as the PREVIOUS calendar day. That's harmless most of the week, but when the picked
+  // date IS the configured week-start weekday itself, it shifts `diff` by a full 7 and
+  // returns the PRIOR week entirely -- confirmed 2026-08-27 (owner report: picking the
+  // week-start date on the Leadership One-Pager showed the previous week). Same defect
+  // dKey() above already guards against (see its header comment) -- this function just
+  // didn't inherit the guard when it was added. Only date-only strings are affected; a
+  // datetime string or a Date object already carries an unambiguous instant.
+  const dateOnly = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date);
+  const d = sodOf(date instanceof Date ? date : new Date(dateOnly ? date + 'T00:00:00' : date));
   const diff = (d.getDay() - startDay + 7) % 7;   // days SINCE the week start
   return addD(d, -diff);
 }

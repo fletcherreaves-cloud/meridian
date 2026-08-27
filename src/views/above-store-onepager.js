@@ -115,7 +115,14 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       // Worst store-days behind the Controls averages (the "who + when"). Only for
       // multi-store scopes — a single store IS the outlier, no need to name it.
       const controlsOut = locs.length > 1 ? buildControlsOutliers(ds, locs, range) : null;
-      const fobAgg = Object.values(fobByRange(fobRows, range));
+      // fobByRange has no locs param -- it returns EVERY loc present in fobRows (district-
+      // wide), so it must be filtered to the selected scope here, same as every other
+      // builder above already receives `locs` directly. Before this fix the header FOB%
+      // silently summed all 27 stores regardless of scope, so switching between FL/OK,
+      // patches, or a single store never changed the number (owner report 2026-08-27).
+      const fobLocSet = new Set(locs.map(l => String(l).replace(/^0+/, '')));
+      const fobAgg = Object.entries(fobByRange(fobRows, range))
+        .filter(([loc]) => fobLocSet.has(loc)).map(([, a]) => a);
       const fob$ = fobAgg.reduce((s, a) => s + (a.fob$ || 0), 0);
       const fobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
       // FOB% vs LY (dollar-weighted, same method as current) — the direction signal.

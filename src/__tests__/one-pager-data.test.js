@@ -159,6 +159,28 @@ describe('buildCurrentState FOB% tile', () => {
     const sales = rows.find(r => r.key === 'sales');
     expect(sales.actual).toBe(7000);               // window net sales
   });
+
+  // Owner report 2026-08-27: the header FOB% tile on both One-Pagers stayed identical no
+  // matter which scope/supervisor/store was selected. Root cause: fobByRange has no `locs`
+  // param -- it returns EVERY loc present in fobRows -- and this function summed ALL of
+  // them regardless of the `locs` it was itself called with, silently ignoring its own
+  // parameter. The existing test above never caught this because it only ever passes
+  // fobRows for a single store, so filtered-vs-unfiltered can't diverge.
+  it('scopes the header FOB% to the requested locs, not every store fobRows carries', () => {
+    const ds = { laborRows: [] };
+    const fobRows = [
+      { loc: '1', date: '2026-06-15', prodSalesAmt: 100000, compWasteAmt: 4000 }, // 4%
+      { loc: '2', date: '2026-06-15', prodSalesAmt: 100000, compWasteAmt: 8000 }, // 8%
+    ];
+    const range = { s: '2026-06-01', e: '2026-06-30' };
+    const store1 = buildCurrentState(ds, fobRows, ['1'], range).find(r => r.key === 'fobPct');
+    const store2 = buildCurrentState(ds, fobRows, ['2'], range).find(r => r.key === 'fobPct');
+    const both   = buildCurrentState(ds, fobRows, ['1', '2'], range).find(r => r.key === 'fobPct');
+    expect(store1.actual).toBeCloseTo(0.04, 6);   // store 1 ONLY -- not blended with store 2
+    expect(store2.actual).toBeCloseTo(0.08, 6);   // store 2 ONLY -- not blended with store 1
+    expect(store1.actual).not.toBeCloseTo(store2.actual, 6); // the actual reported symptom
+    expect(both.actual).toBeCloseTo(0.06, 6);     // both stores selected: 12000/200000
+  });
 });
 
 // ── Dispatch #153 (2026-08-27) — the actual call sites, not just the metric-source engine

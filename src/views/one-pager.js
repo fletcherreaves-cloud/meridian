@@ -105,7 +105,13 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const [savedNote, setSavedNote] = useState('');
 
   const wsd = (settings && settings.weekStartDay != null) ? settings.weekStartDay : WW_START; // McDonald's work week (Wed=3)
-  const anchor = useMemo(() => new Date(weekDate), [weekDate]);
+  // weekDate is a bare 'YYYY-MM-DD' from the "Week containing:" <input type="date">. Parsed
+  // as new Date(weekDate) that's UTC midnight, which every US timezone reads back as the
+  // PREVIOUS local calendar day -- harmless most of the week, but when the picked date IS
+  // the configured week-start weekday itself, weekStartOf's diff shifts by a full 7 and
+  // returns the PRIOR week entirely (owner report 2026-08-27: picking the week-start date
+  // showed last week). Parsing as local midnight fixes it at the source.
+  const anchor = useMemo(() => new Date(weekDate + 'T00:00:00'), [weekDate]);
   const range = useMemo(() => (
     rangeMode === 'week' ? weekRangeFrom(anchor, wsd)
     : rangeMode === 'mtd' ? monthRangeFrom(anchor)

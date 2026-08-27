@@ -64,6 +64,26 @@ describe('weekStartOf', () => {
   it('accepts a date string as well as a Date', () => {
     expect(weekKeyOf('2026-08-07T12:00:00', 3)).toBe('2026-08-05');
   });
+
+  // Owner report 2026-08-27 (Leadership One-Pager): picking the week-start date itself in a
+  // "week containing:" <input type="date"> showed the PREVIOUS week. Root cause: a bare
+  // 'YYYY-MM-DD' string (exactly what that input hands back) parses as UTC midnight; every
+  // US timezone then reads getDay()/getDate() back as the previous LOCAL calendar day. That's
+  // invisible most of the week, but when the picked date IS the configured week-start weekday,
+  // the shifted getDay() pushes `diff` a full 7 days and returns the prior week entirely. Only
+  // reproduces with a bare date-only string -- every existing case above uses a Date or a
+  // datetime string, which is exactly why this survived undetected.
+  it('a bare date-only string on the week-start weekday itself returns THAT week, not the prior one', () => {
+    expect(weekKeyOf('2026-08-19', 3)).toBe('2026-08-19'); // 2026-08-19 IS a Wednesday
+    expect(weekKeyOf('2026-08-26', 3)).toBe('2026-08-26'); // the following Wednesday
+  });
+
+  it('a bare date-only string on every other weekday still resolves to the correct week', () => {
+    const days = ['2026-08-19','2026-08-20','2026-08-21','2026-08-22',
+                  '2026-08-23','2026-08-24','2026-08-25'];
+    const starts = new Set(days.map(d => weekKeyOf(d, 3)));
+    expect([...starts]).toEqual(['2026-08-19']);
+  });
 });
 
 describe('census of hand-rolled week boundaries', () => {

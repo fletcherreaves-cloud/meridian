@@ -431,7 +431,15 @@ export function buildCurrentState(ds, fobRows, locs, range) {
   // Canonical FOB% = Σ components ÷ Σ (fob rows' OWN prodSales base) — never the window
   // sales base (that would divide a fob-period numerator by a window denominator and
   // inflate the %, the FL-14.88% class of bug). Sourced straight from fobByRange.
-  const fobAgg = Object.values(fobByRange(fobRows, range));
+  // fobByRange has no locs param -- it returns EVERY loc present in fobRows, so the result
+  // must be filtered to THIS call's own `locs` before summing, same as every other metric
+  // in this function already is (metricAvg/metricRate below both take `locs` directly).
+  // Before this fix the header FOB% tile silently summed every store fobRows carried
+  // (district-wide), so it never changed no matter which scope/supervisor/store was
+  // selected on either One-Pager -- owner report 2026-08-27.
+  const fobLocSet = new Set((locs || []).map(l => unpad(l)));
+  const fobAgg = Object.entries(fobByRange(fobRows, range))
+    .filter(([loc]) => fobLocSet.has(loc)).map(([, a]) => a);
   const totFob$ = fobAgg.reduce((s, a) => s + (a.fob$ || 0), 0);
   const totFobProd = fobAgg.reduce((s, a) => s + (a.prodSales || 0), 0);
   const tgt = (field) => {
