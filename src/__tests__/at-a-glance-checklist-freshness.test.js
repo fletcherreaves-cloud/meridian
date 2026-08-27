@@ -94,4 +94,23 @@ describe('#366 panel-level: AtAGlance checklist sees every stream, not just labo
     expect(container.textContent).toMatch(/Sales Ledger \(email\)/);
     expect(container.textContent).toMatch(/auto-sync may be down/);
   });
+
+  // Dispatch #163 — the named incident itself, reproduced at the panel level rather than only
+  // at the stream-freshness.js engine level (stream-freshness.test.js's "case 1" already covers
+  // this via worstStream() directly, but per CLAUDE.md's "would this verification still pass if
+  // the change were reverted?" rule, a render that never called worstAuto would pass that test
+  // unchanged — so this asserts the actual rendered checklist item text for LifeLenz by name).
+  it('names LifeLenz specifically when it alone goes dark, reproducing the real Aug 6-11 outage shape', async () => {
+    const landedDs = freshDs();
+    landedDs.schedRows = rowsAt(day(-14)); // LifeLenz dark 30 days; every sibling stream current
+    await act(async () => {
+      root.render(React.createElement(AtAGlance, { ...baseProps, ds: landedDs }));
+    });
+
+    expect(container.textContent).toMatch(/LifeLenz labor\/schedule/);
+    expect(container.textContent).toMatch(/auto-sync may be down/);
+    // And it must NOT be masked by the (deliberately excluded) manual laborRows tile reading
+    // fresh, nor by any of the nine other genuinely-fresh auto/email streams in landedDs.
+    expect(container.textContent).not.toMatch(/Sales Ledger \(email\) is \d+ days old/);
+  });
 });

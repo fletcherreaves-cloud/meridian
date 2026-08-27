@@ -22,10 +22,17 @@
 # purpose: exploratory/one-off workflows (lifelenz-vlh-explore, fob-riddle-analysis,
 # recount-forensics-scan, deploy) are deliberately NOT watched.
 #
-# This does not replace per-stream freshness checking in the app. A workflow can succeed
-# and still write nothing, and At-A-Glance's freshness check takes a single Math.max
-# across five feeds — so one dead feed stays invisible while any other is current. That
-# is tracked separately.
+# This does not replace per-stream freshness checking in the app, and the two layers catch
+# different failures: a workflow can complete with conclusion=success and still write nothing
+# (a token that silently degrades mid-run, a query that legitimately returns zero rows), which
+# this watcher's workflow_run listener has no way to see — it only fires on completed runs, so
+# a run that never completes (a queued job on an offline self-hosted runner, see dispatch #65)
+# is invisible to it too. That "ran clean, wrote nothing" gap is exactly what src/engine/
+# stream-freshness.js's per-stream STREAMS check (#171, dispatch15/dispatch #163) is for —
+# it reads the data itself, independent of whether the workflow that should have produced it
+# reported success. At-A-Glance's freshness check used to pool every feed into one Math.max
+# (so one dead feed stayed invisible while any other was current); that pooling bug is fixed —
+# see stream-freshness.js and CLAUDE.md's "Adding a new automated pull" rule, item 2.
 
 name: Sync Failure Watch
 
