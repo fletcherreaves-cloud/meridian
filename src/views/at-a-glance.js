@@ -15,7 +15,7 @@
 // by the time ds/stores are ready (T1 alone can take several seconds) — see App.js.
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEFAULT_TARGETS, STORE_COORDS, INV_ORG_COORDS } from '../constants.js';
-import { dKey, addD, mwStart } from '../utils/date.js';
+import { dKey, addD, mwStart, spanTagInfo } from '../utils/date.js';
 import { forecastDay, modelHealthScore, getStoreOrg, computeMAPEDrift, computeStoreSigma, locRows, fetchRecentActual } from '../engine/forecast.js';
 import { computeEventFactors } from '../utils/events.js';
 import { f$, fP } from '../utils/fmt.js';
@@ -959,25 +959,15 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   // still the as-of date), in the same footprint, and says out loud when the tile has
   // silently fallen off the selected period onto the 30-day fallback window.
   const _spanTag = (rows) => {
-    const tMs=today.getTime(); let lo=null,hi=null; const days=new Set();
-    for(const r of (rows||[])){ if(!r||!r.date)continue;
-      const d=r.date instanceof Date?r.date:new Date(r.date); const ms=d.getTime();
-      if(isNaN(ms)||ms>tMs)continue;
-      if(!lo||ms<lo.getTime())lo=d;
-      if(!hi||ms>hi.getTime())hi=d;
-      days.add(dKey(d));
-    }
-    if(!hi) return null;
-    const f=d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});
-    const one=!lo||f(lo)===f(hi);
-    const fb=!!(effectiveDateRange&&effectiveDateRange.isFallback);
-    const tip='Data shown spans '+(one?f(hi):f(lo)+'–'+f(hi))+' · '+days.size+' day'+(days.size===1?'':'s')+' present'
-      +(fb?'  ⚠ No data in the selected period ('+(dateRange&&dateRange.label||'selected range')
-        +') — showing the most recent 30 days of available data instead.':'');
+    const info = spanTagInfo(rows, today, {
+      isFallback: !!(effectiveDateRange&&effectiveDateRange.isFallback),
+      fallbackLabel: dateRange&&dateRange.label,
+    });
+    if(!info) return null;
     return span({
-      style:{fontSize:'8px',color:fb?'#f59e0b':'var(--text3)',fontStyle:'italic',whiteSpace:'nowrap'},
-      title:tip},
-      (one?f(hi):f(lo)+'–'+f(hi))+(fb?' ⚠':''));
+      style:{fontSize:'8px',color:info.isFallback?'#f59e0b':'var(--text3)',fontStyle:'italic',whiteSpace:'nowrap'},
+      title:info.tip},
+      info.text);
   };
 
   const labByLoc=loc=>labInRange.filter(r=>r.loc===String(loc));

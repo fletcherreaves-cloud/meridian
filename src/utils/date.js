@@ -92,6 +92,45 @@ function dFmtShort(d){return d?d.toLocaleDateString('en-US',{month:'short',day:'
 function dFmtDow(d){return d?d.toLocaleDateString('en-US',{weekday:'short'}):'—';}
 function thisWeek(){const s=mwStart();const e=new Date(s.getTime()+6*86400000);return{s:sodOf(s),e:eodOf(e),label:'This Week'};}
 
+// spanTagInfo — the "As of" per-tile freshness tag (dispatch #168). Extracted from
+// at-a-glance.js's _spanTag (v4.837, closure-bound there) so a second panel (Store
+// Dashboard) can render the SAME tile-freshness label instead of an independently-drifting
+// copy. This is deliberately only the PURE half: given the rows a tile is actually
+// aggregating and "today", compute the real date SPAN those rows cover (not just the
+// newest date) and format the label/tooltip text — including the ⚠ note for a caller-
+// supplied fallback. It does NOT decide *when* a fallback applies (that stays local to
+// each panel — at-a-glance.js's effectiveDateRange 30-day-lookback memo is closed over
+// panel-wide state that has no reason to generalize) — the caller passes isFallback/
+// fallbackLabel in `opts` after making that call itself.
+//
+// rows: array of {date, ...} (date: Date | ISO/date-only string). Only entries with
+// date <= today count, matching the original's "don't let a future-dated row (e.g.
+// LifeLenz's forward schedule) skew the span" behavior.
+// opts: {isFallback, fallbackLabel} — fallbackLabel is used in the tooltip text only when
+// isFallback is true; defaults to 'selected range' if omitted, matching the original.
+// Returns null when rows has nothing dated <= today (same as the original returning null
+// so callers render nothing), else {text, tip, isFallback}.
+function spanTagInfo(rows, today, opts){
+  const tMs=(today instanceof Date?today:new Date(today)).getTime();
+  let lo=null,hi=null; const days=new Set();
+  for(const r of (rows||[])){ if(!r||!r.date)continue;
+    const d=r.date instanceof Date?r.date:new Date(r.date); const ms=d.getTime();
+    if(isNaN(ms)||ms>tMs)continue;
+    if(!lo||ms<lo.getTime())lo=d;
+    if(!hi||ms>hi.getTime())hi=d;
+    days.add(dKey(d));
+  }
+  if(!hi) return null;
+  const f=d=>d.toLocaleDateString('en-US',{month:'numeric',day:'numeric'});
+  const one=!lo||f(lo)===f(hi);
+  const fb=!!(opts&&opts.isFallback);
+  const rangeTxt=one?f(hi):f(lo)+'–'+f(hi);
+  const tip='Data shown spans '+rangeTxt+' · '+days.size+' day'+(days.size===1?'':'s')+' present'
+    +(fb?'  ⚠ No data in the selected period ('+((opts&&opts.fallbackLabel)||'selected range')
+      +') — showing the most recent 30 days of available data instead.':'');
+  return {text:rangeTxt+(fb?' ⚠':''), tip, isFallback:fb};
+}
+
 // businessDate/lastClosedBusinessDay moved here from engine/swing-feed.js (issue #131 PR
 // review) so a UI-layer caller (src/components/) can import the ABC-cutover-aware "last
 // closed day" logic without reaching into engine/ code — swing-feed.js re-exports both so
@@ -130,4 +169,4 @@ function lastClosedBusinessDay(now=new Date()){
   return d;
 }
 
-export { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, weekStartOf, weekKeyOf, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek, businessDate, lastClosedBusinessDay };
+export { addD, addDR, dKey, nDK, dowOf, sodOf, eodOf, setWeekStartDay, weekStartOf, weekKeyOf, mwStart, nwStart, fmtDI, fmtRng, nDays, rngMode, dFmt, dFmtShort, dFmtDow, thisWeek, businessDate, lastClosedBusinessDay, spanTagInfo };
