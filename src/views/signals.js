@@ -6,7 +6,7 @@ import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '..
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
-import { metricAvg, metricRate, ensureLazyFill } from '../engine/metric-source.js';
+import { metricAvg, metricRate, ensureLazyFillWide } from '../engine/metric-source.js';
 import { STORE_NAMES } from '../constants.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
@@ -311,7 +311,12 @@ function ItemPicker({ ds, value, onChange, label }) {
   const [query, setQuery] = uSt('');
   const [open, setOpen] = uSt(false);
 
-  uE(() => { ensureLazyFill('pmixRows'); }, []);
+  // Dispatch #170 -- the plain 'pmixRows' lazy-fill now defaults to a bounded 40-day window
+  // (ProductMixPanel's own quick-view need), which is too narrow for this picker's real job:
+  // finding an item's real history for correlation (dispatch #169's own acceptance case pulled
+  // 7,916 rows across ~237 days for one item). Goes straight to the WIDE tier -- no reason to
+  // also fire the narrow fetch first, since its result would be superseded moments later.
+  uE(() => { ensureLazyFillWide('pmixRows'); }, []);
 
   const items = uM(() => pmixItemsIndex(ds?.pmixRows), [ds?.pmixRows]);
   const selected = value && isPmixItemKey(value) ? findMetric(value) : null;
@@ -1331,7 +1336,10 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
     return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
   }, [ds]);
 
-  uE(() => { if (includeItems) ensureLazyFill('pmixRows'); }, [includeItems]);
+  // Dispatch #170 -- same reasoning as ItemPicker above: the Scanner's item-correlation sweep
+  // needs real historical breadth, so it opts into the WIDE tier directly rather than the
+  // bounded default.
+  uE(() => { if (includeItems) ensureLazyFillWide('pmixRows'); }, [includeItems]);
 
   const runScan = () => {
     setRunning(true); setScan(null);

@@ -639,7 +639,13 @@ function App() {
   // loadPmixRows already existed (lib/supabase.js) but had zero call sites anywhere in App.js —
   // this is the wiring that makes qsr_product_mix reachable from the app at all, on demand,
   // without a static top-level fetch (entry-chunk budget — CLAUDE.md).
-  React.useEffect(() => { configureLazyFill({ setDs, loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows } }); }, []);
+  // Dispatch #170: `pmixRows` now also gets a `wideLoaders` entry — `loadPmixRows` itself
+  // defaults to a bounded 40-day window (see its own header comment), and `wideLoaders.pmixRows`
+  // calls the SAME function with an explicit 400-day window (unchanged from the loader's old
+  // default — measured to already cover the table's real history, which starts 2026-01-01) for
+  // `ensureLazyFillWide('pmixRows')` callers that need real breadth (ProductMixPanel's
+  // 90D/180D/All ranges, Signal Lab/Scanner's item correlations).
+  React.useEffect(() => { configureLazyFill({ setDs, loaders: { auditRows: loadAuditRows, wasteRows: loadQsrWaste, pmixRows: loadPmixRows }, wideLoaders: { pmixRows: () => loadPmixRows(400) } }); }, []);
   const [view, setView]           = useState('command'); // command | district | store | org
   // Dispatch27 Workstream E (#388's sibling) — URL-synced "route" panels (dicompare/
   // forecast-reports/proj/report, per panel-registry.js's route:true — forecast-reports

@@ -4538,7 +4538,18 @@ export async function loadGmIdentityRevealEnabled() {
   return !!(data?.data?.enabled);
 }
 
-export async function loadPmixRows(daysBack = 400) {
+// Dispatch #170 — default trimmed from 400 to 40. Measured live 2026-08-27:
+// `qsr_product_mix`'s real data starts 2026-01-01, so the old 400-day default was not
+// "the last 400 days," it was "the entire table" — `content-range: 0-0/2526181`, 2.5M+
+// rows and growing ~11K rows/day, ~140s to fetch at the ~18K rows/sec measured throughput.
+// That was the "Cloud tab never populates, waited several minutes" owner report.
+// 40 days measured at ~436K rows / ~24s — comfortably covers ProductMixPanel's own
+// 7D/30D quick views (its `cloudRange` default is '30'). Callers that need real
+// historical breadth (dispatch #169's Signal Lab/Scanner item correlations,
+// ProductMixPanel's own 90D/180D/All range options) go through the separate WIDE
+// lazy-fill tier (`ensureLazyFillWide('pmixRows')` in metric-source.js), which calls
+// this SAME function with an explicit wider `daysBack` — see App.js's `configureLazyFill`.
+export async function loadPmixRows(daysBack = 40) {
   if (!supabase) return [];
   const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
   const _cutStr = _cut.toISOString().slice(0, 10);
