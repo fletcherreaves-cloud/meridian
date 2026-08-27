@@ -90,6 +90,8 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => unpad(s.loc)), [stores]);
   const operators = (settings && settings.operators) || {};      // operator (owner) → stores
   const supervisors = (settings && settings.supervisorGroups) || {}; // supervisor → stores
+  const dos = (settings && settings.doGroups) || {};              // DO (district) → stores
+  const oms = (settings && settings.omGroups) || {};              // OM (scaffold, empty by default) → stores
   const stateLocs = (st) => allLocs.filter(l => (INV_ORG_COORDS[l] || {}).state === st);
   const [locs, setLocs] = useState(allLocs);
   const [scopeLabel, setScopeLabel] = useState('All stores');
@@ -271,11 +273,21 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
                 onChange: e => e.target.value && applyScope('Owner: ' + e.target.value, operators[e.target.value], 'owner'),
                 style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
               }, [h('option', { key: '', value: '' }, 'Owner…'), ...Object.keys(operators).map(o => h('option', { key: o, value: o }, o))]) : null,
+              Object.keys(dos).length ? h('select', {
+                value: scopeLabel.startsWith('DO: ') ? scopeLabel.slice(4) : '',
+                onChange: e => e.target.value && applyScope('DO: ' + e.target.value, dos[e.target.value], 'do'),
+                style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+              }, [h('option', { key: '', value: '' }, 'DO…'), ...Object.keys(dos).map(o => h('option', { key: o, value: o }, o))]) : null,
               Object.keys(supervisors).length ? h('select', {
                 value: scopeLabel.startsWith('Supervisor: ') ? scopeLabel.slice(12) : '',
                 onChange: e => e.target.value && applyScope('Supervisor: ' + e.target.value, supervisors[e.target.value], 'supervisor'),
                 style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
               }, [h('option', { key: '', value: '' }, 'Supervisor…'), ...Object.keys(supervisors).map(s => h('option', { key: s, value: s }, s))]) : null,
+              Object.keys(oms).length ? h('select', {
+                value: scopeLabel.startsWith('OM: ') ? scopeLabel.slice(4) : '',
+                onChange: e => e.target.value && applyScope('OM: ' + e.target.value, oms[e.target.value], 'om'),
+                style: { fontSize: 11, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+              }, [h('option', { key: '', value: '' }, 'OM…'), ...Object.keys(oms).map(o => h('option', { key: o, value: o }, o))]) : null,
               span({ style: { fontSize: 11, color: 'var(--text2)' } }, `${scopeLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'}`),
             ),
             // Store pills (fine control)

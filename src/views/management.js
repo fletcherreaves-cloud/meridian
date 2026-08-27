@@ -267,6 +267,45 @@ function SupervisorAssignmentsEditor({ S, onUpdate }) {
         btn({ className: 'btn btn-sm btn-red', style: { padding: '1px 6px', fontSize: '9px' }, onClick: () => remove(r._i) }, '✕')))));
 }
 
+// Generic name→store-list group editor — mirrors the 'operators' section's add/rename/remove-row
+// UI + "Sync from defaults" reset exactly (see activeSection==='operators' below), parameterized
+// by settings field so DOs/OMs (and any future tier) reuse the same three UI states instead of a
+// hand-rolled second implementation. `field` is the settings key (e.g. 'doGroups'); `title`/`note`
+// are the section heading + description text.
+function GroupsEditor({S, onUpdate, field, title, note}) {
+  const groups = S[field] || {};
+  const inputId = 'new-' + field;
+  return div({className:'set-sec'},
+    div({className:'set-sec-t'}, title),
+    div({className:'set-note'}, note),
+    div({style:{marginBottom:8}},
+      btn({className:'btn btn-sm',onClick:()=>{
+        const n={...S,[field]:{...(DEF_SETTINGS[field]||{})}};
+        onUpdate(n);
+      }},'↺ Sync from defaults')
+    ),
+    Object.entries(groups).map(([name,ids])=>div({key:name,className:'set-row'},
+      div({style:{display:'flex',gap:6,alignItems:'center',marginBottom:3}},
+        div({className:'set-lbl',style:{margin:0,fontWeight:600}},name),
+        btn({className:'btn btn-sm btn-red',style:{padding:'1px 6px',fontSize:'9px'},onClick:()=>{if(confirm('Remove '+name+'?')){const next=JSON.parse(JSON.stringify(S));delete next[field][name];onUpdate(next);}}},'✕')
+      ),
+      inp({className:'set-inp',defaultValue:ids.join(','),key:name+ids.join(','),onBlur:e=>{
+        const next=JSON.parse(JSON.stringify(S));
+        if(!next[field])next[field]={};
+        next[field][name]=e.target.value.split(',').map(s=>s.trim()).filter(Boolean);
+        onUpdate(next);
+      }})
+    )),
+    div({className:'set-row'},
+      div({className:'set-lbl',style:{marginBottom:6}},'Add'),
+      div({style:{display:'flex',gap:6}},
+        inp({id:inputId,className:'set-inp',placeholder:'Name',style:{flex:1}}),
+        btn({className:'btn btn-sm btn-a',onClick:()=>{const n=document.getElementById(inputId).value.trim();if(n){const next=JSON.parse(JSON.stringify(S));if(!next[field])next[field]={};next[field][n]=[];onUpdate(next);document.getElementById(inputId).value='';}}},' +')
+      )
+    )
+  );
+}
+
 function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStoreNotes, onOpenAdmin}) {
   const S=settings;
   const [activeSection, setActiveSection] = useState('identity');
@@ -282,7 +321,7 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
         div({style:{width:140,flexShrink:0,borderRight:'.5px solid var(--bdr)',
           background:'var(--surf2)',padding:'8px 0',overflowY:'auto'}},
           ...[['identity','👤 Identity'],['forecast','📐 Forecast'],['labor','👥 Labor'],
-              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['supervisors','🗂 Patches'],
+              ['appearance','🎨 Theme'],['metrics','📊 Metrics'],['operators','🏢 Operators'],['dos','🏛 DOs'],['supervisors','🗂 Patches'],['oms','⚙ OMs'],
               ['ai','🤖 AI'],['store-notes','📍 Store Notes'],
               ...(onOpenAdmin?[['users','👥 Users']]:[]),
               ...(userRole==='developer'?[['dev','🛠 Dev']]:[]),
@@ -514,7 +553,11 @@ function Settings({settings, onUpdate, onClose, userRole, onClearAll, onOpenStor
             )
           )
         ),
+        activeSection==='dos'&&h(GroupsEditor,{S,onUpdate,field:'doGroups',title:'District Manager (DO) Groups',
+          note:'Edit DOs and their store numbers. A name may also appear in Operators or Patches — dual roles (e.g. a DO who is also a Supervisor for a subset) are expected, not a bug.'}),
         activeSection==='supervisors'&&h(SupervisorAssignmentsEditor,{S,onUpdate}),
+        activeSection==='oms'&&h(GroupsEditor,{S,onUpdate,field:'omGroups',title:'Operations Manager (OM) Groups',
+          note:'Scaffold — empty by default. Add OMs and their store numbers here whenever ready; no code change needed.'}),
         activeSection==='dev'&&React.createElement(DevDashboard, {settings, onUpdate}),
 
         activeSection==='store-notes'&&div({className:'set-sec'},

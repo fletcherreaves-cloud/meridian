@@ -157,6 +157,14 @@ const DEF_SETTINGS={
     // Emerald Arches — Florida (Jacob)
     'Jacob Thorley':      ['6178','6838','35242','38609']
   },
+  doGroups:{
+    // MCDOK — Oklahoma (union of all 5 supervisorGroups OK patches)
+    'Hugh Bonner':  ['3708','6972','24471','32525','5183','18213','29760','33222','5985','10422','13113','33109','43380','10915','33704','34222','35064','11657','20475','31357'],
+    // Emerald Arches — Florida. Brad Denley is ALSO a Supervisor for a 3-store subset of these
+    // same 7 (see supervisorGroups above) — intentional dual role, not a bug to reconcile.
+    'Brad Denley':  ['6178','6838','10034','35242','37566','38609','43701']
+  },
+  omGroups:{}, // scaffold only — no OM names seeded yet; populate via Settings when ready
   // Metric activate/deactivate toggles (true = active in scoring)
   metricActive:{oepe:true,kvst:true,kvsu:true,park:true,tpph:true,labor:true,r2p:true,
     cashOS:true,tRedA:true,ot:true,refund:true,disc:true},
