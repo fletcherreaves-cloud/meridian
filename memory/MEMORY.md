@@ -4057,6 +4057,7 @@ in the "before you theorize" table because their absence has already cost real w
 ### QSRSoft / pulls / auth
 - [project-qsrsoft-cognito-auth-312.md](project-qsrsoft-cognito-auth-312.md) — the #312/#323 token conversion + backfill record
 - [project-product-mix-291.md](project-product-mix-291.md) — #292's design notes and next-session ordering
+- [finding-legacy-pricing-workbook-structure-2026-08-27.md](finding-legacy-pricing-workbook-structure-2026-08-27.md) — owner-supplied 2008-2017 "Menu Management" workbook (Notes 25 #1's foundation spreadsheet), structure only (all data 8-10 years stale): the QCR/Serving-Factors recipe-costing chain, the BRK/REG PRICING IMPACT elasticity simulator, and the 5 real data-pull gaps needed to rebuild it on current Meridian data (distributor ingredient cost is the big one — no current source at all)
 - [data-acquisition-shopping-list.md](data-acquisition-shopping-list.md) — every candidate endpoint, incl. addenda K (Product Outage) and L (Menu Price Comparison)
 - [reference-shift-manager-summary.md](reference-shift-manager-summary.md) — per-daypart manager-on-duty attribution · [qsrsoft-kb-digest.md](qsrsoft-kb-digest.md)
 
