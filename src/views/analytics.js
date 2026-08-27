@@ -6844,32 +6844,75 @@ function LocationBrief({stores, ds, settings, scope, scopeLabel, onClose}) {
   );
 }
 
+// dispatch #171 — Projections vs Actuals custom date range (live Feature Request). Safety cap
+// on how many business weeks one custom range can resolve to: 27 stores x N days x
+// forecastDay() each, so a fat-fingered multi-year range shouldn't hang the browser. 26 weeks
+// is half a year — well past the FR's own "an entire month" example.
+const PVSA_MAX_CUSTOM_WEEKS = 26;
+
+// Resolve a picked start/end into the complete Wed-Tue business weeks that OVERLAP the range
+// (dispatch #171, Option A — see the PR body for why Option B, weeks fully CONTAINED in the
+// range, was rejected: it would silently drop the partial weeks at a month's start/end, which
+// is exactly the FR's own "select an entire month" example). Routes through the shared
+// weekStartOf() (utils/date.js) instead of hand-rolled getDay() arithmetic — this file already
+// made that exact mistake once (DialedInComparisonReport, #367) and week-start.test.js
+// ratchets the hand-rolled-boundary count, so a new one here would fail the suite.
+function resolvePvsaCustomWeeks(startStr, endStr, wsd){
+  if(!startStr||!endStr) return {weeks:[], capped:false, total:0};
+  let s = new Date(startStr+'T00:00:00');
+  let e = new Date(endStr+'T00:00:00');
+  if(isNaN(s)||isNaN(e)) return {weeks:[], capped:false, total:0};
+  if(s>e){ const t=s; s=e; e=t; }
+  const first = weekStartOf(s, wsd);
+  const last  = weekStartOf(e, wsd);
+  const all = [];
+  let ws = first;
+  while(ws<=last){ all.push(ws); ws = addD(ws,7); }
+  const capped = all.length>PVSA_MAX_CUSTOM_WEEKS;
+  return {weeks: capped ? all.slice(-PVSA_MAX_CUSTOM_WEEKS) : all, capped, total: all.length};
+}
+
 // PROJECTION vs ACTUALS REPORT — Professional backtest comparison
 // Shows AI forecast accuracy by location, week, patch, operator, org
 // Print / Save / Email ready
 function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) {
   const [groupBy,      setGroupBy]     = React.useState('patch');
   const [weeksBack,    setWeeksBack]   = React.useState(4);
+  // Custom date range (dispatch #171, live FR) — additive alongside the [2,4,6]-week presets,
+  // same posture as dispatch #158's One-Pager custom-range addition. 'preset' keeps today's
+  // behavior unchanged; 'custom' resolves customStart/customEnd to whichever Wed-Tue business
+  // weeks overlap the picked range via resolvePvsaCustomWeeks() above.
+  const [rangeMode,    setRangeMode]   = React.useState('preset');
+  const [customStart,  setCustomStart] = React.useState('');
+  const [customEnd,    setCustomEnd]   = React.useState('');
   const [computing,    setComputing]   = React.useState(false);
   const [report,       setReport]      = React.useState(null);
   const [expandedCell, setExpandedCell]= React.useState(null);
 
   const runBacktest = React.useCallback(async () => {
     if(!ds||!ds.loaded) return;
+    if(rangeMode==='custom'&&(!customStart||!customEnd)) return;
     setComputing(true); setReport(null); setExpandedCell(null);
     const today = new Date();
     // Compute allLocs inline (safe inside useCallback — no hooks allowed here)
     const allLocs = (stores||[]).filter(s=>/^\d+$/.test(s.loc)).map(s=>s.loc);
     const results = {};
-    // Build past N complete Wed-Tue weeks
-    const weeks = [];
-    let d = new Date(today);
-    while(d.getDay()!==2) d.setDate(d.getDate()-1);
-    d.setDate(d.getDate()-6);
-    for(let w=0;w<weeksBack;w++){
-      const ws=new Date(d); ws.setDate(d.getDate()-w*7); weeks.push(ws);
+    let weeks = [];
+    let capped = false;
+    if(rangeMode==='custom'){
+      const resolved = resolvePvsaCustomWeeks(customStart, customEnd, settings?.weekStartDay);
+      weeks = resolved.weeks;
+      capped = resolved.capped;
+    } else {
+      // Preset: build past N complete Wed-Tue weeks (unchanged from before dispatch #171)
+      let d = new Date(today);
+      while(d.getDay()!==2) d.setDate(d.getDate()-1);
+      d.setDate(d.getDate()-6);
+      for(let w=0;w<weeksBack;w++){
+        const ws=new Date(d); ws.setDate(d.getDate()-w*7); weeks.push(ws);
+      }
+      weeks.reverse();
     }
-    weeks.reverse();
     for(const loc of allLocs){
       const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
       results[loc]=[];
@@ -6893,9 +6936,10 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
         await new Promise(res=>setTimeout(res,0));
       }
     }
-    setReport({results,weeks,allLocs});
+    setReport({results,weeks,allLocs,rangeMode,capped,
+      weeksBack,customStart,customEnd});
     setComputing(false);
-  },[ds,settings,stores,weeksBack]);
+  },[ds,settings,stores,weeksBack,rangeMode,customStart,customEnd]);
 
   const mapeColor=m=>!m?'var(--text3)':+m<6?'#10b981':+m<10?'var(--warn)':'var(--crit)';
   const fmtWk=d=>'Wk '+d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -6944,7 +6988,7 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
         h('thead',null,tr(null,
           th({style:{...TH,textAlign:'left',minWidth:140}},'Location'),
           ...weeks.map((wk,i)=>th({key:i,style:{...TH,minWidth:110,textAlign:'center'}},fmtWk(wk))),
-          th({style:{...TH,minWidth:110,textAlign:'center'}},weeksBack+'-Wk Avg')
+          th({style:{...TH,minWidth:110,textAlign:'center'}},weeks.length+'-Wk Avg')
         )),
         h('tbody',null,
           ...groupLocs.flatMap(loc=>{
@@ -7068,23 +7112,81 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
     );
   };
 
+  // Custom-range live preview (dispatch #171) — resolves customStart/customEnd to actual
+  // business weeks as the user picks, before they click Run, so a bad/huge range is visible
+  // up front rather than discovered after a 27-store compute.
+  const customPreview = React.useMemo(
+    ()=>rangeMode==='custom'?resolvePvsaCustomWeeks(customStart,customEnd,settings?.weekStartDay):null,
+    [rangeMode,customStart,customEnd,settings?.weekStartDay]);
+
+  const setThisMonth = () => {
+    const now=new Date();
+    setCustomStart(dKey(new Date(now.getFullYear(),now.getMonth(),1)));
+    setCustomEnd(dKey(new Date(now.getFullYear(),now.getMonth()+1,0)));
+    setRangeMode('custom');
+  };
+  const setLastMonth = () => {
+    const now=new Date();
+    setCustomStart(dKey(new Date(now.getFullYear(),now.getMonth()-1,1)));
+    setCustomEnd(dKey(new Date(now.getFullYear(),now.getMonth(),0)));
+    setRangeMode('custom');
+  };
+  const rangeDescLabel = rangeMode==='custom'
+    ? (customStart&&customEnd?'the '+customStart+' to '+customEnd+' range':'the selected custom range')
+    : 'the last '+weeksBack+' weeks';
+
   return h(React.Fragment,null,
     // Controls toolbar
     div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',
       display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}},
       div({style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
         div({style:{fontSize:'9px',color:'var(--text3)'}},'Look back:'),
-        [2,4,6].map(n=>btn({key:n,className:'btn btn-sm'+(weeksBack===n?' btn-a':''),
-          style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>setWeeksBack(n)},n+'W')),
+        [2,4,6].map(n=>btn({key:n,className:'btn btn-sm'+(rangeMode==='preset'&&weeksBack===n?' btn-a':''),
+          style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>{setWeeksBack(n);setRangeMode('preset');}},n+'W')),
+        btn({className:'btn btn-sm'+(rangeMode==='custom'?' btn-a':''),
+          style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>setRangeMode('custom')},'Custom…'),
         div({style:{width:1,background:'var(--bdr)',height:14}}),
         div({style:{fontSize:'9px',color:'var(--text3)'}},'Group:'),
         [['all','All'],['patch','Patch'],['operator','Operator'],['org','Org']].map(([v,l])=>
           btn({key:v,className:'btn btn-sm'+(groupBy===v?' btn-a':''),
-            style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>setGroupBy(v)},l))
+            style:{fontSize:'9px',padding:'2px 8px'},onClick:()=>setGroupBy(v)},l)),
+        // Custom range picker — matches DateRangeReport's plain <input type="date"> pattern
+        // (same file, ~line 6222), the reuse precedent named in dispatch #171. Deliberately
+        // NOT the shared DateRangeControl component: that control's presets are day-counts and
+        // its custom range is arbitrary calendar days, neither of which fits this report's
+        // week-shaped backtest engine (see panel-contract.md's own "presets only"/backtest row
+        // and the "period-anchored" carve-out) — so this hand-rolled pair stays, deliberately,
+        // rather than forcing a day-count component onto a week-granular engine.
+        rangeMode==='custom'&&div({style:{display:'flex',gap:8,alignItems:'flex-end',
+          flexWrap:'wrap',width:'100%',paddingTop:6}},
+          div(null,
+            div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2,fontWeight:600}},'START'),
+            h('input',{type:'date',value:customStart,onChange:e=>setCustomStart(e.target.value),
+              style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+                color:'var(--text)',fontSize:'10px',padding:'3px 6px'}})
+          ),
+          div(null,
+            div({style:{fontSize:'8px',color:'var(--text3)',marginBottom:2,fontWeight:600}},'END'),
+            h('input',{type:'date',value:customEnd,onChange:e=>setCustomEnd(e.target.value),
+              style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+                color:'var(--text)',fontSize:'10px',padding:'3px 6px'}})
+          ),
+          div({style:{display:'flex',gap:4}},
+            btn({className:'btn btn-sm',style:{fontSize:'9px',padding:'2px 8px'},onClick:setThisMonth},'This month'),
+            btn({className:'btn btn-sm',style:{fontSize:'9px',padding:'2px 8px'},onClick:setLastMonth},'Last month')
+          ),
+          customPreview&&div({style:{fontSize:'8px',color:'var(--text3)'}},
+            customPreview.weeks.length
+              ?('→ '+customPreview.weeks.length+' business week'+(customPreview.weeks.length===1?'':'s')+
+                ' ('+fmtWk(customPreview.weeks[0])+' – '+fmtWk(addD(customPreview.weeks[customPreview.weeks.length-1],6))+')'+
+                (customPreview.capped?' · capped from '+customPreview.total:''))
+              :'Pick a start and end date')
+        )
       ),
       div({style:{display:'flex',gap:6,marginLeft:'auto',alignItems:'center'}},
-        btn({className:'btn btn-sm btn-a',style:{fontWeight:700},onClick:runBacktest,disabled:computing},
-          computing?'⏳ Computing...':'▶ Run Report'),
+        btn({className:'btn btn-sm btn-a',style:{fontWeight:700},onClick:runBacktest,
+          disabled:computing||(rangeMode==='custom'&&(!customStart||!customEnd))},
+          computing?'⏳ Computing...':(rangeMode==='custom'?'▶ Run Custom Range Backtest':'▶ Run Report')),
         report&&btn({className:'btn btn-sm',onClick:()=>window.print()},'🖨 Print'),
         report&&btn({className:'btn btn-sm',onClick:()=>{
           const rows=[['Group','Location',...(report.weeks||[]).map(w=>fmtWk(w)),'Avg MAPE']];
@@ -7103,7 +7205,10 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
           const csv=rows.map(r=>r.map(v=>'"'+v+'"').join(',')).join('\n');
           const a=document.createElement('a');
           a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
-          a.download='ProjVsActuals_L'+weeksBack+'W_'+dKey(new Date())+'.csv';
+          const _rangeTag=report.rangeMode==='custom'
+            ?('Custom_'+report.customStart+'_to_'+report.customEnd)
+            :('L'+(report.weeks||[]).length+'W');
+          a.download='ProjVsActuals_'+_rangeTag+'_'+dKey(new Date())+'.csv';
           a.click();
         }},'⬇ CSV')
       )
@@ -7114,13 +7219,14 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
         div({style:{fontSize:'32px',marginBottom:12}},'📊'),
         div({style:{fontWeight:600,marginBottom:6}},'Run the backtest to see projection accuracy'),
         div({style:{fontSize:'10px',color:'var(--text3)',marginBottom:20,maxWidth:400,margin:'0 auto 20px'}},
-          ['Computes what the AI model would have forecast for each of the last '+weeksBack+' weeks, then compares to your loaded actual sales. Shows MAPE, vs-LY%, and trend direction. Click any cell to drill into daily detail.']),
-        btn({className:'btn btn-a',style:{padding:'10px 24px',fontSize:'12px'},onClick:runBacktest},
-          ['▶ Run '+weeksBack+'-Week Backtest Report'])
+          ['Computes what the AI model would have forecast for each week in '+rangeDescLabel+', then compares to your loaded actual sales. Shows MAPE, vs-LY%, and trend direction. Click any cell to drill into daily detail.']),
+        btn({className:'btn btn-a',style:{padding:'10px 24px',fontSize:'12px'},onClick:runBacktest,
+          disabled:rangeMode==='custom'&&(!customStart||!customEnd)},
+          [rangeMode==='custom'?'▶ Run Custom Range Backtest':'▶ Run '+weeksBack+'-Week Backtest Report'])
       ),
       computing&&div({style:{textAlign:'center',padding:60}},
         div({style:{fontSize:'24px',marginBottom:8}},'⏳'),
-        div({style:{color:'var(--text3)',fontSize:'11px'}},['Computing '+weeksBack+' weeks across all locations...'])
+        div({style:{color:'var(--text3)',fontSize:'11px'}},['Computing '+rangeDescLabel+' across all locations...'])
       ),
       report&&div(null,
         // Summary KPIs
@@ -7138,10 +7244,11 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
               {l:'District Avg MAPE',v:avgMape!=null?avgMape.toFixed(2)+'%':'—',c:mapeColor(avgMape),
                 sub:avgMape!=null?(avgMape<6?'Excellent accuracy':avgMape<10?'Good accuracy':'Needs attention'):''},
               {l:'Avg vs Last Year',v:avgVsLY!=null?((avgVsLY>=0?'+':'')+avgVsLY.toFixed(2)+'%'):'—',
-                c:avgVsLY!=null?(avgVsLY>=0?'#10b981':'var(--crit)'):'var(--text3)',sub:weeksBack+'-week rolling'},
+                c:avgVsLY!=null?(avgVsLY>=0?'#10b981':'var(--crit)'):'var(--text3)',
+                sub:(report.weeks||[]).length+'-week'+(report.rangeMode==='custom'?' custom range':' rolling')},
               {l:'Most Accurate',v:bestStore?(STORE_NAMES[String(bestStore.loc)]||bestStore.loc):'—',
                 c:'#10b981',sub:bestStore?bestStore.avg.toFixed(2)+'% avg MAPE':''},
-              {l:'Weeks Analyzed',v:String(weeksBack),c:'var(--amber)',sub:report.allLocs.length+' locations'},
+              {l:'Weeks Analyzed',v:String((report.weeks||[]).length),c:'var(--amber)',sub:report.allLocs.length+' locations'},
             ].map((k,i)=>div({key:i,style:{flex:'1 1 160px',background:'var(--surf2)',
               border:'.5px solid var(--bdr)',borderRadius:'var(--rl)',padding:'10px 14px'}},
               div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:4,fontWeight:600,
@@ -7150,6 +7257,21 @@ function ProjectionVsActualsReport({stores, ds, settings, userEvents, onClose}) 
               div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},[k.sub])
             ));
           })()
+        ),
+        // Evaluated weeks — dispatch #171 requires this be stated explicitly, not just implied
+        // by the table's own column headers, since a custom range never divides evenly onto
+        // Wed-Tue business weeks (the FR's own "select an entire month" example never will).
+        (report.weeks||[]).length>0&&div({style:{fontSize:'9px',color:'var(--text3)',marginBottom:10,
+          padding:'6px 10px',background:'var(--surf2)',borderRadius:'var(--r)',
+          border:'.5px solid var(--bdr)'}},
+          span({style:{fontWeight:700,color:'var(--text2)'}},'Evaluated '+report.weeks.length+
+            ' business week'+(report.weeks.length===1?'':'s')+' (Wed–Tue): '),
+          fmtWk(report.weeks[0])+' – '+fmtWk(addD(report.weeks[report.weeks.length-1],6)),
+          report.rangeMode==='custom'
+            ?span(null,' · custom range picked: '+report.customStart+' to '+report.customEnd)
+            :span(null,' · preset: last '+report.weeksBack+' weeks'),
+          report.capped&&span({style:{color:'var(--warn)',fontWeight:600}},
+            ' · capped to the most recent '+PVSA_MAX_CUSTOM_WEEKS+' weeks (picked range was longer)')
         ),
         // Legend
         div({style:{display:'flex',gap:10,marginBottom:12,fontSize:'9px',color:'var(--text3)',
