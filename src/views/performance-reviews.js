@@ -849,7 +849,7 @@ function CompetenciesSection({local, set, custRole, setCustRole, custCat, setCus
 // ═══════════════════════════════════════════════════════════════════════════════
 // REVIEW EDITOR
 // ═══════════════════════════════════════════════════════════════════════════════
-function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', orgRoles, onTransition}) {
+function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='admin', orgRoles, onTransition, dataReady=true}) {
   const [review, setReview]       = useState(() => JSON.parse(JSON.stringify(initReview)));
   const [tab, setTab]             = useState('kpi');
   const [kpiCat, setKpiCat]       = useState('rgr');
@@ -1041,7 +1041,7 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
     TabBar({tabs, active:tab, onSelect:setTab}),
     // Content
     div({style:{flex:1,overflowY:'auto'}},
-      tab==='kpi'     && h(KPITab,     {review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, overrides, canOverride, onAddOverride}),
+      tab==='kpi'     && h(KPITab,     {review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, dataReady, overrides, canOverride, onAddOverride}),
       tab==='behav'   && h(BehavTab,   {review, cfg, qKeys, bCat, setBCat, setRating, setComment}),
       tab==='devplan' && h(DevPlanTab, {review, setDevPlan, update, activeHalf: PERIOD_TO_NARRATIVE_HALF[period]}),
       tab==='summary' && h(SummaryTab, {review:resolvedReview, cfg, scores, qKeys, mths, update, period,
@@ -1119,7 +1119,7 @@ function StatusActionBar({half, review, userRole, orgRoles, onTransition}) {
 }
 
 // ── KPI Results Tab ────────────────────────────────────────────────────────────
-function KPITab({review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, overrides, canOverride, onAddOverride}) {
+function KPITab({review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, dataReady=true, overrides, canOverride, onAddOverride}) {
   // RAW months (targets + manual actuals are edited against these — direct edits are never
   // clobbered by overrides, which only ever apply to src:'auto' actuals). RESOLVED months are
   // what's actually shown/rated for the "Actual" row of an auto-sourced metric — the effective
@@ -1129,18 +1129,31 @@ function KPITab({review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, se
   const catMets = cfg.metrics[kpiCat] || [];
   const allCats = [...CAT_KEYS];
 
+  // Dispatch #159 — `ds.loaded` flips true off the local IDB restore alone, well before the
+  // Supabase auto/cloud streams (qsrActSummaryRows/glimpseRows/opsServiceRows) that
+  // autoPopulateKPIs' OEPE/R2P/KVS/Labor% chains check FIRST have actually landed (App.js's
+  // "T1", a real network round-trip). `dataReady` (defaulted true for any caller that hasn't
+  // been wired to the real signal, e.g. existing tests / other render paths) is App.js's
+  // honest "T1 finished" flag. Without this, a click in that window silently resolved every
+  // recent month from nothing — falling through past the not-yet-loaded auto sources straight
+  // to whatever the already-IDB-resident manual Ops Report rows happened to cover, and to nothing
+  // at all for months beyond that (root cause of the Jan-Jun-populates/Jul-Dec-blank split).
+  const canAutoFill = !!ds?.loaded && dataReady;
+
   return div({style:{padding:16}},
     // Auto-fill button
     div({style:{display:'flex',alignItems:'center',gap:10,marginBottom:16,
       padding:'10px 14px',background:`${AMBER}10`,borderRadius:R,border:`1px solid ${AMBER}30`}},
-      btn({onClick:doAutoFill,disabled:!ds?.loaded||autoFilling,
+      btn({onClick:doAutoFill,disabled:!canAutoFill||autoFilling,
         style:{padding:'6px 14px',background:AMBER,color:'#000',border:'none',
-          borderRadius:R,fontSize:12,fontWeight:700,cursor:ds?.loaded?'pointer':'not-allowed',opacity:ds?.loaded?1:.5}},
+          borderRadius:R,fontSize:12,fontWeight:700,cursor:canAutoFill?'pointer':'not-allowed',opacity:canAutoFill?1:.5}},
         autoFilling?'Filling...' : 'Auto-fill from Uploaded Data'),
       span({style:{fontSize:11,color:TEXT3}},
-        ds?.loaded
-          ? 'Fills OEPE, R2P, KVS, Sales vs Target, Labor %, FOB, and Voice OSAT from your uploaded Operations/Labor/SMG FullScale reports.'
-          : 'Upload Operations Report, Labor Analysis, and SMG FullScale files to enable auto-fill.')),
+        !ds?.loaded
+          ? 'Upload Operations Report, Labor Analysis, and SMG FullScale files to enable auto-fill.'
+          : !dataReady
+          ? 'Still loading live OEPE/R2P/KVS/Labor % data from the cloud — wait a moment before auto-filling, or recent months may come back blank.'
+          : 'Fills OEPE, R2P, KVS, Sales vs Target, Labor %, FOB, and Voice OSAT from your uploaded Operations/Labor/SMG FullScale reports.')),
     // Category tabs
     div({style:{display:'flex',gap:4,marginBottom:16,flexWrap:'wrap'}},
       ...allCats.map(cat => {
@@ -2786,7 +2799,7 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PANEL
 // ═══════════════════════════════════════════════════════════════════════════════
-export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin', orgRoles, initialTab, initialCustomizeSection}) {
+export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole='admin', orgRoles, initialTab, initialCustomizeSection, dataReady=true}) {
   const [tab, setTab]       = useState(initialTab || 'reviews');
   const [cfg, setCfg]       = useState(() => getReviewConfig());
   const [reviews, setReviews] = useState(() => getReviews());
@@ -2835,7 +2848,7 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
         ? h(ReviewEditor,{review:editing, cfg, ds, stores,
             onSave:handleSaveReview,
             onBack:()=>{refresh();setEditing(null);},
-            userRole, orgRoles,
+            userRole, orgRoles, dataReady,
             onTransition:handleTransition})
         : h(ReviewList,{reviews, cfg, stores,
             shiftManagerRows: ds?.shiftManagerRows || [],
