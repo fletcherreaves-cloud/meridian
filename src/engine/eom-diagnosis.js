@@ -41,6 +41,15 @@ const FOUNTAIN_BEV_RE = /\b(COKE|SPRITE|FANTA|HI ?C|DR ?PEPPER|MINUTE MAID|MM |L
 // is only a floor so the check runs before targets are wired.
 export const DEFAULT_FOB_BAND = 0.0025; // 0.25% over target before we flag
 
+// Display labels for the fob-components CHECK's findings — kept distinct from FOB_COMPONENTS's
+// own (shorter) labels used in the narrative FOB driver line, matching this app's established
+// wording elsewhere (fob-eom.js COMP_ORDER, analytics.js FOB tile labels). Purely display text;
+// the component/target KEY mapping itself comes from FOB_COMPONENTS below, the single source.
+const FOB_COMPONENT_LABELS = {
+  compWaste: 'Completed Waste', rawWaste: 'Raw Waste', condiments: 'Condiments',
+  empMgrMeals: 'Emp/Mgr Meals', statVariance: 'Variance Stat', unexplained: 'Unexplained',
+};
+
 // ── The editable check registry ───────────────────────────────────────────────
 // Order + enabled + thresholds are all data → an editing UI can mutate this later.
 export const DEFAULT_CHECKS = [
@@ -48,23 +57,24 @@ export const DEFAULT_CHECKS = [
     id: 'fob-components', label: 'FOB components vs target', order: 10, enabled: true,
     requires: ['fob'], params: { band: DEFAULT_FOB_BAND },
     // Always look at Food Over Base first; flag components excessively out of range.
+    // Component ↔ target-field mapping is read from the single-source FOB_COMPONENTS tuples
+    // (below) — the same ones fobComponentDeltas() uses for the narrative FOB driver line — so
+    // this check and that line can never independently drift out of key-name sync again
+    // (dispatch #176: they'd drifted, which is why this check never fired for any store).
     run: (ctx) => {
       const f = ctx.data.fob; if (!f) return [];
       const t = ctx.data.targets || {};
       const out = [];
-      const COMPONENTS = [
-        ['compWaste', 'Completed Waste'], ['rawWaste', 'Raw Waste'], ['condiments', 'Condiments'],
-        ['empMgrMeals', 'Emp/Mgr Meals'], ['statVariance', 'Variance Stat'], ['unexplained', 'Unexplained'],
-      ];
-      for (const [key, label] of COMPONENTS) {
-        const actPct = f.sales ? (f[key] || 0) / f.sales : null;
+      for (const [, , tk, longKey] of FOB_COMPONENTS) {
+        const actPct = f.sales ? (f[longKey] || 0) / f.sales : null;
         if (actPct == null) continue;
-        const tgt = t[key];
+        const tgt = t[tk];
         const over = tgt != null ? actPct - tgt : null;
         if (over != null && over > (ctx.params.band ?? DEFAULT_FOB_BAND)) {
+          const label = FOB_COMPONENT_LABELS[longKey] || longKey;
           out.push(mkFinding('fob-components', over > 0.01 ? SEVERITY.high : SEVERITY.medium,
             `${label} over target`, `${(actPct * 100).toFixed(2)}% vs ${(tgt * 100).toFixed(2)}% target (+${(over * 100).toFixed(2)} pts)`,
-            (f[key] || 0), { component: key }));
+            (f[longKey] || 0), { component: longKey }));
         }
       }
       return out;
@@ -767,10 +777,15 @@ export const INTEGRITY_CHECK_IDS = new Set([
   'unrealistic-over', 'negative-onhand', 'negative-usage', 'uom-sanity',
 ]);
 
-// The six FOB components and the DEFAULT_TARGETS key that sets each one's target %.
+// The six FOB components, the DEFAULT_TARGETS key that sets each one's target %, and the matching
+// long-form key `ctx.data.fob` (built by eom-report-build.js / eom-dashboard.js) carries the $ under
+// — [shortKey, label, targetKey, longKey]. Single source for BOTH fobComponentDeltas() (narrative FOB
+// driver line) and the fob-components CHECK (structured findings) — see dispatch #176: before this,
+// the check kept its own separately-named, independently-drifted copy of this mapping and it never
+// matched, so the check silently never fired for any store.
 export const FOB_COMPONENTS = [
-  ['comp', 'Comp Waste', 'tCompWaste'], ['raw', 'Raw Waste', 'tRawWaste'], ['cond', 'Condiments', 'tCondiment'],
-  ['emp', 'Emp Meals', 'tEmpFood'], ['statv', 'Stat Variance', 'tStatLoss'], ['unex', 'Unexplained', 'tUnex'],
+  ['comp', 'Comp Waste', 'tCompWaste', 'compWaste'], ['raw', 'Raw Waste', 'tRawWaste', 'rawWaste'], ['cond', 'Condiments', 'tCondiment', 'condiments'],
+  ['emp', 'Emp Meals', 'tEmpFood', 'empMgrMeals'], ['statv', 'Stat Variance', 'tStatLoss', 'statVariance'], ['unex', 'Unexplained', 'tUnex', 'unexplained'],
 ];
 // Per-component actual-% vs target-% deltas from the FOB $ breakdown + the store's targets. Lets the
 // report explain a FOB overage that lives in the COMPONENTS (waste / stat variance) even when the

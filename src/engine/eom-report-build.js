@@ -9,7 +9,7 @@
 // camelCase the client already carries. `components` = the FOB $ breakdown; `targets` = DEFAULT_TARGETS
 // for the store (for the FOB target line). `exception` = a granted count-date exception (or null).
 
-import { runDiagnosis, formatDiagnosisReport, checksConfig, fobComponentDeltas } from './eom-diagnosis.js';
+import { runDiagnosis, formatDiagnosisReport, DEFAULT_CHECKS, fobComponentDeltas } from './eom-diagnosis.js';
 import { diagnoseIncompleteCount } from './eom-inventory.js';
 
 const num = v => (v == null || v === '' ? null : Number(v));
@@ -39,7 +39,13 @@ export function buildEomReport({
 } = {}) {
   const c = components || {};
   const shaped = shapeOnHand(onHand);
-  const activeChecks = checks || checksConfig();
+  // NOT checksConfig() — that returns the check registry stripped down to its serializable config
+  // shape (id/label/order/enabled/params, no `run`), for saving/displaying an editable check list.
+  // Passed straight to runDiagnosis() as `checks`, a `run`-less object makes every check silently
+  // error (caught, logged as `ran:[{..., error}]`) and produce zero findings — found while verifying
+  // dispatch #176's fix: it would otherwise have kept masking fob-components (and every other check)
+  // for every buildEomReport() caller, none of which currently pass an explicit `checks` override.
+  const activeChecks = checks || DEFAULT_CHECKS;
 
   const result = runDiagnosis({
     store: loc, storeName: name, period, asOf, checks: activeChecks,
@@ -48,6 +54,7 @@ export function buildEomReport({
       onHand: shaped,
       variance: variance || [], waste: waste || [], transfers: transfers || [],
       unmatchedTransfers: unmatchedTransfers || [], selfServeTower: !!selfServeTower, rawItems: rawItems || [],
+      targets: targets || {}, // dispatch #176: was omitted, so ctx.data.targets was always {} — fob-components check never fired
     },
   });
 
