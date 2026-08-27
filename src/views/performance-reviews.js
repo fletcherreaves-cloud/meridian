@@ -4,13 +4,17 @@ import {
   DEFAULT_REVIEW_CONFIG, getReviewConfig, saveReviewConfig, resetReviewConfig,
   getReviews, upsertReview, deleteReview, blankReview, autoPopulateKPIs,
   rateMetric, ratingColor, ratingBg, computeScores, computeScoreBreakdown,
-  transitionReview, REVIEW_STATUSES,
+  transitionReview, REVIEW_STATUSES, reviewSummaryStatus,
   getTemplates, saveTemplates, upsertTemplateInList, removeTemplateFromList, duplicateTemplateInList, validateTemplateWeights, syncTemplatesFromSupabase,
-  RATING_LABELS, MONTH_NAMES, halfMonths, halfQKeys, qLabel, qMonths,
+  RATING_LABELS, MONTH_NAMES, qLabel, qMonths,
   CAT_KEYS, CAT_LABELS, ROLE_KEYS, ROLE_LABELS, SHIFT_ATTRIBUTABLE_ROLES,
   // Dispatch #149 — locked auto-populated actuals + reason-required override.
   OVERRIDE_REASONS, OVERRIDE_REASON_LABEL, validateOverrideInput, addReviewOverride,
   getReviewOverrides, syncReviewOverridesFromSupabase, effectiveOverrideFor, applyReviewOverrides,
+  // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — real Q1-Q4/H1/H2/Year period
+  // selector (QUARTER_MONTHS/H1_MONTHS/H2_MONTHS + calendarMonthRange) and segmented-scoring
+  // display (computeSegmentedReview, the Phase 5a engine dispatch #154 shipped with no UI yet).
+  QUARTER_MONTHS, H1_MONTHS, H2_MONTHS, calendarMonthRange, computeSegmentedReview,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
 import { hasPermission, getOrgRoles, canOverrideLockedActual, DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
@@ -39,6 +43,30 @@ const TEXT   = 'var(--text)';
 const TEXT2  = 'var(--text2)';
 const TEXT3  = 'var(--text3)';
 const R      = 'var(--r)';
+
+// ── Period selector (dispatch #157, Priority 1 item 1) ─────────────────────────
+// A review record is a full YEAR now (dispatch #152) — `computeScores`/`computeScoreBreakdown`
+// return all of q1/q2/q3/q4/h1/h2/year from one call. This is the ONE place the editor's period
+// selector's month/quarter-key/status-half mapping is defined, so KPITab/BehavTab/SummaryTab/the
+// print functions/ReviewList all read the SAME definition rather than five different ones drifting
+// apart. `statusHalf` says which of `review.periods.h1`/`h2` a given period's approval status maps
+// to — null for 'year' (spans both halves; the editor shows both halves' status bars for that
+// selection, see StatusActionBar usage in ReviewEditor).
+export const PERIOD_ORDER = ['q1','q2','q3','q4','h1','h2','year'];
+export const PERIOD_META = {
+  q1:   { label:'Q1',              months:QUARTER_MONTHS.q1,               qKeys:['q1'],           statusHalf:'h1' },
+  q2:   { label:'Q2',              months:QUARTER_MONTHS.q2,               qKeys:['q2'],           statusHalf:'h1' },
+  q3:   { label:'Q3',              months:QUARTER_MONTHS.q3,               qKeys:['q3'],           statusHalf:'h2' },
+  q4:   { label:'Q4',              months:QUARTER_MONTHS.q4,               qKeys:['q4'],           statusHalf:'h2' },
+  h1:   { label:'H1 (Mid-Year)',   months:H1_MONTHS,                       qKeys:['q1','q2'],       statusHalf:'h1' },
+  h2:   { label:'H2 (End of Year)',months:H2_MONTHS,                       qKeys:['q3','q4'],       statusHalf:'h2' },
+  year: { label:'Full Year',       months:[...H1_MONTHS,...H2_MONTHS],     qKeys:['q1','q2','q3','q4'], statusHalf:null },
+};
+// Which half's mid-year/EOY narrative fields (comments.midYear / comments.eoy, devPlan default
+// period) a given period selection maps to — quarters/halves map to their own half; 'year' maps to
+// 'h2' (the end-of-year summary is the natural "whole year" narrative home, matching how the wage
+// section below already treats H2/year as the annual decision point).
+const PERIOD_TO_NARRATIVE_HALF = { q1:'h1', q2:'h1', h1:'h1', q3:'h2', q4:'h2', h2:'h2', year:'h2' };
 
 // ── Org / Logo helpers ─────────────────────────────────────────────────────────
 const ORG_LABELS = { mcdok:'McDOK', emerald:'Emerald Arches' };
@@ -828,9 +856,12 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   const [bCat, setBCat]           = useState('rgr');
   const [autoFilling, setAutoFilling] = useState(false);
   const [dirty, setDirty]         = useState(false);
-  const [showReturnForm, setShowReturnForm] = useState(false);
-  const [returnNotes, setReturnNotes]       = useState('');
   const [checkMonth, setCheckMonth]         = useState(null);
+  // Dispatch #157 (Performance Review continuity, Phase 4b UI) — real period selector: a review
+  // record spans the whole year now (dispatch #152), so which months/quarters the KPI/Behavioral
+  // tabs and header score pill show is UI state, not read off the (now nonexistent) review.half.
+  // Defaults to 'year' — the original motivating ask was "how do I see this review in entirety".
+  const [period, setPeriod] = useState('year');
   // Dispatch #149 — locked-actual overrides. Loaded per-review (not globally); Supabase is the
   // durable store, localStorage (getReviewOverrides) is the instant-read cache for this device.
   const [overrides, setOverrides] = useState(() => getReviewOverrides(review.id));
@@ -843,8 +874,8 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   const orgLogo    = getOrgLogo(reviewOrg);
   const orgLabel   = getOrgLabel(reviewOrg);
 
-  const mths  = halfMonths(review.half);
-  const qKeys = halfQKeys(review.half);
+  const mths  = PERIOD_META[period].months;
+  const qKeys = PERIOD_META[period].qKeys;
   const activeCheckMonth = checkMonth || mths[mths.length-1];
 
   const update = useCallback((path, val) => {
@@ -875,20 +906,50 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
     setTimeout(()=>setAutoFilling(false), 800);
   };
 
-  const status     = review.status || 'draft';
-  const isReadOnly = status === 'submitted' || status === 'approved';
+  // Dispatch #157, Priority 1 item 2 — approval status lives per-half now
+  // (review.periods.h1.status / review.periods.h2.status, dispatch #152), never a top-level
+  // review.status (that field no longer exists on a #152-era review — see this dispatch's PR
+  // body finding #2). Read-only gating follows whichever half(s) the CURRENT period selection
+  // touches: a single quarter/half maps to exactly one half's lock state; 'year' (spans both)
+  // is read-only only once BOTH halves are locked, so viewing the full year never blocks
+  // legitimate edits to a still-open half just because its sibling half is already approved.
+  const h1Status = review.periods?.h1?.status || 'draft';
+  const h2Status = review.periods?.h2?.status || 'draft';
+  const _locked = s => s === 'submitted' || s === 'approved';
+  const activeHalf = PERIOD_META[period].statusHalf; // 'h1' | 'h2' | null (year = both)
+  const isReadOnly = activeHalf
+    ? _locked(activeHalf === 'h1' ? h1Status : h2Status)
+    : (_locked(h1Status) && _locked(h2Status));
 
   const doSave = () => { if (isReadOnly) return; onSave(review); setDirty(false); };
 
-  const doTransition = (newStatus, notes='') => {
-    if (onTransition) onTransition(review.id, newStatus, notes);
-    // Optimistically update local state
-    setReview(prev => ({
-      ...prev, status: newStatus, statusNotes: notes || prev.statusNotes || '',
-      statusHistory: [...(prev.statusHistory||[]),
-        {from:prev.status||'draft',to:newStatus,notes,at:new Date().toISOString()}],
-    }));
-  };
+  // Dispatch #157 — fixes the confirmed 3-vs-4-arg bug (dispatch #157 finding #3): the engine's
+  // transitionReview(id, half, newStatus, notes) is 4-arg; this now passes `half` explicitly
+  // (lowercase 'h1'|'h2', matching review.periods' own keys) instead of silently shifting
+  // newStatus into the half slot. Called once per half from StatusActionBar below (rendered
+  // once for a quarter/half selection, twice — h1 and h2 — for 'year').
+  const doTransition = useCallback((half, newStatus, notes='') => {
+    if (onTransition) onTransition(review.id, half, newStatus, notes);
+    // Optimistically update local state — same {from,to,notes,at} audit-trail shape
+    // transitionReview() itself builds, nested under the correct half.
+    setReview(prev => {
+      const periods = prev.periods || {};
+      const cur = periods[half] || { status: 'draft', statusHistory: [], statusNotes: '' };
+      return {
+        ...prev,
+        periods: {
+          ...periods,
+          [half]: {
+            ...cur,
+            status: newStatus,
+            statusHistory: [...(cur.statusHistory || []),
+              { from: cur.status || 'draft', to: newStatus, notes, at: new Date().toISOString() }],
+            statusNotes: notes || '',
+          },
+        },
+      };
+    });
+  }, [review.id, onTransition]);
 
   // Dispatch #149 — the RESOLVED review: every src:'auto' actual with an active override shows
   // that override's value instead of the raw auto-populated one. Computed ONCE here and handed
@@ -928,11 +989,20 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
       div({style:{flex:1}},
         div({style:{fontWeight:700,fontSize:14,color:TEXT}},review.name),
         div({style:{fontSize:11,color:TEXT3}},
-          `${ROLE_LABELS[review.role]||review.role} · ${review.loc||'All Stores'} · ${review.half} ${review.year}`)
+          `${ROLE_LABELS[review.role]||review.role} · ${review.loc||'All Stores'} · ${PERIOD_META[period].label} ${review.year}`)
+      ),
+      // Dispatch #157, Priority 1 item 1 — the real period selector. Drives mths/qKeys (above)
+      // for the KPI tab, Behavioral tab, header score pill, and (via props) the Summary tab and
+      // print exports — replaces the dead `halfMonths(review.half)` (review.half is undefined on
+      // every #152-era review, so this was permanently stuck on H2's months).
+      sel({value:period,onChange:e=>setPeriod(e.target.value),
+        style:{fontSize:11,padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+          borderRadius:R,color:TEXT,fontWeight:700,cursor:'pointer'}},
+        ...PERIOD_ORDER.map(p=>opt({value:p,key:p},PERIOD_META[p].label))
       ),
       dirty&&span({style:{fontSize:11,color:AMBER}},'Unsaved changes'),
-      scores.half?.overall!=null && (() => {
-        const s = scores.half.overall;
+      scores[period]?.overall!=null && (() => {
+        const s = scores[period].overall;
         const col = ratingColor(Math.round(s));
         return span({style:{fontSize:11,fontWeight:700,color:col,
           background:col+'22',border:`1px solid ${col}44`,borderRadius:R,
@@ -951,35 +1021,74 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
         GhostBtn({onClick:()=>printCheckpoint(resolvedReview,cfg,activeCheckMonth,orgLabel,orgLogo),
           style:{fontSize:11}},'1:1 Checkpoint')
       ),
-      GhostBtn({onClick:()=>printBlankForm(review,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Blank Form'),
-      GhostBtn({onClick:()=>printReview(resolvedReview,cfg,orgLabel,orgLogo),style:{fontSize:11}},'Print / PDF'),
+      // Dispatch #157, Priority 1 item 5 — both print functions now take the selected `period`
+      // explicitly instead of reading the broken `review.half` internally.
+      GhostBtn({onClick:()=>printBlankForm(review,cfg,orgLabel,orgLogo,period),style:{fontSize:11}},'Blank Form'),
+      GhostBtn({onClick:()=>printReview(resolvedReview,cfg,orgLabel,orgLogo,period),style:{fontSize:11}},'Print / PDF'),
       PrimaryBtn({onClick:doSave,disabled:isReadOnly,
         style:{minWidth:80,opacity:isReadOnly?0.45:1,cursor:isReadOnly?'not-allowed':'pointer'}},
         'Save'),
     ),
-    // Status action bar
+    // Dispatch #157, Priority 1 item 2 — status action bar(s). A quarter/half selection shows
+    // exactly the ONE half it maps to; 'year' shows BOTH h1 and h2 independently (per the owner's
+    // own words: "I'd still wanna see... a six month half first half year review and a second
+    // six month second half year review" — two real, independent review conversations, not one
+    // fabricated year-level status). Each StatusActionBar reads/writes its own
+    // review.periods.h1/h2.status via the now-correct 4-arg doTransition(half, newStatus, notes).
+    ...(activeHalf ? [activeHalf] : ['h1','h2']).map(half =>
+      h(StatusActionBar, {key:half, half, review, userRole, orgRoles, onTransition:doTransition})),
+    // Tab bar
+    TabBar({tabs, active:tab, onSelect:setTab}),
+    // Content
+    div({style:{flex:1,overflowY:'auto'}},
+      tab==='kpi'     && h(KPITab,     {review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, overrides, canOverride, onAddOverride}),
+      tab==='behav'   && h(BehavTab,   {review, cfg, qKeys, bCat, setBCat, setRating, setComment}),
+      tab==='devplan' && h(DevPlanTab, {review, setDevPlan, update, activeHalf: PERIOD_TO_NARRATIVE_HALF[period]}),
+      tab==='summary' && h(SummaryTab, {review:resolvedReview, cfg, scores, qKeys, mths, update, period,
+        ds, assignmentRows: ds?.assignmentRows || []}),
+    )
+  );
+}
+
+// Dispatch #157, Priority 1 item 2 — one half's status badge + Submit/Approve/Return/Reopen
+// action bar + its own inline return-notes form. A real, standalone component (not a closure
+// inside ReviewEditor) so its `useState` (showReturnForm/returnNotes) is a stable per-half
+// instance rather than being redefined every ReviewEditor render — needed because 'year'
+// mounts TWO of these side by side (h1 and h2), each with independent local UI state.
+function StatusActionBar({half, review, userRole, orgRoles, onTransition}) {
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnNotes, setReturnNotes]       = useState('');
+  const periodState = review.periods?.[half] || {status:'draft', statusHistory:[], statusNotes:''};
+  const status      = periodState.status || 'draft';
+  const isReadOnly  = status === 'submitted' || status === 'approved';
+  const halfLabel   = half === 'h1' ? 'H1' : 'H2';
+
+  const fire = (newStatus, notes='') => onTransition(half, newStatus, notes);
+
+  return div({style:{display:'flex',flexDirection:'column'}},
     div({style:{display:'flex',alignItems:'center',gap:10,padding:'7px 16px',
       borderBottom:`1px solid ${BDR}`,background:S2,flexWrap:'wrap'}},
+      span({style:{fontSize:10,fontWeight:700,color:TEXT3,minWidth:20}},halfLabel),
       h(StatusBadge,{status}),
-      status==='returned'&&review.statusNotes&&
+      status==='returned'&&periodState.statusNotes&&
         span({style:{fontSize:11,color:'#ef4444',fontStyle:'italic'}},
-          `"${review.statusNotes}"`),
+          `"${periodState.statusNotes}"`),
       isReadOnly&&span({style:{fontSize:11,color:TEXT3}},
         status==='submitted'?'Read-only while under review':'Approved — use Reopen to edit'),
       div({style:{flex:1}}),
       // Draft: submit
       status==='draft'&&PrimaryBtn({
-        onClick:()=>doTransition('submitted'),
+        onClick:()=>fire('submitted'),
         style:{fontSize:11,padding:'4px 12px'}},
         'Submit for Review'),
       // Returned: resubmit
       status==='returned'&&PrimaryBtn({
-        onClick:()=>doTransition('submitted'),
+        onClick:()=>fire('submitted'),
         style:{fontSize:11,padding:'4px 12px',background:'#f59e0b',color:'#000'}},
         'Resubmit for Review'),
       // Submitted: approve/return (permission-gated)
       status==='submitted'&&hasPermission(userRole,'reviews.approve',orgRoles||getOrgRoles())&&h(React.Fragment,null,
-        PrimaryBtn({onClick:()=>doTransition('approved'),
+        PrimaryBtn({onClick:()=>fire('approved'),
           style:{fontSize:11,padding:'4px 12px',background:'#16a34a'}},
           'Approve'),
         GhostBtn({onClick:()=>{setShowReturnForm(v=>!v);setReturnNotes('');},
@@ -988,10 +1097,9 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
       ),
       // Approved: reopen (same permission gate)
       status==='approved'&&hasPermission(userRole,'reviews.approve',orgRoles||getOrgRoles())&&
-        GhostBtn({onClick:()=>doTransition('draft'),style:{fontSize:11,padding:'4px 12px'}},
+        GhostBtn({onClick:()=>fire('draft'),style:{fontSize:11,padding:'4px 12px'}},
           'Reopen'),
     ),
-    // Return notes inline form
     showReturnForm&&div({style:{display:'flex',alignItems:'flex-start',gap:8,
       padding:'10px 16px',borderBottom:`1px solid ${BDR}`,background:'#1c0a0a'}},
       ta({value:returnNotes,rows:2,placeholder:'Reason for returning (shown to reviewer)…',
@@ -1001,20 +1109,11 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
           resize:'none',fontFamily:'var(--sans)'}}),
       div({style:{display:'flex',flexDirection:'column',gap:6}},
         PrimaryBtn({style:{background:'#ef4444',fontSize:11,padding:'4px 12px'},
-          onClick:()=>{doTransition('returned',returnNotes);setShowReturnForm(false);setReturnNotes('');}},
+          onClick:()=>{fire('returned',returnNotes);setShowReturnForm(false);setReturnNotes('');}},
           'Confirm'),
         GhostBtn({onClick:()=>{setShowReturnForm(false);setReturnNotes('');},style:{fontSize:11,padding:'4px 12px'}},
           'Cancel')
       )
-    ),
-    // Tab bar
-    TabBar({tabs, active:tab, onSelect:setTab}),
-    // Content
-    div({style:{flex:1,overflowY:'auto'}},
-      tab==='kpi'     && h(KPITab,     {review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, setMonthKPI, doAutoFill, autoFilling, ds, overrides, canOverride, onAddOverride}),
-      tab==='behav'   && h(BehavTab,   {review, cfg, qKeys, bCat, setBCat, setRating, setComment}),
-      tab==='devplan' && h(DevPlanTab, {review, setDevPlan, update}),
-      tab==='summary' && h(SummaryTab, {review:resolvedReview, cfg, scores, qKeys, mths, update}),
     )
   );
 }
@@ -1364,9 +1463,12 @@ function BehavTab({review, cfg, qKeys, bCat, setBCat, setRating, setComment}) {
 }
 
 // ── Dev Plan Tab ───────────────────────────────────────────────────────────────
-function DevPlanTab({review, setDevPlan, update}) {
+// Dispatch #157 — `activeHalf` ('h1'|'h2') comes from the editor's real period selector
+// (PERIOD_TO_NARRATIVE_HALF) now, not the dead `review.half` (undefined on every #152-era
+// review, which silently pinned this tab to its else-branch — always the EOY/H2 fields).
+function DevPlanTab({review, setDevPlan, update, activeHalf}) {
   const plan = review.devPlan || [];
-  const half = review.half;
+  const half = activeHalf === 'h1' ? 'H1' : 'H2';
 
   const addItem = () => setDevPlan([...plan, {
     id: Date.now().toString(),
@@ -1590,12 +1692,14 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
 }
 
 // ── Blank fillable form ────────────────────────────────────────────────────────
-function printBlankForm(review, cfg, orgLabel, orgLogo) {
+// Dispatch #157, Priority 1 item 5 — `period` is now an explicit PARAMETER (a PERIOD_META key:
+// q1-q4/h1/h2/year), matching #152's own scope note ("the print functions... need a period-
+// selector PARAMETER instead") — no longer read off the nonexistent `review.half`.
+function printBlankForm(review, cfg, orgLabel, orgLogo, period='h1') {
   if (!orgLabel) orgLabel = getOrgLabel(getStoreOrg(review.loc));
   const today = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
-  const half = review.half;
-  const halfLabel = half==='H1' ? 'Mid-Year' : 'End of Year';
-  const mths = halfMonths(half);
+  const halfLabel = PERIOD_META[period]?.label || period;
+  const mths = PERIOD_META[period]?.months || H1_MONTHS;
 
   const printCatLabel = key => {
     const ex=(cfg.extraCategories||[]).find(c=>c.key===key);
@@ -1747,14 +1851,24 @@ function printBlankForm(review, cfg, orgLabel, orgLogo) {
 }
 
 // ── Print / PDF export ─────────────────────────────────────────────────────────
-function printReview(review, cfg, orgLabel, orgLogo) {
+// Dispatch #157, Priority 1 item 5 — `period` is now an explicit PARAMETER (any PERIOD_META key)
+// instead of the dead `review.half`. `scores[period]` resolves directly against computeScores'
+// real {q1,q2,q3,q4,h1,h2,year} shape — for `period==='year'` this naturally prints all four
+// quarters (qKeys) plus a true year-total row, not a half.
+function printReview(review, cfg, orgLabel, orgLogo, period='year') {
   if (!orgLabel) orgLabel = getOrgLabel(getStoreOrg(review.loc));
   const scores = computeScores(review, cfg);
-  const half   = review.half;
-  const qKeys  = halfQKeys(half);
-  const mths   = halfMonths(half);
-  const halfLabel = half==='H1'?'Mid-Year':'End of Year';
+  const qKeys  = PERIOD_META[period]?.qKeys || ['q1','q2','q3','q4'];
+  const mths   = PERIOD_META[period]?.months || [...H1_MONTHS,...H2_MONTHS];
+  const halfLabel = PERIOD_META[period]?.label || period;
   const today  = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  // Annual wage decisions print alongside any period that reaches H2/end-of-year (h2, q3, q4,
+  // year) — matches the original H2-only gate, generalized to the new period set.
+  const showWage = ['h2','q3','q4','year'].includes(period);
+  // Mid-year / EOY narrative sections only print if the selected period actually touches that
+  // half — printing a Q1-only export shouldn't surface EOY commentary that hasn't happened yet.
+  const showMidYear = ['q1','q2','h1','year'].includes(period);
+  const showEoy     = ['q3','q4','h2','year'].includes(period);
 
   const rLabel = r => r===4?'Exceeds':r===3?'On Target':r===2?'Below':'Needs Improvement';
   const rCol   = r => r===4?'#10b981':r===3?'#2563eb':r===2?'#d97706':'#dc2626';
@@ -1799,7 +1913,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
     return ex?ex.label:CAT_LABELS[key]||key;
   };
 
-  const wageSection = half==='H2'?`
+  const wageSection = showWage?`
     <h2>Wage Review</h2>
     <table><tr>
       <th>Current Rate</th><th>Recommended Increase</th><th>Approved Rate</th><th>Effective Date</th>
@@ -1855,7 +1969,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
     </div>
     <div style="text-align:right;font-size:10px;color:#6b7280">
       <div>Review Date: ${today}</div>
-      <div>Status: ${(review.status||'Draft').toUpperCase()}</div>
+      <div>Status: H1 ${esc((review.periods?.h1?.status||'draft').toUpperCase())} · H2 ${esc((review.periods?.h2?.status||'draft').toUpperCase())}</div>
     </div>
   </div>
 
@@ -1863,7 +1977,7 @@ function printReview(review, cfg, orgLabel, orgLogo) {
   <table>
     <tr><th>Period</th><th style="text-align:center">Metrics (70%)</th><th style="text-align:center">Behavioral (30%)</th><th style="text-align:center">Overall</th><th style="text-align:center">Rating</th></tr>
     ${qKeys.map(q=>scoreRow(qLabel(q),scores[q])).join('')}
-    ${scoreRow(halfLabel+' Total',scores.half)}
+    ${scoreRow(halfLabel+' Total',scores[period])}
   </table>
   <p style="font-size:10px;color:#6b7280;margin-bottom:16px">Rating Scale: 4 = Exceeds · 3 = On Target · 2 = Below · 1 = Needs Improvement</p>
 
@@ -1901,11 +2015,11 @@ function printReview(review, cfg, orgLabel, orgLogo) {
     ${devRows}
   </table>`:'<p style="color:#9ca3af">No development items recorded.</p>'}
 
-  ${review.comments?.midYear?.summary?`<h3>Mid-Year Summary</h3><div class="narrative">${esc(review.comments.midYear.summary)}</div>`:''}
-  ${review.comments?.midYear?.devPlan?`<h3>Mid-Year Development Plan</h3><div class="narrative">${esc(review.comments.midYear.devPlan)}</div>`:''}
-  ${review.comments?.eoy?.summary?`<h3>End of Year Summary</h3><div class="narrative">${esc(review.comments.eoy.summary)}</div>`:''}
-  ${review.comments?.eoy?.achievements?`<h3>Achievements</h3><div class="narrative">${esc(review.comments.eoy.achievements)}</div>`:''}
-  ${review.comments?.eoy?.nextYear?`<h3>Focus for Next Year</h3><div class="narrative">${esc(review.comments.eoy.nextYear)}</div>`:''}
+  ${showMidYear&&review.comments?.midYear?.summary?`<h3>Mid-Year Summary</h3><div class="narrative">${esc(review.comments.midYear.summary)}</div>`:''}
+  ${showMidYear&&review.comments?.midYear?.devPlan?`<h3>Mid-Year Development Plan</h3><div class="narrative">${esc(review.comments.midYear.devPlan)}</div>`:''}
+  ${showEoy&&review.comments?.eoy?.summary?`<h3>End of Year Summary</h3><div class="narrative">${esc(review.comments.eoy.summary)}</div>`:''}
+  ${showEoy&&review.comments?.eoy?.achievements?`<h3>Achievements</h3><div class="narrative">${esc(review.comments.eoy.achievements)}</div>`:''}
+  ${showEoy&&review.comments?.eoy?.nextYear?`<h3>Focus for Next Year</h3><div class="narrative">${esc(review.comments.eoy.nextYear)}</div>`:''}
 
   ${wageSection}
 
@@ -1928,10 +2042,19 @@ function printReview(review, cfg, orgLabel, orgLogo) {
 
 // ── Summary Tab ────────────────────────────────────────────────────────────────
 // ── Score Breakdown Panel ──────────────────────────────────────────────────────
-function ScoreBreakdownPanel({review, cfg}) {
+// Dispatch #157 — `period` selects which of computeScoreBreakdown's real {q1,q2,q3,q4,h1,h2,year}
+// keys to render. Confirmed broken before this fix, beyond the six numbered dispatch findings:
+// this panel called `computeScoreBreakdown(review,cfg)` and read `bd.categories`/`bd.metricsScore`
+// etc. directly off the return value — but #152 changed that return shape to
+// {q1,...,h1,h2,year}, each holding its OWN {categories,metricsScore,...}. `bd.categories` was
+// therefore always `undefined`, `hasData` always false, and this whole "Score Breakdown"
+// transparent-math panel silently rendered NOTHING for every #152-era review — same family of
+// bug as the six enumerated findings (a stale key read off the new per-period shape), just not
+// separately numbered there because it sits one level deeper (SummaryTab's own child).
+function ScoreBreakdownPanel({review, cfg, period}) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(new Set());
-  const bd = useMemo(() => computeScoreBreakdown(review, cfg), [review, cfg]);
+  const bd = useMemo(() => computeScoreBreakdown(review, cfg)[period], [review, cfg, period]);
 
   const toggleMetric = (key) => setExpanded(prev => {
     const next = new Set(prev);
@@ -2199,15 +2322,99 @@ function ScoreBreakdownPanel({review, cfg}) {
   );
 }
 
+// Dispatch #157, Priority 2 — surfaces dispatch #154's segmented-scoring engine
+// (computeSegmentedReview), which shipped Phase 5a with NO UI. Renders nothing at all when
+// `hasTransitions` is false (the common case — most reviews have no promotion/transfer this
+// period): the flat SummaryTab above it is the complete story and this section must not add so
+// much as an empty wrapper div, verified by a render test (dispatch #157 scope item 7).
+function SegmentedReviewSection({review, cfg, ds, assignmentRows, period, update}) {
+  const periodMonths = PERIOD_META[period]?.months || [];
+  const periodStart = periodMonths.length ? calendarMonthRange(review.year, periodMonths[0]).s : null;
+  const periodEnd   = periodMonths.length ? calendarMonthRange(review.year, periodMonths[periodMonths.length-1]).e : null;
+
+  const result = useMemo(() => {
+    if (!periodStart || !periodEnd) return null;
+    return computeSegmentedReview(review, cfg, ds, assignmentRows || [], { periodStart, periodEnd });
+  }, [review, cfg, ds, assignmentRows, periodStart, periodEnd]);
+
+  if (!result || !result.hasTransitions) return null;
+
+  // comments.segmentRollup is a new sub-object under the review's EXISTING `comments` free-text
+  // structure (matching comments.q1..q4/midYear/eoy's own pattern per this dispatch's scope note
+  // — "matching the existing comments.* free-text pattern") — no engine/blankReview change
+  // needed: ReviewEditor's generic `update(path, val)` creates missing nested objects along the
+  // path automatically, so this persists via the existing onSave -> upsertReview round trip with
+  // zero new storage plumbing.
+  const commentary = review.comments?.segmentRollup?.[period] || '';
+  const roleLabel = r => ROLE_LABELS[r] || r || '—';
+  const fmtRange = (s, e) => {
+    const sd = s ? new Date(s + 'T00:00:00Z') : null;
+    const ed = e ? new Date(e + 'T00:00:00Z') : null;
+    const mn = d => d ? MONTH_NAMES[d.getUTCMonth()] : '?';
+    return (sd && ed) ? `${mn(sd)}–${mn(ed)} ${sd.getUTCFullYear()}` : '—';
+  };
+
+  return div({style:{marginTop:16,padding:'14px 16px',background:S2,borderRadius:R,
+    border:`1px solid ${AMBER}44`}},
+    div({style:{fontSize:11,fontWeight:700,color:AMBER,letterSpacing:'.4px',marginBottom:6}},
+      '⚠ ROLE / STORE CHANGE DETECTED THIS PERIOD'),
+    div({style:{fontSize:11,color:TEXT3,marginBottom:12}},
+      `This person's role and/or store assignment changed during ${PERIOD_META[period]?.label||period} ${review.year}. Each segment below is scored against its OWN role's competency framework and OWN store's targets — not blended.`),
+    div({style:{display:'flex',flexDirection:'column',gap:8,marginBottom:12}},
+      ...result.segments.map((seg,i) =>
+        div({key:i,style:{padding:'10px 12px',background:'var(--surf)',borderRadius:R,border:`1px solid ${BDR}`}},
+          div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6,flexWrap:'wrap',gap:8}},
+            span({style:{fontWeight:700,fontSize:12,color:TEXT}},
+              `${fmtRange(seg.start,seg.end)}: ${roleLabel(seg.role)} @ Store ${seg.loc||'—'}`),
+            ScorePill({score:seg.overall})
+          ),
+          Row({style:{gap:16,flexWrap:'wrap'}},
+            div(null, span({style:{fontSize:9,color:TEXT3,marginRight:4}},'Metrics (70%)'), ScorePill({score:seg.metrics})),
+            div(null, span({style:{fontSize:9,color:TEXT3,marginRight:4}},'Behavioral (30%)'), ScorePill({score:seg.behavioral})),
+          ),
+          // Dispatch #154's own documented, NOT-fixed-here limitation (autoPopulateKPIs is not
+          // segment-aware — targets are correctly re-resolved per segment, actuals are not).
+          // Surfaced as a caption per this dispatch's own "note it visibly if cheap" scope note.
+          div({style:{fontSize:9,color:TEXT3,marginTop:6,fontStyle:'italic'}},
+            'Targets are re-resolved for this segment’s own store; actuals reflect the review’s current auto-populated data (not yet re-sourced per transferred segment — known limitation, dispatch #154).')
+        )
+      )
+    ),
+    // Provisional rollup — surfaces the engine's own `note` text verbatim (per dispatch scope:
+    // "starting point, not final number") rather than presenting the number as authoritative.
+    div({style:{padding:'10px 12px',background:'var(--surf)',borderRadius:R,border:`1px dashed ${AMBER}88`,marginBottom:12}},
+      Row({style:{gap:10,alignItems:'center',marginBottom:4}},
+        span({style:{fontSize:11,fontWeight:700,color:TEXT}},'Provisional Rollup:'),
+        ScorePill({score:result.rollup.value,size:'lg'})
+      ),
+      div({style:{fontSize:10,color:TEXT3,fontStyle:'italic'}}, result.rollup.note)
+    ),
+    // Reviewer commentary — free text, not a second computed-override mechanism (per scope: "a
+    // human judgment call recorded as text alongside the provisional number").
+    div(null,
+      div({style:{fontSize:10,fontWeight:700,color:TEXT3,marginBottom:4}},
+        'REVIEWER COMMENTARY — YOUR ADJUSTED JUDGMENT ON THIS ROLLUP'),
+      ta({rows:3,value:commentary,
+        placeholder:'The provisional number above is a starting point, not a final rating — record your own judgment on how this period should actually be scored...',
+        onChange:e=>update(`comments.segmentRollup.${period}`,e.target.value),
+        style:{width:'100%',padding:'6px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
+          borderRadius:R,color:TEXT,fontSize:12,resize:'vertical',fontFamily:'var(--sans)',boxSizing:'border-box'}})
+    )
+  );
+}
+
 function overallLabel(s) {
   if (s==null) return '';
   return s>=3.5?'Exceeds Expectations':s>=2.5?'Meets Expectations':s>=1.5?'Below Expectations':'Needs Improvement';
 }
 
-function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
-  const half = review.half;
-  const halfLabel = half==='H1' ? 'Mid-Year' : 'End of Year';
-  const halfScore = scores.half?.overall;
+// Dispatch #157 — `period` (a PERIOD_META key) replaces the dead `review.half`; `scores[period]`
+// resolves against computeScores' real {q1,q2,q3,q4,h1,h2,year} shape instead of the nonexistent
+// `scores.half` (always undefined on a #152-era review — dispatch finding #2). `ds`/
+// `assignmentRows` feed the new segmented-review section (Priority 2).
+function SummaryTab({review, cfg, scores, qKeys, mths, update, period, ds, assignmentRows}) {
+  const halfLabel = PERIOD_META[period]?.label || period;
+  const halfScore = scores[period]?.overall;
   const halfPct   = halfScore!=null ? +((halfScore/4)*100).toFixed(2) : null;
   const heroCol   = halfScore!=null ? ratingColor(Math.round(halfScore)) : 'var(--txt3)';
 
@@ -2249,12 +2456,12 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
           halfScore!=null ? overallLabel(halfScore) : 'No data yet'),
         div({style:{display:'flex',alignItems:'center',gap:12,fontSize:11,color:TEXT3}},
           span(null, `Results Achieved (70%): `),
-          span({style:{fontWeight:700,color:scores.half?.metrics!=null?ratingColor(Math.round(scores.half.metrics)):'var(--txt3)'}},
-            scores.half?.metrics!=null ? `${((scores.half.metrics/4)*100).toFixed(2)}%` : '—'),
+          span({style:{fontWeight:700,color:scores[period]?.metrics!=null?ratingColor(Math.round(scores[period].metrics)):'var(--txt3)'}},
+            scores[period]?.metrics!=null ? `${((scores[period].metrics/4)*100).toFixed(2)}%` : '—'),
           span(null, ' · '),
           span(null, `Behavioral (30%): `),
-          span({style:{fontWeight:700,color:scores.half?.behavioral!=null?ratingColor(Math.round(scores.half.behavioral)):'var(--txt3)'}},
-            scores.half?.behavioral!=null ? `${((scores.half.behavioral/4)*100).toFixed(2)}%` : '—'),
+          span({style:{fontWeight:700,color:scores[period]?.behavioral!=null?ratingColor(Math.round(scores[period].behavioral)):'var(--txt3)'}},
+            scores[period]?.behavioral!=null ? `${((scores[period].behavioral/4)*100).toFixed(2)}%` : '—'),
         ),
         halfPct!=null && div({style:{marginTop:8,height:6,borderRadius:3,background:'var(--bdr)',overflow:'hidden'}},
           div({style:{height:'100%',width:`${halfPct}%`,borderRadius:3,background:heroCol,transition:'width .6s'}})),
@@ -2310,9 +2517,13 @@ function SummaryTab({review, cfg, scores, qKeys, mths, update}) {
       ]).flat(),
     ),
     // Score breakdown (transparent math)
-    h(ScoreBreakdownPanel, {review, cfg}),
-    // Wage section (EOY only)
-    half==='H2'&&div({style:{marginTop:20,padding:'14px 16px',background:S2,borderRadius:R,
+    h(ScoreBreakdownPanel, {review, cfg, period}),
+    // Dispatch #157, Priority 2 — segmented review display (dispatch #154's engine, no UI until
+    // now). Renders NOTHING when hasTransitions is false (the common case, verified by test) —
+    // the flat baseline above is unchanged either way.
+    h(SegmentedReviewSection, {review, cfg, ds, assignmentRows, period, update}),
+    // Wage section (reaches H2/end-of-year)
+    ['h2','q3','q4','year'].includes(period)&&div({style:{marginTop:20,padding:'14px 16px',background:S2,borderRadius:R,
       border:`1px solid ${BDR}`}},
       div({style:{fontWeight:700,fontSize:12,color:TEXT,marginBottom:4}},'Wage Review'),
       div({style:{fontSize:11,color:TEXT3,marginBottom:12}},'Annual wage decisions are made at End of Year.'),
@@ -2353,10 +2564,34 @@ function StatusBadge({status}) {
   }}, cfg.label);
 }
 
+// Dispatch #157 — ReviewList's Status column, showing BOTH halves' real per-half state (e.g.
+// "H1: Approved · H2: Draft") instead of the dead single `r.status` (nonexistent on a #152-era
+// review — dispatch finding #4).
+function HalfStatusSummary({review}) {
+  const h1 = review?.periods?.h1?.status || 'draft';
+  const h2 = review?.periods?.h2?.status || 'draft';
+  return Row({style:{gap:8,flexWrap:'wrap'}},
+    Row({style:{gap:4}}, span({style:{fontSize:9,fontWeight:700,color:TEXT3}},'H1'), h(StatusBadge,{status:h1})),
+    Row({style:{gap:4}}, span({style:{fontSize:9,fontWeight:700,color:TEXT3}},'H2'), h(StatusBadge,{status:h2})),
+  );
+}
+
+// Dispatch #157, Priority 1 item 3 — fixes the confirmed dead Period/Score/Half-filter columns
+// (finding #4). A review is a full YEAR record now (dispatch #152), so:
+//   - "Half filter" is DROPPED — there is no longer a record-level half to filter records BY (a
+//     review record inherently spans both halves now); a Status filter over the coarse
+//     "furthest-along of h1/h2" summary (reviewSummaryStatus, already shipped by #152 for exactly
+//     this "informational coarse filtering" purpose) replaces it.
+//   - "Period" column becomes "Year" — a review's only remaining period-scoped identity at the
+//     row level is which year it's for (r.year), never r.half (permanently undefined).
+//   - "Score" column shows the YEAR overall (computeScores(r,cfg).year.overall) — the review's
+//     one full-year headline number.
+//   - "Status" column shows BOTH halves' real state side by side (HalfStatusSummary, below) —
+//     per the dispatch's own explicit requirement ("must reflect BOTH halves' real state, not one
+//     fabricated top-level value").
 function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDelete}) {
   const [filterRole, setFilterRole]     = useState('all');
   const [filterYear, setFilterYear]     = useState('all');
-  const [filterHalf, setFilterHalf]     = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showNew, setShowNew]           = useState(false);
 
@@ -2373,14 +2608,10 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
   const filtered = list.filter(r =>
     (filterRole==='all'||r.role===filterRole) &&
     (filterYear==='all'||r.year===parseInt(filterYear)) &&
-    (filterHalf==='all'||r.half===filterHalf) &&
-    (filterStatus==='all'||(r.status||'draft')===filterStatus)
+    (filterStatus==='all'||reviewSummaryStatus(r)===filterStatus)
   ).sort((a,b)=>b.updatedAt?.localeCompare(a.updatedAt)||0);
 
-  const getScore = (r) => {
-    const s = computeScores(r, cfg);
-    return s.half?.overall ?? null;
-  };
+  const getScore = (r) => computeScores(r, cfg).year?.overall ?? null;
 
   return div({style:{display:'flex',flexDirection:'column',height:'100%'}},
     // Toolbar
@@ -2400,15 +2631,8 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
         opt({value:'all'},'All Years'),
         ...years.map(y=>opt({value:y,key:y},y))
       ),
-      // Half filter
-      sel({value:filterHalf,onChange:e=>setFilterHalf(e.target.value),
-        style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
-          borderRadius:R,color:TEXT,fontSize:12}},
-        opt({value:'all'},'H1 & H2'),
-        opt({value:'H1'},'H1 (Mid-Year)'),
-        opt({value:'H2'},'H2 (End of Year)')
-      ),
-      // Status filter
+      // Status filter — reviewSummaryStatus(r) is the engine's own "furthest along of h1/h2"
+      // informational summary (review-engine.js), the documented use for coarse filtering.
       sel({value:filterStatus,onChange:e=>setFilterStatus(e.target.value),
         style:{padding:'4px 8px',background:'var(--surf)',border:`1px solid ${BDR}`,
           borderRadius:R,color:TEXT,fontSize:12}},
@@ -2431,15 +2655,15 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
             div({style:{fontSize:12}},'Create your first performance review using the button above.'))
         : div(null,
             // Table header
-            div({style:{display:'grid',gridTemplateColumns:'200px 120px 120px 80px 90px 160px 80px',
+            div({style:{display:'grid',gridTemplateColumns:'200px 120px 120px 70px 90px 200px 80px',
               gap:0,padding:'8px 16px',background:S2,borderBottom:`1px solid ${BDR}`,
               fontSize:10,fontWeight:700,color:TEXT3,textTransform:'uppercase',letterSpacing:'.4px'}},...[
-              'Name','Role','Store','Period','Score','Status',''].map((h,i)=>span({key:i},h))
+              'Name','Role','Store','Year','Score','Status',''].map((h,i)=>span({key:i},h))
             ),
             ...filtered.map(r => {
               const score = getScore(r);
               return div({key:r.id,
-                style:{display:'grid',gridTemplateColumns:'200px 120px 120px 80px 90px 160px 80px',
+                style:{display:'grid',gridTemplateColumns:'200px 120px 120px 70px 90px 200px 80px',
                   gap:0,padding:'10px 16px',borderBottom:`1px solid ${BDR}`,alignItems:'center',
                   cursor:'pointer',transition:'background .1s'},
                 onClick:()=>onOpen(r),
@@ -2448,9 +2672,9 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
                 span({style:{fontWeight:600,color:TEXT,fontSize:12}},r.name),
                 span({style:{fontSize:11,color:TEXT2}},ROLE_LABELS[r.role]||r.role),
                 span({style:{fontSize:11,color:TEXT2}},r.loc||'—'),
-                span({style:{fontSize:11,color:TEXT3}},`${r.half} ${r.year}`),
+                span({style:{fontSize:11,color:TEXT3}},String(r.year)),
                 div(null,ScorePill({score})),
-                h(StatusBadge,{status:r.status||'draft'}),
+                h(HalfStatusSummary,{review:r}),
                 btn({onClick:e=>{e.stopPropagation();
                   if(confirm(`Delete review for ${r.name}?`)){deleteReview(r.id);onNew();}},
                   style:{background:'none',border:'none',color:'#ef4444',cursor:'pointer',
@@ -2463,12 +2687,17 @@ function ReviewList({reviews, cfg, stores, shiftManagerRows, onOpen, onNew, onDe
   );
 }
 
+// Dispatch #157, Priority 1 item 4 — the dead Period (H1/H2) dropdown is REMOVED, not wired up.
+// Per #152's own scope note ("a review is now just person+role+loc+year, no half selection at
+// creation") and the plan doc's decision #1: a review record is created once per person-year now
+// — there is no per-half choice to make at creation time, so the honest fix is deleting the
+// control (and its dead `half`/`setHalf` state) rather than pointing it at something that no
+// longer applies.
 function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
   const [name, setName]   = useState('');
   const [role, setRole]   = useState('GM');
   const [loc,  setLoc]    = useState(stores?.[0]?.loc||'');
   const [year, setYear]   = useState(new Date().getFullYear());
-  const [half, setHalf]   = useState('H1');
   const [geid, setGeid]   = useState('');   // manager attribution (Notes 33 A#3)
 
   // Managers with attributed shift data at this store — pick one to attribute a
@@ -2504,14 +2733,9 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
 
   const submit = () => {
     if (!name.trim()) { alert('Name is required'); return; }
-    // Dispatch #152 (Performance Review continuity, Phase 4a) dropped blankReview's `half`
-    // parameter -- a review is a full-year record now. This is a MINIMAL crash fix only (the old
-    // 6-arg call would silently shift `half` into the new `cfg` slot, corrupting
-    // templateSnapshot into a raw string and crashing computeScores/computeScoreBreakdown the
-    // first time the new review is opened) -- the H1/H2 picker UI itself, and everything else
-    // about how a review is created, is untouched and stays exactly as broken/unwired as the
-    // dispatch's own scope note says is expected: Phase 4b (a later dispatch) replaces this whole
-    // form with a period-less creation flow.
+    // blankReview(name, role, loc, year, cfg) — 5-arg, per-person-per-YEAR (dispatch #152). No
+    // half argument: the freshly-created record already carries `periods.h1`/`periods.h2`, both
+    // 'draft', with all 12 months' KPIs and all four quarters' behavioral ratings pre-built.
     const r = blankReview(name.trim(), role, loc, year, cfg);
     r.geid = (showMgr && geid) ? Number(geid) : null;
     onCreate(r);
@@ -2554,11 +2778,6 @@ function NewReviewForm({stores, cfg, shiftManagerRows, onCancel, onCreate}) {
       inp({type:'number',value:year,onChange:e=>setYear(parseInt(e.target.value)),
         style:{...fieldStyle,width:72}})
     ),
-    div(null,
-      div({style:{fontSize:10,color:TEXT3,marginBottom:4}},'Period'),
-      sel({value:half,onChange:e=>setHalf(e.target.value),style:{...fieldStyle}},
-        opt({value:'H1'},'H1 — Mid-Year'), opt({value:'H2'},'H2 — End of Year'))
-    ),
     PrimaryBtn({onClick:submit,style:{alignSelf:'flex-end'}},'Create'),
     GhostBtn({onClick:onCancel,style:{alignSelf:'flex-end'}},'Cancel')
   );
@@ -2585,8 +2804,14 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
     setEditing(rv => rv ? {...rv,...r,updatedAt:new Date().toISOString().slice(0,10)} : rv);
   };
 
-  const handleTransition = (id, newStatus, notes) => {
-    const updated = transitionReview(id, newStatus, notes);
+  // Dispatch #157 — fixes the confirmed 3-vs-4-arg bug (finding #3): transitionReview's real
+  // signature is (id, half, newStatus, notes). The old 3-arg call here shifted `newStatus` into
+  // the `half` parameter slot and `notes` into `newStatus`, so e.g. clicking "Submit for Review"
+  // called transitionReview(id, 'submitted', '') — writing to review.periods['submitted'] (a
+  // garbage key) instead of periods.h1/h2. ReviewEditor's StatusActionBar now calls
+  // onTransition(id, half, newStatus, notes) with `half` in the right position.
+  const handleTransition = (id, half, newStatus, notes) => {
+    const updated = transitionReview(id, half, newStatus, notes);
     if (updated) setEditing(updated);
     refresh();
   };

@@ -263,7 +263,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -1474,6 +1474,21 @@ function App() {
           console.log(`[Meridian] ✓ Loaded ${coachingCycles.length} coaching cycles from Supabase`);
         }
       }catch(e){console.warn('[Meridian] Coaching cycles load failed:',e);} };
+      // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — staff_assignments
+      // reports-to graph rows (dispatch #150), the first client-side consumer. Feeds
+      // computeSegmentedReview's promotion/transfer segmented scoring (Performance Reviews'
+      // Summary tab). RLS already scopes visibility; small table (effective-dated assignment
+      // rows, not a per-day stream), so it loads eagerly like coachingCycles above rather than
+      // through metric-source.js's lazy-fill (that mechanism is for large manual-fallback
+      // streams specifically).
+      const _stStaffAssignments = async () => {
+      try{
+        const assignmentRows=await loadStaffAssignments();
+        if(assignmentRows.length>0){
+          setDs(prev=>{if(!prev)return prev;return {...prev,assignmentRows};});
+          console.log(`[Meridian] ✓ Loaded ${assignmentRows.length} staff assignment rows from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] Staff assignments load failed:',e);} };
       const _stCustomSignals = async () => {
       try{
         const customDefs=await loadCustomSignals();
@@ -1801,6 +1816,7 @@ function App() {
         _timedStage('T2 orgEventsHydration', _stOrgEventsHydration, _t2Start),
         _timedStage('T2 eventImpact', _stEventImpact, _t2Start),
         _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
+        _timedStage('T2 staffAssignments', _stStaffAssignments, _t2Start),
       ]);
       let _t2Done = null;
       _t2.then(() => {
