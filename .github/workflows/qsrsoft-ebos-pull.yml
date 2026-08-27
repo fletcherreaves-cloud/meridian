@@ -26,6 +26,10 @@ on:
         description: 'One-time raw-field dump for store 5183 (1 = on) — reveals which sub-fields roll into ledger Ops Supplies'
         required: false
         default: '0'
+      probe_pending_invoices:
+        description: 'Dispatch #177 one-off: probe GET /purchase?purchase_status=Pending for all stores (1 = on), read-only, no persistence'
+        required: false
+        default: '0'
 
 jobs:
   pull:
@@ -60,6 +64,7 @@ jobs:
           QSRSOFT_EBOS_DEBUG:        ${{ github.event.inputs.debug || '0' }}
           QSRSOFT_EBOS_FORCE_FULL:   ${{ github.event.inputs.force_full || '0' }}
           DUMP_EBOS_FIELDS:          ${{ github.event.inputs.dump_fields || '0' }}
+          PROBE_PENDING_INVOICES:    ${{ github.event.inputs.probe_pending_invoices || '0' }}
 
       - name: Upload debug screenshots
         if: always()
