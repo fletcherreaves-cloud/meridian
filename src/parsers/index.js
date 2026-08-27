@@ -1431,8 +1431,19 @@ function parseDailyGlimpse(wb, dateHint){
     promoPct: fc(h,'Promo Pct','Promo %','Promo Percent'),
     posOverCnt: fc(h,'POS Overrings Cnt','POS Overring Count','POS Overrings Count'),
     posOverAmt: fc(h,'POS Overrings Amt','POS Overring Amount','POS Overrings Amount'),
-    cashOS:    fc(h,'Cash Over/Short $','Cash Over Short $','Cash O/S $'),
-    cashOSPct: fc(h,'Cash Over/Short %','Cash Over Short %','Cash O/S %'),
+    // Real Daily Glimpse header (confirmed live 2026-08-27, dispatch #172, from an
+    // actual ingested daily_glimpse_daily_*.csv) is "Over/Short $" / "Over/Short %"
+    // — NOT any of the "Cash Over/Short..." variants below (those are the Cash
+    // Sheet Extract report's own naming, a different QSRSoft report). The mismatch
+    // meant this column NEVER matched: fc() fell through to -1 on every row, so
+    // parseNum(undefined) silently produced 0 for every single row ever parsed
+    // (measured: 0 of 1,431 live daily_glimpse_daily rows had a nonzero cash_os) —
+    // the root cause of the near-total glimpseRows.cashOS vs qsr_cash_sheet
+    // mismatch found in dispatch #165's audit. The real header is listed first;
+    // the old candidates are kept as a harmless fallback in case QSRSoft ever
+    // renames the column back. See memory/finding-cash-handling-discrepancy-2026-08-27.md.
+    cashOS:    fc(h,'Over/Short $','Cash Over/Short $','Cash Over Short $','Cash O/S $'),
+    cashOSPct: fc(h,'Over/Short %','Cash Over/Short %','Cash Over Short %','Cash O/S %'),
     tRedVoidCnt:    fc(h,'T Red After: Voided','T-Red After Voided','Voided Cnt','T Red Voided'),
     tRedDeletedCnt: fc(h,'T Red After: Deleted','T-Red After Deleted','Deleted Cnt','T Red Deleted'),
     oepe:     fc(h,'OEPE W/O Parked','OEPE Without Parked','OEPE W/o Parked'),
@@ -1538,13 +1549,24 @@ function parseCashSheet(wb, filename){
     // Cash O/S
     cashOS:    fc(h,'Cash Over/Short','Cash Over Short $','Cash O/S $'),
     cashOSPct: fc(h,'Cash Over Short %','Cash Over/Short %','Cash O/S %'),
-    // Refunds
-    cashRefCnt:     fc(h,'Cash Refund Count','Cash Refund Cnt'),
-    cashRefAmt:     fc(h,'Cash Refund Amt','Cash Refund Amount'),
-    cashlessRefCnt: fc(h,'Cashless Refund Count','Cashless Refund Cnt'),
-    cashlessRefAmt: fc(h,'Cashless Refund Amt','Cashless Refund Amount'),
-    // POS
-    posOverCnt: fc(h,'POS Overring Count','POS Overrings Cnt','POS Overring Cnt'),
+    // Refunds. Real Cash Sheet Extract headers (confirmed live 2026-08-27,
+    // dispatch #172, from an actual ingested cash_sheet_extract_daily_*.csv) are
+    // PLURAL "Refunds" + "Qty" — "Cash Refunds Qty"/"Cash Refunds Amt"/"Cashless
+    // Refunds Qty"/"Cashless Refunds Amt" — not the singular "Refund"+"Count/Cnt"
+    // forms below, which never matched (fc() fell through to -1 on every row, so
+    // these were silently 0 for every row ever parsed: measured 0 of 135 sampled
+    // cash_sheet_daily rows had a nonzero cash_ref_amt). Real names listed first;
+    // old candidates kept as a harmless fallback. See
+    // memory/finding-cash-handling-discrepancy-2026-08-27.md.
+    cashRefCnt:     fc(h,'Cash Refunds Qty','Cash Refund Count','Cash Refund Cnt'),
+    cashRefAmt:     fc(h,'Cash Refunds Amt','Cash Refund Amt','Cash Refund Amount'),
+    cashlessRefCnt: fc(h,'Cashless Refunds Qty','Cashless Refund Count','Cashless Refund Cnt'),
+    cashlessRefAmt: fc(h,'Cashless Refunds Amt','Cashless Refund Amt','Cashless Refund Amount'),
+    // POS. Real header (confirmed live 2026-08-27, dispatch #172) is "POS Overring
+    // Qty" — same Count/Cnt-vs-Qty naming gap as the refund fields above; posOverAmt
+    // already matched its real header ("POS Overring Amt") so only the count was
+    // silently 0. See memory/finding-cash-handling-discrepancy-2026-08-27.md.
+    posOverCnt: fc(h,'POS Overring Qty','POS Overring Count','POS Overrings Cnt','POS Overring Cnt'),
     posOverAmt: fc(h,'POS Overring Amt','POS Overrings Amt','POS Overring Amount'),
     // T-Reds
     tRedVoidCnt:    fc(h,'T-Red After: Void Count','T Red After Void','T Red Voided Cnt'),
