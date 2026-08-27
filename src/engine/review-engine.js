@@ -1,6 +1,6 @@
 // Performance Review Engine — config, storage, and scoring
 import { DEFAULT_TARGETS } from '../constants.js';
-import { metricAvg, metricRate } from './metric-source.js';
+import { metricAvg, metricRate, metricSeries } from './metric-source.js';
 import { applyTargetOverrides } from './target-overrides.js';
 // Dispatch #161 — mo.foodOB (the review's FOB $ actual) is sourced through fobByRange(),
 // the SAME canonical qsr_fob dollar-aggregator every other FOB view in the app already uses
@@ -1565,26 +1565,31 @@ export function autoPopulateKPIs(review, ds) {
     // code used. See mergedTargetsForLocMonth's own comment for the full rationale.
     const officialTgts = mergedTargetsForLocMonth(ds, loc, _ry, m);
 
-    if (lr.length) {
-      const s  = sum(lr,'sales');
-      if (s !=null) mo.salesVsTgt    = s;
-      // Dispatch #142 items 1-3: salesVsTgtTgt/laborTgt used to be set HERE, from
-      // sum(lr,'salesTgt')/avg(lr,'laborTgt') — a manual-upload field that unconditionally
-      // overwrote whatever the officialTgts cascade (yearly/monthly workbook, computed just
-      // above) would have supplied, completely bypassing DEFAULT < yearly < monthly
-      // precedence for these two metrics only. Verified against the actual data model before
-      // removing, not just assumed: parseLaborData() (src/parsers/index.js) never emits a
-      // salesTgt/tSales/laborTgt/tCombLabor field on a labor row, saveLaborRows()/
-      // loadLaborRows() (src/lib/supabase.js) never round-trip one either, and the live
-      // production `labor_rows` table has no such column — so this bypass was already fully
-      // dead code today, not the active cause of the wrong numbers. It's still removed per
-      // the dispatch, both because it's misleading dead code and because an unconditional
-      // overwrite here would silently reintroduce the bypass the moment any future labor-row
-      // format ever added a same-named field. These two metrics now fall through to the SAME
-      // generic auto-fill loop every other metric already uses (below) — with the old lr
-      // fields kept ONLY as an explicit fallback AFTER officialTgts, never instead of it (see
-      // that block, right after the generic loop).
-    }
+    // Dispatch #174 — mo.salesVsTgt (Sales actual) used to be set HERE, unconditionally, from
+    // sum(lr,'sales') — hand-filtering ONLY the manual ds.laborRows stream, with zero auto/cloud
+    // fallback (the exact bypass CLAUDE.md's auto-first rule exists to prevent: the live
+    // `labor_rows` table's most recent upload is 2026-07-23, so this silently blanked Sales
+    // actual — and everything derived from it, incl. mo.foodOBTgt below — for every month after
+    // it). It now resolves through metric-source.js's already-registered 'sales' chain
+    // (auto-first: qsrActSummaryRows sales/allNetSales, THEN ds.laborRows last) right after
+    // `range` is computed below — same auto-then-manual precedence, and same code shape, as
+    // foodOB a few lines further down. See that block for the actual assignment.
+    // Dispatch #142 items 1-3: salesVsTgtTgt/laborTgt used to be set HERE, from
+    // sum(lr,'salesTgt')/avg(lr,'laborTgt') — a manual-upload field that unconditionally
+    // overwrote whatever the officialTgts cascade (yearly/monthly workbook, computed just
+    // above) would have supplied, completely bypassing DEFAULT < yearly < monthly
+    // precedence for these two metrics only. Verified against the actual data model before
+    // removing, not just assumed: parseLaborData() (src/parsers/index.js) never emits a
+    // salesTgt/tSales/laborTgt/tCombLabor field on a labor row, saveLaborRows()/
+    // loadLaborRows() (src/lib/supabase.js) never round-trip one either, and the live
+    // production `labor_rows` table has no such column — so this bypass was already fully
+    // dead code today, not the active cause of the wrong numbers. It's still removed per
+    // the dispatch, both because it's misleading dead code and because an unconditional
+    // overwrite here would silently reintroduce the bypass the moment any future labor-row
+    // format ever added a same-named field. These two metrics now fall through to the SAME
+    // generic auto-fill loop every other metric already uses (below) — with the old lr
+    // fields kept ONLY as an explicit fallback AFTER officialTgts, never instead of it (see
+    // that block, right after the generic loop).
     // OEPE / R2P / KVS / Labor % actuals (dispatch #109 item #3) — routed through
     // metric-source.js's metricAvg (glimpse/DAR/controls auto-first, manual upload last)
     // instead of hand-filtering ds.opsRows/ds.laborRows directly, closing the exact bypass
@@ -1617,6 +1622,21 @@ export function autoPopulateKPIs(review, ds) {
     if (kvsAvg   != null) mo.kvs   = kvsAvg;
     if (laborAvg != null) mo.labor = laborAvg;
     if (secondSideAvg != null) mo.secondSide = secondSideAvg;
+    // Dispatch #174 — Sales actual (mo.salesVsTgt): auto-first via metric-source.js's already-
+    // registered 'sales' chain (qsrActSummaryRows sales/allNetSales, THEN ds.laborRows last),
+    // summed over this month's calendar range (`range`, resolved just above) — same
+    // Object.values(metricSeries(...)).reduce(...) pattern already used elsewhere in this
+    // codebase (src/views/sage.js, src/views/store-analytics.js), not a new aggregation helper.
+    // Falls back to the manual `lr`-based sum ONLY when the auto path has nothing for this
+    // month (empty series — e.g. a genuinely manual-only store/month, or one predating any
+    // cloud stream), same auto-then-manual precedence direction as foodOB right below.
+    const salesAutoVals = Object.values(metricSeries(ds, loc, range, 'sales'));
+    if (salesAutoVals.length) {
+      mo.salesVsTgt = salesAutoVals.reduce((a, b) => a + b, 0);
+    } else if (lr.length) {
+      const s = sum(lr, 'sales');
+      if (s != null) mo.salesVsTgt = s;
+    }
     // Dispatch #161 — auto-first: fobByRange() over this month's calendar range (`range`,
     // just resolved above), reading the qsr_fob dollar shape (prodSalesAmt/compWasteAmt/…),
     // NOT fobM's manual ds.fobRows shape (fobPct/fobDollar, no *Amt — passing that shape to
