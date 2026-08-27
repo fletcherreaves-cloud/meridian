@@ -168,12 +168,25 @@ async function main() {
   for (const p of pending) {
     const h = HANDLERS[p.report_type];
     if (!h) continue;
-    // Daily Glimpse has no per-row date column — its rows are dated from the
-    // filename. A weekly/monthly Glimpse file therefore collapses all its
-    // store-days onto one date and would overwrite good daily rows. Daily
-    // Glimpse files already cover every date, so skip the rollups.
-    if (p.report_type === 'daily-glimpse' && /weekly|monthly/i.test(p.filename)) {
-      if (DEBUG) console.log(`  · skip rollup ${p.filename} (glimpse has no date column)`);
+    // Daily Glimpse and Cash Sheet Extract both have no per-row date column
+    // in their weekly/monthly rollup variant — one aggregated row per store,
+    // dated from the FILENAME's week-start date. A weekly/monthly file for
+    // either therefore collapses a whole week's totals onto one date and
+    // overwrites the correct single-day row for that date (upsert onConflict
+    // loc,date). Daily files already cover every date, so skip the rollups.
+    // (Sales Ledger's weekly/monthly variant DOES carry a real per-row Date
+    // column — confirmed live 2026-08-27, dispatch #172 — so it is NOT in
+    // this list; each of its rows is correctly self-dated even from a weekly
+    // file, and skipping it would just discard otherwise-fine data.)
+    // Found live 2026-08-27 (dispatch #172): every `cash_sheet_extract_weekly_*`
+    // file since the pipeline started (9 of them, one per week, 2026-06-24
+    // through 2026-08-19) had silently overwritten that week's Monday row in
+    // `cash_sheet_daily` for all 27 stores with the week's ~7-day TOTAL mislabeled
+    // as a single day — the root cause of the near-total glimpseRows/cashRows
+    // cash O/S mismatch against qsr_cash_sheet found in dispatch #165's audit.
+    // See memory/finding-cash-handling-discrepancy-2026-08-27.md.
+    if ((p.report_type === 'daily-glimpse' || p.report_type === 'cash-sheet') && /weekly|monthly/i.test(p.filename)) {
+      if (DEBUG) console.log(`  · skip rollup ${p.filename} (${p.report_type} has no per-row date column)`);
       continue;
     }
     try {
