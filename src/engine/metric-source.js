@@ -93,11 +93,48 @@ export const METRIC_SOURCES = {
   projGC:    { mode: 'pos', srcs: [['qsrActSummaryRows', 'projGC']] },
   projSales: { mode: 'pos', srcs: [['qsrActSummaryRows', 'projSales']] },
   // Speed of service — manual Ops Report, else emailed Daily Glimpse.
+  // ── Dispatch #153 (2026-08-27) — OEPE/R2P raw numerator/denominator legs ────────────────
+  // qsrActSummaryRows already carries the exact raw components _finalizeQsrAct/oepeSeconds()
+  // (src/utils/oepe.js) use to compute the precomputed `oepe`/`r2p` fields on that same row —
+  // _dtTotal/_dtStore/_dtHeldTime/_dtCars (dt_untilserve/dt_untilstore/dt_heldtime/dt_trans_cnt,
+  // summed per day) for OEPE, and _fcServe/_fcDrawer/_fcCnt (fc_untilserve/fc_untilclosedrawer/
+  // fc_trans_cnt) for R2P. Exposed here as their own chains so metricSumRatio (below) can sum
+  // the SAME raw legs across a range instead of averaging each day's already-divided rate —
+  // the fix for the measured completeness bug: `qsr_daily_activity_rollup` always carries the
+  // full 24-hour_slot shape even for a day still in progress (future hours zero-filled, not
+  // absent), so an in-progress day is structurally indistinguishable from a complete one and
+  // was blending into "this week" with FULL weight under mean-of-daily. Live-measured
+  // 2026-08-27 (service-role Supabase REST, store 3708): dt_trans_cnt on 2026-08-26 sat at
+  // 744 vs a projected 1,061 (70.1% of plan, an in-progress day) yet its own-day R2P read
+  // 92.3s vs 129.7–255.6s the rest of that 8-day window — the exact completeness artifact.
+  // mode:'any' throughout (not 'pos'): a genuine $0/zero-held-time day is common (most days
+  // have no parked cars) and 'pos' would silently drop it from the derive's date set —
+  // the same zero-discarding class already fixed for park/kvsHealthy (#150/#178) — corrupting
+  // the sum by dropping days where the numerator component is legitimately 0, not missing.
+  dtUntilServeUs: { mode: 'any', srcs: [['qsrActSummaryRows', '_dtTotal']] },
+  dtUntilStoreUs: { mode: 'any', srcs: [['qsrActSummaryRows', '_dtStore']] },
+  dtHeldTimeUs:   { mode: 'any', srcs: [['qsrActSummaryRows', '_dtHeldTime']] },
+  dtTransCnt:     { mode: 'any', srcs: [['qsrActSummaryRows', '_dtCars']] },
+  fcUntilServeUs:      { mode: 'any', srcs: [['qsrActSummaryRows', '_fcServe']] },
+  fcUntilClosedDrawerUs: { mode: 'any', srcs: [['qsrActSummaryRows', '_fcDrawer']] },
+  fcTransCnt:     { mode: 'any', srcs: [['qsrActSummaryRows', '_fcCnt']] },
+  // Numerator legs, pre-scaled to seconds (÷1000 factors linearly through a later Σ, so summing
+  // these across days then dividing by Σcnt is identical to summing the raw components first —
+  // same "Σµs / Σtrans / 1000 = sec either way" property src/utils/oepe.js's own comment states).
+  oepeNumSec: { mode: 'any', derive: { inputs: ['dtUntilServeUs', 'dtUntilStoreUs', 'dtHeldTimeUs'],
+               fn: (tot, store, held) => (tot - store - held) / 1000 } },
+  r2pNumSec:  { mode: 'any', derive: { inputs: ['fcUntilServeUs', 'fcUntilClosedDrawerUs'],
+               fn: (serve, drawer) => (serve - drawer) / 1000 } },
   // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
   // OEPE = (dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt, excluding parked/held
   // time (#183, reconciled r=0.9958 against a real QSRSoft Service report, 2026-08-11) so
   // current-day / recent windows populate before the Glimpse email lands.
-  oepe:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']] },
+  // derive/kind:'ratio' (dispatch #153) — a genuine numerator/denominator pair (confirmed live,
+  // see comment above), so metricSumRatio can compute the true Σnum/Σden period rollup instead
+  // of metricAvg's mean-of-daily. The derive.fn is also a same-shape fallback for a day with raw
+  // DAR components but no precomputed source, mirroring tpph's existing pattern — srcs still win.
+  oepe:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'oepe'], ['qsrActSummaryRows', 'oepe'], ['opsServiceRows', 'oepe'], ['opsRows', 'oepe']],
+               derive: { inputs: ['oepeNumSec', 'dtTransCnt'], fn: (num, cnt) => (cnt > 0 ? num / cnt : null), kind: 'ratio' } },
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC
   // column). The KVS stations are the MFY make-lines, so the DAR carries it without a new field.
@@ -116,7 +153,10 @@ export const METRIC_SOURCES = {
   // R2P (Receipt to Print) — manual Ops Report first, else the cloud-fresh DAR-derived
   // R2P = (fc_untilserve − fc_untilclosedrawer) ÷ fc_trans_cnt (reconciled exactly to the
   // QSRSoft Daily Activity R2P column). The DAR fallback populates current-day One-Pager.
-  r2p:       { mode: 'pos', direction: 'lower', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']] },
+  // derive/kind:'ratio' (dispatch #153) — same rationale as oepe just above; r2pNumSec/
+  // fcTransCnt are the confirmed real numerator/denominator legs.
+  r2p:       { mode: 'pos', direction: 'lower', srcs: [['qsrActSummaryRows', 'r2p'], ['opsRows', 'r2p']],
+               derive: { inputs: ['r2pNumSec', 'fcTransCnt'], fn: (num, cnt) => (cnt > 0 ? num / cnt : null), kind: 'ratio' } },
   // Labor — PUNCHED Labor % for ALL locations (Notes 35 + 2026-08-03 correction). Glimpse FIRST,
   // then Controls, then manual Labor rows. Controls (ctrlRows.laborPct) was supposed to already
   // be punched, but parseCtrlData had a bug (fixed 2026-08-03) that preferred "Actual Labor %"

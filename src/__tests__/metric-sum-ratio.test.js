@@ -12,11 +12,11 @@ import { describe, it, expect } from 'vitest';
 import { metricSumRatio, metricAvg, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
-  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph and fobPct (dispatch #104)', () => {
+  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153)', () => {
     const keys = rollupCapableMetricKeys().sort();
     expect(keys).toEqual([
       'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'fobPct', 'laborPct',
-      'rawWaste', 'spph', 'statVar', 'tRedAPct', 'tRedBPct', 'tpph',
+      'oepe', 'r2p', 'rawWaste', 'spph', 'statVar', 'tRedAPct', 'tRedBPct', 'tpph',
     ].sort());
   });
 
@@ -238,7 +238,7 @@ const RATIO_METRIC_ROWS = {
 
 describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {
   it('RATIO_METRIC_ROWS covers every rollup-capable metric not already tested above', () => {
-    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct']);
+    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct', 'oepe', 'r2p']);
     for (const k of rollupCapableMetricKeys()) expect(covered.has(k), k).toBe(true);
   });
 
@@ -268,4 +268,148 @@ describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', ()
       });
     });
   }
+});
+
+// ── Dispatch #153 (2026-08-27) -- OEPE/R2P: an in-progress "today" reading as the best day
+// of the week under mean-of-daily, fixed by routing through Σnum/Σden instead ──────────────
+// oepe/r2p don't fit RATIO_METRIC_ROWS above -- their numerator (oepeNumSec/r2pNumSec) is
+// itself a 3-/2-input DERIVED metric (a difference of raw DAR timing components, not a single
+// field on one row), same reason laborPct/discPct/fobPct got their own describe blocks instead
+// of a RATIO_METRIC_ROWS row.
+//
+// Row shape: qsrActSummaryRows carries the underscore-prefixed per-day SUMS
+// (_dtTotal/_dtStore/_dtHeldTime/_dtCars for OEPE, _fcServe/_fcDrawer/_fcCnt for R2P) that
+// src/utils/oepe.js's oepeSeconds() and supabase.js's _finalizeQsrAct already use to compute
+// the precomputed oepe/r2p fields on that same row -- see src/lib/supabase.js's
+// `_qsrActFromSummed`/`_finalizeQsrAct`. metric-chains.test.js's EMITS.qsrActSummaryRows list
+// already names all seven underscore fields, confirming the loader really emits them.
+describe('metricSumRatio -- oepe (dtUntilServeUs/dtUntilStoreUs/dtHeldTimeUs / dtTransCnt)', () => {
+  it('derive.fn(num, cnt) === num / cnt -- pins input order and a plain division', () => {
+    const fn = METRIC_SOURCES.oepe.derive.fn;
+    expect(fn(700, 5)).toBeCloseTo(140, 5);
+  });
+
+  // ── LIVE cross-check (dispatch #153's verification bar): a KNOWN-COMPLETE historical day,
+  // real numbers pulled 2026-08-27 via SUPABASE_SERVICE_ROLE_KEY REST from
+  // qsr_daily_activity_rollup, store 3708 (loc "0003708"), 2026-08-24 (960 of 1,044 projected
+  // transactions = 91.9% of plan, i.e. genuinely complete, not the in-progress day). Proves the
+  // new chain (Σ(dtUntilServeUs-dtUntilStoreUs-dtHeldTimeUs)/1000 ÷ ΣdtTransCnt) reproduces --
+  // within Math.round's own tolerance -- the SAME formula src/utils/oepe.js's oepeSeconds()
+  // already computes from the identical raw fields (that formula's own r=0.9958 QSRSoft
+  // reconciliation, #183/#185, is what makes this a real numerator/denominator pair, not a
+  // guess -- this test proves the NEW chain reads the same fields correctly, not the formula
+  // itself, which was already proven). ──────────────────────────────────────────────────────
+  it('single-day Σnum/Σden matches the existing oepeSeconds() precomputed value within rounding (live cross-check, store 3708, 2026-08-24)', () => {
+    // Real live values -- see this dispatch's PR body for the raw curl capture.
+    const dt_untilserve = 115730603, dt_untilstore = 14799561, dt_heldtime = 5291082, dt_trans_cnt = 769;
+    const precomputedOepe = Math.round((dt_untilserve - dt_untilstore - dt_heldtime) / dt_trans_cnt / 1000); // 124
+    const ds = { qsrActSummaryRows: [{ loc: '1', date: new Date('2026-08-24'),
+      _dtTotal: dt_untilserve, _dtStore: dt_untilstore, _dtHeldTime: dt_heldtime, _dtCars: dt_trans_cnt }] };
+    const range = { s: new Date('2026-08-24'), e: new Date('2026-08-24') };
+    const sum = metricSumRatio(ds, '1', range, 'oepe');
+    expect(sum.n).toBe(1);
+    expect(Math.abs(sum.value - precomputedOepe)).toBeLessThan(1); // rounding-only delta
+    expect(precomputedOepe).toBe(124); // pins the real measured value itself
+  });
+
+  it('Sum/Sum on an uneven-volume fixture diverges from mean-of-daily', () => {
+    // Raw fields are (ms-equivalent, summed across the day) ÷ 1000 = seconds — real magnitude,
+    // matching the live store-3708 values above (~150,000 raw per transaction ≈ 150s).
+    const ds = {
+      qsrActSummaryRows: [
+        // Low-volume day: small num/den, but a HIGH per-transaction rate (200s).
+        { loc: '1', date: new Date('2026-08-01'), _dtTotal: 20000000, _dtStore: 0, _dtHeldTime: 0, _dtCars: 100 },
+        // High-volume day: much larger num/den, LOW per-transaction rate (50s).
+        { loc: '1', date: new Date('2026-08-02'), _dtTotal: 50000000, _dtStore: 0, _dtHeldTime: 0, _dtCars: 1000 },
+      ],
+    };
+    const range = { s: new Date('2026-08-01'), e: new Date('2026-08-02') };
+    const mean = metricAvg(ds, '1', range, 'oepe');
+    const sum = metricSumRatio(ds, '1', range, 'oepe');
+    expect(mean).toBeCloseTo((200 + 50) / 2, 5); // (20000000/100/1000=200)+(50000000/1000/1000=50), /2
+    expect(sum.value).toBeCloseTo((20000000 + 50000000) / (100 + 1000) / 1000, 5); // 70000000/1100/1000
+    expect(Math.abs(mean - sum.value)).toBeGreaterThan(10);
+  });
+
+  // ── The exact measured real-world shape (dispatch #153 item 5): 7 complete days + 1
+  // partial "today" with a plausible per-transaction rate but far fewer transactions. Reuses
+  // the real store-3708 8-day window (2026-08-19..08-26) pulled live 2026-08-27 -- 2026-08-26
+  // sat at 744 of 1,061 projected transactions (70.1% of plan), matching the dispatch's own
+  // finding verbatim (store 3708 R2P 92.3s on that day, cited in dispatch-153.md). ──────────
+  it('a low-volume in-progress day pulls mean-of-daily toward it but barely moves Σ/Σ (real 8-day store-3708 window)', () => {
+    const days = [
+      // dt: [_dtTotal, _dtStore, _dtHeldTime, _dtCars] -- real qsr_daily_activity_rollup values
+      ['2026-08-19', 152168762, 19240753, 8262177, 799],
+      ['2026-08-20', 183794535, 18185990, 10896295, 873],
+      ['2026-08-21', 178545082, 19800801, 11672246, 916],
+      ['2026-08-22', 187948201, 17619758, 8686196, 739],
+      ['2026-08-23', 139215914, 16323393, 4794893, 648],
+      ['2026-08-24', 115730603, 14799561, 5291082, 769],
+      ['2026-08-25', 141389336, 14854001, 12962488, 800],
+      // 2026-08-26: in-progress -- 744 of 1,061 projected transactions (70.1% of plan).
+      ['2026-08-26', 77563378, 11697170, 5591806, 579],
+    ];
+    const ds = { qsrActSummaryRows: days.map(([dt, tot, store, held, cars]) =>
+      ({ loc: '1', date: new Date(dt), _dtTotal: tot, _dtStore: store, _dtHeldTime: held, _dtCars: cars })) };
+    const range = { s: new Date('2026-08-19'), e: new Date('2026-08-26') };
+    const perDayOepe = days.map(([, tot, store, held, cars]) => Math.round((tot - store - held) / cars / 1000));
+    const mean = metricAvg(ds, '1', range, 'oepe');
+    const sum = metricSumRatio(ds, '1', range, 'oepe');
+    // The in-progress day (104s) really is the fastest single day of the window -- that part
+    // is real and true regardless of aggregation. What must NOT happen is the WEEKLY FIGURE
+    // itself reading as fast as that one day; it should sit solidly inside the range the other
+    // 7 (complete) days occupy, further from 104 under Σ/Σ than under mean-of-daily.
+    const [minComplete] = [...perDayOepe.slice(0, 7)].sort((a, b) => a - b);
+    expect(perDayOepe[7]).toBeLessThan(minComplete); // the partial day IS the window's fastest single reading
+    expect(mean).toBeGreaterThan(perDayOepe[7]);      // (sanity) the mean isn't literally the partial day's value
+    expect(sum.value).toBeGreaterThan(mean);          // Σ/Σ sits FURTHER from the artifact than mean-of-daily
+    expect(sum.value).toBeGreaterThanOrEqual(minComplete - 1); // Σ/Σ stays within the complete-day range
+  });
+});
+
+describe('metricSumRatio -- r2p (fcUntilServeUs/fcUntilClosedDrawerUs / fcTransCnt)', () => {
+  it('derive.fn(num, cnt) === num / cnt -- pins input order and a plain division', () => {
+    const fn = METRIC_SOURCES.r2p.derive.fn;
+    expect(fn(700, 5)).toBeCloseTo(140, 5);
+  });
+
+  // Same live cross-check as OEPE above, same day/store -- R2P's own formula
+  // (supabase.js's _finalizeQsrAct: (fc_untilserve-fc_untilclosedrawer)/fc_trans_cnt/1000) is
+  // NOT rounded before use, so this delta is exact (~0), not rounding-only like OEPE's.
+  it('single-day Σnum/Σden matches the existing R2P formula exactly (live cross-check, store 3708, 2026-08-24)', () => {
+    const fc_untilserve = 41786684, fc_untilclosedrawer = 12095827, fc_trans_cnt = 229;
+    const precomputedR2p = (fc_untilserve - fc_untilclosedrawer) / fc_trans_cnt / 1000;
+    const ds = { qsrActSummaryRows: [{ loc: '1', date: new Date('2026-08-24'),
+      _fcServe: fc_untilserve, _fcDrawer: fc_untilclosedrawer, _fcCnt: fc_trans_cnt }] };
+    const range = { s: new Date('2026-08-24'), e: new Date('2026-08-24') };
+    const sum = metricSumRatio(ds, '1', range, 'r2p');
+    expect(sum.n).toBe(1);
+    expect(sum.value).toBeCloseTo(precomputedR2p, 6);
+    expect(precomputedR2p).toBeCloseTo(129.6544, 3); // pins the real measured value itself
+  });
+
+  it('the real store-3708 8-day window: 2026-08-26 (92.3s, 70.1% of plan) is the fastest single day, but Σ/Σ sits further from it than mean-of-daily', () => {
+    const days = [
+      // dt: [_fcServe, _fcDrawer, _fcCnt] -- real qsr_daily_activity_rollup values
+      ['2026-08-19', 60304166, 11467983, 259],
+      ['2026-08-20', 54784937, 10186836, 220],
+      ['2026-08-21', 64878490, 12227325, 301],
+      ['2026-08-22', 78935630, 16057553, 246],
+      ['2026-08-23', 46981353, 11067664, 204],
+      ['2026-08-24', 41786684, 12095827, 229],
+      ['2026-08-25', 47739490, 8254306, 187],
+      ['2026-08-26', 25436955, 8546200, 183], // in-progress, 70.1% of plan
+    ];
+    const ds = { qsrActSummaryRows: days.map(([dt, serve, drawer, cnt]) =>
+      ({ loc: '1', date: new Date(dt), _fcServe: serve, _fcDrawer: drawer, _fcCnt: cnt })) };
+    const range = { s: new Date('2026-08-19'), e: new Date('2026-08-26') };
+    const perDayR2p = days.map(([, serve, drawer, cnt]) => (serve - drawer) / cnt / 1000);
+    const mean = metricAvg(ds, '1', range, 'r2p');
+    const sum = metricSumRatio(ds, '1', range, 'r2p');
+    const minComplete = Math.min(...perDayR2p.slice(0, 7));
+    expect(perDayR2p[7]).toBeCloseTo(92.3, 0);
+    expect(perDayR2p[7]).toBeLessThan(minComplete);
+    expect(sum.value).toBeGreaterThan(mean);
+    expect(sum.value).toBeGreaterThanOrEqual(minComplete - 1);
+  });
 });
