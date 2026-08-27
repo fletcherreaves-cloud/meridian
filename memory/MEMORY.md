@@ -84,6 +84,71 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.214): [Dispatch #168 — extend At-A-Glance's per-tile "As of"
+  date-span label to Store Dashboard](dispatch-168.md), PR #846.** Inferred scope (no live FR for
+  this one, unlike #167 below — CLAUDE.md's own "'As of [date]' labels on tiles" line is generic,
+  not panel-scoped). Measured first: At-A-Glance already ships this (`_spanTag()`, v4.837, 8 call
+  sites, shows each tile's real date SPAN + a ⚠ note when it fell back to a 30-day default); a
+  tree-wide grep confirmed no other panel had the equivalent, and Store Dashboard — the other major
+  KPI-tile panel — had zero per-tile freshness labeling. **A real error in the dispatch brief's own
+  file reference was caught and self-corrected before writing any code**: the dispatch named
+  `src/views/store-dash.js` as the Store Dashboard panel; the engineer confirmed via `App.js`'s
+  `lazyPanel()` wiring that the actual panel component is `StoreDash` in `src/views/
+  store-analytics.js` (`store-dash.js` is a component library that one imports scorecards from,
+  not the panel itself) and applied the change to the real file. **Part 1 (refactor, At-A-Glance
+  unchanged)**: extracted `_spanTag`'s pure half (date-range-from-rows + label/tooltip formatting,
+  not the parts closed over At-A-Glance's own local state) into `spanTagInfo(rows, today, opts)` in
+  `src/utils/date.js` (checked for an existing equivalent first, per CLAUDE.md's "check whether a
+  helper exists before writing one" — none found); At-A-Glance's own `_spanTag` is now a thin
+  wrapper, all 8 existing call sites untouched, verified byte-identical (existing tests pass
+  unchanged + a new test pins the exact rendered text/tooltip/color for both branches). **Part 2
+  (new coverage)**: Store Dashboard's OEPE/TPPH/Labor %/Cash O/S KPI cards each get their own span
+  tag, sourced from their OWN rows via `metric-source.js`'s `metricSeries` (never raw ops/ctrl/
+  labor arrays directly, per the data-sourcing standing rule) rather than the toolbar `dateRange` —
+  these four are `compute6wk`'s fixed 6-week trailing window and were never toolbar-scoped, so
+  tagging them with the toolbar range would misstate what they show; the ⚠ fallback still applies
+  against each metric's own rows using the same 30-day semantics, reused as-is (not a new
+  threshold). Period Sales/Ops Score/Controls/T2W Trend deliberately left untagged — composites or
+  forecast-blended figures with no single rows set to span, the dispatch's own "skip tiles with no
+  natural rows concept" instruction, not a gap. 281/281 test files, 2937/2937 tests (net +1 file).
+  Build clean, eager-payload total 550.78→551.64 KB gzip (+0.86 KB, budget 850 KB). A real version
+  collision with #167 below (both claimed `5.213`) — renumbered to v5.214 during verification; full
+  diff read directly (not trusted from the PR body) — `spanTagInfo`'s extraction confirmed byte-
+  identical to the original inline logic, both pre-existing imports (`metricSeries`,
+  `lastClosedBusinessDay`) confirmed already present rather than assumed.
+- **✅ SHIPPED (2026-08-27, v5.213): [Dispatch #167 — Scheduled TPPH target in Smart Targets +
+  Projections](dispatch-167.md), PR #845.** FR "TPPH - Calculate TPPH targets automatically"
+  (`feature_requests`, created 2026-07-16 — read live from Supabase, not just CLAUDE.md's
+  compressed one-liner) turned out to be mostly already built: `src/engine/schedule-summary.js`'s
+  `rollup()` already computes `tpmh = fcstGC / schedHrsOf(r)` — LifeLenz's own forecast transaction
+  count over scheduled hourly-only ("Punched") hours, correctly weighted at the district level
+  (ratio-of-aggregates, never average-of-averages), already reconciled to a real LifeLenz
+  screenshot (Schd TPMH 4.92 for the DeFuniak Springs fixture). This dispatch surfaces that
+  existing, already-correct computation in the two places the FR asked for — **additive only, no
+  new derivation, no formula change**. New `currentScheduleWeekRange(now)` helper in
+  `schedule-summary.js` centralizes the Wed→Tue week-anchor math for callers outside that file.
+  `computeSmartTargets` (`smart-targets.js`) gained an optional `now` param and now attaches
+  `results.tpph.scheduled` via the EXISTING `computeScheduleRollup` (reused, not re-derived) for
+  the current LifeLenz business week; `SmartTargetPanel`'s TPPH grid cell shows a `Sched X.XX` line
+  alongside the existing trailing-history figure without a click (per the "say the number AND the
+  decision... never hidden behind a click" voice rule), and the detail panel gets a distinctly-
+  colored "SCHEDULED TARGET · THIS WEEK" box next to the unchanged "TREND TARGET" box — both kept,
+  neither replaces the other, same posture as the sales-forecast-model precedent. `projections.js`
+  (`ProjectionWorkflow`) — a genuinely new integration point, confirmed by grep that nothing in the
+  file previously read `computeSmartTargets` or `schedule-summary.js` — gets a new `ScheduledTPPHRow`
+  sub-row mirroring the existing `GCARow`/`DaypartRow` pattern, gated by `settings.
+  showScheduledTPPH!==false` matching that existing settings-flag convention, correctly scoped to
+  whatever period is on screen (week/month/custom) via `projDays`. New test file reconciles
+  `computeSmartTargets(...).tpph.scheduled.tpmh` against the same DeFuniak Springs fixture
+  `schedule-summary.test.js` already reconciles to the real LifeLenz screenshot, to full float
+  precision, PLUS render-based tests against the real `SmartTargetPanel` and real
+  `ProjectionWorkflow` (not the math in isolation). 280/280 test files, 2934/2934 tests. Build
+  clean, entry chunk gzip 479.32→479.82 KB (+0.50 KB). Out of scope, correctly left alone: the raw
+  LifeLenz `lifelenz_schedule.tpmh` field and its 13 existing call sites (LifeLenz's own possibly-
+  different formula — a different thing from this file's locally-computed, already-reconciled
+  value); the trailing-history TPPH Smart Target itself. Full diff read directly during
+  verification — the reuse of `computeScheduleRollup` (pre-existing, exported before this PR)
+  confirmed, not assumed from the PR body's own claim.
 - **✅ SHIPPED (2026-08-27, v5.212): [Dispatch #166 — DO (+OM scaffold) tier on Leadership
   One-Pager scope dropdown](dispatch-166.md), PR #841.** The corrected follow-up to #158's DO/OM/
   Owner investigation, which (per v5.211's entry below) was conducted against the wrong file.
