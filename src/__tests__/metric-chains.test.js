@@ -19,6 +19,7 @@ const EMITS = {
   opsLaborRows: ['date', 'dt', 'laborDollar', 'loc', 'metrics', 'needed', 'otDollar', 'otHrs', 'tenant_id', 'timeSlice', 'updated_at'],
   opsServiceRows: ['date', 'dt', 'kvsHealthy', 'kvst', 'loc', 'metrics', 'oepe', 'park', 'tenant_id', 'timeSlice', 'updated_at'],
   qsrActSummaryRows: ['_dtCars', '_dtHeld', '_dtHeldTime', '_dtStore', '_dtTotal', '_fcCnt', '_fcDrawer', '_fcServe', '_isQsrAct', '_kvsH', '_kvsU', '_mfyCnt', '_mfyTime', 'actHrs', 'actVsNeed', 'allNetSales', 'at', 'darSchedHrs', 'date', 'detail', 'dt_heldtime', 'dt_trans_cnt', 'dt_untilserve', 'dt_untilstore', 'gc', 'kvsHealthy', 'kvst', 'lyGc', 'lySales', 'needHrs', 'oepe', 'oepeWithPark', 'park', 'projGC', 'projSales', 'r2p', 'sales', 'salesVsLYPct', 'tpph', 'txns'],
+  opsSalesMixRows: ['date', 'dt', 'dtSalesAmt', 'loc', 'metrics', 'netSalesAmt', 'tenant_id', 'timeSlice', 'updated_at'],
 };
 
 const NEW_IN_PHASE1 = [

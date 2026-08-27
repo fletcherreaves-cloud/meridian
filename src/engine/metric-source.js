@@ -314,8 +314,19 @@ export const METRIC_SOURCES = {
   avgCheck:       { mode: 'pos', direction: 'higher', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']],
                     derive: { inputs: ['sales', 'gc'], fn: (s, g) => (g > 0 ? s / g : null), kind: 'ratio' } },
 
-  // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name).
-  dtMixPct:       { mode: 'pos', srcs: [['salesLedgerRows', 'dtPctTotal'], ['laborRows', 'dtPctTotal']] },
+  // DT mix % of sales — manual Labor, then the emailed Sales Ledger (same field name), then
+  // derived from the auto-pulled qsr_sales_mix (dispatch #165 — this chain had NO auto/API
+  // fallback at all: salesLedgerRows was the sole non-manual source despite the emailed
+  // stream's measured coverage gaps (e.g. #347: sales_ledger_daily held zero rows for a window
+  // qsr_sales_mix fully covered). opsSalesMixRows.dtSalesAmt/netSalesAmt reconcile EXACTLY
+  // against salesLedgerRows' own dtSales/allNetSales (see loadOpsSalesMix's comment) — same
+  // report, two pull paths — so this derive is a like-for-like fallback, not an approximation.
+  dtMixPct:       { mode: 'pos', srcs: [['salesLedgerRows', 'dtPctTotal'], ['laborRows', 'dtPctTotal']],
+                    derive: { inputs: ['dtSalesAmt', 'mixNetSalesAmt'], fn: (dt, tot) => (tot > 0 ? dt / tot : null), kind: 'ratio' } },
+  // Legs for dtMixPct's derive — opsSalesMixRows only (no other stream carries a drive-thru $
+  // leg independent of dtMixPct's own precomputed sources above).
+  dtSalesAmt:     { mode: 'pos', srcs: [['opsSalesMixRows', 'dtSalesAmt']] },
+  mixNetSalesAmt: { mode: 'pos', srcs: [['opsSalesMixRows', 'netSalesAmt']] },
 
   // Actual punched hours — manual Controls, then the auto DAR rollup. Added 2026-08-08:
   // an audit of compute6wk found 14 of its 28 fields had no chain, and this was the ONLY
