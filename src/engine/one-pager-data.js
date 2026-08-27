@@ -71,6 +71,26 @@ function _diffFields(fields, end, base) {
 // "last 7 days" near the 1st — differences each month's segment separately, never
 // bleeding one month's cumulative baseline into the next). A component-only result
 // (prodSales delta ≤ 0) is skipped — same guard as before, now applied to the delta.
+//
+// ⚠️ MID-MONTH-WINDOW FALLBACK (found live 2026-08-27 — Leadership One-Pager's "Week of
+// Aug 19" FOB tile showing $0/blank while its own YTD figure worked fine). Measured
+// directly against production `qsr_fob`: this feed's own `actualFoodOverBase` report
+// settles ONCE near each month's start (sometimes with a late correction days later) and
+// then holds that exact same cumulative value for the rest of the month — e.g. store 6178
+// held 282347.08 unchanged for all 26 days from Aug 1 through Aug 26. So for ANY window
+// that (a) starts after that month's settle date and (b) doesn't span into a later month,
+// baseSnap and endSnap are IDENTICAL by construction and the diff is always exactly zero
+// — not a data gap, a structural mismatch between this source's once-a-month cadence and
+// a sub-month window. Confirmed across multiple stores/months before concluding this,
+// per this project's "measure it, don't reason about it" rule.
+// Fix, restricted to the one case it's provably safe for: when the ENTIRE requested
+// `range` sits inside a SINGLE calendar month (`months.length === 1`) and that month's
+// own diff comes out non-positive despite the month having real settled data, fall back
+// to the month-to-date absolute total (as if baseSnap were null) — the same number
+// already used correctly for a full-month/YTD window, now also surfaced for a narrower
+// window that can't be sliced any finer. This does NOT touch multi-month-spanning
+// windows (where a per-segment fallback would double-count whichever month the window
+// only partially covers) — those keep the exact diffing behavior they had before.
 export function fobByRange(fobRows, range) {
   const rows = fobRows || [];
   const acc = {};
@@ -79,15 +99,20 @@ export function fobByRange(fobRows, range) {
   const months = [];
   { let ym = range.s.slice(0, 7); const endYm = range.e.slice(0, 7);
     while (ym <= endYm) { months.push(ym); const [y, m] = ym.split('-').map(Number); ym = new Date(y, m, 1).toISOString().slice(0, 7); } }
+  const singleMonthWindow = months.length === 1;
   for (const loc of locs) {
     const a = at(loc);
     for (const ym of months) {
       const segStart = range.s > _monthStart(ym) ? range.s : _monthStart(ym);
       const segEnd = range.e < _monthEnd(ym) ? range.e : _monthEnd(ym);
       const endSnap = _snapshotAsOf(rows, loc, ym, segEnd);
-      const baseSnap = segStart === _monthStart(ym) ? null : _snapshotAsOf(rows, loc, ym, _dayBefore(segStart));
+      let baseSnap = segStart === _monthStart(ym) ? null : _snapshotAsOf(rows, loc, ym, _dayBefore(segStart));
       if (!endSnap) continue;
-      const cur = _diffFields(_FOB_FIELDS, endSnap, baseSnap);
+      let cur = _diffFields(_FOB_FIELDS, endSnap, baseSnap);
+      if (cur.prodSalesAmt <= 0 && baseSnap && singleMonthWindow && (endSnap.prodSalesAmt || 0) > 0) {
+        baseSnap = null;                                  // MTD fallback — see header comment
+        cur = _diffFields(_FOB_FIELDS, endSnap, baseSnap);
+      }
       if (cur.prodSalesAmt > 0) {
         a.prodSales += cur.prodSalesAmt;
         a.fob$ += cur.compWasteAmt + cur.rawWasteAmt + cur.condimentsAmt + cur.empMgrMealsAmt + cur.statVarianceAmt + cur.unexplainedAmt;

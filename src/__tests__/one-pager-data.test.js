@@ -61,6 +61,44 @@ describe('fobByRange', () => {
     expect(agg['1'].fob$).toBe(1400);          // 4200 - 2800
   });
 
+  // Found live 2026-08-27: production qsr_fob's own `actualFoodOverBase` report settles ONCE
+  // near each month's start and then holds that exact value for the rest of the month (e.g.
+  // store 6178 held 282347.08 unchanged for 26 straight days, Aug 1 through Aug 26 — confirmed
+  // directly against production, not assumed). A single-month window that starts mid-month (like
+  // "this week") diffs two IDENTICAL snapshots and got exactly zero — not a real "no activity"
+  // result, a structural mismatch between this source's once-a-month cadence and a sub-month
+  // window. This is the Leadership One-Pager's "Week of Aug 19" FOB tile showing $0/blank.
+  it('a single-month mid-month-start window falls back to the month-to-date total when the source has NOT changed within the month (frozen-source real-world case)', () => {
+    const rows = [
+      { loc: '1', date: '2026-08-01', prodSalesAmt: 282347.08, compWasteAmt: 296.93 }, // settled at month start
+      { loc: '1', date: '2026-08-16', prodSalesAmt: 282347.08, compWasteAmt: 296.93 }, // baseline (day before window) — UNCHANGED
+      { loc: '1', date: '2026-08-23', prodSalesAmt: 282347.08, compWasteAmt: 296.93 }, // window end — UNCHANGED (frozen)
+    ];
+    // "Week of Aug 19": 08-17 → 08-23, entirely inside August, doesn't start at month-start.
+    const agg = fobByRange(rows, { s: '2026-08-17', e: '2026-08-23' });
+    // A naive diff (282347.08 - 282347.08) would be 0 → the pre-fix bug (blank/$0 tile).
+    // The fallback instead surfaces August's real, settled MTD rate — a true, non-zero number.
+    expect(agg['1'].prodSales).toBe(282347.08);
+    expect(agg['1'].fob$).toBeCloseTo(296.93, 6);
+    expect(agg['1'].fobPct).toBeCloseTo(296.93 / 282347.08, 6);
+  });
+
+  it('the frozen-source fallback does NOT apply to a multi-month-spanning window (avoids double-counting a partially-covered month)', () => {
+    const rows = [
+      { loc: '1', date: '2026-07-01', prodSalesAmt: 400000, compWasteAmt: 8000 }, // July settled, frozen all month
+      { loc: '1', date: '2026-07-29', prodSalesAmt: 400000, compWasteAmt: 8000 }, // baseline (day before window) — frozen
+      { loc: '1', date: '2026-08-01', prodSalesAmt: 50000,  compWasteAmt: 1000 }, // August MTD thru the 1st
+    ];
+    // window = 2026-07-30 → 2026-08-01 (crosses July→August). July's own segment diffs to zero
+    // (frozen), but this must NOT fall back to "all of July" — that would attribute June's
+    // entire activity to a window that only actually covers July 30-31.
+    const agg = fobByRange(rows, { s: '2026-07-30', e: '2026-08-01' });
+    // July segment: diff = 0 (frozen, correctly contributes nothing — NOT July's full 400000).
+    // August segment: no baseline (segStart === monthStart) → 50000 as-is.
+    expect(agg['1'].prodSales).toBe(50000);
+    expect(agg['1'].fob$).toBe(1000);
+  });
+
   it('a range crossing a month boundary differences EACH month segment separately', () => {
     const rows = [
       { loc: '1', date: '2026-05-31', prodSalesAmt: 300000, compWasteAmt: 6000 },  // May's full-month total
