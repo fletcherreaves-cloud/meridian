@@ -333,11 +333,14 @@ async function runPeriod(period, token) {
       tSaved += await upsert('qsr_transfers', xferRows, 'loc,transfer_id,wrin');
 
       // Raw-item forensic register — only for actionable WRINs (|$| >= 50, has an itemId),
-      // top ~20 by |$| to bound request volume. Feeds the Diagnose count-timing drill-down.
+      // top ~50 by |$| to bound request volume (widened from 20, dispatch #179 — measured via
+      // real GitHub Actions run history that the full 27-store loop, incl. this fetch, has never
+      // exceeded ~5 min against a 60-min workflow timeout, so 2.5x the requests still leaves a
+      // large margin). Feeds the Diagnose count-timing drill-down.
       const actionable = varRows
         .filter(v => v.rawItemId != null && Math.abs(v.dolDiff || 0) >= 50)
         .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0))
-        .slice(0, 20);
+        .slice(0, 50);
       const detailRows = [];
       for (const v of actionable) {
         try {

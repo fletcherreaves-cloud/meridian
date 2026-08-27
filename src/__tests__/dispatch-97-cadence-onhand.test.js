@@ -2,8 +2,10 @@
 // @ts-nocheck
 // Dispatch #97 -- Inventory Control's Weekly Count Cadence widget (CadenceMonitor,
 // eom-dashboard.js) used to grade completeness with weekly-cadence.js's analyzeCountCadence()
-// over qsr_raw_item_detail -- a table dollar-filtered to each store's top ~20 variance items,
-// with ZERO Condiment rows district-wide. A real, comprehensive count in qsr_onhand (the full
+// over qsr_raw_item_detail -- a table dollar-filtered to each store's top ~20 variance items
+// (widened to ~50 in dispatch #179, after this test was written; the coverage gap this test
+// guards against is unaffected -- still dollar-filtered, still ZERO Condiment rows district-wide).
+// A real, comprehensive count in qsr_onhand (the full
 // active-item universe) could still read Overdue there because the narrow subset it actually
 // checked fell a couple of items short of its own 60% threshold.
 //

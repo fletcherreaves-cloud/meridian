@@ -242,9 +242,10 @@ function weeklyByClassFor(cadence) {
 // detectSessions() over qsr_onhand (src/engine/count-cycle.js), the SAME full-item-universe,
 // Condiment-fixed session grouping Count Cycle uses (dispatch #96). The OLD basis here was
 // analyzeCountCadence() (weekly-cadence.js) over qsr_raw_item_detail — a table dollar-filtered to
-// each store's top ~20 variance items, with ZERO Condiment rows district-wide (condiments are
-// cheap, so never selected — count-cycle.js's own header comment already measured this). That
-// silently made the Condiment leg of "full Food + Condiment" never fire, and graded the Food leg
+// each store's top ~50 variance items (widened from 20, dispatch #179), with ZERO Condiment rows
+// district-wide (condiments are cheap, so never selected — count-cycle.js's own header comment
+// already measured this). That silently made the Condiment leg of "full Food + Condiment" never
+// fire, and graded the Food leg
 // against a tiny arbitrary subset where a real, comprehensive count (qsr_onhand's full active-item
 // universe) could read Overdue by missing 1-2 of ~29 tracked items.
 //

@@ -10,9 +10,10 @@
 // ── WHY THIS READS qsr_onhand AND NOT qsr_raw_item_detail ───────────────────
 // The existing cadence engine (weekly-cadence.js) reads `qsr_raw_item_detail`, whose
 // live class coverage for 2026-07 is {F: 573, P: 122} — ZERO Condiment rows across all
-// 27 stores. That table is written by the variance pull, which only keeps the top ~20
-// WRINs by |$| over a $50 threshold. Condiments are low-dollar so they are never
-// selected. "Did they count Condiment?" is therefore unanswerable there, by design.
+// 27 stores. That table is written by the variance pull, which only keeps the top ~50
+// WRINs by |$| over a $50 threshold (widened from 20, dispatch #179). Condiments are
+// low-dollar so they are never selected. "Did they count Condiment?" is therefore
+// unanswerable there, by design.
 //
 // That $50 filter is CORRECT for what it was built for — variance diagnosis, where
 // anything smaller isn't chased. It's simply the wrong source for a completeness

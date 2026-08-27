@@ -59,9 +59,10 @@ button in the 🔬 Diagnose modal, shown when the store has raw-item detail):
 - Worst-first item picker chips at the top (net-variance $, color = verdict tone).
 
 **Deliberately honest limits:** Item Journeys only cover items with a pulled
-`raw_detail` — currently the **top-20 actionable WRINs per store** (|$| ≥ 50). That's
-right for diagnosis but is NOT the full catalog. Broadening is a data-pull decision
-(see audit §3). The verdict/inference heuristics are intentionally conservative.
+`raw_detail` — currently the **top-50 actionable WRINs per store** (|$| ≥ 50, widened
+from top-20 by dispatch #179, 2026-08-27). That's right for diagnosis but is NOT the
+full catalog. Broadening further is a data-pull decision (see audit §3). The
+verdict/inference heuristics are intentionally conservative.
 
 ---
 
@@ -99,7 +100,7 @@ dashboard looked empty even though FOB + diagnosis are cloud-fresh all month.
 | Yields (merged onto variance for the cause overlay) | (on variance rows) | same pull |
 | Waste / comp-waste / promo | `qsr_waste` | same pull |
 | Transfers | `qsr_transfers` | same pull |
-| Raw-item forensic ledger (**top-20 actionable WRINs/store, \|$\|≥50**) | `qsr_raw_item_detail` | same pull |
+| Raw-item forensic ledger (**top-50 actionable WRINs/store, \|$\|≥50** — widened from top-20, #179) | `qsr_raw_item_detail` | same pull |
 | On-Hand count progress | `qsr_onhand` | `qsrsoft-onhand-pull.mjs` — hourly in window **+ daily year-round snapshot (new)** |
 | FOB $ / components | `qsr_fob` | existing FOB pull |
 | eBOS purchases | `qsr_ebos_daily` | `qsrsoft-ebos-pull.mjs` |
@@ -110,9 +111,10 @@ dashboard looked empty even though FOB + diagnosis are cloud-fresh all month.
    populates it**. The Physical-Inventory / Inventory-Summary eBOS endpoint hasn't been
    captured. (Task #60.) This is the by-class ending-inventory summary — would give the
    "complete count" (whole-store) view that complements the per-item journey.
-2. **Full-catalog raw_detail** — journeys cover only the top-20 actionable WRINs/store.
-   A "trace ANY item" experience needs a broader (or on-demand per-WRIN) `raw_detail`
-   pull. On-demand fetch when a user opens an item not in the top-20 is the cheap path.
+2. **Full-catalog raw_detail** — journeys cover only the top-50 actionable WRINs/store
+   (widened from top-20 by dispatch #179). A "trace ANY item" experience needs a broader
+   (or on-demand per-WRIN) `raw_detail` pull. On-demand fetch when a user opens an item
+   not in the top-50 is the cheap path.
 3. **`monthly_targets` → diagnosis checks** — the FOB-component check still uses a band
    floor, not the store's real monthly target. Wire `monthly_targets` in (Task #60).
 4. **purchases-posted check** — registered but pending; confirm eBOS "posted vs pending"
@@ -136,7 +138,7 @@ dashboard looked empty even though FOB + diagnosis are cloud-fresh all month.
 - **Complete-count (whole-store) journey** once `qsr_inventory_summary` is pulled —
   same fact/inference visual, but rolled to the class/store level (the "by complete
   count" half of the owner's request).
-- **On-demand raw_detail** so any WRIN (not just top-20) can be traced.
+- **On-demand raw_detail** so any WRIN (not just top-50) can be traced.
 - **Print/PDF + share** the Item Journey (owner values "passing the information along").
   Today only the text diagnosis report prints; the visual journey does not yet.
 - Wire `monthly_targets`; purchases-posted; shift-level attribution; cross-store per-WRIN
