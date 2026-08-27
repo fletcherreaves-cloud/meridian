@@ -84,7 +84,202 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
-- **✅ SHIPPED (2026-08-27, v5.205): [Dispatch #159 — fix Performance Review Auto-fill
+- **✅ SHIPPED (2026-08-27, v5.211): [Dispatch #160 — panel-contract adoption pass on the two
+  One-Pager panels](dispatch-160.md), PR #837.** **Corrects a mislabeling from the dispatch brief
+  itself**, caught while tracing the real wiring rather than trusting the brief: `above-store-
+  onepager.js` maps to registry id `above-store` ("Above-Store One-Pager"), NOT `leader-one-pager`
+  — that id resolves to `one-pager.js`'s `OnePagerPanel` ("📋 Leadership One-Pager"). Both panels
+  got the pass, correctly scoped once re-traced. **Shell**: both converted from a hand-rolled
+  `position:fixed` backdrop to `RoutePanelShell` — `ratchet-modal-backdrop-bypass.test.js` CEILING
+  76→75 (only `above-store-onepager.js` matched the ratchet's regex; `one-pager.js`'s identical
+  anti-pattern had a `zIndex:4000` sitting inside the match window, so the regex missed it even
+  though the fix is the same — noted in the test file so a future re-measurement isn't confused by
+  the asymmetry). **Date mode**: unchanged on both — already period-anchored presets+custom,
+  matching the panel-contract's period-anchored carve-out. **Scope**: `above-store-onepager.js`
+  converted to `LocationSelector` (its scope is a flat single string, same shape as
+  `report-subscriptions.js`); `one-pager.js`'s own richer preset-plus-per-store-pill scope
+  deliberately left unconverted — `LocationSelector` can't represent "preset X, but I've also
+  toggled store Y off" without deleting real capability (same posture as `labor-allocation.js`'s
+  documented `DAYS_BACK` exception). **route:true**: both converted (`panel-registry.test.js`
+  route-panel ratchet 13→15); `one-pager.js`'s five "produce a document" buttons (Print/Discussion
+  sheet/Weekly Review/Download Word filled/blank) collapsed into one `ActionMenu`. **Mobile
+  scroll**: both already compliant, no change. 274/274 test files, 2878/2878 tests (net +2
+  files/+12 tests), confirmed twice under this session's heavy shared-sandbox CPU contention (the
+  only flakes were pre-existing, unrelated `PerformanceReviewsPanel` timeout tests, isolated-
+  rerun-clean both times). Build clean; entry chunk gzip unchanged at 476.20 KB; both panels' lazy
+  chunks got SMALLER (`above-store-onepager.js` 11.02→10.89 KB gzip, `one-pager.js` 14.05→13.92 KB
+  gzip) — the removed hand-rolled markup outweighed the new shared-component imports. A real
+  version collision with #163's PR (both claimed `5.206`) — renumbered to v5.211 during
+  verification (re-merged onto post-v5.210 `main`, re-ran full suite clean: 277/277 files,
+  2922/2922 tests). **Consequence of the mislabeling, reported to the owner directly**: the actual
+  code fixes (FOB scope/week-picker, v5.203) were unaffected since they touched shared engine
+  code; but dispatch #158's DO/OM/Owner-dropdown investigation was conducted against
+  `above-store-onepager.js`'s flat dropdown instead of `one-pager.js`'s real two-tier Owner/
+  Supervisor one — see dispatch #166 below, the corrected follow-up.
+- **✅ SHIPPED (2026-08-27, v5.210): [Dispatch #162 — Performance Review continuity, build item
+  #6: departure/termination handling](dispatch-162.md), PR #836.** Owner's exact mechanism (plan
+  doc's "Second-pass gap review," resolved item B): *"Do the auto finalize but require approval in
+  the ability to override it. The approval and potential override should come from a job title
+  code qualified to perform the review or above."* New `src/engine/departure.js`:
+  `detectDeparture()` (two triggers only — `termination_entry_date`/inactive status, OR a still-
+  active GM/AM/DM/SM job code that no longer classifies into that ladder; a role CHANGE within
+  those four is a transfer/promotion, already handled by #154's segmented scoring, never a
+  departure), `applyDepartureAutoFinalize()` (calls the EXISTING `transitionReview()` — #157 —
+  never a second writer of `review.periods`), `isDepartureHandled()` (walks `statusHistory`
+  backward — a Reopen after an auto-finalize reports NOT handled even with an earlier auto-
+  finalize entry). New `canApproveDeparture` in `permissions.js`: reuses decision #4's
+  `canOverrideLockedActual` primitives (`levelsAbove`/`REVIEW_ROLE_TO_LADDER`/the admin escape
+  hatch) verbatim but at a `>=1` rung threshold instead of `>=2` — answers a different question
+  (the person's own normal reviewer, one rung up) than "who may override a locked actual."
+  `canOverrideLockedActual` itself is untouched. New `auto_finalized` status value (own badge
+  color, only reachable from `applyDepartureAutoFinalize`, never a human click) — chosen over
+  reusing `'approved'`+a note because the plan doc requires the distinction be "visible in the UI,
+  not just the data"; `statusHistory` notes also carry a machine-greppable `[AUTO-FINALIZE]`
+  prefix for the audit trail. `PerformanceReviewsPanel` runs the sweep in a `useEffect` keyed on
+  `ds.tenureRows`' identity over every this-year review the moment tenure data lands — no manual
+  step, per the owner's "no manual step needed for the routine case." New `loadEmployeeTenure()`
+  (`src/lib/supabase.js`, narrow column selection, no PII) wired into `ds.tenureRows` in `App.js` —
+  grep-confirmed nothing in `src/` read `qsr_employee_tenure` client-side before this. Job-code
+  classification (`GM_JOB_CODES` etc.) extracted from `scripts/backfill-staff-assignments-2026.mjs`
+  into new `src/engine/tenure-roles.js` so detection and the backfill share one definition instead
+  of drifting; the backfill script re-exports from the new path, its own test unchanged.
+  **Documented limits, not hidden**: AS/OM/DO departure has zero coverage (`qsr_employee_tenure`
+  is geid-keyed; those roles use a name-string identity per decision #5 — `detectDeparture`
+  correctly reports "not departed," never a false claim of coverage); a promotion from GM/AM/DM/SM
+  into AS/OM currently looks identical to a departure from job-code data alone (AS/OM have no
+  roster code at all) — the owner's own design already covers this via Reopen. Explicitly out of
+  scope: new-manager notification panel (#7, confirmed zero matches for `NewManagerPanel` in
+  `src/`), job-code config table (#8), email wiring (#9), multi-role-per-person (#10), populating
+  `staff_assignments` in production. 275/275 test files, 2910/2910 tests (net +37: departure-
+  detection.test.js ×22, departure-auto-finalize-ui.test.js ×7, permissions.test.js ×8), confirmed
+  clean post-renumber-and-merge onto `main`. Build clean, entry chunk 476.22→476.45 KB gzip (+0.23
+  KB). A real version collision with #163/#165/#161/#164's PRs (all independently claimed `5.206`
+  from the same base commit) — renumbered to v5.210 during verification.
+- **✅ SHIPPED (2026-08-27, v5.209): [Dispatch #164 — confirm `compType:'calendar'` on
+  `labor-summary` is 4am-business-day aligned, #330 resolved](dispatch-164.md), PR #835.**
+  CLAUDE.md's 4am-boundary section named this the one remaining open question: the DAR
+  (`compType:'trading'`) was already confirmed business-day aligned
+  (`dar-vs-ops-reconciliation.md`), but `compType:'calendar'` on QSRSoft's `labor-summary` (feeds
+  `qsr_labor_summary` → `laborDollar`/`laborPct` in `metric-source.js`) was unconfirmed — and
+  `laborPct`'s `derive:{kind:'ratio'}` divides a `calendar`-sourced numerator by a DAR-sourced
+  (`trading`) denominator, exactly the "silently mixes two boundaries" bug class CLAUDE.md warns
+  about, IF the two actually differ. No live QSRSoft credentials in this sandbox, so re-used
+  `dar-vs-ops-reconciliation.md`'s own method against data already in Supabase: re-bucketed raw
+  clock punches from `qsr_punch_times` (#124 — ingested with NO `compType` and no derivation at
+  all, independent ground truth) two ways — plain midnight vs. the 4am ABC boundary — against
+  `qsr_labor_summary.crew_labor_hours`, after first subtracting unpaid-meal time from shift spans
+  (without this correction both cuts overshot by an identical ~10 hrs/day and the comparison was
+  uninformative — the same "definitional gap swamps the boundary question" trap the original DAR
+  reconciliation had to rule out). **Result: the 4am cut matched to 0.000 mean absolute difference
+  across 83 store-days/5 stores (81/83 within 0.1 hr); the midnight cut never won a single
+  store-day (0/83), typically off by 2-3+ hrs.** Conclusion: `compType:'calendar'`, despite the
+  name, is 4am-aligned — the SAME boundary as `trading`. No live bug. This also REFUTES (not just
+  leaves open) the calendar-vs-business-day hypothesis `metric-source.js`'s `laborPct` comment
+  carried for #327's unexplained 10.2% Daily-Glimpse mismatch — comment corrected to record the
+  measured finding instead of the refuted theory (that 10.2% gap's real cause stays open, out of
+  this dispatch's scope). Also checked every other cross-source ratio in the registry
+  (`tRedAPct`/`tRedBPct`/`discPct`/`cashOSPct`) — all divide by `netSalesAmt`, same
+  `opsCashRows`-only source, no boundary risk; `laborPct` was the only cross-source ratio, closing
+  the boundary question for the whole registry. **A duplicate agent was accidentally spawned for
+  this same dispatch** (PM tooling mistake, not an engineer error) and produced a second,
+  contradictory PR (#838: extrapolated from a different endpoint, `qsr_sales_mix`, to a different
+  conclusion — that `calendar` governs LY-comparison basis, not the intraday boundary). Adjudicated
+  in #835's favor and #838 closed with an explanation: #835 directly measured the actual target
+  endpoint (`qsr_labor_summary`) against independent raw-punch ground truth; #838 measured a
+  different endpoint and extrapolated. Investigation only — no engine/schema/UI change beyond the
+  comment correction. 272/272 test files, 2866/2866 (matches main's post-v5.205 baseline exactly —
+  no new test files, doc/comment-only diff). Build clean, unchanged eager payload.
+- **✅ SHIPPED (2026-08-27, v5.208): [Dispatch #161 — Performance Review FOB $ actual now sources
+  auto `qsr_fob`, not manual `ds.fobRows`](dispatch-161.md), PR #834.** The approved follow-up
+  from dispatch #159 (owner clicked "I am good with this" on the suggested task). **Reconciliation
+  measured FIRST, per the dispatch's explicit stop/proceed gate**: 6 real store-months, manual
+  `fob_rows.fob_dollar` vs. auto `fobByRange()`'s `.fob$` via live service-role Supabase reads —
+  every pair matched to the penny (float-precision-only deltas, ~2e-11). Not a coincidence: for a
+  full calendar-month range (what `autoPopulateKPIs`' `monthRange(m)` always passes),
+  `fobByRange`'s `segStart` equals the month start, so `baseSnap` stays null and the result IS that
+  month's settled cumulative snapshot — the same once-a-month-settle total the manual workbook
+  figure was built from. Reconciled cleanly, so the swap proceeded. **Fix**:
+  `review-engine.js`'s `autoPopulateKPIs` now imports the SAME canonical `fobByRange()` both
+  One-Pagers use (fixed there in v5.203) instead of a re-derived formula; pre-filters
+  `ds.qsrFobRows` to the review's own loc (same v5.203 no-`locs`-param pattern); per month, if
+  `fobByRange(...)[loc].prodSales > 0` (the function's own "this range has data" convention) uses
+  its `fob$` directly, else falls through to the old manual `ds.fobRows` sum — now an explicit
+  last-resort fallback instead of the unconditional primary source. Checked
+  `MANUAL_ONLY_METRICS` — `foodOB` was never in that list (always a hand-rolled path specific to
+  this function), nothing to remove. New `dispatch-161-review-fob-auto-source.test.js`: auto wins
+  over a deliberately diverging manual figure (proves the source actually switched, not just that
+  they happen to agree today); falls back correctly when auto has nothing for that month; no
+  cross-store leakage. Existing `review-target-autofill.test.js` fixtures (no `ds.qsrFobRows`)
+  still pass via the fallback path. 273/273 test files, 2870/2870 tests (net +1 file/+4 tests).
+  Build clean, entry chunk gzip 476.24→478.71 KB (+2.47 KB — `fobByRange`'s import pulls
+  `one-pager-data.js` and its own deps into the eager entry chunk for the first time, since
+  `review-engine.js` is itself a static `App.js` import; still 299.89 KB headroom under the 850 KB
+  budget). A real version collision with #163/#165/#164/#162's PRs (all claimed `5.206`) —
+  renumbered to v5.208 during verification.
+- **✅ SHIPPED (2026-08-27, v5.207): [Dispatch #165 — audit emailed-stream redundancy, #260
+  resolved](dispatch-165.md), PR #833.** Audited the three emailed QSRSoft streams
+  (`daily_glimpse_daily`/`sales_ledger_daily`/`cash_sheet_daily`) against their API-pulled siblings
+  from `qsrsoft-ops-pull.mjs`. Full findings + exact live measurements (credential + observation
+  named, per the standing rule) in `audit-emailed-stream-redundancy-2026-08-27.md`. Reproduced
+  #347's pattern live: `daily_glimpse_daily`/`cash_sheet_daily` both missing all 27 stores for
+  2026-07-02..07-04, while `sales_ledger_daily` and every API-pulled sibling (floor 2024-01-01)
+  have full coverage for those exact days — the emailed streams are the ones with gaps, not the
+  data itself. **One genuine, contained bug fixed while auditing**: `dtMixPct` had ZERO auto/API
+  fallback — `salesLedgerRows` was its sole non-manual source. `opsSalesMixRows` (`qsr_sales_mix`)
+  reconciles byte-exact against it on every shared day sampled, so it now gets a
+  `derive:{kind:'ratio'}` fallback via new `dtSalesAmt`/`mixNetSalesAmt` metric-source entries
+  (`src/lib/supabase.js`'s `loadOpsSalesMix` extended to alias `net_sales_amt`/
+  `net_sales_dthru_amt` — confirmed genuinely real fields via existing usage in
+  `loadOpsCashSheet`). Other findings flagged as future work, not acted on (audit-and-report was
+  the scope): promo/POS-over reconcile near-exactly but are unwired; cash O/S and refund fields
+  reconcile poorly (44-79%, a real open discrepancy); `laborPct` stays Glimpse-led since its derive
+  alternative only matches 89.8%. No stream, pull script, or table touched/deprecated. 272/272 test
+  files, 2868/2868 tests. Build clean, entry chunk gzip 476.25 KB. Regenerated the loader field map
+  (`gen-loader-emits.mjs --write`, live against Supabase) for the new `opsSalesMixRows` loader
+  fields. A real version collision with #163/#161/#164/#162's PRs (all claimed `5.206`) —
+  renumbered to v5.207 during verification.
+- **✅ SHIPPED (2026-08-27, v5.206): [Dispatch #163 — #171 pooled-freshness bug already fixed;
+  corrected stale docs](dispatch-163.md), PR #832.** Investigated CLAUDE.md's own #171 concern
+  (pooled `Math.max` freshness hiding one dead stream behind any fresh sibling — the mechanism the
+  6-day undetected LifeLenz outage exploited). **Measured, not assumed**: read
+  `at-a-glance.js`/`analytics.js` directly first. Found `src/engine/stream-freshness.js` (added
+  v5.034/dispatch15, refined v5.058) already checks each of 10 auto/emailed streams
+  INDEPENDENTLY (`streamFreshness()`/`worstStream()`, clamped to `<=asOf` so LifeLenz's
+  forward-published schedule can't read as fresher than it is), already wired into BOTH At-A-Glance's
+  Action Checklist (names the single worst stream by label+days-old) and Analytics' Data Manager
+  panel (full per-stream table, always reachable), and already tested at both the engine and
+  render layer. **So no code fix landed** — writing one would have duplicated an existing, tested
+  mechanism; this is the same "a rule describes code which no longer exists" trap CLAUDE.md itself
+  names for #61/#85, just for #171 instead. Fixed by correcting: (1) CLAUDE.md's own #171 mentions
+  to state the fix is done and repoint the "adding a new pull" checklist at "add the stream's
+  `dsField` to `STREAMS`" rather than "build per-stream freshness" from scratch; (2)
+  `sync-failure-watch.yml`'s header comment, which carried the identical stale "single Math.max
+  across five feeds" description. Also answered a related question the dispatch raised: would
+  `sync-failure-watch.yml` have caught the LifeLenz-class failure? **No** — it only reacts to
+  `workflow_run` `completed`/`failure` events; a run that reports success while writing nothing
+  (a token silently degrading mid-run), or one that never completes at all (queued on an offline
+  runner — `dispatch-65.md`'s documented failure mode), is invisible to it. Flagged as a follow-up
+  in the workflow's own updated comment, not built here (out of scope). One new render-based test
+  (`at-a-glance-checklist-freshness.test.js`): LifeLenz dark 30 days, all 9 siblings fresh —
+  asserts the checklist names "LifeLenz labor/schedule" specifically, reproducing the actual
+  Aug 6-11 incident shape at the render layer (an engine-only test can't tell wired-in from
+  unwired, per CLAUDE.md's "would this still pass if reverted" rule). 2867/2867 tests (main:
+  2866/2866; +1 new test). Build clean, entry chunk gzip 476.23 KB (effectively unchanged — docs +
+  workflow comment + one test file only).
+- **📋 DRAFTED (2026-08-27): [Dispatch #166 — DO (+OM scaffold) tier on Leadership One-Pager scope
+  dropdown](dispatch-166.md).** The corrected follow-up to #158's DO/OM/Owner investigation, which
+  (per v5.211's entry above) was conducted against the wrong file. Distinguishes itself
+  deliberately from #158's own explored architecture: #158 investigated `staff_assignments`/
+  `assignment-graph.js`'s `resolveScope`/`whoOversees` (still zero rows in production, confirmed a
+  blocking prerequisite for THAT approach) — #166 does not depend on it at all, instead mirroring
+  the already-shipped, already-working `operators`/`supervisorGroups` flat-map pattern that powers
+  `one-pager.js`'s EXISTING Owner/Supervisor dropdown (itself never `staff_assignments`-backed).
+  Seeded with the owner's directly-confirmed real assignment (2026-08-27): Hugh Bonner → DO for all
+  20 Oklahoma stores, Brad Denley → DO for all 7 Florida stores (dual role — also Supervisor for a
+  3-store FL subset, intentional overlap, not a bug). OM tier scaffolded empty (settings shape +
+  dropdown UI + Settings-panel editing section, matching the `'🏢 Operators'` section exactly) per
+  the owner's explicit call — populate real names later via the Settings UI, no code change
+  needed then. Engineer dispatched; not yet verified/merged.
   gated on the wrong readiness signal](dispatch-159.md).** Owner-reported: "Auto-fill from
   Uploaded Data" populated OEPE/R2P/KVS/Labor% for a GM review through June only, even though
   July/August had confirmed live DAR data (measured earlier the same session:
