@@ -84,6 +84,61 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.216): [Dispatch #170 — Product Mix Cloud tab never populates:
+  `loadPmixRows` was fetching ~2.5M rows on every open](dispatch-170.md), PR #853.** Owner-
+  reported LIVE bug, same session dispatch #169 shipped: *"everytime I have tried the cloud data,
+  it has not populated after waiting several minutes."* **Not the earlier-fixed wiring bug**
+  (v5.187/188 — confirmed by reading the live code first: `ProductMixPanel` still correctly calls
+  `ensureLazyFill`). Root cause, measured live (not assumed): `loadPmixRows(daysBack=400)` was the
+  SOLE loader for `ds.pmixRows`, called with no args. `qsr_product_mix`'s real data starts
+  2026-01-01, so 400 days back was not "the last 400 days" — it was the entire table:
+  `content-range: 0-0/2526181`, 2.5M+ rows and growing ~11K/day (two pulls/day × 27 stores ×
+  hundreds of items, the exact volume dispatch #169 itself measured an hour earlier). A real
+  paginated fetch at 7/14/30-day windows measured a consistent **~18,000 rows/sec** throughput
+  under `_pagedParallel`'s real `_MAX_INFLIGHT=6` concurrency cap (already present, already
+  correct — the "2,500+ parallel requests" hazard flagged in the dispatch doc turned out to
+  already be handled, confirmed by reading the code rather than assumed broken); extrapolated to
+  the old 2.5M-row default: **~140s (~2.3 min) — this IS "waited several minutes,"** not a
+  hypothetical or a genuine infinite hang.
+  **Fix — two-tier bounded/wide split**, deliberately mirroring the pattern dispatch #169 itself
+  just established for the Scanner's item coverage (bounded-by-default, explicit opt-in for the
+  expensive path) rather than inventing a new shape: `loadPmixRows`'s own default trimmed 400→40
+  days (measured: ~436K rows, ~24s — comfortably covers `ProductMixPanel`'s own 7D/30D quick-view
+  default). New parallel WIDE lazy-fill tier in `metric-source.js`
+  (`ensureLazyFillWide`/`isLazyFillWidePending`/`isLazyFillWideLoaded`/`isLazyFillWideError`, a
+  `wideLoaders` map alongside the existing `loaders` map on the same `configureLazyFill` hook) —
+  once resolved it REPLACES THE SAME `ds.pmixRows` field, so every pre-existing reader
+  (`signal-registry.js`, `events.js`, `store-dash.js`) needed zero changes. `App.js` registers
+  `wideLoaders:{pmixRows:()=>loadPmixRows(400)}` — the OLD default, unchanged, since it was already
+  measured to cover the table's real history. Dispatch #169's `ItemPicker` and the Scanner's "Item
+  Mix" toggle switched from `ensureLazyFill` to `ensureLazyFillWide` (they need breadth, not the
+  bounded default — shipped just before this bug was reported, and this fix was written
+  specifically not to regress it). `ProductMixPanel`: 7D/30D stay bounded; 90D/180D/All now
+  trigger the wide fetch on selection and show an explicit "Loading Full History…"/error state
+  until it resolves — **never silently render the bounded 40-day set under a "180D"/"All Time"
+  label** (the dispatch's own explicit anti-pattern warning, honored).
+  **A real race found and hardened DURING verification, not by the engineer**: the bounded and
+  wide fetches are two independent async operations with no ordering guarantee between them. In
+  the overwhelming common case the bounded fetch (smaller, starts on mount) resolves first — but
+  under unlucky timing the wide fetch could resolve FIRST, and the bounded fetch's later-arriving,
+  smaller result would then silently overwrite `ds.pmixRows` back down to 40 rows while
+  `isLazyFillWideLoaded()` (and therefore the panel's own "full history loaded" UI state) still
+  claimed the wide range was ready — reproducing the exact "range option lies about what it shows"
+  bug the dispatch explicitly warned against, just via a timing race instead of a design gap.
+  Fixed in the verification pass: the bounded resolve handler now checks
+  `_lazyWideState[src]==='loaded'` before writing, skipping the stale write entirely. New
+  regression test added and sanity-checked by reverting the guard first and confirming the test
+  fails (`sets.length` goes 1→2), then restoring it and confirming it passes — proof the test
+  exercises the actual guard, not just a coincidentally-correct end state.
+  287/287 test files, 2982/2982 tests (net +4 from the merged PR, +1 more from the verification-
+  pass hardening). Build clean, entry chunk gzip 480.59→480.60 KB (negligible — no new static
+  top-level import), eager total 552.42→552.53 KB, still 297.47 KB under the 850 KB budget.
+  **Documented, real, out-of-scope trade-off** (engineer's own honest flag, not glossed over):
+  `signal-registry.js`'s Pricing metrics (`pxDaysSince`/`pxItemsChanged`/`pxMeanStepPct`) read
+  `ds.pmixRows` unconditionally in `scanAllPairs`, not gated behind the wide opt-in — if only
+  `ProductMixPanel`'s bounded tier has loaded before a Scanner run without "Item Mix" checked,
+  their effective window narrows from ~237 days to 40. Pre-existing incidental coupling (Pricing
+  predates #169's opt-in pattern), flagged for a future dispatch, not fixed here.
 - **✅ SHIPPED (2026-08-27, v5.215): [Dispatch #169 — product-mix item correlations in Signal
   Lab / Scanner](dispatch-169.md), PR #850.** Notes 28 #5's field-note anchor: *"Filet-O-Fish
   sells more on Fridays and around Easter... once product-mix data is available, correlate
