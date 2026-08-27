@@ -4584,3 +4584,29 @@ export async function loadStaffAssignments() {
     start: r.start_date, end: r.end_date,
   }));
 }
+
+// Dispatch #162 (Performance Review continuity, build item #6) — the first client-side reader of
+// qsr_employee_tenure (schema-qsr-employee-tenure.sql, dispatch #57). Confirmed by grep before
+// writing this: nothing in src/ loaded this table client-side before now — only the one-time,
+// service-role backfill script (scripts/backfill-staff-assignments-2026.mjs) and its own test read
+// it. src/engine/departure.js's detectDeparture() is the first real consumer, keyed by `geid`
+// (matches a review's unified `person` identity for a roster-sourced GM/AM/DM/SM reviewee — see
+// that file's own header comment on the AS/OM/DO coverage gap this doesn't attempt to close).
+//
+// Column selection deliberately narrow: only what departure-detection needs
+// (employment_status/termination_entry_date/job_title_code + its pay-rate-split sibling for
+// classifyRosterAssignment's AM-vs-DM rule). full_employee_name and the rest of the PII this table
+// carries (schema-qsr-employee-tenure.sql's own header: "PII... owner-approved... this table
+// storing a name is not a licence for other panels to start rendering names directly") is NOT
+// selected — a review already has its own display `name` field, so nothing here needs it, and an
+// unfetched column is the safest way to avoid it drifting into a panel later. RLS
+// (accessible_locs-scoped, same file) already limits rows to what the logged-in user can see —
+// same as every other loader here, no extra client-side scoping needed.
+export async function loadEmployeeTenure() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('qsr_employee_tenure')
+    .select('loc, geid, employment_status, termination_entry_date, job_title_code, job_title_code_description, hourly_pay_rate');
+  if (error || !data) { console.warn('[qsr_employee_tenure] load error:', error); return []; }
+  return data;
+}
