@@ -24,8 +24,10 @@ function setNativeValue(el, value) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-// SignalBuilder imports ensureLazyFill (metric-source.js) -- harmless no-op here since no
-// lazy-fill hook is configured in this test process; ds.pmixRows below is provided directly.
+// SignalBuilder's ItemPicker imports ensureLazyFillWide (metric-source.js, dispatch #170 --
+// was ensureLazyFill before this dispatch narrowed the plain lazy-fill tier's default window) --
+// harmless no-op here since no lazy-fill hook is configured in this test process; ds.pmixRows
+// below is provided directly.
 
 describe('Signal Lab item picker — real end-to-end (dispatch #169)', () => {
   let container, root;

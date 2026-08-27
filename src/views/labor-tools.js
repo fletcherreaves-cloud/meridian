@@ -40,7 +40,7 @@ const PT_SCORE_KEY   = 'mf_period_scoreboard';
 // importing this whole (large, otherwise lazy-loaded) panel module — that mistake
 // cost ~25KB gzip on the main entry chunk the first time it was tried. Imported above.
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
-import { metricAvg, metricRate, metricSeries, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
+import { metricAvg, metricRate, metricSeries, ensureLazyFill, isLazyFillPending, isLazyFillError, ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
@@ -334,6 +334,36 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
   const cloudLoc = cloudLocSel && cloudLocs.includes(cloudLocSel) ? cloudLocSel : cloudLocs[0];
   const [cloudRange, setCloudRange] = uSt('30'); // '7'|'30'|'90'|'180'|'all'
 
+  // ── Wide range (dispatch #170) ────────────────────────────────────────────
+  // ds.pmixRows now defaults to a BOUNDED 40-day fetch (loadPmixRows's own default,
+  // src/lib/supabase.js) -- enough for the 7D/30D quick views below with margin, but not
+  // for 90D/180D/All. Those three opt into the separate WIDE lazy-fill tier
+  // (ensureLazyFillWide, metric-source.js), which re-fetches the SAME ds.pmixRows field
+  // with a much wider window. Gated on cloudRange itself (not on mount) so the default
+  // 30D view never pays the wide-fetch cost, and re-checked isLazyFillWideLoaded first so
+  // switching between 90/180/all after the wide fetch has landed doesn't re-request it.
+  // Never render cloudFiltered under a WIDE_RANGES selection before this resolves --
+  // ds.pmixRows may still only hold the bounded 40 days, which would silently show a
+  // "90D"/"180D"/"All Time" label over data that isn't actually that range (the exact
+  // "range options must not lie" trap the dispatch calls out).
+  const WIDE_RANGES = ['90', '180', 'all'];
+  const [wideState, setWideState] = uSt(isLazyFillWideLoaded('pmixRows') ? 'loaded' : 'idle');
+  uE(() => {
+    if (!WIDE_RANGES.includes(cloudRange)) return;
+    if (isLazyFillWideLoaded('pmixRows')) { setWideState('loaded'); return; }
+    const stillPending = ensureLazyFillWide('pmixRows');
+    if (!stillPending) { setWideState(isLazyFillWideError('pmixRows') ? 'error' : 'loaded'); return; }
+    setWideState('pending');
+    const id = setInterval(() => {
+      if (!isLazyFillWidePending('pmixRows')) {
+        setWideState(isLazyFillWideError('pmixRows') ? 'error' : 'loaded');
+        clearInterval(id);
+      }
+    }, 300);
+    return () => clearInterval(id);
+  }, [cloudRange]);
+  const wideNeededAndNotReady = WIDE_RANGES.includes(cloudRange) && wideState !== 'loaded';
+
   const cloudMaxDate = uM(()=>{
     let max=null;
     (ds.pmixRows||[]).forEach(r=>{ const d=pmixDate(r); if(!isNaN(d)&&(!max||d>max)) max=d; });
@@ -494,6 +524,20 @@ function ProductMixPanel({stores, ds, settings, onClose}) {
         div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},'Loading Product Mix…'),
         div({style:{fontSize:'10px',textAlign:'center',maxWidth:380,lineHeight:1.7}},
           'Pulling qsr_product_mix from Supabase (loaded on open, not at startup).')
+      ):
+      // Dispatch #170 -- 90D/180D/All need the WIDE fetch (see wideState above). Never fall
+      // through to cloudFiltered here: ds.pmixRows may still only hold the bounded 40-day
+      // default, which would silently render a "180D"/"All Time" label over 40 days of real
+      // data -- the exact "range option lies about what it shows" trap the dispatch calls out.
+      (dataSrc==='cloud'&&wideNeededAndNotReady)?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
+        flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},
+        div({style:{fontSize:36}},wideState==='error'?'⚠':'☁'),
+        div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)'}},
+          wideState==='error'?'Full-History Load Failed':'Loading Full History…'),
+        div({style:{fontSize:'10px',textAlign:'center',maxWidth:380,lineHeight:1.7}},
+          wideState==='error'
+            ? 'The wider qsr_product_mix read failed. Try a narrower range (7D/30D), or reopen this panel to retry.'
+            : (cloudRange==='all'?'All Time':cloudRange+'D')+' pulls real historical breadth from Supabase -- this can take longer than the default 30D view. Narrow the range for a faster look while this loads.')
       ):
       !activeHasData?div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',
         flexDirection:'column',gap:10,color:'var(--text3)',padding:40}},

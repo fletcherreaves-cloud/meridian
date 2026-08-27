@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   metricDaily, metricSeries, configureLazyFill, isLazyFillPending, ensureLazyFill, LAZY_FILL_SOURCES,
-  _resetLazyFillForTests,
+  _resetLazyFillForTests, ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideLoaded, isLazyFillWideError,
 } from '../engine/metric-source.js';
 
 const d = s => new Date(s + 'T00:00:00');
@@ -84,5 +84,81 @@ describe('metric-source lazy-fill (#191)', () => {
     expect(loader).toHaveBeenCalledTimes(1);
     resolveLoader([]);
     await Promise.resolve(); await Promise.resolve();
+  });
+});
+
+// Dispatch #170 — the WIDE (opt-in) tier. `pmixRows`'s plain lazy-fill loader now defaults to a
+// bounded window (src/lib/supabase.js's loadPmixRows, 40 days); consumers that need real
+// historical breadth (ProductMixPanel's 90D/180D/All, Signal Lab/Scanner's item correlations)
+// call ensureLazyFillWide instead, which is registered via a SEPARATE `wideLoaders` map on the
+// same configureLazyFill hook and, once resolved, replaces the SAME ds[src] field — no new ds
+// key, so every pre-existing reader of ds.pmixRows needs no change.
+describe('metric-source lazy-fill — WIDE tier (dispatch #170)', () => {
+  beforeEach(() => { _resetLazyFillForTests(); });
+
+  it('ensureLazyFillWide triggers the wideLoaders entry (not the plain loaders entry) and replaces ds[src] on resolve', async () => {
+    let resolveWide;
+    const narrowLoader = vi.fn(() => Promise.resolve([{ tag: 'narrow' }]));
+    const wideLoader = vi.fn(() => new Promise(res => { resolveWide = res; }));
+    const sets = [];
+    const setDs = updater => sets.push(updater);
+    configureLazyFill({ setDs, loaders: { pmixRows: narrowLoader }, wideLoaders: { pmixRows: wideLoader } });
+
+    const stillPending = ensureLazyFillWide('pmixRows');
+    expect(stillPending).toBe(true);
+    expect(wideLoader).toHaveBeenCalledTimes(1);
+    expect(narrowLoader).not.toHaveBeenCalled(); // wide never falls back to the bounded loader
+    expect(isLazyFillWidePending('pmixRows')).toBe(true);
+
+    // Calling again before it resolves must not re-trigger the wide loader.
+    ensureLazyFillWide('pmixRows');
+    expect(wideLoader).toHaveBeenCalledTimes(1);
+
+    const wideRows = [{ tag: 'wide-1' }, { tag: 'wide-2' }];
+    resolveWide(wideRows);
+    await Promise.resolve(); await Promise.resolve();
+    expect(isLazyFillWidePending('pmixRows')).toBe(false);
+    expect(isLazyFillWideLoaded('pmixRows')).toBe(true);
+    expect(sets.length).toBe(1);
+    // Replaces the SAME field (pmixRows), not a separate ds.pmixRowsWide key.
+    const prev = { pmixRows: [{ tag: 'narrow' }], other: 'kept' };
+    expect(sets[0](prev)).toEqual({ pmixRows: wideRows, other: 'kept' });
+
+    // Once loaded, a further call is a no-op.
+    ensureLazyFillWide('pmixRows');
+    expect(wideLoader).toHaveBeenCalledTimes(1);
+  });
+
+  it('a source with no wideLoaders entry is a no-op (auditRows/wasteRows are unaffected by this dispatch)', () => {
+    const setDs = () => {};
+    configureLazyFill({ setDs, loaders: { auditRows: vi.fn() } }); // no wideLoaders at all
+    expect(ensureLazyFillWide('auditRows')).toBe(false);
+    expect(isLazyFillWidePending('auditRows')).toBe(false);
+  });
+
+  it('a rejected wide loader sets isLazyFillWideError, independent of the plain-tier error state', async () => {
+    let rejectWide;
+    const wideLoader = vi.fn(() => new Promise((_, rej) => { rejectWide = rej; }));
+    configureLazyFill({ setDs: () => {}, loaders: {}, wideLoaders: { pmixRows: wideLoader } });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      ensureLazyFillWide('pmixRows');
+      rejectWide(new Error('simulated wide-fetch failure'));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(isLazyFillWideError('pmixRows')).toBe(true);
+      expect(isLazyFillWidePending('pmixRows')).toBe(false);
+      expect(isLazyFillWideLoaded('pmixRows')).toBe(false);
+    } finally { warnSpy.mockRestore(); }
+  });
+
+  it('_resetLazyFillForTests clears wide state too, not just the plain-tier state', async () => {
+    const wideLoader = vi.fn(() => Promise.resolve([]));
+    configureLazyFill({ setDs: () => {}, loaders: {}, wideLoaders: { pmixRows: wideLoader } });
+    ensureLazyFillWide('pmixRows');
+    await Promise.resolve(); await Promise.resolve();
+    expect(isLazyFillWideLoaded('pmixRows')).toBe(true);
+    _resetLazyFillForTests();
+    expect(isLazyFillWideLoaded('pmixRows')).toBe(false);
+    expect(isLazyFillWidePending('pmixRows')).toBe(false);
   });
 });

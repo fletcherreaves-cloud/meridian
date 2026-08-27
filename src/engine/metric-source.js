@@ -626,12 +626,55 @@ export function isLazyFillPending(src) { return _lazyState[src] === 'pending'; }
 // only ever reports counts, where 0 vs error both read as "nothing to show").
 export function isLazyFillError(src) { return _lazyState[src] === 'error'; }
 
+// ── Wide (opt-in) tier — dispatch #170 ─────────────────────────────────────────
+// `ensureLazyFill('pmixRows')` alone used to be the ONLY way `ds.pmixRows` ever got
+// populated, via a single loader with a fixed 400-day window. Measured live 2026-08-27:
+// `qsr_product_mix`'s real data starts 2026-01-01, so 400 days back is not "the last 400
+// days" — it's the whole table, and the whole table is 2.5M+ rows and growing (~11K
+// rows/day). That single blob is what "Cloud tab never populates, waited several minutes"
+// (owner report) actually was — reproduced live: a plain fetch of that window scales at
+// ~18K rows/sec measured throughput, so 2.5M rows is ~140s, i.e. "several minutes," not a
+// hang, but indistinguishable from one to someone watching a blank panel.
+//
+// `App.js`'s `configureLazyFill({ loaders: {pmixRows: ...} })` now binds a genuinely
+// BOUNDED loader (40 days back — ~430K rows, ~24s measured, comfortably covers
+// ProductMixPanel's own 7D/30D quick views). Consumers that need real historical breadth
+// — dispatch #169's Signal Lab item picker + Scanner "Item Mix" correlation sweep, and
+// ProductMixPanel's own 90D/180D/All range options — opt into the WIDE fetch explicitly
+// via `ensureLazyFillWide(src)`, which is registered separately (`wideLoaders`) and, once
+// resolved, REPLACES `ds[src]` with the wider array (same field, so every existing reader
+// of `ds.pmixRows` — signal-registry.js, events.js, store-dash.js's price-change badge —
+// needs no changes; they just eventually see a bigger array). Deliberately a second,
+// source-scoped tier rather than a general `ensureLazyFill(src, {range})` API: only
+// `pmixRows` has this two-speed need today, and `LAZY_FILL_SOURCES`'s existing
+// auditRows/wasteRows callers are unaffected (no `wideLoaders` entry for them → no-op).
+const _lazyWideState = {};                // src -> 'pending' | 'loaded' | 'error'
+function _triggerLazyFillWide(src) {
+  if (!_lazyFillHook || !_lazyFillHook.wideLoaders || !_lazyFillHook.wideLoaders[src]) return;
+  if (_lazyWideState[src] === 'pending' || _lazyWideState[src] === 'loaded') return;
+  const loader = _lazyFillHook.wideLoaders[src];
+  _lazyWideState[src] = 'pending';
+  loader().then(rows => {
+    _lazyWideState[src] = 'loaded';
+    _lazyState[src] = 'loaded';        // keep the plain pending/error read coherent too
+    _lazyFillHook.setDs(prev => (prev ? { ...prev, [src]: rows || [] } : prev));
+  }).catch(e => {
+    _lazyWideState[src] = 'error';
+    console.warn(`[Meridian] lazy-fill-wide ${src} failed:`, e);
+  });
+}
+export function ensureLazyFillWide(src) { _triggerLazyFillWide(src); return isLazyFillWidePending(src); }
+export function isLazyFillWidePending(src) { return _lazyWideState[src] === 'pending'; }
+export function isLazyFillWideLoaded(src) { return _lazyWideState[src] === 'loaded'; }
+export function isLazyFillWideError(src) { return _lazyWideState[src] === 'error'; }
+
 // Test-only: this module's lazy-fill state is intentionally module-level (one loader per
 // source per session, not per-caller), which means it persists across test cases unless reset.
 // Not called by application code.
 export function _resetLazyFillForTests() {
   _lazyFillHook = null;
   for (const k of Object.keys(_lazyState)) delete _lazyState[k];
+  for (const k of Object.keys(_lazyWideState)) delete _lazyWideState[k];
 }
 
 const _ok = (v, mode) => v != null && !isNaN(v) && (mode === 'any' ? true : v > 0);
