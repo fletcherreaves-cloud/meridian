@@ -4545,3 +4545,27 @@ export async function loadPmixRows(daysBack = 400) {
     unitPaperCost:  r.unit_paper_cost,
   }));
 }
+
+// Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
+// of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
+// schema.sql) already scopes what a plain select() returns to whatever the logged-in user is
+// allowed to see, same as every other loader here — no extra client-side scoping needed.
+//
+// Column-name mapping: the DB stores `start_date`/`end_date` (schema.sql), but every consumer
+// (assignment-graph.js's own header comment, its exported resolvers, and review-engine.js's
+// computeSegmentedReview) expects row shape `{person, role, target_type, target, start, end}` —
+// confirmed directly against assignment-graph.js and its own test fixtures
+// (dispatch-154-assignment-timeline.test.js), not assumed. Mapped here so every caller gets the
+// shape it already expects, rather than each one re-deriving it.
+export async function loadStaffAssignments() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('staff_assignments')
+    .select('person, role, target_type, target, start_date, end_date')
+    .order('start_date', { ascending: true });
+  if (error || !data) { console.warn('[staff_assignments] load error:', error); return []; }
+  return data.map(r => ({
+    person: r.person, role: r.role, target_type: r.target_type, target: r.target,
+    start: r.start_date, end: r.end_date,
+  }));
+}
