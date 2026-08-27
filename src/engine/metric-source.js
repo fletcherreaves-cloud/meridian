@@ -198,14 +198,18 @@ export const METRIC_SOURCES = {
   // day for the affected store) — it is day-specific. One deep-dive (store 31357, 2026-07-19)
   // ruled out BOTH candidate denominators for that day: neither product_sales_amt nor
   // net_sales_amt implies Glimpse's 0.1876 from crew_labor_dollars=2270.67 — the NUMERATOR itself
-  // disagrees with whatever Glimpse used, not just the sales denominator. Leading unconfirmed
-  // hypothesis, NOT verified: qsr_labor_summary is pulled with compType:'calendar'
-  // (qsrsoft-ops-pull.mjs), while Daily Glimpse may report on a business-day boundary (e.g. 5am
-  // cutover) — late-night volume would land in a different day bucket in each, which would also
-  // explain the positive skew (a calendar-day pull missing late sales the business day counted
-  // understates the denominator, pushing the ratio up) and the day-specific (not store-fixed)
-  // pattern. Not chased further; flagged in the PR for the fallback-accuracy decision instead of
-  // asserted as fact. Unit convention confirmed fraction (0-1), not percent (0.2428, not 22.47) —
+  // disagrees with whatever Glimpse used, not just the sales denominator.
+  // ✅ REFUTED 2026-08-27 (dispatch #164, CLAUDE.md #330): this comment used to carry an unverified
+  // hypothesis that qsr_labor_summary's compType:'calendar' pull was on a DIFFERENT day boundary
+  // than the sales denominator, explaining the mismatch. Measured false — compType:'calendar' on
+  // labor-summary is 4am-business-day aligned (re-bucketed raw qsr_punch_times clock punches
+  // against crew_labor_hours two ways: the 4am cut matched to 0.000 mean abs diff across 83
+  // store-days / 5 stores; midnight never won a single store-day), i.e. the SAME boundary `sales`
+  // already uses (DAR product_sales, compType:'trading', also business-day aligned). Both legs of
+  // this derive are on the same boundary — a boundary mismatch is ruled out as the cause of the
+  // 10.2% gap. Full measurement: memory/finding-comptype-calendar-labor-summary-2026-08-27.md. The
+  // gap's real cause is still open — just not this.
+  // Unit convention confirmed fraction (0-1), not percent (0.2428, not 22.47) —
   // glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every render site
   // multiplies by 100 before display (labor-tools.js). A derive returning d/s*100 would have
   // shipped a number 100x too large.

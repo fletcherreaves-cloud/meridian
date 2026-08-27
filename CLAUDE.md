@@ -559,9 +559,23 @@ actual code — this note nearly caused a duplicate reimplementation.
   - **The DAR is ALREADY business-day aligned — this was measured and is not an open question.**
     `memory/dar-vs-ops-reconciliation.md` (2026-08-07): `hour_slot` runs `05:00 → 28:00`, 24 slots
     covering 04:00→04:00, matching McDonald's ABC. Corroborated by
-    `memory/project-hourly-projection-accuracy.md:81`. So `compType:'trading'` ≈ the 4am business
-    day. **What `compType:'calendar'` means on `labor-summary` is still unconfirmed** — that is the
-    only live boundary question (#330), and it is on the *numerator* side only.
+    `memory/project-hourly-projection-accuracy.md`. So `compType:'trading'` ≈ the 4am business day.
+    **✅ RESOLVED 2026-08-27 (dispatch #164, #330) — `compType:'calendar'` on `labor-summary` is
+    ALSO 4am-business-day aligned, not midnight-to-midnight despite the name.** Measured by
+    re-bucketing raw clock punches (`qsr_punch_times`, ingested with no `compType` and no
+    day-boundary derivation at all) against `qsr_labor_summary`'s `crew_labor_hours`
+    (`compType:'calendar'`) two ways: a 4am-business-day cut matched to **0.000 mean abs diff
+    across 83 store-days / 5 stores** (81/83 within 0.1 hr); a plain midnight cut never won a
+    single store-day and was off by 2-3+ hrs typically. So `laborPct`'s derive
+    (`laborDollar ÷ sales`, `opsLaborRows`/`compType:'calendar'` ÷ DAR/`compType:'trading'`) has
+    BOTH legs on the same boundary — no live mismatch, nothing to fix. This also **refutes** (not
+    just leaves unconfirmed) the boundary-mismatch hypothesis `metric-source.js`'s `laborPct`
+    comment used to carry for the unexplained 10.2% Daily-Glimpse mismatch (#327) — that gap's real
+    cause is still open, but a boundary mismatch is now ruled out as the explanation. Full
+    measurement: `memory/finding-comptype-calendar-labor-summary-2026-08-27.md`. **Do not re-raise
+    #330 or re-derive this** — the other `compType:'calendar'` endpoints in `qsrsoft-ops-pull.mjs`
+    (`cash-sheet-extract`, `labor-detail`, `service/statistics`, `cash-sheet`) were NOT
+    independently re-measured and are suggestive only, per that file's own scope note.
   - **Before adding any new derived metric, ask which boundary each input is on.** Both pull
     scripts already use both `compType` values, so a mismatch is easy to introduce and invisible
     once shipped — `laborPct` only got caught because it was reconciled against a known-good source.
