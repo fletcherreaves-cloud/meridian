@@ -84,6 +84,73 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.215): [Dispatch #169 — product-mix item correlations in Signal
+  Lab / Scanner](dispatch-169.md), PR #850.** Notes 28 #5's field-note anchor: *"Filet-O-Fish
+  sells more on Fridays and around Easter... once product-mix data is available, correlate
+  item-level sell-through against day-of-week/calendar/weather."* The unblocked slice of the
+  Product Mix → Pricing Engine backlog item — owner's explicit split this session: dispatch this
+  now, hold the Pricing Engine itself for the owner's spreadsheet (see the finding above/below).
+  **Measured first, not assumed**: a 20-date/27-store stratified sample of live `qsr_product_mix`
+  (207,966 rows, since full-table server-side aggregation isn't available — PostgREST has
+  aggregates disabled) found **699 distinct items**, concentrated (top 150 by volume ≈ 87% of
+  units sold) — ruled out a static per-item registry entry (would bloat `METRIC_FLAT` ~20x and
+  blow up the Scanner's O(n²) sweep) in favor of a **dynamic per-item resolver**. New `pmixItem:
+  <code>` key shape in `signal-registry.js`: `findMetric()`/`extractMetricValues()` synthesize the
+  metric definition on the fly (real label via `desc_`, `soldQty` correctly SUMMED across price
+  tiers per the `(loc,date,item,price)` grain — not truncated to one row) — reuses the
+  `__calendar`/`__priceEvents` "derived, no static source table" pattern already in the file. New
+  `ItemPicker` in Signal Lab (search/select from the real item list, not a 700+-entry dropdown) on
+  both X/Y axes. Scanner: items capped to top 150 by volume, paired ONLY against Calendar/Weather
+  (never against each other or the rest of the registry), **off by default** behind an explicit
+  "Item Mix" checkbox (daily-only, disabled on Monthly) — a plain "Run scan" has byte-identical
+  pair count/timing to before, regression-tested. `allowZero:true` set deliberately (a 0-sold day
+  is real signal, not missing data) with an honest documented caveat: `qsrsoft-pmix-pull.mjs`
+  already filters `soldQty<=0` rows as "catalog placeholders" before upsert, so a literal zero
+  never actually reaches `ds.pmixRows` today — the setting is correct/forward-compatible but
+  currently inert, stated plainly rather than glossed over. **A real pre-existing bug found and
+  fixed along the way**: Calendar (`calFri`/`calWeekend`/`calMon`) and Pricing
+  (`pxDaysSince`/etc.) metrics had NEVER actually reached `scanAllPairs`'s sweep since Calendar
+  shipped in v4.533 — the presence-check gated every metric on `ds[m.source]` being a non-empty
+  array, which is always `undefined` for these two derived-no-table sources, so they were
+  silently skipped every single scan; `SEEDED_SIGNALS`'s "Friday lift" entry masked this because
+  it calls `computeCustomSignal` directly, bypassing the buggy loop. Reproduced pre-fix
+  (`metricsUsed: 2→5`, `tested: 1→7` on an obvious Fri/Sat/Sun dataset), fixed by special-casing
+  the two derived sources, regression-tested — exactly the "engine right but unused" shape
+  CLAUDE.md's dispatch16 rule warns about (every prior Calendar/Pricing test exercised
+  `extractMetricValues`/`computeCustomSignal` directly, never the Scanner sweep itself). **Real-
+  data acceptance test, not just plumbing**: pulled the FULL captured history for Filet-O-Fish
+  (menuItemNumber 5926, 7,916 rows, all 27 stores) as a fixture, hand-aggregated by day-of-week
+  FIRST (Friday mean 568.8 units/day district-wide vs. 396–495 every other day — Friday is the
+  single highest day, reproducing the Notes 28 #5 claim from raw numbers before any registry code
+  ran), then reproduced through the actual `computeCustomSignal` engine: **r=+0.145, n=6,305,
+  p≈0**. 284/284 test files, 2967/2967 tests (net +51). Build clean, entry chunk gzip
+  479.81→480.59 KB (+0.78 KB; `signal-registry.js` is eagerly imported via `App.js`'s
+  `computeAllCustomSignals`, so the registry's growth reaches the entry chunk, not just the
+  `signals.js` lazy chunk). Full measurement notes (item universe, concentration curve, the
+  allowZero pipeline finding, the scanAllPairs bug) committed to `finding-pmix-item-correlations-
+  2026-08-27.md` in the same PR. Full diff read directly during verification (not trusted from the
+  PR body) — the price-tier-summing correctness, the Scanner's opt-in gate, and the
+  `computeScheduleRollup`-style reuse pattern all confirmed line-by-line.
+- **📋 (2026-08-27): [Finding — legacy pricing workbook structure](finding-legacy-pricing-workbook-
+  structure-2026-08-27.md).** Owner uploaded `Menu_Management__071917.xlsm`, their own 2008-2017
+  hand-built pricing/recipe-costing/elasticity tool — the foundation spreadsheet Notes 25 #1 named
+  as a prerequisite for the Pricing Engine backlog item. Read for STRUCTURE only (all data is
+  8-10 years stale, explicitly not usable). Documents the real pipeline: per-store item pricing →
+  Martin Brower distributor cost feed → per-ingredient recipe costing (QCR: Serving Factors × MB
+  Price List case cost → food cost % per menu item) → four rolling PMIX snapshots → a BRK/REG
+  "Pricing Impact" simulator (the actual analog of "Pricing Engine" — models gain/loss from a
+  price change against trailing PMIX volume, held constant as a static-elasticity assumption).
+  **5 concrete data-pull gaps** identified against Meridian's current schema: (1) distributor
+  ingredient cost — the big one, zero current source at all, no per-item margin possible without
+  it; (2) recipe/BOM data (which ingredients go into each item) — check if QSRSoft exposes this
+  before assuming a manual seed is needed; (3) per-item waste quantity — may be an unmapped field
+  in the existing pull, cheap to check; (4) combo/EVM composition — likely fine as a small
+  hand-maintained config table, same pattern as `constants.js`'s `operators`/`supervisorGroups`;
+  (5) item-code stability across menu relaunches (the legacy sheet's Xref field existed for this
+  exact reason) — unconfirmed either way for `qsr_product_mix.item`, worth checking before leaning
+  on it for trend work (dispatch #169 above included). **Not a dispatch** — the real Pricing
+  Engine build stays queued behind source-recon on gap #1 in particular (does Martin Brower have a
+  usable Sync API/export, per Notes 25's own "possible new data sources" list).
 - **✅ SHIPPED (2026-08-27, v5.214): [Dispatch #168 — extend At-A-Glance's per-tile "As of"
   date-span label to Store Dashboard](dispatch-168.md), PR #846.** Inferred scope (no live FR for
   this one, unlike #167 below — CLAUDE.md's own "'As of [date]' labels on tiles" line is generic,
