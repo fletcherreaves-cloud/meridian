@@ -543,17 +543,25 @@ time dispatch practice:
 4. **✅ SHIPPED (Phase 4a, data/engine layer) — Data model restructure**: per-person yearly review
    records replacing per-half records, with the Q1-Q4 + H1/H2 + full-year rollup view — dispatch
    #152, v5.197. Person-identity field unified with the #150/#151 assignment-graph identity space;
-   status moved to `periods.h1`/`periods.h2`. **Phase 4b (UI: creation form, list view, in-editor
-   period selector, print functions) is separate, later work, not yet built** — the data/engine
-   layer is real and tested, but the UI still reads/writes the old half-scoped shape in several
-   places (documented in dispatch #152's PR body) until Phase 4b lands.
+   status moved to `periods.h1`/`periods.h2`.
+   **✅ SHIPPED (Phase 4b, UI) — dispatch #157, v5.202 (2026-08-27).** Turned out to be more than
+   a cosmetic gap: the editor was silently reading/writing the OLD half-scoped shape in six
+   confirmed ways, including a 3-vs-4-arg `transitionReview` call that silently wrote every
+   Submit/Approve/Return/Reopen action to a garbage key instead of `periods.h1`/`h2` — a real,
+   live regression on every review created since v5.197, not just a stale UI. Fixed alongside a
+   real in-editor Q1-Q4/H1/H2/Year period selector, `ReviewList`'s columns, and the print
+   functions. See dispatch-157.md and MEMORY.md's v5.202 entry for the full finding.
 5. **✅ SHIPPED (Phase 5a, data/engine layer) — Promotion/transfer segmented scoring** — dispatch
    #154, v5.199. Assignment-timeline detection + majority-of-month/quarter attribution +
-   per-segment scoring + provisional rollup, all built on #3/#4. **Phase 5b (UI, and the
-   propose-then-confirm flow for roster-detected changes, resolved item D) is separate, later
-   work, not yet built** — flagged to likely combine with #152's own still-pending Phase 4b UI.
+   per-segment scoring + provisional rollup, all built on #3/#4.
+   **✅ SHIPPED (Phase 5b, segment display UI) — dispatch #157, v5.202 (2026-08-27), combined with
+   Phase 4b above as planned.** Segments + provisional rollup (with its engine-supplied "starting
+   point, not final" framing) now surface in the review editor's Summary tab when
+   `hasTransitions:true`, with a free-text reviewer-commentary field. **Still NOT built: the
+   propose-then-confirm flow for roster-detected changes (resolved item D)** — that stays
+   job-code-config/notification-panel territory, items #7/#8 below, not part of #157's scope.
    `autoPopulateKPIs` confirmed NOT segment-aware (targets correct per-segment, actuals are not) —
-   a real, documented, open follow-on.
+   a real, documented, open follow-on, now also surfaced as a caption in the segment UI itself.
 6. **Departure handling**: auto-finalize + auto-clear from the new-manager panel on
    `termination_entry_date`/a detected role exit, reviewable/reopenable by the person's normal
    reviewer or above (resolved item B) — reuses #1/#2's hierarchy mechanism, built after it.

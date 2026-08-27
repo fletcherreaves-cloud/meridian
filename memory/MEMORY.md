@@ -84,6 +84,65 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.202): [Dispatch #157 — Performance Review continuity Phase 4b +
+  5b UI (combined)](dispatch-157.md).** Fixes a confirmed **live, silent production regression**
+  left by dispatch #152 (v5.197), then surfaces dispatch #154's (v5.199) segmented-scoring
+  engine, which had shipped with zero UI. **The regression, independently verified by the PM
+  session itself (not just trusted from the dispatch or the engineer's PR body) by reading
+  `performance-reviews.js` directly against `review-engine.js`'s real exports**: #152 restructured
+  reviews to per-person-per-year (`periods.h1`/`periods.h2` each own status, `computeScores`
+  returning `{q1,q2,q3,q4,h1,h2,year}` instead of a `.half` key, `transitionReview(id, half,
+  newStatus, notes)` now 4-arg) but the editor was only patched enough to stop crashing.
+  Confirmed live, six ways: (1) `review.half` is `undefined` on every #152-era review, so
+  `halfMonths(review.half)` always fell through to H2 — no UI control could reach H1/quarters at
+  all; (2) `scores.half`/`review.status` no longer exist, so the status pill and score column
+  were permanently blank/Draft; (3) **the serious one** — `handleTransition(id,newStatus,notes)`
+  called `transitionReview(id,newStatus,notes)`, a 3-arg call against the engine's real 4-arg
+  signature, silently shifting `newStatus` into the `half` slot and writing every Submit/Approve/
+  Return/Reopen action to a garbage `review.periods['submitted']`-style key instead of
+  `periods.h1`/`h2` — confirmed directly at the exact call site before merging; (4) `ReviewList`'s
+  Period/Score columns and Half filter were all dead off the same `undefined` fields; (5)
+  `NewReviewForm`'s Period dropdown rendered, was interactive, did nothing; (6) the three print
+  functions derived the same broken `half` internally. **None of this threw** — the #152 crash-
+  guard test kept passing throughout — so it was silently wrong, not visibly broken, for every
+  review created since v5.197 shipped earlier the same day.
+  **Fix**: real `PERIOD_META` (Q1-Q4/H1/H2/Year) table drives `mths`/`qKeys` everywhere off
+  `computeScores`'s real shape (reuses `QUARTER_MONTHS`/`H1_MONTHS`/`H2_MONTHS` from
+  `review-engine.js`, not reinvented); `doTransition`/`handleTransition` now correctly thread
+  `half` through to the engine's 4-arg `transitionReview`; `ReviewList` shows real per-half status
+  side by side (`HalfStatusSummary`) and a real year-overall score; dead Period dropdown removed
+  outright; print functions take an explicit `period` parameter. **Bonus finding, same bug
+  family, fixed in the same pass**: `SummaryTab`'s `ScoreBreakdownPanel` read `bd.categories`
+  directly off `computeScoreBreakdown`'s return instead of indexing `[period]` first — silently
+  rendered nothing for every #152-era review; fixed alongside the six.
+  **Phase 5b**: new `SegmentedReviewSection` in `SummaryTab` calls `computeSegmentedReview` and
+  renders nothing at all (not even an empty wrapper) when `hasTransitions:false` — verified by the
+  PM session directly at the source (`if (!result || !result.hasTransitions) return null;`), not
+  just the PR's claim. When true, surfaces each segment's own role/store/scores plus the
+  provisional rollup with its engine-supplied "starting point, not final" framing text, and a
+  free-text reviewer-commentary field at `review.comments.segmentRollup.<period>` — a new leaf
+  under the review's existing `comments.*` pattern, no engine or `blankReview` change needed
+  (`ReviewEditor`'s generic `update(path,val)` already creates missing nested objects on write).
+  **New plumbing**: `loadStaffAssignments()` in `supabase.js` — the first client-side reader of
+  `staff_assignments` (dispatch #150's graph existed engine-side only until now) — maps the DB's
+  `start_date`/`end_date` columns to the `{start,end}` shape `assignment-graph.js` actually reads
+  (confirmed directly: `assignment-graph.js` reads `row.start`, not `row.start_date` — the mapping
+  is genuinely required, not decorative), wired into `App.js`'s existing T2 eager-load tier
+  alongside the sibling `coachingCycles` loader.
+  269/269 test files, 2855/2855 tests (+8 net new). Build clean, entry chunk 475.07→476.22 KB
+  gzip (+1.15 KB, version-bump/changelog only, no new eager import), `performance-reviews.js`'s
+  own **lazy** chunk 29.71→31.33 KB gzip (+1.62 KB — this dispatch's real weight, correctly
+  landing off the eager path) — `lazyPanel()` wrapping in `App.js` confirmed still intact.
+  **Given the severity of the regression finding, verified unusually thoroughly before merging**:
+  independently re-derived all six findings by reading the live pre-PR code directly (not
+  trusting the dispatch or PR body), traced the full `fire→doTransition→handleTransition→
+  transitionReview` call chain arg-by-arg, confirmed `review.half`/`scores.half` fully gone from
+  live code (only remaining in explanatory comments), confirmed the `loadStaffAssignments` field
+  mapping against `assignment-graph.js`'s actual field reads, read the Submit→Approve regression
+  test in full (asserts the real persisted `periods.h1.status`/`periods.h2.status` after driving
+  the actual UI buttons, and explicitly asserts no `periods.submitted`/`periods.approved` garbage
+  key exists — the exact shape that would catch a reintroduction of the bug), and reproduced both
+  the test and build numbers exactly in a fresh worktree.
 - **✅ SHIPPED (2026-08-27, v5.201): [Dispatch #156 — fix Custom-period panel-blanking bug in
   `OperatorSummaryPanel`](dispatch-156.md).** Found (documented, not fixed) by dispatch #155's
   own PR while writing an unrelated test. `OperatorSummaryPanel`'s single top-level gate
