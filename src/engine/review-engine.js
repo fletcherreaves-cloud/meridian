@@ -347,12 +347,18 @@ export function getReviews() {
 export function saveReviews(reviews) {
   try { localStorage.setItem(PERF_REVIEWS_KEY, JSON.stringify(reviews)); } catch {}
 }
-export function reviewId(name, year, half) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g,'_') + '_' + year + '_' + half;
+// Dispatch #152 (Performance Review continuity, Phase 4a) -- id is now YEAR-ONLY (no half
+// suffix): a review record is one-per-person-per-year now, not one-per-half. See blankReview's
+// own header comment for the person-identity design decision this function's `person` argument
+// implements -- in short, `person` is whatever identity string the caller has (today: still the
+// reviewee's plain display name, since no UI wires a real geid/person picker yet -- that's
+// Phase 4b's job), slugified exactly like the old name-based id already was.
+export function reviewId(person, year) {
+  return String(person).toLowerCase().replace(/[^a-z0-9]+/g,'_') + '_' + year;
 }
 export function upsertReview(review) {
   const reviews = getReviews();
-  const id = review.id || reviewId(review.name, review.year, review.half);
+  const id = review.id || reviewId(review.person || review.name, review.year);
   reviews[id] = { ...review, id, updatedAt: new Date().toISOString().slice(0,10) };
   saveReviews(reviews);
   // Fire-and-forget Supabase push if a client has been registered
@@ -375,6 +381,22 @@ export function deleteReview(id) {
 let _sb = null;
 export function setSupabaseClient(client) { _sb = client; }
 
+// Dispatch #152: `review_half` is dropped -- a review row is a full YEAR now, not a half, so
+// there is no single half value left to mirror into that scalar column (see schema.sql's own
+// comment on the column drop). `status` similarly has no single year-level value anymore --
+// approval is tracked per-half in `review.periods.h1/h2` (see blankReview/transitionReview) --
+// but the scalar `status` column stays (nothing asked to drop it, and some callers may still
+// filter/sort on it), populated by reviewSummaryStatus() below: an INFORMATIONAL "furthest along
+// of h1/h2" summary for coarse filtering only. The authoritative per-half statuses always live in
+// `data.periods.h1.status`/`data.periods.h2.status` -- never resolve real workflow logic from
+// this scalar column.
+const _STATUS_RANK = { draft: 0, returned: 1, submitted: 2, approved: 3 };
+export function reviewSummaryStatus(review) {
+  const h1 = review?.periods?.h1?.status || 'draft';
+  const h2 = review?.periods?.h2?.status || 'draft';
+  return (_STATUS_RANK[h2] ?? 0) >= (_STATUS_RANK[h1] ?? 0) ? h2 : h1;
+}
+
 async function _pushReview(sb, review) {
   try {
     const { error } = await sb.from('reviews').upsert({
@@ -383,8 +405,7 @@ async function _pushReview(sb, review) {
       reviewee_name: review.name,
       reviewee_loc:  review.loc,
       review_year:   review.year,
-      review_half:   review.half,
-      status:        review.status || 'draft',
+      status:        reviewSummaryStatus(review),
       org:           review.org || null,
       updated_at:    new Date().toISOString(),
     });
@@ -678,10 +699,42 @@ export function blankMonthKPIs(year, month) {
   };
 }
 
-export function blankReview(name, role, loc, year, half, cfg) {
-  const [mStart, mEnd] = half === 'H1' ? [1,6] : [7,12];
+// ── Dispatch #152 (Performance Review continuity, Phase 4a) ────────────────────────────────────
+// One record per (person, year) now, not per (person, year, half) -- see
+// memory/plan-performance-review-continuity-2026-08-26.md decision #1 (owner's own words, quoted
+// in memory/dispatch-152.md) and memory/dispatch-152.md's full scope. `half` is DROPPED as a
+// parameter and as a top-level field: `kpis.months` now holds all 12 months, `behavioralRatings`
+// now holds all four `q1..q4` keys, and approval status moves to `periods.h1`/`periods.h2` (see
+// below) since a year isn't approved as one atomic event -- its two halves are, at different
+// points in the year (scope item 3).
+//
+// DESIGN DECISION (dispatch-152.md scope item 1, "make the call explicitly and document it") --
+// the review's person-identity field UNIFIES with the SAME identity space dispatch #150/#151
+// already built for `staff_assignments.person`/`profiles.person` (a geid for a roster-sourced
+// GM/AM/DM/SM role, or a plain supervisor name string for AS/OM/DO). New `person` field, nullable,
+// stored alongside the existing `name` (human display name) and `geid` (unchanged, narrow
+// shift-attribution field -- explicitly NOT repurposed, per the dispatch's own warning) fields.
+// Reasoning:
+//   - It directly serves plan-doc decision #2 ("the review follows the PERSON, not the store") --
+//     a future dispatch resolving "whose review is this" against the assignment graph needs a
+//     field to resolve FROM, and building it now (even unpopulated) means that future dispatch is
+//     a consumer, not another schema change.
+//   - It costs nothing today: this dispatch does NOT build a person-picker UI (that's Phase 4b/
+//     decision #5's job-code config table, item #8) or any auto-derivation (dispatch #151 kept
+//     `profiles.person` manual/admin-set for the identical reason -- "there is no reliable
+//     automatic link... today"). `person` defaults to `null` here exactly like `profiles.person`
+//     does, and `reviewId()` falls back to the reviewee's plain `name` when it's absent -- so
+//     every existing call site (NewReviewForm, still passing only a name -- Phase 4b's job to
+//     change) keeps working unchanged, byte-for-byte, in the common case.
+//   - The alternative (stay a freeform slugified name, decoupled from the assignment graph) would
+//     mean a SECOND future migration once Phase 4b/#5 need real identity resolution -- unifying
+//     now costs one nullable field; deferring costs a second data-model dispatch later for the
+//     exact reason this one exists.
+// Do NOT repurpose `geid` for this -- it's null for GM/AS/OM and means something else entirely
+// (shift-summary attribution for SHIFT_ATTRIBUTABLE_ROLES only, read by autoPopulateKPIs).
+export function blankReview(name, role, loc, year, cfg, person = null) {
   const months = {};
-  for (let m = mStart; m <= mEnd; m++) months[m] = blankMonthKPIs(year, m);
+  for (let m = 1; m <= 12; m++) months[m] = blankMonthKPIs(year, m);
   const makeRatings = () => {
     const out = {};
     const _cfg = cfg || DEFAULT_REVIEW_CONFIG;
@@ -690,14 +743,23 @@ export function blankReview(name, role, loc, year, half, cfg) {
     for (const cat of [...CAT_KEYS, ...extras, 'admin']) out[cat] = (comp[cat] || []).map(() => null);
     return out;
   };
-  const qKeys = half === 'H1' ? ['q1','q2'] : ['q3','q4'];
   const behavioralRatings = {};
-  for (const q of qKeys) behavioralRatings[q] = makeRatings();
+  for (const q of ['q1','q2','q3','q4']) behavioralRatings[q] = makeRatings();
+  const personKey = (person != null && String(person).trim() !== '') ? person : name;
   return {
-    id: reviewId(name, year, half),
-    name, role, loc, year, half,
+    id: reviewId(personKey, year),
+    name, role, loc, year,
+    // Unified identity-space field (see header comment above) -- null until a real geid/person
+    // picker exists (Phase 4b). NOT the same field as `geid` below.
+    person: person != null && String(person).trim() !== '' ? String(person) : null,
     geid: null,   // manager id for DM/shift attribution (Notes 33 A#3); set via the form dropdown
-    status: 'draft',
+    // Per-half approval workflow (scope item 3): a year record's two real-world review
+    // conversations (mid-year, end-of-year) keep their own independent status/audit trail.
+    // transitionReview(id, half, newStatus, notes) is the only writer of these.
+    periods: {
+      h1: { status: 'draft', statusHistory: [], statusNotes: '' },
+      h2: { status: 'draft', statusHistory: [], statusNotes: '' },
+    },
     // Snapshot the template this review is built against (Phase A) so later template
     // edits never silently re-score it. Refreshed via an explicit "apply template".
     templateSnapshot: deepCopy(cfg || DEFAULT_REVIEW_CONFIG),
@@ -777,12 +839,29 @@ function scoreBehavCategory(ratingArr) {
   return avgRating(ratingArr||[]);
 }
 
+// Every quarter's month numbers -- the ONE place this mapping is defined; h1/h2/year below all
+// derive from it rather than re-listing month ranges, so the rollups can never drift out of sync
+// with the per-quarter definitions.
+export const QUARTER_MONTHS = { q1:[1,2,3], q2:[4,5,6], q3:[7,8,9], q4:[10,11,12] };
+
+// Dispatch #152 (Performance Review continuity, Phase 4a): a review record now spans the whole
+// year, so this returns ALL of q1/q2/q3/q4 + h1/h2 + year from one call (scope item 4) --
+// previously this computed only the review's own `half` (its ceiling), since a record was one
+// half. Every level's `overall` is computed the SAME way (metrics*mw + behavioral*bw) -- the
+// levels differ only in which months/quarters feed metrics/behavioral, never in the combining
+// formula itself.
+//   - metrics: recomputed FRESH over the union of that level's months (scoreMetricCategory
+//     weighted-average across every month in scope) -- q1 = its 3 months, h1 = the SAME function
+//     run over all 6 h1 months (not an average of q1.metrics/q2.metrics), year = the same function
+//     run over all 12 -- this is exactly how "half" already worked before this dispatch, just
+//     generalized to run at 3 granularities instead of 1.
+//   - behavioral: averaged from the sub-period scores already computed (q1+q2 -> h1, q3+q4 -> h2,
+//     h1+h2 -> year) via ONE shared helper (`avgOf`) -- so the year rollup is PROVEN to reuse the
+//     identical combining step h1 already used for q1+q2, not a reinvented formula (verified by a
+//     concrete numeric example in review-engine-year-rollup.test.js).
 export function computeScores(review, cfg) {
   cfg = resolveReviewConfig(review, cfg); // score against the review's template snapshot when present
   const months = review.kpis?.months || {};
-  const half = review.half;
-  const qMap = half==='H1' ? {q1:[1,2,3],q2:[4,5,6]} : {q3:[7,8,9],q4:[10,11,12]};
-
   const mArr = nums => nums.map(n=>months[n]).filter(Boolean);
 
   function metricsScore(mArr_) {
@@ -808,97 +887,109 @@ export function computeScores(review, cfg) {
     return allRatings.length ? allRatings.reduce((a,b)=>a+b,0)/allRatings.length : null;
   }
 
+  const avgOf = vals => {
+    const v = vals.filter(x=>x!=null);
+    return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null;
+  };
+  // The ONE combining step every rollup level (h1, h2, year) reuses -- metrics recomputed fresh
+  // over `monthNums`, behavioral averaged from `subBehavioral` (already-computed sub-period
+  // scores), overall = the same metrics*mw + behavioral*bw formula every level uses.
+  const combine = (monthNums, subBehavioral) => {
+    const ms = metricsScore(mArr(monthNums));
+    const bs = avgOf(subBehavioral);
+    return { metrics: ms, behavioral: bs, overall: (ms!=null&&bs!=null) ? ms*cfg.overall.metrics+bs*cfg.overall.behavioral : null };
+  };
+
   const out = {};
-  for (const [qKey,qMonths] of Object.entries(qMap)) {
-    const ms = metricsScore(mArr(qMonths));
-    const bs = behavScore(qKey);
-    out[qKey] = {
-      metrics:ms, behavioral:bs,
-      overall: ms!=null&&bs!=null ? ms*cfg.overall.metrics+bs*cfg.overall.behavioral : null,
-    };
+  for (const [qKey,qMonths] of Object.entries(QUARTER_MONTHS)) {
+    out[qKey] = combine(qMonths, [behavScore(qKey)]);
   }
 
-  const allMonths = Object.values(months);
-  const ms_half = metricsScore(allMonths);
-  const qKeys = Object.keys(qMap);
-  const bScores = qKeys.map(q=>out[q].behavioral).filter(x=>x!=null);
-  const bs_half = bScores.length ? bScores.reduce((a,b)=>a+b,0)/bScores.length : null;
-  out.half = {
-    metrics:ms_half, behavioral:bs_half,
-    overall: ms_half!=null&&bs_half!=null ? ms_half*cfg.overall.metrics+bs_half*cfg.overall.behavioral : null,
-  };
+  out.h1 = combine([...QUARTER_MONTHS.q1, ...QUARTER_MONTHS.q2], [out.q1.behavioral, out.q2.behavioral]);
+  out.h2 = combine([...QUARTER_MONTHS.q3, ...QUARTER_MONTHS.q4], [out.q3.behavioral, out.q4.behavioral]);
+  // Year = h1+h2 combined via the IDENTICAL `combine()` call h1 itself used for q1+q2 -- not a
+  // new formula (see header comment + the numeric proof test).
+  out.year = combine(Object.values(QUARTER_MONTHS).flat(), [out.h1.behavioral, out.h2.behavioral]);
 
   return out;
 }
 
-// Returns a full step-by-step breakdown of how scores are computed for the review's half period.
-// Used by ScoreBreakdownPanel to show transparent, verifiable math to the reviewer.
+// Dispatch #152 (Performance Review continuity, Phase 4a): returns a full step-by-step breakdown
+// for EVERY period in one call -- q1, q2, q3, q4, h1, h2, year (scope item 4) -- keyed the same
+// way computeScores() keys its own return object, each value the same flat shape this function
+// has always returned for "the" period (categories/metricsScore/behavQScores/behavioralScore/
+// overall/mw/bw/qKeys). Previously this computed only review.half's own breakdown, since a record
+// was one half; a record is a full year now, so there is no single period to default to.
 export function computeScoreBreakdown(review, cfg) {
   cfg = resolveReviewConfig(review, cfg); // match computeScores — use the review's snapshot
   const months = review.kpis?.months || {};
-  const half = review.half;
-  const halfMonthNums = half === 'H1' ? [1,2,3,4,5,6] : [7,8,9,10,11,12];
-  const qMap = half === 'H1' ? {q1:[1,2,3],q2:[4,5,6]} : {q3:[7,8,9],q4:[10,11,12]};
-  const halfMoArr = halfMonthNums.map(n => months[n]).filter(Boolean);
-
   const mw = cfg.overall?.metrics ?? 0.70;
   const bw = cfg.overall?.behavioral ?? 0.30;
 
-  let metricsWS = 0, metricsWT = 0;
-  const categories = Object.entries(cfg.categoryWeights).map(([catKey, cw]) => {
-    const scoredMetrics = (cfg.metrics[catKey] || []).filter(m => m.scored);
-    const catTotalWeight = scoredMetrics.reduce((s, m) => s + m.weight, 0) || 1;
-    let catWS = 0, catWT = 0;
+  // Category/metric breakdown for an arbitrary set of month numbers -- the SAME per-metric
+  // rating/contribution/impact math this function has always used, now parameterized by which
+  // months feed it (a quarter's 3, a half's 6, or the full year's 12) instead of hard-coded to
+  // review.half's 6.
+  function categoriesFor(monthNums) {
+    const moArr = monthNums.map(n => months[n]).filter(Boolean);
+    let metricsWS = 0, metricsWT = 0;
+    const categories = Object.entries(cfg.categoryWeights).map(([catKey, cw]) => {
+      const scoredMetrics = (cfg.metrics[catKey] || []).filter(m => m.scored);
+      const catTotalWeight = scoredMetrics.reduce((s, m) => s + m.weight, 0) || 1;
+      let catWS = 0, catWT = 0;
 
-    const metricRows = scoredMetrics.map(m => {
-      // Include ALL half months (with nulls for missing) so the UI can show a complete table
-      const monthlyData = halfMonthNums.map(n => {
-        const mo = months[n];
-        if (!mo) return { month: n, actual: null, target: null, dev: null, rating: null };
-        const actual = mo[m.key] ?? null;
-        const target = mo[m.key + 'Tgt'] ?? null;
-        const rating = rateMetric(actual, target, m);
-        let dev = null;
-        if (actual != null && target != null && !(m.unit === 'pct' && target === 0))
-          dev = m.unit === 'pct' ? (actual - target) / Math.abs(target) : (actual - target);
-        return { month: n, actual, target, dev, rating };
+      const metricRows = scoredMetrics.map(m => {
+        // Include ALL of this period's months (with nulls for missing) so the UI can show a
+        // complete table.
+        const monthlyData = monthNums.map(n => {
+          const mo = months[n];
+          if (!mo) return { month: n, actual: null, target: null, dev: null, rating: null };
+          const actual = mo[m.key] ?? null;
+          const target = mo[m.key + 'Tgt'] ?? null;
+          const rating = rateMetric(actual, target, m);
+          let dev = null;
+          if (actual != null && target != null && !(m.unit === 'pct' && target === 0))
+            dev = m.unit === 'pct' ? (actual - target) / Math.abs(target) : (actual - target);
+          return { month: n, actual, target, dev, rating };
+        });
+
+        const ratedData = monthlyData.filter(d => d.rating != null);
+        const avgRating = ratedData.length
+          ? ratedData.reduce((a, b) => a + b.rating, 0) / ratedData.length : null;
+        const contribution = avgRating != null ? avgRating * m.weight : null;
+        if (avgRating != null) { catWS += avgRating * m.weight; catWT += m.weight; }
+
+        // Impact of +1 full rating point on this metric → overall score change
+        const impactPerPoint = (m.weight / catTotalWeight) * cw.weight * mw;
+
+        let nextRating = null, gapToNext = null;
+        if (avgRating != null && avgRating < 4) {
+          nextRating = Math.min(4, Math.ceil(avgRating + 0.0001));
+          gapToNext = nextRating - avgRating;
+        }
+
+        return {
+          key: m.key, label: m.label, weight: m.weight, unit: m.unit, better: m.better,
+          monthlyData, avgRating, contribution,
+          ratedCount: ratedData.length, totalMonths: moArr.length,
+          impactPerPoint, nextRating, gapToNext,
+        };
       });
 
-      const ratedData = monthlyData.filter(d => d.rating != null);
-      const avgRating = ratedData.length
-        ? ratedData.reduce((a, b) => a + b.rating, 0) / ratedData.length : null;
-      const contribution = avgRating != null ? avgRating * m.weight : null;
-      if (avgRating != null) { catWS += avgRating * m.weight; catWT += m.weight; }
+      const categoryScore = catWT > 0 ? catWS / catWT : null;
+      const categoryContrib = categoryScore != null ? categoryScore * cw.weight : null;
+      if (categoryScore != null) { metricsWS += categoryScore * cw.weight; metricsWT += cw.weight; }
 
-      // Impact of +1 full rating point on this metric → overall score change
-      const impactPerPoint = (m.weight / catTotalWeight) * cw.weight * mw;
-
-      let nextRating = null, gapToNext = null;
-      if (avgRating != null && avgRating < 4) {
-        nextRating = Math.min(4, Math.ceil(avgRating + 0.0001));
-        gapToNext = nextRating - avgRating;
-      }
-
-      return {
-        key: m.key, label: m.label, weight: m.weight, unit: m.unit, better: m.better,
-        monthlyData, avgRating, contribution,
-        ratedCount: ratedData.length, totalMonths: halfMoArr.length,
-        impactPerPoint, nextRating, gapToNext,
-      };
+      return { key: catKey, label: cw.label || catKey, categoryWeight: cw.weight, metrics: metricRows, categoryScore, categoryContrib };
     });
 
-    const categoryScore = catWT > 0 ? catWS / catWT : null;
-    const categoryContrib = categoryScore != null ? categoryScore * cw.weight : null;
-    if (categoryScore != null) { metricsWS += categoryScore * cw.weight; metricsWT += cw.weight; }
+    const metricsScore = metricsWT > 0 ? metricsWS / metricsWT : null;
+    return { categories, metricsScore };
+  }
 
-    return { key: catKey, label: cw.label || catKey, categoryWeight: cw.weight, metrics: metricRows, categoryScore, categoryContrib };
-  });
-
-  const metricsScore = metricsWT > 0 ? metricsWS / metricsWT : null;
-
-  // Behavioral per-quarter scores
-  const behavQScores = {};
-  for (const qKey of Object.keys(qMap)) {
+  // Raw per-quarter behavioral score (average of every active competency rating in that quarter)
+  // -- computed once per quarter, reused unchanged by every period below.
+  function quarterBehavioral(qKey) {
     const rats = review.behavioralRatings?.[qKey] || {};
     const extras = (cfg.extraCategories || []).map(c => c.key);
     const allRatings = [...CAT_KEYS, ...extras, 'admin'].flatMap(cat => {
@@ -908,16 +999,39 @@ export function computeScoreBreakdown(review, cfg) {
         return typeof item === 'string' || item == null || item.active !== false;
       });
     }).filter(x => x != null);
-    behavQScores[qKey] = allRatings.length
-      ? allRatings.reduce((a, b) => a + b, 0) / allRatings.length : null;
+    return allRatings.length ? allRatings.reduce((a, b) => a + b, 0) / allRatings.length : null;
   }
 
-  const bVals = Object.values(behavQScores).filter(x => x != null);
-  const behavioralScore = bVals.length ? bVals.reduce((a, b) => a + b, 0) / bVals.length : null;
-  const overall = metricsScore != null && behavioralScore != null
-    ? metricsScore * mw + behavioralScore * bw : null;
+  const avgOf = vals => {
+    const v = vals.filter(x => x != null);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
 
-  return { categories, metricsScore, behavQScores, behavioralScore, overall, mw, bw, qKeys: Object.keys(qMap) };
+  const out = {};
+  for (const [qKey, qMonths] of Object.entries(QUARTER_MONTHS)) {
+    const { categories, metricsScore } = categoriesFor(qMonths);
+    const behavioralScore = quarterBehavioral(qKey);
+    const overall = metricsScore != null && behavioralScore != null ? metricsScore * mw + behavioralScore * bw : null;
+    out[qKey] = { categories, metricsScore, behavQScores: { [qKey]: behavioralScore }, behavioralScore, overall, mw, bw, qKeys: [qKey] };
+  }
+
+  // h1/h2/year rollups: metrics recomputed fresh over the union of months (categoriesFor, same
+  // function every quarter already used), behavioral = avgOf the sub-period scores ALREADY
+  // computed above. Year uses this SAME rollup() call with h1/h2 as its "sub-periods", proving
+  // it's structurally identical to how h1 itself combines q1+q2 -- not a reinvented formula.
+  function rollup(monthNums, subKeys, subBehavioral) {
+    const { categories, metricsScore } = categoriesFor(monthNums);
+    const behavioralScore = avgOf(subBehavioral);
+    const overall = metricsScore != null && behavioralScore != null ? metricsScore * mw + behavioralScore * bw : null;
+    const behavQScores = Object.fromEntries(subKeys.map((k, i) => [k, subBehavioral[i]]));
+    return { categories, metricsScore, behavQScores, behavioralScore, overall, mw, bw, qKeys: subKeys };
+  }
+
+  out.h1 = rollup([...QUARTER_MONTHS.q1, ...QUARTER_MONTHS.q2], ['q1','q2'], [out.q1.behavioralScore, out.q2.behavioralScore]);
+  out.h2 = rollup([...QUARTER_MONTHS.q3, ...QUARTER_MONTHS.q4], ['q3','q4'], [out.q3.behavioralScore, out.q4.behavioralScore]);
+  out.year = rollup(Object.values(QUARTER_MONTHS).flat(), ['h1','h2'], [out.h1.behavioralScore, out.h2.behavioralScore]);
+
+  return out;
 }
 
 // ── Auto-populate KPIs from ds ─────────────────────────────────────────────────
@@ -1378,19 +1492,33 @@ export const REVIEW_STATUSES = {
   returned:  { label: 'Returned for Revision', color: '#ef4444' },
 };
 
-export function transitionReview(id, newStatus, notes = '') {
+// Dispatch #152 (Performance Review continuity, Phase 4a) — new `half` parameter ('h1' | 'h2').
+// A year record's two real-world review conversations (mid-year, end-of-year) keep their OWN
+// independent status/audit trail — the owner's own words: "I'd still wanna see... a six month
+// half first half year review and a second six month second half year review" — so a year is not
+// approved as one atomic event; its two halves are, at different points in the year. This is the
+// same {from,to,notes,at} audit-trail shape the old top-level statusHistory always used, just
+// nested under `periods[half]` instead of the review root — transitioning one half NEVER touches
+// the other half's own statusHistory (each half's array is only ever spread from itself).
+export function transitionReview(id, half, newStatus, notes = '') {
   const reviews = getReviews();
   const review = reviews[id];
   if (!review) return null;
-  const updated = {
-    ...review,
+  const periods = review.periods || {};
+  const cur = periods[half] || { status: 'draft', statusHistory: [], statusNotes: '' };
+  const updatedPeriod = {
+    ...cur,
     status: newStatus,
-    updatedAt: new Date().toISOString().slice(0, 10),
     statusHistory: [
-      ...(review.statusHistory || []),
-      { from: review.status || 'draft', to: newStatus, notes, at: new Date().toISOString() },
+      ...(cur.statusHistory || []),
+      { from: cur.status || 'draft', to: newStatus, notes, at: new Date().toISOString() },
     ],
     statusNotes: notes || '',
+  };
+  const updated = {
+    ...review,
+    periods: { ...periods, [half]: updatedPeriod },
+    updatedAt: new Date().toISOString().slice(0, 10),
   };
   upsertReview(updated);
   return updated;
