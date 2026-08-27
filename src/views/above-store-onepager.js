@@ -11,6 +11,8 @@ import { shiftDays } from '../engine/trading-days.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } from '../constants.js';
 import { supabase, loadEomCountStatus } from '../lib/supabase.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
+import { LocationSelector } from '../components/PanelControls.js';
 
 // Stream a SAGE analysis (same edge-function contract as sage.js callSageStream).
 async function askSageStream(prompt, systemPrompt, onChunk) {
@@ -70,6 +72,25 @@ export const ONEPAGER_PANELS = [
 ];
 const ALL_PANEL_KEYS = ONEPAGER_PANELS.map(p => p.key);
 
+// scope stays the plain string this component already reads ('all'|'ok'|'fl'|'grp:X'|storeId) —
+// LocationSelector's {level,id} value is only a UI-layer translation, converted at the edges,
+// never stored (dispatch #160 item 3; identical pattern to report-subscriptions.js's own
+// scopeToSelectorValue/selectorValueToScope, per memory/panel-contract.md section 3).
+const scopeToSelectorValue = (scope) => {
+  if (scope === 'all') return { level: 'all', id: null };
+  if (scope === 'ok') return { level: 'state', id: 'OK' };
+  if (scope === 'fl') return { level: 'state', id: 'FL' };
+  if (String(scope).startsWith('grp:')) return { level: 'patch', id: scope.slice(4) };
+  return { level: 'store', id: scope };
+};
+const selectorValueToScope = (v) => {
+  if (!v || v.level === 'all') return 'all';
+  if (v.level === 'state') return v.id === 'OK' ? 'ok' : v.id === 'FL' ? 'fl' : 'all';
+  if (v.level === 'patch') return 'grp:' + v.id;
+  if (v.level === 'store') return v.id || 'all';
+  return 'all';
+};
+
 export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels }) {
   const { useState, useMemo, useEffect } = React;
   const [scope, setScope] = useState(initialScope || 'all');
@@ -101,6 +122,9 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   const fobRows = (ds && ds.qsrFobRows) || [];
 
   const groups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
+  // {loc} shape only — LocationSelector derives state/patch from INV_ORG_COORDS itself (same
+  // report-subscriptions.js pattern).
+  const locSelectorStores = useMemo(() => Object.keys(STORE_NAMES).map(loc => ({ loc })), []);
   const locs = useMemo(() => {
     if (scope.startsWith('grp:')) return (groups[scope.slice(4)] || []).map(l => String(l).replace(/^0+/, ''));
     return Object.keys(STORE_NAMES).filter(l =>
@@ -457,43 +481,53 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   };
 
   const d = data;
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 462, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 20, paddingTop: 24 } },
-    div({ style: { background: 'var(--surf)', border: '.5px solid var(--bdr2)', borderRadius: 'var(--rl)', width: '100%', maxWidth: 900, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.5)', overflow: 'hidden' } },
-      // header
-      div({ style: { padding: '12px 16px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        span({ style: { fontSize: 18 } }, '📄'),
-        div({ style: { flex: 1, minWidth: 160 } },
-          div({ style: { fontSize: '13px', fontWeight: 800, color: 'var(--text)' } }, 'Above-Store One-Pager'),
-          div({ style: { fontSize: '9px', color: 'var(--text3)' } }, scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')')),
-        div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-          ...[['mtd', 'MTD'], ['lastweek', 'Last wk'], ['lastmonth', 'Last mo'], ['custom', 'Custom']].map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)' } }, l))),
-        period === 'custom' ? div({ style: { display: 'flex', gap: 4, alignItems: 'center' } },
-          h('input', { type: 'date', value: customRange.s, max: customRange.e, onChange: e => e.target.value && setCustomRange(r => ({ ...r, s: e.target.value })),
-            style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } }),
-          span({ style: { fontSize: '9px', color: 'var(--text3)' } }, '→'),
-          h('input', { type: 'date', value: customRange.e, min: customRange.s, onChange: e => e.target.value && setCustomRange(r => ({ ...r, e: e.target.value })),
-            style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } })) : null,
-        div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-          ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => btn({ key: v, onClick: () => setScope(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: scope === v ? 'var(--adim)' : 'transparent', color: scope === v ? 'var(--amber)' : 'var(--text3)' } }, l))),
-        Object.keys(groups).length ? h('select', { value: scope.startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Supervisor patch', style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-          h('option', { value: '' }, '— patch —'), Object.keys(groups).sort().map(g => h('option', { key: g, value: 'grp:' + g }, g))) : null,
-        h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value), style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-          h('option', { value: '' }, '— store —'), Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l)))),
-        btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze'),
-        btn({ className: 'btn btn-sm', style: { fontSize: '9px' }, onClick: printOnePager, title: 'Print this rollup' }, '🖨'),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
-      // panel toggles ("build your own" — Notes 49)
-      div({ style: { padding: '6px 16px', borderBottom: '.5px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', background: 'var(--surf)' } },
-        span({ style: { fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Panels'),
-        ...ONEPAGER_PANELS.map(p => btn({ key: p.key, onClick: () => togglePanel(p.key),
-          title: showP(p.key) ? 'Hide ' + p.label : 'Show ' + p.label,
-          style: { padding: '2px 8px', fontSize: '9px', borderRadius: 999, cursor: 'pointer', border: '.5px solid ' + (showP(p.key) ? 'var(--amber)' : 'var(--bdr)'),
-            background: showP(p.key) ? 'var(--adim)' : 'transparent', color: showP(p.key) ? 'var(--amber)' : 'var(--text3)', fontWeight: showP(p.key) ? 700 : 400 } },
-          (showP(p.key) ? '✓ ' : '') + p.label)),
-        panels.size < ALL_PANEL_KEYS.length ? btn({ onClick: () => setPanels(new Set(ALL_PANEL_KEYS)), style: { padding: '2px 8px', fontSize: '9px', borderRadius: 999, cursor: 'pointer', border: '.5px solid var(--bdr)', background: 'transparent', color: 'var(--text2)' } }, 'All') : null),
-      // body
-      d.err ? div({ style: { padding: 30, color: '#fca5a5', fontSize: '12px' } }, 'Could not build rollup: ' + d.err)
-      : div({ style: { flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 } },
+  // Dispatch #160 (panel-contract adoption pass) — RoutePanelShell (route:true in
+  // panel-registry.js, "would I ever want to send someone a link to this district's rollup?" —
+  // yes) replaces the hand-rolled fixed/inset:0/rgba(0,0,0 backdrop+card+close-button this used
+  // to roll itself (the exact anti-pattern src/__tests__/ratchet-modal-backdrop-bypass.test.js
+  // guards against). AI Analyze + Print stay in the header via headerExtra; the period/scope/
+  // panel-toggle rows become ordinary page content below it, same as every other routed panel.
+  return h(RoutePanelShell, {
+    title: 'Above-Store One-Pager', icon: '📄',
+    subtitle: scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')',
+    onBack: onClose,
+    headerExtra: div({ style: { display: 'flex', gap: 6 } },
+      btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze'),
+      btn({ className: 'btn btn-sm', style: { fontSize: '9px' }, onClick: printOnePager, title: 'Print this rollup' }, '🖨')),
+  },
+    // period control (period-anchored presets + custom — dispatch #158's own choice, inherited
+    // unchanged here per this dispatch's item 2: mtd/lastweek/lastmonth are period-anchored, the
+    // same class memory/panel-contract.md's own table carves out for report-subscriptions.js).
+    div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'var(--surf)' } },
+      div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
+        ...[['mtd', 'MTD'], ['lastweek', 'Last wk'], ['lastmonth', 'Last mo'], ['custom', 'Custom']].map(([v, l]) => btn({ key: v, onClick: () => setPeriod(v), style: { padding: '3px 8px', border: 'none', fontSize: '9px', cursor: 'pointer', background: period === v ? 'var(--amber)' : 'transparent', color: period === v ? '#000' : 'var(--text3)' } }, l))),
+      period === 'custom' ? div({ style: { display: 'flex', gap: 4, alignItems: 'center' } },
+        h('input', { type: 'date', value: customRange.s, max: customRange.e, onChange: e => e.target.value && setCustomRange(r => ({ ...r, s: e.target.value })),
+          style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } }),
+        span({ style: { fontSize: '9px', color: 'var(--text3)' } }, '→'),
+        h('input', { type: 'date', value: customRange.e, min: customRange.s, onChange: e => e.target.value && setCustomRange(r => ({ ...r, e: e.target.value })),
+          style: { fontSize: '9px', padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } })) : null),
+    // scope — LocationSelector (dispatch #160 item 3) replaces the hand-rolled All/OK/FL toggle
+    // + patch <select> + store <select>; scope stays the plain string this component's own
+    // locs/scopeLabel logic already reads, translated at the UI boundary only (scopeToSelectorValue
+    // / selectorValueToScope above).
+    div({ style: { padding: '8px 16px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
+      h(LocationSelector, {
+        stores: locSelectorStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES,
+        value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
+      })),
+    // panel toggles ("build your own" — Notes 49)
+    div({ style: { padding: '6px 16px', borderBottom: '.5px solid var(--bdr)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', background: 'var(--surf)' } },
+      span({ style: { fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 } }, 'Panels'),
+      ...ONEPAGER_PANELS.map(p => btn({ key: p.key, onClick: () => togglePanel(p.key),
+        title: showP(p.key) ? 'Hide ' + p.label : 'Show ' + p.label,
+        style: { padding: '2px 8px', fontSize: '9px', borderRadius: 999, cursor: 'pointer', border: '.5px solid ' + (showP(p.key) ? 'var(--amber)' : 'var(--bdr)'),
+          background: showP(p.key) ? 'var(--adim)' : 'transparent', color: showP(p.key) ? 'var(--amber)' : 'var(--text3)', fontWeight: showP(p.key) ? 700 : 400 } },
+        (showP(p.key) ? '✓ ' : '') + p.label)),
+      panels.size < ALL_PANEL_KEYS.length ? btn({ onClick: () => setPanels(new Set(ALL_PANEL_KEYS)), style: { padding: '2px 8px', fontSize: '9px', borderRadius: 999, cursor: 'pointer', border: '.5px solid var(--bdr)', background: 'transparent', color: 'var(--text2)' } }, 'All') : null),
+    // body
+    d.err ? div({ style: { padding: 30, color: '#fca5a5', fontSize: '12px' } }, 'Could not build rollup: ' + d.err)
+    : div({ style: { padding: 14, display: 'flex', flexDirection: 'column', gap: 12 } },
         // AI narrative
         (ai || aiBusy || aiErr) ? div({ style: { border: '.5px solid rgba(129,140,248,.35)', background: 'rgba(129,140,248,.06)', borderRadius: 8, padding: '10px 12px' } },
           div({ style: { fontSize: '10px', fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 } }, '🧠 Analysis'),
@@ -612,7 +646,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
             ])))
           ])
         ]) : null)),
-      // footer
-      div({ style: { padding: '8px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', fontSize: '9px', color: 'var(--text3)' } },
-        'Rollup + AI narrative + Scheduling/VLH. Click a section header for its per-store breakdown. Green = at/better than target (Fixed/Floor: in 10–15% band), red = worse.')));
+    // footer
+    div({ style: { padding: '8px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', fontSize: '9px', color: 'var(--text3)' } },
+      'Rollup + AI narrative + Scheduling/VLH. Click a section header for its per-store breakdown. Green = at/better than target (Fixed/Floor: in 10–15% band), red = worse.'));
 }
