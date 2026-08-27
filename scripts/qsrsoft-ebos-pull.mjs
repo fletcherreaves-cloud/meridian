@@ -238,6 +238,12 @@ async function pullViaPlaywright(startDate, endDate) {
   let ebosToken = null;
   // Capture token from /api/inv/ requests (not /api/cash/ which fires on the home page)
   page.on('request', req => {
+    // Dispatch #177 investigation: log every prod.ebos.qsrsoft.com/api/ URL fired while DEBUG
+    // is on, so a one-off run can reveal endpoints beyond store_ledger (e.g. whatever backs the
+    // "approvePending" tab) without any change to the production pull/aggregate path.
+    if (DEBUG && req.url().includes('prod.ebos.qsrsoft.com/api/')) {
+      console.log('[debug-req]', req.method(), req.url().replace(/\?.*/, ''), '| qs:', req.url().split('?')[1] || '');
+    }
     if (!req.url().includes('prod.ebos.qsrsoft.com/api/inv/')) return;
     const t = req.headers()['x-auth-token'];
     if (t && t.length > 20 && !ebosToken) {
@@ -245,6 +251,23 @@ async function pullViaPlaywright(startDate, endDate) {
       console.log('[auth] eBOS token captured from:', req.url().replace(/\?.*/, ''));
     }
   });
+
+  // Dispatch #177 investigation: also capture response BODIES for the same set of requests, so a
+  // one-off DEBUG run can reveal field shape (e.g. a posted/pending status) without a second pass.
+  if (DEBUG) {
+    page.on('response', async resp => {
+      const url = resp.url();
+      if (!url.includes('prod.ebos.qsrsoft.com/api/')) return;
+      try {
+        const ct = resp.headers()['content-type'] || '';
+        if (!ct.includes('json')) return;
+        const body = await resp.text();
+        console.log('[debug-resp]', url.replace(/\?.*/, ''), '| status:', resp.status(), '| body(first 800):', body.slice(0, 800));
+      } catch (e) {
+        console.log('[debug-resp] read failed for', url.replace(/\?.*/, ''), '-', e.message);
+      }
+    });
+  }
 
   const snap = async (name) => page.screenshot({ path: `screenshots/${name}`, fullPage: true }).catch(() => {});
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -400,13 +423,67 @@ async function pullViaPlaywright(startDate, endDate) {
           }
           log.push(`NSN ${nsn}: ${items.length} line items → ${nDays} day-rows`);
           if (debug) log.push(`  sample: ${JSON.stringify(items[0]).slice(0, 120)}`);
+
+          // Dispatch #177 investigation: confirmed via a DEBUG request-log capture that
+          // GET /api/inv/{nsn}/purchase?purchase_status=Pending is a real, same-token eBOS
+          // endpoint (it's what the Purchases page's default "approvePending" tab calls) --
+          // but the one store sampled there (3708) had zero pending invoices, so its shape
+          // is still unknown. Probe all stores here (still read-only, no persistence) to find
+          // a real non-empty example.
+          if (args.probePending) {
+            try {
+              const pr = await fetch(`${base}/api/inv/${nsn}/purchase?purchase_status=Pending`, {
+                headers: {
+                  'X-Auth-Token':  token,
+                  'X-Current-Nsn': String(nsn),
+                  'Accept':        'application/json',
+                  'Origin':        'https://v3.myqsrsoft.com',
+                  'Referer':       'https://v3.myqsrsoft.com/',
+                },
+              });
+              if (!pr.ok) { log.push(`[PENDING-PROBE] NSN ${nsn} HTTP ${pr.status}`); }
+              else {
+                const pending = await pr.json();
+                const n = Array.isArray(pending) ? pending.length : -1;
+                log.push(`[PENDING-PROBE] NSN ${nsn}: ${n} pending invoice(s)${n > 0 ? ' -- keys: ' + Object.keys(pending[0]).join(', ') + ' -- sample: ' + JSON.stringify(pending[0]).slice(0, 500) : ''}`);
+              }
+            } catch (e) {
+              log.push(`[PENDING-PROBE] NSN ${nsn} error: ${e.message}`);
+            }
+            // All 27 stores came back 0 pending -- healthy, but leaves the item SHAPE unknown
+            // for the case that matters. One extra call (single store only) against the same
+            // endpoint with purchase_status=Approved reveals that shape via a real record,
+            // without fabricating field names for a financial-verification check.
+            if (String(nsn) === (args.dumpStore || '5183')) {
+              try {
+                const ar = await fetch(`${base}/api/inv/${nsn}/purchase?purchase_status=Approved`, {
+                  headers: {
+                    'X-Auth-Token':  token,
+                    'X-Current-Nsn': String(nsn),
+                    'Accept':        'application/json',
+                    'Origin':        'https://v3.myqsrsoft.com',
+                    'Referer':       'https://v3.myqsrsoft.com/',
+                  },
+                });
+                if (!ar.ok) { log.push(`[APPROVED-PROBE] NSN ${nsn} HTTP ${ar.status}`); }
+                else {
+                  const approved = await ar.json();
+                  const n = Array.isArray(approved) ? approved.length : -1;
+                  log.push(`[APPROVED-PROBE] NSN ${nsn}: ${n} approved invoice(s)${n > 0 ? ' -- keys: ' + Object.keys(approved[0]).join(', ') + ' -- sample: ' + JSON.stringify(approved[0]).slice(0, 600) : ''}`);
+                }
+              } catch (e) {
+                log.push(`[APPROVED-PROBE] NSN ${nsn} error: ${e.message}`);
+              }
+            }
+          }
         } catch (e) {
           log.push(`NSN ${nsn} error: ${e.message}`);
         }
       }
       return { rows, log };
     }, { token: ebosToken, nsns: STORE_NSNS, startDate, endDate, base: EBOS_BASE, debug: DEBUG,
-         dumpFields: process.env.DUMP_EBOS_FIELDS === '1', dumpStore: process.env.DUMP_EBOS_STORE || '5183', dumpMonth: process.env.DUMP_EBOS_MONTH || '2026-07' });
+         dumpFields: process.env.DUMP_EBOS_FIELDS === '1', dumpStore: process.env.DUMP_EBOS_STORE || '5183', dumpMonth: process.env.DUMP_EBOS_MONTH || '2026-07',
+         probePending: process.env.PROBE_PENDING_INVOICES === '1' });
 
     for (const msg of log) console.log('[ebos]', msg);
     await snap('ebos-final.png');
