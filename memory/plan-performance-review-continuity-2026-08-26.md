@@ -540,8 +540,13 @@ time dispatch practice:
    production** — see dispatch-150.md/dispatch-151.md and their PR bodies (#802/#805) for exact SQL
    and live verification steps. Foundational — #4, #6, #7 (new-manager panel), and the
    promotion/transfer scoring all depend on it.
-4. **Data model restructure**: per-person yearly review records replacing per-half records, with
-   the Q1-Q4 + H1/H2 + full-year rollup view.
+4. **✅ SHIPPED (Phase 4a, data/engine layer) — Data model restructure**: per-person yearly review
+   records replacing per-half records, with the Q1-Q4 + H1/H2 + full-year rollup view — dispatch
+   #152, v5.197. Person-identity field unified with the #150/#151 assignment-graph identity space;
+   status moved to `periods.h1`/`periods.h2`. **Phase 4b (UI: creation form, list view, in-editor
+   period selector, print functions) is separate, later work, not yet built** — the data/engine
+   layer is real and tested, but the UI still reads/writes the old half-scoped shape in several
+   places (documented in dispatch #152's PR body) until Phase 4b lands.
 5. **Promotion/transfer segmented scoring**, built on #3 and #4, including the propose-then-
    confirm flow for roster-detected changes (resolved item D) — never a silent auto-split.
 6. **Departure handling**: auto-finalize + auto-clear from the new-manager panel on
