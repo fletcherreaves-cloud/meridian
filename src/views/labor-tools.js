@@ -1666,7 +1666,25 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
   const fcCol=(v,tgt)=>{if(!v)return'var(--text2)';if(!tgt)return v<0.30?'#10b981':v<0.33?'#f59e0b':'#ef4444';return v<=tgt?'#10b981':v<=tgt+0.005?'#f59e0b':'#ef4444';};
   const thS={padding:'5px 8px',fontSize:'8px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:'var(--text3)',borderBottom:'.5px solid var(--bdr)',whiteSpace:'nowrap'};
 
-  if(!ds||!ds.loaded||opStats.length===0)
+  // ── No data guard (dispatch #156) ──
+  // Was `!ds||!ds.loaded||opStats.length===0` — folding "nothing loaded at all" together with
+  // "the currently-selected range resolves zero rows" blanked the ENTIRE panel (controls bar +
+  // date inputs included) the instant "Custom" was clicked, since cStart/cEnd start empty and
+  // opStats is gated `if(!range||!ds) return []`. Split, mirroring LaborAnalyticsPanel's
+  // already-correct `hasData` pattern: this check is independent of range/selPeriod/opStats —
+  // it only asks whether ANY of the underlying streams opStats actually reads from (directly,
+  // via ds.fobRows/ds.qsrFobRows; or through autoFirstTotal/matchedVsLY/metricAvg/metricRate's
+  // registered METRIC_SOURCES chains for sales/laborPct/tpph/oepe/otHrs/cashOSPct — see
+  // engine/metric-source.js) are present at all. The "resolves to zero rows for THIS period"
+  // case is handled below by the panel's own (previously unreachable) `sortedOps.length===0`
+  // placeholder inside the results area, so the header/controls/date-inputs stay visible.
+  const hasData = ds && (
+    (ds.fobRows||[]).length>0 || (ds.qsrFobRows||[]).length>0 ||
+    (ds.laborRows||[]).length>0 || (ds.ctrlRows||[]).length>0 ||
+    (ds.qsrActSummaryRows||[]).length>0 || (ds.opsLaborRows||[]).length>0 ||
+    (ds.glimpseRows||[]).length>0 || (ds.cashRows||[]).length>0
+  );
+  if(!hasData)
     return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
       div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
         div({style:{fontSize:40,marginBottom:12}},'📊'),
