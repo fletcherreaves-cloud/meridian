@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, sName, DEFAULT_TARGETS, DOW_BASE, DEF_SETTINGS, STORE_COORDS, INV_ORG_COORDS, EVENT_TYPES, getKB } from '../constants.js';
-import { addD, dKey, sodOf, eodOf, fmtDI } from '../utils/date.js';
+import { addD, dKey, sodOf, eodOf, fmtDI, spanTagInfo } from '../utils/date.js';
 import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModels, forecastRangeAsync } from '../engine/forecast.js';
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
@@ -1770,6 +1770,7 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
   const [opsChartType, setOpsChartType]= useState('radar');
   const [showCharts, setShowCharts]   = useState(false);
   const {p, t} = store;
+  const today = new Date();
 
   useEffect(()=>{
     if(!ds) return;
@@ -1837,17 +1838,68 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     {id:'insights',    l:'💡 AI Insights'},
   ];
 
+  // ── "As of" tile freshness (dispatch #168) ────────────────────────────────
+  // Extends at-a-glance.js's _spanTag pattern (src/utils/date.js's spanTagInfo, extracted
+  // from it under this same dispatch) to Store Dashboard's KPI cards. Each tag states its
+  // OWN metric's real date span from ITS OWN rows — not the toolbar dateRange — because
+  // OEPE/TPPH/Labor %/Cash O/S below are compute6wk's fixed 6-week trailing window (see
+  // forecast.js) and were never toolbar-scoped to begin with; tagging them with the toolbar
+  // range would misstate what they show. Rows are resolved auto-first via metric-source.js's
+  // metricSeries (never the raw ops/ctrl/labor row arrays directly, per CLAUDE.md's "source
+  // data through the shared helpers" standing rule) — a plain {date} pseudo-row per date key,
+  // since metricSeries's job is picking the right VALUE per day, not carrying row objects.
+  // Falls back to the metric's own most recent 30 days when the toolbar's selected period
+  // has none of it, same 30-day-fallback semantics as at-a-glance.js's effectiveDateRange
+  // (CLAUDE.md: reuse the fallback window as-is, don't invent a different threshold) — this
+  // can still happen even for a fixed-window KPI: the fallback is against the metric's OWN
+  // rows, not against the 6-week compute6wk window.
+  //
+  // Period Sales/Ops Score/Controls/T2W Trend are deliberately left untagged: Period Sales
+  // blends live forecast days with actuals (tagging it would misrepresent forecast-only
+  // days as "data"), and Ops Score/Controls/T2W Trend are composites/multi-window
+  // comparisons with no single rows set to span — the "no natural rows concept" skip this
+  // dispatch calls for explicitly, rather than forcing a tag onto them.
+  const _kpiWideRange = React.useMemo(()=>({s:new Date(2000,0,1),e:lastClosedBusinessDay()}),[]);
+  const kpiSpanTags = React.useMemo(()=>{
+    const tMs=t=>t instanceof Date?t.getTime():new Date(t).getTime();
+    const tags={};
+    for(const key of ['oepe','tpph','laborPct','cashOSPct']){
+      const rows=Object.keys(metricSeries(ds,[store.loc],_kpiWideRange,key)).map(dk=>({date:dk}));
+      if(!rows.length){tags[key]=null;continue;}
+      let eff=dateRange&&dateRange.s?dateRange:null, isFallback=false;
+      if(eff){
+        const hasData=rows.some(r=>tMs(r.date)>=tMs(eff.s)&&tMs(r.date)<=tMs(eff.e));
+        if(!hasData){
+          const dates=rows.map(r=>tMs(r.date)).filter(t=>!isNaN(t)&&t<=today.getTime());
+          if(dates.length){
+            const maxD=new Date(Math.max(...dates));
+            const minD=new Date(maxD);minD.setDate(minD.getDate()-29);minD.setHours(0,0,0,0);
+            const toD=new Date(maxD);toD.setHours(23,59,59,999);
+            eff={s:minD,e:toD}; isFallback=true;
+          }
+        }
+      }
+      const effRows=eff?rows.filter(r=>tMs(r.date)>=tMs(eff.s)&&tMs(r.date)<=tMs(eff.e)):rows;
+      const info=spanTagInfo(effRows, today, {isFallback, fallbackLabel:dateRange&&dateRange.label});
+      tags[key]=info?span({style:{fontSize:'8px',color:info.isFallback?'#f59e0b':'var(--text3)',
+        fontStyle:'italic',whiteSpace:'nowrap',display:'block',marginTop:1},title:info.tip},info.text):null;
+    }
+    return tags;
+    // `today` deliberately not in deps, same rationale as at-a-glance.js's worstAuto/latestLab
+    // memos: it's `new Date()`, a fresh reference every render, which would defeat memoization.
+  },[ds, store.loc, dateRange, _kpiWideRange]);
+
   // KPI cards
   const lyV = store.pLY>0?(store.pSales-store.pLY)/store.pLY:null;
   const kpis=[
-    {l:'Period Sales',  v:wkLoading&&wk.length===0?'…':mode==='past'&&rangeAct>0?f$(rangeAct):f$(rangeTotal), s:rangeVar!=null?fPct(rangeVar,2)+' vs LY':ds&&ds.loaded?'Live':'Mock', c:rangeVar!=null?(rangeVar>=0?'#10b981':'#ef4444'):'#94a3b8'},
-    {l:'Ops Score',     v:store.opsScore+'/100',  s:'Operations health',    c:store.opsScore>=80?'#10b981':store.opsScore>=65?'#f59e0b':'#ef4444'},
-    {l:'Controls',      v:store.ctrlScore+'/100', s:'Controls health',      c:store.ctrlScore>=80?'#10b981':store.ctrlScore>=65?'#f59e0b':'#ef4444'},
-    {l:'OEPE',          v:p.oepe>0?Math.round(p.oepe)+'s':'—',   s:'Target '+( t.tOepe||'—')+'s · 6-wk avg',  c:p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8'},
-    {l:'TPPH',          v:p.tpph>0?p.tpph.toFixed(2):'—',         s:'Target '+(t.tTpph||'—')+' · 6-wk avg',       c:p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8'},
-    {l:'Labor %',       v:p.laborPct>0?fP(p.laborPct,2):'—',      s:'Target '+(resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(2)+'%':'—')+' · 6-wk avg', c:laborColor(p.laborPct,resolveLaborTarget(t),settings).color},
-    {l:'T2W Trend',     v:p.t2w!=null?fPct(p.t2w,2):'—',            s:p.t2w!=null?'2-wk vs prior 2-wk avg (rolling)':'Insufficient data (need 3+ days each period)',              c:p.t2w!=null?(p.t2w>=0?'#10b981':'#ef4444'):'#94a3b8'},
-    {l:'Cash O/S',      v:(ds?.ctrlRows||[]).some(r=>r.loc===store.loc)?((p.cashOSPct||0)>=0?'+':'')+((p.cashOSPct||0)*100).toFixed(3)+'%':'—', s:'Target <0.10% · 6-wk avg · +over −short', c:Math.abs(p.cashOSPct||0)<.001?'#10b981':Math.abs(p.cashOSPct||0)<.003?'#f59e0b':'#ef4444'},
+    {l:'Period Sales',  v:wkLoading&&wk.length===0?'…':mode==='past'&&rangeAct>0?f$(rangeAct):f$(rangeTotal), s:rangeVar!=null?fPct(rangeVar,2)+' vs LY':ds&&ds.loaded?'Live':'Mock', c:rangeVar!=null?(rangeVar>=0?'#10b981':'#ef4444'):'#94a3b8', tag:null},
+    {l:'Ops Score',     v:store.opsScore+'/100',  s:'Operations health',    c:store.opsScore>=80?'#10b981':store.opsScore>=65?'#f59e0b':'#ef4444', tag:null},
+    {l:'Controls',      v:store.ctrlScore+'/100', s:'Controls health',      c:store.ctrlScore>=80?'#10b981':store.ctrlScore>=65?'#f59e0b':'#ef4444', tag:null},
+    {l:'OEPE',          v:p.oepe>0?Math.round(p.oepe)+'s':'—',   s:'Target '+( t.tOepe||'—')+'s · 6-wk avg',  c:p.oepe>0&&t.tOepe>0?(p.oepe<=t.tOepe?'#10b981':'#ef4444'):'#94a3b8', tag:kpiSpanTags.oepe},
+    {l:'TPPH',          v:p.tpph>0?p.tpph.toFixed(2):'—',         s:'Target '+(t.tTpph||'—')+' · 6-wk avg',       c:p.tpph>0&&t.tTpph>0?(p.tpph>=t.tTpph?'#10b981':'#ef4444'):'#94a3b8', tag:kpiSpanTags.tpph},
+    {l:'Labor %',       v:p.laborPct>0?fP(p.laborPct,2):'—',      s:'Target '+(resolveLaborTarget(t)?(resolveLaborTarget(t)*100).toFixed(2)+'%':'—')+' · 6-wk avg', c:laborColor(p.laborPct,resolveLaborTarget(t),settings).color, tag:kpiSpanTags.laborPct},
+    {l:'T2W Trend',     v:p.t2w!=null?fPct(p.t2w,2):'—',            s:p.t2w!=null?'2-wk vs prior 2-wk avg (rolling)':'Insufficient data (need 3+ days each period)',              c:p.t2w!=null?(p.t2w>=0?'#10b981':'#ef4444'):'#94a3b8', tag:null},
+    {l:'Cash O/S',      v:(ds?.ctrlRows||[]).some(r=>r.loc===store.loc)?((p.cashOSPct||0)>=0?'+':'')+((p.cashOSPct||0)*100).toFixed(3)+'%':'—', s:'Target <0.10% · 6-wk avg · +over −short', c:Math.abs(p.cashOSPct||0)<.001?'#10b981':Math.abs(p.cashOSPct||0)<.003?'#f59e0b':'#ef4444', tag:kpiSpanTags.cashOSPct},
   ];
 
   // Model Health Score computation
@@ -1908,7 +1960,8 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
       kpis.map((k,i)=>div({key:i,className:'kpi-card',style:{cursor:'default'}},
         div({className:'kpi-l'},k.l),
         div({className:'kpi-v',style:{color:k.c}},k.v),
-        div({className:'kpi-s',style:{color:k.c}},k.s)
+        div({className:'kpi-s',style:{color:k.c}},k.s),
+        k.tag||null
       ))
     ),
 
