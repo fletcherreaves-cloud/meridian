@@ -84,6 +84,95 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.218): [Dispatch #174 — Performance Review Sales actual
+  (`mo.salesVsTgt`) manual-only, silently blanking past July](dispatch-174.md), PR #861.**
+  Owner-reported LIVE bug, follow-up to the same symptom #159 was supposed to fix: *"performance
+  reviews are still only populating through June when I auto populate."* **A real, different bug
+  from #159/#161 — neither touched `salesVsTgt`.** Root cause, measured live
+  (`SUPABASE_SERVICE_ROLE_KEY`): `autoPopulateKPIs()` set `mo.salesVsTgt` unconditionally from
+  `sum(lr,'sales')` — hand-filtering ONLY the manual `ds.laborRows` stream, zero auto/cloud
+  fallback, unlike `oepe`/`r2p`/`kvs`/`laborPct` three lines below (already auto-first per
+  dispatch #109 item #3) or `foodOB` (switched to the auto `qsr_fob` stream by dispatch #161).
+  Confirmed live: `labor_rows`' most recent upload is `report_date: 2026-07-23` — nearly 5 weeks
+  stale — so any month past it went silently blank. Compounding effect: `mo.foodOBTgt` derives
+  FROM `mo.salesVsTgt` (`officialTgts.tFOBTarget * mo.salesVsTgt`), so this one bug also blanked
+  the FOB dollar TARGET even though dispatch #161 already fixed the FOB *actual*.
+  **Fix**: `mo.salesVsTgt` now sums `metric-source.js`'s already-registered auto-first `sales`
+  chain (`qsrActSummaryRows` sales/allNetSales, THEN `ds.laborRows` last) via
+  `Object.values(metricSeries(ds, loc, range, 'sales')).reduce(...)` — the same pattern already
+  used in `sage.js`/`store-analytics.js` — falling back to the old manual `lr`-based sum only
+  when the auto path resolves nothing for the month. Same auto-then-manual precedence direction
+  as `foodOB`. `mo.foodOBTgt` needed no code change — it just starts resolving once
+  `salesVsTgt` does. Confirmed, not assumed: the separate, already-dead `salesTgt`/`laborTgt`
+  manual-only TARGET fallback (dispatch #142) is untouched — different fields.
+  7 new tests (`dispatch-174-review-sales-auto-source.test.js`): real regression case (auto-only,
+  no manual row), manual-only non-regression, per-day auto-vs-manual precedence, per-day blend,
+  cross-store leak guard, dead-field guard, `foodOBTgt` resolving once `salesVsTgt` does.
+  **Version-collision with #171 below** (both branches independently claimed `5.217`, since both
+  were dispatched from the same pre-#171 `main`) — renumbered to `v5.218` during verification
+  (merged cleanly, no code-side conflict — only the changelog files collided). 289/289 test files,
+  2993/2993 tests. Build clean, entry chunk gzip 480.63→480.65 KB, eager total 552.56→552.58 KB,
+  still 297.42 KB under the 850 KB budget.
+- **✅ SHIPPED (2026-08-27, v5.217): [Dispatch #171 — Projections vs Actuals custom date-range
+  picker](dispatch-171.md), PR #860.** Live Feature Request read from Supabase `feature_requests`:
+  *"Add date range picker... Ex: I would like to be able to select an entire month."*
+  `ProjectionVsActualsReport` (`src/views/analytics.js`) previously had only three fixed
+  `[2,4,6]`-weeks-back presets; `runBacktest()` is fundamentally week-shaped (only ever evaluates
+  complete Wed-Tue business weeks), which the dispatch flagged as needing an explicit rule since a
+  calendar month never divides evenly onto Wed-Tue weeks. **Design decision, made and documented
+  during implementation**: Option A (weeks that OVERLAP the picked range) over Option B (only
+  weeks fully CONTAINED) — Option B would silently drop the partial weeks at a range's start/end,
+  exactly the FR's own "select an entire month" example. Verified concretely: picking July 2026
+  resolves to exactly 5 Wed-Tue business weeks, the last running to Aug 4 — past the picked end
+  date, by design, and now stated explicitly on-screen ("Evaluated N business weeks... "), not
+  left implicit in the table's column headers.
+  New `resolvePvsaCustomWeeks()` routes through the shared `weekStartOf()` helper (not hand-rolled
+  `getDay()` arithmetic — this file already made that exact mistake once, #367, and
+  `week-start.test.js` ratchets the hand-rolled-boundary count). Capped at 26 weeks (half a year)
+  as a safety limit against a fat-fingered multi-year range hanging the 27-store compute; the UI
+  states plainly when a pick got capped. UI is a plain `<input type="date">` pair matching the same
+  file's `DateRangeReport` precedent, deliberately NOT the shared `DateRangeControl` component
+  (checked `panel-contract.md` first — that component's day-count presets don't fit this
+  week-granular backtest engine). `[2,4,6]`-week presets unchanged and regression-tested; a
+  latent pre-existing bug also fixed in the same pass — the "Weeks Analyzed" KPI tile was reading
+  the stale preset value unconditionally instead of the actual resolved week count.
+  `dispatch-171-pvsa-custom-range.test.js` renders the real exported component. 288/288 test files,
+  2986/2986 tests (measured on the pre-#174 branch; see #174's entry above for the post-merge
+  289/2993 count). Build clean, entry chunk gzip 480.60→480.62/63 KB, eager total unaffected
+  (`analytics.js` is lazy-loaded).
+- **✅ INVESTIGATED, NO FIX (2026-08-27): [Dispatch #173 — #327's 10.2% laborPct derive mismatch,
+  numerator disagreement confirmed pervasive, root cause still open]
+  (finding-laborpct-numerator-mismatch-2026-08-27.md), PR #859 (docs-only).** Continuation of the
+  investigation `metric-source.js`'s `laborPct` chain comment already documented (582/648, 89.8%
+  match; 66/648, 10.2% mismatch; mean signed diff +0.0050, mostly runs high; 25/27 stores
+  affected; day-boundary hypothesis already refuted by dispatch #164). Reconstructed the original
+  648-store-day comparison from scratch (the original mismatch list was never preserved anywhere)
+  via live Supabase reads — reproduced the documented numbers **exactly**, confirming the
+  reconstructed set is the real population, not a fresh sample that happens to look similar.
+  **All four prioritized leads chased and REFUTED as the explanation:**
+  1. Job-code/pay-type scope (QSRSoft's own "ambiguous" crew-vs-manager JTC codes) — measured
+     against real `qsr_punch_times`: ambiguous-code hour share on mismatched days (26.3%) is
+     essentially identical to matched-day control (24.7%), correlations near zero.
+  2. Correction/revision lag — the ideal test (did a value change between an early and a later
+     pull) isn't answerable (no pull-history log survives); the testable proxy (relative
+     `updated_at` staleness) showed mismatched days are NOT staler, and the "labor pulled before
+     Glimpse" rate is actually LOWER on mismatched days (53.0%) than matched (63.6%) — the
+     opposite of what the lag hypothesis predicts.
+  3. Scale-dependent rounding — mismatch rate is flat (8.6–11.7%) across all four sales-volume
+     quartiles; no correlation with sales or crew dollars.
+  4. Generalizing the single-day store-31357 deep-dive (which had ruled out both candidate sales
+     denominators for that one day) across all 66 mismatched days — **CONFIRMED**: 0/66 days have
+     ANY of 5 independently-sourced sales candidates reconciling the implied denominator within
+     $5. This is a numerator disagreement on every sampled day, not a denominator-picking problem,
+     and not specific to that one store/date. A follow-up check found the numerator gap itself
+     doesn't correlate with OT dollars, gross dollars, or salaried-manager dollars either, and
+     isn't a clean per-hour rate artifact.
+  **What remains open**: what Daily Glimpse's `labor_pct` numerator actually is internally isn't
+  derivable from any field this environment can read — `daily_glimpse_daily` only ever carries the
+  precomputed `labor_pct` itself, and no `qsrsoft_kb` article documents Glimpse's internal
+  labor-$ calculation. Per the dispatch's own scope discipline, `laborPct`'s chain/derive/comment
+  were left untouched — no unambiguous, narrow, confirmed cause was found, so no fix landed.
+  Docs-only PR, no code/test/build changes.
 - **✅ SHIPPED (2026-08-27, v5.216): [Dispatch #170 — Product Mix Cloud tab never populates:
   `loadPmixRows` was fetching ~2.5M rows on every open](dispatch-170.md), PR #853.** Owner-
   reported LIVE bug, same session dispatch #169 shipped: *"everytime I have tried the cloud data,
