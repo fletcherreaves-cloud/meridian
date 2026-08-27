@@ -84,6 +84,71 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **EOM/inventory-count pending-items audit (2026-08-27, owner-requested ahead of the 3-day
+  physical count starting Sat 2026-08-29) — dispatches #176-179, all shipped or honestly closed
+  out same-day.** PM ran a verified sweep of every panel/engine file touching EOM/inventory/FOB
+  (not a memory-file trust pass — every "pending" claim cross-checked against live code/data
+  first), found 5 items, owner triaged all 5 in one message (#1+#2 fix now, #3 best-effort, #4
+  widen to top-50, #5 owner's own task). All four engineering items dispatched in PARALLEL
+  (independent files, one shared file between #176/#177 that auto-merged clean as predicted).
+  - **✅ SHIPPED (v5.222): [Dispatch #176 — `fob-components` EOM diagnosis check never fired,
+    for any store, ever](dispatch-176.md), PR #871.** Two stacked bugs, both confirmed by reading
+    the code before drafting: (1) `eom-report-build.js`'s `buildEomReport()` used its `targets`
+    param for the narrative FOB line but never included it in the `data:` object passed to
+    `runDiagnosis()`, so `ctx.data.targets` was always `{}`; (2) even with that fixed, the check's
+    own component list used long-form keys (`compWaste` etc.) to index targets, but the REAL
+    `DEFAULT_TARGETS` field names (per the already-working `FOB_COMPONENTS`/`fobComponentDeltas()`
+    sibling) are `tCompWaste` etc. — `t[key]` was always `undefined` regardless of bug 1. Fixed by
+    extending `FOB_COMPONENTS` with a 4th tuple element (the long-form key) as the single source
+    of truth both the check and `fobComponentDeltas()` now read — no more independently-drifting
+    copies. **Bonus bug found and fixed during verification** (would have masked the whole fix):
+    `buildEomReport()`'s default `checks` fallback used `checksConfig()` — a `run`-less shape
+    built for an editable-registry UI — which silently error-swallows EVERY check (not just this
+    one) for every current caller (the public EOM share view, 100% of them). Swapped to
+    `DEFAULT_CHECKS`; the in-app EOM Dashboard path (`applyChecksConfig()`) was already correct
+    and unaffected. Also caught: a pre-existing test had been passing on synthetic wrong-shape
+    target keys matching the bug's own broken lookup — fixed to use real `DEFAULT_TARGETS` shape.
+    4 new tests (positive/negative at both the `runDiagnosis()` and end-to-end `buildEomReport()`
+    layers, plus a narrative-line regression guard). 291/291 files, 3021/3021 tests, build clean.
+  - **✅ INVESTIGATED, NO FIX (docs-only): [Dispatch #177 — `purchases-posted` EOM check is a
+    permanent stub](dispatch-177.md → finding-purchases-posted-endpoint-2026-08-27.md), PR #872.**
+    No pulled table carries invoice posted/pending status. Investigation found the REAL eBOS
+    endpoint (`GET /api/inv/{nsn}/purchase?purchase_status=Pending`, same auth token as the daily
+    `store_ledger` pull) by adding DEBUG-gated request/response logging to the production pull
+    script and re-running it live via `workflow_dispatch` (no QSRSoft credentials in the agent
+    session itself) — but all 27 stores read 0 pending invoices right now, so the item SHAPE for
+    the actual failing case is still unverified, and `purchase_status=Approved` (the natural
+    guess at the complementary status) confirmed invalid (HTTP 400). Correctly declined to
+    fabricate field names for a financial-integrity check two days before a physical count.
+    `pending:true` left unchanged — already fails safe (excluded from the run path, shown as
+    "awaiting data," never a false clean pass). Diagnostic instrumentation left on the unmerged
+    investigation branch only, gated behind off-by-default flags (verified: the scheduled cron
+    trigger has no `inputs`, so both new/existing debug flags are inert on every normal run) —
+    NOT on `main`, since it never shipped a code change. Precise handoff written for whoever picks
+    this up next (exact endpoint/auth/params, what's still needed, two ways to get a real sample).
+  - **✅ INVESTIGATED, NO FIX (docs-only): [Dispatch #178 — Inventory Intelligence panel has zero
+    cloud automation](dispatch-178.md → finding-inventory-summary-automation-2026-08-27.md), PR
+    #869.** `qsr_inventory_summary` has no producer (panel already shows "☁ no cloud data yet" +
+    manual-upload fallback, confirmed unaffected). Lead A (a real "Inventory Usage" QSRSoft report
+    — KB article is a field-for-field match to the target schema) is credential-blocked: this
+    session had ZERO QSRSoft credentials (confirmed via a full 137-var env dump), and every prior
+    endpoint-discovery finding in this repo required an owner DevTools capture — not a dead end,
+    an unfinished one. Lead B (derive from `qsr_onhand`+`qsr_raw_item_detail`) measured feasible
+    for only ~9% of one store's WRIN catalog (27 of 288 WRINs, selection-biased toward the
+    highest-variance subset) — correctly judged too thin to relabel as the real table two days
+    before a full physical count. Best-effort ask, honestly closed out rather than forced.
+  - **✅ SHIPPED (v5.221): [Dispatch #179 — widen Item Journey forensic pull from top-20 to
+    top-50 WRINs/store](dispatch-179.md), PR #870.** `scripts/qsrsoft-variance-pull.mjs`'s
+    `.slice(0, 20)` → `.slice(0, 50)`; `|$| >= 50` filter and `hasItemId` requirement unchanged.
+    The existing code comment framed the cap as bounding REQUEST VOLUME, so this needed a real
+    measurement, not just a number change — the agent had no eBOS credentials either, so it
+    instead read this exact workflow's own GitHub Actions run history (21 scheduled runs) and 3
+    full job logs to isolate the real 27-store fetch-loop time from CI overhead: worst observed
+    day (287.7s loop) projects to ~646s at 2.5× the requests — still >4× under the 60-minute
+    workflow timeout, no 429s observed in any log. Shipped as-is, no reduced interim number
+    needed. Three downstream code comments that cited "top ~20" as their reason
+    `qsr_raw_item_detail` under-covers Condiments were updated to top-50 for accuracy (the
+    underlying point — a dollar-filtered subset, not the full item universe — holds either way).
 - **✅ SHIPPED (2026-08-27, v5.220): [Dispatch #175 — cash-handling metrics finish "API over
   email" for cashOS/posOver](dispatch-175.md), PR #866.** Owner's own follow-up question after
   #172: *"is this not data that we're auto pulling through script now as well? Could it just be
