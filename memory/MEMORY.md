@@ -84,6 +84,55 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.200): [Dispatch #155 — extend the OEPE/R2P/TPPH completeness fix
+  (dispatch #153) to its other call sites](dispatch-155.md).** Direct follow-up closing out the
+  "~12 other call sites" list dispatch #153 explicitly deferred. **Not a blanket conversion** —
+  every call site was individually judged on whether its `range` can genuinely include the
+  current, still-open business day, per the dispatch's own required disposition table (reproduced
+  in the PR body): **converted** `review-engine.js`'s `autoPopulateKPIs` (`monthRange()` doesn't
+  clip the current month), `at-a-glance.js`'s district `tpph` tile (toolbar range can be
+  MTD/This-Week), `signals.js`'s `ParkOepeTab` (range end is literally `new Date()`),
+  `labor-tools.js`'s `OperatorSummaryPanel`/`LaborAnalyticsPanel` weekly summary (`'custom'`
+  period lets a user type today), `sage.js`'s `buildLaborSummary`/`buildOpsSummary`
+  (`_lastNDaysRange` also ends on `new Date()`), `store-dash.js`'s `RankingView` (a `'today'`
+  preset exists); **left alone** `morning-brief.js`'s `oepeNorm`, `labor-tools.js`'s `trendData`
+  weekly bucket (verified `wr.e = addDx(wEnd,-1)` — even the newest bucket ends yesterday),
+  `store-dash.js`'s `PerformanceCalculator`, and `above-store-onepager.js`'s `drilldownRows`
+  (its own range only offers `mtd`/`lastweek`/`lastmonth` — no `custom`/`today` option exists) —
+  each because its range is provably always historical/complete by construction, confirmed by
+  reading the caller's own range-construction code, not inferred from a variable name.
+  `above-store-onepager.js`'s panel-level figures needed no change at all — already inherited
+  #153's fix transitively through the shared `one-pager-data.js` builders.
+  **Shared helper relocated**: dispatch #153's private `rateMetric()` (in `one-pager-data.js`)
+  moved to `metric-source.js` and exported as **`metricRate`** — reused by every converted call
+  site above instead of duplicating the fallback logic per-file. Renamed (not kept as
+  `rateMetric`) specifically because `review-engine.js` already exports an unrelated,
+  already-shipped `rateMetric(actual, target, metricCfg)` 1-4 KPI-scoring function — same name,
+  different signature, would have collided the moment `autoPopulateKPIs` needed to import the
+  metric-source helper too.
+  **Discovered, explicitly NOT fixed, flagged as a follow-up candidate**: selecting "Custom" in
+  `labor-tools.js`'s `OperatorSummaryPanel`/`LaborAnalyticsPanel` blanks the entire panel —
+  `cStart`/`cEnd` start empty, `range` becomes `null`, the "No Data Loaded" gate hides the date
+  inputs and period buttons themselves with no way back except closing the panel. Worth its own
+  dispatch; not urgent.
+  264/264 test files, 2825/2825 tests (main baseline 258/2813; +6 net new test files). Build
+  clean, entry chunk 474.95→474.97 KB gzip (+0.02 KB), eager total +0.05 KB — effectively
+  unchanged, well within the 850 KB budget.
+  **Two real version/merge collisions this session, both resolved during independent
+  verification, not left to the merge button:** the engineer's changelog entry claimed `5.199.js`,
+  the same slot dispatch #154's engineer had already claimed (both dispatches launched in
+  parallel from the same base commit, unaware of each other) — GitHub reported
+  `mergeable_state:"dirty"`. Renumbered to `5.200.js` in a fresh verification worktree,
+  regenerated `changelog-latest.js`, and pushed the resolved merge commit directly onto the PR's
+  own branch (`claude/dispatch-155-oepe-r2p-tpph-rate-followup`) so GitHub's merge button worked
+  cleanly — `mergeable_state` moved to `"unstable"` (CI-pending, not conflicted) and then to
+  mergeable once the Vercel "Ignored Build Step" check reported success. Verified independently
+  in the same worktree before merging — the `metric-source.js`/`one-pager-data.js`/
+  `review-engine.js` diffs read in full, the `metricRate` naming-collision rationale confirmed by
+  directly checking `review-engine.js`'s pre-existing `rateMetric` export, two specific
+  per-call-site claims spot-checked against the real source (`attention-now.js`'s `dateRange`
+  prop, `labor-tools.js`'s `trendData` `wr.e` computation), both claimed test/build numbers
+  reproduced exactly.
 - **✅ SHIPPED (2026-08-27, v5.199): [Dispatch #154 — Performance Review continuity Phase 5a:
   promotion/transfer segmented scoring](dispatch-154.md).** Eighth build phase, item #5. A
   manager who transfers stores or is promoted mid-year now scores each period against the role
