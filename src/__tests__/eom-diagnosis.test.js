@@ -11,7 +11,9 @@ describe('runDiagnosis — editable check registry', () => {
       store: '0003708', storeName: 'Tishomingo', period: '2026-07', asOf: d(2026, 7, 30),
       data: {
         fob: { sales: 100000, compWaste: 1500, rawWaste: 400, condiments: 900, empMgrMeals: 300, statVariance: 2000, unexplained: 100 },
-        targets: { compWaste: 0.01, statVariance: 0.0125 }, // 1% / 1.25%
+        // Real DEFAULT_TARGETS-shaped target field names (tCompWaste/tStatLoss), not the fob's own
+        // long-form component keys — dispatch #176 confirmed those don't match.
+        targets: { tCompWaste: 0.01, tStatLoss: 0.0125 }, // 1% / 1.25%
       },
     });
     // fob-components ran; variance/raw/waste/transfers have no data → pending (no data)
@@ -19,6 +21,36 @@ describe('runDiagnosis — editable check registry', () => {
     expect(res.pending.map(p => p.id)).toEqual(expect.arrayContaining(['variance-top5', 'raw-items-timing', 'waste-patterns', 'transfers']));
     // statVariance 2% vs 1.25% target → flagged
     expect(res.findings.some(f => f.data.component === 'statVariance')).toBe(true);
+  });
+
+  // Dispatch #176: fob-components was registered/enabled but never fired for any store — two stacked
+  // bugs (ctx.data.targets never populated by the caller, and the check's own target lookup used the
+  // wrong key names even when targets WAS present). Both are fixed together; these lock in the fix.
+  it('dispatch #176: fob-components fires a structured Finding when a component is over its real DEFAULT_TARGETS-shaped target', () => {
+    const res = runDiagnosis({
+      store: '0003708', storeName: 'Tishomingo', period: '2026-07',
+      data: {
+        fob: { sales: 100000, compWaste: 800, rawWaste: 1200, condiments: 900, empMgrMeals: 300, statVariance: 400, unexplained: 0 },
+        // Real DEFAULT_TARGETS field names, exactly as the app stores them (constants.js / monthly_targets).
+        targets: { tCompWaste: 0.001, tRawWaste: 0.005, tCondiment: 0.017, tEmpFood: 0.004, tStatLoss: 0.02, tUnex: 0.001 },
+      },
+    });
+    // Raw Waste: 1200/100000 = 1.2% vs 0.5% target → +0.7pp, over the 0.25pp band.
+    const f = res.findings.find(x => x.checkId === 'fob-components' && x.data.component === 'rawWaste');
+    expect(f).toBeTruthy();
+    expect(f.title).toMatch(/Raw Waste over target/);
+    expect(f.severityWord).toBe('medium'); // +0.7pp is over the band but under the 1pp high cutoff
+  });
+
+  it('dispatch #176: fob-components does NOT fire when every component is within its real target (no false positives)', () => {
+    const res = runDiagnosis({
+      store: '0003708', storeName: 'Tishomingo', period: '2026-07',
+      data: {
+        fob: { sales: 100000, compWaste: 800, rawWaste: 400, condiments: 900, empMgrMeals: 300, statVariance: 1800, unexplained: 0 },
+        targets: { tCompWaste: 0.01, tRawWaste: 0.008, tCondiment: 0.017, tEmpFood: 0.004, tStatLoss: 0.02, tUnex: 0.001 },
+      },
+    });
+    expect(res.findings.filter(f => f.checkId === 'fob-components')).toHaveLength(0);
   });
 
   it('variance top-5 + ±$50 fire when variance data is present, sorted by severity', () => {
