@@ -1,12 +1,12 @@
 // @ts-nocheck
 import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
-import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS } from '../engine/signal-registry.js';
+import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS, pmixItemsIndex, pmixItemKey, isPmixItemKey } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
-import { metricAvg, metricRate } from '../engine/metric-source.js';
+import { metricAvg, metricRate, ensureLazyFill } from '../engine/metric-source.js';
 import { STORE_NAMES } from '../constants.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
@@ -300,6 +300,59 @@ function MetricSelect({ value, onChange, label, excludeKey }) {
   );
 }
 
+// ── Product Mix Item Picker (dispatch #169) ───────────────────────────────────
+// Search/select from the REAL item list, not a 700+-entry <select> (the dispatch's
+// explicit call-out) — a text filter over pmixItemsIndex(ds.pmixRows), sorted by
+// volume so the items an owner actually cares about ("Filet-O-Fish") surface
+// before single-digit long-tail SKUs. Sits alongside MetricSelect rather than
+// replacing it — most signals still use the static registry; this is the
+// one-item-at-a-time path for the FR's actual ask.
+function ItemPicker({ ds, value, onChange, label }) {
+  const [query, setQuery] = uSt('');
+  const [open, setOpen] = uSt(false);
+
+  uE(() => { ensureLazyFill('pmixRows'); }, []);
+
+  const items = uM(() => pmixItemsIndex(ds?.pmixRows), [ds?.pmixRows]);
+  const selected = value && isPmixItemKey(value) ? findMetric(value) : null;
+
+  const matches = uM(() => {
+    if (!query.trim()) return items.slice(0, 25);
+    const q = query.trim().toLowerCase();
+    return items.filter(it => it.desc.toLowerCase().includes(q) || it.item.includes(q)).slice(0, 25);
+  }, [items, query]);
+
+  return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 } },
+    h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted } }, label),
+    selected
+      ? h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 6, background: 'rgba(192,132,252,.1)', border: '1px solid rgba(192,132,252,.35)' } },
+          h('span', { style: { fontSize: 12, color: '#c084fc', fontWeight: 600, flex: 1 } }, selected.label),
+          h('button', { onClick: () => { onChange(null); setQuery(''); }, title: 'Clear item', style: { background: 'none', border: 'none', color: muted, cursor: 'pointer', fontSize: 13, padding: '0 2px' } }, '×'),
+        )
+      : h('div', { style: { position: 'relative' } },
+          h('input', {
+            type: 'text', value: query, placeholder: items.length ? `Search ${items.length} items…` : 'Loading product-mix items…',
+            onChange: e => { setQuery(e.target.value); setOpen(true); },
+            onFocus: () => setOpen(true),
+            onBlur: () => setTimeout(() => setOpen(false), 150),
+            style: { width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 6, background: '#1a1f2e', border: `1px solid ${bdr}`, color: '#f1f5f9', fontSize: 12 },
+          }),
+          open && matches.length > 0 && h('div', {
+            style: { position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, marginTop: 2, maxHeight: 260, overflowY: 'auto', background: '#1a1f2e', border: `1px solid ${bdr}`, borderRadius: 6, boxShadow: '0 8px 24px rgba(0,0,0,.4)' } },
+            matches.map(it => h('div', {
+              key: it.item,
+              onMouseDown: () => { onChange(pmixItemKey(it.item)); setQuery(''); setOpen(false); },
+              style: { padding: '6px 10px', fontSize: 12, cursor: 'pointer', color: '#f1f5f9', display: 'flex', justifyContent: 'space-between', gap: 8, borderBottom: `1px solid ${bdr}` },
+            },
+              h('span', null, it.desc),
+              h('span', { style: { color: muted, fontSize: 10 } }, it.familyGroup || ''),
+            )),
+          ),
+          open && !items.length && h('div', { style: { position: 'absolute', zIndex: 20, top: '100%', left: 0, right: 0, marginTop: 2, padding: '8px 10px', fontSize: 11, color: muted, background: '#1a1f2e', border: `1px solid ${bdr}`, borderRadius: 6 } }, 'No product-mix data loaded yet.'),
+        ),
+  );
+}
+
 // ── Condition Selector ────────────────────────────────────────────────────────
 function ConditionSelect({ metaMeta, axisLabel, value, onChange, reference, onReferenceChange }) {
   const needsRef = value === 'high' || value === 'low';
@@ -359,7 +412,10 @@ function MiniSparkline({ history }) {
 }
 
 // ── Signal Builder ────────────────────────────────────────────────────────────
-function SignalBuilder({ ds, onSave, existingDefs }) {
+// Exported (dispatch #169) so a render test can reach the real item-picker → build → preview
+// flow directly, same reasoning as ParkOepeTab's own export comment: this was previously only
+// reachable through SignalsPanel's internal tab-navigation state.
+export function SignalBuilder({ ds, onSave, existingDefs }) {
   const [xMetric, setXMetric] = uSt(null);
   const [yMetric, setYMetric] = uSt(null);
   const [granularity, setGranularity] = uSt('daily');
@@ -436,9 +492,17 @@ function SignalBuilder({ ds, onSave, existingDefs }) {
     h('div', { style: { fontSize: 13, fontWeight: 700, marginBottom: 14, color: amber } }, '+ Define New Signal'),
     // Metric selectors
     h('div', { style: { display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap', alignItems: 'flex-end' } },
-      h(MetricSelect, { label: 'X Metric (cause / input)', value: xMetric, onChange: setXMetric, excludeKey: yMetric }),
+      h(MetricSelect, { label: 'X Metric (cause / input)', value: isPmixItemKey(xMetric) ? null : xMetric, onChange: setXMetric, excludeKey: yMetric }),
       h('div', { style: { display: 'flex', alignItems: 'center', color: muted, fontSize: 18, paddingBottom: 2 } }, '→'),
-      h(MetricSelect, { label: 'Y Metric (outcome / output)', value: yMetric, onChange: setYMetric, excludeKey: xMetric }),
+      h(MetricSelect, { label: 'Y Metric (outcome / output)', value: isPmixItemKey(yMetric) ? null : yMetric, onChange: setYMetric, excludeKey: xMetric }),
+    ),
+    // Product-mix item pickers — the dynamic per-item alternative to the static dropdown above
+    // (dispatch #169). Picking an item here sets the SAME xMetric/yMetric state via the
+    // `pmixItem:<code>` key shape signal-registry.js resolves on the fly.
+    h('div', { style: { display: 'flex', gap: 12, marginBottom: 10, flexWrap: 'wrap', alignItems: 'flex-end' } },
+      h(ItemPicker, { ds, label: 'or search a product-mix item (X)', value: xMetric, onChange: setXMetric }),
+      h('div', { style: { display: 'flex', alignItems: 'center', color: muted, fontSize: 18, paddingBottom: 2 } }, '→'),
+      h(ItemPicker, { ds, label: 'or search a product-mix item (Y)', value: yMetric, onChange: setYMetric }),
     ),
     // Condition filters — only shown when metrics are selected
     (xMetric || yMetric) && h('div', { style: { display: 'flex', gap: 20, marginBottom: 14, flexWrap: 'wrap', padding: '10px 12px', background: 'rgba(245,158,11,.04)', border: '1px solid rgba(245,158,11,.12)', borderRadius: 8 } },
@@ -1254,6 +1318,7 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
   const [gran, setGran] = uSt('daily');
   const [minAbsR, setMinAbsR] = uSt(0.4);
   const [scopeLoc, setScopeLoc] = uSt(null);
+  const [includeItems, setIncludeItems] = uSt(false);
   const [running, setRunning] = uSt(false);
   const [scan, setScan] = uSt(null);
   const [tracked, setTracked] = uSt({});
@@ -1266,11 +1331,13 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
     return [...locs].sort((a, b) => (STORE_NAMES?.[a] || a).localeCompare(STORE_NAMES?.[b] || b));
   }, [ds]);
 
+  uE(() => { if (includeItems) ensureLazyFill('pmixRows'); }, [includeItems]);
+
   const runScan = () => {
     setRunning(true); setScan(null);
     // Defer so the "Scanning…" state paints before the (synchronous) sweep.
     setTimeout(() => {
-      try { setScan(scanAllPairs(ds, { granularity: gran, minAbsR, scopeLoc })); }
+      try { setScan(scanAllPairs(ds, { granularity: gran, minAbsR, scopeLoc, includeItems: includeItems && gran === 'daily' })); }
       catch (e) { setScan({ error: e.message, results: [] }); }
       setRunning(false);
     }, 30);
@@ -1351,6 +1418,15 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
       availLocs.length > 1 && h('select', { value: scopeLoc || '', onChange: e => setScopeLoc(e.target.value || null), style: { ...SEL, color: scopeLoc ? amber : muted } },
         h('option', { value: '' }, 'All stores'),
         availLocs.map(loc => h('option', { key: loc, value: loc }, STORE_NAMES?.[loc] || `Store ${loc}`))),
+      // Dispatch #169 -- product-mix items are never in the default sweep (see scanAllPairs's
+      // includeItems block: top-N by volume, paired only against Calendar/Weather). Daily-only,
+      // so the checkbox is disabled on the Monthly view rather than silently no-op'ing.
+      h('label', {
+        title: gran !== 'daily' ? 'Item Mix scan is daily-only' : 'Include your top-selling product-mix items, checked against Friday/Weekend/weather (may take longer)',
+        style: { fontSize: 11, color: gran === 'daily' ? muted : 'rgba(107,114,128,.5)', display: 'flex', alignItems: 'center', gap: 5, cursor: gran === 'daily' ? 'pointer' : 'default' },
+      },
+        h('input', { type: 'checkbox', checked: includeItems, disabled: gran !== 'daily', onChange: e => setIncludeItems(e.target.checked), style: { cursor: gran === 'daily' ? 'pointer' : 'default' } }),
+        'Item Mix'),
       h('button', { onClick: runScan, disabled: running || !ds, style: {
         marginLeft: 'auto', padding: '6px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: running ? 'default' : 'pointer',
         border: `1px solid ${amber}`, background: running ? 'transparent' : 'rgba(245,158,11,.14)', color: amber, opacity: running ? 0.6 : 1,
@@ -1361,7 +1437,8 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
     scan && !scan.error && h('div', { style: { fontSize: 11, color: muted, marginBottom: 12 } },
       `Compared ${scan.tested} pairs across ${scan.metricsUsed} metrics · ${results.length} move together strongly · `,
       h('span', { style: { color: grn, fontWeight: 700 } }, `${scan.fdrCount} unlikely to be a fluke`),
-      results.length > 40 ? ` · showing the top 40` : ''),
+      results.length > 40 ? ` · showing the top 40` : '',
+      scan.itemsUsed > 0 ? ` · includes ${scan.itemsUsed} product-mix items × Friday/Weekend/weather` : ''),
     scan?.error && h('div', { style: { fontSize: 12, color: red, marginBottom: 12 } }, 'Scan error: ' + scan.error),
     scan && !scan.error && !results.length && h('div', { style: { textAlign: 'center', padding: 32, color: muted, fontSize: 12, border: `1px dashed ${bdr}`, borderRadius: 8 } },
       scan.metricsUsed < 2 ? 'Not enough data loaded to compare yet — sync or upload more.' : `Nothing reached strength ${minAbsR}. Try lowering the minimum.`),
