@@ -2819,6 +2819,11 @@ export const loadOpsCashSheet = async (d = 45) => {
     cashRefAmt: r.cash_refunds_amt != null ? Number(r.cash_refunds_amt) : null,
     cashlessRefCnt: r.cashless_refunds_qty != null ? Number(r.cashless_refunds_qty) : null,
     cashlessRefAmt: r.cashless_refunds_amt != null ? Number(r.cashless_refunds_amt) : null,
+    // POS Over $ + count (dispatch #175) — every sibling field above already gets this camelCase
+    // alias; posOverAmt/posOverCnt were the one pair missed, leaving metric-source.js unable to
+    // add an opsCashRows source for them even though qsr_cash_sheet carries overring_amt/qty.
+    posOverAmt: r.overring_amt != null ? Number(r.overring_amt) : null,
+    posOverCnt: r.overring_qty != null ? Number(r.overring_qty) : null,
   }));
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that
