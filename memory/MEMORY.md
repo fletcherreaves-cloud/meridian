@@ -84,6 +84,110 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.205): [Dispatch #159 — fix Performance Review Auto-fill
+  gated on the wrong readiness signal](dispatch-159.md).** Owner-reported: "Auto-fill from
+  Uploaded Data" populated OEPE/R2P/KVS/Labor% for a GM review through June only, even though
+  July/August had confirmed live DAR data (measured earlier the same session:
+  `qsr_daily_activity_rollup` has `content-range: 0-0/57` for that store's July+Aug window).
+  **Root cause, measured not guessed**: the Auto-fill button gated only on `ds?.loaded`, which
+  flips true from the near-instant local IDB restore — with NO dependency on App.js's separate
+  "T1" tiered Supabase load, which is what actually populates `ds.qsrActSummaryRows`/
+  `ds.glimpseRows`/`ds.opsServiceRows` (the exact 3 auto/cloud sources `metric-source.js`'s
+  `oepe`/`r2p`/`kvst`/`laborPct` chains check before the manual `ds.opsRows` fallback). A click
+  in the real window between those two ran `autoPopulateKPIs` against a `ds` missing the auto
+  streams entirely, silently falling through to whatever manual data was already IDB-resident
+  (this store's newest manual row: 2026-07-11) and nothing beyond — exactly the observed
+  Jan-Jun/Jul-Dec split. **Two of this dispatch's own hypotheses were disproven by direct
+  measurement rather than assumed**: `App.js` actually requests 60 days for the auto streams
+  (not the 35/45-day defaults the dispatch spec guessed from the loader functions' own
+  signatures — the app calls them with an explicit wider window), and `metric-source.js`'s math
+  is correct once a stream is actually present — ruling out both a window-sizing bug and a
+  resolver bug, leaving the real cause: a load-order race, not a data or math problem.
+  **Fix**: new `cloudStreamsReady` state in `App.js`, set true once T1's `Promise.all` resolves
+  (or immediately with no Supabase client configured, so dev/offline never wedges the gate),
+  threaded as `dataReady` through `PerformanceReviewsPanel → ReviewEditor → KPITab` (defaults
+  `true` for any caller not yet wired to it, so no other render path/test regressed). The button
+  now stays disabled with a "still loading live data" hint until ready, instead of silently
+  running against a partial `ds`. Two new tests: one drives the real `PerformanceReviewsPanel →
+  ReviewEditor → KPITab` chain and confirms the button's disabled state tracks `dataReady`
+  (verified via `git stash` to fail pre-fix); one calls the real `autoPopulateKPIs` with a `ds`
+  shaped like each side of the actual race, built from the real measured `ops_rows`/
+  `qsr_daily_activity_rollup` values, proving August resolves to `undefined` before the fix and
+  the real `123s` after.
+  **Follow-up flagged, not fixed here (spawned as a suggested task, approved by the owner —
+  next up)**: the review's FOB $ actual (`mo.foodOB`) reads `ds.fobRows` directly (manual-only)
+  instead of the auto `qsr_fob`/`fobByRange` path `one-pager-data.js` already uses elsewhere —
+  same "manual sourcing is always temporary" class, different mechanism (wrong source, not a
+  load-order race), left for separate work since the auto `qsr_fob` $ definition needs
+  reconciling against `fobRows`' own before it can safely replace it.
+  272/272 test files, 2866/2866 tests (main baseline 269/2858 pre both #158/#159; +3 test files
+  net new from #159 alone). Build clean, entry chunk 476.22→476.24 KB gzip (+0.02 KB — one new
+  prop + one new state hook). **A real version collision with dispatch #158's own PR** (both
+  independently claimed v5.204, launched in parallel from the same base commit) — renumbered to
+  v5.205 during verification, same pattern used repeatedly this session. Verified independently
+  in a fresh worktree before merging — the full `App.js`/`performance-reviews.js` diff read line
+  by line (the `cloudStreamsReady`/`dataReady` prop chain traced end to end, the `!supabase`
+  early-return edge case confirmed handled), both new test files read in full, both claimed
+  test/build numbers reproduced exactly post-renumbering.
+- **✅ SHIPPED (2026-08-27, v5.204): [Dispatch #158 — Leadership One-Pager custom date-range
+  picker; DO/OM/Owner scope tiers investigated, not built](dispatch-158.md).** Item 1: added a
+  4th "Custom" period pill to `AboveStoreOnePager` (previously only `mtd`/`lastweek`/
+  `lastmonth`), mirroring `one-pager.js`'s own already-shipped `rangeMode==='custom'` pattern —
+  two date inputs, defaulting to a trailing-7-closed-day seed. Zero engine changes needed: every
+  builder this panel calls (`buildCurrentState`/`buildReviewActuals`/`matchedVsLY`/`metricAvg`/
+  the FOB aggregates/`buildScheduleActuals`/`buildPerLocationRows`) already takes a plain `{s,e}`
+  range, confirmed by reading every signature. Hand-rolled rather than adopting the shared
+  `DateRangeControl` component — `memory/panel-contract.md`'s own date-mode table already carves
+  out this exact shape ("period-anchored" presets) as deliberately NOT converted to
+  `DateRangeControl` for `report-subscriptions.js`'s identical `mtd`/`lastweek`/`lastmonth`
+  picker, since `DateRangeControl`'s day-count presets would misrepresent "Month-to-date"; the
+  same reasoning applies here, and `one-pager.js` is the only existing precedent for
+  "period-anchored + custom" in this codebase.
+  **Item 2, investigated and correctly NOT built**: re-measured `staff_assignments` (dispatch
+  #150's reports-to graph, the natural home for DO/OM/Owner tiers via `assignment-graph.js`'s
+  already-existing `resolveScope`/`whoOversees`) — still **zero rows in production**
+  (`content-range: */0`), calibrated three ways in-session (same credential reads 208 real rows
+  on `qsrsoft_kb` and 15,199 on `lifelenz_schedule`; a bogus column returns Postgres `42703`, not
+  `*/0`). Also checked `org_config.org_roles` (DOES define `do`/`om` as a role *catalog*, but
+  `profiles` has only 3 rows, none assigned those roles) and the owner's own
+  `Organization_Structure.xlsx` (`Locations` sheet has no DO/OM column, and even its existing
+  Owner/Operator/Supervisor/GM columns aren't parsed into the app by `parseOrgStructure()` at
+  all — that parser only extracts the Scheduling Setup sheet's first-week date). **Correctly
+  reported as a blocking prerequisite rather than half-built against nothing**, per the
+  dispatch's own explicit instruction that this is an acceptable outcome. "Owner" needs no new
+  data model at all — single-owner deployment, so it's just the existing `'all'` scope with a
+  different label, not built standalone since item 2 as a whole is blocked.
+  270/270 test files, 2861/2861 tests (+3 net new). Build clean, entry chunk unchanged at 476.20
+  KB gzip; the panel's own lazy chunk +0.29 KB gzip (10.73→11.02 KB). Verified independently in a
+  fresh worktree before merging — the `staff_assignments` empty-table claim re-confirmed
+  directly (not trusted from the PR body) via the same service-role curl recipe plus the same
+  bogus-column calibration check, the date-range diff read in full, both claimed test/build
+  numbers reproduced exactly.
+- **✅ SHIPPED (2026-08-27, v5.203): fix FOB tile ignoring scope selection + week-start-day
+  picker off-by-one.** Direct fix (small, well-diagnosed, pushed straight to `main` — not a
+  dispatch), owner-reported with three Ops Report exports for reference. **FOB %**: the shared
+  `buildCurrentState()` builder (the source of the header FOB tile on BOTH One-Pagers — Store
+  and Leadership) called `fobByRange(fobRows, range)` — which has NO `locs` parameter and
+  returns every store present in `fobRows` — and summed ALL of it regardless of the `locs` this
+  function was itself called with, silently ignoring its own parameter. Selecting any
+  scope/supervisor/store never changed the tile. A second, separate instance of the identical
+  bug was in `above-store-onepager.js`'s own vs-LY delta computation (rendered directly under
+  the FOB tile). Both fixed: filter `fobByRange`'s result to the requested `locs` before summing,
+  matching every other metric in the same function. **Week picker**: the CANONICAL
+  `weekStartOf()` helper (`src/utils/date.js`, used by 16 files across the app — not just one
+  panel) and `one-pager.js`'s own local duplicate both returned the PREVIOUS week when the
+  picked date was exactly the configured week-start weekday (Wednesday) itself. Root cause: a
+  bare `'YYYY-MM-DD'` string — exactly what `<input type="date">` returns — parses as UTC
+  midnight; every US timezone then reads `getDay()`/`getDate()` back as the previous LOCAL
+  calendar day, invisible most of the week but pushing the week-start calc a full 7 days back on
+  the boundary day. `dKey()` in the SAME file already carries an extensive comment documenting
+  this exact pitfall and guards against it; `weekStartOf()` (added later, 2026-08-08) never
+  inherited that guard — genuinely new finding, not previously known. Fixed by parsing a bare
+  date-only string as local midnight in both places. New tests pin the exact reported case
+  (2026-08-19, a Wednesday) plus a multi-loc FOB-scoping reproduction (two stores at 4%/8%,
+  selecting each individually returns the correct distinct number — the exact reported symptom).
+  269/269→272/272 test files across this session's later work; at ship time 269/269, 2858/2858
+  tests (+3 net new). Build clean, entry chunk unchanged at 476.20 KB gzip.
 - **✅ SHIPPED (2026-08-27, v5.202): [Dispatch #157 — Performance Review continuity Phase 4b +
   5b UI (combined)](dispatch-157.md).** Fixes a confirmed **live, silent production regression**
   left by dispatch #152 (v5.197), then surfaces dispatch #154's (v5.199) segmented-scoring
