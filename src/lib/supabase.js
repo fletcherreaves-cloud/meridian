@@ -2828,8 +2828,10 @@ export const loadOpsCashSheet = async (d = 45) => {
 // 2978.60 vs crew 2661.50, diff 317.10), and the headline Punched Labor % this feeds is crew-only
 // (parsers/index.js's punchLaborPct). Measured accuracy against Daily Glimpse's real labor_pct,
 // 648 store-days / 27 stores (2026-08-16): 89.8% match within 0.001; the rest disagree by up to
-// 0.0276, day-specific rather than a fixed per-store gap — full breakdown + an unconfirmed
-// calendar-day-vs-business-day-boundary hypothesis in metric-source.js's laborPct comment.
+// 0.0276, day-specific rather than a fixed per-store gap — full breakdown in metric-source.js's
+// laborPct comment. The calendar-day-vs-business-day-boundary hypothesis it once carried was
+// measured and REFUTED (dispatch #164, 2026-08-27) — compType:'calendar' is not a midnight
+// boundary; see memory/finding-comptype-calendar-boundary-2026-08-27.md. Gap remains unexplained.
 export const loadOpsLaborSummary = async (d = 45) => {
   const rows = await _loadOpsTable('qsr_labor_summary', d);
   return rows.map(r => ({ ...r, otHrs: Number(r.over_time_total_hours) || 0, otDollar: Number(r.over_time_total_dollars) || 0, laborDollar: Number(r.crew_labor_dollars) || 0 }));

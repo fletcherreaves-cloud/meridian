@@ -198,14 +198,20 @@ export const METRIC_SOURCES = {
   // day for the affected store) — it is day-specific. One deep-dive (store 31357, 2026-07-19)
   // ruled out BOTH candidate denominators for that day: neither product_sales_amt nor
   // net_sales_amt implies Glimpse's 0.1876 from crew_labor_dollars=2270.67 — the NUMERATOR itself
-  // disagrees with whatever Glimpse used, not just the sales denominator. Leading unconfirmed
-  // hypothesis, NOT verified: qsr_labor_summary is pulled with compType:'calendar'
-  // (qsrsoft-ops-pull.mjs), while Daily Glimpse may report on a business-day boundary (e.g. 5am
-  // cutover) — late-night volume would land in a different day bucket in each, which would also
-  // explain the positive skew (a calendar-day pull missing late sales the business day counted
-  // understates the denominator, pushing the ratio up) and the day-specific (not store-fixed)
-  // pattern. Not chased further; flagged in the PR for the fallback-accuracy decision instead of
-  // asserted as fact. Unit convention confirmed fraction (0-1), not percent (0.2428, not 22.47) —
+  // disagrees with whatever Glimpse used, not just the sales denominator. ⚠️ REFUTED 2026-08-27
+  // (dispatch #164, closes #330): the once-leading hypothesis — that qsr_labor_summary's
+  // compType:'calendar' pull (qsrsoft-ops-pull.mjs) uses a midnight-to-midnight day while Daily
+  // Glimpse uses the 4am business day — was measured directly and does NOT hold.
+  // compType:'calendar' vs 'trading' sales reconciles with the DAR's confirmed 4am-aligned sales
+  // just as tightly on Fri/Sat/Sun (the days a real midnight cut would show up worst) as any other
+  // day — tightest of all, in fact (866 store-days, mean|%diff| 0.015% weekend / 0.003% Friday vs
+  // 0.061% overall). Re-running THIS exact derive-vs-Glimpse comparison bucketed by weekday shows
+  // the same flat pattern (973 store-days, 88.9%-94.1% match across every day, no weekend trend).
+  // compType is not a daily open/close boundary at all — see above-store-onepager.js's fobly
+  // comment: it's the LY-comparison basis (calendar-date match vs 364-day/trading-day match), an
+  // axis orthogonal to this question. Full measurement:
+  // memory/finding-comptype-calendar-boundary-2026-08-27.md. The ~10% residual mismatch below is
+  // still real and still unexplained — just not this. Unit convention confirmed fraction (0-1), not percent (0.2428, not 22.47) —
   // glimpseRows.laborPct read directly off daily_glimpse_daily.labor_pct, and every render site
   // multiplies by 100 before display (labor-tools.js). A derive returning d/s*100 would have
   // shipped a number 100x too large.

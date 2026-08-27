@@ -1,0 +1,25 @@
+// @ts-nocheck
+export default {version:'5.206', date:'2026-08-27', changes:[
+  'Dispatch #164 (closes #330) -- confirmed what compType:\'calendar\' actually means on '
+  + 'QSRSoft\'s labor-summary (and every sibling endpoint in qsrsoft-ops-pull.mjs, all sharing '
+  + 'the same request builder): NOT a midnight-to-midnight calendar day, refuting the leading '
+  + 'unconfirmed hypothesis in metric-source.js\'s laborPct comment (added by v5.022) that it '
+  + 'explained the ~10% laborPct derive-vs-Glimpse mismatch via a boundary shift. Measured two '
+  + 'ways against the DAR\'s already-confirmed 4am-business-day-aligned sales (service-role read, '
+  + '2026-07-15 - 08-25): (1) a same-script sibling endpoint\'s calendar-pulled product sales '
+  + '(qsr_sales_mix) reconciles TIGHTEST on Fri/Sat/Sun -- mean|%diff| 0.003% Friday, 0.015% '
+  + 'weekend vs 0.061% overall across 866 store-days -- the opposite of what a midnight-boundary '
+  + 'bug would produce; (2) re-running the original 5.022 laborPct-vs-Glimpse comparison bucketed '
+  + 'by weekday (973 store-days) shows a flat 88.9%-94.1% match rate every day, no weekend trend. '
+  + 'compType turns out to govern the LY-comparison basis (364-day/trading-day match vs '
+  + 'same-calendar-date match -- corroborated by an existing comment in '
+  + 'above-store-onepager.js\'s fobly row), not the current period\'s own open/close boundary -- '
+  + 'an axis this question was never actually on. No code branched on the refuted hypothesis, so '
+  + 'no fix was needed -- corrected the two comments that stated it (metric-source.js, '
+  + 'supabase.js) to record the measured finding instead. Full methodology + numbers: '
+  + 'memory/finding-comptype-calendar-boundary-2026-08-27.md. CLAUDE.md\'s 4am section updated to '
+  + 'mark #330 resolved. The ~10% residual laborPct mismatch itself remains real and unexplained '
+  + '-- explicitly out of scope for #330, now a separate open question if pursued.\n\n'
+  + 'Comment-only source changes (no logic touched). Full suite 272/272 files, 2866/2866 tests. '
+  + 'Build clean, entry chunk gzip 476.22 KB (476.24 KB before -- effectively unchanged).',
+]};

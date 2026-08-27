@@ -560,8 +560,21 @@ actual code — this note nearly caused a duplicate reimplementation.
     `memory/dar-vs-ops-reconciliation.md` (2026-08-07): `hour_slot` runs `05:00 → 28:00`, 24 slots
     covering 04:00→04:00, matching McDonald's ABC. Corroborated by
     `memory/project-hourly-projection-accuracy.md:81`. So `compType:'trading'` ≈ the 4am business
-    day. **What `compType:'calendar'` means on `labor-summary` is still unconfirmed** — that is the
-    only live boundary question (#330), and it is on the *numerator* side only.
+    day. **✅ RESOLVED 2026-08-27 (dispatch #164, closes #330) — `compType:'calendar'` on
+    `labor-summary` is NOT a midnight-to-midnight boundary.** Measured two ways against the DAR's
+    confirmed 4am-aligned sales (866 + 973 store-days, 2026-07-15→08-25): a same-script sibling
+    endpoint's calendar-pulled sales reconciles TIGHTEST on Fri/Sat/Sun (mean|%diff| 0.003%
+    Friday, 0.015% weekend vs 0.061% overall) — the opposite of what a midnight-boundary bug would
+    show — and the original laborPct-vs-Glimpse mismatch that motivated the question is flat
+    across every day of week (88.9%-94.1% match, no weekend trend) when rebucketed. `compType`
+    (`'trading'` vs `'calendar'`) turns out to govern the **LY-comparison basis** (364-day/trading-
+    day match vs same-calendar-date match — see `above-store-onepager.js`'s `fobly` comment),
+    not the current period's own open/close boundary; that axis was never about the 4am cutover at
+    all. No code branched on the old (now-refuted) hypothesis — it was comment-only
+    (`metric-source.js`/`supabase.js`), both corrected in the same commit. Full measurement:
+    `memory/finding-comptype-calendar-boundary-2026-08-27.md`. **Do not re-raise #330** — the
+    residual ~10% laborPct derive-vs-Glimpse mismatch is still real and still unexplained, but a
+    separate open question now, not a boundary bug.
   - **Before adding any new derived metric, ask which boundary each input is on.** Both pull
     scripts already use both `compType` values, so a mismatch is easy to introduce and invisible
     once shipped — `laborPct` only got caught because it was reconciled against a known-good source.
