@@ -84,6 +84,39 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.212): [Dispatch #166 — DO (+OM scaffold) tier on Leadership
+  One-Pager scope dropdown](dispatch-166.md), PR #841.** The corrected follow-up to #158's DO/OM/
+  Owner investigation, which (per v5.211's entry below) was conducted against the wrong file.
+  Distinguishes itself deliberately from #158's own explored architecture: #158 investigated
+  `staff_assignments`/`assignment-graph.js`'s `resolveScope`/`whoOversees` (still zero rows in
+  production, confirmed a blocking prerequisite for THAT approach) — #166 does not depend on it at
+  all, instead mirroring the already-shipped, already-working `operators`/`supervisorGroups`
+  flat-map pattern that powers `one-pager.js`'s EXISTING Owner/Supervisor dropdown (itself never
+  `staff_assignments`-backed). `DEF_SETTINGS.doGroups` seeded with the owner's directly-confirmed
+  real assignment (2026-08-27): Hugh Bonner → all 20 Oklahoma stores (union of the 5 OK
+  `supervisorGroups` patches), Brad Denley → all 7 Florida stores — a dual role, since he's also
+  Supervisor for a 3-store subset of those same 7 (intentional overlap, same pattern `operators`'
+  own Ryan Thorley comment already documents; not reconciled, per the dispatch). `omGroups` seeded
+  empty (`{}`) — scaffold only, no OM names invented. `one-pager.js`'s Scope row gets DO/OM
+  `<select>`s using the identical `applyScope(label, list, level)`/empty-guard pattern as the
+  existing Owner/Supervisor tiers (row order: Owner → DO → Supervisor → OM, top-down org-chart
+  order). New shared `GroupsEditor({S, onUpdate, field, title, note})` component in
+  `management.js` reproduces the `'🏢 Operators'` section's add/rename/remove-row UI + "Sync from
+  defaults" reset exactly, parameterized by settings field — backs new `'🏛 DOs'`/`'⚙ OMs'`
+  Settings sections without a second hand-rolled implementation; Operators' own render code
+  untouched. Two new render-based tests against the REAL components (not the data layer in
+  isolation): `dispatch-166-onepager-do-scope.test.js` drives the actual `OnePagerPanel` — DO
+  dropdown lists both names, picking "Hugh Bonner" sets `locs` to exactly the 20 OK store ids
+  (verified via scope label, store count, AND which store pills render "on"), OM dropdown does not
+  render while empty; `dispatch-166-management-do-om-sections.test.js` drives the real `Settings`
+  component through a state-holding harness — an edited store-list, an added row, and a removed
+  row all round-trip through `onUpdate` back into the same rendered tree. 279/279 test files,
+  2928/2928 tests (net +2 files/+12 tests). Build clean, entry chunk gzip 478.92→479.32 KB
+  (+0.40 KB), eager total 550.78 KB (still 299.22 KB headroom under the 850 KB budget). A real
+  version collision with #160's PR (both claimed `5.211`) — renumbered to v5.212 during
+  verification. Full diff read directly during verification (not trusted from the PR body) —
+  `constants.js`'s seed data, `one-pager.js`'s dropdown wiring, and `management.js`'s
+  `GroupsEditor` extraction all matched the dispatch spec exactly.
 - **✅ SHIPPED (2026-08-27, v5.211): [Dispatch #160 — panel-contract adoption pass on the two
   One-Pager panels](dispatch-160.md), PR #837.** **Corrects a mislabeling from the dispatch brief
   itself**, caught while tracing the real wiring rather than trusting the brief: `above-store-
@@ -266,20 +299,7 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   unwired, per CLAUDE.md's "would this still pass if reverted" rule). 2867/2867 tests (main:
   2866/2866; +1 new test). Build clean, entry chunk gzip 476.23 KB (effectively unchanged — docs +
   workflow comment + one test file only).
-- **📋 DRAFTED (2026-08-27): [Dispatch #166 — DO (+OM scaffold) tier on Leadership One-Pager scope
-  dropdown](dispatch-166.md).** The corrected follow-up to #158's DO/OM/Owner investigation, which
-  (per v5.211's entry above) was conducted against the wrong file. Distinguishes itself
-  deliberately from #158's own explored architecture: #158 investigated `staff_assignments`/
-  `assignment-graph.js`'s `resolveScope`/`whoOversees` (still zero rows in production, confirmed a
-  blocking prerequisite for THAT approach) — #166 does not depend on it at all, instead mirroring
-  the already-shipped, already-working `operators`/`supervisorGroups` flat-map pattern that powers
-  `one-pager.js`'s EXISTING Owner/Supervisor dropdown (itself never `staff_assignments`-backed).
-  Seeded with the owner's directly-confirmed real assignment (2026-08-27): Hugh Bonner → DO for all
-  20 Oklahoma stores, Brad Denley → DO for all 7 Florida stores (dual role — also Supervisor for a
-  3-store FL subset, intentional overlap, not a bug). OM tier scaffolded empty (settings shape +
-  dropdown UI + Settings-panel editing section, matching the `'🏢 Operators'` section exactly) per
-  the owner's explicit call — populate real names later via the Settings UI, no code change
-  needed then. Engineer dispatched; not yet verified/merged.
+- **✅ SHIPPED (2026-08-27, v5.205): [Dispatch #159 — fix Performance Review Auto-fill
   gated on the wrong readiness signal](dispatch-159.md).** Owner-reported: "Auto-fill from
   Uploaded Data" populated OEPE/R2P/KVS/Labor% for a GM review through June only, even though
   July/August had confirmed live DAR data (measured earlier the same session:
