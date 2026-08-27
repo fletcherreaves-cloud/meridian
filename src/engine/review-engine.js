@@ -2,6 +2,10 @@
 import { DEFAULT_TARGETS } from '../constants.js';
 import { metricAvg, metricRate } from './metric-source.js';
 import { applyTargetOverrides } from './target-overrides.js';
+// Dispatch #161 — mo.foodOB (the review's FOB $ actual) is sourced through fobByRange(),
+// the SAME canonical qsr_fob dollar-aggregator every other FOB view in the app already uses
+// (both One-Pagers, fixed v5.203) — not a hand-rolled sum over the manual ds.fobRows array.
+import { fobByRange } from './one-pager-data.js';
 // Dispatch #154 (Performance Review continuity, Phase 5a) — promotion/transfer segmented
 // scoring. assignment-graph.js owns ALL reports-to-graph resolution logic (dispatch #150's own
 // "keep resolution logic in ONE place" rule); this file only turns that resolved data into
@@ -1480,8 +1484,17 @@ export function autoPopulateKPIs(review, ds) {
   const sum = (arr,k) => { const v=arr.map(r=>r[k]).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+b,0):null; };
 
   const laborM = byMonth(ds.laborRows);
+  // fobM/fr still backs the manual-fallback path for mo.foodOB below AND the fobPct leg of
+  // the (out-of-scope, dispatch #161 explicitly excludes it) totalProfit derivation further
+  // down — left reading ds.fobRows exactly as before. Only foodOB's own actual-fill switched
+  // to the auto qsr_fob source (qsrFobRowsForLoc/fobByRange, just below).
   const fobM   = byMonth(ds.fobRows);
   const ebosM  = byMonth(ds.ebosRows); // eBOS daily op-supplies purchases (Notes 32 #4)
+  // Dispatch #161 — ds.qsrFobRows (auto-pulled qsr_fob stream), pre-filtered to this
+  // review's own loc so fobByRange (which has no locs param — v5.203's own fix note) only
+  // ever scans/aggregates this store's rows, called once per month inside the loop below.
+  const _unpadLoc = l => String(l == null ? '' : l).replace(/^0+/, '') || String(l == null ? '' : l);
+  const qsrFobRowsForLoc = (ds.qsrFobRows || []).filter(r => _unpadLoc(r.loc) === _unpadLoc(loc));
 
   // People reports are monthly per-loc, keyed by 'YYYY-MM' — index by month number
   // for this store/year (Notes 32 #1/#2/#3). Headcount ← Roster Statistics (authoritative
@@ -1601,7 +1614,20 @@ export function autoPopulateKPIs(review, ds) {
     if (kvsAvg   != null) mo.kvs   = kvsAvg;
     if (laborAvg != null) mo.labor = laborAvg;
     if (secondSideAvg != null) mo.secondSide = secondSideAvg;
-    if (fr.length) {
+    // Dispatch #161 — auto-first: fobByRange() over this month's calendar range (`range`,
+    // just resolved above), reading the qsr_fob dollar shape (prodSalesAmt/compWasteAmt/…),
+    // NOT fobM's manual ds.fobRows shape (fobPct/fobDollar, no *Amt — passing that shape to
+    // fobByRange silently skips every row, same trap v5.203 fixed for the One-Pagers).
+    // Reconciled against ds.fobRows for 6 real store-months (loc 3708 Dec'25–May'26, loc
+    // 5183 May'26) via a live service-role Supabase measurement before this switch — both
+    // sources matched to the penny (see this dispatch's PR body). prodSales>0 gates "the
+    // auto source actually has this month" (fobByRange's own convention — a component-only/
+    // pre-settle result reads back as all-zero, not absent) so an unsettled or missing month
+    // falls through to the manual ds.fobRows figure instead of silently reading $0.
+    const autoFob = fobByRange(qsrFobRowsForLoc, range)[_unpadLoc(loc)];
+    if (autoFob && autoFob.prodSales > 0) {
+      mo.foodOB = autoFob['fob$'];
+    } else if (fr.length) {
       const fd = sum(fr,'fobDollar');
       if (fd!=null) mo.foodOB = fd;
     }
