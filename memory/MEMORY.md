@@ -84,6 +84,29 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.196): FOB fallback (v5.195) now applies per-segment across
+  multi-month windows too — owner directive.** A parallel 4-agent audit of the rest of the
+  Leadership One-Pager (Labor%, OEPE/R2P/TPPH, Sales/GC/Plan, Controls/Suggested-Actions) found
+  Labor/Sales/Controls all clean (genuinely per-day sources, verified live) but surfaced one
+  residual case of the v5.195 FOB bug: a week spanning a month boundary still zeroed out its
+  pre-boundary segment, since that fix was deliberately restricted to single-month windows. Owner
+  directive on hearing this: *"whatever the latest data pulled is the number that should be
+  used."* `fobByRange()` now applies the latest-pulled-total fallback unconditionally per month
+  segment, any window shape — `qsr_fob` can't support a true sub-month delta at all, so this is
+  correct everywhere, not just the single-month case. 256/256 test files, 2781/2781 tests (the
+  multi-month test was rewritten to assert the new behavior, not skipped). Build clean, entry
+  unchanged at 474.69 KB gzip. Direct push, no dispatch cycle, given the same-night urgency.
+  **⚠️ Separate, real, NOT-yet-fixed finding from the same audit:** OEPE/R2P/TPPH blend the
+  CURRENT, still-in-progress business day into "this week" averages with full unflagged weight —
+  measured live: the only day in the current work week (Aug 26) sat at 68% of its own projected
+  transaction volume yet read as the FASTEST OEPE and HIGHEST TPPH of the whole week. Root cause:
+  DAR always returns all 24 hour_slot rows, zero-filled for hours that haven't happened yet, so
+  the existing "count(hour_slot)==24" completeness check (cited elsewhere in this file/CLAUDE.md)
+  **cannot detect this** — a genuinely new gap in that guard, not a re-derivation. Needs a real
+  completeness signal reaching `metricAvg`/`buildCurrentState`/`buildPerLocationRows`/
+  `buildMetricNow` (all independently call the same sourcing) before it's fixed — architecturally
+  bigger than a same-night patch, intentionally NOT rushed. **Next session: this is real,
+  reproducible, and open — don't let it go stale before someone acts on it.**
 - **✅ SHIPPED (2026-08-27, v5.195): fix FOB %/Food $ showing blank on weekly-scoped panels —
   urgent, owner-reported ("need this for in the morning"), fixed same night.** Leadership
   One-Pager's "Week of Aug 19" tile showed FOB "—" and Food $ "$0" while its own YTD FOB % worked
