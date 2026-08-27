@@ -84,6 +84,49 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.197): [Dispatch #152 — Performance Review continuity Phase 4a:
+  per-person-per-YEAR data model + scoring engine](dispatch-152.md).** Sixth build phase — the
+  biggest architectural change of the whole redesign series so far. Restructures reviews from
+  one-record-per-HALF (H1/H2 were two completely separate, unrelated Supabase rows for the same
+  person) to **one record per (person, year)**, holding all four quarters + both half-year
+  rollups + a new full-year rollup. `reviewId(person, year)` drops the `_H1`/`_H2` suffix;
+  `blankReview()` drops the `half` param entirely (`kpis.months` now all 12 months, was 6;
+  `behavioralRatings` all four `q1..q4`, was 2). **Two real design decisions made and documented:**
+  (1) the review's person-identity field **unifies** with the SAME identity space dispatch
+  #150/#151 already built for `staff_assignments.person`/`profiles.person` — new nullable `person`
+  field, defaults null, `reviewId` falls back to plain name so nothing breaks; explicitly did NOT
+  repurpose the narrow shift-attribution-only `geid` field. (2) Approval status moves from one
+  top-level `status` to `periods.h1`/`periods.h2` (each own `{status, statusHistory, statusNotes}`)
+  — a year isn't approved as one atomic event, its two real conversations are, at different points
+  in the year — matches the owner's own words exactly. `computeScores`/`computeScoreBreakdown` now
+  return `{q1,q2,q3,q4,h1,h2,year}` from one call, every level built by the SAME `combine()` step
+  (year = h1+h2 combined identically to how h1 already combines q1+q2) — proven with a concrete
+  numeric test using asymmetric quarter ratings, not just "it runs." One real UI crash found and
+  fixed (`NewReviewForm`'s stale 6-arg `blankReview` call, would corrupt `templateSnapshot` and
+  throw on Create) with its own regression test that was verified to actually catch the crash
+  (reverted the fix, confirmed the test failed, re-applied). Everything else UI-facing (period
+  selector, list columns, print, transition buttons) is real, non-crashing, deliberately deferred
+  breakage — documented in full in the PR body, not Phase 4b's job to fix here.
+  **A genuine, important finding from live measurement (not the plan doc's days-old claim):**
+  `reviews` had **3 real rows**, not 0 — `stacey_hyatt_2026_H1`, `gonzales_briann_2026_H1`,
+  `nick_rice_2026_H1` (the last is literally the plan doc's own motivating example — the owner's
+  own test entries, not real prod data). **The owner confirmed deletion was safe (2026-08-27
+  morning) and the PM session deleted all 3 directly via service-role REST, confirmed empty
+  afterward** — `reviews` is clean going into this schema change, no migration concern.
+  **⚠️ NOT YET APPLIED TO PRODUCTION SUPABASE** — SQL below.
+  **A real merge conflict, not just squash-history noise:** the engineer's own new changelog entry
+  collided on the SAME version number (`5.195.js`) as the same-night urgent FOB fix (v5.195,
+  shipped hours earlier while the engineer was mid-run, unaware of each other) — GitHub reported
+  `mergeable_state: "dirty"`, not mergeable. Resolved during verification: renumbered the
+  engineer's entry to v5.197 (next free slot after the FOB fix's own v5.195/v5.196), regenerated
+  `changelog-latest.js`, pushed the resolution onto the PR's own branch so GitHub's merge went
+  through cleanly. 258/258 test files, 2801/2801 tests (main baseline 2798; the engineer's own
+  measurement was 2799 before this session's 2 same-night FOB tests merged in on top — zero
+  regressions either way). Build
+  clean, entry chunk 474.69→474.96 KB gzip (+0.27 KB). Verified independently in a fresh worktree
+  before merging — full diff read (schema, `reviewId`/`blankReview`/`computeScores`/
+  `transitionReview` all read function-by-function, not skimmed), both claimed test/build numbers
+  reproduced, the year-rollup `combine()` reuse confirmed by reading the actual code.
 - **✅ SHIPPED (2026-08-27, v5.196): FOB fallback (v5.195) now applies per-segment across
   multi-month windows too — owner directive.** A parallel 4-agent audit of the rest of the
   Leadership One-Pager (Labor%, OEPE/R2P/TPPH, Sales/GC/Plan, Controls/Suggested-Actions) found
