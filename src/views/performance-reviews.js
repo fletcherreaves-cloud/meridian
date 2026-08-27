@@ -17,7 +17,9 @@ import {
   QUARTER_MONTHS, H1_MONTHS, H2_MONTHS, calendarMonthRange, computeSegmentedReview,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
-import { hasPermission, getOrgRoles, canOverrideLockedActual, DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
+import { hasPermission, getOrgRoles, canOverrideLockedActual, canApproveDeparture, DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
+// Dispatch #162 (Performance Review continuity, build item #6) — departure/termination handling.
+import { applyDepartureAutoFinalize } from '../engine/departure.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { KPI_REGISTRY, kpiByKey, explainThreshold, makeMetricFromKpi } from '../engine/kpi-registry.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
@@ -915,7 +917,10 @@ function ReviewEditor({review: initReview, cfg, ds, onSave, onBack, userRole='ad
   // legitimate edits to a still-open half just because its sibling half is already approved.
   const h1Status = review.periods?.h1?.status || 'draft';
   const h2Status = review.periods?.h2?.status || 'draft';
-  const _locked = s => s === 'submitted' || s === 'approved';
+  // Dispatch #162 — 'auto_finalized' locks KPI editing the same as 'approved' (a departure-
+  // triggered finalize is still a finalize; only Reopen, gated by canApproveDeparture below in
+  // StatusActionBar, unlocks it again).
+  const _locked = s => s === 'submitted' || s === 'approved' || s === 'auto_finalized';
   const activeHalf = PERIOD_META[period].statusHalf; // 'h1' | 'h2' | null (year = both)
   const isReadOnly = activeHalf
     ? _locked(activeHalf === 'h1' ? h1Status : h2Status)
@@ -1060,8 +1065,17 @@ function StatusActionBar({half, review, userRole, orgRoles, onTransition}) {
   const [returnNotes, setReturnNotes]       = useState('');
   const periodState = review.periods?.[half] || {status:'draft', statusHistory:[], statusNotes:''};
   const status      = periodState.status || 'draft';
-  const isReadOnly  = status === 'submitted' || status === 'approved';
+  // Dispatch #162 — 'auto_finalized' is read-only too, same as 'approved' (see ReviewEditor's own
+  // _locked for the KPI-tab half of this).
+  const isReadOnly  = status === 'submitted' || status === 'approved' || status === 'auto_finalized';
   const halfLabel   = half === 'h1' ? 'H1' : 'H2';
+  // Dispatch #162 — Approve/Reopen on an auto-finalized half is gated by decision #4's hierarchy
+  // mechanism (canApproveDeparture, permissions.js — the person's normal reviewer or above, PLUS
+  // the unconditional Admin/Developer escape hatch), NOT the plain reviews.approve permission a
+  // normal Submitted->Approved transition uses. That's the owner's own explicit design: "The
+  // approval and potential override should come from a job title code qualified to perform the
+  // review or above."
+  const canApproveThisDeparture = canApproveDeparture(userRole, review.role, orgRoles || getOrgRoles());
 
   const fire = (newStatus, notes='') => onTransition(half, newStatus, notes);
 
@@ -1073,7 +1087,13 @@ function StatusActionBar({half, review, userRole, orgRoles, onTransition}) {
       status==='returned'&&periodState.statusNotes&&
         span({style:{fontSize:11,color:'#ef4444',fontStyle:'italic'}},
           `"${periodState.statusNotes}"`),
-      isReadOnly&&span({style:{fontSize:11,color:TEXT3}},
+      // Dispatch #162 — the auto-finalize note itself, surfaced verbatim (departure reason +
+      // who can act on it) rather than a generic "read-only" line, so the distinction from a
+      // normal human approval is visible in the explanatory text too, not just the badge color.
+      status==='auto_finalized'&&periodState.statusNotes&&
+        span({style:{fontSize:11,color:'#a855f7',fontStyle:'italic'}},
+          periodState.statusNotes),
+      isReadOnly&&status!=='auto_finalized'&&span({style:{fontSize:11,color:TEXT3}},
         status==='submitted'?'Read-only while under review':'Approved — use Reopen to edit'),
       div({style:{flex:1}}),
       // Draft: submit
@@ -1099,6 +1119,16 @@ function StatusActionBar({half, review, userRole, orgRoles, onTransition}) {
       status==='approved'&&hasPermission(userRole,'reviews.approve',orgRoles||getOrgRoles())&&
         GhostBtn({onClick:()=>fire('draft'),style:{fontSize:11,padding:'4px 12px'}},
           'Reopen'),
+      // Auto-finalized (dispatch #162): Approve-as-final / Reopen, gated by the hierarchy check
+      // (canApproveThisDeparture), NOT the plain reviews.approve permission above.
+      status==='auto_finalized'&&canApproveThisDeparture&&h(React.Fragment,null,
+        PrimaryBtn({onClick:()=>fire('approved','Confirmed as final by qualified reviewer after auto-finalize.'),
+          style:{fontSize:11,padding:'4px 12px',background:'#16a34a'}},
+          'Approve as Final'),
+        GhostBtn({onClick:()=>fire('draft','Reopened — auto-finalize departure record was reviewed and reversed.'),
+          style:{fontSize:11,padding:'4px 12px'}},
+          'Reopen'),
+      ),
     ),
     showReturnForm&&div({style:{display:'flex',alignItems:'flex-start',gap:8,
       padding:'10px 16px',borderBottom:`1px solid ${BDR}`,background:'#1c0a0a'}},
@@ -2807,6 +2837,31 @@ export function PerformanceReviewsPanel({stores, ds, settings, onClose, userRole
   const [showHelp, setShowHelp] = useState(false);
 
   const refresh = () => setReviews(getReviews());
+
+  // Dispatch #162 (Performance Review continuity, build item #6) — departure/termination
+  // handling. "No manual step needed for the routine case" (plan doc, resolved item B) means this
+  // runs on its own whenever tenure data is available, not behind a button: for every THIS-YEAR
+  // review, detect a departure against ds.tenureRows and auto-finalize its open period(s) via
+  // applyDepartureAutoFinalize (which itself calls the existing transitionReview — see that
+  // file's own header). Guarded by a ref keyed on the tenureRows array identity so this sweep
+  // runs once per fresh load of tenure data, not on every render or every refresh() this same
+  // effect's own transitions trigger (ds.tenureRows only changes when a NEW Supabase load lands,
+  // not when `reviews` changes) — same reasoning the segmented-review effect below already needs.
+  const _tenureSweepRef = React.useRef(null);
+  useEffect(() => {
+    const tenureRows = ds?.tenureRows;
+    if (!tenureRows || !tenureRows.length) return;
+    if (_tenureSweepRef.current === tenureRows) return; // already swept this exact snapshot
+    _tenureSweepRef.current = tenureRows;
+    const thisYear = new Date().getFullYear();
+    let anyTransitioned = false;
+    for (const review of Object.values(getReviews())) {
+      if (review.year !== thisYear) continue; // past-year reviews are already done; not this dispatch's concern
+      const result = applyDepartureAutoFinalize(review, tenureRows);
+      if (result.transitioned.length) anyTransitioned = true;
+    }
+    if (anyTransitioned) refresh();
+  }, [ds?.tenureRows]);
 
   const handleSaveCfg = (newCfg) => { saveReviewConfig(newCfg); setCfg(newCfg); };
   const handleResetCfg= () => { resetReviewConfig(); setCfg(JSON.parse(JSON.stringify(DEFAULT_REVIEW_CONFIG))); };

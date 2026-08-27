@@ -395,7 +395,10 @@ export function setSupabaseClient(client) { _sb = client; }
 // of h1/h2" summary for coarse filtering only. The authoritative per-half statuses always live in
 // `data.periods.h1.status`/`data.periods.h2.status` -- never resolve real workflow logic from
 // this scalar column.
-const _STATUS_RANK = { draft: 0, returned: 1, submitted: 2, approved: 3 };
+// Dispatch #162 — auto_finalized ranks alongside approved (both are "as far along as this half
+// gets without being reopened"); a tie between the two on h1 vs h2 falls to h2 via this function's
+// own >= comparison below, matching the pre-existing tie behavior between two equal ranks.
+const _STATUS_RANK = { draft: 0, returned: 1, submitted: 2, approved: 3, auto_finalized: 3 };
 export function reviewSummaryStatus(review) {
   const h1 = review?.periods?.h1?.status || 'draft';
   const h2 = review?.periods?.h2?.status || 'draft';
@@ -1755,11 +1758,21 @@ export function qLabel(q) { return {q1:'Q1',q2:'Q2',q3:'Q3',q4:'Q4'}[q]||q; }
 export function qMonths(q) { return {q1:[1,2,3],q2:[4,5,6],q3:[7,8,9],q4:[10,11,12]}[q]||[]; }
 
 // ── Review Status Workflow ─────────────────────────────────────────────────────
+// Dispatch #162 (Performance Review continuity, build item #6) — `auto_finalized` is a NEW status
+// value, never written by a human clicking Submit/Approve/Return/Reopen (StatusActionBar,
+// performance-reviews.js). It is written ONLY by departure.js's applyDepartureAutoFinalize(), via
+// this same transitionReview() below, when a departure is detected for a person with an open
+// review. Kept a distinct value (rather than reusing 'approved' + a statusHistory note) so the
+// distinction is visible everywhere REVIEW_STATUSES already drives UI (StatusBadge, ReviewList's
+// HalfStatusSummary) with zero extra plumbing, not just in a statusHistory entry a reader has to
+// go looking for — plan doc's own requirement: "visibly different in the UI, not just in the
+// data." A distinct color (purple) that isn't used by any other status keeps it unmistakable.
 export const REVIEW_STATUSES = {
-  draft:     { label: 'Draft',                 color: '#64748b' },
-  submitted: { label: 'Submitted for Review',  color: '#f59e0b' },
-  approved:  { label: 'Approved',              color: '#16a34a' },
-  returned:  { label: 'Returned for Revision', color: '#ef4444' },
+  draft:          { label: 'Draft',                          color: '#64748b' },
+  submitted:      { label: 'Submitted for Review',            color: '#f59e0b' },
+  approved:       { label: 'Approved',                        color: '#16a34a' },
+  returned:       { label: 'Returned for Revision',           color: '#ef4444' },
+  auto_finalized: { label: 'Auto-Finalized — Departure',      color: '#a855f7' },
 };
 
 // Dispatch #152 (Performance Review continuity, Phase 4a) — new `half` parameter ('h1' | 'h2').

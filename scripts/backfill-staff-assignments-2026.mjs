@@ -35,45 +35,23 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { orgAssignments, unpadLoc } from '../src/constants.js';
+// Dispatch #162 (Performance Review continuity, build item #6) extracted this backfill's own
+// job-code classification into src/engine/tenure-roles.js — #162's departure-detection needed the
+// exact same "is this row still in a review-eligible role" logic, and this project's standing rule
+// is "check whether a helper exists before writing one" rather than duplicate it. Re-exported here
+// (not just imported-and-used) so this script's existing test
+// (src/__tests__/backfill-staff-assignments-2026.test.js) keeps importing GM_JOB_CODES/
+// DM_AM_JOB_CODES/SM_JOB_CODES/isActiveTenureRow/classifyRosterAssignment from THIS path, unchanged.
+export {
+  GM_JOB_CODES, DM_AM_JOB_CODES, SM_JOB_CODES, isActiveTenureRow, classifyRosterAssignment,
+} from '../src/engine/tenure-roles.js';
+import { isActiveTenureRow, classifyRosterAssignment } from '../src/engine/tenure-roles.js';
 
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
   ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const BACKFILL_DATE_TAG = 'Backfilled 2026-08-26 (dispatch #150)';
-
-// ── Job-title-code -> review-role classification (plan doc decision #5, measured 2026-08-26) ──
-export const GM_JOB_CODES    = [45, 641];
-export const DM_AM_JOB_CODES = [845, 846, 10001, 20107];
-export const SM_JOB_CODES    = [647];
-
-// Exact "Active" (not substring -- "Inactive" contains "active"), and no termination date —
-// same discipline as people-reports.js's own isActive(), applied to the DB row shape
-// (qsr_employee_tenure's snake_case columns) rather than parseEmployeeRosterApi()'s camelCase.
-export function isActiveTenureRow(row) {
-  return !!row && /^active$/i.test(String(row.employment_status || '').trim()) && !row.termination_entry_date;
-}
-
-// A tenure row -> { role: DEFAULT_ROLES ladder id, reviewRole: review-engine.js ROLE_KEYS value }
-// or null if the row's job_title_code isn't a review-eligible bucket for this backfill (GM/AM/
-// DM/SM only — AS/OM/DO have no roster code at all, per decision #5, and are seeded separately
-// from orgAssignments(), below). AM vs DM: same functional job in this org, split by pay
-// classification, not job code (owner's own words, decision #5) — hourly_pay_rate 0/null
-// suggests AM (salaried), nonzero suggests DM (hourly). Both fold onto the SAME ladder rung
-// ('sm_am_dm'), matching REVIEW_ROLE_TO_LADDER (permissions.js) exactly, so this split only
-// changes the `notes` audit trail this backfill writes, not the `role` column itself.
-export function classifyRosterAssignment(row) {
-  const code = row && row.job_title_code != null ? Number(row.job_title_code) : null;
-  if (code == null || Number.isNaN(code)) return null;
-  if (GM_JOB_CODES.includes(code)) return { role: 'gm', reviewRole: 'GM' };
-  if (SM_JOB_CODES.includes(code)) return { role: 'sm_am_dm', reviewRole: 'SM' };
-  if (DM_AM_JOB_CODES.includes(code)) {
-    const rate = row.hourly_pay_rate;
-    const isHourly = rate != null && Number(rate) !== 0;
-    return { role: 'sm_am_dm', reviewRole: isHourly ? 'DM' : 'AM' };
-  }
-  return null;
-}
 
 // The later of two ISO 'YYYY-MM-DD' dates (lexical compare is safe for this format); either may
 // be null. Returns null if both are null -- the assignment's precise start can't be determined,

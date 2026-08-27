@@ -293,6 +293,29 @@ export function canOverrideLockedActual(callerRoleId, reviewRole, ladder) {
   return diff != null && diff >= 2;
 }
 
+// ── Departure auto-finalize approval authority (dispatch #162) ─────────────────
+// Plan doc resolved item B (memory/plan-performance-review-continuity-2026-08-26.md), owner's own
+// words: "Do the auto finalize but require approval in the ability to override it. The approval
+// and potential override should come from a job title code qualified to perform the review or
+// above." That is a DIFFERENT, LOWER bar than canOverrideLockedActual's ">=2 rungs" (that check
+// answers "who may override a LOCKED ACTUAL mid-review", decision #4's own separate worked
+// example: "The OM or DO or higher would be the only ones to override a result") -- here, the
+// person's own NORMAL REVIEWER already qualifies (decision #4's other worked example, same
+// paragraph: "if a GM is being reviewed then the Supervisor does the review" -- one rung up, i.e.
+// levelsAbove(...) === 1), or anyone further above. Built from the EXACT SAME primitives
+// canOverrideLockedActual uses -- levelsAbove(), REVIEW_ROLE_TO_LADDER, and the identical
+// unconditional Admin/Developer escape hatch (decision #6-C) -- just gated at >=1 rung instead of
+// >=2, because it answers a different question ("who may finalize/approve this person's review",
+// not "who may override one locked KPI cell"). canOverrideLockedActual itself is UNCHANGED --
+// dispatch #162's scope is explicit that decision #4's existing mechanism is reused, not modified.
+export function canApproveDeparture(callerRoleId, reviewRole, ladder) {
+  if (callerRoleId === 'admin' || callerRoleId === 'owner') return true;
+  const ladderRoleId = REVIEW_ROLE_TO_LADDER[reviewRole];
+  if (!ladderRoleId) return false;
+  const diff = levelsAbove(ladderRoleId, callerRoleId, ladder);
+  return diff != null && diff >= 1;
+}
+
 // ── Persistence ────────────────────────────────────────────────────────────────
 // getOrgRoles()/syncOrgRolesFromSupabase() always PREFERRED a persisted role list wholesale over
 // DEFAULT_ROLES -- correct for a genuinely org-configured list, but it means any org that

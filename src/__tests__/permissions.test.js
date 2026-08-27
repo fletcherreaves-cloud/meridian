@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_ROLES, ROLE_PERMISSION_TEMPLATES, ALL_PERMISSION_KEYS,
   levelsAbove, getRoleById, hasPermission, canManageRole, defaultPermissionsForLevel,
-  REVIEW_ROLE_TO_LADDER, canOverrideLockedActual, mergeMissingDefaultRoles,
+  REVIEW_ROLE_TO_LADDER, canOverrideLockedActual, canApproveDeparture, mergeMissingDefaultRoles,
   reconcileLadderLevels,
 } from '../engine/permissions.js';
 
@@ -233,6 +233,63 @@ describe('permissions.js — canOverrideLockedActual', () => {
   it('defaults to DEFAULT_ROLES when no ladder is supplied', () => {
     expect(canOverrideLockedActual('om', 'GM')).toBe(true);
     expect(canOverrideLockedActual('area_supervisor', 'GM')).toBe(false);
+  });
+});
+
+// Dispatch #162 — Performance Review continuity, build item #6: departure/termination handling.
+// Plan doc resolved item B, owner's own words: "Do the auto finalize but require approval in the
+// ability to override it. The approval and potential override should come from a job title code
+// qualified to perform the review or above." canApproveDeparture is built from the EXACT SAME
+// primitives as canOverrideLockedActual above (levelsAbove/REVIEW_ROLE_TO_LADDER/admin-owner
+// escape hatch) but gated at >=1 rung, not >=2 — "qualified to perform the review" IS the direct
+// reviewer (1 level above), unlike canOverrideLockedActual's stricter "override a locked actual"
+// bar. canOverrideLockedActual itself is unchanged (asserted above, still passing) — this is a new
+// sibling function, not a modification of decision #4's existing mechanism.
+describe('permissions.js — canApproveDeparture (dispatch #162)', () => {
+  it('allows the direct reviewer (1 level above a GM review, area_supervisor) — the qualified case canOverrideLockedActual explicitly rejects', () => {
+    expect(canApproveDeparture('area_supervisor', 'GM', DEFAULT_ROLES)).toBe(true);
+    expect(canOverrideLockedActual('area_supervisor', 'GM', DEFAULT_ROLES)).toBe(false); // unchanged, still stricter
+  });
+
+  it('allows anyone further above too (OM, DO, VP, Owner — "or above")', () => {
+    expect(canApproveDeparture('om', 'GM', DEFAULT_ROLES)).toBe(true);
+    expect(canApproveDeparture('do', 'GM', DEFAULT_ROLES)).toBe(true);
+    expect(canApproveDeparture('vp', 'GM', DEFAULT_ROLES)).toBe(true);
+  });
+
+  it('NEGATIVE CASE: rejects a peer (0 levels — same rung) and rejects someone BELOW', () => {
+    expect(canApproveDeparture('gm', 'GM', DEFAULT_ROLES)).toBe(false);
+    expect(canApproveDeparture('sm_am_dm', 'GM', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('unconditional admin/owner escape hatch applies here too (decision #6-C, same as canOverrideLockedActual)', () => {
+    expect(canApproveDeparture('admin', 'GM', DEFAULT_ROLES)).toBe(true);
+    expect(canApproveDeparture('owner', 'GM', DEFAULT_ROLES)).toBe(true);
+  });
+
+  it('works across the whole review-role set with the correct 1-level-above rung for each', () => {
+    // AM/DM/SM -> sm_am_dm (level 7): 1 above is gm (level 6).
+    expect(canApproveDeparture('gm', 'AM', DEFAULT_ROLES)).toBe(true);
+    expect(canApproveDeparture('sm_am_dm', 'AM', DEFAULT_ROLES)).toBe(false); // 0 levels, a peer
+    // AS -> area_supervisor (level 5): 1 above is om (level 4).
+    expect(canApproveDeparture('om', 'AS', DEFAULT_ROLES)).toBe(true);
+    expect(canApproveDeparture('area_supervisor', 'AS', DEFAULT_ROLES)).toBe(false);
+    // OM -> om (level 4): 1 above is do (level 3).
+    expect(canApproveDeparture('do', 'OM', DEFAULT_ROLES)).toBe(true);
+    expect(canApproveDeparture('om', 'OM', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('returns false for an unrecognized review role (no ladder mapping) even for a high caller role', () => {
+    expect(canApproveDeparture('vp', 'NOT_A_REAL_ROLE', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('returns false for an unrecognized caller role id that is not admin/owner', () => {
+    expect(canApproveDeparture('not_a_real_role', 'GM', DEFAULT_ROLES)).toBe(false);
+  });
+
+  it('defaults to DEFAULT_ROLES when no ladder is supplied', () => {
+    expect(canApproveDeparture('area_supervisor', 'GM')).toBe(true);
+    expect(canApproveDeparture('gm', 'GM')).toBe(false);
   });
 });
 
