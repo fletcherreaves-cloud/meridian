@@ -10,7 +10,7 @@
 import * as React from 'react';
 import { STORE_NAMES, DEFAULT_TARGETS } from '../constants.js';
 import { matchedVsLY } from '../engine/vs-ly.js';
-import { metricAvg } from '../engine/metric-source.js';
+import { metricAvg, metricRate } from '../engine/metric-source.js';
 import { computeVisitReadiness } from '../engine/visit-readiness.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { addD } from '../utils/date.js';
@@ -127,12 +127,16 @@ export function useAttentionFeed({ ds, stores, dateRange, max = 20 }) {
 
     // Drive-thru speed vs each store's own OEPE target. The slowDT detector has been
     // implemented and tested since the engine was written but was never fed inputs, so
-    // it silently contributed nothing. Sourced through metricAvg (auto-first per day)
-    // per the standing rule — never filter opsRows directly.
+    // it silently contributed nothing. Sourced through metricRate (auto-first per day,
+    // true Σ/Σ period rollup — dispatch #155, was metricAvg) per the standing rule — never
+    // filter opsRows directly. `dateRange` is this hook's own caller-supplied prop (the
+    // app's top-level toolbar range), which this "Attention Now" LIVE-monitoring panel has
+    // no reason to assume excludes the current, still-open business day — genuinely the
+    // shape metricRate exists for, not just a defensive conversion.
     // Note: OEPE is a mean of daily values, not car-weighted — the source stores it as a
     // ratio with no car count (see memory/notes-57-metric-registry-plan.md §4).
     const dtRows = allLocs.map(loc => {
-      const dt = metricAvg(ds, [loc], dateRange, 'oepe');
+      const dt = metricRate(ds, [loc], dateRange, 'oepe');
       const tgt = (DEFAULT_TARGETS[unpad(loc)] || {}).tOepe;
       return (dt != null && tgt != null) ? { loc, dt, target: Number(tgt) } : null;
     }).filter(Boolean);

@@ -840,6 +840,33 @@ export function rollupCapableMetricKeys() {
   return Object.keys(METRIC_SOURCES).filter(k => METRIC_SOURCES[k].derive?.kind === 'ratio');
 }
 
+// ── metricRate — the standard "period rate" accessor for a ratio metric (dispatch #153,
+// relocated + reused by dispatch #155) ──────────────────────────────────────────────────────
+// metricAvg is a flat MEAN OF DAILY VALUES, which blends an in-progress, still-incomplete
+// business day into a "current period" average at FULL WEIGHT — qsr_daily_activity_rollup
+// always carries the full 24-hour_slot shape even mid-day (future hours zero-filled, not
+// absent), so an incomplete day is structurally indistinguishable from a complete one and can
+// read as an implausibly fast/high figure purely from being incomplete (see CLAUDE.md's DAR/
+// hour_slot completeness note). metricSumRatio fixes this for a real ratio metric by summing
+// the raw numerator/denominator legs across the range, so a low-volume in-progress day
+// naturally contributes proportionally less instead of being averaged in as if representative.
+//
+// metricRate tries metricSumRatio FIRST and falls back to metricAvg ONLY when metricSumRatio
+// has nothing to compute (no day in range resolves both raw legs — e.g. a store with no DAR
+// rows this period, only a manual Ops Report upload of the precomputed field). Never silently
+// drop a number that used to display.
+//
+// Originally dispatch #153's private `rateMetric` helper in one-pager-data.js (the Leadership
+// One-Pager's 3 call sites). Relocated here and renamed `metricRate` under dispatch #155 so it
+// can be shared across every call site in the app that reads oepe/r2p/tpph (or any other
+// ratio-marked metric) over a range that can include the current, still-open period — NOT
+// renamed `rateMetric` to avoid colliding with the unrelated, already-exported
+// `rateMetric(actual, target, metricCfg)` 1-4 scoring function in engine/review-engine.js.
+export function metricRate(ds, locs, range, key) {
+  const sumRatio = metricSumRatio(ds, locs, range, key);
+  return sumRatio ? sumRatio.value : metricAvg(ds, locs, range, key);
+}
+
 // Dispatch #77 -- the one place a consumer (e.g. Top/Bottom Performers) asks "which way is
 // good" for a metric. Returns 'lower' | 'higher' | null -- null means genuinely undecided
 // (see METRIC_SOURCES header comment for park/actVsNeed, the two deliberate omissions), not

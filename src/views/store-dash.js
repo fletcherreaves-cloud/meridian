@@ -9,7 +9,7 @@ import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache 
 import { computeSmartTarget, peerBaselinesFor } from '../engine/smart-targets-model.js';
 import { robustBaseline, dollarWeightedRatio, median as _median } from '../utils/stats.js';
 import { matchedVsLY, lyQuality } from '../engine/vs-ly.js';
-import { metricAvg, metricSeries as _msSeries } from '../engine/metric-source.js';
+import { metricAvg, metricRate, metricSeries as _msSeries } from '../engine/metric-source.js';
 import { diagnoseMiss, lookupMissEvent } from '../engine/why.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
@@ -2257,15 +2257,19 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
       const loc=String(s.loc);
       res[loc]={
         laborPct: metricAvg(ds,loc,DR,'laborPct'),
-        tpph:     metricAvg(ds,loc,DR,'tpph'),
-        oepe:     metricAvg(ds,loc,DR,'oepe'),
+        // tpph/oepe/r2p via metricRate, not metricAvg (dispatch #155) — DR_PRESETS below
+        // (this panel's own period filter) includes a preset literally called 'today'
+        // ({s:d,e:d} where d=new Date()), so a single-day, still-open-business-day range is
+        // a real, user-reachable selection here, not a theoretical edge case.
+        tpph:     metricRate(ds,loc,DR,'tpph'),
+        oepe:     metricRate(ds,loc,DR,'oepe'),
         kvst:     metricAvg(ds,loc,DR,'kvst'),
         park:     metricAvg(ds,loc,DR,'park'),
         otHrs:    metricAvg(ds,loc,DR,'otHrs'),
         cashOSPct:metricAvg(ds,loc,DR,'cashOSPct'),
         tRedAPct: metricAvg(ds,loc,DR,'tRedAPct'),
         discPct:  metricAvg(ds,loc,DR,'discPct'),
-        r2p:      metricAvg(ds,loc,DR,'r2p'),
+        r2p:      metricRate(ds,loc,DR,'r2p'),
         // sales total: sum of the freshest daily value per day (manual, else auto DAR).
         sales:    Object.values(_msSeries(ds,loc,DR,'sales')).reduce((a,b)=>a+b,0),
       };

@@ -1,6 +1,6 @@
 // Performance Review Engine — config, storage, and scoring
 import { DEFAULT_TARGETS } from '../constants.js';
-import { metricAvg } from './metric-source.js';
+import { metricAvg, metricRate } from './metric-source.js';
 import { applyTargetOverrides } from './target-overrides.js';
 // Dispatch #154 (Performance Review continuity, Phase 5a) — promotion/transfer segmented
 // scoring. assignment-graph.js owns ALL reports-to-graph resolution logic (dispatch #150's own
@@ -1576,8 +1576,18 @@ export function autoPopulateKPIs(review, ds) {
     // current cloud stream on the same day). Strictly a superset of the old ds.opsRows /
     // ds.laborRows-only fallback — both are still in the resolver's own chains.
     const range = monthRange(m);
-    const oepeAvg  = metricAvg(ds, loc, range, 'oepe');
-    const r2pAvg   = metricAvg(ds, loc, range, 'r2p');
+    // OEPE/R2P via metricRate, not metricAvg (dispatch #155). `months` iterates all 12
+    // calendar months of the review year (blankMonthKPIs, this function's own `months`
+    // build-up above) and monthRange(m) always returns the FULL calendar month — it does
+    // NOT clip to "so far" for the current month. autoPopulateKPIs can genuinely be called
+    // for a review of the current, still-in-progress month (a review actively being built
+    // mid-period), so `range` here CAN include today's still-open business day — the exact
+    // shape metricRate exists for. kvsAvg/laborAvg stay on metricAvg: kvst/laborPct are not
+    // `kind:'ratio'` metrics (no declared numerator/denominator pair in METRIC_SOURCES), so
+    // metricSumRatio can't compute a Sum/Sum for them regardless — out of this dispatch's
+    // scope (oepe/r2p/tpph only).
+    const oepeAvg  = metricRate(ds, loc, range, 'oepe');
+    const r2pAvg   = metricRate(ds, loc, range, 'r2p');
     const kvsAvg   = metricAvg(ds, loc, range, 'kvst');
     const laborAvg = metricAvg(ds, loc, range, 'laborPct');
     // 2nd Side Healthy Usage (owner, 2026-08-26: "we need to populate it as well") — same
