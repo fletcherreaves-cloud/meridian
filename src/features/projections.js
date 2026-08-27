@@ -5,6 +5,7 @@ import { dKey, sodOf, addD, eodOf, thisWeek } from '../utils/date.js';
 import { isHoliday } from '../utils/holidays.js';
 import { forecastDay, fetchLY, getStoreOrg, fetchLYDate, gcCrossCheck } from '../engine/forecast.js';
 import { weightedMean } from '../engine/weighted.js';
+import { computeScheduleRollup } from '../engine/schedule-summary.js';
 import { computeEventFactors } from '../utils/events.js';
 import { TH, f$ } from '../utils/fmt.js';
 import { ForecastAudit, CurrentMonthPaceSection } from '../views/analytics.js';
@@ -1134,6 +1135,39 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
     );
   };
 
+  // ── Scheduled TPPH sub-row (dispatch #167 -- FR "TPPH auto-target calc") ──────
+  // "Include in projections smart target" — the genuinely new integration point (this
+  // file had no prior reader of computeSmartTargets or schedule-summary.js). Reuses
+  // schedule-summary.js's rollup() via computeScheduleRollup, scoped to whatever period
+  // is currently on screen (weekDays[0]..weekDays[last] — the same range StoreRow's own
+  // totals use), rather than re-deriving fcstGC/schedHrs math a second time here. TPPH
+  // is a ratio over the period, not a per-day additive figure, so — like GCARow/
+  // DaypartRow above — this renders blank day/week cells and puts the one summary value
+  // in the period-total column.
+  const ScheduledTPPHRow = ({loc}) => {
+    if(settings.showScheduledTPPH===false) return null;
+    if(!weekDays.length) return null;
+    const range={s:dKey(weekDays[0]),e:dKey(weekDays[weekDays.length-1])};
+    const band=computeScheduleRollup(ds&&ds.schedRows,[loc],range);
+    if(!band||band.tpmh==null) return null;
+    return tr({key:'stpph_'+loc,style:{background:'rgba(129,140,248,.04)',borderBottom:'.5px solid var(--bdr)'}},
+      td({style:{padding:'1px 8px 1px 20px',fontSize:'8px',color:'#818cf8',whiteSpace:'nowrap'}},
+        '↳ Scheduled TPPH'),
+      ...(projPeriod==='week'
+        ? weekDays.map((d,i)=>td({key:i,style:{padding:'1px 4px'}}))
+        : projWeeks.map((wk,wi)=>td({key:wi,style:{padding:'1px 4px'}}))
+      ),
+      td({style:{padding:'1px 4px',textAlign:'right',fontFamily:'var(--mono)',fontSize:'9px',
+        fontWeight:700,color:'#818cf8',borderLeft:'.5px solid var(--bdr)'},
+        title:'What TPPH should be if scheduled correctly this period: LifeLenz forecast transactions ('+
+          Math.round(band.fcstGC).toLocaleString()+') ÷ scheduled hourly-only (Punched) hours ('+
+          band.schedHrs.toFixed(1)+'h). Same computation as the Weekly Schedule Summary panel\'s TPMH.'},
+        band.tpmh.toFixed(2)),
+      td({style:{padding:'1px 4px',fontSize:'7.5px',color:'var(--text3)'}},'sched hrs basis'),
+      td()
+    );
+  };
+
   // ── Store row ───────────────────────────────────────────
   const StoreRow = ({loc}) => {
     const store=stores.find(s=>s.loc===loc);
@@ -1788,6 +1822,7 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
                     h(StoreRow,{key:loc,loc}),
                     settings.showGCAComparison!==false&&h(GCARow,{key:'gca_'+loc,loc}),
                     settings.showDaypartSupplement!==false&&h(DaypartRow,{key:'dp_'+loc,loc}),
+                    settings.showScheduledTPPH!==false&&h(ScheduledTPPHRow,{key:'stpph_'+loc,loc}),
                   ].filter(Boolean)),
                   // Section subtotal
                   groupBy!=='all'&&h(SubtotalRow,{key:'sub_'+label,label,locs}),

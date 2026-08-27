@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { DEFAULT_TARGETS, STORE_NAMES, sNameC } from '../constants.js';
 import { fetchLY, getStoreOrg, avg6 } from '../engine/forecast.js';
+import { computeScheduleRollup, currentScheduleWeekRange } from '../engine/schedule-summary.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -87,7 +88,7 @@ function roundTarget(v,tgtKey){
   return Math.round(v*100)/100;
 }
 
-function computeSmartTargets(loc, ds, settings){
+function computeSmartTargets(loc, ds, settings, now){
   if(!ds||!ds.loaded) return null;
   const t=(ds.targets&&ds.targets[loc])||DEFAULT_TARGETS[loc]||{};
   const today=new Date();
@@ -243,6 +244,25 @@ function computeSmartTargets(loc, ds, settings){
       yearlyReasoning,monthlyReasoning,confidence,sampleSize:vals12w.length
     };
   });
+
+  // ── Scheduled TPPH (dispatch #167 -- FR "TPPH auto-target calc") ───────────
+  // A SEPARATE, additive signal from the trailing-history-based `tpph` target above:
+  // "what SHOULD TPPH be, given the current published schedule" rather than "where has
+  // it actually been trending." Reuses schedule-summary.js's rollup() via
+  // computeScheduleRollup — LifeLenz's own forecast transactions ÷ scheduled hourly-only
+  // (Punched) hours for the current LifeLenz business week — rather than re-deriving
+  // fcstGC/schedHrs math a second time here (CLAUDE.md: "reuse it, don't fork it").
+  // `null` when the store has no published forward schedule for the current week yet
+  // (computeScheduleRollup returns null with no matching rows).
+  if(results.tpph){
+    const wkRange=currentScheduleWeekRange(now||new Date());
+    const band=computeScheduleRollup(ds.schedRows, [loc], wkRange);
+    results.tpph.scheduled = (band && band.tpmh!=null) ? {
+      tpmh: band.tpmh, schedHrs: band.schedHrs, fcstGC: band.fcstGC,
+      weekStart: wkRange.weekStart, s: wkRange.s, e: wkRange.e,
+    } : null;
+  }
+
   return results;
 }
 
@@ -433,6 +453,12 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
                   const isOverride=overrides[key]!=null;
                   const val=getVal(loc,m.k);
                   const hasData=d&&d.recent!=null;
+                  // Scheduled TPPH (dispatch #167) -- visible in the grid alongside the
+                  // trailing-trend figure, not just behind the detail-panel click, per this
+                  // repo's "say the number AND the decision... never hidden behind a click"
+                  // voice rule. Independent of hasData: a store can have a live forward
+                  // schedule with too little trailing history for the trend target yet.
+                  const hasSched=m.k==='tpph'&&d&&d.scheduled&&d.scheduled.tpmh!=null;
                   const bg=isApproved?'rgba(16,185,129,.1)':
                     isOverride?'rgba(245,158,11,.1)':'transparent';
                   return h('td',{key:m.k,
@@ -440,27 +466,31 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
                       background:bg,
                       border:selLoc===loc&&selMetric===m.k?'1px solid var(--amber)':'1px solid transparent'},
                     onClick:function(){setSelLoc(loc);setSelMetric(m.k);}},
-                    hasData?div(null,
-                      // Proposed value (editable inline)
-                      h('input',{
-                        value:isOverride?overrides[key]:(val!=null?val:''),
-                        onChange:function(e){
-                          const v=parseFloat(e.target.value);
-                          if(!isNaN(v)){
-                            setOverrides(prev=>({...prev,[key]:v}));
-                          } else if(e.target.value===''){
-                            setOverrides(prev=>{const n={...prev};delete n[key];return n;});
-                          }
-                        },
-                        style:{width:'70px',textAlign:'center',
-                          background:'transparent',border:'none',
-                          color:isApproved?'#10b981':isOverride?'#f59e0b':'var(--text)',
-                          fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,
-                          outline:'none',cursor:'text'}
-                      }),
-                      // Trend indicator
-                      div({style:{fontSize:'7px',color:d.trendColor,marginTop:1}},
-                        d.trendLabel+' | '+d.confidence)
+                    (hasData||hasSched)?div(null,
+                      hasData?div(null,
+                        // Proposed value (editable inline)
+                        h('input',{
+                          value:isOverride?overrides[key]:(val!=null?val:''),
+                          onChange:function(e){
+                            const v=parseFloat(e.target.value);
+                            if(!isNaN(v)){
+                              setOverrides(prev=>({...prev,[key]:v}));
+                            } else if(e.target.value===''){
+                              setOverrides(prev=>{const n={...prev};delete n[key];return n;});
+                            }
+                          },
+                          style:{width:'70px',textAlign:'center',
+                            background:'transparent',border:'none',
+                            color:isApproved?'#10b981':isOverride?'#f59e0b':'var(--text)',
+                            fontFamily:'var(--mono)',fontSize:'9px',fontWeight:700,
+                            outline:'none',cursor:'text'}
+                        }),
+                        // Trend indicator
+                        div({style:{fontSize:'7px',color:d.trendColor,marginTop:1}},
+                          d.trendLabel+' | '+d.confidence)
+                      ):div({style:{fontSize:'9px',color:'var(--text3)'}},'—'),
+                      hasSched&&div({style:{fontSize:'7px',color:'#818cf8',marginTop:1}},
+                        'Sched '+m.fmt(d.scheduled.tpmh))
                     ):div({style:{color:'var(--text3)',fontSize:'8px'}},'—')
                   );
                 }),
@@ -504,17 +534,44 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
 
             div({style:{height:1,background:'var(--bdr)',margin:'8px 0'}}),
 
-            // Proposed targets
+            // Proposed targets — "Trend target": trailing-history-based, same engine
+            // every other metric uses.
             div({style:{padding:'8px',background:'rgba(16,185,129,.08)',
               borderRadius:'var(--r)',border:'.5px solid rgba(16,185,129,.2)',
               marginBottom:8}},
               div({style:{fontSize:'8px',fontWeight:700,color:'#10b981',marginBottom:4}},
-                'PROPOSED '+mode.toUpperCase()),
+                'TREND TARGET · PROPOSED '+mode.toUpperCase()),
               div({style:{fontSize:'12px',fontWeight:800,color:'#10b981',
                 fontFamily:'var(--mono)'}},
                 selData.metric.fmt(getVal(selLoc,selData.metric.k))),
               div({style:{fontSize:'8px',color:'var(--text3)',marginTop:4,lineHeight:1.6}},
                 mode==='monthly'?selData.monthlyReasoning:selData.yearlyReasoning)
+            ),
+
+            // "Scheduled target" (dispatch #167 -- FR "TPPH auto-target calc") — TPPH only,
+            // additive alongside the Trend target above, not a replacement for it. Answers a
+            // DIFFERENT question ("what TPPH should be if this store is scheduled correctly
+            // this week" vs. "where has TPPH actually been trending"), same posture this repo
+            // already takes with the engineered forecast models kept alongside Simple. Reuses
+            // schedule-summary.js's rollup() (via computeScheduleRollup) — never re-derived here.
+            selData.metric.k==='tpph' && div({style:{padding:'8px',background:'rgba(129,140,248,.08)',
+              borderRadius:'var(--r)',border:'.5px solid rgba(129,140,248,.25)',
+              marginBottom:8}},
+              div({style:{fontSize:'8px',fontWeight:700,color:'#818cf8',marginBottom:4}},
+                'SCHEDULED TARGET · THIS WEEK'),
+              selData.scheduled
+                ? React.createElement(React.Fragment,null,
+                    div({style:{fontSize:'12px',fontWeight:800,color:'#818cf8',
+                      fontFamily:'var(--mono)'}},
+                      selData.metric.fmt(selData.scheduled.tpmh)),
+                    div({style:{fontSize:'8px',color:'var(--text3)',marginTop:4,lineHeight:1.6}},
+                      'What TPPH should be if scheduled correctly: LifeLenz forecast transactions ('+
+                      Math.round(selData.scheduled.fcstGC).toLocaleString()+') ÷ scheduled hourly-only '+
+                      '(Punched) hours ('+selData.scheduled.schedHrs.toFixed(1)+'h), week of '+
+                      selData.scheduled.weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'}))
+                  )
+                : div({style:{fontSize:'9px',color:'var(--text3)',fontStyle:'italic'}},
+                    'No published LifeLenz schedule for this store this week yet.')
             ),
 
             div({style:{fontSize:'8px',color:'var(--text3)',lineHeight:1.6,
