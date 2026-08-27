@@ -607,6 +607,16 @@ function _triggerLazyFill(src) {
   _lazyState[src] = 'pending';
   loader().then(rows => {
     _lazyState[src] = 'loaded';
+    // Dispatch #170 hardening: the bounded and WIDE tiers race independently (this
+    // function's own guard above only dedupes bounded-vs-bounded). If a wide fetch for
+    // this same src already landed first — plausible despite the wide fetch starting
+    // later and fetching more, since the two requests are on independent timers with no
+    // ordering guarantee — this bounded result is stale and narrower; writing it would
+    // silently regress ds[src] back down under a UI that already reports the wide range
+    // as loaded (the exact "range option lies about what it shows" bug this dispatch
+    // exists to prevent, just via a timing race instead of a design gap). Skip the write;
+    // _lazyWideState[src]==='loaded' already means ds[src] holds the wider array.
+    if (_lazyWideState[src] === 'loaded') return;
     _lazyFillHook.setDs(prev => (prev ? { ...prev, [src]: rows || [] } : prev));
   }).catch(e => {
     _lazyState[src] = 'error';   // no auto-retry — matches the eager loaders' own error handling

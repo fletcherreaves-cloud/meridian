@@ -161,4 +161,49 @@ describe('metric-source lazy-fill — WIDE tier (dispatch #170)', () => {
     expect(isLazyFillWideLoaded('pmixRows')).toBe(false);
     expect(isLazyFillWidePending('pmixRows')).toBe(false);
   });
+
+  // Verification-time hardening: the bounded and wide tiers are two independent async
+  // operations with no ordering guarantee between them. In real usage the bounded fetch
+  // (40 days) always starts first (on panel mount) and is far smaller than the wide fetch
+  // (400 days, started later, only on user opt-in), so the wide fetch resolving FIRST is an
+  // edge case, not the common path — but it's reachable under unlucky network timing, and
+  // the failure mode if unguarded is exactly the bug this dispatch exists to prevent: a late-
+  // resolving bounded fetch would silently overwrite ds.pmixRows back down to 40 days while
+  // isLazyFillWideLoaded() (and therefore the panel's own "full history loaded" UI state)
+  // still reports the wide range as ready. Bounded's resolve handler must check the wide
+  // state before writing ds[src], not just its own.
+  it('a bounded fetch that resolves AFTER the wide fetch does not clobber the wider ds[src] result', async () => {
+    let resolveNarrow, resolveWide;
+    const narrowLoader = vi.fn(() => new Promise(res => { resolveNarrow = res; }));
+    const wideLoader = vi.fn(() => new Promise(res => { resolveWide = res; }));
+    const sets = [];
+    const setDs = updater => sets.push(updater);
+    configureLazyFill({ setDs, loaders: { pmixRows: narrowLoader }, wideLoaders: { pmixRows: wideLoader } });
+
+    ensureLazyFill('pmixRows');
+    ensureLazyFillWide('pmixRows');
+    expect(narrowLoader).toHaveBeenCalledTimes(1);
+    expect(wideLoader).toHaveBeenCalledTimes(1);
+
+    // Wide resolves FIRST despite starting later — the adversarial ordering.
+    const wideRows = Array.from({ length: 400 }, (_, i) => ({ tag: 'wide', i }));
+    resolveWide(wideRows);
+    await Promise.resolve(); await Promise.resolve();
+    expect(isLazyFillWideLoaded('pmixRows')).toBe(true);
+    expect(sets.length).toBe(1);
+    let ds = { pmixRows: [] };
+    ds = sets[0](ds);
+    expect(ds.pmixRows).toEqual(wideRows);
+
+    // Bounded resolves second, with a SMALLER, staler result. The guard in
+    // _triggerLazyFill's resolve handler must skip calling setDs entirely here — proving
+    // the skip, not just the end-state, since re-applying an unrelated update could
+    // coincidentally leave ds looking right even if the guard were missing.
+    const narrowRows = Array.from({ length: 40 }, (_, i) => ({ tag: 'narrow', i }));
+    resolveNarrow(narrowRows);
+    await Promise.resolve(); await Promise.resolve();
+    expect(sets.length).toBe(1); // still just the one wide setDs call -- narrow's was skipped
+    expect(ds.pmixRows).toEqual(wideRows);
+    expect(ds.pmixRows.length).toBe(400);
+  });
 });
