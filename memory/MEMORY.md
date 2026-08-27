@@ -84,6 +84,35 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.195): fix FOB %/Food $ showing blank on weekly-scoped panels —
+  urgent, owner-reported ("need this for in the morning"), fixed same night.** Leadership
+  One-Pager's "Week of Aug 19" tile showed FOB "—" and Food $ "$0" while its own YTD FOB % worked
+  fine. **Root cause, measured directly against production `qsr_fob` (not guessed):** the
+  underlying QSRSoft "Actual Food Over Base" report settles ONCE near each month's start and then
+  holds that EXACT SAME cumulative value for the rest of the month — confirmed one store held
+  282347.08 unchanged for all 26 days, Aug 1 through Aug 26; confirmed the same once-then-frozen
+  pattern going back through April-July for multiple stores before concluding this wasn't a
+  one-off. `fobByRange()` (`src/engine/one-pager-data.js`) isolates a window's own slice by
+  diffing two within-month snapshots (baseline = day before the window, end = window's last day)
+  — for ANY single-month window that starts after that month's settle date, both snapshots are
+  IDENTICAL by construction, so the diff is always exactly zero. Not a data-pull failure, not a
+  freshness gap — a structural mismatch between this source's once-a-month cadence and a sub-month
+  window; the pull itself is running fine (fresh rows appear daily, just with an unchanged value).
+  **Fix:** when the entire requested range sits inside a single calendar month and that month's
+  diff comes out non-positive despite the month having real settled data, fall back to the
+  month-to-date absolute total — the same number already shown correctly for a full-month/YTD
+  window, now also surfacing for a narrower window that genuinely can't be sliced any finer.
+  **Deliberately restricted to single-month windows only** — a multi-month-spanning window (e.g.
+  "last 7 days" straddling a month boundary) keeps its exact prior diffing behavior unchanged,
+  since applying the same fallback there would double-count whichever month the window only
+  partially covers (a dedicated test proves this guard holds). `fobByRange()` is shared by every
+  FOB-showing panel (At A Glance, Analytics, Signals, SAGE, Opportunity Dollars, the Leadership
+  One-Pager, and others per a `qsrFobRows` grep across 35 files) — this fix reaches all of them,
+  not just the one it was reported on. 256/256 test files, 2781/2781 tests (+2 new — one
+  reproducing the exact real-world frozen-source scenario, one proving the multi-month guard).
+  Build clean, entry chunk 474.62→474.71 KB gzip (+0.09 KB). Fixed and pushed directly (small,
+  well-understood, thoroughly tested against measured real data) rather than the full
+  dispatch/verify cycle, given the morning deadline.
 - **✅ SHIPPED (2026-08-26, v5.194): fix a second real bug found live minutes after v5.193
   shipped — `area_supervisor`'s stale pre-#148 level made it outrank OM.** `area_supervisor`
   already EXISTED in the org's persisted role list (not missing), so v5.193's
