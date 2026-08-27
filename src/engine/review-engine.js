@@ -2,6 +2,11 @@
 import { DEFAULT_TARGETS } from '../constants.js';
 import { metricAvg } from './metric-source.js';
 import { applyTargetOverrides } from './target-overrides.js';
+// Dispatch #154 (Performance Review continuity, Phase 5a) — promotion/transfer segmented
+// scoring. assignment-graph.js owns ALL reports-to-graph resolution logic (dispatch #150's own
+// "keep resolution logic in ONE place" rule); this file only turns that resolved data into
+// review SCORES, so it imports the timeline function rather than re-deriving it.
+import { personAssignmentTimeline } from './assignment-graph.js';
 
 const REVIEW_CONFIG_KEY    = 'mf_review_config_v1';
 const PERF_REVIEWS_KEY     = 'mf_perf_reviews_v1';
@@ -839,6 +844,44 @@ function scoreBehavCategory(ratingArr) {
   return avgRating(ratingArr||[]);
 }
 
+// Dispatch #154 (Performance Review continuity, Phase 5a) — extracted verbatim from what used to
+// be computeScores()'s own internal closures (metricsScore/behavScore/avgOf), to MODULE level,
+// so computeSegmentScores() (below, near autoPopulateKPIs) can reuse the IDENTICAL scoring math
+// instead of reinventing it — per this dispatch's own scope note ("reuses the SAME
+// scoreMetricCategory/behavScore/combine machinery computeScores already has... don't reinvent
+// scoring math a second time"). Pure extraction, zero behavior change — computeScores itself is
+// rewritten just below to call these instead of its old inline closures.
+function _metricsScoreAcross(mArr, cfg) {
+  let wS = 0, wT = 0;
+  for (const [cat, cw] of Object.entries(cfg.categoryWeights)) {
+    const s = scoreMetricCategory(mArr, cat, cfg);
+    if (s == null) continue;
+    wS += s * cw.weight; wT += cw.weight;
+  }
+  return wT > 0 ? wS / wT : null;
+}
+// `roleOverride` (new, optional): when omitted, behaves exactly as before (review.role's own
+// competencies) — computeScores() below never passes it. computeSegmentScores() passes a
+// segment-specific role so a promoted/transferred segment scores against ITS OWN competency
+// framework, not the review's single top-level role.
+function _behavQuarterScore(review, cfg, qKey, roleOverride) {
+  const role = roleOverride || review.role;
+  const rats = review.behavioralRatings?.[qKey] || {};
+  const extras = (cfg.extraCategories || []).map(c => c.key);
+  const allRatings = [...CAT_KEYS, ...extras, 'admin'].flatMap(cat => {
+    const items = cfg?.competencies?.[role]?.[cat] || [];
+    return (rats[cat] || []).filter((_, i) => {
+      const item = items[i];
+      return typeof item === 'string' || item == null || item.active !== false;
+    });
+  }).filter(x => x != null);
+  return allRatings.length ? allRatings.reduce((a, b) => a + b, 0) / allRatings.length : null;
+}
+function _avgOfVals(vals) {
+  const v = (vals || []).filter(x => x != null);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+
 // Every quarter's month numbers -- the ONE place this mapping is defined; h1/h2/year below all
 // derive from it rather than re-listing month ranges, so the rollups can never drift out of sync
 // with the per-quarter definitions.
@@ -864,45 +907,21 @@ export function computeScores(review, cfg) {
   const months = review.kpis?.months || {};
   const mArr = nums => nums.map(n=>months[n]).filter(Boolean);
 
-  function metricsScore(mArr_) {
-    let wS=0,wT=0;
-    for (const [cat,cw] of Object.entries(cfg.categoryWeights)) {
-      const s = scoreMetricCategory(mArr_, cat, cfg);
-      if (s==null) continue;
-      wS+=s*cw.weight; wT+=cw.weight;
-    }
-    return wT>0 ? wS/wT : null;
-  }
-
-  function behavScore(qKey) {
-    const rats = review.behavioralRatings?.[qKey] || {};
-    const extras = (cfg.extraCategories || []).map(c => c.key);
-    const allRatings = [...CAT_KEYS, ...extras, 'admin'].flatMap(cat => {
-      const items = cfg?.competencies?.[review.role]?.[cat] || [];
-      return (rats[cat] || []).filter((_, i) => {
-        const item = items[i];
-        return typeof item === 'string' || item == null || item.active !== false;
-      });
-    }).filter(x => x != null);
-    return allRatings.length ? allRatings.reduce((a,b)=>a+b,0)/allRatings.length : null;
-  }
-
-  const avgOf = vals => {
-    const v = vals.filter(x=>x!=null);
-    return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null;
-  };
   // The ONE combining step every rollup level (h1, h2, year) reuses -- metrics recomputed fresh
   // over `monthNums`, behavioral averaged from `subBehavioral` (already-computed sub-period
-  // scores), overall = the same metrics*mw + behavioral*bw formula every level uses.
+  // scores), overall = the same metrics*mw + behavioral*bw formula every level uses. Dispatch
+  // #154: metricsScore/behavScore/avgOf are now the module-level _metricsScoreAcross/
+  // _behavQuarterScore/_avgOfVals (above) instead of closures defined inline here — pure
+  // extraction so computeSegmentScores() can reuse the identical math, zero behavior change.
   const combine = (monthNums, subBehavioral) => {
-    const ms = metricsScore(mArr(monthNums));
-    const bs = avgOf(subBehavioral);
+    const ms = _metricsScoreAcross(mArr(monthNums), cfg);
+    const bs = _avgOfVals(subBehavioral);
     return { metrics: ms, behavioral: bs, overall: (ms!=null&&bs!=null) ? ms*cfg.overall.metrics+bs*cfg.overall.behavioral : null };
   };
 
   const out = {};
   for (const [qKey,qMonths] of Object.entries(QUARTER_MONTHS)) {
-    out[qKey] = combine(qMonths, [behavScore(qKey)]);
+    out[qKey] = combine(qMonths, [_behavQuarterScore(review, cfg, qKey)]);
   }
 
   out.h1 = combine([...QUARTER_MONTHS.q1, ...QUARTER_MONTHS.q2], [out.q1.behavioral, out.q2.behavioral]);
@@ -1184,6 +1203,231 @@ export function missingReviewTargets(review, cfg, ds) {
   return out;
 }
 
+// ── Dispatch #154 (Performance Review continuity, Phase 5a) — promotion/transfer segmented ─────
+// scoring. Full spec: memory/plan-performance-review-continuity-2026-08-26.md decision #3,
+// memory/dispatch-154.md. A manager who transfers stores or gets promoted mid-year must have
+// each period scored against the role/store that was ACTUALLY true then, not blended into one
+// number. Timeline reconstruction (personAssignmentTimeline) lives in assignment-graph.js — see
+// that file's own header for why (pure reports-to-graph data, no review concept involved). Every
+// function below turns that timeline into review SCORES, so it lives here, next to
+// computeScores/autoPopulateKPIs/mergedTargetsForLocMonth it depends on and reuses.
+
+// Calendar-month [start,end] for a given year+month — extracted verbatim from what used to be
+// autoPopulateKPIs's own private `monthRange` closure (below), so computeSegmentedReview can
+// reuse the identical date math for month-boundary attribution instead of re-deriving it. Pure
+// extraction; autoPopulateKPIs's own monthRange is now a one-line wrapper around this.
+export function calendarMonthRange(year, month) {
+  const s = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const e = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { s, e };
+}
+
+// staff_assignments.role stores a DEFAULT_ROLES LADDER id (dispatch #150's own design decision —
+// see that table's schema comment), but cfg.competencies (this file) is keyed by ROLE_KEYS
+// (GM/AM/DM/SM/AS/OM). permissions.js's REVIEW_ROLE_TO_LADDER is MANY-TO-ONE — AM, DM, and SM all
+// collapse onto the single 'sm_am_dm' rung — so a bare ladder-id assignment row genuinely CANNOT
+// distinguish which of the three a person actually held. That finer distinction exists ONLY as
+// free text in the 2026 backfill script's own `notes` field (dispatch #150's
+// rosterRowToAssignment: "-> suggested review role SM.") — not a structured, reliable signal a
+// future manually-created assignment row is guaranteed to carry at all. Building a real fix (a
+// structured job-code config table) is plan-doc item #8, explicitly out of scope here.
+//
+// Real-world impact, stated plainly rather than glossed over: 'gm' / 'area_supervisor' / 'om'
+// resolve UNAMBIGUOUSLY — a genuine promotion into or out of one of those rungs (the plan doc's
+// own motivating "Nick Rice" SM→GM example) scores against the RIGHT competency framework for
+// whichever segment resolves to gm/area_supervisor/om. Only a segment landing ON the 'sm_am_dm'
+// rung is imprecise. This picks 'AM' as the documented canonical stand-in — not an arbitrary
+// choice: DEFAULT_REVIEW_CONFIG.competencies (top of this file) defines real content for GM/AM/
+// AS/OM only — DM and SM have NO default competency block at all (confirmed by reading that
+// object directly) — so 'AM' is the only one of {AM,DM,SM} that is actually informative, and the
+// owner's own words already treat AM and DM as functionally interchangeable ("I would view them
+// similar, if not the same" — plan doc decision #5).
+export const LADDER_ROLE_TO_REVIEW_ROLE = { gm: 'GM', area_supervisor: 'AS', om: 'OM', sm_am_dm: 'AM' };
+
+// `ladderRole == null` is the sentinel personAssignmentTimeline's caller (computeSegmentedReview)
+// uses for "no real assignment row — this is the implicit whole-period segment" — in that case
+// the review's OWN role is authoritative (there is no assignment data to override it with).
+function resolveSegmentReviewRole(ladderRole, fallbackRole) {
+  if (ladderRole == null) return fallbackRole;
+  return LADDER_ROLE_TO_REVIEW_ROLE[ladderRole] || fallbackRole;
+}
+
+// Majority-of-month attribution (decision #3-A, owner's own words: "it was always awarded based
+// on the store data in which the manager worked the majority of the month"). Pure function:
+// given a period's [start,end] and an ordered list of candidate segments ({start,end,...}),
+// returns whichever segment covers the MOST DAYS of that period. Ties broken by earliest
+// segment start (deterministic; expected to be vanishingly rare in real data — two segments
+// covering the exact same day-count of one period requires a transfer landing on an exact
+// midpoint).
+//
+// Generalized beyond "a month" (the dispatch's own literal wording) on purpose: this file's data
+// model resolves at TWO different granularities that both need this exact rule. Metrics are
+// monthly (kpis.months); behavioralRatings has NO month-level resolution at all, only quarterly
+// (q1..q4) — a segment boundary falling mid-quarter can't be split at the behavioral layer the
+// way it can at the metrics layer. So quarter-level attribution reuses this SAME function at the
+// quarter grain (a quarter's own [start,end], below) rather than inventing a second rule — the
+// two granularities can legitimately disagree at a shared boundary month (e.g. a transfer early
+// in a quarter's last month can majority-attribute that MONTH to the new store while the
+// QUARTER as a whole still majority-attributes to the old one) — that is a deliberate, documented
+// consequence of the schema's own monthly/quarterly split, not a bug.
+export function resolvePeriodAttribution(periodStart, periodEnd, segments) {
+  const ps = String(periodStart), pe = String(periodEnd);
+  let best = null, bestDays = -1;
+  for (const seg of (segments || [])) {
+    const os = seg.start > ps ? seg.start : ps;
+    const oe = seg.end < pe ? seg.end : pe;
+    if (os > oe) continue; // no overlap with this period at all
+    const days = _daysInclusive(os, oe);
+    if (days > bestDays || (days === bestDays && best && seg.start < best.start)) { best = seg; bestDays = days; }
+  }
+  return best;
+}
+function _daysInclusive(a, b) {
+  const da = new Date(a + 'T00:00:00Z'), db = new Date(b + 'T00:00:00Z');
+  return Math.round((db - da) / 86400000) + 1;
+}
+
+// Scores ONE segment — a specific role + store + month/quarter subset — against ITS OWN role's
+// competency framework and ITS OWN store's targets, reusing the IDENTICAL
+// scoreMetricCategory/_metricsScoreAcross/_behavQuarterScore machinery computeScores() itself
+// uses (extracted to module level specifically so this doesn't reinvent scoring math a second
+// time, per this dispatch's own scope note).
+//
+// `segment` = { role: an ALREADY-RESOLVED ROLE_KEYS value (via resolveSegmentReviewRole — NOT a
+// raw staff_assignments ladder id), loc, months: [1..12 subset], qKeys: ['q1'..] subset }.
+//
+// TARGETS: when `ds` is supplied and segment.loc differs from review.loc, this re-resolves each
+// of the segment's months' targets FRESH against the segment's OWN store
+// (mergedTargetsForLocMonth) — review.kpis.months[m][key+'Tgt'] was populated by
+// autoPopulateKPIs against review.loc for the WHOLE year (see that function's own header comment,
+// below), so trusting it as-is would silently compare a transferred segment's actuals against
+// the WRONG store's targets. When segment.loc === review.loc (the common case — no transfer),
+// the already-populated targets are reused unchanged: cheap, and provably identical to a fresh
+// resolve since both would call the exact same function against the exact same store.
+//
+// ACTUALS: read from kpis.months[m][key] AS-IS, for every segment, including a transferred one.
+// This is a KNOWN, DOCUMENTED LIMITATION, not an oversight — see autoPopulateKPIs's own header
+// comment (below) and this dispatch's PR body for the full finding. Making autoPopulateKPIs
+// itself segment-aware is real, nontrivial follow-on work, explicitly NOT one of this dispatch's
+// 4 scope items.
+export function computeSegmentScores(review, cfg, segment, ds) {
+  cfg = resolveReviewConfig(review, cfg);
+  const months = review.kpis?.months || {};
+  const segLoc = segment.loc;
+  const refreshTargets = !!(ds && segLoc != null && String(segLoc) !== String(review.loc));
+  const mArr = (segment.months || []).map(m => {
+    const mo = months[m];
+    if (!mo) return null;
+    if (!refreshTargets) return mo;
+    const tgts = mergedTargetsForLocMonth(ds, segLoc, review.year, m);
+    const patched = { ...mo };
+    for (const [mk, tf] of Object.entries(REVIEW_METRIC_TARGET_FIELD)) {
+      if (tgts[tf] != null) patched[mk + 'Tgt'] = tgts[tf];
+    }
+    return patched;
+  }).filter(Boolean);
+
+  const metrics = _metricsScoreAcross(mArr, cfg);
+  const behavioral = _avgOfVals((segment.qKeys || []).map(qKey => _behavQuarterScore(review, cfg, qKey, segment.role)));
+  const overall = (metrics != null && behavioral != null)
+    ? metrics * cfg.overall.metrics + behavioral * cfg.overall.behavioral : null;
+  return {
+    role: segment.role, loc: segment.loc, start: segment.start, end: segment.end,
+    months: segment.months || [], qKeys: segment.qKeys || [],
+    metrics, behavioral, overall,
+  };
+}
+
+// Provisional weighted rollup (scope item 4) — segment-length (MONTH COUNT) weighted average of
+// each segment's `overall` score, as a STARTING POINT a reviewer can adjust with commentary, NOT
+// a rigid formula — per the plan doc decision #3's own HR-research conclusion: "the overall
+// rating... does not need to be an average." Weighted by MONTHS, not days: the whole attribution
+// pipeline above already resolves at monthly resolution for metrics (majority-of-month) and
+// quarterly resolution for behavioral — introducing day-level weighting here would fabricate a
+// precision the rest of this dispatch deliberately doesn't have (day-weighted apportionment is
+// the plan doc's own explicitly-deferred v2, not built here). A segment with a null `overall`
+// (e.g. no scored data at all for its months) contributes ZERO WEIGHT, not a zero score —
+// matching how every other rollup in this file (`combine`, `rollup`) already treats a missing
+// leg as "excluded", never "scored zero".
+export function provisionalSegmentRollup(segments) {
+  let wS = 0, wT = 0;
+  for (const seg of (segments || [])) {
+    const overall = seg.overall;
+    const weight = (seg.months || []).length;
+    if (overall == null || !weight) continue;
+    wS += overall * weight; wT += weight;
+  }
+  return {
+    value: wT > 0 ? wS / wT : null,
+    provisional: true,
+    note: 'Provisional weighted rollup (segment length in months x segment score) — a starting point for the reviewer to adjust with commentary, not a final number.',
+    segmentCount: (segments || []).length,
+  };
+}
+
+// Ties personAssignmentTimeline (assignment-graph.js) + resolvePeriodAttribution +
+// computeSegmentScores into the full pipeline: reconstruct the person's own assignment history
+// for the period, majority-attribute every month (metrics) and quarter (behavioral) to its
+// winning segment, group into distinct role+loc segments, score each one, and produce a
+// provisional weighted rollup.
+//
+// Defaults to the review's own full year; a caller can narrow to a sub-range via
+// opts.periodStart/periodEnd (same month-set the existing periods.h1/h2 status already
+// partitions on) for Phase 5b's eventual per-half segment display — NOT built or exercised here
+// (this dispatch's own tests only use the full-year default); flagged so a future caller knows
+// the hook exists rather than rebuilding this function.
+//
+// THE COMMON CASE (no promotion/transfer — most reviews): personAssignmentTimeline returns []
+// (no staff_assignments rows for this person at all) OR exactly one segment spanning the whole
+// period. Either way this collapses to exactly ONE segment using the review's OWN role/loc —
+// `hasTransitions` is false, and `rollup.value` is provably identical to computeScores(review,
+// cfg).year.overall for that case (see review-engine-segmented-scoring.test.js's own equivalence
+// test) — callers can use the flag to skip segment UI entirely and use the existing
+// computeScores()/computeScoreBreakdown() as today (Phase 5b's call to make, not built here).
+export function computeSegmentedReview(review, cfg, ds, assignmentRows, opts = {}) {
+  cfg = resolveReviewConfig(review, cfg);
+  const year = review.year || new Date().getFullYear();
+  const periodStart = opts.periodStart || `${year}-01-01`;
+  const periodEnd = opts.periodEnd || `${year}-12-31`;
+  const person = review.person || review.name;
+
+  const timeline = personAssignmentTimeline(person, periodStart, periodEnd, assignmentRows || []);
+  // No assignment data at all -> one implicit whole-period segment, review's own role/loc
+  // (role:null is the sentinel resolveSegmentReviewRole reads as "use review.role verbatim").
+  const effective = timeline.length ? timeline : [{ role: null, loc: review.loc, start: periodStart, end: periodEnd }];
+
+  const winnerFor = (s, e) => resolvePeriodAttribution(s, e, effective) || effective[0];
+  const segKey = w => `${w.role || ''}::${w.loc || ''}`;
+  const groups = {};
+  const addTo = (w, kind, val) => {
+    const k = segKey(w);
+    if (!groups[k]) groups[k] = { role: w.role, loc: w.loc, start: w.start, end: w.end, months: [], qKeys: [] };
+    groups[k][kind].push(val);
+  };
+
+  for (let m = 1; m <= 12; m++) {
+    const { s, e } = calendarMonthRange(year, m);
+    addTo(winnerFor(s, e), 'months', m);
+  }
+  for (const [qKey, qMonths] of Object.entries(QUARTER_MONTHS)) {
+    const s = calendarMonthRange(year, qMonths[0]).s;
+    const e = calendarMonthRange(year, qMonths[qMonths.length - 1]).e;
+    addTo(winnerFor(s, e), 'qKeys', qKey);
+  }
+
+  const segments = Object.values(groups).map(g => {
+    const reviewRole = resolveSegmentReviewRole(g.role, review.role);
+    return computeSegmentScores(review, cfg, { ...g, role: reviewRole }, ds);
+  });
+
+  return {
+    segments,
+    hasTransitions: timeline.length > 1 && segments.length > 1,
+    rollup: provisionalSegmentRollup(segments),
+  };
+}
+
 // Dispatch #149: this function unconditionally overwrites every src:'auto' metric's mo[key] on
 // every run, by design — see the "Locked-actual overrides" section above (near
 // applyReviewOverrides) for the full rationale. A manual correction NEVER goes into mo[key]
@@ -1191,6 +1435,25 @@ export function missingReviewTargets(review, cfg, ds) {
 // record, so this function re-running freely can never destroy one. Do not add a null-check
 // guard here to "fix" the overwrite — that would make the review show stale cloud data instead
 // of the current one, which is the opposite of correct.
+//
+// ⚠️ Dispatch #154 finding (Performance Review continuity, Phase 5a — investigated, NOT fixed
+// here, per that dispatch's own explicit scope): this function is NOT segment-aware. `loc` (just
+// below) is resolved ONCE from `review.loc` and used for EVERY one of the 12 months' worth of
+// data lookups in this function — metricAvg() calls, mergedTargetsForLocMonth(), every
+// byMonth()/byLocMonth() row filter (labor/FOB/eBOS/roster/turnover/digital/delivery/SMG
+// FullScale), and the SHIFT_ATTRIBUTABLE_ROLES check. So for a person who transferred stores
+// mid-year, EVERY auto-sourced actual for EVERY month — including months before the transfer —
+// is sourced from review.loc (typically the person's CURRENT store, since that is what an admin
+// sets a review's own `loc` to), never from an earlier segment's own, different store. Making
+// this segment-aware would mean threading a per-month-resolved loc through roughly 15 distinct
+// per-month lookups here — real, nontrivial follow-on work, and NOT one of dispatch #154's 4
+// listed scope items, so it is documented here rather than attempted. Practical consequence:
+// computeSegmentScores (above) can and does correctly re-resolve a transferred segment's own
+// TARGETS (mergedTargetsForLocMonth is already loc-parameterized per call, so that half of the
+// fix costs nothing extra); it CANNOT correct that segment's ACTUALS, which still reflect
+// whatever this function most recently populated against review.loc. A same-store ROLE-ONLY
+// promotion is entirely unaffected by this gap (loc never changes, so every month's actuals are
+// already correct regardless of segment).
 export function autoPopulateKPIs(review, ds) {
   if (!ds?.loaded) return review;
   const loc = review.loc;
@@ -1229,12 +1492,9 @@ export function autoPopulateKPIs(review, ds) {
   // OEPE/R2P/KVS/Labor% below are resolved through the app's own auto-first resolver
   // instead of hand-filtering ds.opsRows/ds.laborRows, so a month range in the shape it
   // expects ({s,e}, either Date or 'YYYY-MM-DD' — see metricSeries) is built once per month.
-  const monthRange = (m) => {
-    const s = `${_ry}-${String(m).padStart(2, '0')}-01`;
-    const lastDay = new Date(_ry, m, 0).getDate();
-    const e = `${_ry}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    return { s, e };
-  };
+  // Dispatch #154: extracted to the module-level calendarMonthRange() export above, reused here
+  // unchanged rather than duplicated — computeSegmentedReview needs the identical date math.
+  const monthRange = (m) => calendarMonthRange(_ry, m);
   const byLocMonth = (rows) => {
     const m = {};
     for (const r of (rows || [])) {

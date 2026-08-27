@@ -167,3 +167,68 @@ export function personOversees(person, loc, date, rows) {
     throw e;
   }
 }
+
+// ── Dispatch #154 (Performance Review continuity, Phase 5a) ────────────────────────────────────
+// A person's own role/store assignment TIMELINE across a date range with possibly MULTIPLE
+// transitions — distinct from every function above, all of which resolve the graph AS OF ONE
+// POINT IN TIME only. Needed for promotion/transfer segmented scoring (plan doc decision #3): a
+// manager who transfers stores or is promoted mid-year must have each review period scored
+// against the role/store that was ACTUALLY true then, not blended into one snapshot.
+//
+// Lives here, not review-engine.js, because it is pure reports-to-graph data — it reads only
+// `staff_assignments` rows and orders them by time — with no review/scoring concept involved at
+// all; review-engine.js's own new computeSegmentedReview (dispatch #154) imports this and turns
+// it into scores, keeping resolution logic in exactly ONE place, per dispatch #150's own rule.
+//
+// Deliberately NOT a graph walk (resolveScope/whoOversees) — it reads only ONE person's own rows,
+// target_type:'store' only (GM/AM/DM/SM are always leaf assignees per this file's header
+// comment, so a person's OWN timeline is always a sequence of STORE assignments, never a sequence
+// of "reports to a different person" rows) and orders them by time, not by recursive scope
+// resolution. Cycle-safety (AssignmentCycleError) does not apply here for exactly that reason —
+// this never walks "who reports to whom", only "what did THIS person hold, when".
+//
+// Resolution rule: IDENTICAL to every other function in this file — "latest start ≤ date wins",
+// generalized across a whole date range instead of one date (the next row's `start` implicitly
+// ends the prior one; `end_date` is not consulted, matching dispatch #150's own resolved
+// end_date-is-advisory-only decision — see this file's header + supabase/schema.sql's comment).
+// A malformed input (two rows for the same person with the SAME start — no clear "latest start"
+// winner) resolves the SAME way currentHolderOfTarget's own tie-break already does (`s >=
+// bestStart` favors the LATER row in input-array order on a tie): the earlier of the two
+// collapses to a zero-width, dropped segment, and the later one's `start` becomes the real
+// cutover — no second resolution rule invented, no crash.
+//
+// Returns an ORDERED array of `{role, loc, start, end}` segments, clipped to
+// `[periodStart, periodEnd]`, covering every row overlapping the period. Returns `[]` if the
+// person has no `staff_assignments` rows at all — callers (computeSegmentedReview) treat that
+// the SAME as "one full-period segment" by falling back to the review's own role/loc, since both
+// mean "there is nothing to split on, score the whole period as one segment." A period with
+// exactly one applicable row (the common case — most people never transfer or get promoted mid-
+// review) returns exactly one segment spanning the whole (clipped) period — cheap and correct,
+// not just an edge case handled separately.
+export function personAssignmentTimeline(person, periodStart, periodEnd, rows) {
+  const want = _key(person);
+  const ps = _dstr(periodStart), pe = _dstr(periodEnd);
+  const own = (rows || [])
+    .filter(r => r.target_type === 'store' && _key(r.person) === want)
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (a.r.start || '').localeCompare(b.r.start || '') || (a.i - b.i))
+    .map(x => x.r);
+  const segs = [];
+  for (let i = 0; i < own.length; i++) {
+    const row = own[i];
+    const rowStart = row.start || '';
+    const segStart = rowStart > ps ? rowStart : ps;
+    if (segStart > pe) break; // this row (and every later one, since sorted ascending) starts after the period
+    const nextStart = i + 1 < own.length ? (own[i + 1].start || '') : null;
+    const segEnd = (nextStart && nextStart <= pe) ? _dayBefore(nextStart) : pe;
+    if (segEnd < segStart) continue; // zero/negative width -- a same-start tie's shadowed row
+    segs.push({ role: row.role, loc: unpadLoc(row.target), start: segStart, end: segEnd });
+  }
+  return segs;
+}
+
+function _dayBefore(iso) {
+  const d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
