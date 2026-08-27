@@ -83,20 +83,27 @@ describe('fobByRange', () => {
     expect(agg['1'].fobPct).toBeCloseTo(296.93 / 282347.08, 6);
   });
 
-  it('the frozen-source fallback does NOT apply to a multi-month-spanning window (avoids double-counting a partially-covered month)', () => {
+  // Owner directive 2026-08-27, after an audit surfaced this exact multi-month case as a
+  // residual of the same issue: *"whatever the latest data pulled is the number that should
+  // be used."* This source cannot support a true sub-month delta at ANY window shape, so the
+  // fallback is unconditional on segment count — every month segment independently falls back
+  // to its own latest-pulled total when it has no distinguishable in-month delta, whether the
+  // overall range spans one month or several. (This intentionally supersedes an earlier,
+  // more conservative version of this same test that restricted the fallback to single-month
+  // windows only, to avoid a perceived "double-counting" risk — the owner's directive settles
+  // that a per-segment latest-pulled total is the correct answer everywhere, not just there.)
+  it('the frozen-source fallback applies per-segment even across a multi-month-spanning window (owner directive: always use the latest pulled number)', () => {
     const rows = [
       { loc: '1', date: '2026-07-01', prodSalesAmt: 400000, compWasteAmt: 8000 }, // July settled, frozen all month
       { loc: '1', date: '2026-07-29', prodSalesAmt: 400000, compWasteAmt: 8000 }, // baseline (day before window) — frozen
       { loc: '1', date: '2026-08-01', prodSalesAmt: 50000,  compWasteAmt: 1000 }, // August MTD thru the 1st
     ];
-    // window = 2026-07-30 → 2026-08-01 (crosses July→August). July's own segment diffs to zero
-    // (frozen), but this must NOT fall back to "all of July" — that would attribute June's
-    // entire activity to a window that only actually covers July 30-31.
+    // window = 2026-07-30 → 2026-08-01 (crosses July→August).
     const agg = fobByRange(rows, { s: '2026-07-30', e: '2026-08-01' });
-    // July segment: diff = 0 (frozen, correctly contributes nothing — NOT July's full 400000).
-    // August segment: no baseline (segStart === monthStart) → 50000 as-is.
-    expect(agg['1'].prodSales).toBe(50000);
-    expect(agg['1'].fob$).toBe(1000);
+    // July segment: diff = 0 (frozen) → falls back to July's own latest-pulled total, 400000/8000.
+    // August segment: no baseline (segStart === monthStart) → 50000/1000 as-is (unchanged).
+    expect(agg['1'].prodSales).toBe(450000);
+    expect(agg['1'].fob$).toBe(9000);
   });
 
   it('a range crossing a month boundary differences EACH month segment separately', () => {

@@ -78,19 +78,21 @@ function _diffFields(fields, end, base) {
 // settles ONCE near each month's start (sometimes with a late correction days later) and
 // then holds that exact same cumulative value for the rest of the month — e.g. store 6178
 // held 282347.08 unchanged for all 26 days from Aug 1 through Aug 26. So for ANY window
-// that (a) starts after that month's settle date and (b) doesn't span into a later month,
-// baseSnap and endSnap are IDENTICAL by construction and the diff is always exactly zero
-// — not a data gap, a structural mismatch between this source's once-a-month cadence and
-// a sub-month window. Confirmed across multiple stores/months before concluding this,
-// per this project's "measure it, don't reason about it" rule.
-// Fix, restricted to the one case it's provably safe for: when the ENTIRE requested
-// `range` sits inside a SINGLE calendar month (`months.length === 1`) and that month's
-// own diff comes out non-positive despite the month having real settled data, fall back
-// to the month-to-date absolute total (as if baseSnap were null) — the same number
-// already used correctly for a full-month/YTD window, now also surfaced for a narrower
-// window that can't be sliced any finer. This does NOT touch multi-month-spanning
-// windows (where a per-segment fallback would double-count whichever month the window
-// only partially covers) — those keep the exact diffing behavior they had before.
+// that starts after that month's settle date, baseSnap and endSnap are IDENTICAL by
+// construction and the diff is always exactly zero — not a data gap, a structural
+// mismatch between this source's once-a-month cadence and a sub-month window. Confirmed
+// across multiple stores/months before concluding this, per this project's "measure it,
+// don't reason about it" rule.
+// Owner directive 2026-08-27, after an audit surfaced the multi-month-window residual of
+// the same issue (a week spanning a month's start would attribute that WHOLE month's
+// total to a window that only actually covers a few of its days): *"whatever the latest
+// data pulled is the number that should be used."* This source cannot support a true
+// sub-month delta at ANY window shape — a per-segment fallback to the latest settled
+// snapshot is the correct, honest answer everywhere the diff comes out non-positive
+// despite real data existing, not just inside a single-month window. So the fallback
+// below is UNCONDITIONAL on segment count: every month segment independently falls back
+// to its own latest-pulled total when it has no distinguishable in-month delta, whether
+// the overall range spans one month or several.
 export function fobByRange(fobRows, range) {
   const rows = fobRows || [];
   const acc = {};
@@ -99,7 +101,6 @@ export function fobByRange(fobRows, range) {
   const months = [];
   { let ym = range.s.slice(0, 7); const endYm = range.e.slice(0, 7);
     while (ym <= endYm) { months.push(ym); const [y, m] = ym.split('-').map(Number); ym = new Date(y, m, 1).toISOString().slice(0, 7); } }
-  const singleMonthWindow = months.length === 1;
   for (const loc of locs) {
     const a = at(loc);
     for (const ym of months) {
@@ -109,8 +110,8 @@ export function fobByRange(fobRows, range) {
       let baseSnap = segStart === _monthStart(ym) ? null : _snapshotAsOf(rows, loc, ym, _dayBefore(segStart));
       if (!endSnap) continue;
       let cur = _diffFields(_FOB_FIELDS, endSnap, baseSnap);
-      if (cur.prodSalesAmt <= 0 && baseSnap && singleMonthWindow && (endSnap.prodSalesAmt || 0) > 0) {
-        baseSnap = null;                                  // MTD fallback — see header comment
+      if (cur.prodSalesAmt <= 0 && baseSnap && (endSnap.prodSalesAmt || 0) > 0) {
+        baseSnap = null;                                  // latest-pulled fallback — see header comment
         cur = _diffFields(_FOB_FIELDS, endSnap, baseSnap);
       }
       if (cur.prodSalesAmt > 0) {
