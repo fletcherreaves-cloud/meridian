@@ -6,7 +6,7 @@ import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
-import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { aggregateLifelenzLabor } from '../../supabase/functions/sage-chat/lifelenz-labor-agg.js';
 
@@ -117,7 +117,11 @@ export function buildLaborSummary(ds) {
   if (totalDays < 5) return null;
 
   const distAvgLabor = metricAvg(ds, locs, range, 'laborPct');
-  const distAvgTpph  = metricAvg(ds, locs, range, 'tpph');
+  // distAvgTpph via metricRate, not metricAvg (dispatch #155) — _lastNDaysRange's `e` is
+  // literally `new Date()` (no lastClosedBusinessDay clip), so this 60-day window always
+  // includes today's still-open business day, and SAGE reports this figure to the owner as
+  // fact whenever asked about labor mid-day.
+  const distAvgTpph  = metricRate(ds, locs, range, 'tpph');
   const totalOtDollar = perStore.reduce((s, r) => s + r.otDollar, 0);
   const totalOtHrs    = perStore.reduce((s, r) => s + r.otHrs, 0);
 
@@ -200,7 +204,10 @@ export function buildOpsSummary(ds) {
   const totalDays = perStore.reduce((n, s) => n + s.dayCount, 0);
   if (totalDays < 3) return null;
 
-  const distOepe = metricAvg(ds, locs, range, 'oepe');
+  // distOepe via metricRate, not metricAvg (dispatch #155) — same _lastNDaysRange shape as
+  // distAvgTpph above (buildLaborSummary): `e` is literally `new Date()`, always including
+  // today's still-open business day.
+  const distOepe = metricRate(ds, locs, range, 'oepe');
   const distPark = metricAvg(ds, locs, range, 'park');
 
   const stores = perStore.filter(s => s.oepe != null).sort((a,b) => b.oepe - a.oepe);

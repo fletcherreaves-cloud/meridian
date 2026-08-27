@@ -23,7 +23,7 @@ import { districtOpportunity, mtdRange } from '../engine/opportunity-district.js
 import { reconcile as _recon } from '../lib/accuracy.js';
 import { supabase, loadSagePromptRuns, loadEomCountStatus, loadQsrRawItemDetail, loadQsrVarianceStat, saveUserSetting, loadUserSetting } from '../lib/supabase.js';
 import { ledgerScopeDiff, closeWindowStartFor } from '../engine/eom-ledger-baseline.js';
-import { metricSeries, metricAvg } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { PatchHeatmap } from './patch-heatmap.js';
 import { BullseyeTile } from './bullseye-tile.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
@@ -1261,7 +1261,13 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // every other source for that day. Root-caused investigating the AAG Controls & Integrity
     // TPPH "--" gap first reported 2026-08-04 (v4.808's fix didn't fully close it).
     const laborPct=metricAvg(ds,allLocs,effectiveDateRange,'laborPct');
-    const tpph=metricAvg(ds,allLocs,effectiveDateRange,'tpph');
+    // tpph via metricRate, not metricAvg (dispatch #155) — effectiveDateRange is the
+    // toolbar's own selected period (falls back to a 30-day window anchored on the freshest
+    // data, but otherwise honors whatever the user picked, e.g. "This Week"/MTD), which can
+    // genuinely include today's still-open business day. metricSumRatio's Σ/Σ rollup keeps
+    // an in-progress day from blending in at full weight; laborPct is ALSO a `kind:'ratio'`
+    // metric but is out of this dispatch's scope (oepe/r2p/tpph only) — left on metricAvg.
+    const tpph=metricRate(ds,allLocs,effectiveDateRange,'tpph');
     // #303/2026-08-15 review: this gate used to run BEFORE laborPct/tpph existed, on raw
     // cRows/lRows presence alone -- a device with real auto-pulled data (glimpse/cash/DAR
     // rollup, all reachable via metricAvg's own auto-first chain) but zero manual ctrlRows

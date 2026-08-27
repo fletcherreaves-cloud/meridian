@@ -40,7 +40,7 @@ const PT_SCORE_KEY   = 'mf_period_scoreboard';
 // importing this whole (large, otherwise lazy-loaded) panel module — that mistake
 // cost ~25KB gzip on the main entry chunk the first time it was tried. Imported above.
 import { matchedVsLY, autoFirstTotal } from '../engine/vs-ly.js';
-import { metricAvg, metricSeries, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
+import { metricAvg, metricRate, metricSeries, ensureLazyFill, isLazyFillPending, isLazyFillError } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
@@ -1593,8 +1593,14 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
         const matchedCur= _mv.cur, lySales = _mv.ly, vsLY = _mv.pct;
         // Rate metrics via the shared auto-first resolver (manual → Glimpse) so recent windows fill.
         const laborPct   = metricAvg(ds,loc,range,'laborPct');
-        const tpph       = metricAvg(ds,loc,range,'tpph');
-        const oepe       = metricAvg(ds,loc,range,'oepe');
+        // tpph/oepe via metricRate, not metricAvg (dispatch #155) — every PERIODS entry above
+        // except 'custom' ends on lastClosed (the last CLOSED business day, per this panel's
+        // own PERIODS comment), but 'custom' lets the user pick an end date of literally
+        // today, which would include the still-open business day. Converting costs nothing on
+        // the safe (non-custom) periods — metricSumRatio and metricAvg agree once every day in
+        // range is complete — and closes the gap on 'custom'.
+        const tpph       = metricRate(ds,loc,range,'tpph');
+        const oepe       = metricRate(ds,loc,range,'oepe');
         // otHrs now auto-first via metric-source.js (2026-08-06) — matches laborPct/tpph/oepe/
         // cashOS above, which already routed through metricAvg; this one was still raw
         // lRows/cRows-only with no auto (opsLaborRows) backstop.
@@ -1940,7 +1946,10 @@ function LaborAnalyticsPanel({stores, ds, settings, onClose, embedded}) {
       // laborPct×sales÷actHrs); otHrs/actVsNeed are mode:'any' (0/negative are legitimate,
       // not "missing").
       const laborPct  = metricAvg(ds,loc,range,'laborPct');
-      const tpph      = metricAvg(ds,loc,range,'tpph');
+      // tpph via metricRate, not metricAvg (dispatch #155) — same PERIODS shape as
+      // OperatorSummaryPanel above (every entry ends on lastClosed except 'custom', which
+      // lets the user pick today as the end date).
+      const tpph      = metricRate(ds,loc,range,'tpph');
       const avgRate   = metricAvg(ds,loc,range,'avgRate');
       const actVsNeed = metricAvg(ds,loc,range,'actVsNeed');
       const otHrs     = metricAvg(ds,loc,range,'otHrs');
