@@ -84,6 +84,33 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **✅ SHIPPED (2026-08-27, v5.220): [Dispatch #175 — cash-handling metrics finish "API over
+  email" for cashOS/posOver](dispatch-175.md), PR #866.** Owner's own follow-up question after
+  #172: *"is this not data that we're auto pulling through script now as well? Could it just be
+  rewired to the auto pull rather than the email pull?"* Measured live before drafting: `qsr_cash_
+  sheet` (`ds.opsCashRows`, the API-pulled table from `qsrsoft-ops-pull.mjs`) is fresh
+  (`content-range: 0-0/25043`, latest `dt` = today) and already carries `cash_over_or_short` and
+  `overring_amt`/`overring_qty` — everything the just-fixed email pipeline needs. Turned out to be
+  a per-metric picture, not all-or-nothing: `cashRefAmt`/`cashlessRefAmt` (and counts) already led
+  with `opsCashRows`; `cashOSAmt`/`cashOSPct` had it registered but listed THIRD, behind both
+  emailed sources (backwards from the standing rule, more clearly so post-#172); `posOverAmt`/
+  `posOverCnt` had NO auto source wired at all — a gap dispatch #165's own PR body had already
+  flagged and explicitly deferred ("a same-shape fix to the one just shipped, left separate to
+  keep this PR's blast radius contained"), never done.
+  **Fix**: `loadOpsCashSheet` (`src/lib/supabase.js`) gained the missing `posOverAmt`/`posOverCnt`
+  camelCase aliasing (`overring_amt`/`overring_qty`) — every sibling field already had this, these
+  two were the one pair missed. `metric-source.js`: `cashOSAmt`/`cashOSPct` moved `opsCashRows` to
+  the FRONT of the chain (email sources kept as fallback, not removed — #172 already made them
+  correct, still useful for any (loc, date) the ops-pull hasn't reached); `posOverAmt`/`posOverCnt`
+  gained `opsCashRows` as the first source (verified `parseCtrlData` does emit these fields before
+  keeping `ctrlRows` as the last-resort manual fallback). Fixed a stale comment that misdescribed
+  the `cashOSAmt` chain's actual array order even before this change.
+  13 new tests (`dispatch-175-cash-auto-first.test.js`): per-day auto-first precedence for both
+  metrics, per-day (not all-or-nothing) mixed resolution, `'any'`-mode 0/negative preservation,
+  and a regression check that an email-only device (no `opsCashRows` at all — #271's original bug
+  class) still resolves both metrics unchanged. 291/291 test files, 3017/3017 tests. Build clean,
+  eager total 552.59→552.65 KB, 297.35 KB under the 850 KB budget. `promoAmt`/`promoPct` (also
+  flagged reconciling well by #165) deliberately left out of scope — future dispatch if wanted.
 - **✅ SHIPPED (2026-08-27, v5.219): [Dispatch #172 — cash-handling field discrepancy root-caused
   and fixed](dispatch-172.md), PR #863.** Follow-up to dispatch #165's audit
   (`audit-emailed-stream-redundancy-2026-08-27.md`), which found `glimpseRows.cashOS` reconciling
