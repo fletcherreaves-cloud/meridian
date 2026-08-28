@@ -11,6 +11,7 @@
 //   /stat_variance/yields?start&end    → mapYieldGroups    (acceptable yield band per concept group)
 //   /raw_waste_promo?start&end         → mapWasteEvents    (per-entry, manager-attributed)
 //   /raw_detail/{itemId}?start&end     → mapRawItemHistory (forensic count-timing register)
+//   /raw_info/{itemId}?start&end       → mapRawItemInfo    (recipe/serving-factor + current cost snapshot)
 import { normClass } from './eom-inventory.js';
 
 // ── Variance Stat rows ────────────────────────────────────────────────────────
@@ -216,5 +217,33 @@ export function mapRawItemHistory(detail = {}) {
     uom: detail.uom_desc,
     history,
     counts: history.filter((h) => h.isCount),
+  };
+}
+
+// ── Raw-item info (raw_info/{itemId}) — dispatch #184 ──────────────────────────
+// A CURRENT-STATE snapshot per raw item: recipe/serving-factor (BOM — which menu
+// items this raw item feeds, and at what serving factor), combo composition, and
+// current distributor cost (latest/avg case price, vendor, yield). Unlike
+// mapRawItemHistory (a forensic per-transaction log, one row per period), this is
+// point-in-time — the pull script keys it (loc, wrin) with no period, so a re-pull
+// just overwrites the latest known values. See memory/dispatch-184.md.
+export function mapRawItemInfo(detail = {}) {
+  return {
+    wrin: detail.full_wrin,
+    descr: detail.long_desc,
+    invtyCategoryType: detail.invty_category_type ?? null,
+    caseQty: detail.case_qty != null ? Number(detail.case_qty) : null,
+    latestCasePrice: detail.latest_case_price != null ? Number(detail.latest_case_price) : null,
+    casePriceAvg: detail.case_price_avg != null ? Number(detail.case_price_avg) : null,
+    primaryVdrName: detail.primary_vdr_name ?? null,
+    primaryVdr: detail.primary_vdr != null ? String(detail.primary_vdr) : null,
+    midRangeYield: detail.mid_range_yield != null ? Number(detail.mid_range_yield) : null,
+    recipeItem: detail.recipe_item === true || detail.recipe_item === 'Y',
+    currentUpt: detail.current_upt != null ? Number(detail.current_upt) : null,
+    // Lists — stored as JSONB verbatim (matching qsr_raw_item_detail.history's precedent),
+    // not normalized further in this first slice.
+    menuItems: Array.isArray(detail.menu_items) ? detail.menu_items : [],
+    menuItemCombos: Array.isArray(detail.menu_item_combos) ? detail.menu_item_combos : [],
+    uptHist: Array.isArray(detail.upt_hist) ? detail.upt_hist : [],
   };
 }
