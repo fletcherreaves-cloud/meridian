@@ -1,11 +1,24 @@
 // @ts-nocheck
 import { STORE_NAMES } from '../constants.js';
 
-// dispatch #37 (Direction B, identity-vault architecture) — the returned employee objects
-// carry NO plaintext name field. `r.emp` is used transiently below only to build the internal
-// grouping key (never assigned onto the returned `e` object) and is never stored — a caller
-// that needs the real name calls reveal_employee_identity() with e.id (the token), deliberately
-// and logged. `.name` below is the STORE name (STORE_NAMES[r.loc]), not personnel data.
+// dispatch #200 (Task Group B, 2026-08-28) — the returned employee objects now carry the
+// plaintext name as `e.empName`, sourced from `r.emp`. Owner, live: "on the Register Audit
+// tab, no need to hide the employee names here. anyone with access to register audit on
+// qsrsoft can see names anyway." Measured before changing anything (this repo's standing
+// "measure it, don't reason about it" rule): `r.emp` — the raw name — was ALREADY present,
+// unredacted, on every row this function receives (audit_rows.emp is a plaintext name column,
+// additive alongside emp_token per dispatch #37/5.076; loadAuditRows() in src/lib/supabase.js
+// maps it straight through as `emp`). So the identity-vault reveal gate (dispatch #37/#38,
+// `RevealName`/`reveal_employee_identity()`) was never actually withholding the name from
+// this app's own already-loaded client state — it only withheld it from RENDERING. Dispatch
+// #200 removes that display-only gate for Register Audit specifically (see
+// src/views/store-analytics.js's RegisterAuditTab/RegisterAuditNarrative); this file just
+// stops discarding the name it was already handed. `e.id` (the token, `r.empToken`) is KEPT
+// unchanged — it's still the stable grouping/join key used by registerTypeBreakdown() and by
+// Security Findings (security-panel.js groups by empToken and reuses `RevealName` there,
+// UNCHANGED and out of scope for #200 — that surface's underlying data genuinely has no raw
+// name alongside it, a different shape from this one). `.name` below is still the STORE name
+// (STORE_NAMES[r.loc]), not personnel data — unrelated field, same name coincidence as before.
 // dateKey() -- a caller-agnostic string key for "which calendar day is this row." audit_rows
 // callers disagree on the wire type: loadAuditRows() hands back a Date object, loadAuditRowsWindow()
 // hands back the raw 'YYYY-MM-DD' string, and this file's own tests use both. Needed at all only
@@ -19,7 +32,11 @@ const dateKey = d => d instanceof Date ? d.toISOString().slice(0, 10) : String(d
 // registerTypeBreakdown() below can reuse the EXACT same math for a per-register-type slice
 // instead of hand-rolling a second reducer that could drift from this one.
 function newAccumulator(r) {
-  return {empToken:null,loc:r.loc,name:STORE_NAMES[r.loc]||('Store '+r.loc),
+  // empName is the plaintext employee name (audit_rows.emp) -- identical across every row in
+  // this group already, since r.emp is literally part of the grouping key (`r.loc+'::'+r.emp`)
+  // analyzeRegisterAudit() builds below. Set once here rather than re-checked in accumulateRow
+  // the way empToken is, since (unlike the token, which can be null pre-backfill) it can't vary.
+  return {empToken:null,empName:r.emp||null,loc:r.loc,name:STORE_NAMES[r.loc]||('Store '+r.loc),
     _seenDays:new Set(),_cashOSSeenDays:new Set(),days:0,
     totalSales:0,totalGC:0,avgCheck:0,drawerOpens:0,cashOSTotal:0,cashOSDays:0,
     tRedACnt:0,tRedBCnt:0,tRedADollar:0,tRedBDollar:0,
@@ -124,8 +141,9 @@ function analyzeRegisterAudit(auditRows) {
 // ONE register_type, so a blended employee's numbers on the Register Audit panel can be split
 // back apart instead of only shown as a combined total. Deliberately does NOT touch
 // analyzeRegisterAudit's totals (audited under #59, correct for the "everything sums" case) --
-// this is an added view over the same rows, keyed loc::empToken so the identity-vault invariant
-// (dispatch #37: raw `emp` never leaves this module) holds for the breakdown too.
+// this is an added view over the same rows, keyed loc::empToken (the stable join key, unchanged
+// by dispatch #200 -- see this file's own header comment for why the token stays the KEY even
+// though each value now also carries empName).
 //
 // Pre-backfill rows with no token collapse to the literal id 'Unknown' in analyzeRegisterAudit,
 // which can silently MERGE two different real employees at the same store if used as a lookup

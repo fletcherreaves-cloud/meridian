@@ -1281,3 +1281,12 @@ export function RecordDayPanel({ stores, ds, onClose }) {
     viewData && viewData.totalStores>0 && tab==='topdays'  && h(TopDaysTab,          { data:viewData, breakIndex }),
   );
 }
+
+// dispatch #200 (Task Group C) — StoreRecordsTab (store-analytics.js) reuses the SAME
+// record-computation engine this panel uses, scoped to one store, rather than re-deriving
+// week/month/day-of-week records a second time from scratch. Only the pure computation +
+// plain-string formatters are exported — none of this file's own React components (HeroGrid,
+// SalesVolumeTab, etc., all built around a cross-store sortable TABLE, the wrong shape for a
+// single-store drill-down tab) or its `S` style object. Per this dispatch's own scope note,
+// this panel's own cross-store UI/behavior is otherwise unchanged.
+export { computeRecords, scopeRecordData, fDate, fDateShort, fWeekLabel, fMonthLabel, fSec, fGC, f$2, DOW_SHORT, DOW_NAMES };

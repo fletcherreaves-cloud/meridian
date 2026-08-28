@@ -1,6 +1,14 @@
 // @ts-nocheck
-// analyzeRegisterAudit's identity-vault retrofit (dispatch #37, Direction B): e.id is now the
-// emp_token, and no returned employee object carries a plaintext name field anywhere.
+// analyzeRegisterAudit's identity handling. Originally (dispatch #37, Direction B): e.id was
+// the emp_token, and no returned employee object carried a plaintext name field at all.
+// Dispatch #200 (Task Group B, 2026-08-28) reversed the name-hiding half of that, per the
+// owner's live direction ("no need to hide the employee names here... anyone with access to
+// register audit on qsrsoft can see names anyway") — investigated first (this file's own
+// header comment / register-audit.js's header comment): audit_rows.emp (the plaintext name)
+// was ALREADY present, unredacted, on every row this function receives; it was simply being
+// discarded before being returned. e.id (the emp_token) is UNCHANGED — still the stable
+// grouping/join key, still what Security Findings uses via RevealName, a surface #200
+// deliberately left alone.
 import { describe, it, expect } from 'vitest';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
 
@@ -13,16 +21,15 @@ const row = (over = {}) => ({
   ...over,
 });
 
-describe('analyzeRegisterAudit — identity-vault retrofit', () => {
-  it('sets e.id to the emp_token, not the plaintext name', () => {
+describe('analyzeRegisterAudit — identity handling', () => {
+  it('sets e.id to the emp_token, not the plaintext name (unchanged by #200)', () => {
     const { employees: [e] } = analyzeRegisterAudit([row()]);
     expect(e.id).toBe('tok-aaden-w');
   });
 
-  it('never exposes a plaintext name field anywhere on the returned employee object', () => {
-    const { employees: [e] } = analyzeRegisterAudit([row({ emp: 'Real Person Name' })]);
-    expect(e.emp).toBeUndefined();
-    expect(JSON.stringify(e)).not.toContain('Real Person Name');
+  it('exposes the plaintext name as e.empName (dispatch #200)', () => {
+    const { employees: [e] } = analyzeRegisterAudit([row({ emp: 'Real Person Name', empToken: 'tok-rpn' })]);
+    expect(e.empName).toBe('Real Person Name');
   });
 
   it('falls back to "Unknown" only when a row genuinely has no token (pre-backfill state)', () => {
@@ -54,5 +61,7 @@ describe('analyzeRegisterAudit — identity-vault retrofit', () => {
     expect(employees.length).toBe(2);
     const ids = employees.map(e => e.id).sort();
     expect(ids).toEqual(['tok-alice', 'tok-bob']);
+    const names = employees.map(e => e.empName).sort();
+    expect(names).toEqual(['Alice', 'Bob']);
   });
 });
