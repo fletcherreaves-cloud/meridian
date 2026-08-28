@@ -112,7 +112,15 @@ function renderNavTexts(permFn) {
 // icon drop out of this snapshot, same "harvest, no other icon claims it" shape as #194's 💡
 // above. 'Crew Schedule'/'🗓' (People section) is unchanged -- same id, same slot, now a
 // Schedule/Punches tab strip internally.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-08-28 for dispatch #202: 'eom-summary' ('EOM Supervisor', 📊) folded
+// into the Inventory Control hub as a Supervisor Rollup tab, kind:'nav' -> kind:'internal', same
+// demotion #189 gave 'count-cycle' above. 'EOM Supervisor' drops out of the Operations section
+// entirely -- Operations is now just the 3PO Delivery/Graded Visits/Promo/Guest Voice/Visit
+// Readiness five, all analytics.store. Its 📊 icon stays in the DOM via Org Summary
+// (operator-summary, still kind:'nav') and LifeLenz Gap (still kind:'test-kitchen'), neither
+// affected by this retirement -- same "shared icon, other owner survives" shape as #188/#189's
+// own 📋 note above.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -182,7 +190,12 @@ const HIDDEN_WHEN_DENIED = {
   // dispatch #191 (2026-08-28): 'Calendar' dropped out of this list -- calendar-manager is
   // kind:'internal' now (merged into Events & Tags), no longer a sidebar entry to hide at all.
   'analytics.dashboard': ['Event Impact', 'My Reports', '📈'],
-  'analytics.district': ['Above-Store One-Pager', 'District View', 'EOM Supervisor', 'Inventory Control', 'Opportunity $', 'Org Summary', 'Top/Bottom Performers', '⊞', '💰'],
+  // dispatch #202 (2026-08-28): 'EOM Supervisor' dropped out -- kind:'internal' now, renders
+  // nowhere in the sidebar regardless of permission, so an analytics.district denial can't hide
+  // text that was never rendered in the first place. 📊 stays absent from this list (unchanged --
+  // it was never here even when EOM Supervisor carried it, since LifeLenz Gap, perm
+  // analytics.forecasting, always kept it rendering under an analytics.district-only denial).
+  'analytics.district': ['Above-Store One-Pager', 'District View', 'Inventory Control', 'Opportunity $', 'Org Summary', 'Top/Bottom Performers', '⊞', '💰'],
   // dispatch #106 Phase B (2026-08-24): 'Forecast Accuracy' and 'MBI vs LifeLenz Accuracy' no
   // longer render as their own nav text at all (both are now kind:'hub-tab', which renders
   // nowhere in the sidebar) -- replaced by the merged 'Forecast Reports' entry. '🌉' had no
@@ -224,7 +237,13 @@ const HIDDEN_WHEN_DENIED = {
   // as 'Count Cycle'/'Training Retention' above. Both 'Time Punches' and its unique 🕐 icon drop
   // out of this list; 'Crew Schedule' and 🗓 are unaffected (unique-owner reasoning already
   // covered by the dispatch #125 note above).
-  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // dispatch #202 (2026-08-28): 'Operations' (the section header itself) joins this list.
+  // EOM Supervisor was the section's one non-analytics.store member -- with it gone, all five
+  // remaining Operations members (3PO Delivery/Graded Visits/Promo/Guest Voice/Visit Readiness)
+  // are perm:'analytics.store', so denying it now empties the section entirely and
+  // panelsForSection()/renderSection() drop the header too, same "fully empty -> header vanishes"
+  // behavior 'Scheduling & Labor' already demonstrates below (see the next test).
+  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Operations', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
@@ -263,11 +282,18 @@ describe('AppSidebar permission gates survive the Job B section-driven render', 
     // render-based check that can.
     const shown = renderNavTexts(x => x !== 'analytics.store');
     expect(shown).not.toContain('Scheduling & Labor');
-    // Operations, by contrast, keeps a member (EOM Supervisor, perm analytics.district) --
-    // its header correctly SURVIVES, confirming the hide is per-section-emptiness, not a
-    // blanket reaction to any permission denial anywhere in the nav.
-    expect(shown).toContain('Operations');
-    expect(shown).toContain('EOM Supervisor');
+    // Operations, by contrast, used to keep a member (EOM Supervisor, perm analytics.district)
+    // whose header correctly SURVIVED an analytics.store-only denial. Dispatch #202 folded EOM
+    // Supervisor into the Inventory Control hub, so Operations no longer has a non-store member
+    // either -- re-measured fresh (not assumed): it now behaves exactly like 'Scheduling & Labor'
+    // above, confirming this is still per-section-emptiness, not a special case for one section.
+    expect(shown).not.toContain('Operations');
+    expect(shown).not.toContain('EOM Supervisor');
+    // Inventory & Food Cost takes over as the "keeps a member, header survives" contrast case --
+    // Inventory Control (eom-dashboard, perm analytics.district) is its one non-store member,
+    // alongside Food Cost/Inventory (both analytics.store).
+    expect(shown).toContain('Inventory & Food Cost');
+    expect(shown).toContain('Inventory Control');
   });
 });
 
