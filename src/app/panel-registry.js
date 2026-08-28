@@ -46,7 +46,7 @@ export const PANELS = [
   { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'analytics', route:true },
   { id:'aiscan', label:'Anomaly Scan', icon:'🔍', perm:'analytics.ai', kind:'optional', section:'intelligence' },
   { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily', route:true },
-  { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics' },
+  { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics', route:true },
   // Planning cluster, in the owner's own stated order (dispatch #54 Job B, 2026-08-21): "Planning
   // (the hub, keeping its five tabs) · Events & Tags · Event Impact" -- three sidebar links, the
   // hub NOT exploded (its five internal tabs stay kind:'hub-tab', see monthly-proj/pace-target/
@@ -105,7 +105,7 @@ export const PANELS = [
   { id:'crew-schedule', label:'Crew Schedule', icon:'🗓', perm:'analytics.store', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
-  { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations' },
+  { id:'delivery-mix', label:'3PO Delivery', icon:'🛵', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:4 },
   { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:7 },
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
@@ -189,7 +189,7 @@ export const PANELS = [
   { id:'gm-brief', label:'GM Letters', icon:'👨‍💼', perm:'analytics.store', kind:'optional', section:'reports' },
   // Owner-answered 2026-08-21 (dispatch #54 Job B): "They would be more Operations" -- moved out
   // of People alongside visit-readiness below.
-  { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
+  { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   // Dispatch #196 -- the former single 'help' entry split in two, and BOTH now carry the
   // real section:'help' (not 'admin') -- SECTIONS below has always declared a 'help' section
   // (label 'Help') that no panel actually used until now, exactly the "inert section" pattern
@@ -238,13 +238,13 @@ export const PANELS = [
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
   { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics' },
-  { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics' },
+  { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   // Opportunity $ v1 (memory/design-opportunity-dollars.md) -- flagship "every performance gap
   // becomes recoverable dollars" panel. kind:'test-kitchen' with its real eventual section:
   // 'analytics' set from day one (promotion is a `kind:` flip only, dispatch #61); it sits next
   // to the At-A-Glance headline tile that already links here (onOpenModal('opportunity-dollars')).
   { id:'opportunity-dollars', label:'Opportunity $', icon:'💰', perm:'analytics.district', kind:'test-kitchen', section:'analytics', tkOrder:13 },
-  { id:'operator-summary', label:'Org Summary', icon:'📊', perm:'analytics.district', kind:'nav', section:'reports' },
+  { id:'operator-summary', label:'Org Summary', icon:'📊', perm:'analytics.district', kind:'nav', section:'reports', route:true },
   { id:'pace-target', label:'Pace Target', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'panel-manager', label:'Panel Manager', icon:'🧩', perm:'settings.view', kind:'nav', section:'admin' },
   // perf-calc — RETIRED as a standalone/optional panel (dispatch #199, 2026-08-28): folded into
@@ -359,7 +359,7 @@ export const PANELS = [
   // registered so old deep links redirect" pattern as record-day just above.
   { id:'top-bottom', label:'Top/Bottom Performers', icon:'🏆', perm:'analytics.district', kind:'internal', section:'analytics' },
   { id:'unified-targets', label:'Unified Targets', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
-  { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'operations' },
+  { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'why-engine', label:'Why Engine', icon:'🔬', perm:'analytics.ai', kind:'optional', section:'analysis' },
   { id:'yearly-proj', label:'Yearly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
 ];

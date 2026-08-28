@@ -8,6 +8,7 @@ import * as React from 'react';
 import { computeVisitReadiness, analyzeGradedVisits, srcMeta, daysSince } from '../engine/visit-readiness.js';
 import { readinessReportHTML, readinessAuditCSV, reportFileBase, fmtMetric } from './visit-readiness-report.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
@@ -569,62 +570,64 @@ export function VisitReadinessPanel({ ds, onClose, initialScope }) {
     h('div', { style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 } }, label),
     h('div', { style: { fontSize: 17, fontWeight: 800, fontFamily: 'var(--mono)', color: col || 'var(--text)' } }, val));
 
-  return h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    h('div', { style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    h('div', { style: { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
-      h('div', { style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        h('span', { style: { fontSize: 18 } }, '🛡️'),
-        h('div', { style: { flex: 1, minWidth: 200 } },
-          h('div', { style: { fontSize: 14, fontWeight: 800 } }, 'Visit Readiness'),
-          h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, 'PACE graded-visit readiness (CFV / RGRV / EcoSure) from daily ops metrics · coach the at-risk stores before the visit')),
-        h(ReportButton, { detail, setDetail, onPrint: doPrint }),
-        h('button', { className: 'btn btn-sm', title: 'Download the full calibration audit — one row per store × area × metric, with targets, tolerances and sources', style: { fontSize: 10 }, onClick: doCsv }, '⬇ Audit CSV'),
-        h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+  // route:true (dispatch #205, URL migration batch 2) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop + sheet + '✕' close
+  // button (same treatment as OperatorSummaryPanel/StoreOnePager/GradedVisitsPanel got in this
+  // same batch, and AttentionPanel/RankingView under dispatch #192). The Scope + report options
+  // bar moves into the body — RoutePanelShell has no subHeader slot, same treatment
+  // AttentionPanel's severity chips got under dispatch #192.
+  return h(RoutePanelShell, {
+    icon: '🛡️',
+    title: 'Visit Readiness',
+    subtitle: 'PACE graded-visit readiness (CFV / RGRV / EcoSure) from daily ops metrics · coach the at-risk stores before the visit',
+    onBack: onClose,
+    headerExtra: h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      h(ReportButton, { detail, setDetail, onPrint: doPrint }),
+      h('button', { className: 'btn btn-sm', title: 'Download the full calibration audit — one row per store × area × metric, with targets, tolerances and sources', style: { fontSize: 10 }, onClick: doCsv }, '⬇ Audit CSV')),
+  },
+    // ── Scope + report options ──
+    h('div', { style: { padding: '0 0 10px', borderBottom: '.5px solid var(--bdr)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      h('div', { style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
+        ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => h('button', { key: v, onClick: () => setScope(v),
+          style: { padding: '3px 10px', border: 'none', fontSize: 10, cursor: 'pointer', background: scope === v ? 'var(--amber)' : 'transparent', color: scope === v ? '#000' : 'var(--text3)', fontWeight: scope === v ? 700 : 400 } }, l))),
+      Object.keys(groups).length ? h('select', { value: String(scope).startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Supervisor patch',
+        style: { fontSize: 10, padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
+        h('option', { value: '' }, '— patch —'), Object.keys(groups).sort().map(g => h('option', { key: g, value: 'grp:' + g }, g))) : null,
+      h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Single store',
+        style: { fontSize: 10, padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
+        h('option', { value: '' }, '— store —'),
+        Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l) || sName(l)))),
+      h('span', { style: { fontSize: 9.5, color: 'var(--text3)' } }, scopeLabel + ' · ' + (res.stores || []).length + ' with data'),
+      h('span', { style: { flex: 1 } })),
 
-      // ── Scope + report options ──
-      h('div', { style: { padding: '7px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-        h('div', { style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', overflow: 'hidden' } },
-          ...[['all', 'All'], ['ok', 'OK'], ['fl', 'FL']].map(([v, l]) => h('button', { key: v, onClick: () => setScope(v),
-            style: { padding: '3px 10px', border: 'none', fontSize: 10, cursor: 'pointer', background: scope === v ? 'var(--amber)' : 'transparent', color: scope === v ? '#000' : 'var(--text3)', fontWeight: scope === v ? 700 : 400 } }, l))),
-        Object.keys(groups).length ? h('select', { value: String(scope).startsWith('grp:') ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Supervisor patch',
-          style: { fontSize: 10, padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-          h('option', { value: '' }, '— patch —'), Object.keys(groups).sort().map(g => h('option', { key: g, value: 'grp:' + g }, g))) : null,
-        h('select', { value: STORE_NAMES[scope] ? scope : '', onChange: e => e.target.value && setScope(e.target.value), title: 'Single store',
-          style: { fontSize: 10, padding: '3px 5px', background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)' } },
-          h('option', { value: '' }, '— store —'),
-          Object.keys(STORE_NAMES).sort((a, b) => (STORE_NAMES[a] || a).localeCompare(STORE_NAMES[b] || b)).map(l => h('option', { key: l, value: l }, sNameC(l) || sName(l)))),
-        h('span', { style: { fontSize: 9.5, color: 'var(--text3)' } }, scopeLabel + ' · ' + (res.stores || []).length + ' with data'),
-        h('span', { style: { flex: 1 } })),
+    !d ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
+      h('div', { style: { fontSize: 26, marginBottom: 10 } }, '🛡️'),
+      'No operational data loaded yet. Readiness reads your speed (OEPE/KVS/park), accuracy (SMG/refunds/T-Reds), waste, and labor metrics — sync or upload data and it fills in.')
+    : h('div', null,
+      h('div', { style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
+        'Readiness (0–100) is a weighted blend — ', h('b', null, 'Speed 35%'), ' · ', h('b', null, 'Accuracy 30%'), ' · ',
+        h('b', null, 'Quality 20%'), ' · ', h('b', null, 'Leadership 15%'), ' — each metric scored against that store\'s own target. ',
+        'Weighted toward the areas most heavily graded and most directly measured in your data. Waste & variance is a separate risk flag (waste/holding proxies) — it is not a Food Safety measure. ',
+        h('b', null, 'This is an early-warning estimate, not a predicted score.')),
 
-      h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
-        !d ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
-          h('div', { style: { fontSize: 26, marginBottom: 10 } }, '🛡️'),
-          'No operational data loaded yet. Readiness reads your speed (OEPE/KVS/park), accuracy (SMG/refunds/T-Reds), waste, and labor metrics — sync or upload data and it fills in.')
-        : h('div', null,
-          h('div', { style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8 } },
-            'Readiness (0–100) is a weighted blend — ', h('b', null, 'Speed 35%'), ' · ', h('b', null, 'Accuracy 30%'), ' · ',
-            h('b', null, 'Quality 20%'), ' · ', h('b', null, 'Leadership 15%'), ' — each metric scored against that store\'s own target. ',
-            'Weighted toward the areas most heavily graded and most directly measured in your data. Waste & variance is a separate risk flag (waste/holding proxies) — it is not a Food Safety measure. ',
-            h('b', null, 'This is an early-warning estimate, not a predicted score.')),
+      h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 } },
+        stat('District readiness', Math.round(d.readiness), scoreColor(d.readiness)),
+        stat('At risk', d.atRisk, d.atRisk ? '#ef4444' : '#10b981'),
+        stat('Watch', d.watch, '#f59e0b'),
+        stat('W&V elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
+        stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
+        stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
 
-          h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 } },
-            stat('District readiness', Math.round(d.readiness), scoreColor(d.readiness)),
-            stat('At risk', d.atRisk, d.atRisk ? '#ef4444' : '#10b981'),
-            stat('Watch', d.watch, '#f59e0b'),
-            stat('W&V elevated', d.fsElevated, d.fsElevated ? '#ef4444' : '#10b981'),
-            stat('Speed', Math.round(d.subs.speed || 0), scoreColor(d.subs.speed)),
-            stat('Accuracy', Math.round(d.subs.accuracy || 0), scoreColor(d.subs.accuracy))),
+      h(CalibrationCard, { cal: res.calibration }),
 
-          h(CalibrationCard, { cal: res.calibration }),
+      h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
+        h(StoreListHeader),
+        res.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
 
-          h('div', { style: { border: '.5px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
-            h(StoreListHeader),
-            res.stores.map(s => h(StoreRow, { key: s.loc, s, expanded: expanded === s.loc, onToggle: () => setExpanded(expanded === s.loc ? null : s.loc) }))),
+      h(VisitPatterns, { ds, locs }),
 
-          h(VisitPatterns, { ds, locs }),
+      h(CoverageGaps, { res }),
 
-          h(CoverageGaps, { res }),
-
-          h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 8 } },
-            '⚙ ', res.gapNote, ' Scores are a directional early-warning from leading indicators, not a predicted visit percentage. Validate against actual CFV/RGR outcomes as they accumulate (shown per store when available).')))));
+      h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 8 } },
+        '⚙ ', res.gapNote, ' Scores are a directional early-warning from leading indicators, not a predicted visit percentage. Validate against actual CFV/RGR outcomes as they accumulate (shown per store when available).')));
 }

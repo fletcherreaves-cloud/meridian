@@ -82,7 +82,24 @@ const ROOTS = ['src/views', 'src/features'];
 // content-only (no ModalShell/overlay of its own, since it now renders inside an existing shell).
 // Different file from #198's sweep, so the two reductions are additive; re-measured fresh on this
 // merge (not 53−1 by assumption) to confirm.
-const CEILING = 52;
+// Lowered 52 → 47 by dispatch #205 (URL migration batch 2, 2026-08-28): four of the six panels
+// converted to route:true this batch hand-rolled a backdrop matching this exact pattern and were
+// refactored to RoutePanelShell — StoreOnePager (src/views/analytics.js, 1 hit),
+// GradedVisitsPanel (src/views/graded-visits.js, 1 hit — the file's only function, so the file
+// drops out of the scan entirely), VisitReadinessPanel (src/views/visit-readiness.js, 1 hit,
+// same "file drops out entirely" effect), and OperatorSummaryPanel (src/views/labor-tools.js, 2
+// hits — an empty-state early return AND the main panel body under one component, same "two
+// backdrops, one component" shape dispatch #188 found in FOBAnalysisPanel). 1+1+1+2 = 5 removed.
+// The other two panels in this batch did NOT move this count: LocationBrief ('brief') never had
+// a hand-rolled backdrop of its own (it rendered inside an external ModalShell at the App.js
+// call site, now an external RoutePanelShell instead — same "no internal chrome" shape as
+// dispatch #192's security/signals); DeliveryMixPanel ('delivery-mix') was already ModalShell-
+// based, not hand-rolled, confirmed by this file's own scan finding zero hits in
+// src/views/delivery-mix.js both before and after. Verified per-file against the fresh scan on
+// this dispatch's own branch (not by arithmetic subtraction) — analytics.js and labor-tools.js
+// in particular host several OTHER components each, so each surviving/removed line was checked
+// against the actual function boundaries, not assumed 1:1 with the panel being converted.
+const CEILING = 47;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

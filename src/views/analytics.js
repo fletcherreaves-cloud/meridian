@@ -1020,51 +1020,47 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,
-    display:'flex',alignItems:'center',justifyContent:'center',padding:24}},
-    div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
-      width:'100%',maxWidth:640,display:'flex',flexDirection:'column',
-      boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
-      div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',background:'var(--surf2)',
-        display:'flex',alignItems:'center',gap:10}},
-        span({style:{fontSize:'18px'}},'📄'),
-        div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'Store One-Pager Generator'),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},'Professional print-ready brief — opens in new tab, save as PDF via browser print')
-        ),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
-      ),
-      div({style:{padding:'20px 24px',display:'flex',flexDirection:'column',gap:14}},
-        div(null,
-          div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:5}},'Select Store'),
-          h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-            style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-              color:'var(--text)',fontSize:'11px',padding:'6px 10px'}},
-            LOCS.map(l=>h('option',{key:l,value:l},sName(l)))
-          )
-        ),
-        div(null,
-          div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:5}},'Report Period'),
-          div({style:{display:'flex',gap:6}},
-            PERIODS.map(p=>btn({key:p.id,className:'btn btn-sm',
-              style:{fontSize:'9px',background:period===p.id?'var(--adim)':'transparent',
-                color:period===p.id?'var(--amber)':'var(--text3)',
-                borderColor:period===p.id?'rgba(245,158,11,.4)':'var(--bdr)'},
-              onClick:()=>setPeriod(p.id)},p.l))
-          )
-        ),
-        // Summary preview
-        data.sales&&div({style:{padding:'12px',background:'rgba(245,158,11,.06)',
-          borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.2)',fontSize:'9px',color:'var(--text3)'}},
-          `Preview: ${STORE_NAMES[selLoc]} · Avg daily sales ${data.sales?'$'+Math.round(data.sales).toLocaleString():'—'} · `,
-          data.n+' days of data · ',
-          (data.vsLY!=null?`${data.vsLY>=0?'+':''}${(data.vsLY*100).toFixed(2)}% vs LY`:' LY comparison unavailable')
-        ),
-        div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}},
-          btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'Cancel'),
-          btn({className:'btn btn-sm btn-a',style:{fontWeight:700,padding:'7px 20px',fontSize:'11px'},
-            onClick:generateAndPrint},'📄 Generate & Open One-Pager')
+  // route:true (dispatch #205, URL migration batch 2) — RoutePanelShell is now the SOLE shell
+  // (back button/title), replacing this component's own hand-rolled position:fixed/inset:0/
+  // rgba(0,0,0 backdrop + card + '✕' close button. Same treatment as AttentionPanel/RankingView
+  // got under dispatch #192 (see that dispatch's own comment on this exact pattern). The
+  // duplicate "Cancel" body button is dropped too — the header back arrow is the only dismiss
+  // action now, matching every other RoutePanelShell-wrapped panel in this file.
+  return h(RoutePanelShell,{
+    icon:'📄',
+    title:'Store One-Pager Generator',
+    subtitle:'Professional print-ready brief — opens in new tab, save as PDF via browser print',
+    onBack:onClose,
+  },
+    div({style:{display:'flex',flexDirection:'column',gap:14,maxWidth:640}},
+      div(null,
+        div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:5}},'Select Store'),
+        h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
+          style:{width:'100%',background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'11px',padding:'6px 10px'}},
+          LOCS.map(l=>h('option',{key:l,value:l},sName(l)))
         )
+      ),
+      div(null,
+        div({style:{fontSize:'9px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:5}},'Report Period'),
+        div({style:{display:'flex',gap:6}},
+          PERIODS.map(p=>btn({key:p.id,className:'btn btn-sm',
+            style:{fontSize:'9px',background:period===p.id?'var(--adim)':'transparent',
+              color:period===p.id?'var(--amber)':'var(--text3)',
+              borderColor:period===p.id?'rgba(245,158,11,.4)':'var(--bdr)'},
+            onClick:()=>setPeriod(p.id)},p.l))
+        )
+      ),
+      // Summary preview
+      data.sales&&div({style:{padding:'12px',background:'rgba(245,158,11,.06)',
+        borderRadius:'var(--r)',border:'.5px solid rgba(245,158,11,.2)',fontSize:'9px',color:'var(--text3)'}},
+        `Preview: ${STORE_NAMES[selLoc]} · Avg daily sales ${data.sales?'$'+Math.round(data.sales).toLocaleString():'—'} · `,
+        data.n+' days of data · ',
+        (data.vsLY!=null?`${data.vsLY>=0?'+':''}${(data.vsLY*100).toFixed(2)}% vs LY`:' LY comparison unavailable')
+      ),
+      div({style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}},
+        btn({className:'btn btn-sm btn-a',style:{fontWeight:700,padding:'7px 20px',fontSize:'11px'},
+          onClick:generateAndPrint},'📄 Generate & Open One-Pager')
       )
     )
   );
