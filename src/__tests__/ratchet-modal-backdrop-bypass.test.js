@@ -53,7 +53,7 @@ const ROOTS = ['src/views', 'src/features'];
 // PromoRoiPanel (promo-roi.js) each hand-rolled this exact backdrop shape and were converted to
 // RoutePanelShell as part of their route:true conversion
 // (routePanel==='attention'/'ranking'/'promo-roi').
-const CEILING = 70;
+const CEILING = 69;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 
