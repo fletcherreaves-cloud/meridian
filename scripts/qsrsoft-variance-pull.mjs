@@ -8,6 +8,8 @@
 //   • Yields                    → merged onto variance rows (yield-band cause)
 //   • Waste (raw_waste_promo)   → qsr_waste           (manager/pencil-whip patterns)
 //   • Transfers                 → qsr_transfers       (In/Out, unposted)
+//   • Raw Item Info (raw_info)  → qsr_raw_item_info   (recipe/BOM + current cost snapshot,
+//                                                       top-50 actionable WRINs, dispatch #184)
 //
 // Parsed with the SAME src/engine/eom-parsers.js mappers the client uses (zero
 // drift — the standing rule for cloud streams).
@@ -17,6 +19,8 @@
 //   GET /api/inv/{nsn}/stat_variance/yields?start_date=&end_date=
 //   GET /api/inv/{nsn}/raw_waste_promo?start_date=&end_date=
 //   GET /api/inv/{nsn}/transfers?start_date=&end_date=
+//   GET /api/inv/{nsn}/raw_detail/{rawItemId}?start_date=&end_date=   (top-50 actionable WRINs)
+//   GET /api/inv/{nsn}/raw_info/{rawItemId}?start_date=&end_date=     (same WRIN set, dispatch #184)
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Auth — same eBOS ladder as scripts/qsrsoft-onhand-pull.mjs, tried in order:
@@ -39,7 +43,7 @@ import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
-  mapWasteEvents, mapTransferLines, mapRawItemHistory,
+  mapWasteEvents, mapTransferLines, mapRawItemHistory, mapRawItemInfo,
 } from '../src/engine/eom-parsers.js';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
 
@@ -273,7 +277,7 @@ async function runPeriod(period, token) {
   const range = `start_date=${first}&end_date=${last}`;
   console.log(`[variance-pull] period ${period} (${first}…${last}) × ${STORE_NSNS.length} stores`);
 
-  let vSaved = 0, wSaved = 0, tSaved = 0, rSaved = 0, storesOk = 0, authFailed = false;
+  let vSaved = 0, wSaved = 0, tSaved = 0, rSaved = 0, iSaved = 0, storesOk = 0, authFailed = false;
   const tracker = makeOutcomeTracker('variance-pull');
   for (const nsn of STORE_NSNS) {
     if (authFailed) break;
@@ -342,9 +346,19 @@ async function runPeriod(period, token) {
         .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0))
         .slice(0, 50);
       const detailRows = [];
+      const infoRows = [];
       for (const v of actionable) {
-        try {
-          const detail = await ebosGetObj(token, nsn, `raw_detail/${v.rawItemId}?${range}`);
+        // raw_detail (forensic history) + raw_info (recipe/BOM + current cost, dispatch #184) —
+        // fired CONCURRENTLY per item (not sequential awaits) so this second call keeps the
+        // per-store loop's wall time close to raw_detail-alone, not double it (both are
+        // independent GETs to the same host; see the PR body for the measured before/after).
+        const [detailRes, infoRes] = await Promise.allSettled([
+          ebosGetObj(token, nsn, `raw_detail/${v.rawItemId}?${range}`),
+          ebosGetObj(token, nsn, `raw_info/${v.rawItemId}?${range}`),
+        ]);
+
+        if (detailRes.status === 'fulfilled') {
+          const detail = detailRes.value;
           // One-time raw-field dump (DUMP_RAW_FIELDS=1) — reveal any hidden columns (e.g. a Replace/
           // count-type flag) we don't currently map, so we can nail the walkthrough-vs-recount split.
           if (process.env.DUMP_RAW_FIELDS === '1' && !globalThis.__rawDumped && Array.isArray(detail.history) && detail.history.length) {
@@ -356,15 +370,34 @@ async function runPeriod(period, token) {
           }
           const m = mapRawItemHistory(detail);
           detailRows.push({ loc, period, wrin: v.wrin, descr: m.descr || v.descr, item_class: m.itemClass || v.classCode, history: m.history });
-        } catch (e) {
+        } else {
+          const e = detailRes.reason;
           if (String(e.message).startsWith('AUTH_FAILED')) throw e;
           if (DEBUG) console.warn(`    raw_detail ${v.wrin}: ${e.message}`);
         }
+
+        if (infoRes.status === 'fulfilled') {
+          const info = infoRes.value;
+          const mi = mapRawItemInfo(info);
+          infoRows.push({
+            loc, wrin: v.wrin, full_wrin: mi.wrin || null, long_desc: mi.descr || v.descr || null,
+            invty_category_type: mi.invtyCategoryType, case_qty: mi.caseQty,
+            latest_case_price: mi.latestCasePrice, case_price_avg: mi.casePriceAvg,
+            primary_vdr_name: mi.primaryVdrName, primary_vdr: mi.primaryVdr,
+            mid_range_yield: mi.midRangeYield, recipe_item: mi.recipeItem, current_upt: mi.currentUpt,
+            menu_items: mi.menuItems, menu_item_combos: mi.menuItemCombos, upt_hist: mi.uptHist,
+          });
+        } else {
+          const e = infoRes.reason;
+          if (String(e.message).startsWith('AUTH_FAILED')) throw e;
+          if (DEBUG) console.warn(`    raw_info ${v.wrin}: ${e.message}`);
+        }
       }
       rSaved += await upsert('qsr_raw_item_detail', detailRows.filter(r => r.wrin), 'loc,period,wrin');
+      iSaved += await upsert('qsr_raw_item_info', infoRows.filter(r => r.wrin), 'loc,wrin');
 
       storesOk++;
-      if (DEBUG) console.log(`  ${nsn}: ${varRows.length} var · ${wasteRows.length} waste · ${xferRows.length} xfer · ${detailRows.length} raw-detail`);
+      if (DEBUG) console.log(`  ${nsn}: ${varRows.length} var · ${wasteRows.length} waste · ${xferRows.length} xfer · ${detailRows.length} raw-detail · ${infoRows.length} raw-info`);
     } catch (e) {
       if (e.message.startsWith('AUTH_FAILED')) { authFailed = true; console.error('[variance-pull] auth failed — refresh QSRSOFT_EBOS_TOKEN'); break; }
       console.warn(`  ${nsn}: ${e.message}`);
@@ -372,11 +405,11 @@ async function runPeriod(period, token) {
     }
   }
 
-  console.log(`[variance-pull] ✓ ${storesOk}/${STORE_NSNS.length} stores · ${vSaved} variance · ${wSaved} waste · ${tSaved} transfer · ${rSaved} raw-detail rows for ${period}`);
+  console.log(`[variance-pull] ✓ ${storesOk}/${STORE_NSNS.length} stores · ${vSaved} variance · ${wSaved} waste · ${tSaved} transfer · ${rSaved} raw-detail · ${iSaved} raw-info rows for ${period}`);
   const code = authFailed ? 0 : tracker.finalize({
     // authFailed already short-circuits main() to exit 1 -- don't also run the
     // zero-rows/threshold check against a period this loop broke out of early.
-    requestedUnits: STORE_NSNS, totalSaved: vSaved + wSaved + tSaved + rSaved,
+    requestedUnits: STORE_NSNS, totalSaved: vSaved + wSaved + tSaved + rSaved + iSaved,
     formatRerun: failedStores => `VARIANCE_STORES=${failedStores.join(',')} VARIANCE_PERIOD=${period}`,
   });
   return { authFailed, code };
