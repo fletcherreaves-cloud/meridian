@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import {
   mapVarianceRows, mapYieldGroups, parseYieldRange, yieldBandFor, yieldStatus,
   mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers, flagUnmatchedTransfers,
-  mapRawItemHistory, mapRawItemInfo, mapMenuItems,
+  mapRawItemHistory, mapRawItemInfo, mapMenuItems, mapMenuItemActivity, mapMenuItemActivityCost,
 } from '../engine/eom-parsers.js';
 
 describe('mapVarianceRows', () => {
@@ -211,5 +211,40 @@ describe('mapMenuItems', () => {
     expect(m.filter(r => r.itemNumber == null)).toHaveLength(0);
     const ids = new Set(m.map(r => r.storeMenuitemId));
     expect(ids.size).toBe(5466); // storeMenuitemId is 1:1 unique, per the dispatch's own finding
+  });
+});
+
+describe('mapMenuItemActivity', () => {
+  it('extracts the per-day counts from the getMenuItemActivity wrapper (dispatch #193, dispatch #185 sample)', () => {
+    const resp = { currentBusinessTime: '06:06', getMenuItemActivity: [
+      { date_range: '2026-08-28', activity: 12, sold: 10, emp_meal: 1, mgr_meal: 0, waste: 1, promo: 0, free_choice_qty: 0, datetime_range: 'Fri - 08/28/2026 | 00:00 to 23:45' },
+    ] };
+    const [row] = mapMenuItemActivity(resp);
+    expect(row.dateRange).toBe('2026-08-28');
+    expect(row.activity).toBe(12);
+    expect(row.sold).toBe(10);
+    expect(row.empMeal).toBe(1);
+    expect(row.waste).toBe(1);
+  });
+  it('defaults safely on an empty/missing response', () => {
+    expect(mapMenuItemActivity({})).toEqual([]);
+    expect(mapMenuItemActivity(undefined)).toEqual([]);
+  });
+});
+
+describe('mapMenuItemActivityCost', () => {
+  it('extracts food/paper/total cost from the flat response (dispatch #193, dispatch #185 sample)', () => {
+    const resp = { food_cost: 0.6292658241696025, paper_cost: 0.015955, total_cost: 0.6452208241696026, last_close_business_date: '2026-08-27' };
+    const m = mapMenuItemActivityCost(resp);
+    expect(m.foodCost).toBeCloseTo(0.6292658241696025);
+    expect(m.paperCost).toBeCloseTo(0.015955);
+    expect(m.totalCost).toBeCloseTo(0.6452208241696026);
+    expect(m.lastCloseBusinessDate).toBe('2026-08-27');
+  });
+  it('defaults missing fields to null rather than 0 (0 is a real, distinct food cost value)', () => {
+    const m = mapMenuItemActivityCost({});
+    expect(m.foodCost).toBeNull();
+    expect(m.paperCost).toBeNull();
+    expect(m.totalCost).toBeNull();
   });
 });

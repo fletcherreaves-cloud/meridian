@@ -44,7 +44,7 @@ const ROOT = 'src';
 // Measured fresh against this branch, 2026-08-18. Fuzzy pattern (unlike R1/R3's clean literal
 // matches) — hand-reviewed every candidate hit before trusting this number. See PATTERN below
 // for exactly what counts as a hit.
-const CEILING = 93;
+const CEILING = 89;
 
 // Matches `<value> + '<2 hex chars>'` (any quote style). Two shapes for <value>, alternated:
 //   1. A literal var() reference — 'var(--crit)' + '18' — the dispatch's own #351/#368 example.

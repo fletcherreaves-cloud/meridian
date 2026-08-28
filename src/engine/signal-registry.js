@@ -535,28 +535,13 @@ export function extractMetricValues(metricKey, ds, granularity, scopeLoc) {
 }
 
 // ── Statistics ────────────────────────────────────────────────────────────────
-function pearson(pairs) {
-  const n = pairs.length;
-  if (n < 5) return null;
-  const mx = pairs.reduce((s,p)=>s+p.x,0)/n;
-  const my = pairs.reduce((s,p)=>s+p.y,0)/n;
-  let num=0, dx2=0, dy2=0;
-  for (const {x,y} of pairs) { const dx=x-mx,dy=y-my; num+=dx*dy; dx2+=dx*dx; dy2+=dy*dy; }
-  if (!dx2||!dy2) return null;
-  return Math.max(-1, Math.min(1, num/Math.sqrt(dx2*dy2)));
-}
-
-export function linearRegression(pairs) {
-  const n = pairs.length;
-  if (n < 5) return null;
-  const mx = pairs.reduce((s,p)=>s+p.x,0)/n;
-  const my = pairs.reduce((s,p)=>s+p.y,0)/n;
-  let num=0, den=0;
-  for (const {x,y} of pairs) { const dx=x-mx; num+=dx*(y-my); den+=dx*dx; }
-  if (!den) return null;
-  const slope = num/den;
-  return { slope, intercept: my - slope*mx, mx, my };
-}
+// Relocated to src/engine/correlation-stats.js under dispatch #195 (2026-08-28) so a panel
+// outside Signals (the merged Correlations tab) can call the same math without statically
+// pulling in this file's ~900 lines of Signals-specific metric-registry machinery. Re-exported
+// below so every existing consumer of THIS module (csat-signals.js, signals.js, tests) sees
+// zero behavior change — same functions, same identity, just defined elsewhere.
+import { pearson, linearRegression, spearman, pValueFromR, benjaminiHochberg } from './correlation-stats.js';
+export { linearRegression, spearman, pValueFromR, benjaminiHochberg };
 
 // ── Conditional filtering ─────────────────────────────────────────────────────
 // Conditions narrow the data before Pearson is computed.
@@ -700,70 +685,8 @@ export function getProjectionInfluence(customSig, def, currentXValue) {
 // multiple-comparisons (Benjamini–Hochberg FDR) correction — because scanning
 // ~hundreds of pairs guarantees some will look "significant" by chance alone.
 // Framing is ALWAYS "move together," never causation.
-
-// Spearman rank correlation = Pearson on the rank-transformed values.
-// Catches monotone-but-nonlinear relationships and is robust to outliers.
-export function spearman(pairs) {
-  const n = pairs.length;
-  if (n < 5) return null;
-  const rankOf = (getter) => {
-    const arr = pairs.map((p, i) => ({ v: getter(p), i })).sort((a, b) => a.v - b.v);
-    const ranks = new Array(n);
-    let i = 0;
-    while (i < n) {
-      let j = i;
-      while (j + 1 < n && arr[j + 1].v === arr[i].v) j++;
-      const avg = (i + j) / 2 + 1; // 1-based average rank for ties
-      for (let k = i; k <= j; k++) ranks[arr[k].i] = avg;
-      i = j + 1;
-    }
-    return ranks;
-  };
-  const xr = rankOf(p => p.x);
-  const yr = rankOf(p => p.y);
-  return pearson(xr.map((x, i) => ({ x, y: yr[i] })));
-}
-
-// Standard-normal CDF via an Abramowitz–Stegun erf approximation.
-function _erf(x) {
-  const s = x < 0 ? -1 : 1; const ax = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * ax);
-  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-ax * ax);
-  return s * y;
-}
-function _normCdf(z) { return 0.5 * (1 + _erf(z / Math.SQRT2)); }
-
-// Two-sided p-value for a Pearson r under H0: rho = 0.
-// t = r·√((n−2)/(1−r²)); approximated by the normal tail (accurate for n ≳ 30,
-// which is our scanner minimum). Small-sample monthly scans are directional only.
-export function pValueFromR(r, n) {
-  if (r == null || n == null || n < 4) return null;
-  const rr = Math.min(0.999999, Math.max(-0.999999, r));
-  const t = rr * Math.sqrt((n - 2) / (1 - rr * rr));
-  const p = 2 * (1 - _normCdf(Math.abs(t)));
-  return Math.max(0, Math.min(1, p));
-}
-
-// Benjamini–Hochberg FDR. Mutates each item: sets .qValue and .fdrSig (survives
-// FDR at `alpha`). Denominator = number of tests actually run (all pairs scored),
-// so the correction reflects the true search space, not just what we surface.
-export function benjaminiHochberg(items, alpha = 0.05) {
-  const withP = items.filter(it => it.p != null);
-  const m = withP.length;
-  if (!m) return items;
-  const sorted = [...withP].sort((a, b) => a.p - b.p);
-  let kMax = 0;
-  for (let i = 0; i < m; i++) if (sorted[i].p <= ((i + 1) / m) * alpha) kMax = i + 1;
-  const threshP = kMax > 0 ? sorted[kMax - 1].p : -1;
-  let minq = 1;
-  for (let i = m - 1; i >= 0; i--) {
-    const q = Math.min(1, sorted[i].p * m / (i + 1));
-    minq = Math.min(minq, q);
-    sorted[i].qValue = minq;
-  }
-  for (const it of withP) it.fdrSig = it.p <= threshP;
-  return items;
-}
+// (spearman/pValueFromR/benjaminiHochberg used below are the imports at the top of this file —
+// see src/engine/correlation-stats.js, dispatch #195.)
 
 // scanAllPairs — the auto-scanner.
 // opts: { granularity:'daily'|'monthly', minN, minAbsR, scopeLoc, alpha }

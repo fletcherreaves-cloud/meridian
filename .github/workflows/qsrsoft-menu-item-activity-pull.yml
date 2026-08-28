@@ -1,0 +1,76 @@
+name: QSRSoft Menu Item Activity Pull
+
+# Per-menu-item DAILY activity + $ cost (dispatch #193) — POST menu_item_activity2 (activity/sold/
+# emp_meal/mgr_meal/waste/promo/free_choice_qty) + GET menu_item_activity_cost (food/paper/total
+# cost), bounded per store to the item_numbers with qsr_product_mix activity in the trailing 90
+# days (~330-390/store, per memory/finding-menu-item-activity-subset-2026-08-28.md — NOT the full
+# ~5,466-item catalog). Daily cadence (not weekly, like qsrsoft-menu-items-pull.mjs's catalog
+# pull) — this IS a daily time series, unlike that reference-data catalog.
+#
+# Scheduled after the variance pull (10:30 UTC) so it doesn't race qsr_product_mix's own daily
+# refresh; well clear of the menu-items catalog pull's Sunday 11:30 UTC slot.
+
+on:
+  schedule:
+    - cron: '50 10 * * *'   # 10:50 UTC daily
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Subset of NSNs (comma-separated, default: all 27)'
+        required: false
+        default: ''
+      date:
+        description: 'Pull date (YYYY-MM-DD, default: yesterday)'
+        required: false
+        default: ''
+      window_days:
+        description: 'Trailing-window days for item selection (default: 90)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Menu Item Activity + Cost
+        run: node scripts/qsrsoft-menu-item-activity-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:     ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          ACTIVITY_STORES:           ${{ github.event.inputs.stores || '' }}
+          ACTIVITY_DATE:             ${{ github.event.inputs.date || '' }}
+          ACTIVITY_WINDOW_DAYS:      ${{ github.event.inputs.window_days || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-item-activity-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

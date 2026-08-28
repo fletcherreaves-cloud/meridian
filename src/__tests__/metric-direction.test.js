@@ -16,8 +16,14 @@ import path from 'node:path';
 import { METRIC_SOURCES, metricDirection, rankableMetricKeys } from '../engine/metric-source.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const analyticsSrc = readFileSync(path.join(__dirname, '../views/analytics.js'), 'utf8');
 const storeDashSrc = readFileSync(path.join(__dirname, '../views/store-dash.js'), 'utf8');
+// Dispatch #195 (2026-08-28) moved CORR_PREDICTORS out of analytics.js into its own module
+// (src/engine/correlation-predictors.js) so signals.js's merged Correlations tab could share
+// it without statically importing all of analytics.js. Same "the check follows the real
+// declaration, not the historical file" pattern as the toleranceSrc migration below -- the
+// checks that used to read `analyticsSrc` for CORR_PREDICTORS ids now read `predictorsSrc`
+// (analyticsSrc itself removed here since nothing else in this file used it).
+const predictorsSrc = readFileSync(path.join(__dirname, '../engine/correlation-predictors.js'), 'utf8');
 // Dispatch #94 Phase 2 moved UnifiedTargetsPanel's inline METRICS array (id/lowerBetter/tol)
 // out of store-dash.js into engine/tolerance-status.js's TOL_METRICS -- the single source of
 // truth the KPI table, the district rollup tile, and Coaching findings all now import instead
@@ -65,14 +71,14 @@ describe('METRIC_SOURCES direction (dispatch #77)', () => {
       ['tpph',      'higher', toleranceSrc, 'tpph',    "engine/tolerance-status.js TOL_METRICS (labor) -- moved from store-dash.js, dispatch #94 Phase 2"],
       ['discPct',   'lower',  toleranceSrc, 'disc',    "engine/tolerance-status.js TOL_METRICS (fob, id=disc) -- moved from store-dash.js, dispatch #94 Phase 2"],
       ['cashOSPct', 'lower',  toleranceSrc, 'cashOS',  "engine/tolerance-status.js TOL_METRICS (pos) -- moved from store-dash.js, dispatch #94 Phase 2"],
-      ['oepe',      'lower',  analyticsSrc, 'oepe',    "analytics.js CORR_PREDICTORS"],
-      ['r2p',       'lower',  analyticsSrc, 'r2p',     "analytics.js CORR_PREDICTORS"],
-      ['laborPct',  'lower',  analyticsSrc, 'labor',   "analytics.js CORR_PREDICTORS -- dispatch #77 fix"],
-      ['tpph',      'higher', analyticsSrc, 'tpph',    "analytics.js CORR_PREDICTORS"],
-      ['otHrs',     'lower',  analyticsSrc, 'otHrs',   "analytics.js CORR_PREDICTORS"],
-      ['cashOSPct', 'lower',  analyticsSrc, 'cashOS',  "analytics.js CORR_PREDICTORS"],
-      ['tRedAPct',  'lower',  analyticsSrc, 'tRedA',   "analytics.js CORR_PREDICTORS"],
-      ['discPct',   'lower',  analyticsSrc, 'discPct', "analytics.js CORR_PREDICTORS -- dispatch #77 fix"],
+      ['oepe',      'lower',  predictorsSrc, 'oepe',    "engine/correlation-predictors.js CORR_PREDICTORS -- moved from analytics.js, dispatch #195"],
+      ['r2p',       'lower',  predictorsSrc, 'r2p',     "engine/correlation-predictors.js CORR_PREDICTORS -- moved from analytics.js, dispatch #195"],
+      ['laborPct',  'lower',  predictorsSrc, 'labor',   "engine/correlation-predictors.js CORR_PREDICTORS -- dispatch #77 fix, moved dispatch #195"],
+      ['tpph',      'higher', predictorsSrc, 'tpph',    "engine/correlation-predictors.js CORR_PREDICTORS -- moved from analytics.js, dispatch #195"],
+      ['otHrs',     'lower',  predictorsSrc, 'otHrs',   "engine/correlation-predictors.js CORR_PREDICTORS -- moved from analytics.js, dispatch #195"],
+      ['cashOSPct', 'lower',  predictorsSrc, 'cashOS',  "engine/correlation-predictors.js CORR_PREDICTORS -- moved from analytics.js, dispatch #195"],
+      ['tRedAPct',  'lower',  predictorsSrc, 'tRedA',   "engine/correlation-predictors.js CORR_PREDICTORS -- moved from analytics.js, dispatch #195"],
+      ['discPct',   'lower',  predictorsSrc, 'discPct', "engine/correlation-predictors.js CORR_PREDICTORS -- dispatch #77 fix, moved dispatch #195"],
     ];
     const bad = [];
     for (const [key, expectedDir, src, id, label] of checks) {
@@ -89,8 +95,8 @@ describe('METRIC_SOURCES direction (dispatch #77)', () => {
   it('the three owner-ruled fixes are actually in place (revert-sensitive)', () => {
     // Dispatch #77 -- these three exact sites read the wrong direction before this dispatch,
     // per the owner ruling in memory/dispatch-77.md. A revert of any one fix must fail here.
-    expect(lowerBetterFor(analyticsSrc, 'labor')).toBe(true);   // was false
-    expect(lowerBetterFor(analyticsSrc, 'discPct')).toBe(true); // was false
+    expect(lowerBetterFor(predictorsSrc, 'labor')).toBe(true);   // was false
+    expect(lowerBetterFor(predictorsSrc, 'discPct')).toBe(true); // was false
     expect(lowerBetterFor(toleranceSrc, 'r2p')).toBe(true);     // was false (store-dash.js before dispatch #94 Phase 2's move)
   });
 });

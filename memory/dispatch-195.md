@@ -61,3 +61,51 @@ two fully separate surfaces.
 - Any other panel merge from the 2026-08-10 list (Feature Requests/Task Queue, Help/Workflow).
 - Redesigning Scanner's statistical method itself (effect-size threshold, FDR alpha) — reuse as-is,
   this is a code-location/presentation merge, not a methodology change.
+
+## Resolution (2026-08-28, v5.234)
+
+**Where Scanner's math actually lived:** NOT inline in `signals.js` — already in a real
+importable module, `src/engine/signal-registry.js` (`pearson`/`spearman`/`pValueFromR`/
+`benjaminiHochberg`, used by `scanAllPairs`). But that module also carries ~900 lines of
+Signals-specific machinery (`METRIC_CATEGORIES`, `extractMetricValues`, pmix item indexing,
+custom-signal computation, `SEEDED_SIGNALS`) that a panel outside Signals had no reason to
+statically pull in. So the four pure math functions were extracted to a new, dependency-light
+`src/engine/correlation-stats.js`; `signal-registry.js` now imports from there and re-exports
+the same names, so its existing consumers (`csat-signals.js`, `signals.js`'s own Scanner tab,
+`dispatch-169-*`/`voice-perf-metrics`/`signal-scanner` tests) see zero behavior change.
+`CORR_TARGETS`/`CORR_PREDICTORS` (Metric Correlations' own small 9-predictor catalog) similarly
+moved out of `analytics.js` into `src/engine/correlation-predictors.js`, shared with District
+Lens (untouched, out of scope) the same way.
+
+**What changed in the math:** `MetricCorrelationExplorer` computed Pearson r itself (a private
+`corrPearson`, identical formula) plus an ad-hoc single-test t-statistic significance label
+('strong'/'sig'/'weak', uncorrected). That's gone. The merged tab now calls the shared
+`pearson()` for r (same numbers), then computes a p-value for every predictor tested against
+the selected target and runs Benjamini-Hochberg FDR correction across that whole batch (Scanner's
+own default alpha, .05) — so "significant" accounts for the ~9 tests run together, not one in
+isolation. Spearman rho is now computed alongside r per row, flagged non-linear when it diverges
+from r by >= .25. Scanner's own effect-size floor (|r| >= .35) is surfaced per row, and the "Top
+Findings" hero card is now gated on BOTH the effect-size floor AND FDR significance (previously a
+bare |r| > .25). Everything else — per-store/per-target selection, plain-English finding
+sentences, strength bars, expandable detail, raw-stats table — is unchanged presentation.
+
+**corr-explorer retired**, folded into Signals as a new "🔗 Correlations" tab
+(`CorrelationsTab` in `signals.js`). `panel-registry.js`'s entry kept as `kind:'internal'`
+(same pattern as `calendar-manager`'s dispatch #191 retirement) so `onOpenModal('corr-explorer')`
+still redirects (via a new lifted `signalsTab` state in App.js, mirroring `schedTab`/
+`planningTab`) instead of doing nothing; removed from `constants.js`'s `OPTIONAL_PANELS` toggle
+list since it no longer has a sidebar entry to toggle. Bonus: `MetricCorrelationExplorer`'s
+hand-rolled `position:fixed/inset:0/rgba(0,0,0` backdrop (a panel-contract violation) is gone
+entirely rather than converted, since the merged tab lives inside Signals' existing
+`RoutePanelShell` with no chrome of its own — lowered `ratchet-modal-backdrop-bypass.test.js`'s
+ceiling 70 → 69.
+
+**Scanner-in-Signals confirmed unchanged**: `ScannerTab` itself was not touched — only its
+underlying math functions moved to a new home file that it now imports from (identical exports,
+identical behavior). Its move-together framing, one-click promote-to-Signal-Lab, and seed
+signals (`SEEDED_SIGNALS`) are all still driven by the same `signal-registry.js` code path.
+
+**Verification:** `npx vitest run --exclude "**/.claude/**"` and `npm run build` both clean
+(see PR). `metric-direction.test.js` updated to read the relocated `CORR_PREDICTORS` declarations
+from `correlation-predictors.js` instead of `analytics.js` (7 checks + 2 revert-sensitive
+assertions) — same file, same assertions, new location.

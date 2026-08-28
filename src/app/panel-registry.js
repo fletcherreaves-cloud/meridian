@@ -71,7 +71,16 @@ export const PANELS = [
   { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'internal', section:'planning' },
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
-  { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analysis' },
+  // corr-explorer — RETIRED as a standalone/optional panel (dispatch #195, 2026-08-28): its
+  // engine (plain Pearson) was replaced by Scanner's own statistics (Pearson+Spearman+effect-
+  // size floor+Benjamini-Hochberg FDR, src/engine/correlation-stats.js) and its presentation
+  // was folded into Signals as a "Correlations" tab (signals.js's CorrelationsTab) — the
+  // owner's own "Good with merge" resolution (memory/decisions-panel-inventory-2026-08-10.md).
+  // kind:'internal' keeps the id registered (satisfies panel-registry.test.js's dispatch<->
+  // registry pairing) without a Panel Manager toggle or sidebar entry, so onOpenModal
+  // ('corr-explorer') still redirects into Signals' Correlations tab instead of no-oping if
+  // anything still calls it. Same pattern as calendar-manager's retirement (dispatch #191).
+  { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'internal', section:'analysis' },
   // Crew Schedule Lookup (dispatch #123) -- search an employee, see their upcoming schedule.
   // perm:'analytics.store' (dispatch #125, RBAC re-decision) -- was 'security.view' when the
   // panel gated behind an identity-reveal step; the owner reversed that ("no reason to hide
@@ -126,7 +135,16 @@ export const PANELS = [
   // choosing it over the dispatch's other candidate, "Forecasting Center". Not a proposal
   // anymore; do not re-open the naming question. See memory/dispatch-106.md's Resolution section.
   { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
-  { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
+  // feature-requests -- RETIRED as a nav entry (dispatch #194, 2026-08-28, owner-approved
+  // 2026-08-10): its content (SEED_ITEMS roadmap history, the Supabase-backed submit/vote/
+  // dev-notes flow, category/priority taxonomy) was harvested into Task Queue as a `type` field
+  // ('task' | 'feature_request') -- src/views/task-queue.js's own header comment has the full
+  // merge shape. Same pattern as calendar-manager just above: kind:'internal' keeps the id
+  // registered (satisfies panel-registry.test.js's dispatch<->registry pairing) with no sidebar
+  // link of its own, so the old ?modal=feature-requests deep link still redirects (into Task
+  // Queue, pre-filtered to type:'feature_request' -- App.js's onOpenModal) instead of doing
+  // nothing.
+  { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'internal', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   // Dispatch #188 -- merged into Food Cost as an "End of Month" mode (per the owner's
   // 2026-08-10 decision, memory/decisions-panel-inventory-2026-08-10.md). kind:'internal'
@@ -146,7 +164,27 @@ export const PANELS = [
   // Owner-answered 2026-08-21 (dispatch #54 Job B): "They would be more Operations" -- moved out
   // of People alongside visit-readiness below.
   { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
-  { id:'help', label:'Help', icon:'?', perm:null, kind:'nav', section:'admin' },
+  // Dispatch #196 -- the former single 'help' entry split in two, and BOTH now carry the
+  // real section:'help' (not 'admin') -- SECTIONS below has always declared a 'help' section
+  // (label 'Help') that no panel actually used until now, exactly the "inert section" pattern
+  // CLAUDE.md's own kind/section rule warns about. Grouped together here out of declaration
+  // order on purpose, same precedent as the Planning cluster above (panelsForSection() renders
+  // in array order, and this pairing -- "learn the app" then "fix the app" -- is a deliberate
+  // reading order, not alphabetical).
+  //   'workflow' (was 'help') -- the daily/weekly onboarding checklist. Its modal already
+  //   titled itself "Workflow Guide" and its content was already workflow-shaped; only the
+  //   registry label/id were stale. id CHANGED (help -> workflow): this app has no URL-based
+  //   ?modal= deep-linking for non-route panels (checked -- no `searchParams`/`get('modal')`
+  //   reads anywhere), every "deep link" is an in-code onOpenModal('help') call site, and all
+  //   three were found and updated in the same PR (App.js's two onOpenModal chains, shell.js's
+  //   user-menu item) -- so a stale id costing a truthful label forever was the worse trade,
+  //   not a broken bookmark.
+  { id:'workflow', label:'Workflow', icon:'🧭', perm:null, kind:'nav', section:'help' },
+  // 'troubleshoot' -- the genuinely NEW panel (no prior surface existed anywhere in the app).
+  // Two modes (End User / Developer), src/views/troubleshooting.js. Inherits the '?' icon
+  // 'help' used to carry -- the owner's own framing is "Help should MEAN troubleshooting", so
+  // the icon universally read as "help" now sits on the panel that actually does that job.
+  { id:'troubleshoot', label:'Troubleshooting', icon:'?', perm:null, kind:'nav', section:'help' },
   // Dispatch #54 Job A found this had NO sidebar entry at all (only reachable via ?modal=inventory
   // deep link). Job B's Inventory & Food Cost section gives it a real one for the first time --
   // the owner's own list explicitly named it ("plus Inventory and Product Mix").
@@ -242,6 +280,9 @@ export const PANELS = [
   // pattern as fcst-accuracy/lifelenz-bridge above. Old deep links (modal==='targets-editor')
   // now open perf-reviews and select Customize > Targets instead of a standalone panel.
   { id:'targets-editor', label:'Targets Editor', icon:'🎯', perm:'reviews.customize', kind:'hub-tab', section:'people' },
+  // Dispatch #194 -- absorbed Feature Requests (id:'feature-requests', retired above): the panel
+  // now carries a `type` field ('task' | 'feature_request') distinguishing the two entry kinds
+  // within one list. See src/views/task-queue.js's header comment for the merge shape.
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
   // Time Punches (dispatch #138) -- real qsr_punch_times clock punches (shift+meal), the pull's
   // own output had NO UI anywhere until this panel (owner: "where do i find the time punches").
@@ -320,6 +361,9 @@ export const SECTIONS = [
   { id:'forecasting',        label:'Forecasting and Labor Projections' },
   { id:'forms',              label:'Forms' },
   { id:'intelligence',       label:'Intelligence' },
+  // Dispatch #196: this section id existed since Job B (2026-08-21) but no panel ever set
+  // section:'help' -- inert, exactly the pattern CLAUDE.md's kind/section rule warns about.
+  // Now truthfully populated by 'workflow' and 'troubleshoot' (see PANELS above).
   { id:'help',               label:'Help' },
   { id:'admin',              label:'Admin' },
 ];

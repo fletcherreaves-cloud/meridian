@@ -144,7 +144,9 @@ const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ defau
 // here regardless of this group; that one export moved to model-health-badge.js so this split
 // actually holds. AIInsightsTab isn't here — it was imported in App.js and never rendered.
 const _analytics = () => import('../views/analytics.js');
-const MetricCorrelationExplorer = lazyPanel(() => _analytics().then(m => ({ default: m.MetricCorrelationExplorer })));
+// MetricCorrelationExplorer — RETIRED (dispatch #195, 2026-08-28): merged into Signals as the
+// Correlations tab (signals.js's CorrelationsTab, now Scanner-statistics-powered). See
+// panel-registry.js's comment on corr-explorer.
 const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
 const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-performers.js').then(m => ({ default: m.TopBottomPerformers })));
 const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
@@ -195,6 +197,8 @@ const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-rev
 // lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
+// TroubleshootingPanel — dispatch #196: the app's real "Help" (two modes, End User/Developer).
+const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js').then(m => ({ default: m.TroubleshootingPanel })));
 // CountCyclePanel — dispatch #189: no longer its own lazyPanel entry here. It's still used,
 // but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
@@ -266,8 +270,7 @@ const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.j
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
-import { FeatureRequestsPanel } from '../views/feature-requests.js';
-import { TaskQueuePanel } from '../views/task-queue.js';
+import { TaskQueuePanel } from '../views/task-queue.js'; // dispatch #194: absorbed Feature Requests -- see the panel's own header comment
 // #232 Finding 2: gated behind showDtSoS, statically imported. Its own chart.js/auto import was
 // the third of the three paths pulling Chart.js into the entry chunk — see the comment on the
 // dead top-of-file Chart import above.
@@ -803,6 +806,9 @@ function App() {
   const [planningTab, setPlanningTab] = useState('targets');
   // showSchedHub — Dispatch #55 Part B: replaced by routePanel==='sched-hub' (see routePanel above).
   const [schedTab, setSchedTab] = useState('scheduling');
+  // signalsTab (dispatch #195, 2026-08-28) — same lifted-tab pattern as schedTab/planningTab
+  // above. The retired corr-explorer id redirects into Signals' 'corr' tab via this.
+  const [signalsTab, setSignalsTab] = useState('liveops');
   // forecastReportsTab (dispatch #106 Phase B) — which of ForecastReportsPanel's two internal
   // tabs to open, same pattern as schedTab/planningTab above. The 'fcst-accuracy'/
   // 'lifelenz-bridge' hub-tab dispatch branches below set this before routing to
@@ -813,7 +819,8 @@ function App() {
   const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
   const setAllPanelVis = (on) => setPanelVis(() => { const n = {}; OPTIONAL_PANELS.forEach(p => { n[p.id] = on; }); savePanelVis(n); return n; });
   const [showPerfCalc,    setShowPerfCalc]    = useState(false);
-  const [showCorrExplorer,setShowCorrExplorer]= useState(false);
+  // showCorrExplorer — RETIRED (dispatch #195, 2026-08-28): corr-explorer merged into Signals'
+  // Correlations tab; see signalsTab above and the modal handler below.
   const [showDistrictLens,setShowDistrictLens]= useState(false);
   const [showModelAssign, setShowModelAssign] = useState(false);
   const [showOnePager,    setShowOnePager]    = useState(false);
@@ -877,7 +884,8 @@ function App() {
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
-  const [showHelp,     setShowHelp]    = useState(false);
+  const [showWorkflow,     setShowWorkflow]    = useState(false);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false); // dispatch #196 — new Troubleshooting panel
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
   const [briefScope,   setBriefScope]  = useState({scope:'district',label:'District'});
   const [lockedProjections, setLockedProjections] = useState(()=>{
@@ -946,8 +954,10 @@ function App() {
   const [showSage,            setShowSage]            = useState(false);
   const [sageMin,             setSageMin]             = useState(false); // SAGE minimized to a floating pill (session keeps running)
   const [sageBusy,            setSageBusy]            = useState(false); // SAGE is streaming/thinking (drives the pill's red/green light)
-  const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
+  // dispatch #194: pre-selects Task Queue's type filter when opened via the old
+  // ?modal=feature-requests deep link (or the Feature Request destination of SAGE's 🐞 Log).
+  const [tqInitialType,       setTqInitialType]       = useState(null);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   // showFcstRef — Dispatch #121: replaced by routePanel==='fcst-ref' (see routePanel above).
   // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy', then dispatch #106
@@ -2846,14 +2856,14 @@ function App() {
     showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
-    showCompare||showCorrExplorer||showDARDaypart||
+    showCompare||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
-    showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
+    showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2869,7 +2879,7 @@ function App() {
       if(routePanel){goRoute(null);return;}
       setShowAIScan(false);setShowAbout(false);
       setShowAudit(false);setShowBrief(false);setShowCompare(false);
-      setShowCorrExplorer(false);setShowDARDaypart(false);
+      setShowDARDaypart(false);
       // Dispatch #72 A3 -- setShowDev/setShowInsights never existed (no matching useState
       // anywhere in this file): an unconditional ReferenceError on EVERY Escape press, which
       // aborted every setter after it in this single function call -- so the "Escape always
@@ -2877,7 +2887,7 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
-      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
+      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
@@ -2888,7 +2898,7 @@ function App() {
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
-      setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFormsLibrary(false);
       setShowFormsPrint(false);setShowMetricLineage(false);
       setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
@@ -3010,7 +3020,8 @@ function App() {
         // Performance Review -> Customize -> Targets so an old deep link doesn't 404.
         if(modal==='targets-editor') perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'targets'}),goRoute('perf-reviews'));
         if(modal==='events')         (setEventsMode('list'),setShowEvents(true));
-        if(modal==='help')           setShowHelp(true);
+        if(modal==='workflow')       setShowWorkflow(true);
+        if(modal==='troubleshoot')   setShowTroubleshoot(true);
         if(modal==='kb')             setShowKB(true);
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
@@ -3037,16 +3048,21 @@ function App() {
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
         if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
         if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
-        if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
+        // corr-explorer — RETIRED id (dispatch #195, 2026-08-28), redirects into Signals'
+        // Correlations tab (Scanner-statistics-powered) rather than doing nothing; see
+        // panel-registry.js's comment on this id.
+        if(modal==='corr-explorer')  perm('analytics.store')&&(setSignalsTab('corr'),goRoute('signals'));
         if(modal==='unified-targets') perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
-        if(modal==='signals')        perm('analytics.store')&&goRoute('signals');
+        if(modal==='signals')        perm('analytics.store')&&(setSignalsTab('liveops'),goRoute('signals'));
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),goRoute('sched-hub'));
         if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),goRoute('sched-hub'));
         if(modal==='sage')              {setShowSage(true);setSageMin(false);}
-        if(modal==='feature-requests')  setShowFeatureRequests(true);
-        if(modal==='task-queue')        setShowTaskQueue(true);
+        // dispatch #194: Feature Requests retired into Task Queue -- redirect the old deep link
+        // into the merged panel, pre-filtered to feature_request entries.
+        if(modal==='feature-requests')  {setTqInitialType('feature_request');setShowTaskQueue(true);}
+        if(modal==='task-queue')        {setTqInitialType(null);setShowTaskQueue(true);}
         if(modal==='attention')      goRoute('attention');
         if(modal==='forms-print')    setShowFormsPrint(true);
         // 'leader-one-pager' is no longer a registry id (dispatch #190 folded it into
@@ -3084,10 +3100,11 @@ function App() {
         betaMode,
         onToggleBeta: perm('users.manage.all') ? toggleBetaMode : null,
         onOpenModal: (modal) => {
-          if(modal==='settings')   setShowSettings(true);
-          if(modal==='help')       setShowHelp(true);
-          if(modal==='proj-brief') setShowProjBriefSA(true);
-          if(modal==='sage')       {setShowSage(true);setSageMin(false);}
+          if(modal==='settings')     setShowSettings(true);
+          if(modal==='workflow')     setShowWorkflow(true);
+          if(modal==='troubleshoot') setShowTroubleshoot(true);
+          if(modal==='proj-brief')   setShowProjBriefSA(true);
+          if(modal==='sage')         {setShowSage(true);setSageMin(false);}
         }
       }),
 
@@ -3250,7 +3267,7 @@ function App() {
       routePanel==='signals'&&h(RoutePanelShell,{
         title:'📡 Signals',
         onBack:()=>goRoute(null),
-      }, h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar})),
+      }, h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar,initialTab:signalsTab})),
       routePanel==='promo-roi'&&h(PromoRoiPanel,{ds,userEvents,onClose:()=>goRoute(null)}),
       routePanel==='morning-brief'&&h(RoutePanelShell,{
         icon:'☀️',
@@ -3273,7 +3290,8 @@ function App() {
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
     showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
     showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
-    showCorrExplorer&&h(MetricCorrelationExplorer,{stores,ds,settings,onClose:()=>setShowCorrExplorer(false)}),
+    // MetricCorrelationExplorer render line — RETIRED (dispatch #195, 2026-08-28): see
+    // signalsTab above and the corr-explorer modal handler.
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
     showModelAssign&&h(ModelAssignmentPanel,{stores,ds,settings,userEvents,onClose:()=>setShowModelAssign(false)}),
     showOnePager&&h(StoreOnePager,{stores,ds,settings,onClose:()=>setShowOnePager(false)}),
@@ -3359,8 +3377,7 @@ function App() {
       span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'13px',color:'var(--text)'}},'🧠 SAGE'),
       span({style:{fontSize:'10px',fontWeight:700,color:sageBusy?'#ef4444':'#10b981'}},sageBusy?'working…':'ready'),
     ),
-    showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
-    showTaskQueue&&h(TaskQueuePanel,{onClose:()=>setShowTaskQueue(false)}),
+    showTaskQueue&&h(TaskQueuePanel,{settings,initialType:tqInitialType,onClose:()=>setShowTaskQueue(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
@@ -3428,12 +3445,12 @@ function App() {
     },
       h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
-    showHelp&&h(ModalShell,{
+    showWorkflow&&h(ModalShell,{
       title:'📖 Meridian — Workflow Guide',
-      onClose:()=>setShowHelp(false),maxWidth:800,zIndex:Z.nested,
+      onClose:()=>setShowWorkflow(false),maxWidth:800,zIndex:Z.nested,
       bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
       headerExtra:btn({
-        onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
+        onClick:()=>{setShowWorkflow(false);resetTutorial();setShowTutorial(true);},
         style:{padding:'5px 12px',fontSize:11,fontWeight:700,
           background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
       },'▶ Start Tour')
@@ -3488,6 +3505,7 @@ function App() {
             )
           ))
     ),
+    showTroubleshoot&&h(TroubleshootingPanel,{onClose:()=>setShowTroubleshoot(false)}),
     showBrief&&h(ModalShell,{
       icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
       subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
