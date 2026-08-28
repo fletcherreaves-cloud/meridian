@@ -194,7 +194,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the nineteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192, minus #140, #189 and #190)', () => {
+  it('is exactly the eighteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192, minus #140, #189, #190 and #197)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -234,11 +234,16 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // fob-analysis/fob-eom; 'promo-roi' also had its hand-rolled backdrop refactored internally
     // AND was lazy-wrapped (previously a static top-level import); 'morning-brief' had no
     // internal chrome (wrapped at the call site) and was also lazy-wrapped (previously a static
-    // top-level import) (thirteen -> nineteen).
+    // top-level import) (thirteen -> nineteen). Dispatch #197 (2026-08-28) then merged
+    // 'time-punches' (Time Punches) into 'crew-schedule' (Crew Schedule Lookup) as a Punches tab
+    // — same "route:true -> internal, folded into a sibling as a tab" demotion #106/#140/#189
+    // did above, except landing on kind:'internal' (a saved `?panel=time-punches` deep link still
+    // needs to resolve, via routing.js's LEGACY_PANEL_REDIRECTS) rather than kind:'hub-tab'
+    // (nineteen -> eighteen).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'attention', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
       'forecast-reports', 'morning-brief', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report', 'sched-hub',
-      'security', 'signals', 'time-punches',
+      'security', 'signals',
     ]);
   });
 

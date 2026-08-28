@@ -4,6 +4,17 @@
 // helpers, PLUS call-site rendering tests (same standing rule crew-schedule-panel.test.js's own
 // header cites, from #366 — a test that only imports a helper can't tell "built" from "built but
 // never wired in").
+//
+// Dispatch #197 (2026-08-28): TimePunchesPanel (a full standalone RoutePanelShell/
+// LocationSelector/search-box panel) is now TimePunchesTab (a body-only component, props-driven:
+// `locs`/`query` come from the merged CrewSchedulePanel host, `onSummaryChange` reports the
+// "N employees / N shifts" text upward instead of rendering it in a subtitle directly here). The
+// component-wiring tests below render TimePunchesTab through a tiny Harness that mirrors what the
+// real host does with `onSummaryChange` (renders the reported text into the DOM), so the same
+// textContent assertions this file always used still exercise the real prop contract end to end
+// — not just the tab in isolation. New tests at the end prove the `locs`/`query` props actually
+// drive the query (the merge's whole point) and that this component no longer owns its own
+// search box (that would silently double the search UI if it crept back in).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -16,9 +27,19 @@ vi.mock('../lib/supabase.js', () => ({
 }));
 
 import {
-  TimePunchesPanel, shortEmployeeId, punchBusinessDay, punchKey, pairPunchesByShift,
+  TimePunchesTab, shortEmployeeId, punchBusinessDay, punchKey, pairPunchesByShift,
   groupPunchesByEmployee, filterPunchDirectory, punchesForSelected,
 } from '../views/time-punches-panel.js';
+
+// Mirrors what CrewSchedulePanel does with onSummaryChange (renders the reported text), so the
+// pre-merge assertions on "N employees / N shifts" text still exercise the real contract.
+function Harness(props) {
+  const [summary, setSummary] = React.useState('');
+  return React.createElement(React.Fragment, null,
+    React.createElement('div', null, summary),
+    React.createElement(TimePunchesTab, { ...props, onSummaryChange: setSummary }),
+  );
+}
 
 // Shape mirrors loadPunchTimes' return, and the real pairing observed live 2026-08-25 (dispatch
 // #138 grounding read, geid 200165491 @ loc 0024471): a 'shift' row spanning the whole shift, and
@@ -155,7 +176,7 @@ async function flush(container, maxTicks = 15) {
   }
 }
 
-describe('TimePunchesPanel — no reveal gate, loads unconditionally, shows meal pairing + edit flags', () => {
+describe('TimePunchesTab — no reveal gate, loads unconditionally, shows meal pairing + edit flags', () => {
   let container, root;
   beforeEach(() => {
     // Pin "now" so the panel's default DateRangeControl window (trailing 7 days ending at the
@@ -177,7 +198,7 @@ describe('TimePunchesPanel — no reveal gate, loads unconditionally, shows meal
 
   it('loads punches on mount with no permission check in front of it', async () => {
     loadPunchTimesMock.mockResolvedValue(ROWS);
-    await act(async () => { root.render(React.createElement(TimePunchesPanel, { onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
     await flush(container);
     expect(loadPunchTimesMock).toHaveBeenCalled();
     expect(container.textContent).not.toMatch(/not permitted/i);
@@ -185,7 +206,7 @@ describe('TimePunchesPanel — no reveal gate, loads unconditionally, shows meal
 
   it('renders a resolved employee name directly in the directory list — no click-to-reveal', async () => {
     loadPunchTimesMock.mockResolvedValue(ROWS);
-    await act(async () => { root.render(React.createElement(TimePunchesPanel, { onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
     await flush(container);
     expect(container.textContent).toMatch(/Alice Anderson/);
     expect(container.textContent).not.toMatch(/reveal/i);
@@ -193,14 +214,14 @@ describe('TimePunchesPanel — no reveal gate, loads unconditionally, shows meal
 
   it('an employee with no resolved name falls back to the short geid display', async () => {
     loadPunchTimesMock.mockResolvedValue(ROWS);
-    await act(async () => { root.render(React.createElement(TimePunchesPanel, { onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
     await flush(container);
     expect(container.textContent).toMatch(/Employee #/);
   });
 
   it('selecting an employee renders their shift with the meal nested under it, and the edit flag for the modified shift', async () => {
     loadPunchTimesMock.mockResolvedValue(ROWS);
-    await act(async () => { root.render(React.createElement(TimePunchesPanel, { onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
     await flush(container);
     const e2Row = [...container.querySelectorAll('div')].find(el => el.textContent === 'Employee #E2' + '1 shift');
     expect(e2Row).toBeTruthy();
@@ -215,7 +236,7 @@ describe('TimePunchesPanel — no reveal gate, loads unconditionally, shows meal
 
   it('renders the empty-scope message when loaded with zero rows', async () => {
     loadPunchTimesMock.mockResolvedValue([]);
-    await act(async () => { root.render(React.createElement(TimePunchesPanel, { onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
     await flush(container);
     expect(container.textContent).toMatch(/no punches match this scope/i);
     expect(container.textContent).toMatch(/0 employees/);
@@ -223,8 +244,32 @@ describe('TimePunchesPanel — no reveal gate, loads unconditionally, shows meal
 
   it('renders an error message when the load rejects, instead of a silent empty state', async () => {
     loadPunchTimesMock.mockRejectedValue(new Error('network down'));
-    await act(async () => { root.render(React.createElement(TimePunchesPanel, { onClose: vi.fn() })); });
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
     await flush(container);
     expect(container.textContent).toMatch(/could not load punch data/i);
+  });
+
+  // ── Dispatch #197 merge contract: locs/query are PROPS now, no owned search box ──────────────
+
+  it('the `query` prop filters the directory, exactly like the shared search box would', async () => {
+    loadPunchTimesMock.mockResolvedValue(ROWS);
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: 'alice' })); });
+    await flush(container);
+    expect(container.textContent).toMatch(/Alice Anderson/);
+    expect(container.textContent).not.toMatch(/Employee #E2/);
+  });
+
+  it('forwards the `locs` prop straight through to loadPunchTimes (no internal LocationSelector recomputing it)', async () => {
+    loadPunchTimesMock.mockResolvedValue([]);
+    await act(async () => { root.render(React.createElement(Harness, { locs: ['0003708'], query: '' })); });
+    await flush(container);
+    expect(loadPunchTimesMock).toHaveBeenCalledWith(expect.objectContaining({ locs: ['0003708'] }));
+  });
+
+  it('renders no input of its own — the search box lives in the merged host now, not duplicated here', async () => {
+    loadPunchTimesMock.mockResolvedValue(ROWS);
+    await act(async () => { root.render(React.createElement(Harness, { locs: undefined, query: '' })); });
+    await flush(container);
+    expect(container.querySelector('input')).toBeNull();
   });
 });
