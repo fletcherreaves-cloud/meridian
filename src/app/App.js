@@ -197,6 +197,8 @@ const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-rev
 // lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
+// TroubleshootingPanel — dispatch #196: the app's real "Help" (two modes, End User/Developer).
+const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js').then(m => ({ default: m.TroubleshootingPanel })));
 // CountCyclePanel — dispatch #189: no longer its own lazyPanel entry here. It's still used,
 // but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
@@ -268,8 +270,7 @@ const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.j
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
-import { FeatureRequestsPanel } from '../views/feature-requests.js';
-import { TaskQueuePanel } from '../views/task-queue.js';
+import { TaskQueuePanel } from '../views/task-queue.js'; // dispatch #194: absorbed Feature Requests -- see the panel's own header comment
 // #232 Finding 2: gated behind showDtSoS, statically imported. Its own chart.js/auto import was
 // the third of the three paths pulling Chart.js into the entry chunk — see the comment on the
 // dead top-of-file Chart import above.
@@ -883,7 +884,8 @@ function App() {
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
-  const [showHelp,     setShowHelp]    = useState(false);
+  const [showWorkflow,     setShowWorkflow]    = useState(false);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false); // dispatch #196 — new Troubleshooting panel
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
   const [briefScope,   setBriefScope]  = useState({scope:'district',label:'District'});
   const [lockedProjections, setLockedProjections] = useState(()=>{
@@ -952,8 +954,10 @@ function App() {
   const [showSage,            setShowSage]            = useState(false);
   const [sageMin,             setSageMin]             = useState(false); // SAGE minimized to a floating pill (session keeps running)
   const [sageBusy,            setSageBusy]            = useState(false); // SAGE is streaming/thinking (drives the pill's red/green light)
-  const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
+  // dispatch #194: pre-selects Task Queue's type filter when opened via the old
+  // ?modal=feature-requests deep link (or the Feature Request destination of SAGE's 🐞 Log).
+  const [tqInitialType,       setTqInitialType]       = useState(null);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   // showFcstRef — Dispatch #121: replaced by routePanel==='fcst-ref' (see routePanel above).
   // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy', then dispatch #106
@@ -2854,12 +2858,12 @@ function App() {
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
     showCompare||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
-    showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
+    showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2883,7 +2887,7 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
-      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
+      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
@@ -2894,7 +2898,7 @@ function App() {
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
-      setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFormsLibrary(false);
       setShowFormsPrint(false);setShowMetricLineage(false);
       setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
@@ -3016,7 +3020,8 @@ function App() {
         // Performance Review -> Customize -> Targets so an old deep link doesn't 404.
         if(modal==='targets-editor') perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'targets'}),goRoute('perf-reviews'));
         if(modal==='events')         (setEventsMode('list'),setShowEvents(true));
-        if(modal==='help')           setShowHelp(true);
+        if(modal==='workflow')       setShowWorkflow(true);
+        if(modal==='troubleshoot')   setShowTroubleshoot(true);
         if(modal==='kb')             setShowKB(true);
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
@@ -3054,8 +3059,10 @@ function App() {
         if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),goRoute('sched-hub'));
         if(modal==='sage')              {setShowSage(true);setSageMin(false);}
-        if(modal==='feature-requests')  setShowFeatureRequests(true);
-        if(modal==='task-queue')        setShowTaskQueue(true);
+        // dispatch #194: Feature Requests retired into Task Queue -- redirect the old deep link
+        // into the merged panel, pre-filtered to feature_request entries.
+        if(modal==='feature-requests')  {setTqInitialType('feature_request');setShowTaskQueue(true);}
+        if(modal==='task-queue')        {setTqInitialType(null);setShowTaskQueue(true);}
         if(modal==='attention')      goRoute('attention');
         if(modal==='forms-print')    setShowFormsPrint(true);
         // 'leader-one-pager' is no longer a registry id (dispatch #190 folded it into
@@ -3093,10 +3100,11 @@ function App() {
         betaMode,
         onToggleBeta: perm('users.manage.all') ? toggleBetaMode : null,
         onOpenModal: (modal) => {
-          if(modal==='settings')   setShowSettings(true);
-          if(modal==='help')       setShowHelp(true);
-          if(modal==='proj-brief') setShowProjBriefSA(true);
-          if(modal==='sage')       {setShowSage(true);setSageMin(false);}
+          if(modal==='settings')     setShowSettings(true);
+          if(modal==='workflow')     setShowWorkflow(true);
+          if(modal==='troubleshoot') setShowTroubleshoot(true);
+          if(modal==='proj-brief')   setShowProjBriefSA(true);
+          if(modal==='sage')         {setShowSage(true);setSageMin(false);}
         }
       }),
 
@@ -3369,8 +3377,7 @@ function App() {
       span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'13px',color:'var(--text)'}},'🧠 SAGE'),
       span({style:{fontSize:'10px',fontWeight:700,color:sageBusy?'#ef4444':'#10b981'}},sageBusy?'working…':'ready'),
     ),
-    showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
-    showTaskQueue&&h(TaskQueuePanel,{onClose:()=>setShowTaskQueue(false)}),
+    showTaskQueue&&h(TaskQueuePanel,{settings,initialType:tqInitialType,onClose:()=>setShowTaskQueue(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
@@ -3438,12 +3445,12 @@ function App() {
     },
       h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
-    showHelp&&h(ModalShell,{
+    showWorkflow&&h(ModalShell,{
       title:'📖 Meridian — Workflow Guide',
-      onClose:()=>setShowHelp(false),maxWidth:800,zIndex:Z.nested,
+      onClose:()=>setShowWorkflow(false),maxWidth:800,zIndex:Z.nested,
       bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
       headerExtra:btn({
-        onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
+        onClick:()=>{setShowWorkflow(false);resetTutorial();setShowTutorial(true);},
         style:{padding:'5px 12px',fontSize:11,fontWeight:700,
           background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
       },'▶ Start Tour')
@@ -3498,6 +3505,7 @@ function App() {
             )
           ))
     ),
+    showTroubleshoot&&h(TroubleshootingPanel,{onClose:()=>setShowTroubleshoot(false)}),
     showBrief&&h(ModalShell,{
       icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
       subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',

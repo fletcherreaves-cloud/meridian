@@ -1,34 +1,23 @@
 // @ts-nocheck
 export default {version:'5.235', date:'2026-08-28', changes:[
-  'Dispatch #195 -- merged Metric Correlations into Signals\' Scanner: executed the owner\'s own ' +
-  '"best of both worlds" resolution (memory/decisions-panel-inventory-2026-08-10.md), "merge the ' +
-  'ENGINE, keep the PRESENTATION." Scanner\'s statistics (Pearson r + Spearman, an effect-size ' +
-  'floor, Benjamini-Hochberg FDR correction) already lived in a real importable module (src/' +
-  'engine/signal-registry.js), not inline in signals.js as the dispatch anticipated might be the ' +
-  'case -- so the actual extraction was pulling the four pure math functions (pearson/spearman/' +
-  'pValueFromR/benjaminiHochberg) out of that Signals-specific ~900-line module into a new, ' +
-  'dependency-light src/engine/correlation-stats.js, so a panel outside Signals could call them ' +
-  'without statically importing Signals\' whole metric-registry machinery. signal-registry.js ' +
-  're-exports the same functions, so its existing consumers (csat-signals.js, signals.js\'s own ' +
-  'Scanner tab, three test files) see zero behavior change. CORR_TARGETS/CORR_PREDICTORS (the ' +
-  'small 9-predictor catalog Metric Correlations used) similarly moved out of analytics.js into ' +
-  'src/engine/correlation-predictors.js, shared with District Lens (unchanged, out of scope) ' +
-  'without either surface statically importing the other\'s much larger module. Metric ' +
-  'Correlations\' presentation (per-store/per-target selector, plain-English finding sentences, ' +
-  'strength bars, expandable per-metric detail, raw-stats table) is preserved verbatim as a new ' +
-  '"Correlations" tab inside Signals, now computing r via the shared pearson() instead of its own ' +
-  'duplicate implementation, and layering Scanner\'s guardrails on top: a p-value + Benjamini-' +
-  'Hochberg FDR correction across the batch of predictors tested for the selected target ' +
-  '(replacing the old single-test, uncorrected t-statistic significance column), a Spearman rho ' +
-  'alongside Pearson r with a non-linearity flag when they diverge, and Scanner\'s own default ' +
-  'effect-size floor (|r| >= .35) surfaced per row. The "Top Findings" hero card is now gated on ' +
-  'BOTH guardrails (effect-size floor AND FDR significance), not a bare |r| > .25 threshold. ' +
-  'corr-explorer retired as a standalone/optional panel (kind:\'internal\' in panel-registry.js, ' +
-  'removed from constants.js\'s OPTIONAL_PANELS toggle list, same "kept registered so old deep ' +
-  'links redirect" pattern as calendar-manager\'s dispatch #191 retirement) -- onOpenModal(' +
-  '\'corr-explorer\') now redirects into Signals\' new Correlations tab. Signals\' own Scanner tab ' +
-  '(move-together framing, one-click promote to Signal Lab, predefined seed signals) is untouched. ' +
-  'Bonus: MetricCorrelationExplorer\'s hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop -- a ' +
-  'panel-contract violation -- is gone entirely (folded into an already-RoutePanelShell-wrapped ' +
-  'tab with no chrome of its own), lowering the backdrop-bypass ratchet 70 -> 69.',
+  'Dispatch #194 -- merged Feature Requests into Task Queue with a `type` field ' +
+  '(\'task\' | \'feature_request\'), per the owner\'s 2026-08-10 decision. Harvested ' +
+  'FeatureRequestsPanel in full: the ~30-item SEED_ITEMS roadmap history (carried over as the ' +
+  'same client-side overlay it always was -- never a Supabase row), the Supabase-backed submit/ ' +
+  'vote/dev-notes flow (loadFeatureRequests/saveFeatureRequest/updateFeatureRequest/' +
+  'voteFeatureRequest, unchanged), and the category/priority taxonomy. Priority unified to Task ' +
+  'Queue\'s existing 1/2/3 int scale (same high/medium/low->1/2/3 mapping sage.js\'s Log-Issue ' +
+  'flow already used); status stays in each entry\'s own native vocab (backlog/ready/in_progress/' +
+  'done/blocked for tasks, idea/planned/in-progress/completed/declined for feature requests) so ' +
+  'no live row needed rewriting. `feature-requests` retired from panel-registry.js; the old ' +
+  '?modal=feature-requests deep link now opens the merged panel pre-filtered to type:' +
+  '\'feature_request\'. supabase/schema-tasks-feature-merge.sql (adds type/submitted_by/' +
+  'dev_notes/completed_version/votes/is_seed to `tasks` + widens its status CHECK) and ' +
+  'scripts/migrate-feature-requests-to-tasks.mjs (copies the 2 live feature_requests rows, ' +
+  'measured via SUPABASE_SERVICE_ROLE_KEY content-range 0-0/2) ship ready-to-run -- this agent ' +
+  'session has no Postgres DDL connection (only the REST API), so the physical table merge ' +
+  'is a pending owner action, same posture as this repo\'s other schema-*.sql files. Nothing in ' +
+  'the shipped code depends on it: the panel reads both `tasks` and `feature_requests` today, ' +
+  'tags entries with `type` + an internal source marker, and dedups a `tasks`-table ' +
+  'type:feature_request row over its legacy twin once the migration does run.',
 ]}
