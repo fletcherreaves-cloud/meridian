@@ -68,5 +68,18 @@ export default {version:'5.245', date:'2026-08-28', changes:[
   '\n\n' +
   'Full suite: 300 files / 3112 tests passing. npm run build clean, entry chunk 545.99 KB / 850 KB ' +
   'gzip budget (304.01 KB headroom) -- both new tabs render lazily inside store-analytics.js\'s ' +
-  'existing lazy chunk, no new static import added to App.js.',
+  'existing lazy chunk, no new static import added to App.js.' +
+  '\n\n' +
+  'PM-verification addition (2026-08-28): the live-Supabase engine verification above proves the ' +
+  'ENGINES compute correctly against real data -- it does not prove the REACT COMPONENTS actually ' +
+  'render that data, per this repo\'s standing "would this verification still pass if reverted?" ' +
+  'rule. Added dispatch-204-store-cockpit.test.js, mounting the real FoodCostCockpitTab/ ' +
+  'LaborCockpitTab (not mocks): loading-state renders for both without a data source, plus a real ' +
+  'hero FOB%/driver-bar render computed end-to-end through the actual buildStoreFobReport engine ' +
+  'from fixture qsr_fob rows (2.20% vs a 2.80% target -> -0.60pp, Variance Stat ranked #1 driver -- ' +
+  'matches a hand trace). Deliberately does not test the ds.qsrFobRows:[] fallback-fetch branch: ' +
+  'this session\'s own sandbox carries real VITE_SUPABASE_URL/ANON_KEY, so that branch would call ' +
+  'the live loadQsrFob() and its timing would depend on network round-trip rather than the test -- ' +
+  'exactly the kind of environment-dependent behavior CLAUDE.md\'s "measure it" rule warns about ' +
+  '(it would behave differently in CI, where those vars are typically unset).',
 ]}
