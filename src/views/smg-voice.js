@@ -7,6 +7,7 @@ import { INV_ORG_COORDS, supervisorOf } from '../constants';
 import { escapeHtml as esc } from '../utils/fmt';
 import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 import { LocationSelector } from '../components/PanelControls.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 
@@ -1053,58 +1054,57 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
     return c;
   }, [scopedRows, storeSel, storeMap]);
 
+  // ── Tab switcher + Backfill (shared by both the empty and main returns' headerExtra) ────────
+  const tabSwitcher = h('div', { style: { display: 'flex', gap: 2, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)', overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' } },
+    [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities'], ['daypart','🕐 Dayparts']].map(([t, label]) =>
+      h('button', { key: t, onClick: () => setTab(t), style: {
+        padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
+        background: tab===t ? 'var(--accent)' : 'transparent',
+        color: tab===t ? '#fff' : 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+      }}, label)
+    )
+  );
+  const backfillBtn = onBackfillComments && h('button', {
+    onClick: runBackfill, disabled: !!(bf && bf.running),
+    title: 'Pull every comment PDF the poller stored in Supabase, parse, and cloud-persist',
+    style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--amber,#f59e0b)', background: 'rgba(245,158,11,.10)', cursor: (bf && bf.running) ? 'default' : 'pointer', fontSize: 12, color: 'var(--amber,#f59e0b)', fontWeight: 700 }
+  }, bf && bf.running ? '⟳ Backfilling…' : bf && bf.saved != null ? `✓ ${bf.saved} saved` : '⟳ Backfill from storage');
+
   // ── Empty state ────────────────────────────────────────────────────────────
-  if (!rows.length && !fsRows.length && !vpRows.length && !dpRows.length) return h('div', {
-    style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 },
-    onClick: e => { if (e.target === e.currentTarget) onClose(); }
+  // route:true (dispatch #206, URL migration batch 3) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/zIndex:1200/rgba(0,0,0 backdrops (this
+  // empty-state early return AND the main panel body below) — same "two hand-rolled backdrops
+  // under one component" shape OperatorSummaryPanel/FOBAnalysisPanel had under dispatch #205/
+  // #188. NOTE: the zIndex:1200 sitting between inset:0 and background: meant this pattern never
+  // matched ratchet-modal-backdrop-bypass.test.js's regex in the first place, so converting it
+  // does NOT move that ratchet's CEILING (see that test's own comment).
+  if (!rows.length && !fsRows.length && !vpRows.length && !dpRows.length) return h(RoutePanelShell, {
+    icon: '💬', title: 'SMG VOICE', onBack: onClose,
   },
-    h('div', { style: { background: 'var(--bg)', border: '1px solid var(--bdr)', borderRadius: 14, width: '100%', maxWidth: 540, padding: 40, textAlign: 'center' } },
+    h('div', { style: { textAlign: 'center', padding: 40 } },
       h('div', { style: { fontSize: 40, marginBottom: 12 } }, '💬'),
       h('div', { style: { fontWeight: 700, fontSize: 16, marginBottom: 8 } }, 'No SMG Data Loaded'),
-      h('div', { style: { fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 8 } },
+      h('div', { style: { fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 } },
         'Drop a FullScale_Report.xlsx for aggregate scores, or an SMG VOICE PDF for customer comments.'
       ),
-      h('button', { onClick: onClose, style: { padding: '8px 20px', borderRadius: 8, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13 } }, 'Close')
     )
   );
 
   // ── Main panel ─────────────────────────────────────────────────────────────
-  return h('div', {
-    style: { position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: isMobile ? 'stretch' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 16 },
-    onClick: e => { if (e.target === e.currentTarget) onClose(); }
+  // The tab switcher + Backfill button move into headerExtra; the shared filter bar moves into
+  // the body as the first child — RoutePanelShell has no subHeader slot, same treatment
+  // AttentionPanel's severity chips got under dispatch #192.
+  return h(RoutePanelShell, {
+    icon: '💬',
+    title: 'SMG VOICE',
+    subtitle: periodLabel || undefined,
+    onBack: onClose,
+    headerExtra: h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+      tabSwitcher,
+      backfillBtn,
+    ),
   },
-    h('div', {
-      style: { background: 'var(--bg)', border: isMobile ? 'none' : '1px solid var(--bdr)', borderRadius: isMobile ? 0 : 14, width: '100%', maxWidth: isMobile ? '100%' : 1060, height: isMobile ? '100dvh' : 'auto', maxHeight: isMobile ? '100dvh' : '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
-    },
-
-      // ── Header ──────────────────────────────────────────────────────────────
-      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '10px 12px' : '14px 20px', borderBottom: '1px solid var(--bdr)', flexShrink: 0, flexWrap: 'wrap', gap: 8 } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0, flex: isMobile ? '1 1 100%' : 'initial' } },
-          h('span', { style: { fontSize: 20 } }, '💬'),
-          h('div', null,
-            h('span', { style: { fontWeight: 700, fontSize: 16 } }, 'SMG VOICE'),
-            periodLabel && !isMobile && h('span', { style: { fontSize: 11, color: 'var(--text3)', marginLeft: 10 } }, periodLabel),
-          ),
-          h('div', { style: { display: 'flex', gap: 2, marginLeft: isMobile ? 0 : 16, border: '1px solid var(--bdr)', borderRadius: 8, padding: 2, background: 'var(--surf2)', overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' } },
-            [['performance','📋 Performance'], ['fullscale','📊 Scorecard'], ['comments','💬 Comments'], ['opportunities','🎯 Opportunities'], ['daypart','🕐 Dayparts']].map(([t, label]) =>
-              h('button', { key: t, onClick: () => setTab(t), style: {
-                padding: '4px 12px', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: tab===t ? 700 : 400,
-                background: tab===t ? 'var(--accent)' : 'transparent',
-                color: tab===t ? '#fff' : 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-              }}, label)
-            )
-          ),
-        ),
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          onBackfillComments && h('button', {
-            onClick: runBackfill, disabled: !!(bf && bf.running),
-            title: 'Pull every comment PDF the poller stored in Supabase, parse, and cloud-persist',
-            style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--amber,#f59e0b)', background: 'rgba(245,158,11,.10)', cursor: (bf && bf.running) ? 'default' : 'pointer', fontSize: 12, color: 'var(--amber,#f59e0b)', fontWeight: 700 }
-          }, bf && bf.running ? '⟳ Backfilling…' : bf && bf.saved != null ? `✓ ${bf.saved} saved` : '⟳ Backfill from storage'),
-          h('button', { onClick: onClose, style: { padding: '5px 12px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--bg)', cursor: 'pointer', fontSize: 13, color: 'var(--text)' } }, '✕'),
-        ),
-      ),
-      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 16px', fontSize: 11, color: bf.error ? 'var(--crit)' : 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
+      bf && !bf.running && bf.saved != null && h('div', { style: { padding: '6px 0', marginBottom: 10, fontSize: 11, color: bf.error ? 'var(--crit)' : 'var(--text3)', borderBottom: '1px solid var(--bdr)' } },
         `Backfill: ${bf.found} report file${bf.found !== 1 ? 's' : ''} in storage → ${bf.comments} comments parsed → ${bf.saved} saved to cloud.${bf.found === 0 ? ' (No eu### comment files found in the bucket.)' : ''}`,
         bf.error ? ` · save error: ${bf.error}` : ''),
 
@@ -1253,6 +1253,6 @@ export function SMGVoicePanel({ ds, stores, voicePerf, voiceDaypart, onBackfillC
           ),
         ),
       ),
-    ),
   );
 }
+

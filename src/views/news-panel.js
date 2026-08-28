@@ -25,6 +25,7 @@
 import * as React from 'react';
 import { loadNewsMentions } from '../lib/supabase.js';
 import { sName, STORE_NAMES } from '../constants.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -126,40 +127,36 @@ export function NewsPanel({ onClose, initialLoc = null }) {
             ? shown.map(a => h(Story, { key: a.itemKey, row: a }))
             : div({ style: { padding: 24, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 11 } }, 'Nothing matches that filter.'));
 
-  return div({
-    style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', zIndex: 320, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 20px', overflowY: 'auto' },
-    onClick: onClose,
+  // route:true (dispatch #206, URL migration batch 3) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop + centered card +
+  // '✕ Close' button, same treatment as this batch's other backdrop conversions. The signal/
+  // location filter-chip row has no natural headerExtra fit at this width (it can run to dozens
+  // of chips), so it moves into the body as the first child — same "severity chips" move
+  // AttentionPanel got under dispatch #192.
+  return h(RoutePanelShell, {
+    icon: '📰',
+    title: 'Local News',
+    subtitle: rows === null ? 'loading…'
+      : `${articles.length} stories · last 120 days · ${byLoc.length} of ${Object.keys(STORE_NAMES).filter(k=>/^\d+$/.test(k)).length} stores have coverage`,
+    onBack: onClose,
   },
-    div({ onClick: e => e.stopPropagation(), style: {
-      width: '100%', maxWidth: 820, background: 'var(--surf,#0f1117)', borderRadius: 12,
-      border: '.5px solid var(--bdr,#2a2f3a)', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.6)',
-    } },
-      div({ style: { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '.5px solid var(--bdr,#2a2f3a)', background: 'var(--surf2,#151821)' } },
-        span({ style: { fontSize: 16 } }, '📰'),
-        div({ style: { flex: 1 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text,#e8eaed)' } }, 'Local News'),
-          div({ style: { fontSize: 10, color: 'var(--text3,#6b7280)', marginTop: 2 } },
-            rows === null ? 'loading…'
-              : `${articles.length} stories · last 120 days · ${byLoc.length} of ${Object.keys(STORE_NAMES).filter(k=>/^\d+$/.test(k)).length} stores have coverage`)),
-        h('button', { onClick: onClose, style: { background: 'none', border: '1px solid var(--bdr2,#3a4050)', borderRadius: 6, color: 'var(--text3,#6b7280)', padding: '5px 10px', cursor: 'pointer', fontSize: 12 } }, '✕ Close')),
+    articles.length ? div({ style: { display: 'flex', gap: 5, flexWrap: 'wrap', paddingBottom: 10, marginBottom: 10, borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+      chip(!signalFilter && !locFilter, 'All', () => { setSignalFilter(null); setLocFilter(null); }, 'all'),
+      ...Object.entries(SIGNAL_META).map(([k, m]) =>
+        chip(signalFilter === k, `${m.icon} ${m.label}`, () => setSignalFilter(signalFilter === k ? null : k), k)),
+      // Every location that HAS a story gets a chip. This was capped at 8, so the header could
+      // read "17 locations" while only 8 were selectable (Notes 62). The header counts stores
+      // with coverage, not the 27-store estate — most towns simply have no local story.
+      ...byLoc.map(([l, n]) =>
+        chip(locFilter === l, `${sName(l) || l} ${n}`, () => setLocFilter(locFilter === l ? null : l), 'loc' + l))) : null,
 
-      articles.length ? div({ style: { display: 'flex', gap: 5, flexWrap: 'wrap', padding: '9px 14px', borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
-        chip(!signalFilter && !locFilter, 'All', () => { setSignalFilter(null); setLocFilter(null); }, 'all'),
-        ...Object.entries(SIGNAL_META).map(([k, m]) =>
-          chip(signalFilter === k, `${m.icon} ${m.label}`, () => setSignalFilter(signalFilter === k ? null : k), k)),
-        // Every location that HAS a story gets a chip. This was capped at 8, so the header could
-        // read "17 locations" while only 8 were selectable (Notes 62). The header counts stores
-        // with coverage, not the 27-store estate — most towns simply have no local story.
-        ...byLoc.map(([l, n]) =>
-          chip(locFilter === l, `${sName(l) || l} ${n}`, () => setLocFilter(locFilter === l ? null : l), 'loc' + l))) : null,
+    body,
 
-      div({ style: { maxHeight: '60vh', overflowY: 'auto' } }, body),
-
-      div({ style: { padding: '9px 18px', borderTop: '.5px solid var(--bdr,#2a2f3a)', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.55 } },
-        'Local outlets only — this is context near our restaurants, not brand monitoring. These feeds carry almost no McDonald’s mentions; ',
-        'a story marked EITHER belongs to a town with two of our stores and has not been assigned to one. ',
-        // Notes 62: the owner asked "when does this update and how?" — the answer only appeared
-        // in the empty state, which is exactly when you cannot see it.
-        h('span', { style: { color: 'var(--text2,#9aa4b2)' } },
-          'Updated nightly at 11:40 UTC from nine local RSS feeds; run it on demand from Data Manager → Sync.'))));
+    div({ style: { marginTop: 10, paddingTop: 8, borderTop: '.5px solid var(--bdr,#2a2f3a)', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.55 } },
+      'Local outlets only — this is context near our restaurants, not brand monitoring. These feeds carry almost no McDonald’s mentions; ',
+      'a story marked EITHER belongs to a town with two of our stores and has not been assigned to one. ',
+      // Notes 62: the owner asked "when does this update and how?" — the answer only appeared
+      // in the empty state, which is exactly when you cannot see it.
+      h('span', { style: { color: 'var(--text2,#9aa4b2)' } },
+        'Updated nightly at 11:40 UTC from nine local RSS feeds; run it on demand from Data Manager → Sync.')));
 }

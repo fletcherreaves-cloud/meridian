@@ -15,7 +15,13 @@ const SHELL = readFileSync(new URL('../app/shell.js', import.meta.url), 'utf8');
 
 const dispatchIds = () => {
   const i = APP.indexOf('onOpenModal: (modal) => {');
-  const seg = APP.slice(i, i + 14000);
+  // Window bumped 14000 -> 16000 (dispatch #206, 2026-08-28): the dispatcher body itself was
+  // already at 13,961 chars to its last branch before this dispatch's own edits, 39 chars under
+  // the old ceiling -- one more line-comment anywhere in the block would have silently dropped
+  // 'forms-library'/'metric-lineage' out of this scan and failed the "every registered panel has
+  // a dispatch handler" test below with a misleading "unopenable" message. Real headroom now,
+  // not a re-measured exact fit.
+  const seg = APP.slice(i, i + 16000);
   return new Set([...seg.matchAll(/modal\s*===\s*'([a-z0-9:_-]+)'/g)].map(m => m[1]));
 };
 // Dispatch #54 Job A moved most nav items from literal onOpenModal('id') call sites to
@@ -194,7 +200,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the twenty-four panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205, minus #140, #189, #190 and #197)', () => {
+  it('is exactly the thirty-one panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206, minus #140, #189, #190 and #197)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -252,12 +258,34 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // site) and is now wrapped in RoutePanelShell directly at the call site instead, same
     // treatment as #192's security/signals; 'delivery-mix' (3PO Delivery) already had no
     // hand-rolled backdrop (already ModalShell-based) so this was a pure shell swap, no ratchet
-    // interaction (eighteen -> twenty-four).
+    // interaction (eighteen -> twenty-four). Dispatch #206 (URL migration batch 3, closing out
+    // the "default to route:true" candidate list from #205's own scoping pass) added the final
+    // seven: 'dt-sos' (DT Speed of Service), 'news' (Local News), and 'loc-intel' (Market
+    // Intelligence, also lazy-wrapped -- previously a static top-level import) each had one
+    // hand-rolled backdrop refactored to RoutePanelShell inside the component, same treatment as
+    // #205's one-pager/graded-visits; 'inventory' (Inventory Intelligence) had TWO hand-rolled
+    // backdrops under one component (an empty-state early return and the main body), same
+    // "two backdrops, one component" shape #205's operator-summary/#188's FOBAnalysisPanel had;
+    // 'smg-voice' (SMG VOICE) also had two hand-rolled backdrops under one component (its own
+    // empty-state early return and main body), but written with a zIndex sitting between inset:0
+    // and background: (the same regex-evasion shape one-pager.js's zIndex:4000 case carried under
+    // dispatch #160), so converting it does NOT move ratchet-modal-backdrop-bypass.test.js's
+    // CEILING; 'task-queue' (Task Queue) was an opaque full-page position:fixed wrapper (not the
+    // rgba(0,0,0 backdrop pattern at all), converted for routing/chrome reasons but likewise not
+    // moving that ratchet -- see that test file's own CEILING comment for the full accounting on
+    // both; 'my-reports' (My Reports / ReportSubscriptions) was already ModalShell-based, zero
+    // hand-rolled backdrop, so this was a pure shell swap like #205's delivery-mix, plus its
+    // legacy `feature-requests` alias (dispatch #194) stays a plain onOpenModal branch that now
+    // calls goRoute('task-queue') instead of setShowTaskQueue(true) -- see routing.js's
+    // LEGACY_PANEL_REDIRECTS comment for why it does NOT also need a routing.js entry (it was
+    // never itself route:true, so there's no legacy `?panel=` URL value to redirect)
+    // (twenty-four -> thirty-one).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'attention', 'brief', 'crew-schedule', 'delivery-mix', 'dicompare', 'eom-dashboard',
-      'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'morning-brief',
-      'one-pager', 'operator-summary', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report',
-      'sched-hub', 'security', 'signals', 'visit-readiness',
+      'above-store', 'attention', 'brief', 'crew-schedule', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
+      'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
+      'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'proj',
+      'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'task-queue',
+      'visit-readiness',
     ]);
   });
 
@@ -338,6 +366,28 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
     const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
     expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
+  });
+
+  it('Dispatch #206: no setShowX(true) call site survives for the seven converted booleans', () => {
+    // Same regression class as #55 Part B / #192 / #205 above, for this batch's seven: dt-sos/
+    // news/inventory/loc-intel/my-reports/smg-voice/task-queue.
+    const REMOVED_SETTERS = [
+      'setShowDtSoS', 'setShowNews', 'setShowInventory', 'setShowLocIntel',
+      'setShowReportSubs', 'setShowSMGVoice', 'setShowTaskQueue',
+    ];
+    const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
+    expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
+    const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
+    expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
+  });
+
+  it('Dispatch #206: the legacy feature-requests alias still redirects into the routed Task Queue', () => {
+    // 'task-queue' becoming route:true means its old sibling id ('feature-requests', dispatch
+    // #194's Feature-Requests->Task-Queue merge, kind:'internal' in the registry) must keep
+    // landing on the SAME routed panel, pre-filtered -- not just resolve to routePanel===null.
+    // 'task-queue' itself is covered by the generic ROUTE_IDS pairing test above; this asserts
+    // the alias's own branch shares that exact goRoute call and still sets the pre-filter.
+    expect(APP).toMatch(/modal==='feature-requests'\)\s*\{setTqInitialType\('feature_request'\);goRoute\('task-queue'\);\}/);
   });
 });
 

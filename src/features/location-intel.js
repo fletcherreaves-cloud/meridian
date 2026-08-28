@@ -3,6 +3,7 @@ import * as React from 'react';
 import { sName, sNameC, DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
 import { dKey, nDays } from '../utils/date.js';
 import { gCol, escapeHtml as esc } from '../utils/fmt.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -434,35 +435,34 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
     oppAction:{fontSize:'10px',color:'#818cf8',lineHeight:1.4},
     findRow:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'8px 0',borderBottom:'.5px solid var(--bdr)',gap:12},
   };
-  var cardStyle=embedded
-    ?{background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',borderRadius:'var(--rl)',border:'.5px solid var(--bdr)'}
-    :{flex:1,background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'};
-  var card=div({style:cardStyle},
-      // HEADER
-      div({style:{padding:'11px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:8,flexShrink:0,background:'var(--surf2)',flexWrap:'wrap'}},
-        div({style:{fontSize:'13px',fontWeight:800,color:'var(--amber)',flexShrink:0}},'📊 Location Intelligence'),
-        div({style:{display:'flex',gap:2}},
-          [['store','Store'],['district','District']].map(function(pair){
-            return btn({key:pair[0],className:'btn btn-sm'+(activeLevel===pair[0]?' btn-a':''),style:{fontSize:'9px'},onClick:function(){setActiveLevel(pair[0]);}},pair[1]);
-          })
-        ),
-        activeLevel==='store'&&h('select',{value:selLoc,onChange:function(e){setSelLoc(e.target.value);},
-          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'10px',padding:'3px 6px',maxWidth:180}},
-          locs.map(function(l){return h('option',{key:l,value:l},sNameC(l));})
-        ),
-        div({style:{display:'flex',gap:0,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden',marginLeft:'auto'}},
-          [['statistical','📊 Statistical'],['ai','🤖 AI Narrative']].map(function(pair){
-            return btn({key:pair[0],onClick:function(){setMode(pair[0]);},style:{padding:'4px 11px',fontSize:'9px',fontWeight:600,border:'none',
-              background:mode===pair[0]?'var(--amber)':'var(--surf)',color:mode===pair[0]?'#000':'var(--text3)',cursor:'pointer'}},pair[1]);
-          })
-        ),
-        mode==='ai'&&btn({className:'btn btn-sm btn-a',style:{fontSize:'9px'},onClick:handleGenAI,disabled:generating||noData},generating?'⏳ Generating…':'⚡ Generate'),
-        btn({className:'btn btn-sm',style:{fontSize:'9px'},onClick:handlePrint,title:'Print / Save as PDF'},'🖨 Print'),
-        btn({className:'btn btn-sm',style:{fontSize:'9px'},onClick:handleDownload,title:'Download HTML report'},'⬇ Download'),
-        !embedded&&btn({className:'btn btn-sm',onClick:onClose},'✕')
-      ),
-      // BODY
-      div({style:{flex:1,overflowY:'auto',padding:18}},
+  var cardStyle={background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',borderRadius:'var(--rl)',border:'.5px solid var(--bdr)'};
+  // Interactive header controls (level toggle, store select, mode toggle, Generate/Print/
+  // Download) -- shared by both call shapes. embedded:true (store-analytics.js's inline tab)
+  // renders them under this component's own '📊 Location Intelligence' title bar, unchanged from
+  // before; the standalone route (below) renders them as RoutePanelShell's headerExtra instead.
+  var headerControls=[
+    div({key:'level',style:{display:'flex',gap:2}},
+      [['store','Store'],['district','District']].map(function(pair){
+        return btn({key:pair[0],className:'btn btn-sm'+(activeLevel===pair[0]?' btn-a':''),style:{fontSize:'9px'},onClick:function(){setActiveLevel(pair[0]);}},pair[1]);
+      })
+    ),
+    activeLevel==='store'&&h('select',{key:'sel',value:selLoc,onChange:function(e){setSelLoc(e.target.value);},
+      style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'10px',padding:'3px 6px',maxWidth:180}},
+      locs.map(function(l){return h('option',{key:l,value:l},sNameC(l));})
+    ),
+    div({key:'mode',style:{display:'flex',gap:0,border:'.5px solid var(--bdr)',borderRadius:'var(--r)',overflow:'hidden',marginLeft:'auto'}},
+      [['statistical','📊 Statistical'],['ai','🤖 AI Narrative']].map(function(pair){
+        return btn({key:pair[0],onClick:function(){setMode(pair[0]);},style:{padding:'4px 11px',fontSize:'9px',fontWeight:600,border:'none',
+          background:mode===pair[0]?'var(--amber)':'var(--surf)',color:mode===pair[0]?'#000':'var(--text3)',cursor:'pointer'}},pair[1]);
+      })
+    ),
+    mode==='ai'&&btn({key:'gen',className:'btn btn-sm btn-a',style:{fontSize:'9px'},onClick:handleGenAI,disabled:generating||noData},generating?'⏳ Generating…':'⚡ Generate'),
+    btn({key:'print',className:'btn btn-sm',style:{fontSize:'9px'},onClick:handlePrint,title:'Print / Save as PDF'},'🖨 Print'),
+    btn({key:'dl',className:'btn btn-sm',style:{fontSize:'9px'},onClick:handleDownload,title:'Download HTML report'},'⬇ Download'),
+  ];
+  // BODY -- extracted to its own variable so both call shapes (embedded's own card, and the
+  // standalone route's RoutePanelShell below) render the identical body, never a second copy.
+  var bodyEl=div({style:{flex:1,overflowY:'auto',padding:18}},
         noData&&div({style:{textAlign:'center',padding:60,color:'var(--text3)'}},
           div({style:{fontSize:40,marginBottom:12}},'📊'),
           div({style:{fontSize:'13px',fontWeight:700,color:'var(--text)',marginBottom:8}},'Load your data to generate Location Intelligence'),
@@ -627,12 +627,27 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
             )
           );
         })()
-      )
+      );
+  if(embedded) return div({style:cardStyle},
+    // HEADER (embedded call shape only -- store-analytics.js's inline tab, dispatch #200. No
+    // shell of any kind here, unchanged from before this dispatch's route conversion.)
+    div({style:{padding:'11px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:8,flexShrink:0,background:'var(--surf2)',flexWrap:'wrap'}},
+      div({style:{fontSize:'13px',fontWeight:800,color:'var(--amber)',flexShrink:0}},'📊 Location Intelligence'),
+      ...headerControls
+    ),
+    bodyEl
   );
-  return embedded?card:div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
-    div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
-    card
-  );
+  // route:true (dispatch #206, URL migration batch 3) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop + sheet + '✕' close
+  // button for the standalone (non-embedded) call shape -- App.js's "Market Intelligence" nav
+  // panel. Also folded into lazyPanel() as part of this conversion (App.js's import was a static
+  // top-level one; see App.js's own import comment).
+  return h(RoutePanelShell,{
+    icon:'📊',
+    title:'Location Intelligence',
+    onBack:onClose,
+    headerExtra:div({style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},...headerControls),
+  }, bodyEl);
 }
 
 export { LocationIntelligence };

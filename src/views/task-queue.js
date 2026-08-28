@@ -46,6 +46,7 @@
 import * as React from 'react';
 import { loadTasks, saveTask, updateTask, loadSessionNotes, saveSessionNote, markNoteConsumed,
   loadFeatureRequests, saveFeatureRequest, updateFeatureRequest, voteFeatureRequest } from '../lib/supabase.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h   = React.createElement;
 const div  = (p,...c) => h('div',   p, ...c);
@@ -875,31 +876,30 @@ export function TaskQueuePanel({ onClose, settings, initialType }) {
     })
   );
 
-  return div({ style:{ position:'fixed', inset:0, zIndex:400, display:'flex',
-    flexDirection:'column', background:'var(--bg)' }},
-
-    // ── Header ──
-    div({ style:{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px',
-      borderBottom:'.5px solid var(--bdr)', background:'var(--surf)', flexShrink:0 }},
-      btn({ onClick:onClose,
-        style:{ padding:'8px 14px', borderRadius:8, border:'.5px solid var(--bdr)',
-          background:'transparent', color:'var(--text3)', fontSize:13,
-          fontWeight:600, cursor:'pointer', flexShrink:0 }},
-        '← Back'),
-      div({ style:{ flex:1 }},
-        div({ style:{ fontSize:16, fontWeight:800, color:'var(--text)' }}, '⚡ Task Queue'),
-        div({ style:{ fontSize:'10px', color:'var(--text3)', marginTop:1 }},
-          'Autonomous + manual work tracking, plus feature requests · vote for what matters most'),
-      ),
-      activeCt>0 && span({ style:{ background:'rgba(245,188,0,.15)', color:'var(--gold)',
-        border:'.5px solid rgba(245,188,0,.3)', borderRadius:99,
-        fontSize:11, fontWeight:800, padding:'4px 10px' }},
-        activeCt),
-    ),
+  // route:true (dispatch #206, URL migration batch 3) — RoutePanelShell replaces this
+  // component's own hand-rolled header + full-page position:fixed/inset:0/zIndex:400/
+  // background:'var(--bg)' wrapper (opaque, not the rgba(0,0,0 backdrop pattern the other six
+  // panels in this batch carried, so this conversion does NOT move
+  // ratchet-modal-backdrop-bypass.test.js's CEILING — see that test's own comment). The Queue/
+  // AI Notes tab bar has no natural headerExtra fit (it's a full-width two-tab strip, not an
+  // inline control), so it moves into the body as the first child — same "severity chips" move
+  // AttentionPanel got under dispatch #192. AddEntrySheet (the '+' bottom-sheet dialog) and the
+  // floating '+' action button are untouched — they're a genuine secondary popup stacked on top
+  // of this routed page, not this panel's own chrome, same "real secondary popup" reasoning
+  // dispatch #198 used for EOMDashboardPanel's sub-modals.
+  return h(RoutePanelShell, {
+    icon: '⚡',
+    title: 'Task Queue',
+    subtitle: 'Autonomous + manual work tracking, plus feature requests · vote for what matters most',
+    onBack: onClose,
+    headerExtra: activeCt>0 && span({ style:{ background:'rgba(245,188,0,.15)', color:'var(--gold)',
+      border:'.5px solid rgba(245,188,0,.3)', borderRadius:99,
+      fontSize:11, fontWeight:800, padding:'4px 10px' }},
+      activeCt),
+  },
 
     // ── Tabs ──
-    div({ style:{ display:'flex', borderBottom:'.5px solid var(--bdr)', background:'var(--surf)',
-      flexShrink:0 }},
+    div({ style:{ display:'flex', borderBottom:'.5px solid var(--bdr)', marginBottom:12 }},
       ...['queue','notes'].map(t =>
         btn({ key:t, onClick:()=>setTab(t),
           style:{ flex:1, padding:'12px 0', border:'none', background:'transparent',
@@ -911,29 +911,27 @@ export function TaskQueuePanel({ onClose, settings, initialType }) {
     ),
 
     // ── Body ──
-    div({ style:{ flex:1, overflowY:'auto' }},
-      tab==='queue' ? div(null,
-        statBar(),
-        typeFilterPills(),
-        filterPills(),
-        catFilterPills(),
-        loading
-          ? div({ style:{ textAlign:'center', padding:40, color:'var(--text3)' }}, 'Loading…')
-          : filtered.length===0
-            ? div({ style:{ textAlign:'center', padding:'48px 24px', color:'var(--text3)' }},
-                div({ style:{ fontSize:32, marginBottom:12 }}, '✅'),
-                div({ style:{ fontSize:14, fontWeight:700, marginBottom:6 }},
-                  filter==='done' ? 'Nothing done yet' : 'Queue is clear'),
-                filter==='active' && div({ style:{ fontSize:12 }}, 'Tap + to add your first entry')
+    tab==='queue' ? div(null,
+      statBar(),
+      typeFilterPills(),
+      filterPills(),
+      catFilterPills(),
+      loading
+        ? div({ style:{ textAlign:'center', padding:40, color:'var(--text3)' }}, 'Loading…')
+        : filtered.length===0
+          ? div({ style:{ textAlign:'center', padding:'48px 24px', color:'var(--text3)' }},
+              div({ style:{ fontSize:32, marginBottom:12 }}, '✅'),
+              div({ style:{ fontSize:14, fontWeight:700, marginBottom:6 }},
+                filter==='done' ? 'Nothing done yet' : 'Queue is clear'),
+              filter==='active' && div({ style:{ fontSize:12 }}, 'Tap + to add your first entry')
+            )
+          : div({ style:{ padding:'10px 12px 80px' }},
+              filtered.map(item =>
+                h(TaskCard, { key:(item._src+'-'+(item.id||item.title)), item, isDev, votedIds,
+                  onUpdate:handleUpdate, onDelete:handleDelete, onVote:handleVote })
               )
-            : div({ style:{ padding:'10px 12px 80px' }},
-                filtered.map(item =>
-                  h(TaskCard, { key:(item._src+'-'+(item.id||item.title)), item, isDev, votedIds,
-                    onUpdate:handleUpdate, onDelete:handleDelete, onVote:handleVote })
-                )
-              )
-      ) : h(SessionNotesTab)
-    ),
+            )
+    ) : h(SessionNotesTab),
 
     // ── Add button (fixed bottom, queue tab only) ──
     tab==='queue' && btn({ onClick:()=>setShowAdd(true),

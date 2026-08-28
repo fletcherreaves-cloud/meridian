@@ -9,7 +9,7 @@ import * as React from 'react';
 import { loadReportSubs, saveReportSubs } from '../lib/supabase.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 import { ONEPAGER_PANELS } from './above-store-onepager.js';
-import { ModalShell } from '../components/ModalShell.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
 
 const h = React.createElement;
@@ -109,11 +109,15 @@ export function ReportSubscriptions({ onClose, onLaunch }) {
     value: scopeToSelectorValue(scope), onChange: v => setScope(selectorValueToScope(v)),
   });
 
-  return h(ModalShell, {
-    title: 'My Reports', icon: '🗂', maxWidth: 760, onClose,
+  // route:true (dispatch #206, URL migration batch 3) — swapped ModalShell for RoutePanelShell.
+  // Already ModalShell-based (no hand-rolled backdrop of its own), same lower-risk shell-swap
+  // shape as DeliveryMixPanel got under dispatch #205 — just the shell swap + onClose->onBack
+  // rename, no backdrop refactor.
+  return h(RoutePanelShell, {
+    title: 'My Reports', icon: '🗂', onBack: onClose,
     subtitle: 'Save the reports and groupings you want — one-click, pre-scoped',
     headerExtra: msg ? span({ style: { fontSize: '10px', color: 'var(--text3)' } }, busy ? '…' : msg) : null,
-    bodyStyle: { padding: 14, display: 'flex', flexDirection: 'column', gap: 14 },
+    bodyStyle: { display: 'flex', flexDirection: 'column', gap: 14 },
   },
         // ── saved list ──
         div(null,

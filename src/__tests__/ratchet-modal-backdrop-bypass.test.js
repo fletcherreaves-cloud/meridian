@@ -99,7 +99,35 @@ const ROOTS = ['src/views', 'src/features'];
 // this dispatch's own branch (not by arithmetic subtraction) — analytics.js and labor-tools.js
 // in particular host several OTHER components each, so each surviving/removed line was checked
 // against the actual function boundaries, not assumed 1:1 with the panel being converted.
-const CEILING = 47;
+// Lowered 47 → 42 by dispatch #206 (URL migration batch 3, 2026-08-28, closing out the "default
+// to route:true" candidate list): four of the seven panels converted to route:true this batch
+// hand-rolled a backdrop matching this exact pattern and were refactored to RoutePanelShell —
+// DTSpeedOfServicePanel (src/views/dt-speedofservice.js, 1 hit — the file's only function, so
+// the file drops out of the scan entirely), NewsPanel (src/views/news-panel.js, 1 hit, same
+// "file drops out entirely" effect), LocationIntelligence (src/features/location-intel.js, 1
+// hit, same), and InventoryIntelligence (src/views/inventory.js, 2 hits — an empty-state early
+// return AND the main panel body under one component, same "two backdrops, one component" shape
+// dispatch #205/#188 found in OperatorSummaryPanel/FOBAnalysisPanel). 1+1+1+2 = 5 removed
+// (47 → 42). The other three panels in this batch did NOT move this count, each for a different
+// reason, confirmed by re-running this file's own scan on both src/views/smg-voice.js and
+// src/views/task-queue.js before AND after their conversion (both zero hits, not just "expected
+// zero"): SMGVoicePanel ('smg-voice') genuinely hand-rolled TWO backdrops of its own (an
+// empty-state early return and the main body, the same "two backdrops, one component" shape as
+// InventoryIntelligence above) — but both used `zIndex: 1200,` sitting between `inset: 0,` and
+// `background:`, which breaks this regex's exact adjacency requirement (the same regex-evasion
+// shape dispatch #160's own comment records for one-pager.js's old zIndex:4000 case), so
+// converting real hand-rolled chrome to RoutePanelShell here still didn't move the number;
+// TaskQueuePanel ('task-queue') was never the rgba(0,0,0 backdrop pattern at all — its main
+// render was an opaque `position:'fixed', inset:0, zIndex:400, background:'var(--bg)'` full-page
+// wrapper (no backdrop, already read like a route) and its `AddEntrySheet` add-entry bottom
+// sheet splits an `absolute inset:0,background:'rgba(0,0,0,.6)'` backdrop from the `fixed` sheet
+// container across two separate divs, also escaping this regex — AddEntrySheet itself was left
+// alone (a genuine secondary popup stacked on the routed page, not this panel's own chrome, same
+// "real secondary popup" reasoning dispatch #198 used for EOMDashboardPanel's sub-modals);
+// ReportSubscriptions ('my-reports') was already ModalShell-based, not hand-rolled, matching
+// dispatch #205's delivery-mix precedent exactly (pure shell swap, zero backdrop-pattern
+// interaction either side).
+const CEILING = 42;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 
