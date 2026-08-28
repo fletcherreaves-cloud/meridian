@@ -26,6 +26,10 @@ import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
 // Targets Editor, moved into Customize as a sub-tab by dispatch #135 item 3 (was its own
 // standalone panel-registry nav entry under dispatch #132 — see targets-editor.js's own header).
 import { TargetsEditorSection } from './targets-editor.js';
+// Performance Calculator, moved into Customize as a sub-tab by dispatch #199 (was its own
+// standalone panel-registry optional-panel entry — see performance-calculator.js's own header
+// for the scoring-divergence and RBAC notes).
+import { PerformanceCalculatorSection } from './performance-calculator.js';
 
 const h   = React.createElement;
 const div = (p,...c) => h('div',p,...c);
@@ -486,6 +490,12 @@ function CustomizePanel({cfg, onSave, onReset, ds, initialSection}) {
     {key:'targets', label:'Targets'},
     {key:'competencies', label:'Competencies'},
     {key:'logos', label:'Logos'},
+    // Performance Calculator (formerly store-dash.js's standalone `PerformanceCalculator`,
+    // panel-registry id 'perf-calc'), moved in here by dispatch #199, the same "this does not
+    // need it's own panel" move #135 item 3 did for Targets Editor above. It is an unrelated
+    // what-if throughput calculator (OEPE -> cars/hr -> GC -> sales -> labor -> TPPH), not a
+    // review-scoring tool — see performance-calculator.js's header comment.
+    {key:'calculator', label:'Calculator'},
   ];
 
   return div({style:{display:'flex',flexDirection:'column',height:'100%'}},
@@ -526,6 +536,7 @@ function CustomizePanel({cfg, onSave, onReset, ds, initialSection}) {
       section==='targets' && h(TargetsEditorSection, {ds}),
       section==='competencies' && h(CompetenciesSection, {local, set, custRole, setCustRole, custCat, setCustCat}),
       section==='logos' && h(LogosSection, {}),
+      section==='calculator' && h(PerformanceCalculatorSection, {ds}),
     )
   );
 }

@@ -225,7 +225,17 @@ export const PANELS = [
   { id:'operator-summary', label:'Org Summary', icon:'📊', perm:'analytics.district', kind:'nav', section:'reports' },
   { id:'pace-target', label:'Pace Target', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'panel-manager', label:'Panel Manager', icon:'🧩', perm:'settings.view', kind:'nav', section:'admin' },
-  { id:'perf-calc', label:'Performance Calc', icon:'🧮', perm:'analytics.store', kind:'optional', section:'people' },
+  // perf-calc — RETIRED as a standalone/optional panel (dispatch #199, 2026-08-28): folded into
+  // Performance Review -> Customize -> Calculator (performance-calculator.js's
+  // PerformanceCalculatorSection), the same "opens a hub and selects a tab, no sidebar entry"
+  // move dispatch #135 item 3 did for targets-editor above. kind:'hub-tab' keeps the id
+  // registered (satisfies panel-registry.test.js's dispatch<->registry pairing) without a Panel
+  // Manager toggle or sidebar entry; onOpenModal('perf-calc') redirects into Performance
+  // Reviews' Customize tab instead of no-oping. perm left at 'analytics.store' as a record of
+  // the PANEL's old gate — the actual redirect checks perm('reviews.customize'), the
+  // Customize tab's real (narrower) gate; see performance-calculator.js's header comment for
+  // why that access-control narrowing is a deliberate, flagged side effect of this move.
+  { id:'perf-calc', label:'Performance Calc', icon:'🧮', perm:'analytics.store', kind:'hub-tab', section:'people' },
   { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'people', route:true },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'inventory-food-cost' },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
