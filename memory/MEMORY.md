@@ -84,6 +84,94 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **Pricing Engine data-pull unlock (2026-08-28) — dispatches #182-185, from 4 owner-captured live
+  DevTools requests.** Owner sent a morning burst of real eBOS network captures
+  (`prod.ebos.qsrsoft.com`) closing real gaps from
+  `memory/finding-legacy-pricing-workbook-structure-2026-08-27.md`. All four dispatched in
+  parallel; #182/#183 shipped code fixes, #185 was correctly investigation-only, #184 shipped a
+  new pull with one bug caught and fixed during PM verification.
+  - **✅ SHIPPED (v5.224): [Dispatch #182 — `avgCheck`'s DAR-based derive now outranks
+    `laborRows` specifically](dispatch-182.md), PR #881.** Last unaddressed row in #165's audit
+    table (`avgCheck` was "flagged low-risk to reorder" but never fixed). PM's own dispatch doc
+    found the "reorder" framing was wrong: `metricSeriesWithSource()`'s shared `_derive()` only
+    fills a day AFTER every `srcs` entry has been checked, unconditionally — a plain array
+    reorder can't make the derive outrank `laborRows`, and touching the shared mechanism would
+    move priority for every other `derive`-using metric (`oepe`, `r2p`, `laborPct`, `spph`,
+    `cashOSPct`, `discPct`, `tRedAPct`/`tRedBPct`, `fobPct`, more). Engineer found the clean
+    narrow answer: a `key === 'avgCheck'` early return routing to a dedicated `_avgCheckSeries`
+    helper (precomputed-minus-`laborRows` → derive → `laborRows` last), reusing `spec.derive.fn`
+    verbatim so the math can't drift. Every other metric falls through to the untouched generic
+    path. 11 new tests; **zero test outside the new file changed behavior** — the exact
+    leak-detection bar the dispatch itself set. 293/293 files, 3048/3048 tests, build clean.
+  - **✅ SHIPPED (v5.225): [Dispatch #183 — real Meridian-side bug found and fixed for #181's
+    store-clustered emp/mgr-meal gap](dispatch-183.md →
+    finding-audit-rows-registertype-duplication-2026-08-28.md), PR #883.** Chased #181's own
+    named lead (some stores match audit data to the penny, others off $85-158/day, every sampled
+    day) to two compounding bugs: (1) `audit_rows`' Manager-type and Preparer-type register-audit
+    API calls return IDENTICAL meal-$ values to each other (redistributed across different
+    employee names within the day — a QSRSoft report-shape quirk, confirmed via real row-level
+    inspection with actual employee names/values, not just aggregates) — Cashier-type alone
+    already matches `qsr_cash_sheet` almost exactly; (2) `metric-source.js` was ALSO treating
+    `audit_rows` (one row per loc/date/employee/register-type) like every other store-day-grain
+    source, silently returning one arbitrary employee's value as the whole store total. Fixed via
+    a new optional `'sum'` aggregation mode on a `srcs` tuple (`_resolveLeg()` helper, fully
+    backward-compatible — every existing 2/3-element tuple defaults to identical prior
+    behavior), with `empMealAmt`/`mgrMealAmt`/`mgrMealCnt`'s `auditRows` leg now cashier-only +
+    summed-across-employees. **Verified against real data: 71.1%→98.0% (empMealAmt), 67.4%→97.8%
+    (mgrMealAmt)**, 26/27 stores ≥90%. Engineer confirmed cashier-only ALONE (without summing)
+    would have REGRESSED the match rate to 24%/10% — caught before shipping, not after.
+    **Flagged, not fixed — a real, separate, security-relevant lead**: the same Manager==Preparer
+    duplication was also measured on `pos_over_amt`, which `register-audit.js`'s
+    `analyzeRegisterAudit` currently sums across register types for the live Security panel
+    (CASH-003 reads it) — if it behaves the same way, displayed totals are inflated. Future
+    dispatch. 294/294 files, 3057/3057 tests, build clean.
+  - **✅ SHIPPED (v5.226): [Dispatch #184 — wire the eBOS `raw_info/{itemId}` endpoint: recipe/
+    serving-factor BOM, combo composition, current distributor cost](dispatch-184.md), PR #884.**
+    Owner-captured live DevTools request against the "Raw Item Detail Information" button.
+    Extends the already-working `raw_detail` pull in `scripts/qsrsoft-variance-pull.mjs` with a
+    sibling `raw_info` call for the SAME top-50 actionable-WRIN set (dispatch #179) — both calls
+    now fire CONCURRENTLY per item (`Promise.allSettled`) to keep the per-store loop's wall time
+    close to baseline instead of ~doubling it. New table `qsr_raw_item_info`
+    (`supabase/schema-qsr-raw-item-info.sql`), keyed `(loc, wrin)` only (current-state snapshot,
+    not a per-period forensic log like its sibling `qsr_raw_item_detail`) — `tenant_id` +
+    tenant-scoped RLS set up directly (brand-new empty table, no phase1/phase2 split needed).
+    **Real live verification**: triggered an actual `workflow_dispatch` run against production
+    (no eBOS credentials in-session) — all 38 actionable WRINs for store 3708 succeeded on both
+    `raw_detail` (unaffected, same row count as before) and the new `raw_info` call, confirming
+    the concurrent-fetch design is genuinely concurrent (not accidentally sequential). Real timing
+    extrapolation to all 27 stores: ~620s (~10.3 min), ~17% of the 60-min workflow timeout.
+    **✅ Bug found and fixed during PM verification**: `mapRawItemInfo()`'s `recipeItem` field
+    checked `=== true || === 'Y'`, but the owner's own captured sample sends this as the JSON
+    integer `1` — the check would have silently read every real item as `false`. The shipped
+    test used a synthetic `true` fixture that happened to pass despite the bug. Fixed (widened to
+    accept `1`/`'1'` too) and the test corrected to use the REAL captured value; revert-checked
+    (fails without the fix, passes with it).
+    **⚠️ Pending user action — schema not yet applied**: `supabase/schema-qsr-raw-item-info.sql`
+    has not been run against production (no mechanism exists for an agent session to execute DDL
+    directly — every `schema-*.sql` in this repo is human-run-via-SQL-editor by design). Until
+    then, the pull runs successfully but lands 0 rows every time (`upsert()`'s existing
+    catch-and-warn behavior, confirmed non-fatal — the rest of the pull, including the unaffected
+    `raw_detail` path, still completes). **Owner needs to run this file once in the Supabase SQL
+    editor.** `stream-freshness.js`'s `STREAMS` array was measured, not silently skipped, as a
+    non-fit — the whole EOM/variance table family (this table's own sibling included) sits
+    outside the `ds`/`STREAMS` architecture entirely, a separate, larger, out-of-scope
+    architecture question.
+    Scoped to pull + storage only, per both dispatch docs — no Pricing Engine UI/panel/analysis in
+    either #184 or #185 yet.
+  - **✅ INVESTIGATED, NO FIX (docs-only): [Dispatch #185 — `menu_item_activity2`/
+    `menu_item_activity_cost` (per-item daily waste + $ cost) blocked on ID enumeration]
+    (dispatch-185.md → finding-menu-item-id-enumeration-2026-08-28.md), PR #882.** Two more
+    owner-captured endpoints (per-menu-item daily `waste`/`emp_meal`/`mgr_meal`/`promo` counts,
+    and per-menu-item daily `food_cost`/`paper_cost`/`total_cost`), keyed by `store_menuitem_id`
+    — a DIFFERENT internal ID space than `raw_info`'s WRIN-based `item_number`. All three named
+    candidates for enumerating this ID checked and ruled out: dispatch #184's `raw_info` response
+    doesn't carry it; `qsrsoft_kb` confirms the "Menu Items" UI page exists but has no API
+    schema; no already-pulled table (`qsr_product_mix`, `qsr_waste`, `qsr_variance_stat`) carries
+    an ID in this space (checked the full 113-table schema). **Next step, concrete**: one more
+    owner DevTools capture — the Menu Items landing page's list-loading request almost certainly
+    returns every item's `store_menuitem_id` in one call. A related `menu_item_activity_breakdown`
+    endpoint (15-min granularity, same ID family) was also captured and explicitly NOT pulled —
+    noted for a future dispatch needing intraday detail, not needed for Pricing Engine cost work.
 - **Closing out #165's stream-redundancy audit (2026-08-27/28) — dispatches #180-181, the last two
   items on that list.** PM-initiated (not owner-requested) continuation of the backlog-clearing
   work after the EOM audit wrapped, picking the two remaining flagged-not-fixed items from
