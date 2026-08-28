@@ -20,6 +20,15 @@ import { PANEL_BY_ID } from './panel-registry.js';
 
 const PARAM = 'panel';
 
+// Dispatch #190 — 'leader-one-pager' (Leadership One-Pager) retired as its own route:true
+// registry entry when it merged into 'above-store' (Above-Store One-Pager) behind a scope
+// selector (see src/views/above-store-onepager.js's `view` state). A saved `?panel=leader-
+// one-pager` link must still land somewhere real, not fail safe to "no route" like a genuine
+// unknown id — so it's redirected here to the id that now hosts it. App.js separately reads the
+// RAW (pre-redirect) query param once on mount to seed AboveStoreOnePager's `initialView` so the
+// redirected panel opens directly in Leadership Cascade scope, not the default Rollup one.
+const LEGACY_PANEL_REDIRECTS = { 'leader-one-pager': 'above-store' };
+
 // A route id is valid only if the registry marks it route:true — an unknown or non-route value
 // in the URL (a stale link, a typo, someone hand-editing the query string) fails safe to "no
 // route" rather than to whatever string happened to be there.
@@ -30,7 +39,8 @@ export function isRoutePanelId(id) {
 
 // Reads the current route panel id from a location.search-shaped string (or an empty one).
 export function parseRoute(search) {
-  const id = new URLSearchParams(search || '').get(PARAM);
+  const raw = new URLSearchParams(search || '').get(PARAM);
+  const id = LEGACY_PANEL_REDIRECTS[raw] || raw;
   return isRoutePanelId(id) ? id : null;
 }
 

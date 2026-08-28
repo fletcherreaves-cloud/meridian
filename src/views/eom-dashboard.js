@@ -43,6 +43,9 @@ import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/
 import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
 import { dowOf } from '../utils/date.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
+// Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
+// count-cycle.js route/panel; see count-cycle-panel.js's own header for the full story).
+import { CountCycleSection } from './count-cycle-panel.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -1474,7 +1477,11 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
       })));
 }
 
-export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
+// initialMode — dispatch #189: one-shot deep-link target for the old `?panel=count-cycle`
+// route (retired, folded into this panel's Count Cycle tab). null for every ordinary open;
+// App.js sets it to 'compliance' only when redirecting a legacy count-cycle link, same
+// one-shot-prop pattern as PerformanceReviewsPanel's initialTab/initialCustomizeSection.
+export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }) {
   const periods = useMemo(() => recentPeriods(4), []);
   const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
   const [loading, setLoading] = useState(true);
@@ -1537,9 +1544,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
   const [oneStore, setOneStore] = useState(''); // '' = all stores in scope, else a single loc
   const [patch, setPatch] = useState('');       // '' = all supervisors, else a supervisor's patch
   const patchGroups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
-  const [mode, setMode] = useState(() => defaultModeFor(defaultPeriod())); // 'eom' | 'progress'
-  // Re-default the mode when the period changes (manual toggle still overrides after).
-  useEffect(() => { setMode(defaultModeFor(period)); }, [period]);
+  const [mode, setMode] = useState(() => initialMode || defaultModeFor(defaultPeriod())); // 'scoreboard' | 'eom' | 'progress' | 'compliance'
+  // Re-default the mode when the period changes (manual toggle still overrides after) — but
+  // never override a legacy-redirect initialMode on the very first render (that useEffect
+  // would fire immediately after mount since `period` is already set, undoing the redirect
+  // before the user ever sees it). Only the FIRST period change after mount is suppressed.
+  const skipNextModeDefault = React.useRef(!!initialMode);
+  useEffect(() => {
+    if (skipNextModeDefault.current) { skipNextModeDefault.current = false; return; }
+    setMode(defaultModeFor(period));
+  }, [period]);
   const [diagCfg, setDiagCfg] = useState(null); // saved check overrides (or null = defaults)
   const [flowOpen, setFlowOpen] = useState(false); // flow-editor modal
   const [flowDraft, setFlowDraft] = useState([]); // editable copy while the modal is open
@@ -1814,6 +1828,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
       (!patchLocs || patchLocs.has(unpad(r.loc))) &&
       (!oneStore || r.loc === oneStore));
   }, [allRows, scope, oneStore, patch, patchGroups]);
+
+  // Count Cycle tab (dispatch #189) — onHand rows scoped to the same state/patch/store
+  // filter as `rows` above, so the harvested compliance view respects the same location
+  // picker as every other mode instead of silently always showing all 27 stores.
+  const complianceOnHand = useMemo(() => {
+    const locSet = new Set(rows.map(r => r.loc));
+    return onHand.filter(r => locSet.has(unpad(String(r.loc))));
+  }, [onHand, rows]);
 
   // FOB Root-Cause Analysis (Notes 41) — recount impact + FOB consistency, SCOPED to the current filter
   // (one / all / patch). Same engine as the CI scan, so numbers are verifiable. Declared AFTER `rows`
@@ -2574,14 +2596,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
     ]),
     span({ style: { color: 'var(--text3)', fontSize: '12px' } }, `${rows.length} shown`));
 
-  // mode toggle — EOM count-completion vs year-round progress — is a view-tab selector,
-  // so it moves into PanelChrome's tabs slot (band 3, right side) rather than staying an
-  // action button.
+  // mode toggle — EOM count-completion vs year-round cadence vs weekly compliance — is a
+  // view-tab selector, so it moves into PanelChrome's tabs slot (band 3, right side) rather
+  // than staying an action button.
+  // Dispatch #189 — 'progress' relabeled 'Cadence' (it always described itself as "🗓 Weekly
+  // Count Cadence" internally; the DISPLAY label just hadn't matched yet) so the new
+  // 'compliance' tab can take the exact "Count Cycle" name/identity the retired standalone
+  // panel carried — same underlying qsr_onhand + cycleCompliance() data both tabs already
+  // shared (dispatch #97/#98/#112), two different lenses on it: 'progress'/Cadence is the
+  // district table with FOB variance trace; 'compliance'/Count Cycle is the exceptions-first,
+  // plain-language per-store card view the standalone panel harvested.
   const tabsSlot = div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
-    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Count Cycle']].map(([k, label]) =>
+    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle']].map(([k, label]) =>
       h('button', {
         key: k, onClick: () => setMode(k),
-        title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared' : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)' : 'Year-round: last-count freshness + FOB/diagnosis results',
+        title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared'
+          : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)'
+          : k === 'progress' ? 'Year-round: last-count freshness + FOB/diagnosis results'
+          : 'Weekly compliance — every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first',
         style: {
           background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
           border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
@@ -2641,6 +2673,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
   const subtitleText = (mode === 'eom'
     ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
+    : mode === 'compliance'
+    ? 'Weekly Count Cycle · every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first'
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
     + (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : '');
 
@@ -2651,7 +2685,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
 
     h(PanelChrome, { location: locationSlot, dateControl: dateControlSlot, exportSlot: exportSlotContent, actions: actionsSlot, tabs: tabsSlot }),
 
-    h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
+    // Count Cycle (mode==='compliance') renders its OWN compact summary line inline
+    // (CountCycleSection) instead of these tiles — SummaryTiles only knows the EOM/Cadence
+    // shapes (dispatch #98 fixed exactly this "wrong tiles for the mode" bug for Cadence;
+    // giving Count Cycle a third undefined branch here would reintroduce it, not extend it).
+    mode !== 'compliance' && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
 
     // "ready for review" notification banner
     readyForReview.length > 0 && div({
@@ -2668,14 +2706,32 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose }) {
         div({ style: { fontSize: '12px', color: 'var(--text2)', marginTop: '2px' } },
           readyForReview.map(r => r.name).join(', ') + ' — count ≥90%. Set Diagnosis to "In review" to begin.'))),
 
-    // Count Cycle view → weekly-cadence monitor above the store table (Notes 40 #1). Renders only when
-    // it has cadence data; hidden in Scoreboard/EOM modes.
+    // Cadence view (mode==='progress') → weekly-cadence monitor above the store table (Notes 40
+    // #1). Renders only when it has cadence data; hidden in Scoreboard/EOM/Count Cycle modes —
+    // Count Cycle (mode==='compliance') is its own self-contained tab below, not layered with this.
     // fobPending folded in (PM review, 2026-08-12): loading is driven by the other 7 loads and
     // doesn't know about FOB's own copy-then-fallback path, so without this the panel could
     // flip to its "no data" branch while FOB was still genuinely unresolved.
     (mode === 'progress' && !(loading || fobPending) && rows.length) ? h(CadenceMonitor, { rows, cadenceByLoc, rawByLoc, fobRows, period, nm }) : null,
 
-    (loading || fobPending) ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+    // Count Cycle (mode==='compliance', dispatch #189) — self-contained: its own loading/empty
+    // states (matching the standalone panel it was harvested from) rather than reusing the EOM
+    // completion table's loading/empty branches below, which talk about EOM/FOB data that has
+    // nothing to do with weekly count compliance. Same fobPending-aware loading gate as
+    // CadenceMonitor just above (dispatch-98's own "don't show a wrong empty state while a
+    // slower-resolving stream is still pending" rule) — a bare "no data" while onHand is still
+    // loading would misreport every store as never-counted for a moment on every open.
+    mode === 'compliance'
+      ? (loading || fobPending)
+        ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+        : h(CountCycleSection, { rows: complianceOnHand, period })
+      : null,
+
+    // mode==='compliance' short-circuits this entire EOM-completion/scoreboard chain — its
+    // content (loading/empty/table) is all about EOM+FOB data, not weekly count compliance,
+    // and CountCycleSection above already handles its own loading/empty states.
+    mode === 'compliance' ? null
+    : (loading || fobPending) ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
           allRows.length === 0
             ? `No EOM data for ${period} yet. Variance / waste / transfers pull daily; On-Hand count progress fills in the last 3 days of the month.`

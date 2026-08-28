@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.229', date:'2026-08-28', changes:[
+export default {version:'5.232', date:'2026-08-28', changes:[
   'Dispatch #191 -- merge the "Calendar" panel (calendar-manager) into "Events & Tags" (events), '
   + 'owner-approved 2026-08-10 (memory/decisions-panel-inventory-2026-08-10.md) and re-confirmed '
   + 'directly 2026-08-28 after dispatch #54\'s "four sidebar links" framing was flagged as an '

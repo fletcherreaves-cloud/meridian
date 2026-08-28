@@ -809,7 +809,13 @@ function StoreSelectorBar({storeData, selStore, setSelStore, stores}) {
 // pure function and this is the exact call the ReferenceError lived in.
 export { analyzeData };
 
-export function FOBEOMPanel({stores, ds, settings, onClose}) {
+// embedded (dispatch #188) -- when true, this renders as the "End of Month" mode inside
+// Food Cost (FOBAnalysisPanel, src/views/analytics.js) rather than as its own full-page
+// overlay: no outer position:fixed shell and no own title/close button (Food Cost's
+// RoutePanelShell already owns both), just a slim toolbar carrying the two actions that
+// only make sense here (Print, FOB Tolerances) plus the same body every mode below already
+// had. onClose is unused in embedded mode -- Food Cost's own close button covers it.
+export function FOBEOMPanel({stores, ds, settings, onClose, embedded}) {
   // storeData: { [storeNum]: { contributors, onhand, summary, variance, pl, history } }
   const [storeData,    setStoreData]    = useState({});
   const [selStore,     setSelStore]     = useState('');
@@ -905,9 +911,27 @@ export function FOBEOMPanel({stores, ds, settings, onClose}) {
       background:'rgba(239,68,68,.15)',color:'#ef4444'}},''+t.badge)
   );
 
-  return div({style:{position:'fixed',inset:0,background:'var(--bg)',display:'flex',flexDirection:'column',zIndex:100}},
-    // Header
-    div({style:{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)'}},
+  return div({style:embedded
+      ?{display:'flex',flexDirection:'column',height:'100%',minHeight:0}
+      :{position:'fixed',inset:0,background:'var(--bg)',display:'flex',flexDirection:'column',zIndex:100}},
+    // Header — embedded mode gets a slim toolbar (title/close live on Food Cost's own
+    // RoutePanelShell header instead); standalone mode keeps the full title+close bar.
+    embedded
+      ? div({style:{display:'flex',alignItems:'center',gap:10,padding:'6px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)'}},
+          div({style:{flex:1,minWidth:0}},
+            div({style:{fontSize:'9px',color:'var(--text3)'}},
+              'Identify count accuracy issues before EOM close · Food & Condiment items only',
+              selStore&&span({style:{marginLeft:8,color:'var(--text2)',fontWeight:600}},'Store '+selStore),
+              period&&span({style:{marginLeft:6}},'· '+period)
+            )
+          ),
+          hasData&&h(PrintReport,{analysis,storeName:'Store '+selStore,period,selClasses}),
+          btn({onClick:()=>setShowFobSet(v=>!v),title:'Edit FOB tolerances',
+            style:{padding:'4px 10px',fontSize:'11px',border:'.5px solid var(--bdr)',borderRadius:4,
+              background:showFobSet?'var(--amber)':'transparent',color:showFobSet?'#000':'var(--text3)',cursor:'pointer'}},
+            '⚙ Tolerances'),
+        )
+      : div({style:{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)'}},
       div({style:{flex:1}},
         div({style:{fontWeight:700,fontSize:'14px',color:'var(--text)'}},
           'FOB End-of-Month Troubleshooter',

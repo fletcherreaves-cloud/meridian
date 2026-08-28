@@ -89,7 +89,14 @@ export const PANELS = [
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
-  { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
+  // count-cycle CONVERTED 2026-08-28 (dispatch #189, owner-approved 2026-08-10) from a
+  // standalone route:true entry to kind:'hub-tab' -- same "opens a hub and selects a tab, no
+  // sidebar entry of its own" pattern this registry already uses for fcst-accuracy/
+  // targets-editor/sched-retention etc (see the `kind` field doc above). Opening 'count-cycle'
+  // now selects EOMDashboardPanel's Count Cycle tab and routes to 'eom-dashboard', exactly
+  // like 'targets-editor' selects PerformanceReviewsPanel's Customize>Targets tab. Its own
+  // component (CountCycleSection, src/views/count-cycle-panel.js) is reused as-is, not deleted.
+  { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'hub-tab', section:'inventory-food-cost' },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
   // fcst-accuracy CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
@@ -121,7 +128,14 @@ export const PANELS = [
   { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
-  { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
+  // Dispatch #188 -- merged into Food Cost as an "End of Month" mode (per the owner's
+  // 2026-08-10 decision, memory/decisions-panel-inventory-2026-08-10.md). kind:'internal'
+  // (no sidebar entry any more; open it from Food Cost's own mode tabs) but route:true is
+  // DELIBERATELY kept -- not just left over -- so an old ?panel=fob-eom bookmark still
+  // validates through routing.js's isRoutePanelId() and reaches the routePanel==='fob-eom'
+  // redirect effect in App.js (goRoute('fob-analysis') + initial EOM mode) instead of 404ing
+  // to the default view. Removing route:true here would silently break that link.
+  { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'internal', section:'inventory-food-cost', route:true },
   // QSRSoft Forms dashboard, Slice 2 of 3 -- kind:'test-kitchen' since Slice 3's pull script
   // (the data source) hasn't shipped yet; the panel renders an honest empty state against a real
   // read, not fake data. Promote to kind:'nav' once Slice 3 lands and the owner has seen it live.
@@ -141,7 +155,12 @@ export const PANELS = [
   { id:'labor-allocation', label:'Labor Allocation', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
-  { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics', route:true },
+  // 'leader-one-pager' (Leadership One-Pager) retired here (dispatch #190, owner-approved
+  // 2026-08-10 decision list) — merged into 'above-store' (Above-Store One-Pager) below, behind
+  // a Rollup/Leadership scope selector inside AboveStoreOnePager. Its content (cascade selector,
+  // opportunity $, action plan, Weekly Review exports) is now LeadershipCascadeBody
+  // (src/views/one-pager.js), embedded there; a stale ?panel=leader-one-pager link redirects to
+  // 'above-store' via routing.js's LEGACY_PANEL_REDIRECTS.
   { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:6 },
   // lifelenz-bridge CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
   // entry to kind:'hub-tab', same pattern as fcst-accuracy above — opens ForecastReportsPanel's
