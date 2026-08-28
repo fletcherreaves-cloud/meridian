@@ -167,7 +167,6 @@ const DistrictPriorityBrief     = lazyPanel(() => _analytics().then(m => ({ defa
 const AttentionPanel            = lazyPanel(() => _analytics().then(m => ({ default: m.AttentionPanel })));
 const DataManagerPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.DataManagerPanel })));
 const StoreOnePager             = lazyPanel(() => _analytics().then(m => ({ default: m.StoreOnePager })));
-const ChannelIntelligencePanel  = lazyPanel(() => _analytics().then(m => ({ default: m.ChannelIntelligencePanel })));
 const MonthlyProjectionsPanel   = lazyPanel(() => _analytics().then(m => ({ default: m.MonthlyProjectionsPanel })));
 const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ default: m.StoreVlhConfigPanel })));
 
@@ -186,7 +185,9 @@ const _storeDash = () => import('../views/store-dash.js');
 const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })));
 const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })));
 const RankingView           = lazyPanel(() => _storeDash().then(m => ({ default: m.RankingView })));
-const PerformanceCalculator = lazyPanel(() => _storeDash().then(m => ({ default: m.PerformanceCalculator })));
+// PerformanceCalculator — dispatch #199 moved this UI into Performance Review -> Customize ->
+// Calculator (see performance-reviews.js's PerformanceCalculatorSection usage). No longer a
+// standalone lazy-loaded panel here; 'perf-calc' deep-links now redirect into perf-reviews below.
 const UnifiedTargetsPanel   = lazyPanel(() => _storeDash().then(m => ({ default: m.UnifiedTargetsPanel })));
 const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default: m.MonthlyTargetManager })));
 const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default: m.EventCalendar })));
@@ -203,10 +204,12 @@ const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js
 // but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
 // entry point" pattern as LifeLenzBridgePanel/ForecastAccuracyPanel above (dispatch #106).
+// Crew Schedule Lookup (dispatch #123) — merged with Time Punches under dispatch #197 into one
+// page, two tabs (Schedule/Punches); this panel's own file now owns both. TimePunchesTab is no
+// longer its own lazyPanel entry here — it's imported directly by crew-schedule-panel.js and
+// rendered as the Punches tab, same "absorbed into the hub, no standalone entry point" pattern as
+// CountCyclePanel/count-cycle-panel.js above.
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
-// Time Punches (dispatch #138) — companion to Crew Schedule Lookup just above, same
-// lazy-panel/route-panel wiring shape.
-const TimePunchesPanel = lazyPanel(() => import('../views/time-punches-panel.js').then(m => ({ default: m.TimePunchesPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
 // lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
@@ -315,8 +318,9 @@ import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tut
 // scope) used to be statically imported here for 47 exports. Investigation found only 3 were ever
 // used unconditionally (the migrate-on-mount effect + mergedTargets memo below) — moved to their
 // own tiny engine/monthly-targets-v2.js module. Every panel App.js actually renders from
-// store-dash.js (DistrictGrid/OrgView/RankingView/PerformanceCalculator/UnifiedTargetsPanel/
-// MonthlyTargetManager/EventCalendar) was already gated behind view/show state; the other ~38
+// store-dash.js (DistrictGrid/OrgView/RankingView/UnifiedTargetsPanel/
+// MonthlyTargetManager/EventCalendar — PerformanceCalculator moved out under dispatch #199) was
+// already gated behind view/show state; the other ~38
 // imported symbols (the Chart.js wrapper library, ForecastTable, Brief, etc.) were dead code here
 // — never referenced, only used by analytics.js/labor-tools.js/store-analytics.js, which are
 // already lazy themselves. See the _storeDash() lazyPanel group below for the real panels.
@@ -809,6 +813,18 @@ function App() {
   // signalsTab (dispatch #195, 2026-08-28) — same lifted-tab pattern as schedTab/planningTab
   // above. The retired corr-explorer id redirects into Signals' 'corr' tab via this.
   const [signalsTab, setSignalsTab] = useState('liveops');
+  // crewTab (dispatch #197, 2026-08-28) — same lifted-tab pattern as schedTab/signalsTab above,
+  // for the merged Crew Schedule/Time Punches page. 'time-punches' was its own route:true
+  // registry entry before this dispatch folded it into 'crew-schedule' as a Punches tab (see
+  // panel-registry.js's now-kind:'internal' 'time-punches' entry + routing.js's
+  // LEGACY_PANEL_REDIRECTS, which redirects a saved `?panel=time-punches` URL to routePanel==
+  // 'crew-schedule'). Read the RAW query param here (not routePanel, which parseRoute already
+  // redirected) so that link opens straight into the Punches tab instead of the default Schedule
+  // one — same "raw param, once" shape as aboveStoreInit's leader-one-pager case.
+  const [crewTab, setCrewTab] = useState(() => {
+    const raw = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('panel');
+    return raw === 'time-punches' ? 'punches' : 'schedule';
+  });
   // forecastReportsTab (dispatch #106 Phase B) — which of ForecastReportsPanel's two internal
   // tabs to open, same pattern as schedTab/planningTab above. The 'fcst-accuracy'/
   // 'lifelenz-bridge' hub-tab dispatch branches below set this before routing to
@@ -818,7 +834,8 @@ function App() {
   const [panelVis, setPanelVis] = useState(loadPanelVis);          // {id:bool} optional-panel visibility
   const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
   const setAllPanelVis = (on) => setPanelVis(() => { const n = {}; OPTIONAL_PANELS.forEach(p => { n[p.id] = on; }); savePanelVis(n); return n; });
-  const [showPerfCalc,    setShowPerfCalc]    = useState(false);
+  // showPerfCalc removed — dispatch #199 moved this UI into Performance Review -> Customize ->
+  // Calculator (perfReviewsEntry above drives the redirect for old deep links).
   // showCorrExplorer — RETIRED (dispatch #195, 2026-08-28): corr-explorer merged into Signals'
   // Correlations tab; see signalsTab above and the modal handler below.
   const [showDistrictLens,setShowDistrictLens]= useState(false);
@@ -853,7 +870,10 @@ function App() {
   const [showReportSubs, setShowReportSubs] = useState(false);
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
-  const [showChannelIntel, setShowChannelIntel] = useState(false);
+  // showChannelIntel — RETIRED (dispatch #201, 2026-08-28): ChannelIntelligencePanel was folded
+  // into DeliveryMixPanel as its Overview tab. modal==='channel-intel' now redirects into
+  // setShowDeliveryMix below instead of its own state/render line — see delivery-mix.js's file
+  // header and panel-registry.js's channel-intel entry (kind:'internal').
   // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge',
   // then dispatch #106 Phase B folded that route into routePanel==='forecast-reports' (see
   // routePanel above) as one of ForecastReportsPanel's two internal tabs.
@@ -2861,9 +2881,9 @@ function App() {
     showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
-    showPerfCalc||showPriorityBrief||showProjBriefSA||
+    showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2891,10 +2911,10 @@ function App() {
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
-      setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
+      setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
@@ -3005,8 +3025,11 @@ function App() {
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='security')       perm('security.view')&&goRoute('security');
-        if(modal==='crew-schedule')  perm('analytics.store')&&goRoute('crew-schedule');
-        if(modal==='time-punches')   perm('analytics.store')&&goRoute('time-punches');
+        // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
+        // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
+        // tab via crewTab (see its own declaration above for the full reasoning).
+        if(modal==='crew-schedule')  perm('analytics.store')&&(setCrewTab('schedule'),goRoute('crew-schedule'));
+        if(modal==='time-punches')   perm('analytics.store')&&(setCrewTab('punches'),goRoute('crew-schedule'));
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
@@ -3043,11 +3066,19 @@ function App() {
         if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
         if(modal==='above-store')    perm('analytics.district')&&goRoute('above-store');
         if(modal==='my-reports')     perm('analytics.dashboard')&&setShowReportSubs(true);
-        if(modal==='channel-intel')  perm('analytics.store')&&setShowChannelIntel(true);
+        // channel-intel — RETIRED (dispatch #201, 2026-08-28): folded into DeliveryMixPanel's
+        // Overview tab, which is the panel's default tab, so this redirect lands in the same
+        // place the old panel did. See delivery-mix.js's file header.
+        if(modal==='channel-intel')  perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
         if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
-        if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
+        // 'perf-calc' — dispatch #199: no longer its own panel, redirects into Performance
+        // Review -> Customize -> Calculator, same pattern as 'targets-editor' above. Gated on
+        // reviews.customize (the Customize tab's real gate), not the panel's old broader
+        // analytics.store perm — see performance-calculator.js's header comment for why that's
+        // a deliberate access-control narrowing, not an oversight.
+        if(modal==='perf-calc')      perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'calculator'}),goRoute('perf-reviews'));
         // corr-explorer — RETIRED id (dispatch #195, 2026-08-28), redirects into Signals'
         // Correlations tab (Scanner-statistics-powered) rather than doing nothing; see
         // panel-registry.js's comment on this id.
@@ -3225,8 +3256,9 @@ function App() {
         initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
         initialView:aboveStoreInit?.view,
         onClose:()=>{goRoute(null);setAboveStoreInit(null);}}),
-      routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
-      routePanel==='time-punches'&&h(TimePunchesPanel,{stores,onClose:()=>goRoute(null)}),
+      // 'time-punches' no longer has its own routePanel branch — dispatch #197 folded it into
+      // CrewSchedulePanel's Punches tab (crewTab, initialTab above).
+      routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,initialTab:crewTab,onClose:()=>goRoute(null)}),
       // routePanel==='fob-eom' never renders here on purpose — the useEffect above (near
       // fobAnalysisInitialMode's declaration) redirects it into fob-analysis before this
       // switch is reached, so by the time this render runs routePanel is already
@@ -3289,7 +3321,8 @@ function App() {
     // (RoutePanelShell now lives inside SchedulingHubPanel itself; see routePanel==='sched-hub').
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
     showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
-    showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
+    // PerformanceCalculator render line — RETIRED (dispatch #199, 2026-08-28): see
+    // perfReviewsEntry above and the perf-calc modal handler.
     // MetricCorrelationExplorer render line — RETIRED (dispatch #195, 2026-08-28): see
     // signalsTab above and the corr-explorer modal handler.
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
@@ -3322,7 +3355,6 @@ function App() {
         else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
       }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
-    showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
     // perf-reviews — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
@@ -3341,7 +3373,7 @@ function App() {
     // mode and moved RoutePanelShell inside FOBAnalysisPanel itself, same as this comment block's
     // other "shell inside the component" siblings.
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
-    showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
+    showDeliveryMix&&h(DeliveryMixPanel,{ds,stores,onClose:()=>setShowDeliveryMix(false)}),
     // signals / security — Dispatch #192: moved to the routePanel gates in the main content
     // area (wrapped directly in RoutePanelShell there; see routePanel==='signals' /
     // routePanel==='security' — neither component had internal chrome to strip).
