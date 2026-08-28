@@ -1,5 +1,5 @@
 // @ts-nocheck
-// ── Count Cycle compliance panel ─────────────────────────────────────────────
+// ── Count Cycle compliance — a tab inside Inventory Control ─────────────────
 // Notes 58 #1. Surfaces the owner's count rules per store: every weekly count needs a
 // full Food AND Condiment count, and Paper is mandatory on the floating mid-month count.
 //
@@ -9,12 +9,22 @@
 //
 // Reads qsr_onhand (the full item universe) rather than qsr_raw_item_detail, which
 // carries zero Condiment rows by design — see src/engine/count-cycle.js for why.
+//
+// Dispatch #189 (2026-08-28) — retired as a standalone route (was CountCyclePanel, its own
+// panel-registry.js entry) and folded into Inventory Control (eom-dashboard.js) as a tab,
+// per the owner's 2026-08-10 merge decision ("a view of the same data, not a separate job").
+// This file now exports CountCycleSection, a body-only component (same
+// "Section"-not-"Panel" naming EOMDashboardPanel's sibling hub-tab conversions already use —
+// see schedule-retention.js's ScheduleRetentionSection) — no RoutePanelShell of its own, no
+// independent qsr_onhand fetch. `rows` is Inventory Control's own already-loaded `onHand`
+// state (same table, same period selector, zero duplicate network call), matching the
+// EXACT precedent its sibling tab already set: CadenceMonitor's cadenceFromOnHand(onHand,
+// { asOf: new Date() }) also grades the currently-loaded onHand snapshot against today,
+// regardless of which EOM period is selected — this tab does the same, not a new tradeoff.
 
 import * as React from 'react';
 import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES } from '../engine/count-cycle.js';
-import { loadQsrOnHand } from '../lib/supabase.js';
 import { sName } from '../constants.js';
-import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -100,56 +110,44 @@ function StoreCard({ c, expanded, onToggle }) {
         'A class counts as fully counted at 75% coverage or above.')) : null);
 }
 
-export function CountCyclePanel({ onClose }) {
-  const [rows, setRows] = React.useState(null);
-  const [err, setErr] = React.useState(null);
+/**
+ * Count Cycle compliance body — Inventory Control's "Count Cycle" tab.
+ * `rows` — Inventory Control's own already-loaded qsr_onhand rows (its `onHand` state) for
+ * the currently selected EOM period; `period` is used only for the empty-state message.
+ * No fetch, no RoutePanelShell — the caller owns loading/chrome, same contract as
+ * CadenceMonitor (the sibling "Cadence" tab) already has.
+ */
+export function CountCycleSection({ rows, period }) {
   const [open, setOpen] = React.useState({});
   const [showClean, setShowClean] = React.useState(false);
-
-  const period = new Date().toISOString().slice(0, 7);
-  React.useEffect(() => {
-    let live = true;
-    loadQsrOnHand({ period })
-      .then(r => { if (live) { setRows(r || []); setErr(null); } })
-      .catch(e => { if (live) setErr(e?.message || 'load failed'); });
-    return () => { live = false; };
-  }, [period]);
 
   const comp = React.useMemo(() => (rows ? cycleCompliance(rows) : []), [rows]);
   const sum = React.useMemo(() => cycleSummary(comp), [comp]);
   const flagged = comp.filter(c => c.exceptions.length);
   const clean = comp.filter(c => !c.exceptions.length);
 
-  const body = err
-    ? div({ style: { padding: 30, textAlign: 'center', color: '#f59e0b', fontSize: 12 } },
-        'Could not load on-hand data — ', err)
-    : rows === null
-      ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } }, 'Loading…')
-      : !comp.length
-        ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } },
-            `No on-hand data for ${period} yet.`)
-        : div(null,
-            // Exceptions first — a screen that opens on green rows buries the ones to chase.
-            flagged.length
-              ? flagged.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))
-              : div({ style: { padding: '20px 12px', textAlign: 'center', color: '#10b981', fontSize: 12 } },
-                  '✅ Every store is on cycle.'),
-            clean.length ? div(null,
-              h('button', {
-                onClick: () => setShowClean(v => !v),
-                style: { width: '100%', marginTop: 10, background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 7, color: 'var(--text3,#6b7280)', padding: '7px', cursor: 'pointer', fontSize: 11 },
-              }, showClean ? `▾ Hide ${clean.length} stores on cycle` : `▸ Show ${clean.length} stores on cycle`),
-              showClean ? div({ style: { marginTop: 6 } },
-                clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))) : null) : null);
+  return div(null,
+    div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 } },
+      div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } },
+        comp.length ? `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle` : ''),
+    ),
+    !comp.length
+      ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } },
+          `No on-hand data for ${period} yet.`)
+      : div(null,
+          // Exceptions first — a screen that opens on green rows buries the ones to chase.
+          flagged.length
+            ? flagged.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))
+            : div({ style: { padding: '20px 12px', textAlign: 'center', color: '#10b981', fontSize: 12 } },
+                '✅ Every store is on cycle.'),
+          clean.length ? div(null,
+            h('button', {
+              onClick: () => setShowClean(v => !v),
+              style: { width: '100%', marginTop: 10, background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 7, color: 'var(--text3,#6b7280)', padding: '7px', cursor: 'pointer', fontSize: 11 },
+            }, showClean ? `▾ Hide ${clean.length} stores on cycle` : `▸ Show ${clean.length} stores on cycle`),
+            showClean ? div({ style: { marginTop: 6 } },
+              clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))) : null) : null),
 
-  return h(RoutePanelShell, {
-    title: 'Count Cycle Compliance',
-    icon: '📋',
-    subtitle: rows === null ? period : `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle`,
-    onBack: onClose,
-  },
-    div({ style: { padding: 12 } }, body),
-
-    div({ style: { padding: '9px 18px', borderTop: '.5px solid var(--bdr,#2a2f3a)', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.5 } },
+    div({ style: { padding: '9px 2px 0', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.5 } },
       `Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day.`));
 }
