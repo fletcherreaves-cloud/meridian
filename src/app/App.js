@@ -202,10 +202,12 @@ const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js
 // but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
 // entry point" pattern as LifeLenzBridgePanel/ForecastAccuracyPanel above (dispatch #106).
+// Crew Schedule Lookup (dispatch #123) — merged with Time Punches under dispatch #197 into one
+// page, two tabs (Schedule/Punches); this panel's own file now owns both. TimePunchesTab is no
+// longer its own lazyPanel entry here — it's imported directly by crew-schedule-panel.js and
+// rendered as the Punches tab, same "absorbed into the hub, no standalone entry point" pattern as
+// CountCyclePanel/count-cycle-panel.js above.
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
-// Time Punches (dispatch #138) — companion to Crew Schedule Lookup just above, same
-// lazy-panel/route-panel wiring shape.
-const TimePunchesPanel = lazyPanel(() => import('../views/time-punches-panel.js').then(m => ({ default: m.TimePunchesPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
 // lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
@@ -808,6 +810,18 @@ function App() {
   // signalsTab (dispatch #195, 2026-08-28) — same lifted-tab pattern as schedTab/planningTab
   // above. The retired corr-explorer id redirects into Signals' 'corr' tab via this.
   const [signalsTab, setSignalsTab] = useState('liveops');
+  // crewTab (dispatch #197, 2026-08-28) — same lifted-tab pattern as schedTab/signalsTab above,
+  // for the merged Crew Schedule/Time Punches page. 'time-punches' was its own route:true
+  // registry entry before this dispatch folded it into 'crew-schedule' as a Punches tab (see
+  // panel-registry.js's now-kind:'internal' 'time-punches' entry + routing.js's
+  // LEGACY_PANEL_REDIRECTS, which redirects a saved `?panel=time-punches` URL to routePanel==
+  // 'crew-schedule'). Read the RAW query param here (not routePanel, which parseRoute already
+  // redirected) so that link opens straight into the Punches tab instead of the default Schedule
+  // one — same "raw param, once" shape as aboveStoreInit's leader-one-pager case.
+  const [crewTab, setCrewTab] = useState(() => {
+    const raw = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('panel');
+    return raw === 'time-punches' ? 'punches' : 'schedule';
+  });
   // forecastReportsTab (dispatch #106 Phase B) — which of ForecastReportsPanel's two internal
   // tabs to open, same pattern as schedTab/planningTab above. The 'fcst-accuracy'/
   // 'lifelenz-bridge' hub-tab dispatch branches below set this before routing to
@@ -3007,8 +3021,11 @@ function App() {
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
         if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
         if(modal==='security')       perm('security.view')&&goRoute('security');
-        if(modal==='crew-schedule')  perm('analytics.store')&&goRoute('crew-schedule');
-        if(modal==='time-punches')   perm('analytics.store')&&goRoute('time-punches');
+        // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
+        // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
+        // tab via crewTab (see its own declaration above for the full reasoning).
+        if(modal==='crew-schedule')  perm('analytics.store')&&(setCrewTab('schedule'),goRoute('crew-schedule'));
+        if(modal==='time-punches')   perm('analytics.store')&&(setCrewTab('punches'),goRoute('crew-schedule'));
         if(modal==='lfz-gap')        perm('analytics.forecasting')&&setShowLFZGap(true);
         if(modal==='fcst-ref')       perm('analytics.forecasting')&&goRoute('fcst-ref');
         if(modal==='forms-completion') perm('analytics.store')&&setShowFormsCompletion(true);
@@ -3230,8 +3247,9 @@ function App() {
         initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
         initialView:aboveStoreInit?.view,
         onClose:()=>{goRoute(null);setAboveStoreInit(null);}}),
-      routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
-      routePanel==='time-punches'&&h(TimePunchesPanel,{stores,onClose:()=>goRoute(null)}),
+      // 'time-punches' no longer has its own routePanel branch — dispatch #197 folded it into
+      // CrewSchedulePanel's Punches tab (crewTab, initialTab above).
+      routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,initialTab:crewTab,onClose:()=>goRoute(null)}),
       // routePanel==='fob-eom' never renders here on purpose — the useEffect above (near
       // fobAnalysisInitialMode's declaration) redirects it into fob-analysis before this
       // switch is reached, so by the time this render runs routePanel is already
