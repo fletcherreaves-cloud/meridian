@@ -16,6 +16,11 @@ import { ModalShell, Z } from '../components/ModalShell.js';
 import { metricSeries, metricAvg, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+// dispatch #200 (Task Group C) -- the same live-data record-computation engine record-day.js's
+// main-menu "Record Days" panel uses, reused (not re-derived) for StoreRecordsTab's week/month/
+// day-of-week depth. See StoreRecordsTab's own header comment for why only the computation +
+// formatters are imported, never record-day.js's own React components.
+import { computeRecords, scopeRecordData, fDate as rdFDate, fWeekLabel as rdFWeekLabel, fMonthLabel as rdFMonthLabel, fSec as rdFSec, fGC as rdFGC, f$2 as rdF$2, DOW_SHORT as RD_DOW_SHORT } from './record-day.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1157,6 +1162,21 @@ function RevenueIntelligence({stores, ds, settings, userEvents, onSelectStore, o
 
 // REGISTER AUDIT — NARRATIVE ENGINE
 // ── RevealName — dispatch #38, the reveal-UI half of dispatch #37's identity-vault architecture ──
+// ⚠️ dispatch #200 (Task Group B, 2026-08-28) — Register Audit itself no longer calls this
+// component. Owner, live: "on the Register Audit tab, no need to hide the employee names here.
+// anyone with access to register audit on qsrsoft can see names anyway." Investigated before
+// changing anything (register-audit.js's own header comment has the full measurement): the raw
+// name (audit_rows.emp) was ALREADY present, unredacted, in every row this app loads into
+// ds.auditRows — analyzeRegisterAudit() was simply discarding it before this dispatch. So the
+// click/reason/RPC/log gate below never actually withheld the name from this app's own already-
+// loaded client state, only from rendering it — removing it for Register Audit is a display-only
+// change, not a new data exposure. RegisterAuditTab/RegisterAuditNarrative below now render
+// `e.empName` directly. This component is KEPT UNCHANGED and still load-bearing for Security
+// Findings (security-panel.js imports it and calls it with `token: group.empToken`) — THAT
+// surface's underlying data genuinely has no raw name alongside the token (security_findings is
+// built from a token-keyed aggregate, not audit_rows' per-row shape), so its reveal-with-reason/
+// audit-log trail is a real confidentiality boundary, not a redundant one, and dispatch #200's own
+// scope explicitly leaves it alone.
 // analyzeRegisterAudit's employee objects carry only e.id (a token) now, by design (dispatch
 // #37 §4 — "blind mode" default, not a data gap). This is the ONE place that resolves a token
 // back to a real name: a deliberate click, a required reason, logged server-side by
@@ -1204,7 +1224,11 @@ function RevealName({token, cache, onReveal}) {
   }, busy ? 'revealing…' : err ? '⚠ reveal failed' : '🔒 reveal');
 }
 
-function RegisterAuditNarrative({auditData, store, ds, revealed, onReveal}) {
+// dispatch #200 -- empName() is the one place this narrative resolves an employee's display
+// name, so every paragraph agrees on the same fallback (pre-#37-backfill rows have no name).
+const empName = e => (e&&e.empName) || (e&&e.id) || 'Unknown';
+
+function RegisterAuditNarrative({auditData, store, ds}) {
   if(!auditData||!auditData.employees||!auditData.employees.length) return null;
   const {p, t} = store;
   const employees = auditData.employees;
@@ -1246,7 +1270,7 @@ function RegisterAuditNarrative({auditData, store, ds, revealed, onReveal}) {
       title: 'Cash Over/Short',
       text: [
         'The most significant cash variance belongs to ',
-        h(RevealName,{key:'rn',token:worst.id,cache:revealed,onReveal}),
+        empName(worst),
         `, running ${worst.cashOS>=0?'+':'-'}$${Math.abs(worst.cashOS||0).toFixed(2)} over/short across their shifts. ${Math.abs(worst.cashOS||0)>10?'At this level, the variance is too large and consistent to attribute to counting error alone — this warrants a video review of their drawer interactions.':'This is at the upper edge of acceptable variance but not yet in the territory that demands escalation.'} ${patternNote}`,
       ],
     });
@@ -1263,7 +1287,7 @@ function RegisterAuditNarrative({auditData, store, ds, revealed, onReveal}) {
       title: 'Void & Refund Activity',
       text: [
         `Total void activity across the team averages ${avgVoids.toFixed(1)} per employee. `,
-        h(RevealName,{key:'rn',token:worst.id,cache:revealed,onReveal}),
+        empName(worst),
         ` is running at ${worst.voids} voids — ${isConcentrated?`3× the store average, which is statistically significant and not consistent with normal order correction. Voids concentrated in one employee, especially if they cluster after close or in periods of low supervision, are a primary integrity indicator.`:`above average but not at a level that definitively indicates a pattern.`} ${(p.tRedAPct||0)>(t.tRedAPct||.003)*1.5?'Combined with the elevated T-Red After rate for this store, the void pattern strengthens the case for a closer look at specific transactions.':''}`,
       ],
     });
@@ -1276,7 +1300,7 @@ function RegisterAuditNarrative({auditData, store, ds, revealed, onReveal}) {
       type: (worst.discPct||0)>.25?'crit':'watch',
       title: 'Discount & Meal Activity',
       text: [
-        h(RevealName,{key:'rn',token:worst.id,cache:revealed,onReveal}),
+        empName(worst),
         ` is applying discounts on ${fP(worst.discPct||0,2)} of transactions — ${(worst.discPct||0)>.20?'well above':(worst.discPct||0)>.12?'above':'near'} the expected range. Discount rates above 15% on a consistent basis either indicate a misunderstanding of discount eligibility, a habit of applying unauthorized discounts to drive tips or personal relationships, or systematic meal fraud. Cross-reference these transactions with the Meal Activity report to determine if the employee meals policy explains the rate or if there's an unexplained gap.`,
       ],
     });
@@ -1285,7 +1309,7 @@ function RegisterAuditNarrative({auditData, store, ds, revealed, onReveal}) {
   // Interleaves RevealName elements for a list of employees with ', ' separators — used by
   // both Drawer Open Frequency below and the Recommended Actions block. Returns an array of
   // (string|element), never a joined string, since a name can't be a raw string until revealed.
-  const namesList = emps => emps.flatMap((e,i)=>[i>0?', ':null, h(RevealName,{key:'nl'+i,token:e.id,cache:revealed,onReveal})]).filter(Boolean);
+  const namesList = emps => [emps.map(empName).join(', ')];
 
   // Drawer opens
   if(highOpens.length>0) {
@@ -1343,15 +1367,13 @@ function RegisterAuditTab({ds, loc}) {
     return () => clearInterval(id);
   }, []);
 
-  // dispatch #38 — token->name reveal cache, lifted here so it's shared across the table
-  // sections AND the narrative below: revealing one employee once resolves them everywhere
-  // else in this same panel view, no repeat prompt or RPC call. Declared before any early
-  // return (hooks can't be conditional).
-  const [revealed, setRevealed] = React.useState({});
-  const onReveal = React.useCallback((token, name) => setRevealed(r => ({...r, [token]: name})), []);
+  // dispatch #200 -- the token->name reveal cache (dispatch #38) is gone: employee objects now
+  // carry `empName` directly (register-audit.js), so there's nothing left to reveal or cache
+  // for this tab. See RevealName's own header comment for why this is a display-only change,
+  // and why RevealName itself stays intact for Security Findings.
   // dispatch #62 -- register-type filter/pill state, plus which blended employee (if any) has
   // its per-type breakdown expanded. Declared here, before the early returns below, for the
-  // same reason revealed/onReveal are (hooks can't be conditional).
+  // same reason hooks generally must be (hooks can't be conditional).
   const [registerFilter, setRegisterFilter] = React.useState('all');
   const [expandedEmp, setExpandedEmp] = React.useState(null);
 
@@ -1512,7 +1534,7 @@ function RegisterAuditTab({ds, loc}) {
           ColHdr('Refunds','right'),ColHdr('POS Over','right'),ColHdr('O/S','right'),ColHdr('Disc%','right')
         )),
         h('tbody',null,sorted.flatMap((e,i)=>[tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           td({style:{padding:'5px 8px'}},span({style:{fontSize:'9px',fontWeight:700,padding:'2px 6px',borderRadius:3,
             background:riskColor(e.riskScore||0)+'22',color:riskColor(e.riskScore||0),border:`.5px solid ${riskColor(e.riskScore||0)}44`}},riskLabel(e.riskScore||0))),
           td({style:{padding:'5px 8px'}},registerCell(e)),
@@ -1537,7 +1559,7 @@ function RegisterAuditTab({ds, loc}) {
         )),
         h('tbody',null,sorted.filter(e=>e.tRedACnt>0||e.tRedBCnt>0).map((e,i)=>tr({key:i,
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.tRedACnt, e.tRedACnt>5?'var(--crit)':e.tRedACnt>2?'var(--warn)':'var(--text)','right'),
           Cell('$'+(e.tRedADollar||0).toFixed(2), e.tRedADollar>20?'var(--crit)':e.tRedADollar>5?'var(--warn)':'var(--text)','right'),
           Cell('$'+(e.avgTRedADollar||0).toFixed(2), e.avgTRedADollar>3?'var(--crit)':e.avgTRedADollar>1?'var(--warn)':'var(--text)','right'),
@@ -1558,7 +1580,7 @@ function RegisterAuditTab({ds, loc}) {
         )),
         h('tbody',null,sorted.filter(e=>e.refundCnt>0||e.posOver>0||e.manualRef>0).map((e,i)=>tr({key:i,
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.refundCnt||0, e.refundCnt>5?'#f59e0b':'var(--text)','right'),
           Cell('$'+(e.refundCash||0).toFixed(2),'var(--text)','right'),
           Cell('$'+(e.refundCashless||0).toFixed(2),'var(--text3)','right'),
@@ -1578,7 +1600,7 @@ function RegisterAuditTab({ds, loc}) {
         )),
         h('tbody',null,sorted.map((e,i)=>tr({key:i,
           style:{borderBottom:'.5px solid var(--bdr)',background:i%2?'rgba(255,255,255,.01)':'transparent'}},
-          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},h(RevealName,{token:e.id,cache:revealed,onReveal})),
+          td({style:{padding:'5px 8px',fontWeight:600,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}},empName(e)),
           Cell(e.txCount||'—','var(--text3)','right'),
           Cell(((e.cashOSTotal||0)>=0?'+':'')+((e.cashOSTotal||0).toFixed(2)), Math.abs(e.cashOSTotal||0)>10?'var(--crit)':Math.abs(e.cashOSTotal||0)>3?'var(--warn)':'var(--text)','right'),
           Cell(((e.cashOS||0)>=0?'+':'')+((e.cashOS||0).toFixed(2)), Math.abs(e.cashOS||0)>5?'var(--crit)':Math.abs(e.cashOS||0)>2?'var(--warn)':'var(--text)','right'),
@@ -1590,16 +1612,15 @@ function RegisterAuditTab({ds, loc}) {
       )
     ),
 
-    h(RegisterAuditNarrative,{auditData,store:{p:{},t:{}},ds,revealed,onReveal}),
+    h(RegisterAuditNarrative,{auditData,store:{p:{},t:{}},ds}),
     h(AITabInsight,{label:'AI Register Audit Analysis',
       buildPrompt:()=>{
-        // dispatch #38 §5 — deliberately NOT wired to reveal (no click target/rendered DOM to
-        // attach one to, and prompts regenerate fresh each run). Reads e.id (the token) since
-        // e.emp no longer exists on this object post-dispatch #37 -- was previously e.emp,
-        // which had silently gone stale to always '?' since that retrofit landed.
+        // dispatch #200 — now reads e.empName (the plaintext name, register-audit.js), since
+        // there's no reveal step left to avoid triggering. Was e.id (the token) pre-#200,
+        // per dispatch #38 §5's original "deliberately not wired to reveal" note.
         if(!auditData||!auditData.employees||!auditData.employees.length) return 'No audit data.';
         const top3=(auditData.employees||[]).slice(0,3).map(e=>
-          (e.id||'?')+' risk:'+Math.round(e.riskScore||0)+' voids:'+e.tRedACnt+' OS:$'+(e.cashOS||0).toFixed(2)).join('; ');
+          empName(e)+' risk:'+Math.round(e.riskScore||0)+' voids:'+e.tRedACnt+' OS:$'+(e.cashOS||0).toFixed(2)).join('; ');
         const s=auditData.summary||{};
         return 'McDonald\'s register audit for '+loc+'. Top risk: '+top3+'. District: '+(s.totalVoids||0)+' voids, '+(s.highRisk||0)+' high-risk. Provide coaching talking points for high-risk employees and 2-3 process improvements to reduce cash handling errors.';
       }})
@@ -2394,17 +2415,59 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='register'   && h(RegisterAuditTab,{ds,loc:store.loc}),
     tab==='records'    && h(StoreRecordsTab,{ds,loc:store.loc,name:store.name}),
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
-    tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',onClose:()=>setTab('overview')})
+    tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')})
   );
 }
 
 // STORE RECORDS TAB
+// dispatch #200 (Task Group C, 2026-08-28) — merges this per-store tab with the main-menu
+// "Record Days" panel's (record-day.js) richer, live-data record engine. Owner, live: "why
+// don't we merge the records tab in there with the results from the records panel on the main
+// menu. It would provide an even more robust records experience for each location in district
+// view."
+//
+// Read both fully before choosing a shape. record-day.js's own React components (HeroGrid,
+// SalesVolumeTab, DOWTab, etc.) are all built around a cross-store SORTABLE TABLE — one row per
+// store, click-to-sort by column — the wrong shape for a single-store drill-down tab. They also
+// turn out to style themselves entirely through CSS custom properties (--txt/--txt2/--txt3/
+// --acc/--rm/--rs) that are never DEFINED anywhere in meridian.css — a real, pre-existing bug in
+// that file, discovered while reading it for this dispatch, out of scope to fix here (this
+// dispatch's own instruction: don't change record-day.js's cross-store UI/behavior) and flagged
+// rather than silently carried into new code.
+//
+// So this tab reuses ONLY the pure computation — computeRecords()/scopeRecordData(), scoped to
+// this one store via scopeRecordData(data, [loc]), UNCHANGED (matches dispatch #136 Part 2's own
+// precedent: "do not touch computeRecords()'s scoring logic beyond location filtering") — and its
+// plain-string formatters, then renders a fresh, single-store-shaped view in THIS file's own
+// established card/table idiom (the same one LocationIntelligence/RegisterAuditTab above use).
+//
+// The two record sources are DELIBERATELY KEPT SEPARATE, not collapsed into one number per
+// metric: the Excel-uploaded "Records - Total Day - Sun-Sat - Total.xlsx" all-time section
+// (unchanged below) can carry history from before this app's daily cloud streams existed —
+// silently replacing it with the live engine's number would regress a store whose real all-time
+// best predates Meridian's own data. The live section is ADDITIVE depth: week/month/day-of-week
+// breakdowns, speed records (OEPE/KVS/R2P), recent record breaks, and top days, all computed
+// from data already loaded (computeRecords() already sources through metricSeries(), this app's
+// auto-first shared helper) — no upload required. record-day.js's own main-menu panel is
+// unchanged — still live, still the cross-store comparison view, per this dispatch's scope.
 function StoreRecordsTab({ds, loc, name}) {
   const recs = ds&&ds.records&&ds.records[loc];
-  if(!recs) return div({style:{padding:20}},
+
+  // Same default window (60 days) and same engine call RecordDayPanel itself uses — computed
+  // district-wide (computeRecords doesn't take a location filter, by design), then narrowed to
+  // this one store via scopeRecordData, exactly like RecordDayPanel's own LocationSelector scope
+  // narrows it. Memoized on [ds, liveWindow] so switching tabs doesn't re-run the district scan.
+  const [liveWindow, setLiveWindow] = React.useState(60);
+  const liveAll    = React.useMemo(() => computeRecords(ds, liveWindow), [ds, liveWindow]);
+  const liveScoped = React.useMemo(() => scopeRecordData(liveAll, loc ? [loc] : null), [liveAll, loc]);
+  const liveRec    = liveScoped && liveScoped.stores ? liveScoped.stores[loc] : null;
+  const liveBreaks = (liveScoped && liveScoped.recentBreakers) || [];
+  const liveTop    = (liveScoped && liveScoped.topDays) || [];
+
+  if(!recs && !liveRec) return div({style:{padding:20}},
     div({className:'empty-st'},
       div({className:'empty-st-t'},'No Records Data'),
-      div({className:'empty-st-s'},'Load the Records - Total Day - Sun-Sat - Total.xlsx file to see all-time store records.')
+      div({className:'empty-st-s'},'Load the Records - Total Day - Sun-Sat - Total.xlsx file, or load daily sales/ops data, to see store records.')
     )
   );
 
@@ -2420,10 +2483,10 @@ function StoreRecordsTab({ds, loc, name}) {
     total_transactions:  {l:'Total Transactions',fmt:'num',   icon:'💰', col:'#10b981'},
   };
 
-  const entries = Object.entries(recs)
+  const entries = recs ? Object.entries(recs)
     .filter(([k,v])=>k!=='loc'&&v&&v.value>0)
     .map(([k,v])=>({key:k, ...v, meta:LABELS[k]||{l:v.label||k, fmt:'num', icon:'📊', col:'var(--text3)'}}))
-    .sort((a,b)=>a.meta.l.localeCompare(b.meta.l));
+    .sort((a,b)=>a.meta.l.localeCompare(b.meta.l)) : [];
 
   const fmtRec = (val, fmt) => {
     if(fmt==='dollar') return f$(val);
@@ -2431,42 +2494,147 @@ function StoreRecordsTab({ds, loc, name}) {
     return val.toLocaleString();
   };
 
+  // ── Live-data record cards (dispatch #200) — same visual idiom as the Excel cards above,
+  // driven by computeRecords()'s output instead of ds.records[loc]. ────────────────────────
+  const liveCard = (key, label, icon, col, valStr, sub, lower) => div({key,style:{
+      background:'var(--surf2)', border:`.5px solid ${col}40`, borderRadius:'var(--rl)',
+      padding:'12px 14px', position:'relative', overflow:'hidden'}},
+    div({style:{position:'absolute',top:0,left:0,width:3,height:'100%',background:col,borderRadius:'3px 0 0 3px'}}),
+    div({style:{paddingLeft:8}},
+      div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}},
+        div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',color:col}},icon+' '+label),
+        lower&&span({style:{fontSize:'7px',color:'var(--text3)',marginTop:1}},'lower=better')
+      ),
+      div({style:{fontFamily:'var(--mono)',fontSize:'22px',fontWeight:800,color:col,marginBottom:4}},valStr||'—'),
+      div({style:{fontSize:'9px',color:'var(--text3)'}},sub||'No data yet')
+    )
+  );
+
+  const liveCards = liveRec ? [
+    liveCard('sday','Best Day Sales','💰','#10b981', liveRec.sales.day&&rdF$2(liveRec.sales.day.val), liveRec.sales.day&&rdFDate(liveRec.sales.day.dk)),
+    liveCard('sweek','Best Week Sales','📅','#10b981', liveRec.sales.week&&rdF$2(liveRec.sales.week.val), liveRec.sales.week&&rdFWeekLabel(liveRec.sales.week.wdk)),
+    liveCard('smonth','Best Month Sales','📊','#10b981', liveRec.sales.month&&rdF$2(liveRec.sales.month.val), liveRec.sales.month&&rdFMonthLabel(liveRec.sales.month.ym)),
+    liveCard('gcday','Best Day GC','👥','#8b5cf6', liveRec.gc.day&&rdFGC(liveRec.gc.day.val), liveRec.gc.day&&rdFDate(liveRec.gc.day.dk)),
+    liveCard('avgchk','Best Avg Check','💳','#ec4899', liveRec.avgChk.day&&rdF$2(liveRec.avgChk.day.val), liveRec.avgChk.day&&rdFDate(liveRec.avgChk.day.dk)),
+    liveCard('bf','Best Breakfast Sales','🌅','#f59e0b', liveRec.bf.day&&rdF$2(liveRec.bf.day.val), liveRec.bf.day&&rdFDate(liveRec.bf.day.dk)),
+    liveCard('oepe','Best OEPE','⚡','#06b6d4', liveRec.speed.oepe&&rdFSec(liveRec.speed.oepe.val), liveRec.speed.oepe&&rdFDate(liveRec.speed.oepe.dk), true),
+    liveCard('kvs','Best KVS','🍟','#06b6d4', liveRec.speed.kvs&&rdFSec(liveRec.speed.kvs.val), liveRec.speed.kvs&&rdFDate(liveRec.speed.kvs.dk), true),
+    liveCard('r2p','Best R2P','📦','#06b6d4', liveRec.speed.r2p&&rdFSec(liveRec.speed.r2p.val), liveRec.speed.r2p&&rdFDate(liveRec.speed.r2p.dk), true),
+  ] : [];
+
+  const dowRows = liveRec ? RD_DOW_SHORT.map((label,i) => ({label, sales:liveRec.sales.dow[i], gc:liveRec.gc.dow[i]})) : [];
+
+  const RHdr = (l, align='left') => th({style:{padding:'5px 8px',background:'var(--surf3)',fontSize:'8px',
+    textTransform:'uppercase',letterSpacing:'.3px',color:'var(--text2)',textAlign:align,borderBottom:'.5px solid var(--bdr)'}},l);
+
   return div({style:{padding:2}},
-    div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:14}},
-      div({style:{fontSize:'13px',fontWeight:700}},'🏆 All-Time Store Records'),
-      div({style:{fontSize:'10px',color:'var(--text3)'}},'Best single-day performance on record')
+    recs && div(null,
+      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:14}},
+        div({style:{fontSize:'13px',fontWeight:700}},'🏆 All-Time Store Records'),
+        div({style:{fontSize:'10px',color:'var(--text3)'}},'Uploaded file · best single-day performance on record')
+      ),
+      div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8,marginBottom:20}},
+        entries.map((rec,i)=>div({key:i,style:{
+          background:'var(--surf2)',
+          border:`.5px solid ${rec.meta.col}40`,
+          borderRadius:'var(--rl)',padding:'12px 14px',
+          position:'relative',overflow:'hidden'}},
+          div({style:{position:'absolute',top:0,left:0,width:3,height:'100%',background:rec.meta.col,borderRadius:'3px 0 0 3px'}}),
+          div({style:{paddingLeft:8}},
+            div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}},
+              div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',
+                color:rec.meta.col}},rec.meta.icon+' '+rec.meta.l),
+              rec.meta.lower&&span({style:{fontSize:'7px',color:'var(--text3)',marginTop:1}},'lower=better')
+            ),
+            div({style:{fontFamily:'var(--mono)',fontSize:'22px',fontWeight:800,
+              color:rec.meta.col,marginBottom:4}},fmtRec(rec.value, rec.meta.fmt)),
+            div({style:{fontSize:'9px',color:'var(--text3)'}},
+              rec.date
+                ? '📅 '+rec.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+                : 'Date unknown'
+            )
+          )
+        ))
+      ),
+      entries.length===0&&div({style:{color:'var(--text3)',padding:16,fontSize:'11px',marginBottom:20}},
+        'No records found in loaded file.'),
     ),
-    div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}},
-      entries.map((rec,i)=>div({key:i,style:{
-        background:'var(--surf2)',
-        border:`.5px solid ${rec.meta.col}40`,
-        borderRadius:'var(--rl)',padding:'12px 14px',
-        position:'relative',overflow:'hidden'}},
-        // Color accent bar
-        div({style:{position:'absolute',top:0,left:0,width:3,height:'100%',background:rec.meta.col,borderRadius:'3px 0 0 3px'}}),
-        div({style:{paddingLeft:8}},
-          div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}},
-            div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',letterSpacing:'.4px',
-              color:rec.meta.col}},rec.meta.icon+' '+rec.meta.l),
-            rec.meta.lower&&span({style:{fontSize:'7px',color:'var(--text3)',marginTop:1}},'lower=better')
+
+    // ── Live-data records (dispatch #200) ─────────────────────────────────
+    liveRec && div(null,
+      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6,marginTop:recs?8:0}},
+        div({style:{fontSize:'13px',fontWeight:700}},'📈 Live Data Records'),
+        div({style:{fontSize:'10px',color:'var(--text3)'}},'Computed from daily sales/ops data already loaded — updates automatically, no upload needed')
+      ),
+      div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8,marginBottom:14}},
+        liveCards
+      ),
+
+      // Day-of-week breakdown
+      div({style:{fontSize:'11px',fontWeight:700,color:'var(--text2)',marginBottom:6}},'Day-of-Week Bests'),
+      div({style:{overflowX:'auto',marginBottom:16}},
+        tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+          h('thead',null,tr(null,RHdr('Day'),RHdr('Best Sales','right'),RHdr('Date','right'),RHdr('Best GC','right'),RHdr('Date','right'))),
+          h('tbody',null,dowRows.map((r,i)=>tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
+            td({style:{padding:'5px 8px',fontWeight:600,fontSize:'10px'}},r.label),
+            td({style:{padding:'5px 8px',fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right'}},r.sales?rdF$2(r.sales.val):'—'),
+            td({style:{padding:'5px 8px',fontSize:'9px',color:'var(--text3)',textAlign:'right'}},r.sales?rdFDate(r.sales.dk):'—'),
+            td({style:{padding:'5px 8px',fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right'}},r.gc?rdFGC(r.gc.val):'—'),
+            td({style:{padding:'5px 8px',fontSize:'9px',color:'var(--text3)',textAlign:'right'}},r.gc?rdFDate(r.gc.dk):'—'),
+          )))
+        )
+      ),
+
+      // Recent record breaks
+      div({style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+        div({style:{fontSize:'11px',fontWeight:700,color:'var(--text2)'}},`Recent Record Breaks — Last ${liveWindow} Days`),
+        sel({value:liveWindow,onChange:e=>setLiveWindow(+e.target.value),
+          style:{marginLeft:'auto',background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',color:'var(--text)',fontSize:'9px',padding:'2px 6px'}},
+          opt({value:30},'30 days'),opt({value:60},'60 days'),opt({value:90},'90 days'),opt({value:180},'180 days'),
+        )
+      ),
+      liveBreaks.length===0
+        ? div({style:{color:'var(--text3)',padding:'10px 0',fontSize:'10px',marginBottom:16}},`No records broken in the last ${liveWindow} days.`)
+        : div({style:{overflowX:'auto',marginBottom:16}},
+            tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+              h('thead',null,tr(null,RHdr('Date'),RHdr('Record'),RHdr('New','right'),RHdr('Previous','right'),RHdr('Status'))),
+              h('tbody',null,liveBreaks.map((b,i)=>{
+                const fVal = b.isLow ? rdFSec : b.type.includes('GC') ? rdFGC : rdF$2;
+                const dLabel = b.type.includes('Week') ? rdFWeekLabel(b.dk) : b.type.includes('Month') ? rdFMonthLabel(b.dk) : rdFDate(b.dk);
+                return tr({key:i,style:{borderBottom:'.5px solid var(--bdr)',background:b.isProvisional?'rgba(249,115,22,.06)':'transparent'}},
+                  td({style:{padding:'5px 8px',fontSize:'9px'}},dLabel),
+                  td({style:{padding:'5px 8px',fontSize:'10px'}},b.type),
+                  td({style:{padding:'5px 8px',fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right',fontWeight:700,color:b.isProvisional?'#f97316':'var(--amber)'}},fVal(b.val)),
+                  td({style:{padding:'5px 8px',fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right',color:'var(--text3)'}},b.prev!=null?fVal(b.prev):'first record'),
+                  td({style:{padding:'5px 8px',fontSize:'9px'}},b.isProvisional?'⏳ provisional':'✓ confirmed'),
+                );
+              }))
+            )
           ),
-          div({style:{fontFamily:'var(--mono)',fontSize:'22px',fontWeight:800,
-            color:rec.meta.col,marginBottom:4}},fmtRec(rec.value, rec.meta.fmt)),
-          div({style:{fontSize:'9px',color:'var(--text3)'}},
-            rec.date
-              ? '📅 '+rec.date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
-              : 'Date unknown'
+
+      // Top days
+      liveTop.length>0 && div(null,
+        div({style:{fontSize:'11px',fontWeight:700,color:'var(--text2)',marginBottom:6}},'Top Days'),
+        div({style:{overflowX:'auto'}},
+          tbl({style:{width:'100%',borderCollapse:'collapse',fontSize:'10px'}},
+            h('thead',null,tr(null,RHdr('Date'),RHdr('Sales','right'),RHdr('GC','right'))),
+            h('tbody',null,liveTop.slice(0,10).map((d,i)=>tr({key:i,style:{borderBottom:'.5px solid var(--bdr)'}},
+              td({style:{padding:'5px 8px',fontSize:'9px'}},rdFDate(d.dk)),
+              td({style:{padding:'5px 8px',fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right'}},rdF$2(d.sales)),
+              td({style:{padding:'5px 8px',fontFamily:'var(--mono)',fontSize:'10px',textAlign:'right'}},d.gc?rdFGC(d.gc):'—'),
+            )))
           )
         )
-      ))
+      ),
     ),
-    entries.length===0&&div({style:{color:'var(--text3)',padding:16,fontSize:'11px'}},
-      'No records found in loaded file.'),
+
     h(AITabInsight,{label:'AI Records Analysis',
       buildPrompt:()=>{
-        if(!recs) return 'No records data.';
-        const entries=Object.entries(recs).slice(0,8).map(([k,v])=>k+':'+(typeof v==='object'?JSON.stringify(v).slice(0,40):String(v))).join(', ');
-        return 'McDonald\'s store records for '+name+'. Records: '+entries+'. Which records are most at risk of being broken given current trends? Which represent the biggest operational gaps? Give specific improvement actions.';
+        const parts=[];
+        if(recs) parts.push('Uploaded all-time records: '+Object.entries(recs).slice(0,8).map(([k,v])=>k+':'+(typeof v==='object'?JSON.stringify(v).slice(0,40):String(v))).join(', '));
+        if(liveRec) parts.push('Live-data records: best day sales '+(liveRec.sales.day?rdF$2(liveRec.sales.day.val):'—')+', best week '+(liveRec.sales.week?rdF$2(liveRec.sales.week.val):'—')+', best OEPE '+(liveRec.speed.oepe?rdFSec(liveRec.speed.oepe.val):'—')+'.');
+        if(!parts.length) return 'No records data.';
+        return 'McDonald\'s store records for '+name+'. '+parts.join(' ')+'. Which records are most at risk of being broken given current trends? Which represent the biggest operational gaps? Give specific improvement actions.';
       }})
   );
 }

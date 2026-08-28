@@ -1,10 +1,20 @@
 // @vitest-environment happy-dom
 // @ts-nocheck
-// Integration smoke test (dispatch #38) — mounts the ACTUAL RegisterAuditTab consumer, not just
-// RevealName in isolation, per CLAUDE.md's "would this verification still pass if the change
-// were reverted" rule: a test that only exercises RevealName can't tell "wired into the panel"
-// from "wired into the panel but the prop got dropped at one of the 9 call sites." This renders
-// the Overview table + narrative and clicks through one real reveal.
+// Integration smoke test (dispatch #200, rewrite of dispatch #38's original) — mounts the
+// ACTUAL RegisterAuditTab consumer, not just a unit around register-audit.js, per CLAUDE.md's
+// "would this verification still pass if the change were reverted" rule: a test that only
+// exercises analyzeRegisterAudit() can't tell "wired into the panel" from "wired into the panel
+// but a call site still hides the name behind RevealName."
+//
+// Dispatch #200 (Task Group B) removed the click/reason/RPC reveal gate for Register Audit
+// specifically -- owner, live: "on the Register Audit tab, no need to hide the employee names
+// here. anyone with access to register audit on qsrsoft can see names anyway." Investigated
+// first, per the dispatch's own instruction: audit_rows.emp (the plaintext name) was ALREADY
+// present, unredacted, in every row this panel loads -- analyzeRegisterAudit() was discarding
+// it before returning employee objects to the panel. So this is a display-only change; nothing
+// about what data reaches the browser changes. RevealName itself (dispatch #38) is UNCHANGED
+// and stays covered by reveal-name.test.js -- it's still load-bearing for Security Findings
+// (security-panel.js), whose underlying data genuinely has no raw name alongside the token.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -25,7 +35,7 @@ const AUDIT_ROWS = [
     refundCnt: 0, refundCash: 0, refundCashless: 0, promoAmt: 0 },
 ];
 
-describe('RegisterAuditTab — reveal wired through the actual panel (dispatch #38)', () => {
+describe('RegisterAuditTab — employee names render directly, no reveal gate (dispatch #200)', () => {
   let container, root;
   beforeEach(() => {
     _resetLazyFillForTests();
@@ -41,29 +51,31 @@ describe('RegisterAuditTab — reveal wired through the actual panel (dispatch #
     delete window.prompt;
   });
 
-  it('shows a reveal affordance (not a name, not raw "Unknown") in the Overview table for a real token', async () => {
+  it('shows the real name directly in the Overview table — no reveal click, no RPC call', async () => {
     await act(async () => {
       root.render(React.createElement(RegisterAuditTab, { ds: { auditRows: AUDIT_ROWS }, loc: '0043380' }));
     });
-    expect(container.textContent).toMatch(/reveal/i);
-    expect(container.textContent).not.toContain('Aaden W');
+    expect(container.textContent).toContain('Aaden W');
+    expect(container.textContent).not.toMatch(/reveal/i);
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(window.prompt).not.toHaveBeenCalled();
   });
 
-  it('clicking the table-cell reveal resolves the name AND updates the narrative paragraph below it, from one shared cache', async () => {
-    rpcMock.mockResolvedValue({ data: 'Aaden W', error: null });
+  it('the name also appears directly in the narrative paragraph below the table, same data, no second lookup', async () => {
     await act(async () => {
       root.render(React.createElement(RegisterAuditTab, { ds: { auditRows: AUDIT_ROWS }, loc: '0043380' }));
     });
-
-    const cell = container.querySelector('td span'); // the table-cell RevealName
-    expect(cell).toBeTruthy();
-    await act(async () => { cell.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-
-    expect(rpcMock).toHaveBeenCalledWith('reveal_employee_identity', { p_token: 'tok-aaden', p_reason: 'cash variance follow-up' });
-    // Revealed once -> appears everywhere in the panel (table cell AND the narrative's Cash
-    // Over/Short paragraph, both reading the SAME lifted `revealed` cache) without a 2nd prompt.
     const occurrences = (container.textContent.match(/Aaden W/g) || []).length;
-    expect(occurrences).toBeGreaterThanOrEqual(2);
-    expect(window.prompt).toHaveBeenCalledTimes(1);
+    expect(occurrences).toBeGreaterThanOrEqual(2); // table cell + narrative(s)
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it('a pre-backfill row with no name falls back to the token, not a raw click target', async () => {
+    const rowsNoName = [{ ...AUDIT_ROWS[0], emp: '', empToken: null }];
+    await act(async () => {
+      root.render(React.createElement(RegisterAuditTab, { ds: { auditRows: rowsNoName }, loc: '0043380' }));
+    });
+    expect(container.textContent).toContain('Unknown');
+    expect(container.textContent).not.toMatch(/reveal/i);
   });
 });

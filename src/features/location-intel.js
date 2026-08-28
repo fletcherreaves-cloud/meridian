@@ -361,7 +361,7 @@ async function liGenerateAI(stats,roadmap,onUpdate){
     onUpdate(text);
   }catch(e){onUpdate('Error generating AI narrative: '+e.message);}
 }
-function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
+function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedded}){
   var [mode,setMode]=React.useState('statistical');
   var [activeLevel,setActiveLevel]=React.useState(scope||'store');
   var [selLoc,setSelLoc]=React.useState(store?store.loc:(allStores&&allStores[0]&&allStores[0].loc)||'');
@@ -434,9 +434,10 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
     oppAction:{fontSize:'10px',color:'#818cf8',lineHeight:1.4},
     findRow:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',padding:'8px 0',borderBottom:'.5px solid var(--bdr)',gap:12},
   };
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
-    div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
+  var cardStyle=embedded
+    ?{background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',borderRadius:'var(--rl)',border:'.5px solid var(--bdr)'}
+    :{flex:1,background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'};
+  var card=div({style:cardStyle},
       // HEADER
       div({style:{padding:'11px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:8,flexShrink:0,background:'var(--surf2)',flexWrap:'wrap'}},
         div({style:{fontSize:'13px',fontWeight:800,color:'var(--amber)',flexShrink:0}},'📊 Location Intelligence'),
@@ -458,7 +459,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
         mode==='ai'&&btn({className:'btn btn-sm btn-a',style:{fontSize:'9px'},onClick:handleGenAI,disabled:generating||noData},generating?'⏳ Generating…':'⚡ Generate'),
         btn({className:'btn btn-sm',style:{fontSize:'9px'},onClick:handlePrint,title:'Print / Save as PDF'},'🖨 Print'),
         btn({className:'btn btn-sm',style:{fontSize:'9px'},onClick:handleDownload,title:'Download HTML report'},'⬇ Download'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕')
+        !embedded&&btn({className:'btn btn-sm',onClick:onClose},'✕')
       ),
       // BODY
       div({style:{flex:1,overflowY:'auto',padding:18}},
@@ -627,7 +628,10 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose}){
           );
         })()
       )
-    )
+  );
+  return embedded?card:div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
+    div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
+    card
   );
 }
 
