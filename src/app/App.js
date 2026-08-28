@@ -195,7 +195,10 @@ const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-rev
 // lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
-const CountCyclePanel = lazyPanel(() => import('../views/count-cycle-panel.js').then(m => ({ default: m.CountCyclePanel })));
+// CountCyclePanel — dispatch #189: no longer its own lazyPanel entry here. It's still used,
+// but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
+// imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
+// entry point" pattern as LifeLenzBridgePanel/ForecastAccuracyPanel above (dispatch #106).
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
 // Time Punches (dispatch #138) — companion to Crew Schedule Lookup just above, same
 // lazy-panel/route-panel wiring shape.
@@ -657,9 +660,39 @@ function App() {
   // opening a route panel replaces the content area exactly like a view change, but leaves
   // view/selStore untouched underneath, so closing it reveals whatever was already selected —
   // see the render gates below (`view==='command'&&!anyModalOpen&&!routePanel&&...`).
-  const [routePanel, setRoutePanel] = useState(() => parseRoute(typeof location !== 'undefined' ? location.search : ''));
+  // Dispatch #189 — count-cycle's registry entry lost route:true (folded into eom-dashboard's
+  // Count Cycle tab), so parseRoute/isRoutePanelId now correctly say it ISN'T a route id any
+  // more. But real bookmarked/shared `?panel=count-cycle` links from before the merge still
+  // exist and must land somewhere real, not the default view. Read the RAW query param once,
+  // outside parseRoute (routing.js stays generic — it has no idea individual panels get
+  // merged), at the one place other than a popstate that routePanel's initial value is decided.
+  const legacyRouteParam = (search) =>
+    typeof URLSearchParams !== 'undefined' ? new URLSearchParams(search || '').get('panel') : null;
+  const [routePanel, setRoutePanel] = useState(() => {
+    const search = typeof location !== 'undefined' ? location.search : '';
+    return legacyRouteParam(search) === 'count-cycle' ? 'eom-dashboard' : parseRoute(search);
+  });
   const goRoute = (id) => { pushRoute(id); setRoutePanel(id); };
-  React.useEffect(() => onRouteChange(setRoutePanel), []);
+  React.useEffect(() => onRouteChange((id) => {
+    // Same legacy-redirect check as the initializer above, for browser back/forward (or a
+    // pasted URL while the app is already mounted) landing on the old param — onRouteChange's
+    // own `id` has already been through the strict parseRoute filter by this point and would
+    // otherwise come through as null.
+    if (typeof location !== 'undefined' && legacyRouteParam(location.search) === 'count-cycle') {
+      setEomInitialMode('compliance'); setRoutePanel('eom-dashboard'); return;
+    }
+    setRoutePanel(id);
+  }), []);
+  // One-shot: rewrite a legacy count-cycle URL to the real, current one on first mount, so a
+  // refresh (or copying the URL back out) doesn't need this redirect a second time. Mirrors
+  // goRoute's own pushRoute call — this is the same "the URL reflects reality" contract, just
+  // firing once for an inbound legacy link instead of on every click. eomInitialMode/routePanel
+  // themselves are already correct from their own initializers above by the time this runs.
+  React.useEffect(() => {
+    if (legacyRouteParam(typeof location !== 'undefined' ? location.search : '') === 'count-cycle') {
+      pushRoute('eom-dashboard');
+    }
+  }, []);
   const [selStore, setSelStore]   = useState(null);
   const [locScope,   setLocScope]   = useState('all');
   const [dateRange, setDateRange] = useState(()=>thisWeek());
@@ -709,6 +742,17 @@ function App() {
   // showTargetsEditor removed — dispatch #135 item 3 moved this UI into Performance Review ->
   // Customize -> Targets (perfReviewsEntry below drives the redirect for old deep links).
   const [perfReviewsEntry, setPerfReviewsEntry] = useState(null); // {tab, section} | null — one-shot deep-link target for PerformanceReviewsPanel
+  // eomInitialMode (dispatch #189) — one-shot deep-link target for EOMDashboardPanel, same
+  // pattern as perfReviewsEntry above. Only ever set to 'compliance', when redirecting the
+  // retired count-cycle route (see the routePanel initializer/onRouteChange effect below and
+  // the modal==='count-cycle' branch further down). Self-contained lazy initializer (reads
+  // location.search directly, not derived from routePanel's own state) so a hard page load on
+  // a legacy `?panel=count-cycle` URL has the right value on EOMDashboardPanel's VERY FIRST
+  // render — routePanel's own initializer (below) already resolves to 'eom-dashboard' just as
+  // synchronously on that same first render, so the panel mounts with both correct together.
+  const [eomInitialMode, setEomInitialMode] = useState(() =>
+    (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('panel') === 'count-cycle') ? 'compliance' : null);
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   const [showPlanningHub, setShowPlanningHub] = useState(false);   // Notes 24 Planning hub
   const [planningTab, setPlanningTab] = useState('targets');
@@ -754,7 +798,9 @@ function App() {
   const [showRevIntel,setShowRevIntel] = useState(false);
   const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
   const [showOpportunity,setShowOpportunity] = useState(false); // Opportunity $ v1
-  // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle' (see routePanel above).
+  // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle', then dispatch
+  // #189 folded that route into routePanel==='eom-dashboard' (see routePanel above) as
+  // EOMDashboardPanel's Count Cycle tab (eomInitialMode==='compliance').
   const [showNews, setShowNews] = useState(false);
   const [showAIScan, setShowAIScan]    = useState(false);
   const [showDialedIn, setShowDialedIn]= useState(false);
@@ -2904,7 +2950,10 @@ function App() {
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
         if(modal==='inventory')      perm('analytics.store')&&setShowInventory(true);
-        if(modal==='count-cycle')    perm('analytics.store')&&goRoute('count-cycle');
+        // 'count-cycle' — dispatch #189: no longer its own panel, redirects into Inventory
+        // Control's Count Cycle tab (mirrors 'targets-editor' just above) so an old deep link
+        // doesn't 404.
+        if(modal==='count-cycle')    perm('analytics.store')&&(setEomInitialMode('compliance'),goRoute('eom-dashboard'));
         if(modal==='news')           perm('analytics.store')&&setShowNews(true);
         if(modal==='fob-analysis')   perm('analytics.store')&&goRoute('fob-analysis');
         if(modal==='fob-eom')        perm('analytics.store')&&goRoute('fob-eom');
@@ -3055,19 +3104,21 @@ function App() {
         onBack:()=>goRoute(null),
       }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       // Dispatch #55 Part B (Job C Batch 1) — six overlay-to-page conversions. sched-hub,
-      // perf-reviews, eom-dashboard and count-cycle carry RoutePanelShell inside their own
-      // component (they already rendered their own header chrome). fob-analysis ORIGINALLY had
-      // no internal chrome and was wrapped in RoutePanelShell directly here too — Dispatch #188
-      // moved RoutePanelShell inside FOBAnalysisPanel itself (same "shell inside the component"
+      // perf-reviews and eom-dashboard carry RoutePanelShell inside their own component (they
+      // already rendered their own header chrome). fob-analysis ORIGINALLY had no internal
+      // chrome and was wrapped in RoutePanelShell directly here too — Dispatch #188 moved
+      // RoutePanelShell inside FOBAnalysisPanel itself (same "shell inside the component"
       // pattern as this line's own siblings) while merging fob-eom into it as an EOM mode, so it
-      // renders unwrapped below now, same shape as sched-hub.
+      // renders unwrapped below now, same shape as sched-hub. count-cycle (its own seventh entry
+      // in this batch) was retired by dispatch #189, folded into eom-dashboard as a tab — see
+      // eomInitialMode below.
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
       routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
         dataReady:cloudStreamsReady,
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
-      routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
-      routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
+      routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,initialMode:eomInitialMode,
+        onClose:()=>{setEomInitialMode(null);goRoute(null);}}),
       // above-store/leader-one-pager — Dispatch #160 (panel-contract pass): RoutePanelShell now
       // lives inside AboveStoreOnePager/OnePagerPanel themselves, same "shell inside the
       // component" pattern as sched-hub/perf-reviews/eom-dashboard/count-cycle above.
@@ -3221,8 +3272,9 @@ function App() {
     // (RoutePanelShell now lives inside OnePagerPanel itself; see routePanel==='leader-one-pager').
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
-    // count-cycle — Dispatch #55 Part B: moved to the routePanel gate in the main content area
-    // (RoutePanelShell now lives inside CountCyclePanel itself; see routePanel==='count-cycle').
+    // count-cycle — Dispatch #55 Part B moved this to the routePanel gate; dispatch #189
+    // retired it entirely, folded into routePanel==='eom-dashboard' as a tab (see
+    // eomInitialMode above / CountCycleSection in eom-dashboard.js).
     showNews&&h(NewsPanel,{onClose:()=>setShowNews(false)}),
     showAIScan&&h(ModalShell,{
       title:'🔍 Historical Sales Anomaly Scan',

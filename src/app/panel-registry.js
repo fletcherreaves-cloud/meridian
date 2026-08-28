@@ -77,7 +77,14 @@ export const PANELS = [
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
-  { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
+  // count-cycle CONVERTED 2026-08-28 (dispatch #189, owner-approved 2026-08-10) from a
+  // standalone route:true entry to kind:'hub-tab' -- same "opens a hub and selects a tab, no
+  // sidebar entry of its own" pattern this registry already uses for fcst-accuracy/
+  // targets-editor/sched-retention etc (see the `kind` field doc above). Opening 'count-cycle'
+  // now selects EOMDashboardPanel's Count Cycle tab and routes to 'eom-dashboard', exactly
+  // like 'targets-editor' selects PerformanceReviewsPanel's Customize>Targets tab. Its own
+  // component (CountCycleSection, src/views/count-cycle-panel.js) is reused as-is, not deleted.
+  { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'hub-tab', section:'inventory-food-cost' },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
   // fcst-accuracy CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true

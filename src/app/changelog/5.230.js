@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.228', date:'2026-08-28', changes:[
+export default {version:'5.230', date:'2026-08-28', changes:[
   'Dispatch #188 -- merged End of Month (fob-eom, FOBEOMPanel) into Food Cost (fob-analysis, '
   + 'FOBAnalysisPanel) as a mode/tab, per the owner\'s 2026-08-10 decision '
   + '(memory/decisions-panel-inventory-2026-08-10.md). Harvested FOBEOMPanel\'s full '
