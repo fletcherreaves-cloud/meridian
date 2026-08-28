@@ -12,6 +12,7 @@
 //   /raw_waste_promo?start&end         → mapWasteEvents    (per-entry, manager-attributed)
 //   /raw_detail/{itemId}?start&end     → mapRawItemHistory (forensic count-timing register)
 //   /raw_info/{itemId}?start&end       → mapRawItemInfo    (recipe/serving-factor + current cost snapshot)
+//   /menuitems                         → mapMenuItems      (per-store menu-item catalog, dispatch #186)
 import { normClass } from './eom-inventory.js';
 
 // ── Variance Stat rows ────────────────────────────────────────────────────────
@@ -250,4 +251,29 @@ export function mapRawItemInfo(detail = {}) {
     menuItemCombos: Array.isArray(detail.menu_item_combos) ? detail.menu_item_combos : [],
     uptHist: Array.isArray(detail.upt_hist) ? detail.upt_hist : [],
   };
+}
+
+// ── Menu items catalog (GET /menuitems) — dispatch #186 ────────────────────────
+// The store's full definable menu-item catalog: [{ data, value }], `data` =
+// store_menuitem_id (the SAME id space menu_item_activity2/menu_item_activity_cost key
+// off, dispatch #185), `value` = "{item_number} - {description}". Catalog/reference
+// data, not a per-transaction log -- one row per (store, store_menuitem_id), full
+// replace on every pull. Real live capture (memory/captures/menu-items-list-2026-08-28.json,
+// store 3708, 5,466 rows) matched the "digits - text" pattern on every single row, but a
+// future store/item could plausibly not -- unmatched rows keep their raw `value` with
+// itemNumber/description left null rather than being dropped.
+const MENU_ITEM_VALUE_RE = /^(\d+)\s*-\s*(.*)$/;
+export function mapMenuItems(rows = []) {
+  return (rows || [])
+    .filter(r => r && r.data != null)
+    .map(r => {
+      const value = r.value != null ? String(r.value) : '';
+      const m = MENU_ITEM_VALUE_RE.exec(value);
+      return {
+        storeMenuitemId: r.data,
+        itemNumber: m ? Number(m[1]) : null,
+        description: m ? m[2] : null,
+        value,
+      };
+    });
 }

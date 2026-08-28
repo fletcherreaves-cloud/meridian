@@ -1,8 +1,18 @@
 # Finding: no clean way yet to enumerate `store_menuitem_id` for a store (dispatch #185)
 
-**Verdict: dispatch #185 cannot wire a real pull.** All three enumeration paths the dispatch doc
-named were checked and each comes up empty for this specific ID space. This is a docs-only
-outcome, matching the precedent set by dispatches #172/#177/#178/#181.
+**✅ RESOLVED 2026-08-28 (dispatch #186) — the owner captured the missing request.**
+`GET /api/inv/{nsn}/menuitems` (`memory/dispatch-186.md`) returns exactly the enumeration this
+finding says is needed: `[{data: store_menuitem_id, value: "{item_number} - {description}"}, ...]`
+for a store's full catalog. Wired into `scripts/qsrsoft-menu-items-pull.mjs` →
+`qsr_menu_items`. The real-activity subset sizing question this unblocks (dispatch #185 task 3 /
+dispatch #186 task 3) is answered in `memory/finding-menu-item-activity-subset-2026-08-28.md`.
+The `menu_item_activity2`/`menu_item_activity_cost` pull itself is still NOT wired (deliberately
+out of scope for #186 too — sized against that finding's numbers in a follow-up dispatch).
+
+**Verdict (as of dispatch #185, now superseded above): dispatch #185 cannot wire a real pull.**
+All three enumeration paths the dispatch doc named were checked and each comes up empty for this
+specific ID space. This is a docs-only outcome, matching the precedent set by dispatches
+#172/#177/#178/#181.
 
 ## The gap, precisely
 
