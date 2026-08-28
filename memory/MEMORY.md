@@ -84,6 +84,47 @@ for records that live at their own path: `dispatchNN-topic.md` above):
   ever writes that name.
 
 ## ⭐ READ FIRST — latest handoff & vision
+- **Closing out #165's stream-redundancy audit (2026-08-27/28) — dispatches #180-181, the last two
+  items on that list.** PM-initiated (not owner-requested) continuation of the backlog-clearing
+  work after the EOM audit wrapped, picking the two remaining flagged-not-fixed items from
+  `audit-emailed-stream-redundancy-2026-08-27.md`.
+  - **✅ SHIPPED (v5.223): [Dispatch #180 — `promoAmt`/`promoPct` finish "API over
+    email"](dispatch-180.md), PR #875.** The last remaining item from #165's audit that already
+    had a clean measured 97-98% field match (`glimpseRows.promoAmt` vs
+    `qsr_cash_sheet.metrics.promo_amt`) — same fix shape as dispatch #175's already-shipped
+    cashOS/posOver fix. `loadOpsCashSheet` gained `promoAmt` (straight alias) and `promoPct`
+    (net-sales-weighted derive, copying `discPct`'s exact pattern, since `qsr_cash_sheet` has no
+    `promo_pct` column — only `cash_over_or_short`-style fields had a precomputed %).
+    `metric-source.js`'s `promoAmt`/`promoPct` chains got `opsCashRows` as the first source, email/
+    manual kept as fallback. 18 new tests, 292/292 files, 3037/3037 tests, build clean (552.72 KB
+    eager, 297.28 KB under budget).
+  - **✅ INVESTIGATED, NO FIX (docs-only): [Dispatch #181 — `empMealAmt`/`mgrMealAmt`(+counts)
+    reconciliation](dispatch-181.md → finding-emp-mgr-meal-reconciliation-2026-08-28.md), PR
+    #876.** #165's audit had explicitly flagged this pair as NOT yet reconciliation-tested (unlike
+    promo/posOver) — this dispatch measured it before touching anything, per that instruction.
+    **Two-layer finding.** (1) The comparison as originally posed is unanswerable:
+    `daily_glimpse_daily.emp_meal_amt`/`mgr_meal_amt`/`emp_meal_cnt`/`mgr_meal_cnt` have been
+    **0 for 100% of the table's history** (1,431/1,431 rows) — confirmed by downloading 4 real
+    CSVs spanning the pipeline's full operating history (2026-07-31 through 2026-08-26): none
+    contain a `Meal`/`Discount` column at all. **This directly contradicts
+    `supabase/schema-glimpse-meals.sql`'s comment that the owner confirmed both fields are in the
+    Daily Glimpse report** (Notes 60, 2026-08-08) — whatever was true then isn't true of any file
+    this pipeline has actually ingested since. Not a Meridian parsing bug (no wrong header to fix,
+    the columns simply aren't present) — a QSRSoft report-subscription config question, flagged as
+    an owner action item. Nothing in the app is currently broken by this: the affected chains use
+    `mode:'pos'` (requires `v>0`), so glimpse's structural 0 is already correctly rejected and
+    falls through to `ctrlRows`/`auditRows`, verified directly not assumed.
+    (2) Substituted `audit_rows` (register audit, itself auto-pulled) as independent ground truth
+    against `qsr_cash_sheet`: **71.3% (empMeal) / 67.5% (mgrMeal) match** at $1 tolerance, 647
+    store-days, all 27 stores. Day-boundary hypothesis tested directly and refuted (same-day match
+    75%/72% far exceeds a ±1-day shift at 20%/9%). Mismatch is **store-clustered, not random** —
+    some stores (6178, 6838) match to the penny every sampled day, others (6972, 5183, 5985) are
+    off $100+ every sampled day — a real, measured gap, not a one-line header-name bug like #172
+    found for cash O/S. Below the dispatch's own ~90% bar to wire a chain — **no `METRIC_SOURCES`
+    change shipped**, chains keep their existing `glimpseRows` (inert, harmless) → `ctrlRows` →
+    `auditRows` order. Two follow-up leads written up for whoever picks this back up: the owner
+    checking QSRSoft's Daily Glimpse column-selection config, and investigating what the
+    high-gap-vs-clean-match stores have in common.
 - **EOM/inventory-count pending-items audit (2026-08-27, owner-requested ahead of the 3-day
   physical count starting Sat 2026-08-29) — dispatches #176-179, all shipped or honestly closed
   out same-day.** PM ran a verified sweep of every panel/engine file touching EOM/inventory/FOB
