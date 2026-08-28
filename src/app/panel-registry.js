@@ -45,7 +45,7 @@ export const PANELS = [
   { id:'about', label:'About', icon:'ℹ️', perm:null, kind:'nav', section:'admin' },
   { id:'above-store', label:'Above-Store One-Pager', icon:'📄', perm:'analytics.district', kind:'nav', section:'analytics', route:true },
   { id:'aiscan', label:'Anomaly Scan', icon:'🔍', perm:'analytics.ai', kind:'optional', section:'intelligence' },
-  { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily' },
+  { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily', route:true },
   { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics' },
   // Planning cluster, in the owner's own stated order (dispatch #54 Job B, 2026-08-21): "Planning
   // (the hub, keeping its five tabs) · Calendar · Events & Tags · Event Impact" -- four sidebar
@@ -141,7 +141,7 @@ export const PANELS = [
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
-  { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily' },
+  { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
   { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics' },
   { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics' },
   // Opportunity $ v1 (memory/design-opportunity-dollars.md) -- flagship "every performance gap
@@ -166,9 +166,9 @@ export const PANELS = [
   // links (#516) instead of Forecasting and Labor Projections where it belongs.
   { id:'proj', label:'Projections', icon:'▦', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:1 },
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
-  { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations' },
+  { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:2 },
-  { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports' },
+  { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports', route:true },
   { id:'record-day', label:'Record Days', icon:'🏆', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'daily', route:true },
   { id:'revintel', label:'Revenue', icon:'◈', perm:'analytics.store', kind:'optional', section:'analytics' },
@@ -194,9 +194,9 @@ export const PANELS = [
   // org_config.gm_identity_reveal_enabled condition this key can't express, happens live inside
   // src/views/security-panel.js's securityPanelAccess(). Never treat `perm:'security.view'`
   // alone as sufficient for a manager.
-  { id:'security', label:'Security', icon:'🔒', perm:'security.view', kind:'nav', section:'people' },
+  { id:'security', label:'Security', icon:'🔒', perm:'security.view', kind:'nav', section:'people', route:true },
   { id:'settings', label:'Settings', icon:'⚙', perm:'settings.view', kind:'nav', section:'admin' },
-  { id:'signals', label:'Signals', icon:'📡', perm:'analytics.store', kind:'nav', section:'analytics' },
+  { id:'signals', label:'Signals', icon:'📡', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   { id:'skills-matrix', label:'Skills Matrix', icon:'', perm:'analytics.store', kind:'hub-tab', section:'people' },
   { id:'smart-targets', label:'Smart Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   { id:'smart-targets-v2', label:'Smart Targets V2', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },

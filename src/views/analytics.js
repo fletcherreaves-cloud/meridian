@@ -25,6 +25,7 @@ import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.j
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
 import { CoachingModal } from './coaching-modal.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -5730,35 +5731,20 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
     );
   };
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:300,
-    display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'40px 20px',
-    overflowY:'auto'}},
+  return h(RoutePanelShell,{
+    title:'⚠ Needs Attention',
+    subtitle:'Ranked by worst finding per store · click a chip to filter',
+    onBack:onClose,
+  },
+    // Clickable severity chips (Notes 61 DV14) — moved into the body since RoutePanelShell
+    // has no subHeader slot (same treatment as perf-reviews' TabBar, dispatch #55 Part B).
+    div({style:{display:'flex',gap:8,padding:'0 0 10px',borderBottom:'.5px solid var(--bdr)',marginBottom:10,flexWrap:'wrap'}},
+      sevChip('Critical',critStores.length,'var(--crit)',filter==='critical',()=>toggleFilter('critical')),
+      sevChip('Watch',warnStores.length,'#f5bc00',filter==='watch',()=>toggleFilter('watch')),
+      sevChip('Acknowledged',ackHistory.length,'#10b981',ackOpen,()=>setAckOpen(p=>!p))
+    ),
 
-    div({style:{width:'100%',maxWidth:820,background:'var(--surf)',borderRadius:'var(--rl)',
-      border:'.5px solid rgba(239,68,68,.3)',overflow:'hidden',
-      boxShadow:'0 20px 60px rgba(0,0,0,.6)'}},
-
-      // Header
-      div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',
-        padding:'14px 20px',borderBottom:'.5px solid var(--bdr)',
-        background:'rgba(239,68,68,.06)'}},
-        div(null,
-          div({style:{fontSize:'14px',fontWeight:800,color:'var(--crit)',
-            letterSpacing:'-.2px'}},'⚠ Needs Attention'),
-          div({style:{fontSize:'9px',color:'var(--text3)',marginTop:2}},
-            'Ranked by worst finding per store · click a chip to filter')
-        ),
-        btn({className:'btn btn-sm',onClick:onClose},'✕')
-      ),
-
-      // Clickable severity chips (Notes 61 DV14)
-      div({style:{display:'flex',gap:8,padding:'10px 20px',borderBottom:'.5px solid var(--bdr)',flexWrap:'wrap'}},
-        sevChip('Critical',critStores.length,'var(--crit)',filter==='critical',()=>toggleFilter('critical')),
-        sevChip('Watch',warnStores.length,'#f5bc00',filter==='watch',()=>toggleFilter('watch')),
-        sevChip('Acknowledged',ackHistory.length,'#10b981',ackOpen,()=>setAckOpen(p=>!p))
-      ),
-
-      div({style:{maxHeight:'65vh',overflowY:'auto',padding:'10px 20px 16px'}},
+    div(null,
 
         // Pinned district strip — loc-less items, never sorted among stores.
         districtItems.length>0&&div({style:{marginBottom:12}},
@@ -5832,8 +5818,7 @@ function AttentionPanel({stores, ds, dateRange, swingAcks, swingItems, onSelectS
                   border:'.5px solid rgba(16,185,129,.2)'}},s.name||sNameC(s.loc)))
           )
         )
-      )
-    ),
+      ),
     // #208 — record the measured follow-up for a coaching cycle whose review came due.
     reviewCycle && h(CoachingModal, {
       mode: 'review', cycle: reviewCycle, ds,

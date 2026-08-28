@@ -42,7 +42,11 @@ const ROOTS = ['src/views', 'src/features'];
 // same dispatch, but its zIndex:4000 sat between `inset:0,` and `background:'rgba(0,0,0` on that
 // one line, so this regex never counted it in the first place — its removal doesn't move this
 // number, even though it's the same anti-pattern fixed the same way.
-const CEILING = 75;
+// Lowered 75 → 72 by dispatch #192 (URL migration batch 1): AttentionPanel (analytics.js),
+// RankingView (store-dash.js) and PromoRoiPanel (promo-roi.js) each hand-rolled this exact
+// backdrop shape and were converted to RoutePanelShell as part of their route:true conversion
+// (routePanel==='attention'/'ranking'/'promo-roi').
+const CEILING = 72;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

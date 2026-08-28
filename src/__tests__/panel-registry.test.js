@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the fifteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160, minus #140)', () => {
-    // Ratchet, not a ceiling: adding a sixteenth route panel is a real routing change (a new
+  it('is exactly the twenty-one panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192, minus #140)', () => {
+    // Ratchet, not a ceiling: adding a twenty-second route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -218,10 +218,19 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // memory/panel-contract.md item 4) converted 'above-store' (Above-Store One-Pager) and
     // 'leader-one-pager' (Leadership One-Pager) -- both genuine "send someone a link to this
     // rollup/review" destinations, same test the existing thirteen already passed, shell swapped
-    // to RoutePanelShell inside each component (thirteen -> fifteen).
+    // to RoutePanelShell inside each component (thirteen -> fifteen). Dispatch #192 (URL migration
+    // batch 1, owner-affirmed "convert pages to urls except where specified") added the next six:
+    // 'attention' (Needs Attention) and 'ranking' (Rankings) had their hand-rolled backdrop/header
+    // refactored to RoutePanelShell inside the component, same treatment as #55's count-cycle;
+    // 'security' and 'signals' had no internal chrome and are wrapped in RoutePanelShell directly
+    // at the App.js call site, same treatment as #55's fob-analysis/fob-eom; 'promo-roi' also had
+    // its hand-rolled backdrop refactored internally AND was lazy-wrapped (previously a static
+    // top-level import); 'morning-brief' had no internal chrome (wrapped at the call site) and was
+    // also lazy-wrapped (previously a static top-level import) (fifteen -> twenty-one).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'leader-one-pager', 'perf-reviews', 'proj', 'report', 'sched-hub', 'time-punches',
+      'above-store', 'attention', 'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
+      'forecast-reports', 'leader-one-pager', 'morning-brief', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report', 'sched-hub',
+      'security', 'signals', 'time-punches',
     ]);
   });
 
@@ -274,6 +283,19 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
     // And the state itself should be gone entirely -- not just unused -- since nothing else in
     // this batch needs the modal-visibility boolean once the panel is routed.
+    const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
+    expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
+  });
+
+  it('Dispatch #192: no setShowX(true) call site survives for the six converted booleans', () => {
+    // Same regression class as #55 Part B above, for this batch's six: attention/ranking/
+    // security/signals/promo-roi/morning-brief.
+    const REMOVED_SETTERS = [
+      'setShowAttention', 'setShowRanking', 'setShowSecurity', 'setShowSignals',
+      'setShowPromoRoi', 'setShowMorningBrief',
+    ];
+    const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
+    expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
     const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
     expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
   });
