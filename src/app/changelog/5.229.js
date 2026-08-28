@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.228', date:'2026-08-28', changes:[
+export default {version:'5.229', date:'2026-08-28', changes:[
   'Dispatch #189 -- merge Count Cycle into Inventory Control as a tab, per the owner\'s '
   + '2026-08-10 merge decision ("a view of the same data, not a separate job",  '
   + 'memory/decisions-panel-inventory-2026-08-10.md).\n\n'
