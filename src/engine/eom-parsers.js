@@ -13,6 +13,8 @@
 //   /raw_detail/{itemId}?start&end     → mapRawItemHistory (forensic count-timing register)
 //   /raw_info/{itemId}?start&end       → mapRawItemInfo    (recipe/serving-factor + current cost snapshot)
 //   /menuitems                         → mapMenuItems      (per-store menu-item catalog, dispatch #186)
+//   /menu_item_activity2 (POST)        → mapMenuItemActivity      (per-item, per-day counts, dispatch #193)
+//   /menu_item_activity_cost           → mapMenuItemActivityCost  (per-item, per-day $ cost, dispatch #193)
 import { normClass } from './eom-inventory.js';
 
 // ── Variance Stat rows ────────────────────────────────────────────────────────
@@ -276,4 +278,39 @@ export function mapMenuItems(rows = []) {
         value,
       };
     });
+}
+
+// ── Menu item activity (POST /menu_item_activity2) — dispatch #193 ─────────────
+// Per-item, per-day counts: activity/sold/emp_meal/mgr_meal/waste/promo/free_choice_qty.
+// Response wraps a `getMenuItemActivity` array under `currentBusinessTime` (dispatch #185's
+// captured sample); one entry per date_range in the requested window. The pull always requests
+// a SINGLE calendar day, so normally exactly one entry comes back — but this stays a general
+// array mapper (matching every other list mapper in this file) rather than assuming index [0],
+// and the pull script sums across entries as a defensive fallback if the API ever returns more
+// than one for a single-day request.
+export function mapMenuItemActivity(resp = {}) {
+  const rows = Array.isArray(resp?.getMenuItemActivity) ? resp.getMenuItemActivity : [];
+  return rows.map(r => ({
+    dateRange: r.date_range ?? null,
+    activity: Number(r.activity) || 0,
+    sold: Number(r.sold) || 0,
+    empMeal: Number(r.emp_meal) || 0,
+    mgrMeal: Number(r.mgr_meal) || 0,
+    waste: Number(r.waste) || 0,
+    promo: Number(r.promo) || 0,
+    freeChoiceQty: Number(r.free_choice_qty) || 0,
+    datetimeRange: r.datetime_range ?? null,
+  }));
+}
+
+// ── Menu item activity cost (GET /menu_item_activity_cost) — dispatch #193 ─────
+// Per-item, per-day QSRSoft-computed food+paper cost. Response is a single flat object (not a
+// list, unlike menu_item_activity2), matching menu_item_activity_cost's dispatch #185 sample.
+export function mapMenuItemActivityCost(resp = {}) {
+  return {
+    foodCost: resp?.food_cost != null ? Number(resp.food_cost) : null,
+    paperCost: resp?.paper_cost != null ? Number(resp.paper_cost) : null,
+    totalCost: resp?.total_cost != null ? Number(resp.total_cost) : null,
+    lastCloseBusinessDate: resp?.last_close_business_date ?? null,
+  };
 }
