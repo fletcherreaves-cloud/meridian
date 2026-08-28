@@ -10,6 +10,7 @@ import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchFo
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
 import { LocationIntelligence } from '../features/location-intel.js';
+import { FoodCostCockpitTab, LaborCockpitTab } from './store-cockpit.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -1851,6 +1852,8 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     {id:'scorecards',  l:'Scorecards'},
     {id:'brief',       l:'Intelligence Brief'},
     {id:'intelligence',l:'📊 Intelligence'},
+    {id:'foodcost',    l:'Food Cost'},
+    {id:'laborsched',  l:'Labor & Scheduling'},
     {id:'action',      l:'📋 Action Plan'},
     {id:'shift',       l:'⏱ Shift Analysis'},
     {id:'peaks',       l:'3 Peaks'},
@@ -2415,7 +2418,9 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
     tab==='register'   && h(RegisterAuditTab,{ds,loc:store.loc}),
     tab==='records'    && h(StoreRecordsTab,{ds,loc:store.loc,name:store.name}),
     tab==='insights'   && h(AIInsightsTab,{store,ds,settings}),
-    tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')})
+    tab==='intelligence'&&h(LocationIntelligence,{store,allStores,ds,settings,scope:'store',embedded:true,onClose:()=>setTab('overview')}),
+    tab==='foodcost'   && h(FoodCostCockpitTab,{store,ds}),
+    tab==='laborsched' && h(LaborCockpitTab,{store,ds})
   );
 }
 

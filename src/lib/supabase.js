@@ -2083,6 +2083,25 @@ export async function loadDailyActivityRange(startDate, endDate) {
     .range(lo, hi));
 }
 
+// Single-store hourly range (dispatch #204, Store Cockpit Labor & Scheduling tab) — same
+// columns as loadDailyActivityRange but scoped to one loc via .eq, so the intraday
+// deployment heat map doesn't pull all 27 stores' hourly rows to render one store's grid.
+// Trailing 6 weeks × 24 slots is well under the 1000-row cap, so no pagination needed, but
+// fetchAll is used anyway for the same truncation-safety this table's other readers get.
+export async function loadDailyActivityRangeForStore(loc, startDate, endDate) {
+  if (!supabase) return [];
+  const locPadded = String(loc).padStart(7, '0');
+  return fetchAll((lo, hi) => supabase
+    .from('qsr_daily_activity')
+    .select('loc,dt,hour_slot,dt_trans_cnt,actual_punched_hours,total_needed_hours,total_scheduled_hours')
+    .eq('loc', locPadded)
+    .gte('dt', startDate)
+    .lte('dt', endDate)
+    .order('dt')
+    .order('hour_slot')
+    .range(lo, hi));
+}
+
 // ── Hourly Projection Accuracy (2026-08-09) ──────────────────────────────────
 // Reads the small daily-computed rollup (supabase/schema-hourly-projection-accuracy.sql,
 // scripts/compute-hourly-projection-accuracy.mjs) instead of the raw qsr_daily_activity table —
