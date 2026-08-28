@@ -402,27 +402,21 @@ function PlanningHubPanel({ ds, stores, settings, customSignalDefs, initialTab, 
     tab === 'pace'    ? h(PaceToTargetPanel, common) :
     tab === 'yearly'  ? h(YearlyProjectionsPanel, common) :
                         h(SmartTargetsPanel, common);
-  // paddingBottom mirrors paddingTop (#192 P1) — without it the sheet's flex:1 fills all the way
-  // to the viewport's physical bottom edge, so a horizontally-scrolling table inside gets a
-  // native scrollbar glued to the screen edge with zero room to grab it (reported against
-  // Planning → Monthly; this hub shell is shared verbatim with the Scheduling hub below).
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 16, paddingBottom: 16 } },
-    div({ style: { flex: '0 0 16px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1200, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
-      // Hub header: title + tab strip + single close
-      div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        span({ style: { fontSize: 13, fontWeight: 800, color: 'var(--amber)', letterSpacing: '-.2px', flexShrink: 0 } }, 'Planning'),
-        div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap', flex: 1, minWidth: 0 } },
-          ...PLANNING_TABS.map(t => btn({ key: t.id, onClick: () => setTab(t.id),
-            title: t.label,
-            style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
-              border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
-              background: tab === t.id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
-              color: tab === t.id ? 'var(--amber)' : 'var(--text2)' } },
-            span({ style: { fontSize: 12 } }, t.icon), t.label))),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)', flexShrink: 0 }, onClick: onClose }, '✕')),
-      // Active tab body (only the active panel mounts)
-      div({ style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, active)));
+  // Dispatch #207: same "hand-rolled backdrop -> RoutePanelShell, tab-strip pulled into a local
+  // tabBar var" treatment SchedulingHubPanel below got under #55 Part B -- that conversion is
+  // this one's literal template, in the same file, zero extraction needed either time.
+  const tabBar = div({ style: { display: 'flex', gap: 2, flexWrap: 'wrap' } },
+    ...PLANNING_TABS.map(t => btn({ key: t.id, onClick: () => setTab(t.id),
+      title: t.label,
+      style: { display: 'flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+        border: '1px solid ' + (tab === t.id ? 'var(--amber)' : 'var(--bdr)'),
+        background: tab === t.id ? 'rgba(245,188,0,.14)' : 'var(--surf)',
+        color: tab === t.id ? 'var(--amber)' : 'var(--text2)' } },
+      span({ style: { fontSize: 12 } }, t.icon), t.label)));
+  return h(RoutePanelShell, {
+    title: 'Planning', icon: '🎯', onBack: onClose, headerExtra: tabBar,
+    bodyStyle: { minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  }, active);
 }
 
 // ── Scheduling hub ───────────────────────────────────────────────────────────
@@ -829,7 +823,7 @@ function App() {
     (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
       && new URLSearchParams(location.search).get('panel') === 'count-cycle') ? 'compliance' : null);
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
-  const [showPlanningHub, setShowPlanningHub] = useState(false);   // Notes 24 Planning hub
+  // showPlanningHub — dispatch #207: replaced by routePanel==='planning' (see routePanel above).
   const [planningTab, setPlanningTab] = useState('targets');
   // showSchedHub — Dispatch #55 Part B: replaced by routePanel==='sched-hub' (see routePanel above).
   const [schedTab, setSchedTab] = useState('scheduling');
@@ -2920,7 +2914,7 @@ function App() {
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2951,7 +2945,8 @@ function App() {
       setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
       setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowScheduling(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowScheduling(false);setShowMonthlyProj(false);setShowSage(false);setShowPanelManager(false);
+      // setShowPlanningHub(false) — dispatch #207: replaced by routePanel==='planning' (see routePanel above); the routePanel!==null branch above already handles Escape for it.
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
@@ -3030,8 +3025,8 @@ function App() {
         if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
         if(modal==='operator-summary')  perm('analytics.district')&&goRoute('operator-summary');
         // Planning hub (Notes 24): one modal, five tabs. Legacy per-panel ids deep-link to the right tab.
-        if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
-        if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
+        if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),goRoute('planning'));
+        if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),goRoute('planning'));
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
         // 'top-bottom' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
         // redirects into it on the Top/Bottom mode, same "route to the hub, select the tab"
@@ -3055,8 +3050,8 @@ function App() {
         if(modal==='proj-brief')     perm('analytics.forecasting')&&setShowProjBriefSA(true);
         if(modal==='dialedin')       perm('analytics.forecasting')&&setShowDialedIn(true);
         if(modal==='pvsa')           perm('analytics.forecasting')&&setShowPVSA(true);
-        if(modal==='pace-target')    perm('analytics.store')&&(setPlanningTab('pace'),setShowPlanningHub(true));
-        if(modal==='yearly-proj')    perm('analytics.store')&&(setPlanningTab('yearly'),setShowPlanningHub(true));
+        if(modal==='pace-target')    perm('analytics.store')&&(setPlanningTab('pace'),goRoute('planning'));
+        if(modal==='yearly-proj')    perm('analytics.store')&&(setPlanningTab('yearly'),goRoute('planning'));
         if(modal==='promo-roi')      perm('analytics.store')&&goRoute('promo-roi');
         if(modal==='visit-readiness')perm('analytics.store')&&goRoute('visit-readiness');
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
@@ -3137,9 +3132,9 @@ function App() {
         // Correlations tab (Scanner-statistics-powered) rather than doing nothing; see
         // panel-registry.js's comment on this id.
         if(modal==='corr-explorer')  perm('analytics.store')&&(setSignalsTab('corr'),goRoute('signals'));
-        if(modal==='unified-targets') perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
+        if(modal==='unified-targets') perm('analytics.store')&&(setPlanningTab('targets'),goRoute('planning'));
         if(modal==='signals')        perm('analytics.store')&&(setSignalsTab('liveops'),goRoute('signals'));
-        if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
+        if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),goRoute('planning'));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),goRoute('sched-hub'));
         if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),goRoute('sched-hub'));
@@ -3290,6 +3285,9 @@ function App() {
       // in this batch) was retired by dispatch #189, folded into eom-dashboard as a tab — see
       // eomInitialMode below.
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
+      // planning — Dispatch #207: moved to the routePanel gate in the main content area
+      // (RoutePanelShell now lives inside PlanningHubPanel itself; see routePanel==='planning').
+      routePanel==='planning'&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>goRoute(null)}),
       routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
         dataReady:cloudStreamsReady,
@@ -3412,8 +3410,8 @@ function App() {
     // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
     // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
-    // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
-    showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
+    // showPlanningHub — Dispatch #207: moved to the routePanel gate in the main content area
+    // (RoutePanelShell now lives inside PlanningHubPanel itself; see routePanel==='planning').
     // sched-hub — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside SchedulingHubPanel itself; see routePanel==='sched-hub').
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels

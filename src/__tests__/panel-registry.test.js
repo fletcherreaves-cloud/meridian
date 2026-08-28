@@ -200,7 +200,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the thirty-one panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206, minus #140, #189, #190 and #197)', () => {
+  it('is exactly the thirty-two panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -279,11 +279,17 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // calls goRoute('task-queue') instead of setShowTaskQueue(true) -- see routing.js's
     // LEGACY_PANEL_REDIRECTS comment for why it does NOT also need a routing.js entry (it was
     // never itself route:true, so there's no legacy `?panel=` URL value to redirect)
-    // (twenty-four -> thirty-one).
+    // (twenty-four -> thirty-one). Dispatch #207 then added the last named holdout, 'planning'
+    // (Planning Hub) -- PlanningHubPanel is a module-level function inline in App.js, same shape
+    // as SchedulingHubPanel ('sched-hub' above, converted under #55 Part B), and took the exact
+    // same treatment: hand-rolled backdrop -> RoutePanelShell in place, tab-strip pulled into a
+    // local tabBar var, zero file extraction. 'events' (Events & Tags) was scoped and explicitly
+    // deferred, not converted -- its chrome lives in two different delegate components rather
+    // than the hub itself, a genuinely different shape (thirty-one -> thirty-two).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'attention', 'brief', 'crew-schedule', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
       'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
-      'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'proj',
+      'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'planning', 'proj',
       'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'task-queue',
       'visit-readiness',
     ]);
@@ -375,6 +381,18 @@ describe('route panels (Dispatch27 Workstream E)', () => {
       'setShowDtSoS', 'setShowNews', 'setShowInventory', 'setShowLocIntel',
       'setShowReportSubs', 'setShowSMGVoice', 'setShowTaskQueue',
     ];
+    const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
+    expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
+    const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
+    expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
+  });
+
+  it('Dispatch #207: no setShowPlanningHub(true) call site survives', () => {
+    // Same regression class as #55 Part B / #192 / #205 / #206 above, for this dispatch's single
+    // converted boolean: planning (Planning Hub) -- six old open-call sites (modal==='planning',
+    // 'monthly-proj', 'pace-target', 'yearly-proj', 'unified-targets', 'smart-targets-v2') all
+    // rewired to goRoute('planning'), each keeping its setPlanningTab(...) companion call as-is.
+    const REMOVED_SETTERS = ['setShowPlanningHub'];
     const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
     expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
     const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
