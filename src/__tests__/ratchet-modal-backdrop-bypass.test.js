@@ -62,7 +62,27 @@ const ROOTS = ['src/views', 'src/features'];
 // Task Queue, not converted in place), and its own hand-rolled backdrop went with the file.
 // Measured fresh against this merge per the standing "never copy a number" rule — #195's branch
 // alone would have measured 69, but merging in #194's already-landed deletion drops it one more.
-const CEILING = 67;
+// Lowered 68 → 53 by dispatch #198 (eom-dashboard.js backdrop sweep): all 15 hits in
+// src/views/eom-dashboard.js were converted to ModalShell. Measured (not assumed uniform):
+// EOMDashboardPanel's own top-level chrome is RoutePanelShell (no backdrop pattern, so never
+// counted here) with no OUTER shell wrapping it from App.js — unlike FOBAnalysisPanel's
+// dispatch-#188 fix, none of these 15 were redundant double chrome under an existing shell.
+// Every one was a genuine secondary popup (FOB Report, FOB Root-Cause, Waste Analysis, comms
+// draft, Food-Cost Diagnosis, Item journeys, Count Reliability, Rubber-band, District EOM
+// Summary, Change Monitor, EOM Follow-up, AI Cross-Check, Chronic Offenders, FOB component
+// breakdown, Edit diagnosis flow) that needed a real backdrop — so each was converted in place
+// to ModalShell (title/onClose/maxWidth/closeOnBackdrop, and headerExtra for the three that
+// carried a look-back selector alongside their title: Count Reliability, Rubber-band, Chronic
+// Offenders), never deleted outright. 68 − 15 = 53, and this is the freshly re-measured count on
+// dispatch #198's own branch (per the standing "never copy a number" rule), not an arithmetic
+// subtraction.
+// Lowered 53 → 52 by dispatch #199 (Performance Calculator → Performance Reviews merge, landed
+// on main concurrently with #198): PerformanceCalculator's own hand-rolled backdrop in
+// src/views/store-dash.js went with it — relocated into Performance Reviews' Customize tab as
+// content-only (no ModalShell/overlay of its own, since it now renders inside an existing shell).
+// Different file from #198's sweep, so the two reductions are additive; re-measured fresh on this
+// merge (not 53−1 by assumption) to confirm.
+const CEILING = 52;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

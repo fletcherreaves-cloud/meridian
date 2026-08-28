@@ -8,7 +8,7 @@
 // persist to eom_count_status so the owner can track who was told what.
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, supervisorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
-import { RoutePanelShell } from '../components/ModalShell.js';
+import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
 import {
@@ -66,10 +66,6 @@ function lastPeriods(period, n = 6) {
   return out.reverse();
 }
 
-// Standardized modal close ✕ — pinned to the top-right corner of the modal container so it
-// lands in the SAME place on every panel (owner req #43), instead of riding at the end of the
-// header row. The container must be position:relative (added to each modal below).
-const MODAL_X = { position: 'absolute', top: '10px', right: '14px', background: 'none', border: 'none', color: 'var(--text3)', fontSize: '18px', lineHeight: 1, cursor: 'pointer', zIndex: 6, padding: '2px 5px' };
 // Small toolbar button (Save CSV / Print) shared by the scan modals.
 const MODAL_TOOLBTN = { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '11px', fontWeight: 600, color: 'var(--text2)', background: 'var(--surf3)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '4px 9px', cursor: 'pointer' };
 
@@ -2898,10 +2894,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                   r.masking ? div({ style: { fontSize: '10.5px', color: '#f5bc00', marginTop: '4px' } }, `Masking: ${$(r.grossLoss)} losses offset by ${$(r.grossGain)} gains (net ${$(r.net)}) — verify the offsetting counts are real.`) : null) : null);
             }))));
       };
-      return div({ onClick: () => setFobRepOpen(false), style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' } },
-        div({ onClick: e => e.stopPropagation(), style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '980px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📊 FOB Report — ${scopeLabel()}`),
-          h('button', { onClick: () => setFobRepOpen(false), style: MODAL_X }, '✕'),
+      return h(ModalShell, { title: `📊 FOB Report — ${scopeLabel()}`, onClose: () => setFobRepOpen(false), maxWidth: 980, closeOnBackdrop: true },
           div({ style: { display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' } },
             h('button', { onClick: () => openPrintWindow('FOB Report', fobRepPrintHtml()), style: MODAL_TOOLBTN, title: 'Full report → PDF (summary + opportunities + every store)' }, '⎙ Print (full)'),
             h('button', { onClick: () => openPrintWindow('FOB Leadership Summary', leadershipPrintHtml()), style: { ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399' }, title: 'Detailed-yet-summarized report for above-store leaders: where we are, who is where, the math of focus stores vs top performers, and what to do' }, '⎙ Leadership Summary'),
@@ -2934,7 +2927,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
             : div({ style: { color: '#4ade80', fontSize: '12px', marginBottom: '14px' } }, 'No over-target or regressing stores in scope — clean. ✓'),
           // Hierarchy
           div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px', borderTop: '1px solid var(--bdr2)', paddingTop: '10px' } }, 'By market → patch → store'),
-          R.orgs.map(orgBlock)));
+          R.orgs.map(orgBlock));
     })(),
     // 🔬 FOB Root-Cause Analysis modal (Notes 41) — recount impact + FOB consistency, scoped + verifiable.
     riddleOpen && (() => {
@@ -2943,10 +2936,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
       const harmful = R.impact.filter(s => s.net < 0);
       const winLbl = R.months.length ? `${R.months[0]} → ${R.months[R.months.length - 1]} (${R.months.length} mo)` : 'no FOB history in scope';
       const th = (t, r) => h('th', { key: t, style: { textAlign: r ? 'right' : 'left', padding: '4px 9px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
-      return div({ onClick: () => setRiddleOpen(false), style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' } },
-        div({ onClick: e => e.stopPropagation(), style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '940px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `🔬 FOB Root-Cause Analysis — ${scopeLabel()}`),
-          h('button', { onClick: () => setRiddleOpen(false), style: MODAL_X }, '✕'),
+      return h(ModalShell, { title: `🔬 FOB Root-Cause Analysis — ${scopeLabel()}`, onClose: () => setRiddleOpen(false), maxWidth: 940, closeOnBackdrop: true },
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } }, `Scope: ${rows.length} store${rows.length === 1 ? '' : 's'} · FOB history ${winLbl} · ${R.nFob.toLocaleString()} daily snapshots · recount impact from the current-period ledger`),
           // Methodology — for trust
           div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr)', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px', fontSize: '11.5px', color: 'var(--text2)', lineHeight: 1.55 } },
@@ -2987,18 +2977,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                 h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' } }, `${s.mean.toFixed(2)}%`),
                 h('td', { style: { padding: '5px 9px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: s.sd < 0.3 ? '#4ade80' : s.sd < 0.5 ? '#f5bc00' : 'var(--crit)' } }, s.sd.toFixed(2)),
                 h('td', { style: { padding: '5px 9px', textAlign: 'right', color: 'var(--text3)' } }, s.n)))))),
-          div({ style: { marginTop: '12px', fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic' } }, 'Recount impact reads the current selected period\'s ledger; consistency spans all FOB history in scope. Click a store above to see the recounts driving its number.')));
+          div({ style: { marginTop: '12px', fontSize: '10.5px', color: 'var(--text3)', fontStyle: 'italic' } }, 'Recount impact reads the current selected period\'s ledger; consistency spans all FOB history in scope. Click a store above to see the recounts driving its number.'));
     })(),
 
     // Waste analysis modal (Notes 40 #2) — Second-Look waste rules across the scope.
-    wasteOpen && div({
-      onClick: () => setWasteOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    wasteOpen && h(ModalShell, {
+      title: `🗑 Waste Analysis — ${scopeLabel()}`, onClose: () => setWasteOpen(false), maxWidth: 860, closeOnBackdrop: true,
     },
-      div({ onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-        div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `🗑 Waste Analysis — ${scopeLabel()}`),
-        h('button', { onClick: () => setWasteOpen(false), style: MODAL_X }, '✕'),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '12px' } },
           wasteScan ? `${wasteScan.nFlags} flag${wasteScan.nFlags === 1 ? '' : 's'} across ${wasteScan.nStores} store${wasteScan.nStores === 1 ? '' : 's'} · ${period} · Second-Look waste rules (verify, don't accuse)` : ''),
         (!wasteScan || !wasteScan.stores.length)
@@ -3026,21 +3011,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                 evs.length > 40 && div({ key: 'more', style: { fontSize: '10px', color: 'var(--text3)', marginTop: '2px' } }, `+${evs.length - 40} more`),
               ]),
             ]); })),
-        div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginTop: '10px', fontStyle: 'italic' } }, 'Uniform = same $ many days (estimated, not weighed) · Session = one manager/day outlier · Concentration = one manager\'s share · Spike = count-window day spike. Verify, don\'t accuse.')),
+        div({ style: { fontSize: '10.5px', color: 'var(--text3)', marginTop: '10px', fontStyle: 'italic' } }, 'Uniform = same $ many days (estimated, not weighed) · Session = one manager/day outlier · Concentration = one manager\'s share · Spike = count-window day spike. Verify, don\'t accuse.'),
     ),
 
     // comms draft modal
-    draft && div({
-      onClick: () => setDraft(null),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    draft && h(ModalShell, {
+      title: `✉️ Store message — ${draft.name}`, onClose: () => setDraft(null), maxWidth: 640, closeOnBackdrop: true,
     },
-      div({
-        onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '640px', maxHeight: '85vh', overflow: 'auto', padding: '18px', position: 'relative' },
-      },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `✉️ Store message — ${draft.name}`),
-          h('button', { onClick: () => setDraft(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
         // FOB component strip verbatim (owner Notes 38) — same tiles the diagnose panel shows on top.
@@ -3073,20 +3050,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
             style: { background: 'none', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, 'Mark as sent'),
           !draft.hasGaps && draft.hasPlan && span({ style: { fontSize: '12px', color: '#38bdf8' } }, 'No count gaps — this is the food-cost action plan.'),
-          !draft.hasGaps && !draft.hasPlan && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.')))),
+          !draft.hasGaps && !draft.hasPlan && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.'))),
 
     // diagnosis modal — the detailed report + action items (owner downloads/attaches to email)
-    diag && div({
-      onClick: () => setDiag(null),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    diag && h(ModalShell, {
+      title: `🔬 Food-Cost Diagnosis — ${diag.name}`, onClose: () => setDiag(null), maxWidth: 720, closeOnBackdrop: true,
     },
-      div({
-        onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '720px', maxHeight: '85vh', overflow: 'auto', padding: '18px', position: 'relative' },
-      },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔬 Food-Cost Diagnosis — ${diag.name}`),
-          h('button', { onClick: () => setDiag(null), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } }, diag.result.summary),
         // Count timing (#45) — the LAST count date's start→end + duration (owner: the final count is
         // the meaningful one; mid-cycle counts telescope out of the EOM result).
@@ -3196,22 +3165,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
           h('button', {
             onClick: () => { updateStatus(diag.loc, { diagnosisStatus: 'diagnosed' }); setDiag(null); },
             style: { background: 'none', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
-          }, 'Mark diagnosed')))),
+          }, 'Mark diagnosed'))),
 
     // item-journey modal — the visual count-cycle guide (worst items first)
     journeys && (() => {
       const sel = journeys.list.find(j => j.wrin === journeys.selectedWrin) || journeys.list[0];
-      return div({
-        onClick: () => setJourneys(null),
-        style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+      return h(ModalShell, {
+        title: `📊 Item journeys — ${journeys.name}`, onClose: () => setJourneys(null), maxWidth: 760, closeOnBackdrop: true,
       },
-        div({
-          onClick: e => e.stopPropagation(),
-          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' },
-        },
-          div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
-            div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 Item journeys — ${journeys.name}`),
-            h('button', { onClick: () => setJourneys(null), style: MODAL_X }, '✕')),
           div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '10px' } },
             `${journeys.list.length} item${journeys.list.length !== 1 ? 's' : ''} pulled for ${period}, worst net-variance first. Pick an item to trace its count cycle.`),
 
@@ -3238,24 +3199,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                     (j.descr || j.wrin), Math.abs(j.netCountDollars) >= 1 && span({ style: { color: 'var(--text3)' } }, jMoney(j.netCountDollars)));
                 })),
               // selected item's journey
-              h(ItemJourneyView, { key: sel && sel.wrin, journey: sel }))))
+              h(ItemJourneyView, { key: sel && sel.wrin, journey: sel })))
     })(),
 
     // FOB multi-location variance matrix modal
-    relOpen && div({
-      onClick: () => setRelOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    relOpen && h(ModalShell, {
+      title: `📊 Count Reliability — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`,
+      onClose: () => setRelOpen(false), maxWidth: 720, closeOnBackdrop: true,
+      headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'Prior monthly count periods scored (one EOM count = one month).' },
+        'Look back (months)',
+        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+          [1, 2, 3, 6, 12].map(n => h('button', { key: n, onClick: () => { setRelLookback(n); runReliabilityScan(n); }, disabled: relBusy,
+            style: { background: relLookback === n ? '#f5bc00' : 'var(--surf3)', color: relLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: relBusy ? 'default' : 'pointer' } }, n)))),
     },
-      div({ onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '720px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap', paddingRight: '30px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 Count Reliability — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
-          div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'Prior monthly count periods scored (one EOM count = one month).' },
-            'Look back (months)',
-            div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-              [1, 2, 3, 6, 12].map(n => h('button', { key: n, onClick: () => { setRelLookback(n); runReliabilityScan(n); }, disabled: relBusy,
-                style: { background: relLookback === n ? '#f5bc00' : 'var(--surf3)', color: relLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: relBusy ? 'default' : 'pointer' } }, n))))),
-        h('button', { onClick: () => setRelOpen(false), style: MODAL_X }, '✕'),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
           'How CONSISTENTLY each store counts — a store whose same items swing wildly month-to-month (big over-count→correction reversals) is counting unreliably, which skews its numbers AND risks a bad opening for next month. Real losses do NOT count against the grade. Accuracy + consistency is king. Least reliable first. Click a store to see the items behind its grade.'),
         rel && rel.stores.length ? div({ style: { display: 'flex', gap: '7px', marginBottom: '10px' } },
@@ -3292,22 +3248,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                         span({ style: { color: 'var(--crit)', fontWeight: 700 } }, `swing $${Math.round(w.swing || 0).toLocaleString()}`),
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.swingHi || 0).toLocaleString()} (${w.swingHiP || ''}) → -$${Math.abs(Math.round(w.swingLo || 0)).toLocaleString()} (${w.swingLoP || ''})`))))));
               }))
-          : null)),
+          : null),
 
-    rbOpen && div({
-      onClick: () => setRbOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    rbOpen && h(ModalShell, {
+      title: `🪃 Rubber-band — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`,
+      onClose: () => setRbOpen(false), maxWidth: 760, closeOnBackdrop: true,
+      headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'Prior monthly count periods scanned. Rubber-band needs at least 3 to see a run then a snap.' },
+        'Look back (months)',
+        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+          [3, 6, 12].map(n => h('button', { key: n, onClick: () => { setRbLookback(n); runRubberBandScan(n); }, disabled: rbBusy,
+            style: { background: rbLookback === n ? '#f5bc00' : 'var(--surf3)', color: rbLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: rbBusy ? 'default' : 'pointer' } }, n)))),
     },
-      div({ onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap', paddingRight: '30px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🪃 Rubber-band — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
-          div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'Prior monthly count periods scanned. Rubber-band needs at least 3 to see a run then a snap.' },
-            'Look back (months)',
-            div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-              [3, 6, 12].map(n => h('button', { key: n, onClick: () => { setRbLookback(n); runRubberBandScan(n); }, disabled: rbBusy,
-                style: { background: rbLookback === n ? '#f5bc00' : 'var(--surf3)', color: rbLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: rbBusy ? 'default' : 'pointer' } }, n))))),
-        h('button', { onClick: () => setRbOpen(false), style: MODAL_X }, '✕'),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
           'The padding→collapse pattern: an item that ran OVER (a gain — inventory padded, a "loan against next month") for 2+ months and then SNAPPED to a big short. That snap is the accumulated padding catching up. Biggest snap exposure first. Click a store for the items. Verify each — a real explanation clears it.'),
         rb && rb.stores.length ? div({ style: { display: 'flex', gap: '7px', marginBottom: '10px' } },
@@ -3341,7 +3292,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                         span({ style: { color: '#fb923c', fontWeight: 700 } }, `snap $${Math.round(w.snap || 0).toLocaleString()}`),
                         span({ style: { color: 'var(--text3)' } }, `+$${Math.round(w.overSum || 0).toLocaleString()} over ${w.overN} mo (from ${w.from || ''}) → snapped ${w.to || ''}`))))));
               }))
-          : null)),
+          : null),
 
     sumOpen && (() => {
       const d = districtSummary, r = d.rollup;
@@ -3353,14 +3304,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
       const fobOver = r.fobPct != null && r.fobTgt != null && r.fobPct > r.fobTgt;
       const th = t => h('th', { style: { textAlign: 'right', color: 'var(--text3)', fontWeight: 600, padding: '4px 7px', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, t);
       const stores = d.stores.slice().sort((a, b) => (b.over$ || -1e9) - (a.over$ || -1e9));
-      return div({
-        onClick: () => setSumOpen(false),
-        style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+      return h(ModalShell, {
+        title: `📊 District EOM Summary — ${scopeLabel()}`, onClose: () => setSumOpen(false), maxWidth: 960, closeOnBackdrop: true,
       },
-        div({ onClick: e => e.stopPropagation(),
-          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '960px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📊 District EOM Summary — ${scopeLabel()}`),
-          h('button', { onClick: () => setSumOpen(false), style: MODAL_X }, '✕'),
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } }, `${period} · ${r.nStores} store${r.nStores === 1 ? '' : 's'} · dollar-weighted roll-up`),
           div({ style: { display: 'flex', gap: '7px', marginBottom: '12px' } },
             h('button', { onClick: () => downloadText(`eom-summary_${scope}_${period}.csv`, sumCsv()), style: MODAL_TOOLBTN }, '⤓ Save CSV'),
@@ -3413,7 +3359,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                   h('td', { style: { padding: '4px 7px', textAlign: 'right', color: s.over$ > 0 ? '#f5bc00' : 'var(--text3)', fontVariantNumeric: 'tabular-nums' } }, s.over$ != null && s.over$ > 0 ? $(s.over$) : ''),
                 ]);
               })),
-            ]))));
+            ])));
     })(),
 
     // ── Change Monitor modal — day-2 diff of live state vs the locked baseline ──────
@@ -3427,14 +3373,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
       const d = mon?.diff;
       const stores = d ? d.stores : [];
       const takenLbl = mon?.takenAt ? new Date(mon.takenAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null;
-      return div({
-        onClick: () => setMonOpen(false),
-        style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+      return h(ModalShell, {
+        title: `📸 EOM Change Monitor — ${scopeLabel()}`, onClose: () => setMonOpen(false), maxWidth: 1000, closeOnBackdrop: true,
       },
-        div({ onClick: e => e.stopPropagation(),
-          style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '1000px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '2px', paddingRight: '30px' } }, `📸 EOM Change Monitor — ${scopeLabel()}`),
-          h('button', { onClick: () => setMonOpen(false), style: MODAL_X }, '✕'),
           div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
             monView === 'progression'
               ? 'Per-item variance progression — read straight from the raw count ledger (no lock needed), for the selected period.'
@@ -3557,17 +3498,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                 })),
               ])),
           ],
-        ));
+        );
     })(),
 
-    bulkOpen && div({
-      onClick: () => setBulkOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    bulkOpen && h(ModalShell, {
+      title: `📣 EOM Follow-up — ${bulkDrafts.length} location${bulkDrafts.length === 1 ? '' : 's'}`, onClose: () => setBulkOpen(false), maxWidth: 760, closeOnBackdrop: true,
     },
-      div({ onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '760px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-        div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '4px', paddingRight: '30px' } }, `📣 EOM Follow-up — ${bulkDrafts.length} location${bulkDrafts.length === 1 ? '' : 's'}`),
-        h('button', { onClick: () => setBulkOpen(false), style: MODAL_X }, '✕'),
         (() => { const needed = bulkDrafts.filter(d => d.hasGaps || d.hasPlan).length; return div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '12px' } },
           `${needed} need a follow-up (count gap or food-cost action plan); the rest look clean. Copy each and send to the store, then Mark sent. Ordered by who needs it first.`); })(),
         div({ style: { display: 'flex', flexDirection: 'column', gap: '7px' } },
@@ -3583,16 +3519,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                   h('button', { onClick: () => { openDraft(d.loc, d.name, allRows.find(r => r.loc === d.loc)?.components); setBulkOpen(false); }, style: MODAL_TOOLBTN, title: 'Open the single-store message (recap + Full report toggle)' }, 'Open'),
                   h('button', { onClick: () => updateStatus(d.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }), style: { ...MODAL_TOOLBTN, color: '#4ade80', borderColor: '#4ade80' } }, 'Mark sent'))),
               div({ style: { fontSize: '11.5px', color: needs ? 'var(--text2)' : 'var(--text3)', marginTop: '4px' } }, needs ? d.subject : 'Count looks complete — no action items. Nothing to send.'));
-          })))),
+          }))),
 
-    xcOpen && div({
-      onClick: () => setXcOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    xcOpen && h(ModalShell, {
+      title: '🔍 AI Cross-Check — external FOB vs Meridian', onClose: () => setXcOpen(false), maxWidth: 820, closeOnBackdrop: true,
     },
-      div({ onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '820px', maxHeight: '90vh', overflow: 'auto', padding: '18px', position: 'relative' } },
-        div({ style: { fontWeight: 700, color: 'var(--text)', marginBottom: '4px', paddingRight: '30px' } }, '🔍 AI Cross-Check — external FOB vs Meridian'),
-        h('button', { onClick: () => setXcOpen(false), style: MODAL_X }, '✕'),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
           'Paste an external AI\'s FOB analysis (one store per line — store number, then Prod Sales, FOB$, FOB%, and the 6 components). Meridian reconciles it against its own real numbers and flags: ',
           span({ style: { color: 'var(--crit)', fontWeight: 700 } }, 'fabricated'), ' (the external row\'s own components don\'t sum to its stated FOB$), ',
@@ -3635,27 +3566,20 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                   ]);
                 })),
               ]),
-        ]) : null)),
+        ]) : null),
 
-    chronicOpen && div({
-      onClick: () => setChronicOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    chronicOpen && h(ModalShell, {
+      title: `🔁 Chronic Offenders — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`,
+      onClose: () => setChronicOpen(false), maxWidth: 860, closeOnBackdrop: true,
+      headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'How many prior monthly count periods to scan across (one EOM count = one month).' },
+        'Look back (months)',
+        div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+          [1, 2, 3, 6, 12].map(n => h('button', {
+            key: n, title: `last ${n} monthly count periods`,
+            onClick: () => { setChronicLookback(n); runChronicScan(n); }, disabled: chronicBusy,
+            style: { background: chronicLookback === n ? '#f5bc00' : 'var(--surf3)', color: chronicLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: chronicBusy ? 'default' : 'pointer' },
+          }, n)))),
     },
-      div({
-        onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '860px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' },
-      },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', gap: '8px', flexWrap: 'wrap', paddingRight: '30px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `🔁 Chronic Offenders — ${scope === 'all' ? 'all stores' : scope}${oneStore ? ` · ${nm(oneStore)}` : ''}`),
-          div({ style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text3)' }, title: 'How many prior monthly count periods to scan across (one EOM count = one month).' },
-            'Look back (months)',
-            div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-              [1, 2, 3, 6, 12].map(n => h('button', {
-                key: n, title: `last ${n} monthly count periods`,
-                onClick: () => { setChronicLookback(n); runChronicScan(n); }, disabled: chronicBusy,
-                style: { background: chronicLookback === n ? '#f5bc00' : 'var(--surf3)', color: chronicLookback === n ? '#0f1117' : 'var(--text2)', border: 'none', padding: '3px 9px', fontSize: '11px', fontWeight: 700, cursor: chronicBusy ? 'default' : 'pointer' },
-              }, n))))),
-        h('button', { onClick: () => setChronicOpen(false), style: MODAL_X }, '✕'),
         div({ style: { fontSize: '11.5px', color: 'var(--text3)', marginBottom: '10px' } },
           chronicBusy ? 'Scanning…'
             : chronic?.error ? `Scan failed: ${chronic.error}`
@@ -3699,19 +3623,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                         s.series.map(p => dolStr(p.dol)).join(' → '))))));
               }),
               chronic.items.length > 40 ? div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '6px' } }, `+${chronic.items.length - 40} more.`) : null)
-          : null)),
+          : null),
 
-    fobOpen && div({
-      onClick: () => setFobOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    fobOpen && h(ModalShell, {
+      title: `📊 FOB component breakdown — ${period}`, onClose: () => setFobOpen(false), maxWidth: 900, closeOnBackdrop: true,
     },
-      div({
-        onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '900px', maxHeight: '88vh', overflow: 'auto', padding: '18px', position: 'relative' },
-      },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, `📊 FOB component breakdown — ${period}`),
-          h('button', { onClick: () => setFobOpen(false), style: MODAL_X }, '✕')),
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' } },
           div({ style: { fontSize: '12px', color: 'var(--text3)' } },
             `${rows.length} store${rows.length !== 1 ? 's' : ''} in view · where each store's food-cost dollars are leaking`),
@@ -3721,20 +3637,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
                 key: String(v), onClick: () => setFobDollars(v),
                 style: { background: fobDollars === v ? '#f5bc00' : 'var(--surf3)', color: fobDollars === v ? '#0f1117' : 'var(--text2)', border: 'none', padding: '5px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' },
               }, label)))),
-        h(FobVarianceMatrix, { rows, showDollars: fobDollars, sortKey: fobSort, onSort: setFobSort }))),
+        h(FobVarianceMatrix, { rows, showDollars: fobDollars, sortKey: fobSort, onSort: setFobSort })),
 
     // flow-editor modal — reorder/toggle checks + tune thresholds (persists to cloud)
-    flowOpen && div({
-      onClick: () => setFlowOpen(false),
-      style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+    flowOpen && h(ModalShell, {
+      title: '⚙ Edit diagnosis flow', onClose: () => setFlowOpen(false), maxWidth: 620, closeOnBackdrop: true,
     },
-      div({
-        onClick: e => e.stopPropagation(),
-        style: { background: 'var(--surf)', border: '1px solid var(--bdr2)', borderRadius: '10px', width: '100%', maxWidth: '620px', maxHeight: '85vh', overflow: 'auto', padding: '18px', position: 'relative' },
-      },
-        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
-          div({ style: { fontWeight: 700, color: 'var(--text)' } }, '⚙ Edit diagnosis flow'),
-          h('button', { onClick: () => setFlowOpen(false), style: MODAL_X }, '✕')),
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '12px' } },
           'Reorder, enable/disable, and tune each check. Applies to every store’s 🔬 Diagnose. Saved to the cloud.'),
 
@@ -3770,7 +3678,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
           h('button', {
             onClick: flowReset,
             style: { background: 'none', color: 'var(--text3)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
-          }, 'Reset to defaults')))),
+          }, 'Reset to defaults'))),
 
     div({ style: { marginTop: '14px', fontSize: '11px', color: 'var(--text3)' } },
       'Count progress is inferred from each item\'s last-counted / last-submitted date landing inside the count window. ',

@@ -3,10 +3,19 @@
 // "where do i find the time punches" (owner, 2026-08-25) -- qsr_punch_times (dispatch #124's
 // automated pull, un-tokenized by dispatch #126) had ZERO files under src/views referencing it
 // before this panel. Built as a companion to src/views/crew-schedule-panel.js (dispatch #123/
-// #125's template, per this dispatch's own instruction) -- same RoutePanelShell/
-// DateRangeControl/LocationSelector shape, same un-tokenized-name convention (names render
-// directly, no reveal-click step), same ordinary panel RBAC (see panel-registry.js's
-// 'time-punches' entry for the full reasoning).
+// #125's template, per this dispatch's own instruction) -- same DateRangeControl/LocationSelector
+// shape, same un-tokenized-name convention (names render directly, no reveal-click step), same
+// ordinary panel RBAC (see panel-registry.js's 'time-punches' entry for the full reasoning).
+//
+// 🔄 DISPATCH #197 (owner live in this session, 2026-08-28): "Crew Schedule and Time punches can
+// be merged to same page also." This panel is no longer its own standalone route -- it lost its
+// own RoutePanelShell/LocationSelector/search box. What used to be exported as `TimePunchesPanel`
+// (a full standalone panel) is now `TimePunchesTab`, a body-only component rendered as the
+// "Punches" tab of src/views/crew-schedule-panel.js's merged CrewSchedulePanel, which owns the
+// shell, the tab strip, and the SHARED location scope + employee search query (see that file's
+// header for why those two are shared and the date range + employee selection are not). All the
+// pure logic below (pairing rule, business-day bucketing, directory/filter/select helpers) is
+// UNCHANGED -- this dispatch is a presentation-layer merge only, per its own "out of scope" list.
 //
 // MEAL-PAIRING SHAPE -- determined from real rows via a live service-role read, not assumed
 // (the dispatch's own instruction). Querying every punch for geid 200165491 @ loc 0024471
@@ -30,18 +39,14 @@
 // reveal-click/token step for names -- this data class is un-tokenized by explicit owner
 // directive (dispatch #125/#126), same as Crew Schedule Lookup.
 import * as React from 'react';
-import { RoutePanelShell } from '../components/ModalShell.js';
-import { DateRangeControl, LocationSelector, buildLocationHierarchy, locationSelectorLocs, resolveDatePreset } from '../components/PanelControls.js';
+import { DateRangeControl, resolveDatePreset } from '../components/PanelControls.js';
 import { loadPunchTimes } from '../lib/supabase.js';
-import { INV_ORG_COORDS, STORE_NAMES } from '../constants.js';
+import { STORE_NAMES } from '../constants.js';
 import { businessDate } from '../utils/date.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
-const inp = (p, ...c) => h('input', p, ...c);
-
-const EMPTY_STORES = [];
 
 // ── Pure logic — exported and tested independently of any rendering ─────────────────────────────
 
@@ -158,17 +163,20 @@ function ModifiedFlag({ inModified, outModified }) {
   }, '✏ ' + label);
 }
 
-export function TimePunchesPanel({ onClose, stores }) {
+// TimePunchesTab — dispatch #197: the body-only Punches tab of the merged CrewSchedulePanel.
+// `locs` and `query` come from the host (SHARED location scope + employee search — see
+// crew-schedule-panel.js's header for why those two are shareable and this one isn't the full
+// standalone panel any more). `dateRange` and `selected` stay LOCAL/independent, deliberately: a
+// shared date range would force one tab's window onto the other's semantically opposite direction
+// (Schedule defaults forward to the next upcoming shifts; Punches is necessarily backward-looking
+// — a punch can't exist for a date that hasn't happened). `onSummaryChange` reports this tab's
+// "N employees / N shifts" text up to the host so it can show it as the shell's subtitle while
+// this tab is active, the same role RoutePanelShell's subtitle played when this was standalone.
+export function TimePunchesTab({ locs, query, onSummaryChange }) {
   const [dataState, setDataState] = React.useState('idle'); // idle | loading | loaded | error
   const [rows, setRows] = React.useState([]);
-  const [scope, setScope] = React.useState({ level: 'all', id: null });
   const [dateRange, setDateRange] = React.useState(() => resolveDatePreset('7d'));
-  const [query, setQuery] = React.useState('');
   const [selected, setSelected] = React.useState(() => new Set());
-
-  const treeStores = stores || EMPTY_STORES;
-  const tree = React.useMemo(() => buildLocationHierarchy(treeStores, INV_ORG_COORDS, STORE_NAMES), [treeStores]);
-  const locs = React.useMemo(() => locationSelectorLocs(scope, tree), [scope, tree]);
 
   // No client-side permission gate here (same as Crew Schedule Lookup) — App.js's onOpenModal
   // already checked perm('analytics.store') before this panel could ever mount. Load starts
@@ -179,7 +187,7 @@ export function TimePunchesPanel({ onClose, stores }) {
     (async () => {
       const data = await loadPunchTimes({
         start: dateRange?.s, end: dateRange?.e,
-        locs: locs.length ? locs : undefined,
+        locs: locs && locs.length ? locs : undefined,
       });
       if (cancelled) return;
       setRows(data);
@@ -218,23 +226,23 @@ export function TimePunchesPanel({ onClose, stores }) {
     return max;
   }, [scoped]);
 
+  // Reports "N employees in scope · N shifts" up to the host, same text this tab's own
+  // RoutePanelShell subtitle used to show when it was a standalone panel — see file header.
+  React.useEffect(() => {
+    onSummaryChange?.(`${directory.length} employee${directory.length === 1 ? '' : 's'} in scope · ${totalShifts} shift${totalShifts === 1 ? '' : 's'}`);
+  }, [directory.length, totalShifts, onSummaryChange]);
+
   const body = div(null,
     div({ style: { display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 14px', borderBottom: '.5px solid var(--bdr)' } },
       div({ style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
         span({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Date range:'),
         h(DateRangeControl, { value: dateRange, onChange: setDateRange, allowCustom: true }),
       ),
-      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, mode: 'progressive' }),
       freshness && span({ style: { fontSize: 10, color: 'var(--text3)' } }, `Punch data as of ${new Date(freshness).toLocaleString('en-US', { hourCycle: 'h23' })}`),
     ),
     div({ style: { display: 'flex', gap: 12, padding: '10px 14px', flexWrap: 'wrap' } },
       div({ style: { flex: '1 1 260px', minWidth: 240 } },
-        inp({
-          type: 'text', placeholder: 'Search employee name or geid…', value: query,
-          onChange: e => setQuery(e.target.value),
-          style: { width: '100%', padding: '6px 10px', borderRadius: 'var(--r)', border: '.5px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12, boxSizing: 'border-box' },
-        }),
-        div({ style: { marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 360, overflowY: 'auto' } },
+        div({ style: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 360, overflowY: 'auto' } },
           dataState === 'loading' && div({ style: { color: 'var(--text3)', fontSize: 12, padding: '8px 0' } }, 'Loading punches…'),
           dataState === 'error' && div({ style: { color: 'var(--crit,#ef4444)', fontSize: 12, padding: '8px 0' } }, 'Could not load punch data — try again.'),
           dataState === 'loaded' && !filtered.length && div({ style: { color: 'var(--text3)', fontSize: 12, padding: '8px 0' } }, 'No punches match this scope.'),
@@ -299,9 +307,5 @@ export function TimePunchesPanel({ onClose, stores }) {
     ),
   );
 
-  return h(RoutePanelShell, {
-    title: 'Time Punches', icon: '🕐',
-    subtitle: `${directory.length} employee${directory.length === 1 ? '' : 's'} in scope · ${totalShifts} shift${totalShifts === 1 ? '' : 's'}`,
-    onBack: onClose,
-  }, body);
+  return body;
 }
