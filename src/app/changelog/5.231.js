@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.228', date:'2026-08-28', changes:[
+export default {version:'5.231', date:'2026-08-28', changes:[
   'Dispatch #190 -- merged the "Leadership One-Pager" (registry id leader-one-pager) into '
   + '"Above-Store One-Pager" (registry id above-store) behind a new Rollup/Leadership scope '
   + 'selector, per the owner\'s 2026-08-10 decision list (memory/decisions-panel-inventory-'
