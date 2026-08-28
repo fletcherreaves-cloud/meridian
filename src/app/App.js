@@ -229,15 +229,20 @@ const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').th
 // every other rarely-opened panel here is.
 const ChangelogPanel = lazyPanel(() => import('./changelog-panel.js').then(m => ({ default: m.ChangelogPanel })));
 import { FormsPrintPanel } from '../views/forms-print.js';
-const OnePagerPanel = lazyPanel(() => import('../views/one-pager.js').then(m => ({ default: m.OnePagerPanel })));
 import { MetricLineagePanel } from '../views/metric-lineage.js';
 // #207: forms-library.js/report-subscriptions.js were the only static importers left of
 // one-pager.js (64KB) and above-store-onepager.js (55KB) respectively — App.js already
-// lazy-loads both one-pagers (lines above/below), but a lazy import is defeated the moment
-// ANY static import chain also reaches the same module, which is exactly what these two did.
+// lazy-loads above-store-onepager.js (below), but a lazy import is defeated the moment ANY
+// static import chain also reaches the same module, which is exactly what these two did.
 // The build's own [INEFFECTIVE_DYNAMIC_IMPORT] warning named both; making these two panels
 // (occasional-use, neither on the startup path) lazy like the other 26 lets all four chunk
 // out of the entry bundle together instead of one static edge pinning 134KB raw in place.
+// Dispatch #190: one-pager.js no longer gets its own lazyPanel binding here — it retired as a
+// standalone routed panel (folded into 'above-store' behind a scope selector) and is now reached
+// only transitively, via above-store-onepager.js's own static import of LeadershipCascadeBody
+// (still on-demand from App.js's perspective, since above-store-onepager.js itself stays lazy)
+// and via forms-library.js's pre-existing static import of its CASCADE_LEVELS/weeklyReviewHtml
+// exports. Either way, one-pager.js never reaches the entry chunk.
 const FormsLibraryPanel = lazyPanel(() => import('../views/forms-library.js').then(m => ({ default: m.FormsLibraryPanel })));
 const SignalsPanel = lazyPanel(() => import('../views/signals.js').then(m => ({ default: m.SignalsPanel })));
 import { SmartTargetsPanel } from '../views/smart-targets.js';
@@ -739,7 +744,15 @@ function App() {
   // above) as part of the panel-contract pass (memory/panel-contract.md item 1/4) —
   // "would I ever want to send someone a link to this district's rollup?" — yes. aboveStoreInit
   // stays local App state (not URL-encoded, matching every other routed panel's initialX props).
-  const [aboveStoreInit, setAboveStoreInit] = useState(null); // {scope,period,panels} from a saved report
+  // Dispatch #190: also carries `view` ('rollup'|'leadership') — set when a saved
+  // `?panel=leader-one-pager` deep link is redirected to 'above-store' (see routing.js's
+  // LEGACY_PANEL_REDIRECTS) so the merged panel opens straight into the Leadership Cascade scope
+  // instead of the default Rollup one. Read the RAW query param here (not routePanel, which
+  // parseRoute already redirected to 'above-store') so this only fires for that legacy id.
+  const [aboveStoreInit, setAboveStoreInit] = useState(() => {
+    const raw = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('panel');
+    return raw === 'leader-one-pager' ? { view: 'leadership' } : null;
+  }); // {scope,period,panels,view} from a saved report or a legacy deep-link redirect
   const [showReportSubs, setShowReportSubs] = useState(false);
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
@@ -785,8 +798,9 @@ function App() {
   },[]);
   const [showAttention, setShowAttention] = useState(false);
   const [showFormsPrint, setShowFormsPrint] = useState(false);
-  // showLeaderOnePager — dispatch #160: replaced by routePanel==='leader-one-pager' (see
-  // routePanel above), same panel-contract pass as showAboveStore above.
+  // showLeaderOnePager — dispatch #160 first replaced this with routePanel==='leader-one-pager';
+  // dispatch #190 then retired that standalone route entirely, folding it into 'above-store'
+  // (see routePanel above) behind AboveStoreOnePager's own Leadership/Rollup scope selector.
   const [showMetricLineage, setShowMetricLineage] = useState(false);
   const [showFormsLibrary, setShowFormsLibrary] = useState(false);
   const [showKB, setShowKB] = useState(false);
@@ -2705,8 +2719,9 @@ function App() {
   // pause — this is the "converting a panel to a route naturally resolves the concern for that
   // panel" case the dispatch names, not a regression of the v4.212 fix for what remains a modal.
   // Dispatch #55 Part B adds sched-hub/perf-reviews/fob-analysis/fob-eom/eom-dashboard/count-cycle
-  // to that same list — same reasoning, same removal. Dispatch #160 removes above-store/
-  // leader-one-pager the same way (now routePanel==='above-store'/'leader-one-pager').
+  // to that same list — same reasoning, same removal. Dispatch #160 removes above-store the same
+  // way (now routePanel==='above-store'); dispatch #190 then retired 'leader-one-pager' as its
+  // own routePanel entirely, folding it into 'above-store' behind a scope selector.
   const anyModalOpen = showNews||showAIScan||showAbout||showAttention||showAudit||showBrief||
     showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showMetricLineage||
@@ -2762,8 +2777,9 @@ function App() {
       // B: removed from this sweep, same reasoning as the routePanel check above (they're
       // routePanel now, caught by the early return, no showX left to reset).
       // fcst-ref — Dispatch #121: same reasoning, added to the routePanel set above.
-      // above-store/leader-one-pager — Dispatch #160: same reasoning, added to the routePanel
-      // set above (routePanel==='above-store'/'leader-one-pager').
+      // above-store — Dispatch #160: same reasoning, added to the routePanel set above
+      // (routePanel==='above-store'). leader-one-pager got the same treatment, then dispatch #190
+      // retired it as a separate routePanel id entirely (folded into 'above-store').
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -2910,7 +2926,13 @@ function App() {
         if(modal==='task-queue')        setShowTaskQueue(true);
         if(modal==='attention')      setShowAttention(true);
         if(modal==='forms-print')    setShowFormsPrint(true);
-        if(modal==='leader-one-pager') goRoute('leader-one-pager');
+        // 'leader-one-pager' is no longer a registry id (dispatch #190 folded it into
+        // 'above-store') and never reaches onOpenModal any more — no nav pill references it, and
+        // an `onOpenModal handler registered' with no matching PANEL_BY_ID entry fails
+        // src/__tests__/panel-registry.test.js's registry-integrity check, so no dispatch line
+        // lives here for it. A stale ?panel=leader-one-pager URL is handled separately, at the
+        // routing layer, by routing.js's LEGACY_PANEL_REDIRECTS + the aboveStoreInit initializer
+        // above (which opens 'above-store' straight into its Leadership Cascade scope).
         if(modal==='metric-lineage')   setShowMetricLineage(true);
         if(modal==='forms-library')    setShowFormsLibrary(true);
       }
@@ -3042,15 +3064,20 @@ function App() {
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='count-cycle'&&h(CountCyclePanel,{onClose:()=>goRoute(null)}),
-      // above-store/leader-one-pager — Dispatch #160 (panel-contract pass): RoutePanelShell now
-      // lives inside AboveStoreOnePager/OnePagerPanel themselves, same "shell inside the
-      // component" pattern as sched-hub/perf-reviews/eom-dashboard/count-cycle above.
-      // aboveStoreInit stays local App state (My Reports quick-launch pre-scope), not URL-encoded
-      // — matching perf-reviews' initialTab/initialCustomizeSection above.
+      // above-store — Dispatch #160 (panel-contract pass): RoutePanelShell now lives inside
+      // AboveStoreOnePager itself, same "shell inside the component" pattern as sched-hub/
+      // perf-reviews/eom-dashboard/count-cycle above. aboveStoreInit stays local App state (My
+      // Reports quick-launch pre-scope), not URL-encoded — matching perf-reviews' initialTab/
+      // initialCustomizeSection above. Dispatch #190: 'leader-one-pager' retired as its own
+      // routePanel id (the OLD `routePanel==='leader-one-pager'&&h(OnePagerPanel,...)` line that
+      // used to sit here is gone) — its content is now AboveStoreOnePager's own "Leadership
+      // Cascade" scope, and aboveStoreInit.view opens straight into it (see the aboveStoreInit
+      // useState initializer + routing.js's LEGACY_PANEL_REDIRECTS for how a stale
+      // ?panel=leader-one-pager link still lands here in that scope).
       routePanel==='above-store'&&h(AboveStoreOnePager,{ds,settings,userEvents,eventImpact:getEventImpact(),
         initialScope:aboveStoreInit?.scope,initialPeriod:aboveStoreInit?.period,initialPanels:aboveStoreInit?.panels,
+        initialView:aboveStoreInit?.view,
         onClose:()=>{goRoute(null);setAboveStoreInit(null);}}),
-      routePanel==='leader-one-pager'&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='time-punches'&&h(TimePunchesPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='fob-analysis'&&h(RoutePanelShell,{
@@ -3193,8 +3220,9 @@ function App() {
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false),onCoachingSaved:refreshCoachingCycles}),
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
-    // showLeaderOnePager — Dispatch #160: moved to the routePanel gate in the main content area
-    // (RoutePanelShell now lives inside OnePagerPanel itself; see routePanel==='leader-one-pager').
+    // showLeaderOnePager — Dispatch #160 moved this to the routePanel gate in the main content
+    // area; dispatch #190 then folded that route into 'above-store' entirely (see
+    // routePanel==='above-store' above and AboveStoreOnePager's own scope selector).
     showMetricLineage&&h(MetricLineagePanel,{onClose:()=>setShowMetricLineage(false)}),
     showFormsLibrary&&h(FormsLibraryPanel,{onClose:()=>setShowFormsLibrary(false)}),
     // count-cycle — Dispatch #55 Part B: moved to the routePanel gate in the main content area

@@ -129,7 +129,12 @@ export const PANELS = [
   { id:'labor-allocation', label:'Labor Allocation', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
-  { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics', route:true },
+  // 'leader-one-pager' (Leadership One-Pager) retired here (dispatch #190, owner-approved
+  // 2026-08-10 decision list) — merged into 'above-store' (Above-Store One-Pager) below, behind
+  // a Rollup/Leadership scope selector inside AboveStoreOnePager. Its content (cascade selector,
+  // opportunity $, action plan, Weekly Review exports) is now LeadershipCascadeBody
+  // (src/views/one-pager.js), embedded there; a stale ?panel=leader-one-pager link redirects to
+  // 'above-store' via routing.js's LEGACY_PANEL_REDIRECTS.
   { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:6 },
   // lifelenz-bridge CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
   // entry to kind:'hub-tab', same pattern as fcst-accuracy above — opens ForecastReportsPanel's

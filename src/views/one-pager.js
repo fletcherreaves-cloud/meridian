@@ -86,7 +86,19 @@ const FOLLOW_META = {
   'no-data': { label: '· No data',   color: 'var(--text2)' },
 };
 
-export function OnePagerPanel({ ds, stores, settings, onClose }) {
+// Dispatch #190 — the harvested Leadership One-Pager body, split out of the standalone
+// OnePagerPanel component below so the SAME content (cascade selector, opportunity $, action
+// plan, Weekly Review exports — everything genuinely distinct from Above-Store One-Pager) can
+// render two ways: standalone via OnePagerPanel (unchanged for dispatch #160/#166's existing
+// tests, which render OnePagerPanel directly and expect its own RoutePanelShell header), and
+// embedded — no second header/shell — inside the merged Above-Store One-Pager's "Leadership
+// Cascade" scope (src/views/above-store-onepager.js). Its own scope UI (Org/OK/FL + Owner/DO/
+// Supervisor/OM presets + per-store pills) is DELIBERATELY still hand-rolled, not LocationSelector
+// — dispatch #160 item 3 measured that its arbitrary multi-select "fine control" is richer than
+// LocationSelector's single-level {all|state|patch|store} value shape, so converting would remove
+// real capability, not just reskin the UI (src/__tests__/dispatch-160-onepager-panel.test.js
+// guards this). That decision is unchanged by this merge — only the outer chrome moved.
+export function LeadershipCascadeBody({ ds, stores, settings }) {
   const allLocs = useMemo(() => (stores || []).filter(s => /^\d+$/.test(s.loc)).map(s => unpad(s.loc)), [stores]);
   const operators = (settings && settings.operators) || {};      // operator (owner) → stores
   const supervisors = (settings && settings.supervisorGroups) || {}; // supervisor → stores
@@ -212,25 +224,29 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
   // (dispatch #160 item 4; memory/panel-contract.md section 4's own "3+ grouped actions" bar).
   // Save stays its own prominent button (a commit action, not an export) and the Cascade
   // select/tag stay as-is.
-  return h(RoutePanelShell, {
-    title: 'Leadership One-Pager', icon: '📋',
-    subtitle: `${rLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'} · window ${range.s} → ${range.e}`,
-    onBack: onClose,
-    headerExtra: div({ style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
-      span({ style: { fontSize: 11, fontWeight: 800, color: '#111', background: 'var(--accent,#f5bc00)', borderRadius: 5, padding: '1px 6px' }, title: cascadeOf(cascade).label }, cascadeOf(cascade).tag),
-      // Cascade pairing (who → whom)
-      h('select', { value: cascade, onChange: e => setCascade(e.target.value), title: 'Cascade level', style: { ...btn, padding: '5px 8px', fontWeight: 700 } },
-        CASCADE_LEVELS.map(c => h('option', { key: c.id, value: c.id }, c.label))),
-      savedNote ? span({ style: { fontSize: 11, color: 'var(--text2)' } }, savedNote) : null,
-      h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
-      h(ActionMenu, { label: '🖨 Reports', items: [
-        { label: 'Print', onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems) },
-        { label: 'Discussion sheet', onClick: () => printBlankOnePager(page, period), title: 'Open-ended discussion sheet (auto state, blank sections)' },
-        { label: 'Weekly Review', onClick: () => printWeeklyReview(page, wkOpts()), title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' },
-        { label: 'Download Word (filled)', onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, { ...wkOpts(), word: true })), title: 'Download the filled Weekly Review as an editable Word (.doc)' },
-        { label: 'Download Word (blank)', onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true, word: true })), title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' },
-      ] })),
-  },
+  // Dispatch #190 — this used to be RoutePanelShell's own header (title/subtitle/headerExtra).
+  // Split into a plain wrapper div + a toolbar row (first child, styled like the Range row right
+  // below it) so the exact same controls work both standalone (wrapped by OnePagerPanel's own
+  // RoutePanelShell below) and embedded inside the merged Above-Store One-Pager's header-less
+  // "Leadership Cascade" scope, without ever nesting two RoutePanelShell headers.
+  return div({},
+      div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
+        span({ style: { fontSize: 11, fontWeight: 800, color: '#111', background: 'var(--accent,#f5bc00)', borderRadius: 5, padding: '1px 6px' }, title: cascadeOf(cascade).label }, cascadeOf(cascade).tag),
+        // Cascade pairing (who → whom)
+        h('select', { value: cascade, onChange: e => setCascade(e.target.value), title: 'Cascade level', style: { ...btn, padding: '5px 8px', fontWeight: 700 } },
+          CASCADE_LEVELS.map(c => h('option', { key: c.id, value: c.id }, c.label))),
+        savedNote ? span({ style: { fontSize: 11, color: 'var(--text2)' } }, savedNote) : null,
+        h('button', { onClick: save, disabled: saving, style: gold }, saving ? 'Saving…' : '💾 Save'),
+        h(ActionMenu, { label: '🖨 Reports', items: [
+          { label: 'Print', onClick: () => printOnePager(page, period, narrative, actions.length ? actions : priorItems) },
+          { label: 'Discussion sheet', onClick: () => printBlankOnePager(page, period), title: 'Open-ended discussion sheet (auto state, blank sections)' },
+          { label: 'Weekly Review', onClick: () => printWeeklyReview(page, wkOpts()), title: 'Weekly Business Review — auto-fills actuals + shift-manager names, print to PDF' },
+          { label: 'Download Word (filled)', onClick: () => downloadDoc(`Weekly-Review-${(page?.rangeLabel || '').replace(/[^\w-]+/g, '-')}.doc`, weeklyReviewHtml(page, { ...wkOpts(), word: true })), title: 'Download the filled Weekly Review as an editable Word (.doc)' },
+          { label: 'Download Word (blank)', onClick: () => downloadDoc('Weekly-Review-BLANK.doc', weeklyReviewHtml(page, { blank: true, word: true })), title: 'Download a fully-blank fillable Weekly Review (.doc) for hand/Word completion' },
+        ] }),
+        span({ style: { marginLeft: 'auto', fontSize: 10.5, color: 'var(--text3,var(--text2))' } },
+          `${rLabel} · ${locs.length} store${locs.length === 1 ? '' : 's'} · window ${range.s} → ${range.e}`),
+      ),
       // Range controls (Notes 31 #1) — mode pills + anchor/custom dates
       div({ style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--bdr)', background: 'var(--surf)' } },
         span({ style: { fontSize: 11, fontWeight: 700, color: 'var(--text2)' } }, 'Range:'),
@@ -321,6 +337,16 @@ export function OnePagerPanel({ ds, stores, settings, onClose }) {
             ),
           ),
   );
+}
+
+// Dispatch #190 — thin RoutePanelShell wrapper so OnePagerPanel keeps its own header (Back
+// button, title "Leadership One-Pager") when opened standalone; dispatch #160/#166's tests
+// render this directly and still see the same header + body. The merged Above-Store One-Pager
+// panel (src/views/above-store-onepager.js) embeds LeadershipCascadeBody directly instead — no
+// second header — under its own "Leadership Cascade" scope selector.
+export function OnePagerPanel({ ds, stores, settings, onClose }) {
+  return h(RoutePanelShell, { title: 'Leadership One-Pager', icon: '📋', onBack: onClose },
+    h(LeadershipCascadeBody, { ds, stores, settings }));
 }
 
 function FocusBanner({ cascade }) {
