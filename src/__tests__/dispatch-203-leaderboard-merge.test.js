@@ -99,6 +99,33 @@ describe('LeaderboardPanel — merged Rankings/Record Days/Top-Bottom Performers
     render({ mode: 'top-bottom' });
     expect(container.textContent).toContain('Ranked at the individual store');
   });
+
+  // Found in PM verification 2026-08-28: 'top-bottom' kept its pre-merge analytics.district perm
+  // (stricter than 'ranking'/'record-day''s analytics.store) in panel-registry.js and the old
+  // deep-link modal handler, but LEADERBOARD_MODES itself rendered all three mode tabs
+  // unconditionally with no perm passed through -- so a user with only analytics.store (e.g. a
+  // Supervisor) who opened Leaderboards via ordinary nav and clicked the Top/Bottom tab could
+  // reach content that was previously gated at the district level. Mirrors SCHED_TABS/
+  // SchedulingHubPanel's established per-tab perm-filter pattern (App.js).
+  it('a caller without analytics.district cannot reach the Top/Bottom mode via the tab strip', () => {
+    const storeOnlyPerm = k => k !== 'analytics.district';
+    render({ perm: storeOnlyPerm });
+    const labels = [...container.querySelectorAll('button')].map(b => b.textContent);
+    expect(labels.some(l => l.includes('Top/Bottom'))).toBe(false);
+  });
+
+  it('a caller without analytics.district requesting mode:"top-bottom" falls back to Rankings, not the gated content', () => {
+    const storeOnlyPerm = k => k !== 'analytics.district';
+    render({ mode: 'top-bottom', perm: storeOnlyPerm });
+    expect(container.textContent).not.toContain('Ranked at the individual store');
+    const labels = [...container.querySelectorAll('button')].map(b => b.textContent);
+    expect(labels.some(l => l.includes('Combined Score'))).toBe(true);
+  });
+
+  it('a caller WITH analytics.district can still reach Top/Bottom normally', () => {
+    render({ mode: 'top-bottom', perm: () => true });
+    expect(container.textContent).toContain('Ranked at the individual store');
+  });
 });
 
 describe('registry — record-day/top-bottom retired to internal, ranking promoted-in-place (dispatch #203)', () => {

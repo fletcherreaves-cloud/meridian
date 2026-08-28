@@ -3023,10 +3023,15 @@ function App() {
         // 'top-bottom' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
         // redirects into it on the Top/Bottom mode, same "route to the hub, select the tab"
         // pattern as crew-schedule/time-punches (#197) above. Kept on its original
-        // analytics.district perm (stricter than Rankings/Record Days' analytics.store) --
-        // LeaderboardPanel itself still opens under analytics.store via the 'ranking' id/perm, so
-        // a user without analytics.district who somehow reaches this exact modal id just falls
-        // through the perm() gate as before, unchanged behavior.
+        // analytics.district perm (stricter than Rankings/Record Days' analytics.store). This
+        // gate only covers the deep-link entry point -- the real protection (a user who is
+        // already inside LeaderboardPanel via the looser 'ranking' perm cannot click into the
+        // Top/Bottom mode tab in the first place) is LEADERBOARD_MODES' own perm filter in
+        // store-dash.js, mirroring SCHED_TABS/SchedulingHubPanel's established per-tab gate
+        // pattern (App.js's own SCHED_TABS above). Found and fixed in PM verification 2026-08-28
+        // -- the original #203 PR only gated this modal-id path and left the tab-strip itself
+        // unfiltered, which would have let any analytics.store user reach Top/Bottom content
+        // through ordinary navigation.
         if(modal==='top-bottom')     perm('analytics.district')&&(setLeaderboardMode('top-bottom'),goRoute('ranking'));
         if(modal==='opportunity-dollars') perm('analytics.district')&&setShowOpportunity(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
@@ -3327,7 +3332,7 @@ function App() {
       // (same treatment as count-cycle-panel.js got in dispatch #55 Part B), so it's called
       // directly too.
       routePanel==='attention'&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles}),
-      routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
+      routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',
         onBack:()=>goRoute(null),

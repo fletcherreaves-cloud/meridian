@@ -85,5 +85,14 @@ export default {version:'5.244', date:'2026-08-28', changes:[
   '460.67 KB gzip / eager payload 532.98 KB gzip (budget 850 KB, 317.02 KB headroom) -- DOWN from ' +
   'a measured 473.63 KB / 545.98 KB gzip baseline on the pre-merge tree (same build, changes ' +
   'stashed), the record-day.js static-import fix above shrinking the entry chunk by ~13 KB gzip ' +
-  'even though the merge is otherwise a pure code-motion, net-neutral operation.',
+  'even though the merge is otherwise a pure code-motion, net-neutral operation.' +
+  '\n\n' +
+  'PM-verification fix (2026-08-28): the merge kept Top/Bottom\'s stricter analytics.district ' +
+  'perm on its registry entry and on the retired modal\'s deep-link handler, but LEADERBOARD_MODES ' +
+  'itself rendered all three mode tabs unconditionally with no perm check -- so a user with only ' +
+  'analytics.store (a Supervisor, say) who opened Leaderboards through ordinary nav and clicked ' +
+  'the Top/Bottom tab could reach content previously gated at the district level. Fixed by ' +
+  'filtering LEADERBOARD_MODES through a perm prop (App.js now passes its own perm() down), ' +
+  'mirroring SCHED_TABS/SchedulingHubPanel\'s existing per-tab gate exactly -- the mechanism #202 ' +
+  'independently confirmed exists for this exact situation. Three new tests cover it.',
 ]}

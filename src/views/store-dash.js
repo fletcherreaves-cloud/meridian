@@ -2457,17 +2457,26 @@ function RankingTab({stores, ds, settings, dateRange, onDateChange, defaultMetri
 // "window" at all in the same sense (its windowDays only bounds the Recent Breaks tab, not the
 // all-time record scan itself) -- forcing one picker onto all three would silently change what at
 // least one of them means.
+// perm on each mode -- 'top-bottom' carries its pre-merge analytics.district gate (stricter
+// than Rankings/Record Days' analytics.store), same as it had as a standalone panel. The merge
+// itself only widened WHERE you reach it from (one nav entry instead of three); it must not
+// widen WHO can see it -- filtered below the same way SCHED_TABS/SchedulingHubPanel already
+// gates a stricter-perm tab inside a looser-perm hub (App.js).
 const LEADERBOARD_MODES = [
-  { key:'ranking',    label:'🏆 Rankings' },
-  { key:'record-day', label:'🏆 Record Days' },
-  { key:'top-bottom', label:'🏆 Top/Bottom' },
+  { key:'ranking',    label:'🏆 Rankings',    perm:'analytics.store' },
+  { key:'record-day', label:'🏆 Record Days', perm:'analytics.store' },
+  { key:'top-bottom', label:'🏆 Top/Bottom',  perm:'analytics.district' },
 ];
 
-function LeaderboardPanel({stores, ds, settings, dateRange, onDateChange, defaultMetric, mode, onModeChange, onSelectStore, onClose}) {
-  const [localMode, setLocalMode] = useState(mode || 'ranking');
+function LeaderboardPanel({stores, ds, settings, dateRange, onDateChange, defaultMetric, mode, onModeChange, onSelectStore, onClose, perm}) {
+  const allowed = LEADERBOARD_MODES.filter(m => !perm || perm(m.perm));
+  const firstAllowed = (allowed[0] && allowed[0].key) || 'ranking';
+  const [localMode, setLocalMode] = useState(allowed.some(m=>m.key===mode) ? mode : firstAllowed);
   // Sync if the caller's mode changes (e.g. a different nav/deep-link source re-opens this panel
-  // on a different mode) -- same pattern RankingTab already uses for defaultMetric above.
-  React.useEffect(()=>{ if(mode) setLocalMode(mode); },[mode]);
+  // on a different mode) -- same pattern RankingTab already uses for defaultMetric above. Falls
+  // back to firstAllowed rather than trusting the caller's mode blindly -- a stale deep link or a
+  // caller bug asking for 'top-bottom' must not bypass the perm filter above.
+  React.useEffect(()=>{ if(mode) setLocalMode(allowed.some(m=>m.key===mode) ? mode : firstAllowed); },[mode]);
   const setMode = (m) => { setLocalMode(m); onModeChange && onModeChange(m); };
 
   return h(RoutePanelShell,{
@@ -2476,7 +2485,7 @@ function LeaderboardPanel({stores, ds, settings, dateRange, onDateChange, defaul
     onBack:onClose,
   },
     div({style:{display:'flex',gap:6,padding:'0 0 16px',flexWrap:'wrap',borderBottom:'.5px solid var(--bdr)',marginBottom:16}},
-      ...LEADERBOARD_MODES.map(md=>btn({
+      ...allowed.map(md=>btn({
         key:md.key, className:'btn btn-sm',
         style:{fontSize:'11px',fontWeight:600,padding:'6px 14px',
           background:localMode===md.key?'rgba(245,188,0,.14)':'transparent',
@@ -2487,7 +2496,7 @@ function LeaderboardPanel({stores, ds, settings, dateRange, onDateChange, defaul
     ),
     localMode==='ranking'    && h(RankingTab,    {stores,ds,settings,dateRange,onDateChange,defaultMetric,onSelectStore}),
     localMode==='record-day' && h(RecordDayTab,  {stores,ds}),
-    localMode==='top-bottom' && h(TopBottomTab,  {stores,ds,onSelectStore}),
+    localMode==='top-bottom' && allowed.some(m=>m.key==='top-bottom') && h(TopBottomTab,  {stores,ds,onSelectStore}),
   );
 }
 
