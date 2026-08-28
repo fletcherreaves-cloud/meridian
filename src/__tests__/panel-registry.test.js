@@ -194,7 +194,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the eighteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192, minus #140, #189, #190 and #197)', () => {
+  it('is exactly the twenty-four panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205, minus #140, #189, #190 and #197)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -239,11 +239,25 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // — same "route:true -> internal, folded into a sibling as a tab" demotion #106/#140/#189
     // did above, except landing on kind:'internal' (a saved `?panel=time-punches` deep link still
     // needs to resolve, via routing.js's LEGACY_PANEL_REDIRECTS) rather than kind:'hub-tab'
-    // (nineteen -> eighteen).
+    // (nineteen -> eighteen). Dispatch #205 (URL migration batch 2, same owner-affirmed policy as
+    // #192) added six more: 'one-pager' (Store One-Pager) and 'graded-visits' (Graded Visits) had
+    // their hand-rolled backdrop/header refactored to RoutePanelShell inside the component, same
+    // treatment as #192's attention/ranking; 'visit-readiness' and 'operator-summary' got the
+    // same treatment (each also had a Scope/Controls bar that had no subHeader slot to live in,
+    // so it moved into the body, same "severity chips" move #192's AttentionPanel made);
+    // 'operator-summary' specifically had TWO hand-rolled backdrops under one component (an
+    // empty-state early return and the main body), same "two backdrops, one component" shape
+    // FOBAnalysisPanel had under dispatch #188; 'brief' (Forecast Brief / LocationBrief) had no
+    // internal chrome of its own (previously wrapped in an external ModalShell at the App.js call
+    // site) and is now wrapped in RoutePanelShell directly at the call site instead, same
+    // treatment as #192's security/signals; 'delivery-mix' (3PO Delivery) already had no
+    // hand-rolled backdrop (already ModalShell-based) so this was a pure shell swap, no ratchet
+    // interaction (eighteen -> twenty-four).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'attention', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'morning-brief', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report', 'sched-hub',
-      'security', 'signals',
+      'above-store', 'attention', 'brief', 'crew-schedule', 'delivery-mix', 'dicompare', 'eom-dashboard',
+      'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'morning-brief',
+      'one-pager', 'operator-summary', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report',
+      'sched-hub', 'security', 'signals', 'visit-readiness',
     ]);
   });
 
@@ -306,6 +320,19 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     const REMOVED_SETTERS = [
       'setShowAttention', 'setShowRanking', 'setShowSecurity', 'setShowSignals',
       'setShowPromoRoi', 'setShowMorningBrief',
+    ];
+    const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
+    expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);
+    const stillDeclared = REMOVED_SETTERS.filter(fn => new RegExp(`const \\[show${fn.slice(7)},\\s*${fn}\\]`).test(APP));
+    expect(stillDeclared, `stale useState declaration(s): ${stillDeclared.join(', ')}`).toEqual([]);
+  });
+
+  it('Dispatch #205: no setShowX(true) call site survives for the six converted booleans', () => {
+    // Same regression class as #55 Part B / #192 above, for this batch's six: one-pager/brief/
+    // visit-readiness/graded-visits/operator-summary/delivery-mix.
+    const REMOVED_SETTERS = [
+      'setShowOnePager', 'setShowBrief', 'setShowVisitReady', 'setShowGradedVisits',
+      'setShowOperatorSummary', 'setShowDeliveryMix',
     ];
     const stillCalledTrue = REMOVED_SETTERS.filter(fn => new RegExp(`${fn}\\(\\s*true\\s*\\)`).test(APP));
     expect(stillCalledTrue, `stale setX(true) call site(s): ${stillCalledTrue.join(', ')}`).toEqual([]);

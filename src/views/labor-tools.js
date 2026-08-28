@@ -44,6 +44,7 @@ import { metricAvg, metricRate, metricSeries, ensureLazyFill, isLazyFillPending,
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { ExportDropdown } from './store-dash.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -1728,26 +1729,31 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
     (ds.qsrActSummaryRows||[]).length>0 || (ds.opsLaborRows||[]).length>0 ||
     (ds.glimpseRows||[]).length>0 || (ds.cashRows||[]).length>0
   );
+  // route:true (dispatch #205, URL migration batch 2) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrops (this empty-state
+  // early return AND the main panel body below) + sheet + '✕' close button — same "two hand-
+  // rolled backdrops under one component" shape FOBAnalysisPanel had under dispatch #188. Same
+  // treatment as OperatorSummaryPanel's siblings in this batch (StoreOnePager/GradedVisitsPanel/
+  // VisitReadinessPanel), and AttentionPanel/RankingView under dispatch #192.
   if(!hasData)
-    return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
+    return h(RoutePanelShell,{icon:groupIcon,title:'Org Summary',onBack:onClose},
       div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
         div({style:{fontSize:40,marginBottom:12}},'📊'),
         div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Data Loaded'),
-        div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load an Operations Report or Labor Analysis.'),
-        btn({className:'btn btn-sm',onClick:onClose},'✕')));
+        div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},'Load an Operations Report or Labor Analysis.')));
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
-    div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',maxWidth:1300,margin:'0 auto',width:'calc(100% - 32px)',
-      borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
-
-      // ── Header ────────────────────────────────────────────────────────────────
-      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf2)',
-        display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
-        div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},groupIcon+' Org Summary'),
-        div({style:{fontSize:'9px',color:'var(--text3)'}},'Sales, labor, food cost & service by '+GROUP_OPTS.find(g=>g.id===groupBy).l.toLowerCase()+' · Expand rows for store detail'),
-        div({style:{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}},
+  // route:true (dispatch #205, URL migration batch 2) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop + sheet + '✕' close
+  // button (see the empty-state early return above for the other one this same panel hand-rolled).
+  // The Controls bar (period/group/focus/sort) moves up to be the first body child —
+  // RoutePanelShell has no subHeader slot, same treatment AttentionPanel's severity chips got
+  // under dispatch #192.
+  return h(RoutePanelShell,{
+    icon:groupIcon,
+    title:'Org Summary',
+    subtitle:'Sales, labor, food cost & service by '+GROUP_OPTS.find(g=>g.id===groupBy).l.toLowerCase()+' · Expand rows for store detail',
+    onBack:onClose,
+    headerExtra:
           h(ExportDropdown,{
             title:'District Summary (by '+GROUP_OPTS.find(g=>g.id===groupBy).l+') — '+curP.l,
             filename:'district_summary_'+groupBy+'_'+selPeriod+'_'+new Date().toISOString().slice(0,10),
@@ -1799,8 +1805,7 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
               ).join('');
             })(),
           }),
-          btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
-      ),
+  },
 
       // ── Controls bar (period · group-by · focus · sort) ────────────────────
       div({style:{flexShrink:0,borderBottom:'.5px solid var(--bdr)',background:'var(--surf)'}},
@@ -1921,7 +1926,6 @@ function OperatorSummaryPanel({stores, ds, settings, onClose}) {
           );
         })
       )
-    )
   );
 }
 

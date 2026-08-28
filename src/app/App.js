@@ -859,7 +859,7 @@ function App() {
   // Correlations tab; see signalsTab above and the modal handler below.
   const [showDistrictLens,setShowDistrictLens]= useState(false);
   const [showModelAssign, setShowModelAssign] = useState(false);
-  const [showOnePager,    setShowOnePager]    = useState(false);
+  // showOnePager — dispatch #205: replaced by routePanel==='one-pager' (see routePanel above).
   const [showGMBrief,     setShowGMBrief]     = useState(false);
   const [idbCoverage,     setIdbCoverage]     = useState(null);
   const [showDataManager,    setShowDataManager]    = useState(false);
@@ -891,8 +891,9 @@ function App() {
   const [showWhyEngine, setShowWhyEngine] = useState(false);
   // showChannelIntel — RETIRED (dispatch #201, 2026-08-28): ChannelIntelligencePanel was folded
   // into DeliveryMixPanel as its Overview tab. modal==='channel-intel' now redirects into
-  // setShowDeliveryMix below instead of its own state/render line — see delivery-mix.js's file
-  // header and panel-registry.js's channel-intel entry (kind:'internal').
+  // goRoute('delivery-mix') instead of its own state/render line — see delivery-mix.js's file
+  // header and panel-registry.js's channel-intel entry (kind:'internal'). (DeliveryMixPanel
+  // itself became routePanel==='delivery-mix' under dispatch #205.)
   // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge',
   // then dispatch #106 Phase B folded that route into routePanel==='forecast-reports' (see
   // routePanel above) as one of ForecastReportsPanel's two internal tabs.
@@ -911,7 +912,7 @@ function App() {
   const [showProjBriefSA, setShowProjBriefSA] = useState(false); // standalone Pre-Forecast Brief
   const [sessionBanner,   setSessionBanner]   = useState(null);  // IDB restore prompt
   const [showAudit,    setShowAudit]   = useState(false);
-  const [showBrief,    setShowBrief]   = useState(false);
+  // showBrief — dispatch #205: replaced by routePanel==='brief' (see routePanel above).
   // showMorningBrief — dispatch #192: replaced by routePanel==='morning-brief' (see routePanel above).
   // showEOMSummary — dispatch #202: removed. EOM Supervisor Summary is now a tab inside
   // EOMDashboardPanel (eomInitialMode==='supervisor'), same "no standalone showX state any more"
@@ -922,7 +923,8 @@ function App() {
   const [showPace,     setShowPace]    = useState(false); // Pace to Target
   const [showYearly,   setShowYearly]  = useState(false); // Yearly Projections
   // showPromoRoi — dispatch #192: replaced by routePanel==='promo-roi' (see routePanel above).
-  const [showVisitReady,setShowVisitReady]=useState(false); // Visit Readiness
+  // showVisitReady — dispatch #205: replaced by routePanel==='visit-readiness' (see routePanel
+  // above). visitReadyInit stays local state (still passed through as initialScope).
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
@@ -977,13 +979,14 @@ function App() {
   // showRecordDay — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
   // opened via routePanel==='ranking' + leaderboardMode==='record-day' instead.
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
-  const [showDeliveryMix,     setShowDeliveryMix]     = useState(false);
+  // showDeliveryMix — dispatch #205: replaced by routePanel==='delivery-mix' (see routePanel above).
   const [showScheduling,      setShowScheduling]      = useState(false);
   const [userRole,            setUserRole]            = useState('admin');
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
   const [betaMode,            setBetaMode]            = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_beta_mode')||'false');}catch{return false;}});
   const toggleBetaMode = React.useCallback(()=>setBetaMode(v=>{const nv=!v;try{localStorage.setItem('mf_beta_mode',JSON.stringify(nv));}catch{}return nv;}),[]);
-  const [showOperatorSummary,   setShowOperatorSummary]   = useState(false);
+  // showOperatorSummary — dispatch #205: replaced by routePanel==='operator-summary' (see
+  // routePanel above).
   const [showMonthlyProj,       setShowMonthlyProj]       = useState(false);
   const [showPriorityBrief,   setShowPriorityBrief]   = useState(false);
   // showSignals — dispatch #192: replaced by routePanel==='signals' (see routePanel above).
@@ -1006,7 +1009,7 @@ function App() {
   // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy', then dispatch #106
   // Phase B folded that route into routePanel==='forecast-reports' (see routePanel above).
   const [showDtSoS,       setShowDtSoS]       = useState(false);
-  const [showGradedVisits, setShowGradedVisits] = useState(false);
+  // showGradedVisits — dispatch #205: replaced by routePanel==='graded-visits' (see routePanel above).
   // showSecurity — dispatch #192: replaced by routePanel==='security' (see routePanel above).
   const [showFormsCompletion, setShowFormsCompletion] = useState(false);
   const [userTargets, setUserTargets]  = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_targets')||'{}');}catch{return {};}});
@@ -2895,7 +2898,10 @@ function App() {
   // own routePanel entirely, folding it into 'above-store' behind a scope selector. Dispatch
   // #192 removes attention/ranking/security/signals/promo-roi/morning-brief the same way (now
   // routePanel==='attention'/'ranking'/'security'/'signals'/'promo-roi'/'morning-brief').
-  const anyModalOpen = showNews||showAIScan||showAbout||showAudit||showBrief||
+  // Dispatch #205 removes one-pager/brief/visit-readiness/graded-visits/operator-summary/
+  // delivery-mix the same way (now routePanel==='one-pager'/'brief'/'visit-readiness'/
+  // 'graded-visits'/'operator-summary'/'delivery-mix').
+  const anyModalOpen = showNews||showAIScan||showAbout||showAudit||
     showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
@@ -2903,10 +2909,10 @@ function App() {
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
-    showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
+    showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2921,7 +2927,7 @@ function App() {
       // a view that's no longer showing any of them.
       if(routePanel){goRoute(null);return;}
       setShowAIScan(false);setShowAbout(false);
-      setShowAudit(false);setShowBrief(false);setShowCompare(false);
+      setShowAudit(false);setShowCompare(false);
       setShowDARDaypart(false);
       // Dispatch #72 A3 -- setShowDev/setShowInsights never existed (no matching useState
       // anywhere in this file): an unconditional ReferenceError on EVERY Escape press, which
@@ -2930,14 +2936,14 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
-      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
+      setShowDtSoS(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
-      setShowModelAssign(false);setShowOnePager(false);
-      setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
+      setShowModelAssign(false);
+      setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
       setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
@@ -2945,7 +2951,7 @@ function App() {
       setShowFormsPrint(false);setShowMetricLineage(false);
       setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
-      setShowVisitReady(false);setShowNews(false);
+      setShowNews(false);
       // sched-hub/perf-reviews/fob-analysis/fob-eom/eom-dashboard/count-cycle — Dispatch #55 Part
       // B: removed from this sweep, same reasoning as the routePanel check above (they're
       // routePanel now, caught by the early return, no showX left to reset).
@@ -2955,6 +2961,9 @@ function App() {
       // above-store — Dispatch #160: same reasoning, added to the routePanel set above
       // (routePanel==='above-store'). leader-one-pager got the same treatment, then dispatch #190
       // retired it as a separate routePanel id entirely (folded into 'above-store').
+      // one-pager/brief/visit-readiness/graded-visits/operator-summary/delivery-mix — Dispatch
+      // #205: same reasoning, removed from this sweep (routePanel now, caught by the early
+      // return above).
     };
     document.addEventListener('keydown', onKey);
     return ()=>document.removeEventListener('keydown', onKey);
@@ -3000,7 +3009,7 @@ function App() {
         // Scheduling hub (Notes 24): one modal, tabs. Legacy per-panel ids deep-link to the right tab.
         if(modal==='sched-hub')       perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='labor-analytics') perm('analytics.labor')&&(setSchedTab('analytics'),goRoute('sched-hub'));
-        if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
+        if(modal==='delivery-mix')    perm('analytics.store')&&goRoute('delivery-mix');
         if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='morning-brief')  perm('analytics.brief')&&goRoute('morning-brief');
         // eom-summary RETIRED (dispatch #202) — redirects into eom-dashboard's Supervisor
@@ -3009,13 +3018,9 @@ function App() {
         // perm — no widening, no narrowing.
         if(modal==='eom-summary')    perm('analytics.district')&&(setEomInitialMode('supervisor'),goRoute('eom-dashboard'));
         if(modal==='eom-dashboard')  perm('analytics.district')&&goRoute('eom-dashboard');
-        if(modal==='brief')          perm('analytics.brief')&&(()=>{
-          if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
-          else setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null});
-          setShowBrief(true);
-        })();
+        if(modal==='brief')          perm('analytics.brief')&&(selStore?setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]}):setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null}),goRoute('brief'));
         if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
-        if(modal==='operator-summary')  perm('analytics.district')&&setShowOperatorSummary(true);
+        if(modal==='operator-summary')  perm('analytics.district')&&goRoute('operator-summary');
         // Planning hub (Notes 24): one modal, five tabs. Legacy per-panel ids deep-link to the right tab.
         if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
@@ -3045,7 +3050,7 @@ function App() {
         if(modal==='pace-target')    perm('analytics.store')&&(setPlanningTab('pace'),setShowPlanningHub(true));
         if(modal==='yearly-proj')    perm('analytics.store')&&(setPlanningTab('yearly'),setShowPlanningHub(true));
         if(modal==='promo-roi')      perm('analytics.store')&&goRoute('promo-roi');
-        if(modal==='visit-readiness')perm('analytics.store')&&setShowVisitReady(true);
+        if(modal==='visit-readiness')perm('analytics.store')&&goRoute('visit-readiness');
         if(modal==='sched-summary')  perm('analytics.store')&&(setSchedTab('summary'),goRoute('sched-hub'));
         // 'sched-retention' — dispatch #140 item 1: no longer its own route; opens the
         // Scheduling & Labor hub and lands on the Training Retention tab, same "select a tab,
@@ -3062,7 +3067,7 @@ function App() {
         if(modal==='fcst-accuracy')   perm('analytics.forecasting')&&(setForecastReportsTab('fcst-accuracy'),goRoute('forecast-reports'));
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&(setForecastReportsTab('lifelenz-bridge'),goRoute('forecast-reports'));
         if(modal==='dt-sos')         perm('analytics.store')&&setShowDtSoS(true);
-        if(modal==='graded-visits')  perm('analytics.store')&&setShowGradedVisits(true);
+        if(modal==='graded-visits')  perm('analytics.store')&&goRoute('graded-visits');
         if(modal==='security')       perm('security.view')&&goRoute('security');
         // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
         // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
@@ -3097,7 +3102,7 @@ function App() {
         if(modal==='fob-eom')        perm('analytics.store')&&goRoute('fob-eom');
         if(modal==='smg-voice')      perm('analytics.store')&&setShowSMGVoice(true);
         if(modal==='store-kb')       perm('analytics.store')&&setShowStoreKB(true);
-        if(modal==='one-pager')      perm('analytics.store')&&setShowOnePager(true);
+        if(modal==='one-pager')      perm('analytics.store')&&goRoute('one-pager');
         if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
         // calendar-manager — RETIRED id (dispatch #191, 2026-08-28), redirects into Events & Tags'
         // Calendar mode rather than doing nothing; see panel-registry.js's comment on this id.
@@ -3108,7 +3113,7 @@ function App() {
         // channel-intel — RETIRED (dispatch #201, 2026-08-28): folded into DeliveryMixPanel's
         // Overview tab, which is the panel's default tab, so this redirect lands in the same
         // place the old panel did. See delivery-mix.js's file header.
-        if(modal==='channel-intel')  perm('analytics.store')&&setShowDeliveryMix(true);
+        if(modal==='channel-intel')  perm('analytics.store')&&goRoute('delivery-mix');
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
         // 'record-day' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
@@ -3216,7 +3221,7 @@ function App() {
         onCoachingSaved:refreshCoachingCycles,
         onOpenProjections:()=>goRoute('proj'),
         onOpenPVSA:()=>setShowPVSA(true),
-        onOpenBrief:()=>setShowBrief(true),
+        onOpenBrief:()=>goRoute('brief'),
         onNav:v=>setView(v),
         onOpenModal:(modal)=>{
           if(modal==='ranking'||modal.startsWith('ranking:')){
@@ -3348,7 +3353,28 @@ function App() {
         title:'Morning Intelligence Brief',
         subtitle:'Correlation engine · 9 rules · '+Object.keys(STORE_NAMES).length+' stores · Sorted by priority',
         onBack:()=>goRoute(null),
-      }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar}))
+      }, h(MorningBriefPanel,{ds,settings,customSignalDefs,darRows,refreshDar})),
+      // Dispatch #205 (URL migration batch 2) — one-pager/visit-readiness/graded-visits/
+      // operator-summary/delivery-mix carry RoutePanelShell inside their own component (same
+      // "shell inside the component" pattern as above-store/ranking/perf-reviews/fob-analysis
+      // above); 'brief' (LocationBrief) has no internal chrome of its own and is wrapped in
+      // RoutePanelShell directly here, same treatment as security/signals/morning-brief above.
+      routePanel==='one-pager'&&h(StoreOnePager,{stores,ds,settings,onClose:()=>goRoute(null)}),
+      routePanel==='brief'&&h(RoutePanelShell,{
+        icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
+        subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
+        onBack:()=>goRoute(null),bodyStyle:{padding:0},
+      }, h(LocationBrief,{
+        stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
+        ds,settings,
+        scope:briefScope.scope,
+        scopeLabel:briefScope.label,
+        onClose:()=>goRoute(null)
+      })),
+      routePanel==='visit-readiness'&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{goRoute(null);setVisitReadyInit(null);}}),
+      routePanel==='graded-visits'&&h(GradedVisitsPanel,{ds,onClose:()=>goRoute(null)}),
+      routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
+      routePanel==='delivery-mix'&&h(DeliveryMixPanel,{ds,stores,onClose:()=>goRoute(null)})
     )  // close main content scroll area
     )  // close right panel flex-col
 
@@ -3370,7 +3396,8 @@ function App() {
     // signalsTab above and the corr-explorer modal handler.
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
     showModelAssign&&h(ModelAssignmentPanel,{stores,ds,settings,userEvents,onClose:()=>setShowModelAssign(false)}),
-    showOnePager&&h(StoreOnePager,{stores,ds,settings,onClose:()=>setShowOnePager(false)}),
+    // showOnePager — Dispatch #205: moved to the routePanel gate in the main content area
+    // (StoreOnePager carries RoutePanelShell internally; see routePanel==='one-pager').
     showGMBrief&&h(GMCoachingBrief,{stores,ds,settings,userEvents,onClose:()=>setShowGMBrief(false)}),
     showDARDaypart&&h(DARDaypartPanel,{stores,ds,settings,onClose:()=>setShowDARDaypart(false)}),
     showDataManager&&h(DataManagerPanel,{ds,idbCoverage,onClose:()=>setShowDataManager(false),
@@ -3378,7 +3405,9 @@ function App() {
     showStoreVlhConfig&&h(StoreVlhConfigPanel,{onClose:()=>setShowStoreVlhConfig(false)}),
     // showPromoRoi — Dispatch #192: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside PromoRoiPanel itself; see routePanel==='promo-roi').
-    showVisitReady&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{setShowVisitReady(false);setVisitReadyInit(null);}}),
+    // showVisitReady — Dispatch #205: moved to the routePanel gate in the main content area
+    // (VisitReadinessPanel carries RoutePanelShell internally; see routePanel==='visit-readiness').
+    // visitReadyInit stays local App state, same shape as every other routed panel's initialX prop.
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
     // Events & Tags — merged with Calendar Manager (dispatch #191): EventsAndTagsPanel switches
@@ -3394,7 +3423,7 @@ function App() {
       onLaunch:(sub)=>{
         setShowReportSubs(false);
         if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsMode('calendar'); setShowEvents(true); }
-        else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); setShowVisitReady(true); }
+        else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); goRoute('visit-readiness'); }
         else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
       }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
@@ -3416,7 +3445,8 @@ function App() {
     // mode and moved RoutePanelShell inside FOBAnalysisPanel itself, same as this comment block's
     // other "shell inside the component" siblings.
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
-    showDeliveryMix&&h(DeliveryMixPanel,{ds,stores,onClose:()=>setShowDeliveryMix(false)}),
+    // showDeliveryMix — Dispatch #205: moved to the routePanel gate in the main content area
+    // (DeliveryMixPanel carries RoutePanelShell internally; see routePanel==='delivery-mix').
     // signals / security — Dispatch #192: moved to the routePanel gates in the main content
     // area (wrapped directly in RoutePanelShell there; see routePanel==='signals' /
     // routePanel==='security' — neither component had internal chrome to strip).
@@ -3454,12 +3484,14 @@ function App() {
     ),
     showTaskQueue&&h(TaskQueuePanel,{settings,initialType:tqInitialType,onClose:()=>setShowTaskQueue(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
-    showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
+    // showOperatorSummary — Dispatch #205: moved to the routePanel gate in the main content area
+    // (OperatorSummaryPanel carries RoutePanelShell internally; see routePanel==='operator-summary').
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
     // showFcstRef ModalShell — Dispatch #121: converted to routePanel==='fcst-ref' (see the
     // routePanel gates above, near fob-analysis) using RoutePanelShell instead.
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
-    showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
+    // showGradedVisits — Dispatch #205: moved to the routePanel gate in the main content area
+    // (GradedVisitsPanel carries RoutePanelShell internally; see routePanel==='graded-visits').
     // showAttention — Dispatch #192: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside AttentionPanel itself; see routePanel==='attention').
     showFormsPrint&&h(FormsPrintPanel,{onClose:()=>setShowFormsPrint(false)}),
@@ -3581,19 +3613,9 @@ function App() {
           ))
     ),
     showTroubleshoot&&h(TroubleshootingPanel,{onClose:()=>setShowTroubleshoot(false)}),
-    showBrief&&h(ModalShell,{
-      icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
-      subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',
-      onClose:()=>setShowBrief(false),maxWidth:720,zIndex:Z.nested,bodyStyle:{padding:0}
-    },
-      h(LocationBrief,{
-        stores:briefScope.locs?stores.filter(s=>briefScope.locs.includes(s.loc)):stores,
-        ds,settings,
-        scope:briefScope.scope,
-        scopeLabel:briefScope.label,
-        onClose:()=>setShowBrief(false)
-      })
-    ),
+    // showBrief — Dispatch #205: moved to the routePanel gate in the main content area
+    // (wrapped directly in RoutePanelShell there; see routePanel==='brief' — LocationBrief had
+    // no internal chrome to strip, same treatment as security/signals under dispatch #192).
     showAbout&&h(ModalShell,{
       title:h(React.Fragment,null,
         h('div',{style:{fontFamily:"'Syne',sans-serif",fontSize:'16px',fontWeight:800}},

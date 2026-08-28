@@ -5,6 +5,7 @@ import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { oepeSeconds } from '../utils/oepe.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const ALL_LOCS = Object.keys(STORE_NAMES);
@@ -565,38 +566,38 @@ export function GradedVisitsPanel({ ds, onClose }) {
       div({ style: { fontSize: 8, color: 'var(--text3)', marginTop: 6, lineHeight: 1.5 } }, 'Day vs Visit-hour + hourly, from qsr_daily_activity (QSRSoft formulas): OEPE = (DT serve − store − held)/GC, w/o parked · DT TTL = DT serve/GC · Avg CTP = (DT serve − recall)/GC · R2P = (FC serve − close-drawer)/GC, front counter · KVS Time Per GC = (MFY1+MFY2 serve)/kitchen GC · KVS Healthy = healthy/(healthy+unhealthy) · Labor % = punch $ / prod sales · TPPH = all-channel transactions / punch hours · DT Pull Forward % = cars-held/GC · +/- % = vs last year (hourly cell shows “—” below a measured-stable LY count: <40 transactions or <$800 sales — a thinner LY hour swings too wildly to trust, e.g. -100%/+2200% at a single-digit count). Day totals are dollar/count-weighted, not averaged. R2P & Avg CTP show “—” until a DAR re-pull backfills fc-close-drawer / dt-recall. Print / CSV export this summary + the chosen hourly rows.'));
   };
 
-  return div({ style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    div({ style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    div({ style: { flex: 1, background: 'var(--surf)', maxWidth: 1500, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
-
-      // Header
-      div({ style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        span({ style: { fontSize: 18 } }, '📋'),
-        div({ style: { flex: 1 } },
-          div({ style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Graded Visits'),
-          div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'CFV (single-channel) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded')),
-        types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
-          h('option', { value: 'all' }, 'All Types'),
-          types.map(t => h('option', { key: t, value: t }, t))),
-        h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px', colorScheme: 'dark' } },
-          h('option', { value: 'all' }, 'All Stores'),
-          h('option', { value: 'fl' }, 'Florida'),
-          h('option', { value: 'ok' }, 'Oklahoma'),
-          h('optgroup', { label: '— Patches —' },
-            ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
-              h('option', { key: name, value: '__patch__' + name }, name.split(' ')[0] + ' Patch (' + locs.length + ')'))),
-          h('optgroup', { label: '— Florida —' },
-            ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
-          h('optgroup', { label: '— Oklahoma —' },
-            ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
-        btn({ onClick: exportCSV, disabled: !filtered.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '⬇ CSV'),
-        btn({ onClick: () => setPrintCtx(x => !x), title: 'Include each visit’s Day / hour-before / visit-hour context in the printed report',
-          style: { padding: '3px 8px', borderRadius: 6, border: '1px solid ' + (printCtx ? 'var(--amber)' : 'var(--bdr)'), background: printCtx ? 'var(--amber)' : 'var(--surf)', color: printCtx ? '#1a1a1a' : 'var(--text3)', fontSize: 10, fontWeight: 700, cursor: 'pointer' } }, (printCtx ? '✓ ' : '+ ') + 'context'),
-        btn({ onClick: printReport, disabled: !filtered.length || printBusy, title: printCtx ? 'Print / PDF — includes per-visit context' : 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length && !printBusy ? 'pointer' : 'default' } }, printBusy ? 'Loading…' : '🖨 Print'),
-        btn({ className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
-
-      // Body
-      div({ style: { flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 } },
+  // route:true (dispatch #205, URL migration batch 2) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop + sheet + '✕' close
+  // button (same treatment as OperatorSummaryPanel/StoreOnePager/VisitReadinessPanel got in this
+  // same batch, and AttentionPanel/RankingView under dispatch #192). The filter selects + CSV/
+  // context/print buttons move into headerExtra; the header back arrow is now the sole dismiss
+  // action, so the body's own '✕' button is dropped.
+  return h(RoutePanelShell, {
+    icon: '📋',
+    title: 'Graded Visits',
+    subtitle: 'CFV (single-channel) & RGR (whole-restaurant, component-scored) · pass ≥ ' + PASS + '% · Ecosure slots in once uploaded',
+    onBack: onClose,
+    headerExtra: div({ style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+      types.length > 1 && h('select', { value: typeFilter, onChange: e => setTypeFilter(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px' } },
+        h('option', { value: 'all' }, 'All Types'),
+        types.map(t => h('option', { key: t, value: t }, t))),
+      h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value), style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '3px 7px', colorScheme: 'dark' } },
+        h('option', { value: 'all' }, 'All Stores'),
+        h('option', { value: 'fl' }, 'Florida'),
+        h('option', { value: 'ok' }, 'Oklahoma'),
+        h('optgroup', { label: '— Patches —' },
+          ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
+            h('option', { key: name, value: '__patch__' + name }, name.split(' ')[0] + ' Patch (' + locs.length + ')'))),
+        h('optgroup', { label: '— Florida —' },
+          ...ALL_LOCS.filter(l => FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l]))),
+        h('optgroup', { label: '— Oklahoma —' },
+          ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])).map(l => h('option', { key: l, value: l }, STORE_NAMES[l])))),
+      btn({ onClick: exportCSV, disabled: !filtered.length, title: 'Download CSV', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default' } }, '⬇ CSV'),
+      btn({ onClick: () => setPrintCtx(x => !x), title: 'Include each visit’s Day / hour-before / visit-hour context in the printed report',
+        style: { padding: '3px 8px', borderRadius: 6, border: '1px solid ' + (printCtx ? 'var(--amber)' : 'var(--bdr)'), background: printCtx ? 'var(--amber)' : 'var(--surf)', color: printCtx ? '#1a1a1a' : 'var(--text3)', fontSize: 10, fontWeight: 700, cursor: 'pointer' } }, (printCtx ? '✓ ' : '+ ') + 'context'),
+      btn({ onClick: printReport, disabled: !filtered.length || printBusy, title: printCtx ? 'Print / PDF — includes per-visit context' : 'Print / PDF', style: { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text2)', fontSize: 11, fontWeight: 600, cursor: filtered.length && !printBusy ? 'pointer' : 'default' } }, printBusy ? 'Loading…' : '🖨 Print')),
+  },
+      div({ style: { display: 'flex', flexDirection: 'column', gap: 12 } },
 
         // Upload / drop zone
         div({
@@ -673,9 +674,8 @@ export function GradedVisitsPanel({ ds, onClose }) {
                       isOpen && h('tr', null, h('td', { colSpan: 7, style: { padding: 0 } }, renderContext(v))));
                   })))),
             ]),
-
       // Footer
-      div({ style: { padding: '6px 16px', borderTop: '.5px solid var(--bdr)', flexShrink: 0, fontSize: 8, color: 'var(--text3)', background: 'var(--surf2)' } },
+      div({ style: { padding: '6px 16px', marginTop: 8, borderTop: '.5px solid var(--bdr)', fontSize: 8, color: 'var(--text3)' } },
         'Channel = order method (Drive Thru / Curbside / Delivery / In-Store) = the primary scored module. Foundation for the Graded-Visit Predictor.')
-    ));
+  );
 }

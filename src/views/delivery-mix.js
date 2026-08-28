@@ -24,7 +24,7 @@
 import * as React from 'react';
 import { f$, fPct } from '../utils/fmt.js';
 import { STORE_NAMES } from '../constants.js';
-import { ModalShell } from '../components/ModalShell.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
 const { useState, useMemo } = React;
@@ -503,16 +503,18 @@ function DeliveryPlatformsTab({ ds }) {
 }
 
 // ── Main panel ───────────────────────────────────────────────────────────────
+// route:true (dispatch #205, URL migration batch 2) — swapped ModalShell for RoutePanelShell.
+// Confirmed lower-risk than this batch's other five: this panel never hand-rolled its own
+// backdrop (it was already ModalShell-based), so there's no ratchet-modal-backdrop-bypass.js
+// interaction here, just the shell swap + onClose->onBack rename.
 export function DeliveryMixPanel({ ds, stores, onClose }) {
   const [tab, setTab] = useState('overview');  // 'overview' | 'delivery' — Overview first (see file header)
 
-  return h(ModalShell, {
+  return h(RoutePanelShell, {
     title: 'Delivery & Channel Mix',
     subtitle: 'District channel-mix overview, drill into 3rd-party delivery platforms',
     icon: '🛵',
-    onClose,
-    maxWidth: 960,
-    scroll: true,
+    onBack: onClose,
     headerExtra: h('div', { style: { display: 'flex', gap: 6 } },
       h(Pill, { active: tab === 'overview', onClick: () => setTab('overview') }, '📊 Channel Overview'),
       h(Pill, { active: tab === 'delivery', onClick: () => setTab('delivery') }, '🛵 Delivery Platforms'),
