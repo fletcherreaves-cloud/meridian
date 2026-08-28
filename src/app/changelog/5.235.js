@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.234', date:'2026-08-28', changes:[
+export default {version:'5.235', date:'2026-08-28', changes:[
   'Dispatch #194 -- merged Feature Requests into Task Queue with a `type` field ' +
   '(\'task\' | \'feature_request\'), per the owner\'s 2026-08-10 decision. Harvested ' +
   'FeatureRequestsPanel in full: the ~30-item SEED_ITEMS roadmap history (carried over as the ' +
