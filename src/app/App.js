@@ -167,7 +167,6 @@ const DistrictPriorityBrief     = lazyPanel(() => _analytics().then(m => ({ defa
 const AttentionPanel            = lazyPanel(() => _analytics().then(m => ({ default: m.AttentionPanel })));
 const DataManagerPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.DataManagerPanel })));
 const StoreOnePager             = lazyPanel(() => _analytics().then(m => ({ default: m.StoreOnePager })));
-const ChannelIntelligencePanel  = lazyPanel(() => _analytics().then(m => ({ default: m.ChannelIntelligencePanel })));
 const MonthlyProjectionsPanel   = lazyPanel(() => _analytics().then(m => ({ default: m.MonthlyProjectionsPanel })));
 const StoreVlhConfigPanel       = lazyPanel(() => _analytics().then(m => ({ default: m.StoreVlhConfigPanel })));
 
@@ -871,7 +870,10 @@ function App() {
   const [showReportSubs, setShowReportSubs] = useState(false);
   const [calInitScope, setCalInitScope] = useState(null);     // pre-scope Calendar from a saved report
   const [showWhyEngine, setShowWhyEngine] = useState(false);
-  const [showChannelIntel, setShowChannelIntel] = useState(false);
+  // showChannelIntel — RETIRED (dispatch #201, 2026-08-28): ChannelIntelligencePanel was folded
+  // into DeliveryMixPanel as its Overview tab. modal==='channel-intel' now redirects into
+  // setShowDeliveryMix below instead of its own state/render line — see delivery-mix.js's file
+  // header and panel-registry.js's channel-intel entry (kind:'internal').
   // showLifeLenzBridge — dispatch #105 correction: replaced by routePanel==='lifelenz-bridge',
   // then dispatch #106 Phase B folded that route into routePanel==='forecast-reports' (see
   // routePanel above) as one of ForecastReportsPanel's two internal tabs.
@@ -2881,7 +2883,7 @@ function App() {
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2912,7 +2914,7 @@ function App() {
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
@@ -3064,7 +3066,10 @@ function App() {
         if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
         if(modal==='above-store')    perm('analytics.district')&&goRoute('above-store');
         if(modal==='my-reports')     perm('analytics.dashboard')&&setShowReportSubs(true);
-        if(modal==='channel-intel')  perm('analytics.store')&&setShowChannelIntel(true);
+        // channel-intel — RETIRED (dispatch #201, 2026-08-28): folded into DeliveryMixPanel's
+        // Overview tab, which is the panel's default tab, so this redirect lands in the same
+        // place the old panel did. See delivery-mix.js's file header.
+        if(modal==='channel-intel')  perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
         if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
@@ -3350,7 +3355,6 @@ function App() {
         else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
       }}),
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
-    showChannelIntel&&h(ChannelIntelligencePanel,{stores,ds,onClose:()=>setShowChannelIntel(false)}),
     // perf-reviews — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
     showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
@@ -3369,7 +3373,7 @@ function App() {
     // mode and moved RoutePanelShell inside FOBAnalysisPanel itself, same as this comment block's
     // other "shell inside the component" siblings.
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
-    showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
+    showDeliveryMix&&h(DeliveryMixPanel,{ds,stores,onClose:()=>setShowDeliveryMix(false)}),
     // signals / security — Dispatch #192: moved to the routePanel gates in the main content
     // area (wrapped directly in RoutePanelShell there; see routePanel==='signals' /
     // routePanel==='security' — neither component had internal chrome to strip).
