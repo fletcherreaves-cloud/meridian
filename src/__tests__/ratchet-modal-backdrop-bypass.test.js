@@ -62,7 +62,7 @@ const ROOTS = ['src/views', 'src/features'];
 // Task Queue, not converted in place), and its own hand-rolled backdrop went with the file.
 // Measured fresh against this merge per the standing "never copy a number" rule — #195's branch
 // alone would have measured 69, but merging in #194's already-landed deletion drops it one more.
-const CEILING = 68;
+const CEILING = 67;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

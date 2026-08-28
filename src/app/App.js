@@ -186,7 +186,9 @@ const _storeDash = () => import('../views/store-dash.js');
 const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })));
 const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })));
 const RankingView           = lazyPanel(() => _storeDash().then(m => ({ default: m.RankingView })));
-const PerformanceCalculator = lazyPanel(() => _storeDash().then(m => ({ default: m.PerformanceCalculator })));
+// PerformanceCalculator — dispatch #199 moved this UI into Performance Review -> Customize ->
+// Calculator (see performance-reviews.js's PerformanceCalculatorSection usage). No longer a
+// standalone lazy-loaded panel here; 'perf-calc' deep-links now redirect into perf-reviews below.
 const UnifiedTargetsPanel   = lazyPanel(() => _storeDash().then(m => ({ default: m.UnifiedTargetsPanel })));
 const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default: m.MonthlyTargetManager })));
 const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default: m.EventCalendar })));
@@ -315,8 +317,9 @@ import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tut
 // scope) used to be statically imported here for 47 exports. Investigation found only 3 were ever
 // used unconditionally (the migrate-on-mount effect + mergedTargets memo below) — moved to their
 // own tiny engine/monthly-targets-v2.js module. Every panel App.js actually renders from
-// store-dash.js (DistrictGrid/OrgView/RankingView/PerformanceCalculator/UnifiedTargetsPanel/
-// MonthlyTargetManager/EventCalendar) was already gated behind view/show state; the other ~38
+// store-dash.js (DistrictGrid/OrgView/RankingView/UnifiedTargetsPanel/
+// MonthlyTargetManager/EventCalendar — PerformanceCalculator moved out under dispatch #199) was
+// already gated behind view/show state; the other ~38
 // imported symbols (the Chart.js wrapper library, ForecastTable, Brief, etc.) were dead code here
 // — never referenced, only used by analytics.js/labor-tools.js/store-analytics.js, which are
 // already lazy themselves. See the _storeDash() lazyPanel group below for the real panels.
@@ -818,7 +821,8 @@ function App() {
   const [panelVis, setPanelVis] = useState(loadPanelVis);          // {id:bool} optional-panel visibility
   const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
   const setAllPanelVis = (on) => setPanelVis(() => { const n = {}; OPTIONAL_PANELS.forEach(p => { n[p.id] = on; }); savePanelVis(n); return n; });
-  const [showPerfCalc,    setShowPerfCalc]    = useState(false);
+  // showPerfCalc removed — dispatch #199 moved this UI into Performance Review -> Customize ->
+  // Calculator (perfReviewsEntry above drives the redirect for old deep links).
   // showCorrExplorer — RETIRED (dispatch #195, 2026-08-28): corr-explorer merged into Signals'
   // Correlations tab; see signalsTab above and the modal handler below.
   const [showDistrictLens,setShowDistrictLens]= useState(false);
@@ -2861,7 +2865,7 @@ function App() {
     showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
-    showPerfCalc||showPriorityBrief||showProjBriefSA||
+    showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
@@ -2891,7 +2895,7 @@ function App() {
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
-      setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);setShowPerfCalc(false);
+      setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowChannelIntel(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
@@ -3047,7 +3051,12 @@ function App() {
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
         if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
-        if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
+        // 'perf-calc' — dispatch #199: no longer its own panel, redirects into Performance
+        // Review -> Customize -> Calculator, same pattern as 'targets-editor' above. Gated on
+        // reviews.customize (the Customize tab's real gate), not the panel's old broader
+        // analytics.store perm — see performance-calculator.js's header comment for why that's
+        // a deliberate access-control narrowing, not an oversight.
+        if(modal==='perf-calc')      perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'calculator'}),goRoute('perf-reviews'));
         // corr-explorer — RETIRED id (dispatch #195, 2026-08-28), redirects into Signals'
         // Correlations tab (Scanner-statistics-powered) rather than doing nothing; see
         // panel-registry.js's comment on this id.
@@ -3289,7 +3298,8 @@ function App() {
     // (RoutePanelShell now lives inside SchedulingHubPanel itself; see routePanel==='sched-hub').
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
     showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
-    showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
+    // PerformanceCalculator render line — RETIRED (dispatch #199, 2026-08-28): see
+    // perfReviewsEntry above and the perf-calc modal handler.
     // MetricCorrelationExplorer render line — RETIRED (dispatch #195, 2026-08-28): see
     // signalsTab above and the corr-explorer modal handler.
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
