@@ -1,0 +1,63 @@
+name: QSRSoft Menu Items Catalog Pull
+
+# Per-store menu-item CATALOG (item_number/description keyed by the internal
+# store_menuitem_id) from prod.ebos.qsrsoft.com -- reference data, not a daily time
+# series. Weekly is the cadence (see scripts/qsrsoft-menu-items-pull.mjs's own header
+# for why this is a separate script/workflow from the daily qsrsoft-variance-pull.mjs
+# loop, and why weekly specifically -- mirrors LifeLenz People Skills Sync's identical
+# reasoning for its own catalog-like data).
+
+on:
+  schedule:
+    - cron: '30 11 * * 0'   # Sundays 11:30 UTC -- after the LifeLenz People Skills Sync's Monday slot
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Subset of NSNs (comma-separated, default: all 27)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Menu Items catalog
+        run: node scripts/qsrsoft-menu-items-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:     ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          MENUITEMS_STORES:          ${{ github.event.inputs.stores || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-items-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

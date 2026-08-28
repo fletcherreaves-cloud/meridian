@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   mapVarianceRows, mapYieldGroups, parseYieldRange, yieldBandFor, yieldStatus,
   mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers, flagUnmatchedTransfers,
-  mapRawItemHistory, mapRawItemInfo,
+  mapRawItemHistory, mapRawItemInfo, mapMenuItems,
 } from '../engine/eom-parsers.js';
 
 describe('mapVarianceRows', () => {
@@ -160,5 +162,54 @@ describe('mapRawItemInfo', () => {
     expect(m.recipeItem).toBe(false);
     expect(m.caseQty).toBeNull();
     expect(m.primaryVdr).toBeNull();
+  });
+});
+
+describe('mapMenuItems', () => {
+  it('splits "{item_number} - {description}" into real fields (dispatch #186)', () => {
+    const rows = [
+      { data: 4194793, value: '1 - Hamburger' },
+      { data: 4195010, value: '10 - McRib' },
+      { data: 4227570, value: '17 - 2 Southern Style Ckn' }, // description itself starts with a digit
+      { data: 5895959, value: '70 - Do Not Use' },
+    ];
+    const m = mapMenuItems(rows);
+    expect(m).toHaveLength(4);
+    expect(m[0]).toEqual({ storeMenuitemId: 4194793, itemNumber: 1, description: 'Hamburger', value: '1 - Hamburger' });
+    expect(m[1].itemNumber).toBe(10);
+    expect(m[1].description).toBe('McRib');
+    // A description that itself leads with digits must not truncate the parse early.
+    expect(m[2].itemNumber).toBe(17);
+    expect(m[2].description).toBe('2 Southern Style Ckn');
+    expect(m[3].itemNumber).toBe(70);
+    expect(m[3].description).toBe('Do Not Use');
+  });
+
+  it('keeps the raw value and nulls the parsed fields on an unrecognized shape, rather than dropping the row', () => {
+    const m = mapMenuItems([{ data: 999, value: 'no dash here' }, { data: 1000, value: null }]);
+    expect(m).toHaveLength(2);
+    expect(m[0].itemNumber).toBeNull();
+    expect(m[0].description).toBeNull();
+    expect(m[0].value).toBe('no dash here');
+    expect(m[1].value).toBe('');
+  });
+
+  it('drops rows with no id and defaults on an empty/missing response', () => {
+    expect(mapMenuItems([{ value: '1 - Hamburger' }])).toEqual([]);
+    expect(mapMenuItems([])).toEqual([]);
+    expect(mapMenuItems(undefined)).toEqual([]);
+  });
+
+  it('matches every one of the 5,466 rows in the real owner-captured sample (store 3708)', () => {
+    // memory/captures/menu-items-list-2026-08-28.json -- confirms the regex holds on the full
+    // real response, not just the handful of hand-picked rows above.
+    const capture = JSON.parse(
+      readFileSync(join(process.cwd(), 'memory/captures/menu-items-list-2026-08-28.json'), 'utf8'),
+    );
+    const m = mapMenuItems(capture);
+    expect(m).toHaveLength(5466);
+    expect(m.filter(r => r.itemNumber == null)).toHaveLength(0);
+    const ids = new Set(m.map(r => r.storeMenuitemId));
+    expect(ids.size).toBe(5466); // storeMenuitemId is 1:1 unique, per the dispatch's own finding
   });
 });
