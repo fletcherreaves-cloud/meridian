@@ -127,6 +127,9 @@ const ROOTS = ['src/views', 'src/features'];
 // ReportSubscriptions ('my-reports') was already ModalShell-based, not hand-rolled, matching
 // dispatch #205's delivery-mix precedent exactly (pure shell swap, zero backdrop-pattern
 // interaction either side).
+// Dispatch #207 converted 'planning' (PlanningHubPanel) to route:true too, but that component
+// lives in src/app/App.js, which ROOTS above never walks -- confirmed by re-running this file's
+// own scan after the conversion: still exactly 42 hits, no change.
 const CEILING = 42;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;

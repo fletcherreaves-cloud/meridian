@@ -58,7 +58,7 @@ export const PANELS = [
   // memory/decisions-panel-inventory-2026-08-10.md and memory/dispatch-191.md. calendar-manager
   // stays registered below, kind:'internal', purely so a stray dispatch to the old id still
   // redirects instead of doing nothing -- it is not a fifth link.)
-  { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning' },
+  { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning', route:true },
   { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
   { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'planning' },
   // calendar-manager — RETIRED as a nav entry (dispatch #191, 2026-08-28): its distinct capability
