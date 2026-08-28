@@ -303,10 +303,14 @@ export const METRIC_SOURCES = {
   posOverAmt:     { mode: 'any', srcs: [['opsCashRows', 'posOverAmt'], ['glimpseRows', 'posOverAmt'], ['cashRows', 'posOverAmt'], ['ctrlRows', 'posOverAmt']] },
   posOverCnt:     { mode: 'any', srcs: [['opsCashRows', 'posOverCnt'], ['glimpseRows', 'posOverCnt'], ['cashRows', 'posOverCnt'], ['ctrlRows', 'posOverCnt']] },
 
-  // Promo $ / % — manual Controls, then emailed Glimpse. (promoCnt deliberately NOT
-  // added: no auto/emailed stream emits it, so a chain would be single-source theatre.)
-  promoAmt:       { mode: 'any', srcs: [['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
-  promoPct:       { mode: 'any', srcs: [['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
+  // Promo $ / % — auto-first (dispatch #180): the auto-pulled Operations Report cash-sheet
+  // leads, then emailed Glimpse (kept as a fallback for any (loc, date) the ops-pull hasn't
+  // reached yet), then manual Controls last. Closes the last remaining item from #165's audit
+  // (promoAmt/promoPct measured 97-98% field match, same fix shape as #175's cashOS/posOver).
+  // (promoCnt deliberately NOT added: no auto/emailed stream emits it, so a chain would be
+  // single-source theatre.)
+  promoAmt:       { mode: 'any', srcs: [['opsCashRows', 'promoAmt'], ['glimpseRows', 'promoAmt'], ['ctrlRows', 'promoAmt']] },
+  promoPct:       { mode: 'any', srcs: [['opsCashRows', 'promoPct'], ['glimpseRows', 'promoPct'], ['ctrlRows', 'promoPct']] },
 
   // T-Red Before/After COUNTS — the % versions already had chains to opsCashRows since
   // #37; the counts beside them did not, so the same tile could show a fresh % next to a

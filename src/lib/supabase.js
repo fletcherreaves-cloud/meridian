@@ -2824,6 +2824,12 @@ export const loadOpsCashSheet = async (d = 45) => {
     // add an opsCashRows source for them even though qsr_cash_sheet carries overring_amt/qty.
     posOverAmt: r.overring_amt != null ? Number(r.overring_amt) : null,
     posOverCnt: r.overring_qty != null ? Number(r.overring_qty) : null,
+    // Promo $ + % (dispatch #180) — closes the last remaining item from #165's audit
+    // (97-98% field match, flagged but never wired). qsr_cash_sheet.metrics carries
+    // promo_amt but no promo_pct column, so % is derived net-sales-weighted, same
+    // pattern as discPct/cashOSPct/tRedAPct/tRedBPct above.
+    promoAmt: r.promo_amt != null ? Number(r.promo_amt) : null,
+    promoPct: (r.net_sales_amt > 0 && r.promo_amt != null) ? r.promo_amt / r.net_sales_amt : null,
   }));
 };
 // OT + crew + needed hrs. Alias the snake_cased OT fields to the app's otHrs/otDollar so tiles that
