@@ -125,6 +125,30 @@ for records that live at their own path: `dispatchNN-topic.md` above):
     `auditRows` order. Two follow-up leads written up for whoever picks this back up: the owner
     checking QSRSoft's Daily Glimpse column-selection config, and investigating what the
     high-gap-vs-clean-match stores have in common.
+  - **✅ SHIPPED (v5.225): [Dispatch #183 — chased #181's store-clustered gap, found and FIXED a
+    real Meridian-side bug](dispatch-183.md →
+    finding-audit-rows-registertype-duplication-2026-08-28.md), PR TBD.** Picked up #181's
+    "investigate what the high-gap-vs-clean-match stores have in common" lead. Reproduced #181's
+    own measurement first (71.1%/67.4%, matching #181's 71.3%/67.5%) to confirm the same real
+    population. Register-type coverage (lead 1) ruled out — all 27 stores carry all three types.
+    Channel mix (lead 2) showed a moderate but not decisive signal. **Lead 3 (POS/config) found
+    the real cause:** `audit_rows`' Manager-type and Preparer-type register-audit API calls return
+    IDENTICAL meal $ totals to each other (redistributed across different employee names within
+    the day, not real incremental register activity) — confirmed via row-level inspection, not
+    just aggregates. **Two compounding Meridian-side bugs, both fixed:** `metricDaily`/
+    `metricSeriesWithSource` (`metric-source.js`) were (1) not filtering `auditRows` to the
+    correct (Cashier) register type, and (2) — a second bug found while implementing the fix —
+    only ever returning ONE employee's row as if it were the whole store's day total, since
+    `auditRows` is one row per (loc,date,EMPLOYEE,register_type), unlike every other source in
+    that chain. Fixed together via a new `'sum'` aggregation mode on a `srcs` tuple (cashier-only,
+    summed across employees) — verified 98.0%/97.8% match against `qsr_cash_sheet` (up from
+    71.1%/67.4%), clearing the ~90% bar decisively. 9 new tests, confirmed 8/9 fail on revert per
+    CLAUDE.md's revert-check rule. Full suite 3046/3046, build clean (552.84 KB eager, 297.16 KB
+    under budget). **Flagged, NOT fixed:** the same Manager==Preparer duplication was also found
+    on `pos_over_amt`, which `register-audit.js`'s `analyzeRegisterAudit` currently SUMS across
+    register types for the live Register Audit / Security panel (CASH-003 reads it) — a real,
+    separate, security-relevant lead for a future dispatch, not independently verified beyond a
+    store-level total comparison here.
 - **EOM/inventory-count pending-items audit (2026-08-27, owner-requested ahead of the 3-day
   physical count starting Sat 2026-08-29) — dispatches #176-179, all shipped or honestly closed
   out same-day.** PM ran a verified sweep of every panel/engine file touching EOM/inventory/FOB
