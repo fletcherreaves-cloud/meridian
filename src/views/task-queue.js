@@ -1,6 +1,51 @@
 // @ts-nocheck
+// ── Task Queue (merged with Feature Requests, dispatch #194) ──────────────────
+//
+// Owner's 2026-08-10 decision (memory/decisions-panel-inventory-2026-08-10.md): "Feature
+// Requests -> merge into Task Queue with a type field." Every entry in this panel now carries
+// a `type`: 'task' (the original Task Queue shape -- tiered work items, T1 auto/T2 PR/T3 human)
+// or 'feature_request' (harvested from the retired src/views/feature-requests.js -- votable,
+// publicly-submitted roadmap ideas with dev notes and a shipped-version badge).
+//
+// ── Why two Supabase tables still back this one panel ──────────────────────────
+// `tasks` (34 live rows, measured via SUPABASE_SERVICE_ROLE_KEY Bearer, content-range 0-0/34)
+// and `feature_requests` (2 live rows, content-range 0-0/2, same credential) have never shared
+// a schema -- different status vocab (backlog/ready/in_progress/done/blocked vs.
+// idea/planned/in-progress/completed/declined), different priority type (int 1/2/3 vs. string
+// high/medium/low), and FR-only columns (submitted_by/dev_notes/completed_version/votes) `tasks`
+// never had. `supabase/schema-tasks-feature-merge.sql` adds those columns to `tasks` (+ a `type`
+// column, + a widened status CHECK) so the two CAN physically consolidate, and
+// `scripts/migrate-feature-requests-to-tasks.mjs` copies the 2 live feature_requests rows in --
+// but applying that SQL needs a Postgres DDL connection this agent session doesn't have (no
+// DATABASE_URL/psql credential reaches this sandbox, only the Supabase REST API via the service
+// role key, which can read/write existing columns but cannot ALTER TABLE). So it ships as a
+// ready-to-run migration, same as this repo's other schema-*.sql files awaiting the owner.
+//
+// The PANEL merge does not wait on that: this component reads BOTH `tasks` (loadTasks, via
+// updateTask/saveTask) and `feature_requests` (loadFeatureRequests, via saveFeatureRequest/
+// updateFeatureRequest/voteFeatureRequest -- all four imports unchanged from feature-requests.js)
+// and normalizes both into one shared item shape tagged with `type` + an internal `_src`
+// provenance marker ('tasks' | 'feature_requests' | 'seed') that routes edits/votes back to the
+// correct table. New Task submissions never send a `type` key (so they work identically whether
+// or not the schema migration has landed -- the column's DEFAULT 'task' covers it once it has).
+// New Feature Request submissions still go through saveFeatureRequest, unchanged, into
+// `feature_requests` -- so nothing about actually filing a request depends on the pending SQL
+// either. Once the owner runs the schema file + migration script, any `tasks` row that then
+// carries type:'feature_request' is preferred over a same-titled legacy `feature_requests` row
+// (see `dedupedFR` below), so the two won't double-render.
+//
+// SEED_ITEMS (the ~30-item pre-seeded roadmap history) was NEVER a Supabase row in the first
+// place -- FeatureRequestsPanel always merged it client-side, filtering out any seed title that
+// already had a matching DB row. That behavior is carried over verbatim here, so none of that
+// history is gated on the pending migration at all.
+//
+// scripts/features.mjs (the CLI referenced from SAGE's 🐞 Log flow and this panel's own history)
+// is untouched -- it still targets `feature_requests` directly, which stays the live write path
+// for feature-request-type entries until a future dispatch flips it over post-migration.
+
 import * as React from 'react';
-import { loadTasks, saveTask, updateTask, loadSessionNotes, saveSessionNote, markNoteConsumed } from '../lib/supabase.js';
+import { loadTasks, saveTask, updateTask, loadSessionNotes, saveSessionNote, markNoteConsumed,
+  loadFeatureRequests, saveFeatureRequest, updateFeatureRequest, voteFeatureRequest } from '../lib/supabase.js';
 
 const h   = React.createElement;
 const div  = (p,...c) => h('div',   p, ...c);
@@ -10,30 +55,55 @@ const btn  = (p,...c) => h('button',p, ...c);
 const { useState, useEffect, useRef, useCallback } = React;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+const TYPE_META = {
+  task:            { label:'🔧 Task',            color:'#60a5fa', bg:'rgba(96,165,250,.12)' },
+  feature_request: { label:'💡 Feature Request', color:'var(--gold)', bg:'rgba(245,188,0,.12)' },
+};
+
 const TIER_META = {
   1: { label:'T1', desc:'Config / copy / minor UI — auto-safe', color:'#10b981', bg:'rgba(16,185,129,.15)' },
   2: { label:'T2', desc:'New feature / logic change — PR + review', color:'#f59e0b', bg:'rgba(245,158,11,.15)' },
   3: { label:'T3', desc:'Infra / schema / auth — human only', color:'#ef4444', bg:'rgba(239,68,68,.15)' },
 };
 
+// Priority is unified to the Task Queue's int scale (1=High/2=Medium/3=Low) for BOTH types --
+// the same 1/2/3 mapping sage.js's LogIssueModal already applies when it files a Feature
+// Request as a task-shaped record, so this isn't a new convention. Feature Request rows sourced
+// from the (string-priority) feature_requests table are normalized to these ints on load; a new
+// Feature Request submission is converted back to a string just before saveFeatureRequest.
 const PRI_META = {
   1: { label:'High',   color:'#ef4444', dot:'🔴' },
   2: { label:'Medium', color:'#f59e0b', dot:'🟡' },
   3: { label:'Low',    color:'#94a3b8', dot:'🟢' },
 };
+const PRI_STR_TO_INT = { high:1, medium:2, low:3 };
+const PRI_INT_TO_STR = { 1:'high', 2:'medium', 3:'low' };
 
+// Status stays in each backing table's own native vocabulary (no data rewrite of the 2 live
+// feature_requests rows) -- the badge/facet UI just displays both vocabularies with a shared
+// visual language. 'in_progress'/'done' (task) and 'in-progress'/'completed' (feature request)
+// are genuinely different stored strings; both map to the same label/color pairing below.
 const STATUS_META = {
-  backlog:     { label:'Backlog',     color:'#94a3b8', bg:'rgba(148,163,184,.12)' },
-  ready:       { label:'Ready',       color:'#60a5fa', bg:'rgba(96,165,250,.12)'  },
-  in_progress: { label:'In Progress', color:'#f59e0b', bg:'rgba(245,158,11,.12)'  },
-  done:        { label:'Done',        color:'#10b981', bg:'rgba(16,185,129,.12)'  },
-  blocked:     { label:'Blocked',     color:'#ef4444', bg:'rgba(239,68,68,.12)'   },
+  backlog:      { label:'Backlog',     color:'#94a3b8', bg:'rgba(148,163,184,.12)' },
+  ready:        { label:'Ready',       color:'#60a5fa', bg:'rgba(96,165,250,.12)'  },
+  in_progress:  { label:'In Progress', color:'#f59e0b', bg:'rgba(245,158,11,.12)'  },
+  done:         { label:'Done',        color:'#10b981', bg:'rgba(16,185,129,.12)'  },
+  blocked:      { label:'Blocked',     color:'#ef4444', bg:'rgba(239,68,68,.12)'   },
+  idea:         { label:'Idea',        color:'#94a3b8', bg:'rgba(148,163,184,.12)' },
+  planned:      { label:'Planned',     color:'#60a5fa', bg:'rgba(96,165,250,.12)'  },
+  'in-progress':{ label:'In Progress', color:'#f59e0b', bg:'rgba(245,158,11,.12)'  },
+  completed:    { label:'Done',        color:'#10b981', bg:'rgba(16,185,129,.12)'  },
+  declined:     { label:'Declined',    color:'#ef4444', bg:'rgba(239,68,68,.12)'   },
 };
 
-const STATUSES = ['backlog','ready','in_progress','done','blocked'];
+const TASK_STATUSES = ['backlog','ready','in_progress','done','blocked'];
+const FR_STATUSES    = ['idea','planned','in-progress','completed','declined'];
 
-// Domain facet, harvested from the orphaned AIInsightsLog panel's taxonomy (issue #128) —
-// a well-chosen set of buckets for this domain that TaskQueuePanel never had of its own.
+// Domain facet, harvested from the orphaned AIInsightsLog panel's taxonomy (issue #128) for
+// type:'task', merged with FeatureRequestsPanel's own category set for type:'feature_request'.
+// No key collision worth normalizing away ('Labor' vs 'labor' stay two distinct badges) -- each
+// is exactly what its source panel used, and merging their casing would be a data-shape change
+// nobody asked for.
 const CATEGORY_META = {
   ops:     { label:'Operations', color:'#60a5fa' },
   ctrl:    { label:'Controls',   color:'var(--crit)' },
@@ -42,7 +112,63 @@ const CATEGORY_META = {
   weather: { label:'Weather',    color:'#93c5fd' },
   anomaly: { label:'Anomaly',    color:'#f97316' },
   other:   { label:'Other',      color:'#94a3b8' },
+  'AI':          { label:'AI',          color:'#a78bfa' },
+  'Analytics':   { label:'Analytics',   color:'#60a5fa' },
+  'Data':        { label:'Data',        color:'#34d399' },
+  'Finance':     { label:'Finance',     color:'#f59e0b' },
+  'Guest Voice': { label:'Guest Voice', color:'#f472b6' },
+  'Labor':       { label:'Labor',       color:'#fb923c' },
+  'UI':          { label:'UI',          color:'#38bdf8' },
+  'General':     { label:'General',     color:'#94a3b8' },
 };
+const TASK_CATEGORIES = ['ops','ctrl','labor','sales','weather','anomaly','other'];
+const FR_CATEGORIES   = ['AI','Analytics','Data','Finance','Guest Voice','Labor','UI','General'];
+
+// ── Seed data — historical + planned items from Meridian roadmap ───────────────
+// Harvested verbatim from feature-requests.js's SEED_ITEMS. Never a Supabase row (see header
+// comment) -- a client-side historical overlay, merged the same way it always was: any seed
+// title already covered by a live feature_requests/tasks row is suppressed so it doesn't
+// double-render once that title graduates to a real record.
+const SEED_ITEMS = [
+  // Completed
+  { id:'seed-sage',    title:'SAGE AI Chat Assistant',                       category:'AI',          status:'completed', priority:'high',   completed_version:'v4.281', votes:0, submitted_by:'Fletcher Reaves', description:'Claude Opus-powered AI advisor with streaming, JWT-verified Edge Function, adaptive thinking.' },
+  { id:'seed-sb-ops',  title:'Supabase persistence — operational data',       category:'Data',        status:'completed', priority:'high',   completed_version:'v4.301', votes:0, submitted_by:'Fletcher Reaves', description:'Move fobRows, opsRows, ctrlRows, darRows, smgFullscale from OPFS to Supabase for true cross-device access.' },
+  { id:'seed-smg-cal', title:'SMG VOICE auto-calibrate thresholds',           category:'Guest Voice', status:'completed', priority:'medium', completed_version:'v4.310', votes:0, submitted_by:'Fletcher Reaves', description:'p75/p25 percentile engine derives OSAT, B2B, and problem rate thresholds from historical data automatically.' },
+  { id:'seed-grid',    title:'District grid Option A+C tile layout',          category:'UI',          status:'completed', priority:'medium', completed_version:'v4.311', votes:0, submitted_by:'Fletcher Reaves', description:'4px accent bar, FL/OK chip, 4-metric rows (Sales, Labor, OEPE, TPPH), model health score per store card.' },
+  { id:'seed-orgsum',  title:'Org Summary group selector',                    category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.314', votes:0, submitted_by:'Fletcher Reaves', description:'Renamed from Operator Summary. Groups: Company (all stores), Org (FL/OK), Operator, Patch (supervisor territory).' },
+  { id:'seed-dm',      title:'Data Manager cloud-first update',               category:'Data',        status:'completed', priority:'low',    completed_version:'v4.315', votes:0, submitted_by:'Fletcher Reaves', description:'Supabase section now shows operational row coverage. Header updated to reflect cloud-first architecture.' },
+  { id:'seed-fr',      title:'Feature Requests module',                       category:'UI',          status:'completed', priority:'low',    completed_version:'v4.316', votes:0, submitted_by:'Fletcher Reaves', description:'Track feature ideas from all users. Pre-seeded with roadmap history. Supabase-backed for cross-user submissions.' },
+  { id:'seed-ebos',    title:'QSRSoft eBOS purchases automation',             category:'Data',        status:'completed', priority:'high',   completed_version:'v4.340', votes:0, submitted_by:'Fletcher Reaves', description:'Daily GitHub Actions sync of op supplies purchases via Playwright auth → qsr_ebos_daily table.' },
+  { id:'seed-dar',     title:'QSRSoft Daily Activity (DAR) automation',       category:'Data',        status:'completed', priority:'high',   completed_version:'v4.356', votes:0, submitted_by:'Fletcher Reaves', description:'Hourly intraday data for all 27 stores, quarter-hour granularity → qsr_daily_activity. Runs daily 5am CDT.' },
+  { id:'seed-daypart', title:'Store Dashboard daypart card',                  category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.357', votes:0, submitted_by:'Fletcher Reaves', description:'Aggregates hour slots to Breakfast/Lunch/PM/Dinner/Late from qsr_daily_activity. Shows vs projection, vs LY.' },
+  { id:'seed-pace',    title:'Morning Brief district hourly pace',            category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.358', votes:0, submitted_by:'Fletcher Reaves', description:'TodayPaceCard: today sales pace vs 30-day mean by hour slot from qsr_daily_activity.' },
+  { id:'seed-signals', title:'Signals LiveOps panel',                        category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.360', votes:0, submitted_by:'Fletcher Reaves', description:'Live operational alerts from qsr_daily_activity: sales pace, DT serve time, labor vs needed hours.' },
+  { id:'seed-qsrproj', title:'Projections QSRSoft baseline column',          category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.369', votes:0, submitted_by:'Fletcher Reaves', description:'Adds proj_sales_dollars from qsr_daily_activity as a second comparison line in Projections grid.' },
+  // Planned
+  { id:'seed-sage-tl', title:'SAGE tool use — live Supabase queries',         category:'AI',          status:'completed', priority:'high',   completed_version:'v4.379', votes:0, submitted_by:'Fletcher Reaves', description:'SAGE queries Supabase directly for live numbers (query_daily_activity, query_lifelenz_labor, query_forecast_snapshots) instead of context-window injection.' },
+  { id:'seed-mape',    title:'MAPE daily — three-way forecast accuracy',      category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.379', votes:0, submitted_by:'Fletcher Reaves', description:'Proj vs Actuals report: Meridian forecast vs QSRSoft proj vs actual, MAPE over held-out weeks (forecast_snapshots).' },
+  { id:'seed-dt-sos',  title:'DT Speed-of-Service Analytics panel',          category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.37', votes:0, submitted_by:'Fletcher Reaves', description:'All-station speed panel (DT/front-counter/kitchen-MFY/beverage), cross-store, by hour, 90-day trend, best slots + worst stores.' },
+  { id:'seed-sage-mm', title:'SAGE cross-device session memory',              category:'AI',          status:'planned',   priority:'medium', completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Conversation retention and context across devices and sessions for continuity.' },
+  { id:'seed-osat',    title:'Performance Review OSAT auto-fill polish',      category:'Analytics',   status:'planned',   priority:'medium', completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Preview SMG data being auto-filled; show which months have coverage; handle multi-month reviews cleanly.' },
+  { id:'seed-beta',    title:'Beta operator onboarding',                      category:'Data',        status:'planned',   priority:'high',   completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Onboard a second trusted operator to Meridian beta. RBAC, restricted panel set, their own Supabase RLS config.' },
+  { id:'seed-fob-p',   title:'FOB multi-location variance analysis',          category:'Finance',     status:'completed', priority:'medium', completed_version:'v4.543', votes:0, submitted_by:'Fletcher Reaves', description:'Side-by-side FOB component breakdown across stores (EOM Dashboard → 📊 FOB breakdown): 6 controllable components as %/$, dollar-weighted district comparison, outlier + primary-driver flags — spots where food cost overruns originate.' },
+  { id:'seed-eom',     title:'EOM Dashboard + food-cost diagnosis engine',    category:'Finance',     status:'completed', priority:'high',   completed_version:'v4.542', votes:0, submitted_by:'Fletcher Reaves', description:'All-stores End-of-Month view: count progress, FOB $/% + components, editable diagnosis flow, recount+action-plan comms, and the Item Journey visual guide (per-item count-cycle timeline with verified-fact vs likely-inference signals). Two modes: EOM count-completion + year-round progress.' },
+  // ── Shipped 2026-07-23 (Smart Targets / Labor / SAGE / Projections batch) ──
+  { id:'seed-st-model', title:'Smart Targets model — median-of-simple + deeper backtest', category:'Analytics', status:'completed', priority:'high', completed_version:'v4.483', votes:0, submitted_by:'Fletcher Reaves', description:'27-store backtest proved simple trailing beats engineered models for monthly sales; recommended = median of T3M/T6W/T3W · recent-3wk · 3-mo-avg. Engineered models preserved as diagnostics.' },
+  { id:'seed-st-metrics', title:'Smart Targets — Labor % / DT speed / FOB % metrics', category:'Analytics', status:'completed', priority:'high', completed_version:'v4.489', votes:0, submitted_by:'Fletcher Reaves', description:'Ratio metrics (dollar/volume-weighted trailing levels, direction lower). FOB % matches the At-A-Glance formula.' },
+  { id:'seed-st-adj',  title:'Smart Targets — known-event (+/-) adjustments',  category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.486', votes:0, submitted_by:'Fletcher Reaves', description:'Per-store exclude one-off days from learning + add a signed event delta to the target (smart_target_adjustments).' },
+  { id:'seed-st-apply', title:'Smart Targets — Apply as Official',             category:'Analytics',   status:'completed', priority:'high',   completed_version:'v4.489', votes:0, submitted_by:'Fletcher Reaves', description:'Per-store + bulk write of the Smart number into monthly_targets (partial upsert) for the upcoming month; feeds Projections.' },
+  { id:'seed-ll-labor', title:'LifeLenz Labor Analysis auto-pull',            category:'Labor',       status:'completed', priority:'high',   completed_version:'v4.485', votes:0, submitted_by:'Fletcher Reaves', description:'Weekly Band-1 derived from the daily lifelenz_schedule (Hours Fcst = Proj VLH+Fixed+Floor); auto wins, manual MBI gap-fills.' },
+  { id:'seed-sage-log', title:'SAGE — log a data issue → Task / Feature Request', category:'AI',       status:'completed', priority:'medium', completed_version:'v4.487', votes:0, submitted_by:'Fletcher Reaves', description:'🐞 Log on any answer: detects the data source, suggests Task vs FR, drafts a troubleshooting prompt into the ticket.' },
+  { id:'seed-sage-lib', title:'SAGE — saved prompt library + auto-scheduling', category:'AI',         status:'completed', priority:'medium', completed_version:'v4.488', votes:0, submitted_by:'Fletcher Reaves', description:'📚 save/run prompts; ⏰ schedule daily/weekly (GitHub Action runner); 🧭 Scheduled-Runs At-A-Glance tile.' },
+  { id:'seed-pace',    title:'Pace to Target — monthly MTD actual vs official', category:'Analytics',  status:'completed', priority:'high',   completed_version:'v4.490', votes:0, submitted_by:'Fletcher Reaves', description:'Dedicated view: MTD actual vs the official monthly target, run-rate pace + % ahead/behind, Store/Patch/Operator toggle.' },
+  { id:'seed-gc-pace', title:'Signals — guest-count tracking-to-plan',         category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.491', votes:0, submitted_by:'Fletcher Reaves', description:'GC pace alongside $ pace, with a traffic-vs-sales divergence flag (leading indicator of a check-average slip).' },
+  { id:'seed-yearly',  title:'Yearly Projections view',                       category:'Analytics',   status:'completed', priority:'medium', completed_version:'v4.492', votes:0, submitted_by:'Fletcher Reaves', description:'Annual target (Σ monthly) vs YTD actual (prorated), Projected Full Year, FY-vs-target, OK/FL/grand subtotals.' },
+  // ── Remaining / next ──
+  { id:'seed-sage-rbac', title:'SAGE — RBAC awareness',                       category:'AI',          status:'completed', priority:'medium', completed_version:'v4.494', votes:0, submitted_by:'Fletcher Reaves', description:'Scope what SAGE sees + recommends by the caller’s role / accessible_locs. Shipped — needs a sage-chat edge-function redeploy to take effect.' },
+  { id:'seed-gvp',     title:'Graded-Visit Predictor (CFV / RGR / EcoSure)',  category:'Analytics',   status:'idea',      priority:'high',   completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Flagship: learn the operational pattern preceding graded visits → score pass-likelihood + levers. BLOCKED on an EcoSure data sample.' },
+  { id:'seed-dar-more', title:'DAR secondary fields — channel splits, GC anomalies, product-volume', category:'Data', status:'idea', priority:'low', completed_version:'', votes:0, submitted_by:'Fletcher Reaves', description:'Surface dt/is channel splits, GC baseline anomalies, sandwich/fry/beverage projections. Each needs a loader-SELECT widening first.' },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function timeAgo(ts) {
@@ -53,6 +179,28 @@ function timeAgo(ts) {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h/24)}d ago`;
+}
+
+// Normalizes a `tasks` row into the shared display shape. Every field the panel already had
+// stays as-is; `type` defaults to 'task' for the (overwhelming, pre-migration) common case
+// where the column doesn't exist live yet or was never set.
+function normalizeTaskRow(r) {
+  return { ...r, _src:'tasks', type: r.type || 'task' };
+}
+
+// Normalizes a feature_requests row OR a SEED_ITEMS entry into the shared display shape.
+// `src` is 'feature_requests' (real DB row) or 'seed' (client-side history, never persisted).
+function normalizeFRRow(r, src) {
+  return { ...r, _src:src, type:'feature_request',
+    priority: PRI_STR_TO_INT[r.priority] || 2 };
+}
+
+// ── TypeBadge ─────────────────────────────────────────────────────────────────
+function TypeBadge({ type }) {
+  const m = TYPE_META[type] || TYPE_META.task;
+  return span({ style:{ fontSize:'9px', fontWeight:800, padding:'2px 7px', borderRadius:99,
+    background:m.bg, color:m.color, border:`.5px solid ${m.color}55`, flexShrink:0,
+    whiteSpace:'nowrap' }}, m.label);
 }
 
 // ── TierBadge ─────────────────────────────────────────────────────────────────
@@ -78,40 +226,59 @@ function CategoryBadge({ category }) {
     background:m.color+'22', color:m.color, border:`.5px solid ${m.color}44`, whiteSpace:'nowrap' }}, m.label);
 }
 
+// ── VoteButton ────────────────────────────────────────────────────────────────
+function VoteButton({ item, voted, onVote }) {
+  return btn({ onClick:e=>{ e.stopPropagation(); onVote(item); }, disabled:voted,
+    style:{ fontSize:'10px', padding:'3px 8px', borderRadius:99, cursor:voted?'default':'pointer',
+      border:`.5px solid ${voted?'var(--gold)':'var(--bdr)'}`,
+      background:voted?'rgba(245,188,0,.15)':'transparent',
+      color:voted?'var(--gold)':'var(--text3)', display:'flex', alignItems:'center', gap:4,
+      flexShrink:0, fontWeight:700 }},
+    span(null,'▲'), span(null, item.votes||0));
+}
+
 // ── TaskCard ──────────────────────────────────────────────────────────────────
-function TaskCard({ task, onUpdate, onDelete }) {
+function TaskCard({ item, isDev, votedIds, onUpdate, onDelete, onVote }) {
   const [open, setOpen] = useState(false);
-  const [notes, setNotes] = useState(task.notes || '');
+  const isFR = item.type === 'feature_request';
+  const [notes, setNotes] = useState((isFR ? item.dev_notes : item.notes) || '');
   const [savingNotes, setSavingNotes] = useState(false);
-  const pri = PRI_META[task.priority] || PRI_META[2];
-  const tierColor = (TIER_META[task.tier] || TIER_META[1]).color;
+  const pri = PRI_META[item.priority] || PRI_META[2];
+  const tierColor = (TIER_META[item.tier] || TIER_META[1]).color;
+  const statusOptions = isFR ? FR_STATUSES : TASK_STATUSES;
+  const canEditDevFields = isFR ? isDev : true; // task notes were always editable; FR dev_notes is dev/admin-only, matching the original panel
+  const readOnly = item._src === 'seed'; // historical roadmap entries -- not persisted, not editable
 
   const saveNotes = async () => {
     setSavingNotes(true);
-    await onUpdate(task.id, { notes });
+    await onUpdate(item, isFR ? { dev_notes: notes } : { notes });
     setSavingNotes(false);
   };
 
   return div({ style:{ borderRadius:8, overflow:'hidden', marginBottom:8,
     border:`.5px solid var(--bdr)`, background:'var(--surf2)',
-    borderLeft:`3px solid ${tierColor}` }},
+    borderLeft:`3px solid ${isFR ? TYPE_META.feature_request.color : tierColor}` }},
 
     // ── Collapsed row ──
     div({ onClick:()=>setOpen(o=>!o),
       style:{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px',
         cursor:'pointer', minHeight:44 }},
-      span({ style:{ fontSize:13, flexShrink:0 }}, pri.dot),
+      isFR ? null : span({ style:{ fontSize:13, flexShrink:0 }}, pri.dot),
       div({ style:{ flex:1, minWidth:0 }},
         div({ style:{ fontSize:13, fontWeight:600, color:'var(--text)',
-          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}, task.title),
-        (task.description || task.loc) && !open && div({ style:{ fontSize:10, color:'var(--text3)',
+          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}, item.title),
+        (item.description || item.loc || item.submitted_by) && !open && div({ style:{ fontSize:10, color:'var(--text3)',
           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginTop:2 }},
-          (task.loc ? '#'+task.loc+' · ' : '')+(task.description||'')),
+          (item.loc ? '#'+item.loc+' · ' : '') +
+          (isFR && item.submitted_by ? 'by '+item.submitted_by+' · ' : '') +
+          (item.description||'')),
       ),
       div({ style:{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }},
-        h(CategoryBadge, { category:task.category }),
-        h(TierBadge, { tier:task.tier }),
-        h(StatusBadge, { status:task.status }),
+        isFR && h(VoteButton, { item, voted:votedIds.has(item.id||item.title), onVote }),
+        h(TypeBadge, { type:item.type }),
+        h(CategoryBadge, { category:item.category }),
+        !isFR && h(TierBadge, { tier:item.tier }),
+        h(StatusBadge, { status:item.status }),
         span({ style:{ fontSize:12, color:'var(--text3)', marginLeft:2 }}, open?'▲':'▼'),
       ),
     ),
@@ -119,40 +286,44 @@ function TaskCard({ task, onUpdate, onDelete }) {
     // ── Expanded ──
     open && div({ style:{ padding:'0 14px 14px', borderTop:'.5px solid var(--bdr)' }},
 
-      task.description && div({ style:{ fontSize:12, color:'var(--text2)', lineHeight:1.5,
-        padding:'10px 0 12px' }}, task.description),
+      item.description && div({ style:{ fontSize:12, color:'var(--text2)', lineHeight:1.5,
+        padding:'10px 0 12px' }}, item.description),
 
-      task.loc && div({ style:{ fontSize:11, color:'var(--text3)', marginBottom:8 }},
-        '📍 Store #'+task.loc),
+      item.loc && div({ style:{ fontSize:11, color:'var(--text3)', marginBottom:8 }},
+        '📍 Store #'+item.loc),
+
+      isFR && item.completed_version && span({ style:{ fontSize:'10px', color:'#10b981',
+        display:'block', marginBottom:8 }}, '✅ Shipped '+item.completed_version),
 
       // Category buttons
-      div({ style:{ marginBottom:12 }},
+      !readOnly && div({ style:{ marginBottom:12 }},
         div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)',
           textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Category'),
         div({ style:{ display:'flex', gap:6, flexWrap:'wrap' }},
-          ...Object.entries(CATEGORY_META).map(([c, m]) =>
-            btn({ key:c, onClick:()=>onUpdate(task.id,{category:task.category===c?null:c}),
-              style:{ padding:'5px 10px', borderRadius:99, border:`.5px solid ${task.category===c?m.color:m.color+'44'}`,
-                background:task.category===c?m.color+'22':'transparent',
-                color:task.category===c?m.color:'var(--text3)',
-                fontSize:11, fontWeight:task.category===c?700:400, cursor:'pointer' }},
+          ...(isFR?FR_CATEGORIES:TASK_CATEGORIES).map(c => {
+            const m = CATEGORY_META[c];
+            return btn({ key:c, onClick:()=>onUpdate(item,{category:item.category===c?null:c}),
+              style:{ padding:'5px 10px', borderRadius:99, border:`.5px solid ${item.category===c?m.color:m.color+'44'}`,
+                background:item.category===c?m.color+'22':'transparent',
+                color:item.category===c?m.color:'var(--text3)',
+                fontSize:11, fontWeight:item.category===c?700:400, cursor:'pointer' }},
               m.label
-            )
-          )
+            );
+          })
         )
       ),
 
       // Priority buttons
-      div({ style:{ marginBottom:12 }},
+      !readOnly && div({ style:{ marginBottom:12 }},
         div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)',
           textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Priority'),
         div({ style:{ display:'flex', gap:8 }},
           ...Object.entries(PRI_META).map(([p, m]) =>
-            btn({ key:p, onClick:()=>onUpdate(task.id,{priority:+p}),
-              style:{ flex:1, padding:'10px 0', borderRadius:8, border:`.5px solid ${task.priority===+p?m.color:m.color+'44'}`,
-                background:task.priority===+p?m.color+'22':'transparent',
-                color:task.priority===+p?m.color:'var(--text3)',
-                fontSize:12, fontWeight:task.priority===+p?800:500, cursor:'pointer',
+            btn({ key:p, onClick:()=>onUpdate(item,{priority:+p}),
+              style:{ flex:1, padding:'10px 0', borderRadius:8, border:`.5px solid ${item.priority===+p?m.color:m.color+'44'}`,
+                background:item.priority===+p?m.color+'22':'transparent',
+                color:item.priority===+p?m.color:'var(--text3)',
+                fontSize:12, fontWeight:item.priority===+p?800:500, cursor:'pointer',
                 display:'flex', flexDirection:'column', alignItems:'center', gap:3 }},
               span(null, m.dot), span({ style:{fontSize:9}}, m.label)
             )
@@ -160,60 +331,65 @@ function TaskCard({ task, onUpdate, onDelete }) {
         )
       ),
 
-      // Tier buttons
-      div({ style:{ marginBottom:12 }},
+      // Tier buttons — task type only, meaningless for a feature request
+      !readOnly && !isFR && div({ style:{ marginBottom:12 }},
         div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)',
           textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Tier — safety level'),
         div({ style:{ display:'flex', gap:8 }},
           ...Object.entries(TIER_META).map(([t, m]) =>
-            btn({ key:t, onClick:()=>onUpdate(task.id,{tier:+t}),
-              style:{ flex:1, padding:'8px 4px', borderRadius:8, border:`.5px solid ${task.tier===+t?m.color:m.color+'44'}`,
-                background:task.tier===+t?m.color+'22':'transparent',
-                color:task.tier===+t?m.color:'var(--text3)',
-                fontSize:11, fontWeight:task.tier===+t?800:500, cursor:'pointer' }},
+            btn({ key:t, onClick:()=>onUpdate(item,{tier:+t}),
+              style:{ flex:1, padding:'8px 4px', borderRadius:8, border:`.5px solid ${item.tier===+t?m.color:m.color+'44'}`,
+                background:item.tier===+t?m.color+'22':'transparent',
+                color:item.tier===+t?m.color:'var(--text3)',
+                fontSize:11, fontWeight:item.tier===+t?800:500, cursor:'pointer' }},
               m.label
             )
           )
         ),
         div({ style:{ fontSize:'9px', color:'var(--text3)', marginTop:4 }},
-          (TIER_META[task.tier]||TIER_META[1]).desc)
+          (TIER_META[item.tier]||TIER_META[1]).desc)
       ),
 
-      // Status buttons
-      div({ style:{ marginBottom:12 }},
+      // Status buttons — statusOptions is type-specific so this always writes a value the
+      // item's own backing table's CHECK constraint already accepts.
+      !readOnly && div({ style:{ marginBottom:12 }},
         div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)',
           textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Status'),
         div({ style:{ display:'flex', flexWrap:'wrap', gap:6 }},
-          ...STATUSES.map(s => {
+          ...statusOptions.map(s => {
             const m = STATUS_META[s];
-            return btn({ key:s, onClick:()=>onUpdate(task.id,{status:s}),
-              style:{ padding:'8px 12px', borderRadius:99, border:`.5px solid ${task.status===s?m.color:m.color+'44'}`,
-                background:task.status===s?m.bg:'transparent',
-                color:task.status===s?m.color:'var(--text3)',
-                fontSize:11, fontWeight:task.status===s?700:400, cursor:'pointer' }},
+            return btn({ key:s, onClick:()=>onUpdate(item,{status:s}),
+              style:{ padding:'8px 12px', borderRadius:99, border:`.5px solid ${item.status===s?m.color:m.color+'44'}`,
+                background:item.status===s?m.bg:'transparent',
+                color:item.status===s?m.color:'var(--text3)',
+                fontSize:11, fontWeight:item.status===s?700:400, cursor:'pointer' }},
               m.label
             );
           })
         )
       ),
 
-      // Notes for this task
-      div({ style:{ marginBottom:8 }},
+      readOnly && div({ style:{ fontSize:'9px', color:'var(--text3)', marginBottom:10 }},
+        'Historical roadmap entry — read-only.'),
+
+      // Notes / Dev notes
+      !readOnly && (canEditDevFields || !isFR) && div({ style:{ marginBottom:8 }},
         div({ style:{ fontSize:'9px', fontWeight:700, color:'var(--text3)',
-          textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Notes'),
+          textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }},
+          isFR ? 'Dev Notes (visible to all users)' : 'Notes'),
         h('textarea', {
           value:notes, onChange:e=>setNotes(e.target.value),
-          placeholder:'Context, links, clarifications…',
+          placeholder: isFR ? 'Status commentary for everyone who can see this request…' : 'Context, links, clarifications…',
           rows:3,
           style:{ width:'100%', background:'var(--mid2)', border:'.5px solid var(--bdr)',
             borderRadius:6, color:'var(--text)', fontSize:12, padding:'8px 10px',
             resize:'vertical', fontFamily:'inherit', boxSizing:'border-box' }
         }),
         div({ style:{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:6 }},
-          task.result_summary && span({ style:{ fontSize:'9px', color:'var(--text3)' }},
-            '🤖 '+task.result_summary.slice(0,80)+(task.result_summary.length>80?'…':'')),
+          item.result_summary && span({ style:{ fontSize:'9px', color:'var(--text3)' }},
+            '🤖 '+item.result_summary.slice(0,80)+(item.result_summary.length>80?'…':'')),
           div({ style:{ display:'flex', gap:8, marginLeft:'auto' }},
-            btn({ onClick:()=>onDelete(task.id),
+            !isFR && btn({ onClick:()=>onDelete(item),
               style:{ padding:'6px 12px', borderRadius:6, border:'.5px solid rgba(239,68,68,.3)',
                 background:'transparent', color:'var(--crit)', fontSize:11, cursor:'pointer' }},
               'Remove'),
@@ -225,36 +401,48 @@ function TaskCard({ task, onUpdate, onDelete }) {
           )
         )
       ),
+      isFR && !canEditDevFields && item.dev_notes && div({ style:{ fontSize:'9px', color:'#60a5fa', marginTop:4, lineHeight:1.5 }},
+        span({ style:{ fontWeight:700, marginRight:4 }}, 'Dev notes:'), item.dev_notes),
 
-      task.result_pr && div({ style:{ fontSize:'9px', color:'#60a5fa', marginTop:4 }},
-        '🔗 PR: '+task.result_pr),
+      item.result_pr && div({ style:{ fontSize:'9px', color:'#60a5fa', marginTop:4 }},
+        '🔗 PR: '+item.result_pr),
       div({ style:{ fontSize:'9px', color:'var(--text3)', marginTop:6 }},
-        'Added '+timeAgo(task.created_at)+(task.source&&task.source!=='manual'?' · via '+task.source:'')),
+        isFR
+          ? 'Submitted by '+(item.submitted_by||'Anonymous')+(item.created_at?' · '+timeAgo(item.created_at):'')
+          : 'Added '+timeAgo(item.created_at)+(item.source&&item.source!=='manual'?' · via '+item.source:'')),
     )
   );
 }
 
-// ── AddTaskSheet ──────────────────────────────────────────────────────────────
-function AddTaskSheet({ onSave, onClose }) {
+// ── AddEntrySheet ─────────────────────────────────────────────────────────────
+function AddEntrySheet({ defaultType, onSaveTask, onSaveFR, onClose }) {
+  const [type,  setType]    = useState(defaultType==='feature_request'?'feature_request':'task');
   const [title, setTitle]   = useState('');
   const [desc,  setDesc]    = useState('');
   const [tier,  setTier]    = useState(1);
   const [pri,   setPri]     = useState(2);
   const [cat,   setCat]     = useState(null);
   const [notes, setNotes]   = useState('');
+  const [submittedBy, setSubmittedBy] = useState('');
   const [saving, setSaving] = useState(false);
   const titleRef = useRef(null);
+  const isFR = type === 'feature_request';
 
+  useEffect(()=>{ setCat(null); },[type]); // categories differ per type — don't carry a task category into an FR submission or vice versa
   useEffect(()=>{ setTimeout(()=>titleRef.current?.focus(), 80); },[]);
 
   const submit = async () => {
     if (!title.trim()) return;
     setSaving(true);
-    const ok = await onSave({ title:title.trim(), description:desc.trim()||null,
-      tier, priority:pri, category:cat, notes:notes.trim()||null, status:'backlog', source:'manual' });
+    const ok = isFR
+      ? await onSaveFR({ title:title.trim(), description:desc.trim()||null, category:cat||'General',
+          priority: PRI_INT_TO_STR[pri]||'medium', status:'idea',
+          submitted_by: submittedBy.trim()||'Anonymous', votes:0, is_seed:false })
+      : await onSaveTask({ title:title.trim(), description:desc.trim()||null,
+          tier, priority:pri, category:cat, notes:notes.trim()||null, status:'backlog', source:'manual' });
     setSaving(false);
     if (ok) onClose();
-    else alert('Could not save task — check your connection and try again. Your entry is still here.');
+    else alert('Could not save — check your connection and try again. Your entry is still here.');
   };
 
   const selBtn = (val, cur, set, label, color) =>
@@ -285,23 +473,33 @@ function AddTaskSheet({ onSave, onClose }) {
 
       div({ style:{ padding:'8px 20px 20px' }},
 
-        div({ style:{ fontSize:16, fontWeight:800, color:'var(--text)', marginBottom:16 }},
-          'Add Task'),
+        div({ style:{ fontSize:16, fontWeight:800, color:'var(--text)', marginBottom:12 }},
+          'Add Entry'),
+
+        // Type toggle
+        div({ style:{ marginBottom:14 }},
+          div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
+            textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Type'),
+          div({ style:{ display:'flex', gap:8 }},
+            selBtn('task', type, setType, TYPE_META.task.label, TYPE_META.task.color),
+            selBtn('feature_request', type, setType, TYPE_META.feature_request.label, TYPE_META.feature_request.color),
+          )
+        ),
 
         // Title
         div({ style:{ marginBottom:14 }},
           div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
             textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Title *'),
           h('input', { ref:titleRef, value:title, onChange:e=>setTitle(e.target.value),
-            placeholder:'What needs to be done?',
+            placeholder: isFR ? 'Short, clear feature description…' : 'What needs to be done?',
             onKeyDown:e=>e.key==='Enter'&&submit(),
             style:{ width:'100%', background:'var(--mid2)', border:`.5px solid ${title?'var(--gold)':'var(--bdr)'}`,
               borderRadius:8, color:'var(--text)', fontSize:15, padding:'12px 14px',
               fontFamily:'inherit', boxSizing:'border-box', outline:'none' }})
         ),
 
-        // Tier
-        div({ style:{ marginBottom:14 }},
+        // Tier — task only
+        !isFR && div({ style:{ marginBottom:14 }},
           div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
             textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Tier'),
           div({ style:{ display:'flex', gap:8 }},
@@ -324,21 +522,33 @@ function AddTaskSheet({ onSave, onClose }) {
           )
         ),
 
-        // Category (optional)
+        // Category (optional) — options depend on type
         div({ style:{ marginBottom:14 }},
           div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
             textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Category (optional)'),
           div({ style:{ display:'flex', gap:6, flexWrap:'wrap' }},
-            ...Object.entries(CATEGORY_META).map(([c,m]) =>
-              btn({ key:c, onClick:()=>setCat(cat===c?null:c),
+            ...(isFR?FR_CATEGORIES:TASK_CATEGORIES).map(c => {
+              const m = CATEGORY_META[c];
+              return btn({ key:c, onClick:()=>setCat(cat===c?null:c),
                 style:{ padding:'6px 12px', borderRadius:99, border:`.5px solid ${cat===c?m.color:m.color+'44'}`,
                   background:cat===c?m.color+'22':'transparent',
                   color:cat===c?m.color:'var(--text3)',
                   fontSize:11, fontWeight:cat===c?700:400, cursor:'pointer' }},
                 m.label
-              )
-            )
+              );
+            })
           )
+        ),
+
+        // Submitted by — feature request only
+        isFR && div({ style:{ marginBottom:14 }},
+          div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
+            textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }}, 'Your Name'),
+          h('input', { value:submittedBy, onChange:e=>setSubmittedBy(e.target.value),
+            placeholder:'Optional — leave blank to submit anonymously',
+            style:{ width:'100%', background:'var(--mid2)', border:'.5px solid var(--bdr)',
+              borderRadius:8, color:'var(--text)', fontSize:13, padding:'10px 14px',
+              fontFamily:'inherit', boxSizing:'border-box', outline:'none' }})
         ),
 
         // Description
@@ -347,15 +557,15 @@ function AddTaskSheet({ onSave, onClose }) {
             textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }},
             'Description'),
           h('textarea', { value:desc, onChange:e=>setDesc(e.target.value),
-            placeholder:'What exactly should be built or changed?',
+            placeholder: isFR ? 'More context, use case, or example…' : 'What exactly should be built or changed?',
             rows:3,
             style:{ width:'100%', background:'var(--mid2)', border:'.5px solid var(--bdr)',
               borderRadius:8, color:'var(--text)', fontSize:13, padding:'10px 14px',
               resize:'none', fontFamily:'inherit', boxSizing:'border-box', outline:'none' }})
         ),
 
-        // Notes for AI
-        div({ style:{ marginBottom:20 }},
+        // Notes for AI — task only
+        !isFR && div({ style:{ marginBottom:20 }},
           div({ style:{ fontSize:'10px', fontWeight:700, color:'var(--text3)',
             textTransform:'uppercase', letterSpacing:'.5px', marginBottom:6 }},
             'Notes for AI  '),
@@ -381,7 +591,7 @@ function AddTaskSheet({ onSave, onClose }) {
               border:'none', background:title.trim()?'var(--gold)':'rgba(245,188,0,.3)',
               color:title.trim()?'#0f1117':'rgba(245,188,0,.5)',
               fontSize:14, fontWeight:800, cursor:title.trim()?'pointer':'default' }},
-            saving?'Adding…':'Add Task')
+            saving?'Adding…':(isFR?'Submit Request':'Add Task'))
         )
       )
     )
@@ -476,66 +686,120 @@ function SessionNotesTab() {
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
-export function TaskQueuePanel({ onClose }) {
+// initialType: 'feature_request' | 'task' | null — pre-selects the type filter, used by App.js's
+// ?modal=feature-requests redirect so the old deep link still lands on Feature Request content.
+export function TaskQueuePanel({ onClose, settings, initialType }) {
+  const isDev = settings?.role === 'developer' || settings?.role === 'admin';
+
   const [tab,     setTab]     = useState('queue');
-  const [tasks,   setTasks]   = useState([]);
+  const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [filter,  setFilter]  = useState('active'); // 'active' | 'done' | 'all' | 1 | 2 | 3
-  const [catFilter, setCatFilter] = useState('all'); // 'all' | one of CATEGORY_META's keys
+  const [filter,  setFilter]  = useState('active'); // 'active' | 'done' | 'all' | 1 | 2 | 3 (tier, task-only)
+  const [typeFilter, setTypeFilter] = useState(initialType==='feature_request'?'feature_request':'all'); // 'all' | 'task' | 'feature_request'
+  const [catFilter, setCatFilter] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const [votedIds, setVotedIds] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('mf_voted_reqs') || '[]')); }
+    catch { return new Set(); }
+  });
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const rows = await loadTasks();
-    setTasks(rows);
+    const [taskRows, frRows] = await Promise.all([loadTasks(), loadFeatureRequests()]);
+    const normTasks = taskRows.map(normalizeTaskRow);
+    const normFR    = frRows.map(r => normalizeFRRow(r, 'feature_requests'));
+    // A `tasks` row that has already been migrated to type:'feature_request' (post schema
+    // migration) wins over a same-titled legacy `feature_requests` row, so the two never
+    // double-render once the owner runs the migration script.
+    const migratedFRTitles = new Set(normTasks.filter(t=>t.type==='feature_request').map(t=>t.title));
+    const dedupedFR = normFR.filter(r => !migratedFRTitles.has(r.title));
+    const liveFRTitles = new Set([...dedupedFR, ...normTasks].map(r=>r.title));
+    const seedToShow = SEED_ITEMS.filter(s => !liveFRTitles.has(s.title));
+    const normSeed = seedToShow.map(s => normalizeFRRow(s, 'seed'));
+    setItems([...normTasks, ...dedupedFR, ...normSeed]);
     setLoading(false);
   }, []);
 
   useEffect(()=>{ refresh(); },[]);
 
-  const handleUpdate = useCallback(async (id, updates) => {
-    await updateTask(id, updates);
-    setTasks(prev => prev.map(t => t.id===id ? {...t,...updates} : t));
+  const handleUpdate = useCallback(async (item, updates) => {
+    if (item._src === 'seed') return; // historical, never persisted
+    if (item._src === 'feature_requests') {
+      if (!isDev && updates.dev_notes === undefined && updates.status === undefined) { /* allow (non-dev fields, none in this UI though) */ }
+      const updated = await updateFeatureRequest(item.id, updates);
+      if (updated) setItems(prev => prev.map(x => (x._src==='feature_requests'&&x.id===item.id) ? normalizeFRRow(updated,'feature_requests') : x));
+      return;
+    }
+    await updateTask(item.id, updates);
+    setItems(prev => prev.map(x => (x._src==='tasks'&&x.id===item.id) ? {...x,...updates} : x));
+  },[isDev]);
+
+  const handleDelete = useCallback(async (item) => {
+    if (item._src !== 'tasks') return; // Feature Requests were never delete-able from this panel; only Tasks were
+    await updateTask(item.id, { status:'scrapped' });
+    setItems(prev => prev.filter(x => !(x._src==='tasks'&&x.id===item.id)));
   },[]);
 
-  const handleDelete = useCallback(async (id) => {
-    await updateTask(id, { status:'scrapped' });
-    setTasks(prev => prev.filter(t => t.id!==id));
-  },[]);
+  const handleVote = useCallback(async (item) => {
+    const key = item.id || item.title;
+    if (votedIds.has(key)) return;
+    const newVoted = new Set(votedIds); newVoted.add(key);
+    setVotedIds(newVoted);
+    localStorage.setItem('mf_voted_reqs', JSON.stringify([...newVoted]));
+    if (item._src === 'feature_requests') {
+      const updated = await voteFeatureRequest(item.id, item.votes || 0);
+      if (updated) setItems(prev => prev.map(x => (x._src==='feature_requests'&&x.id===item.id) ? normalizeFRRow(updated,'feature_requests') : x));
+    }
+    // seed / tasks-sourced FR rows: local-only vote tally (matches the original panel's behavior
+    // for seed items — no persistence target for those).
+  },[votedIds]);
 
-  const handleSave = useCallback(async (task) => {
-    const saved = await saveTask(task);
+  const handleSaveTask = useCallback(async (task) => {
+    const saved = await saveTask(task); // no `type` key — DB default ('task', once migrated) or simply absent, both read as 'task'
     if (saved) {
-      setTasks(prev => [...prev, saved].sort((a,b)=>a.priority-b.priority||new Date(a.created_at)-new Date(b.created_at)));
+      setItems(prev => [...prev, normalizeTaskRow(saved)].sort((a,b)=>a.priority-b.priority||new Date(a.created_at)-new Date(b.created_at)));
       return true;
     }
-    // saveTask already console.warn'd the Supabase error — surface it to the user too,
-    // rather than closing the sheet as if it saved (the task would then only exist in
-    // the sheet's now-discarded local state, silently lost).
+    return false; // saveTask already console.warn'd the Supabase error — surface it to the user too
+  },[]);
+
+  const handleSaveFR = useCallback(async (req) => {
+    const saved = await saveFeatureRequest(req);
+    if (saved) {
+      setItems(prev => [normalizeFRRow(saved,'feature_requests'), ...prev]);
+      return true;
+    }
     return false;
   },[]);
 
-  const filtered = tasks.filter(t => {
+  const filtered = items.filter(t => {
+    if (typeFilter!=='all' && t.type!==typeFilter) return false;
     if (catFilter!=='all' && (t.category||null)!==catFilter) return false;
-    if (filter==='active') return t.status!=='done';
-    if (filter==='done')   return t.status==='done';
-    if (filter==='all')    return true;
-    if (typeof filter==='number') return t.tier===filter;
+    if (filter==='active') { if (t.status==='done'||t.status==='completed'||t.status==='declined') return false; }
+    else if (filter==='done') { if (!(t.status==='done'||t.status==='completed'||t.status==='declined')) return false; }
+    else if (typeof filter==='number') { if (t.type!=='task' || t.priority!==filter) return false; } // filter here is actually priority for the 1/2/3 chips, kept as tier-labeled chips below for continuity with the original UI's T1/T2/T3 language on task priority... see filterPills
+    if (searchText.trim()) {
+      const q = searchText.trim().toLowerCase();
+      const hay = (t.title+' '+(t.description||'')+' '+(t.submitted_by||'')).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
-  const activeCt  = tasks.filter(t=>t.status!=='done').length;
-  const readyCt   = tasks.filter(t=>t.status==='ready').length;
-  const highCt    = tasks.filter(t=>t.priority===1&&t.status!=='done').length;
+  const activeCt  = items.filter(t=>!(t.status==='done'||t.status==='completed'||t.status==='declined')).length;
+  const taskCt    = items.filter(t=>t.type==='task').length;
+  const frCt      = items.filter(t=>t.type==='feature_request').length;
+  const highCt    = items.filter(t=>t.priority===1&&!(t.status==='done'||t.status==='completed'||t.status==='declined')).length;
 
   // ── Stats bar ──
   const statBar = () => div({ style:{ display:'flex', gap:12, padding:'10px 16px',
     borderBottom:'.5px solid var(--bdr)', flexWrap:'wrap' }},
     ...[
       { label:'Active',   val:activeCt,       col:'var(--text)' },
-      { label:'Ready',    val:readyCt,        col:'#60a5fa' },
+      { label:'🔧 Tasks',  val:taskCt,         col:TYPE_META.task.color },
+      { label:'💡 Requests', val:frCt,         col:TYPE_META.feature_request.color },
       { label:'🔴 High',  val:highCt,         col:'#ef4444' },
-      { label:'T1 auto',  val:tasks.filter(t=>t.tier===1&&t.status!=='done').length, col:'#10b981' },
     ].map((s,i) =>
       div({ key:i, style:{ textAlign:'center' }},
         div({ style:{ fontSize:18, fontWeight:800, color:s.col, fontFamily:'var(--mono)' }}, s.val),
@@ -544,16 +808,35 @@ export function TaskQueuePanel({ onClose }) {
     )
   );
 
-  // ── Filter pills ──
+  // ── Type filter pills ──
+  const typeFilterPills = () => div({ style:{ display:'flex', gap:6, padding:'10px 16px 0' }},
+    ...[
+      { key:'all', label:'All' },
+      { key:'task', label:TYPE_META.task.label },
+      { key:'feature_request', label:TYPE_META.feature_request.label },
+    ].map(f =>
+      btn({ key:f.key, onClick:()=>setTypeFilter(f.key),
+        style:{ padding:'7px 14px', borderRadius:99, whiteSpace:'nowrap',
+          border:`.5px solid ${typeFilter===f.key?'var(--gold)':'var(--bdr)'}`,
+          background:typeFilter===f.key?'rgba(245,188,0,.12)':'transparent',
+          color:typeFilter===f.key?'var(--gold)':'var(--text3)',
+          fontSize:12, fontWeight:typeFilter===f.key?700:400, cursor:'pointer' }},
+        f.label)
+    )
+  );
+
+  // ── Status/tier filter pills ──
   const filterPills = () => div({ style:{ display:'flex', gap:6, padding:'10px 16px',
     overflowX:'auto', flexWrap:'nowrap', borderBottom:'.5px solid var(--bdr)' }},
     ...([
       { key:'active', label:'Active' },
       { key:'all',    label:'All' },
       { key:'done',   label:'Done' },
-      { key:1,        label:'T1 Auto' },
-      { key:2,        label:'T2 PR' },
-      { key:3,        label:'T3 Human' },
+      ...(typeFilter==='feature_request' ? [] : [
+        { key:1, label:'High' },
+        { key:2, label:'Medium' },
+        { key:3, label:'Low' },
+      ]),
     ].map(f =>
       btn({ key:f.key, onClick:()=>setFilter(f.key),
         style:{ padding:'7px 14px', borderRadius:99, whiteSpace:'nowrap',
@@ -562,13 +845,15 @@ export function TaskQueuePanel({ onClose }) {
           color:filter===f.key?'var(--gold)':'var(--text3)',
           fontSize:12, fontWeight:filter===f.key?700:400, cursor:'pointer' }},
         f.label)
-    ))
+    )),
+    h('input', { value:searchText, onChange:e=>setSearchText(e.target.value),
+      placeholder:'Search…', style:{ marginLeft:'auto', fontSize:'11px', padding:'5px 10px',
+        background:'var(--surf2)', border:'.5px solid var(--bdr)', borderRadius:99,
+        color:'var(--text)', outline:'none', width:110, flexShrink:0 }})
   );
 
-  // ── Category filter pills — only shown once at least one task is categorized, so an
-  // all-uncategorized queue (every panel before this ships a category on anything) doesn't
-  // show a facet that can never do anything.
-  const presentCats = [...new Set(tasks.map(t=>t.category).filter(Boolean))];
+  // ── Category filter pills — only shown once at least one item is categorized ──
+  const presentCats = [...new Set(items.map(t=>t.category).filter(Boolean))];
   const catFilterPills = () => presentCats.length===0 ? null : div({ style:{ display:'flex', gap:6,
     padding:'0 16px 10px', overflowX:'auto', flexWrap:'nowrap', borderBottom:'.5px solid var(--bdr)' }},
     btn({ onClick:()=>setCatFilter('all'),
@@ -604,7 +889,7 @@ export function TaskQueuePanel({ onClose }) {
       div({ style:{ flex:1 }},
         div({ style:{ fontSize:16, fontWeight:800, color:'var(--text)' }}, '⚡ Task Queue'),
         div({ style:{ fontSize:'10px', color:'var(--text3)', marginTop:1 }},
-          'Autonomous + manual work tracking'),
+          'Autonomous + manual work tracking, plus feature requests · vote for what matters most'),
       ),
       activeCt>0 && span({ style:{ background:'rgba(245,188,0,.15)', color:'var(--gold)',
         border:'.5px solid rgba(245,188,0,.3)', borderRadius:99,
@@ -629,6 +914,7 @@ export function TaskQueuePanel({ onClose }) {
     div({ style:{ flex:1, overflowY:'auto' }},
       tab==='queue' ? div(null,
         statBar(),
+        typeFilterPills(),
         filterPills(),
         catFilterPills(),
         loading
@@ -638,11 +924,12 @@ export function TaskQueuePanel({ onClose }) {
                 div({ style:{ fontSize:32, marginBottom:12 }}, '✅'),
                 div({ style:{ fontSize:14, fontWeight:700, marginBottom:6 }},
                   filter==='done' ? 'Nothing done yet' : 'Queue is clear'),
-                filter==='active' && div({ style:{ fontSize:12 }}, 'Tap + to add your first task')
+                filter==='active' && div({ style:{ fontSize:12 }}, 'Tap + to add your first entry')
               )
             : div({ style:{ padding:'10px 12px 80px' }},
-                filtered.map(t =>
-                  h(TaskCard, { key:t.id, task:t, onUpdate:handleUpdate, onDelete:handleDelete })
+                filtered.map(item =>
+                  h(TaskCard, { key:(item._src+'-'+(item.id||item.title)), item, isDev, votedIds,
+                    onUpdate:handleUpdate, onDelete:handleDelete, onVote:handleVote })
                 )
               )
       ) : h(SessionNotesTab)
@@ -659,6 +946,7 @@ export function TaskQueuePanel({ onClose }) {
         display:'flex', alignItems:'center', justifyContent:'center' }},
       '+'),
 
-    showAdd && h(AddTaskSheet, { onSave:handleSave, onClose:()=>setShowAdd(false) }),
+    showAdd && h(AddEntrySheet, { defaultType:typeFilter==='all'?'task':typeFilter,
+      onSaveTask:handleSaveTask, onSaveFR:handleSaveFR, onClose:()=>setShowAdd(false) }),
   );
 }
