@@ -3253,7 +3253,12 @@ function MonthlyTargetManager({userTargets, mergedTargets, onUpdate, onClose, ds
 
 
 // EVENT CALENDAR
-function EventCalendar({userEvents, onUpdate, onClose, stores}) {
+// viewToggle (dispatch #191, 2026-08-28) — optional ReactNode, the List/Calendar mode switcher
+// rendered by the merged EventsAndTagsPanel wrapper (App.js) so this panel and its sibling
+// CalendarManagerPanel (features/calendar.js) can be swapped without either owning the other's
+// state. Undefined/falsy when EventCalendar is rendered standalone (unchanged for existing
+// callers, e.g. dispatch-122-events-calendar.test.js) — nothing renders in that case.
+function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
   const [editKey, setEditKey] = useState(null);
   const [editType, setEditType] = useState('other');
   const [editNote, setEditNote] = useState('');
@@ -3441,7 +3446,8 @@ function EventCalendar({userEvents, onUpdate, onClose, stores}) {
             Note: ev.note||'',
           })),
         }),
-        btn({onClick:onClose,style:{marginLeft:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
+        viewToggle,
+        btn({onClick:onClose,style:{marginLeft:viewToggle?0:'auto',background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕')
       ),
       // #192: was a warning claiming heavy tagging drops LY comparison entirely — true before
       // v4.924, when tag presence alone excluded a candidate day (what broke Tishomingo

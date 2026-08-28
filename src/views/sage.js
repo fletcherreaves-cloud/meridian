@@ -9,6 +9,11 @@ import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { aggregateLifelenzLabor } from '../../supabase/functions/sage-chat/lifelenz-labor-agg.js';
+// Cross-device cloud persistence (dispatch #187): reuse the SAME generic {data,savedAt}
+// blob-sync helpers labor-tools.js/analytics.js already use for model_backtest_summary/
+// dialed_in — CLAUDE.md's "check whether a helper exists before writing one." blob-sync.js
+// is already the shared push/hydrate abstraction; no SAGE-specific wrapper needed.
+import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob } from '../lib/blob-sync.js';
 
 const h = React.createElement;
 const { useState: uSt, useRef: uRef, useEffect: uEf, useCallback: uCb, useMemo: uMemo } = React;
@@ -20,6 +25,39 @@ const red   = '#ef4444';
 
 const SAGE_THREAD_KEY = 'mf_sage_thread_v1';
 const SAGE_SESSIONS_KEY = 'mf_sage_sessions_v1';   // archived past conversations (recoverable "tabs")
+const SAGE_THREAD_SETTING = 'sage_thread';         // user_settings key — cloud mirror of the active thread
+const SAGE_SESSIONS_SETTING = 'sage_sessions';     // user_settings key — cloud mirror of archived sessions
+
+// SAGE_THREAD_KEY/SAGE_SESSIONS_KEY predate the {data,savedAt} cloud-sync envelope
+// (dispatch #187) — existing localStorage may still hold a bare array from a pre-#187
+// build. Treated as savedAt:0 (oldest) so it never wins a hydration comparison against a
+// genuine timestamped write, local or cloud — mirrors blob-sync.js's own normalizeDialedIn
+// legacy-shape handling for the pre-#118 dialed-in blob (same migration problem, same fix).
+export function _normSageBlob(raw) {
+  if (Array.isArray(raw)) return { data: raw, savedAt: 0 };
+  if (raw && typeof raw === 'object' && Array.isArray(raw.data)) return { data: raw.data, savedAt: raw.savedAt || 0 };
+  return { data: [], savedAt: 0 };
+}
+
+// Payload bound for archived sessions (dispatch #187, task 4 — "measure before shipping, cap
+// only if genuinely large"). Measured: a synthetic-but-realistic 25-session archive (2-9 turns
+// each, SAGE's actual answer length — ranked tables + root-cause + tiered action plans run
+// long) serializes to 428 KB typical / 646 KB heavy-tail. That's well past "multiple hundred
+// KB", so this caps TOTAL SERIALIZED SIZE, not just the pre-existing 25-session count cap —
+// dropping the OLDEST sessions (end of the newest-first array) until back under budget. 300KB
+// is comfortably under both a browser's localStorage quota and a reasonable per-save network
+// payload, while still holding a real multi-conversation archive.
+const SAGE_SESSIONS_MAX_BYTES = 300 * 1024;
+function _byteLen(s) {
+  try { return new TextEncoder().encode(s).length; } catch { return s.length; }
+}
+export function _capSessionsBySize(newestFirst, maxBytes = SAGE_SESSIONS_MAX_BYTES) {
+  let arr = newestFirst;
+  while (arr.length > 1 && _byteLen(JSON.stringify(arr)) > maxBytes) {
+    arr = arr.slice(0, -1); // drop the oldest (last) session
+  }
+  return arr;
+}
 
 // ── Data summary helpers ──────────────────────────────────────────────────────
 function _avg(arr) {
@@ -1155,15 +1193,8 @@ const QUICK_PROMPTS = [
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
-  const [messages, setMessages] = uSt(() => {
-    try {
-      const saved = localStorage.getItem(SAGE_THREAD_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-  const [sessions, setSessions] = uSt(() => {
-    try { return JSON.parse(localStorage.getItem(SAGE_SESSIONS_KEY) || '[]'); } catch { return []; }
-  });
+  const [messages, setMessages] = uSt(() => _normSageBlob(_readBlobLocal(SAGE_THREAD_KEY)).data);
+  const [sessions, setSessions] = uSt(() => _normSageBlob(_readBlobLocal(SAGE_SESSIONS_KEY)).data);
   const [sessionsOpen, setSessionsOpen] = uSt(false);
   const [input, setInput]       = uSt('');
   const [streaming, setStreaming] = uSt(false);
@@ -1182,14 +1213,36 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   const refreshPrompts = uCb(() => { loadSagePrompts().then(setPrompts).catch(() => setPrompts([])); }, []);
   uEf(() => { refreshPrompts(); }, [refreshPrompts]);
 
+  // Cross-device hydration (dispatch #187) — SAGE-mount-only, not app-wide startup: SAGE is
+  // already lazy-loaded and its conversation data is heavier/less universally needed than
+  // dialed_in/model_assignments, so pulling it into every app boot for every user isn't
+  // justified. `_hydrateBlob` applies the local copy first (matches the useState initializer
+  // above — a harmless re-render), then applies the cloud copy ONLY if its savedAt is
+  // strictly newer, exactly the `_stDialedIn` guard this dispatch calls for. The `data.length`
+  // check mirrors `_stDialedIn`'s own `Object.keys(remoteData).length>0` guard — a newer-but-
+  // empty cloud value does not clobber a present local thread/history (matches the existing
+  // Dialed-In precedent; an intentional cross-device "clear" does not propagate through this
+  // path any more than a Dialed-In reset does through its own mount-time hydrate).
   uEf(() => {
-    try {
-      if (messages.length > 0) {
-        localStorage.setItem(SAGE_THREAD_KEY, JSON.stringify(messages));
-      } else {
-        localStorage.removeItem(SAGE_THREAD_KEY);
-      }
-    } catch (_) { /* quota exceeded — ignore */ }
+    _hydrateBlob(SAGE_THREAD_KEY, SAGE_THREAD_SETTING, (blob) => {
+      const { data } = _normSageBlob(blob);
+      if (data.length) setMessages(data);
+    });
+    _hydrateBlob(SAGE_SESSIONS_KEY, SAGE_SESSIONS_SETTING, (blob) => {
+      const { data } = _normSageBlob(blob);
+      if (data.length) setSessions(data);
+    });
+    // Mount-only — mirrors every other cloud-hydrate effect in this codebase (App.js,
+    // DialedInPanel). eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Instant local read/write path (unchanged behavior, envelope-stamped per dispatch #187 so
+  // the savedAt this leaves behind is meaningful at the NEXT mount's hydration comparison —
+  // see _normSageBlob). Cloud is pushed separately, only at the settle points below, NOT on
+  // every message array change (that would fire once per user-send AND once per assistant
+  // reply, i.e. up to 2x/turn — the streaming-transition push below covers a full turn in one).
+  uEf(() => {
+    try { localStorage.setItem(SAGE_THREAD_KEY, JSON.stringify({ data: messages, savedAt: Date.now() })); } catch (_) { /* quota exceeded — ignore */ }
   }, [messages]);
 
   uEf(() => {
@@ -1201,9 +1254,27 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   // Report thinking/idle status to the shell (drives the minimized pill's light).
   uEf(() => { onBusy?.(streaming); }, [streaming]);
 
+  // Settle point (dispatch #187): a turn just finished — streaming transitioned true→false
+  // (success, error, AND abort all land here, since all three take the same finally-block
+  // path in sendMessage). NOT on every stream chunk — streamText updates every token but never
+  // touches `messages`/`streaming`, so this effect is inert for the whole body of a response.
+  const prevStreamingRef = uRef(false);
+  uEf(() => {
+    if (prevStreamingRef.current && !streaming && messages.length > 0) {
+      _pushBlob(SAGE_THREAD_KEY, SAGE_THREAD_SETTING, { data: messages });
+    }
+    prevStreamingRef.current = streaming;
+  }, [streaming, messages]);
+
   const persistSessions = (next) => {
-    setSessions(next);
-    try { localStorage.setItem(SAGE_SESSIONS_KEY, JSON.stringify(next.slice(0, 25))); } catch {}
+    // Count cap (pre-existing) THEN size cap (dispatch #187 task 4 — measured 428-646 KB for a
+    // realistic 25-session archive, genuinely large, see _capSessionsBySize above).
+    const capped = _capSessionsBySize(next.slice(0, 25));
+    setSessions(capped);
+    // Settle point (dispatch #187): archive-to-history and delete are explicit user actions,
+    // not per-keystroke — safe to push straight to cloud every call, matching DialedInPanel's
+    // per-action (not per-render) push convention.
+    _pushBlob(SAGE_SESSIONS_KEY, SAGE_SESSIONS_SETTING, { data: capped });
   };
   // Archive the current conversation into the recoverable session list.
   const archiveCurrent = () => {
@@ -1222,13 +1293,20 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
   const clearThread = () => {
     archiveCurrent();
     setMessages([]);
-    localStorage.removeItem(SAGE_THREAD_KEY);
+    // Settle point (dispatch #187): clear the CLOUD copy too, with a fresh savedAt — mirrors
+    // DialedInPanel's clearAll (`memory` note there: without this, a stale cloud copy wins the
+    // next hydration and silently resurrects the "cleared" thread on another device).
+    _pushBlob(SAGE_THREAD_KEY, SAGE_THREAD_SETTING, { data: [] });
     setError(null);
   };
 
   const reopenSession = (s) => {
     archiveCurrent();
-    setMessages(s.messages || []);
+    const reopened = s.messages || [];
+    setMessages(reopened);
+    // Settle point (dispatch #187): session switch is an explicit user action, not a stream
+    // chunk — push straight to cloud so the newly-active thread follows to other devices too.
+    _pushBlob(SAGE_THREAD_KEY, SAGE_THREAD_SETTING, { data: reopened });
     setSessionsOpen(false);
     setError(null);
   };

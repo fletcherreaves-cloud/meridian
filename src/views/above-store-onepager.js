@@ -13,6 +13,12 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } fr
 import { supabase, loadEomCountStatus } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
+// Dispatch #190 — merges the retired "Leadership One-Pager" (registry id leader-one-pager,
+// src/views/one-pager.js) into this panel via a `view` scope selector (see AboveStoreOnePager's
+// headerExtra below). LeadershipCascadeBody is the harvested content, header-less so it embeds
+// without a doubled RoutePanelShell; OnePagerPanel (one-pager.js's own thin wrapper around the
+// same body) keeps working unchanged for anything that still renders it standalone.
+import { LeadershipCascadeBody } from './one-pager.js';
 
 // Stream a SAGE analysis (same edge-function contract as sage.js callSageStream).
 async function askSageStream(prompt, systemPrompt, onChunk) {
@@ -91,8 +97,22 @@ const selectorValueToScope = (v) => {
   return 'all';
 };
 
-export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels }) {
+export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onClose, initialScope, initialPeriod, initialPanels, initialView }) {
   const { useState, useMemo, useEffect } = React;
+  // Dispatch #190's scope selector — NOT the same axis as the location `scope` below. This is
+  // WHO the one-pager is being built for: the quantified, read-only district/patch/store ROLLUP
+  // (the original Above-Store One-Pager — panel toggles, AI Analyze, Print) vs. the LEADERSHIP
+  // CASCADE (the harvested Leadership One-Pager — Owner→DO/DO→Supervisor/Supervisor→GM framing,
+  // opportunity-$ headline, a persisted week-to-week action plan with an accountability loop, and
+  // the Weekly Review / Discussion-sheet / Word exports). The owner's own instruction named this
+  // "a scope selector" but the two things it could plausibly mean are genuinely different axes —
+  // audience/purpose vs. location — and forcing this one through LocationSelector (which only
+  // models All/State/Patch/Store) would either drop the cascade framing entirely or misrepresent
+  // it as a location tier it isn't. So `view` stays its own toggle here; each view keeps its OWN
+  // location-scope control below (this rollup's LocationSelector; Leadership's own hand-rolled
+  // Org/OK/FL/Owner/DO/Supervisor/OM + store-pill picker, deliberately NOT converted — see
+  // LeadershipCascadeBody's own comment in one-pager.js and dispatch #160 item 3's test).
+  const [view, setView] = useState(initialView === 'leadership' ? 'leadership' : 'rollup');
   const [scope, setScope] = useState(initialScope || 'all');
   const [period, setPeriod] = useState(initialPeriod || 'mtd');
   // Custom date range (dispatch #158 item 1) — {s,e} ISO strings, only consulted when
@@ -485,16 +505,35 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
   // panel-registry.js, "would I ever want to send someone a link to this district's rollup?" —
   // yes) replaces the hand-rolled fixed/inset:0/rgba(0,0,0 backdrop+card+close-button this used
   // to roll itself (the exact anti-pattern src/__tests__/ratchet-modal-backdrop-bypass.test.js
-  // guards against). AI Analyze + Print stay in the header via headerExtra; the period/scope/
-  // panel-toggle rows become ordinary page content below it, same as every other routed panel.
+  // guards against). AI Analyze + Print stay in the header via headerExtra (rollup view only —
+  // Leadership Cascade's own toolbar, cascade select/Save/Reports menu, lives in its embedded
+  // body per one-pager.js's LeadershipCascadeBody); the period/scope/panel-toggle rows become
+  // ordinary page content below it, same as every other routed panel.
+  // locSelectorStores is already the [{loc}] shape LeadershipCascadeBody's own `stores` prop
+  // expects (see its allLocs derivation in one-pager.js) — no second store list to build.
+  const viewPill = (v, label, icon) => btn({
+    key: v, onClick: () => setView(v), title: label,
+    style: { padding: '3px 9px', fontSize: '10px', fontWeight: 700, borderRadius: 999, cursor: 'pointer',
+      border: '.5px solid ' + (view === v ? 'var(--amber)' : 'var(--bdr)'),
+      background: view === v ? 'var(--adim)' : 'transparent', color: view === v ? 'var(--amber)' : 'var(--text3)' },
+  }, icon + ' ' + label);
   return h(RoutePanelShell, {
-    title: 'Above-Store One-Pager', icon: '📄',
-    subtitle: scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')',
+    title: view === 'leadership' ? 'Leadership One-Pager' : 'Above-Store One-Pager',
+    icon: view === 'leadership' ? '📋' : '📄',
+    subtitle: view === 'leadership'
+      ? 'Weekly cascade — Owner → DO → Supervisor → GM'
+      : scopeLabel + ' · ' + range.label + ' (' + range.s + ' → ' + range.e + ')',
     onBack: onClose,
-    headerExtra: div({ style: { display: 'flex', gap: 6 } },
-      btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze'),
-      btn({ className: 'btn btn-sm', style: { fontSize: '9px' }, onClick: printOnePager, title: 'Print this rollup' }, '🖨')),
+    headerExtra: div({ style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
+      // Dispatch #190's scope selector — Rollup (Above-Store, read-only quantified rollup) vs.
+      // Leadership Cascade (the harvested weekly accountability loop). See the `view` state
+      // comment above for why this is a separate axis from location scope.
+      div({ style: { display: 'flex', gap: 2, border: '.5px solid var(--bdr)', borderRadius: 999, padding: 2 } },
+        viewPill('rollup', 'Rollup', '📄'), viewPill('leadership', 'Leadership', '📋')),
+      view === 'rollup' ? btn({ className: 'btn btn-sm', disabled: aiBusy, style: { fontSize: '9px', background: 'rgba(129,140,248,.1)', borderColor: 'rgba(129,140,248,.35)', color: '#a5b4fc' }, onClick: runAI }, aiBusy ? '🧠 …' : '🧠 Analyze') : null,
+      view === 'rollup' ? btn({ className: 'btn btn-sm', style: { fontSize: '9px' }, onClick: printOnePager, title: 'Print this rollup' }, '🖨') : null),
   },
+    view === 'leadership' ? h(LeadershipCascadeBody, { ds, stores: locSelectorStores, settings }) : h(React.Fragment, null,
     // period control (period-anchored presets + custom — dispatch #158's own choice, inherited
     // unchanged here per this dispatch's item 2: mtd/lastweek/lastmonth are period-anchored, the
     // same class memory/panel-contract.md's own table carves out for report-subscriptions.js).
@@ -648,5 +687,5 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
         ]) : null)),
     // footer
     div({ style: { padding: '8px 16px', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)', fontSize: '9px', color: 'var(--text3)' } },
-      'Rollup + AI narrative + Scheduling/VLH. Click a section header for its per-store breakdown. Green = at/better than target (Fixed/Floor: in 10–15% band), red = worse.'));
+      'Rollup + AI narrative + Scheduling/VLH. Click a section header for its per-store breakdown. Green = at/better than target (Fixed/Floor: in 10–15% band), red = worse.')));
 }

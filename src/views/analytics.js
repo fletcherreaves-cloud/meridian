@@ -9,6 +9,7 @@ import { SEV_META, groupAttentionByStore } from '../engine/attention-feed.js';
 import { pushBlob as _pushBlob, readBlobLocal as _readBlobLocal, hydrateBlob as _hydrateBlob, normalizeDialedIn as _normalizeDialedIn } from '../lib/blob-sync.js';
 import { runWhyEngineScan, diagnoseMiss, runWhyEngineDistrict } from '../engine/why.js';
 import { LocationSelector } from '../components/PanelControls.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 import { weightedMean, ratioOfSums, ratioOfSumsDerived } from '../engine/weighted.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
@@ -2971,7 +2972,23 @@ function fobAudit(metrics){
   return _audit(checks);
 }
 
-function FOBAnalysisPanel({stores, ds, settings, onClose}){
+// Dispatch #188 -- End of Month (fob-eom.js's FOBEOMPanel) merged into Food Cost as a mode,
+// per the owner's 2026-08-10 decision (memory/decisions-panel-inventory-2026-08-10.md). Loaded
+// via React.lazy(), NOT a static import, so fob-eom.js's own `import * as XLSX from 'xlsx'`
+// (~140KB gzip, see changelog 5.006) only reaches the network the first time a user actually
+// switches to the EOM mode -- everyone who only opens Food Cost for the qsr_fob cloud analysis
+// (the common case) never pays for it, same discipline the panel already had as its own
+// lazyPanel() entry before this merge.
+const FOBEOMPanelLazy = React.lazy(() => import('./fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
+const _fobEomFallback = () => div({style:{padding:24,fontSize:'11px',color:'var(--text3)'}},'Loading End of Month…');
+
+function FOBAnalysisPanel({stores, ds, settings, onClose, initialMode}){
+  // mode (dispatch #188) -- 'analysis' (the original Food Cost content, default) or 'eom'
+  // (the harvested End-of-Month troubleshooter). initialMode lets App.js land here directly on
+  // 'eom' for the old ?panel=fob-eom redirect and the "End of Month" nav click, both of which
+  // now route to fob-analysis instead of their own page (see App.js's routePanel==='fob-eom'
+  // effect and the modal==='fob-eom' dispatch branch).
+  const [mode, setMode] = React.useState(initialMode==='eom' ? 'eom' : 'analysis');
   const allLocs=React.useMemo(()=>(stores||[]).filter(s=>/^\d+$/.test(s.loc)&&DEFAULT_TARGETS[s.loc]).map(s=>s.loc),[stores]);
   const okLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='OK'),[allLocs]);
   const flLocs=React.useMemo(()=>allLocs.filter(l=>(INV_ORG_COORDS[l]||{}).state==='FL'),[allLocs]);
@@ -3337,87 +3354,51 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
   // to settle (success or caught-error-fallback-to-[]) before rendering anything, so it never
   // shows a transient, wrongly-scoped state. qsrFobRows always resolves (loadQsrFob's .then/.catch
   // both call setQsrFobRows), so this cannot get stuck loading forever under normal conditions.
-  if(!ds||qsrFobRows===null||!(fobRowsEff||[]).length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center'}},
-    div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-      div({style:{fontSize:40,marginBottom:12}},'🥗'),
-      div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},qsrFobRows===null?'Loading FOB data…':'No FOB Data Yet'),
-      div({style:{fontSize:'11px',marginBottom:16,lineHeight:1.6}},qsrFobRows===null?'Checking the cloud FOB stream…':'The cloud FOB stream (qsr_fob) is empty for now — or load an Operations Report file (its FOB sheet parses automatically) for Total Food Cost detail.'),
-      btn({className:'btn btn-sm',onClick:onClose},'✕')));
+  // Dispatch #188 — mode tabs (Food Cost / End of Month), same pill-tab shape the Planning/
+  // Scheduling hubs use for their own internal mode switchers. EOM is upload-driven and has
+  // nothing to do with the qsr_fob cloud stream, so the loading/empty gate below is now scoped
+  // to mode==='analysis' only — a user can open the EOM mode even while Food Cost's own cloud
+  // data is still loading or empty for the selected period.
+  const MODE_TABS = [
+    {id:'analysis', label:'Food Cost',    icon:'🥗'},
+    {id:'eom',      label:'End of Month', icon:'📋'},
+  ];
+  const modeTabBar = div({style:{display:'flex',gap:4}},
+    ...MODE_TABS.map(t=>btn({key:t.id, onClick:()=>setMode(t.id),
+      style:{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:6,cursor:'pointer',
+        fontSize:'11px',fontWeight:mode===t.id?700:400,
+        border:'1px solid '+(mode===t.id?'var(--accent)':'var(--bdr)'),
+        background:mode===t.id?'rgba(96,165,250,.14)':'transparent',
+        color:mode===t.id?'var(--accent)':'var(--text2)'}},
+      span(null,t.icon+' '+t.label))));
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:450,display:'flex',flexDirection:'column',paddingTop:20}},
-    div({style:{flex:'0 0 20px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',maxWidth:1100,margin:'0 auto',width:'calc(100% - 32px)',
-      borderRadius:'var(--rl) var(--rl) 0 0',display:'flex',flexDirection:'column',overflow:'hidden',
-      boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
-      // ── Title bar ──────────────────────────────────────────────────
-      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,
-        background:'var(--surf2)',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
-        div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🥗 FOB Analysis'),
-        fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
-          style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
-        // Notes 60 bug #1. This indicator already existed but was an 8px pill whose
-        // explanation lived in a TOOLTIP, so the owner read the truncated month list as
-        // missing data rather than a failed cloud read — the months stop at the last
-        // manual upload carrying sales (May 2026), which looks exactly like "no data
-        // after May". Say it in words, at a readable size, next to the Period selector
-        // that is showing the truncated list.
-        (qsrFobRows!==null&&!fobHasCloud)&&span({
-          title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr})`:'Cloud FOB stream returned no rows',
-          style:{fontSize:'10px',fontWeight:700,padding:'4px 9px',borderRadius:5,background:'rgba(244,63,94,.14)',color:'var(--crit)',border:'.5px solid rgba(244,63,94,.45)',cursor:'help',maxWidth:360,lineHeight:1.35}},
-          '⚠ Manual uploads only — the cloud FOB stream returned nothing, so Period stops at your last upload.'),
-        // Month selector
-        div({style:{display:'flex',flexDirection:'column',gap:1}},
-          div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Period'),
-          h('select',{value:selMonth,onChange:e=>{setSelMonth(e.target.value);setExpandedRow(null);},
-            style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-              color:'var(--text)',fontSize:'10px',padding:'3px 8px'}},
-            months.map(m=>h('option',{key:m,value:m},monthLabel(m))))),
-        // Location selector
-        div({style:{display:'flex',flexDirection:'column',gap:1}},
-          div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Location'),
-          h('select',{value:selLoc,onChange:e=>{setSelLoc(e.target.value);setExpandedRow(null);},
-            style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-              color:'var(--text)',fontSize:'10px',padding:'3px 8px',maxWidth:200}},
-            h('option',{value:'all'},'All Locations ('+allLocs.length+')'),
-            h('option',{value:'ok'},'MCDOK — OK ('+okLocs.length+')'),
-            h('option',{value:'fl'},'Emerald Arches — FL ('+flLocs.length+')'),
-            allLocs.map(l=>h('option',{key:l,value:l},sNameC(l))))),
-        div({style:{marginLeft:'auto',display:'flex',gap:6}},
-          // Dispatch #129: the standalone 🖨 Print button (native window.print()) is removed —
-          // it printed whatever happened to be scrolled into view inside #116's shared
-          // overflowY:'auto' region, not the full KPI cards + Root-Cause Matrix + Waste-Entry
-          // Discipline + Contributors table. ExportDropdown's "HTML Report / Print" (extraHTML
-          // below) replaces it: same pattern as EventCalendar/RankingView elsewhere in this file,
-          // builds the printable page from the already-computed data, not the scrolled DOM, so it
-          // always contains the FULL current result set regardless of scroll position. CSV/JSON
-          // (the `rows` below) are unchanged.
-          h(ExportDropdown,{
-            title:'FOB Analysis — '+(selLoc==='all'?'All Locations':selLoc==='ok'?'MCDOK (OK)':selLoc==='fl'?'Emerald Arches (FL)':(STORE_NAMES[selLoc]||selLoc))+(selMonth?' · '+selMonth:''),
-            filename:'fob_analysis_'+(selMonth||'all')+'_'+new Date().toISOString().slice(0,10),
-            rows:(metrics&&metrics.byLoc?metrics.byLoc.map(s=>({
-              Store: String(s.loc)+' — '+(STORE_NAMES[s.loc]||s.loc),
-              'FOB %': s.fobPct!=null?((s.fobPct*100).toFixed(2)+'%'):'—',
-              'FC %': s.fcPct!=null?((s.fcPct*100).toFixed(2)+'%'):'—',
-              'Debit %': s.debitPct!=null?((s.debitPct*100).toFixed(2)+'%'):'—',
-              'Credit %': s.creditPct!=null?((s.creditPct*100).toFixed(2)+'%'):'—',
-              'MOP %': s.mopPct!=null?((s.mopPct*100).toFixed(2)+'%'):'—',
-              'Kiosk %': s.kioskPct!=null?((s.kioskPct*100).toFixed(2)+'%'):'—',
-            })):[]),
-            extraHTML:fobPrintHTML(),
-          }),
-          btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕'))
-      ),
-      // ── Scroll region (#116) ──────────────────────────────────────
-      // KPI cards + Root-Cause Priority Matrix + Waste-Entry Discipline + Contributors
-      // table used to be four fixed-height (flexShrink:0) siblings under this flex
-      // column, with only the Contributors table itself scrollable. On a short mobile
-      // viewport the fixed stack above the table could alone exceed the available
-      // height, squeezing the table toward zero with no scroll affordance to reach it
-      // (owner-reported). Fix: one shared scroll region wraps all four sections so
-      // every section — including the table below the two matrices — is always
-      // reachable regardless of viewport height. Individual sections keep flexShrink:0
-      // so they size to content inside the scrolling column instead of being squished.
-      div({style:{flex:1,minHeight:0,overflowY:'auto',display:'flex',flexDirection:'column'}},
+  const analysisLoading = !ds||qsrFobRows===null;
+  const analysisEmpty = !analysisLoading&&!(fobRowsEff||[]).length;
+  // analysisReady gates the header's Period/Location/Export controls (and cloud-status pills) —
+  // matches the ORIGINAL panel's behavior exactly: before dispatch #188, loading/empty returned
+  // a bare overlay with no title bar at all, so no <select> existed in the DOM until real data
+  // had landed. fob-analysis-month-race.test.js asserts this directly (no <select> while
+  // qsrFobRows is still null, even with manual rows already present) — gating only on `mode` and
+  // not also on readiness would regress that race-condition fix.
+  const analysisReady = mode==='analysis'&&!analysisLoading&&!analysisEmpty;
+
+  // ── Analysis-mode body ──────────────────────────────────────────────────────
+  const analysisBody = (analysisLoading||analysisEmpty)
+    ? div({style:{padding:'60px 24px',textAlign:'center',color:'var(--text3)'}},
+        div({style:{fontSize:40,marginBottom:12}},'🥗'),
+        div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},analysisLoading?'Loading FOB data…':'No FOB Data Yet'),
+        div({style:{fontSize:'11px',lineHeight:1.6,maxWidth:440,margin:'0 auto'}},analysisLoading?'Checking the cloud FOB stream…':'The cloud FOB stream (qsr_fob) is empty for now — or load an Operations Report file (its FOB sheet parses automatically) for Total Food Cost detail.'))
+    // ── Scroll region (#116) ──────────────────────────────────────
+    // KPI cards + Root-Cause Priority Matrix + Waste-Entry Discipline + Contributors
+    // table used to be four fixed-height (flexShrink:0) siblings under this flex
+    // column, with only the Contributors table itself scrollable. On a short mobile
+    // viewport the fixed stack above the table could alone exceed the available
+    // height, squeezing the table toward zero with no scroll affordance to reach it
+    // (owner-reported). Fix: one shared scroll region wraps all four sections so
+    // every section — including the table below the two matrices — is always
+    // reachable regardless of viewport height. Individual sections keep flexShrink:0
+    // so they size to content inside the scrolling column instead of being squished.
+    : div({style:{flex:1,minHeight:0,overflowY:'auto',display:'flex',flexDirection:'column'}},
       // ── KPI cards ──────────────────────────────────────────────────
       kpiCards(),
       // ── Root-Cause Priority Matrix ──────────────────────────────────
@@ -3488,8 +3469,84 @@ function FOBAnalysisPanel({stores, ds, settings, onClose}){
             'Difference $ = (Actual% − Target%) × Net Sales. Negative = favorable (money below target). Positive = unfavorable (over target).')))
         )
       )
-      ) // ── end scroll region (#116) ──
-    )
+    ); // ── end scroll region (#116) ──
+
+  // Dispatch #188 — RoutePanelShell is now the SOLE shell (title/back button/close), replacing
+  // the panel's former hand-rolled position:fixed overlay + its own "🥗 FOB Analysis" title bar
+  // + its own "✕" close button. Those duplicated the RoutePanelShell App.js already wraps this
+  // panel in (routePanel==='fob-analysis'), so opening Food Cost showed two close affordances
+  // stacked on top of each other — a real panel-contract violation (memory/panel-contract.md
+  // §1: "Nothing else rolls its own backdrop, card, or close button"), not just a style choice.
+  // Fixed opportunistically here since the mode-tab header rework already touches this exact
+  // area; App.js's own render for routePanel==='fob-analysis' no longer wraps this component in
+  // a second RoutePanelShell (see App.js).
+  return h(RoutePanelShell, {
+    title: mode==='eom' ? 'End of Month' : 'Food Cost',
+    icon: mode==='eom' ? '📋' : '🥗',
+    onBack: onClose,
+    headerExtra: div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
+      modeTabBar,
+      analysisReady&&fobHasCloud&&span({title:'FOB components fed by the auto qsr_fob cloud stream (no upload needed). Total Food Cost % still comes from an Operations Report upload.',
+        style:{fontSize:'8px',fontWeight:700,padding:'2px 6px',borderRadius:4,background:'rgba(16,185,129,.12)',color:'#10b981',border:'.5px solid rgba(16,185,129,.3)'}},'☁ Cloud auto'),
+      // Notes 60 bug #1. This indicator already existed but was an 8px pill whose
+      // explanation lived in a TOOLTIP, so the owner read the truncated month list as
+      // missing data rather than a failed cloud read — the months stop at the last
+      // manual upload carrying sales (May 2026), which looks exactly like "no data
+      // after May". Say it in words, at a readable size, next to the Period selector
+      // that is showing the truncated list.
+      analysisReady&&!fobHasCloud&&span({
+        title:qsrFobErr?`Cloud FOB stream failed to load (${qsrFobErr})`:'Cloud FOB stream returned no rows',
+        style:{fontSize:'10px',fontWeight:700,padding:'4px 9px',borderRadius:5,background:'rgba(244,63,94,.14)',color:'var(--crit)',border:'.5px solid rgba(244,63,94,.45)',cursor:'help',maxWidth:360,lineHeight:1.35}},
+        '⚠ Manual uploads only — the cloud FOB stream returned nothing, so Period stops at your last upload.'),
+      // Month selector — period-anchored (calendar-month presets built from the data itself,
+      // not a day-count window; see memory/panel-contract.md §2's "period-anchored" row).
+      analysisReady&&div({style:{display:'flex',flexDirection:'column',gap:1}},
+        div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Period'),
+        h('select',{value:selMonth,onChange:e=>{setSelMonth(e.target.value);setExpandedRow(null);},
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'3px 8px'}},
+          months.map(m=>h('option',{key:m,value:m},monthLabel(m))))),
+      // Location selector — hand-rolled <select>, not the shared LocationSelector component.
+      // Left as-is (dispatch #188, panel-contract opportunistic check): this panel's scope
+      // shape is 'all'|'ok'|'fl'|storeId (a district-weighted-average toggle, not a hierarchy
+      // pick), which doesn't map cleanly onto LocationSelector's {level,id} value without a
+      // translation layer for the 'ok'/'fl' market shortcuts — a real conversion, not a
+      // drop-in swap, and out of this dispatch's scope (merging EOM in, not a selector
+      // rewrite). Flagged here rather than silently skipped.
+      analysisReady&&div({style:{display:'flex',flexDirection:'column',gap:1}},
+        div({style:{fontSize:'7.5px',color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.4px'}},'Location'),
+        h('select',{value:selLoc,onChange:e=>{setSelLoc(e.target.value);setExpandedRow(null);},
+          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'3px 8px',maxWidth:200}},
+          h('option',{value:'all'},'All Locations ('+allLocs.length+')'),
+          h('option',{value:'ok'},'MCDOK — OK ('+okLocs.length+')'),
+          h('option',{value:'fl'},'Emerald Arches — FL ('+flLocs.length+')'),
+          allLocs.map(l=>h('option',{key:l,value:l},sNameC(l))))),
+      // Export — already present pre-dispatch #188 (ExportDropdown's CSV/JSON + "HTML Report /
+      // Print" pattern, dispatch #129); Food Cost was NOT one of the panel-contract's named
+      // print/export gaps. Analysis-mode only: EOM's own print (the harvested PrintReport
+      // button, FOBEOMPanel's embedded toolbar) covers that mode instead, since it reports on
+      // upload-driven per-store data the Export dropdown's CSV/rows shape doesn't have.
+      analysisReady&&h(ExportDropdown,{
+        title:'FOB Analysis — '+(selLoc==='all'?'All Locations':selLoc==='ok'?'MCDOK (OK)':selLoc==='fl'?'Emerald Arches (FL)':(STORE_NAMES[selLoc]||selLoc))+(selMonth?' · '+selMonth:''),
+        filename:'fob_analysis_'+(selMonth||'all')+'_'+new Date().toISOString().slice(0,10),
+        rows:(metrics&&metrics.byLoc?metrics.byLoc.map(s=>({
+          Store: String(s.loc)+' — '+(STORE_NAMES[s.loc]||s.loc),
+          'FOB %': s.fobPct!=null?((s.fobPct*100).toFixed(2)+'%'):'—',
+          'FC %': s.fcPct!=null?((s.fcPct*100).toFixed(2)+'%'):'—',
+          'Debit %': s.debitPct!=null?((s.debitPct*100).toFixed(2)+'%'):'—',
+          'Credit %': s.creditPct!=null?((s.creditPct*100).toFixed(2)+'%'):'—',
+          'MOP %': s.mopPct!=null?((s.mopPct*100).toFixed(2)+'%'):'—',
+          'Kiosk %': s.kioskPct!=null?((s.kioskPct*100).toFixed(2)+'%'):'—',
+        })):[]),
+        extraHTML:fobPrintHTML(),
+      }),
+    ),
+    bodyStyle:{padding:0,overflow:'hidden',display:'flex',flexDirection:'column'},
+  },
+    mode==='eom'
+      ? h(React.Suspense,{fallback:h(_fobEomFallback)}, h(FOBEOMPanelLazy,{stores,ds,settings,embedded:true}))
+      : analysisBody
   );
 }
 

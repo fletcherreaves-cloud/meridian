@@ -48,15 +48,27 @@ export const PANELS = [
   { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily', route:true },
   { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics' },
   // Planning cluster, in the owner's own stated order (dispatch #54 Job B, 2026-08-21): "Planning
-  // (the hub, keeping its five tabs) · Calendar · Events & Tags · Event Impact" -- four sidebar
-  // links, the hub NOT exploded (its five internal tabs stay kind:'hub-tab', see monthly-proj/
-  // pace-target/etc below). Grouped physically together here (not alphabetical, like the rest of
-  // this array) because panelsForSection() renders in PANELS declaration order and this order is
-  // an explicit owner decision, not incidental.
+  // (the hub, keeping its five tabs) · Events & Tags · Event Impact" -- three sidebar links, the
+  // hub NOT exploded (its five internal tabs stay kind:'hub-tab', see monthly-proj/pace-target/
+  // etc below). Grouped physically together here (not alphabetical, like the rest of this array)
+  // because panelsForSection() renders in PANELS declaration order and this order is an explicit
+  // owner decision, not incidental.
+  // (Was four links through 2026-08-27: Calendar merged into Events & Tags as its Calendar mode,
+  // dispatch #191, 2026-08-28, re-confirming the original 2026-08-10 merge decision -- see
+  // memory/decisions-panel-inventory-2026-08-10.md and memory/dispatch-191.md. calendar-manager
+  // stays registered below, kind:'internal', purely so a stray dispatch to the old id still
+  // redirects instead of doing nothing -- it is not a fifth link.)
   { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning' },
-  { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'nav', section:'planning' },
   { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
   { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'planning' },
+  // calendar-manager — RETIRED as a nav entry (dispatch #191, 2026-08-28): its distinct capability
+  // (month grid, recurring rules, AI-search/bulk-import pending review) was harvested into Events
+  // & Tags as a Calendar mode (App.js's EventsAndTagsPanel), CalendarManagerPanel component itself
+  // unchanged (features/calendar.js). kind:'internal' keeps the id registered (satisfies
+  // panel-registry.test.js's dispatch<->registry pairing) without a sidebar link, so
+  // onOpenModal('calendar-manager') below still redirects into Events & Tags' Calendar mode rather
+  // than silently no-oping if anything still calls it.
+  { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'internal', section:'planning' },
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analysis' },
@@ -77,7 +89,14 @@ export const PANELS = [
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
   { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
   { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
-  { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
+  // count-cycle CONVERTED 2026-08-28 (dispatch #189, owner-approved 2026-08-10) from a
+  // standalone route:true entry to kind:'hub-tab' -- same "opens a hub and selects a tab, no
+  // sidebar entry of its own" pattern this registry already uses for fcst-accuracy/
+  // targets-editor/sched-retention etc (see the `kind` field doc above). Opening 'count-cycle'
+  // now selects EOMDashboardPanel's Count Cycle tab and routes to 'eom-dashboard', exactly
+  // like 'targets-editor' selects PerformanceReviewsPanel's Customize>Targets tab. Its own
+  // component (CountCycleSection, src/views/count-cycle-panel.js) is reused as-is, not deleted.
+  { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'hub-tab', section:'inventory-food-cost' },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
   // fcst-accuracy CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
@@ -109,7 +128,14 @@ export const PANELS = [
   { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
-  { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
+  // Dispatch #188 -- merged into Food Cost as an "End of Month" mode (per the owner's
+  // 2026-08-10 decision, memory/decisions-panel-inventory-2026-08-10.md). kind:'internal'
+  // (no sidebar entry any more; open it from Food Cost's own mode tabs) but route:true is
+  // DELIBERATELY kept -- not just left over -- so an old ?panel=fob-eom bookmark still
+  // validates through routing.js's isRoutePanelId() and reaches the routePanel==='fob-eom'
+  // redirect effect in App.js (goRoute('fob-analysis') + initial EOM mode) instead of 404ing
+  // to the default view. Removing route:true here would silently break that link.
+  { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'internal', section:'inventory-food-cost', route:true },
   // QSRSoft Forms dashboard, Slice 2 of 3 -- kind:'test-kitchen' since Slice 3's pull script
   // (the data source) hasn't shipped yet; the panel renders an honest empty state against a real
   // read, not fake data. Promote to kind:'nav' once Slice 3 lands and the owner has seen it live.
@@ -129,7 +155,12 @@ export const PANELS = [
   { id:'labor-allocation', label:'Labor Allocation', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analytics', label:'Labor Analytics', icon:'', perm:'analytics.labor', kind:'hub-tab', section:'scheduling' },
-  { id:'leader-one-pager', label:'Leadership One-Pager', icon:'📋', perm:null, kind:'nav', section:'analytics', route:true },
+  // 'leader-one-pager' (Leadership One-Pager) retired here (dispatch #190, owner-approved
+  // 2026-08-10 decision list) — merged into 'above-store' (Above-Store One-Pager) below, behind
+  // a Rollup/Leadership scope selector inside AboveStoreOnePager. Its content (cascade selector,
+  // opportunity $, action plan, Weekly Review exports) is now LeadershipCascadeBody
+  // (src/views/one-pager.js), embedded there; a stale ?panel=leader-one-pager link redirects to
+  // 'above-store' via routing.js's LEGACY_PANEL_REDIRECTS.
   { id:'lfz-gap', label:'LifeLenz Gap', icon:'📊', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:6 },
   // lifelenz-bridge CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
   // entry to kind:'hub-tab', same pattern as fcst-accuracy above — opens ForecastReportsPanel's

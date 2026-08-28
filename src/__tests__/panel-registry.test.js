@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the twenty-one panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192, minus #140)', () => {
-    // Ratchet, not a ceiling: adding a twenty-second route panel is a real routing change (a new
+  it('is exactly the nineteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192, minus #140, #189 and #190)', () => {
+    // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -218,18 +218,26 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // memory/panel-contract.md item 4) converted 'above-store' (Above-Store One-Pager) and
     // 'leader-one-pager' (Leadership One-Pager) -- both genuine "send someone a link to this
     // rollup/review" destinations, same test the existing thirteen already passed, shell swapped
-    // to RoutePanelShell inside each component (thirteen -> fifteen). Dispatch #192 (URL migration
-    // batch 1, owner-affirmed "convert pages to urls except where specified") added the next six:
-    // 'attention' (Needs Attention) and 'ranking' (Rankings) had their hand-rolled backdrop/header
-    // refactored to RoutePanelShell inside the component, same treatment as #55's count-cycle;
-    // 'security' and 'signals' had no internal chrome and are wrapped in RoutePanelShell directly
-    // at the App.js call site, same treatment as #55's fob-analysis/fob-eom; 'promo-roi' also had
-    // its hand-rolled backdrop refactored internally AND was lazy-wrapped (previously a static
-    // top-level import); 'morning-brief' had no internal chrome (wrapped at the call site) and was
-    // also lazy-wrapped (previously a static top-level import) (fifteen -> twenty-one).
+    // to RoutePanelShell inside each component (thirteen -> fifteen). Dispatch #189 (owner-
+    // approved 2026-08-10) then converted 'count-cycle' (Count Cycle) to kind:'hub-tab', folded
+    // into 'eom-dashboard' (Inventory Control) as a tab -- same "route:true -> hub-tab" demotion
+    // #106/#140 did above (fifteen -> fourteen). Dispatch #190 then merged 'leader-one-pager'
+    // INTO 'above-store' behind a Rollup/Leadership scope selector (owner's 2026-08-10 "three
+    // one-pagers -> two" decision) -- its content survives as LeadershipCascadeBody
+    // (one-pager.js), embedded rather than separately routed, so that registry entry retires too
+    // (fourteen -> thirteen) while 'above-store' itself is unchanged here. Dispatch #192 (URL
+    // migration batch 1, owner-affirmed "convert pages to urls except where specified") then
+    // added the next six: 'attention' (Needs Attention) and 'ranking' (Rankings) had their
+    // hand-rolled backdrop/header refactored to RoutePanelShell inside the component, same
+    // treatment as #55's count-cycle; 'security' and 'signals' had no internal chrome and are
+    // wrapped in RoutePanelShell directly at the App.js call site, same treatment as #55's
+    // fob-analysis/fob-eom; 'promo-roi' also had its hand-rolled backdrop refactored internally
+    // AND was lazy-wrapped (previously a static top-level import); 'morning-brief' had no
+    // internal chrome (wrapped at the call site) and was also lazy-wrapped (previously a static
+    // top-level import) (thirteen -> nineteen).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'attention', 'count-cycle', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'leader-one-pager', 'morning-brief', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report', 'sched-hub',
+      'above-store', 'attention', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
+      'forecast-reports', 'morning-brief', 'perf-reviews', 'proj', 'promo-roi', 'ranking', 'report', 'sched-hub',
       'security', 'signals', 'time-punches',
     ]);
   });
