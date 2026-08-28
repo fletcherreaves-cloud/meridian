@@ -18,6 +18,10 @@ import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engi
 import { lastPriceChangeByStore } from '../engine/price-events.js';
 import { TOL_METRICS, TOL_SPEC, tolValuesForLoc, tolFobMonthly, tolMergedTarget, tolStatus, TOL_STATUS_COLOR, TOL_STATUS_ICON } from '../engine/tolerance-status.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+// Dispatch #203 -- LeaderboardPanel (below) merges Rankings/Record Days/Top-Bottom Performers
+// into one panel with three modes, so this file pulls in the other two's content components.
+import { RecordDayTab } from './record-day.js';
+import { TopBottomTab } from './top-bottom-performers.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -2177,7 +2181,15 @@ function ExportDropdown({rows, columns, title, filename, extraHTML, btnClassName
   );
 }
 
-function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetric, onSelectStore, onClose}) {
+// Was RankingView, a standalone route:true panel owning its own RoutePanelShell. Dispatch #203
+// merged it into the Leaderboards panel (LeaderboardPanel below) as a mode alongside Record Days
+// and Top/Bottom Performers, 'ranking' surviving as the registry id/route (the most-established
+// of the three -- already kind:'nav', route:true, section:'reports', vs record-day's
+// kind:'optional' and top-bottom's kind:'test-kitchen'). RankingTab is the SAME body this file
+// always computed (METRICS/localStats/groups/sorted all unchanged), just with the RoutePanelShell
+// wrapper peeled off -- what was its title/subtitle/headerExtra now renders as ordinary top rows,
+// since the host owns the outer shell.
+function RankingTab({stores, ds, settings, dateRange, onDateChange, defaultMetric, onSelectStore}) {
   const [metric, setMetric] = useState(defaultMetric||'score');
   const [groupDim, setGroupDim] = useState('store');   // store | patch | operator | state (Notes 25 #5)
   // Sync if defaultMetric changes (when opened from different nav sources)
@@ -2334,23 +2346,24 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
       return m.higherBetter===false?va-vb:vb-va;
     });
 
-  return h(RoutePanelShell,{
-    title:'🏆 District Rankings',
-    subtitle:DR&&('Period: '+(DR.label||new Date(DR.s).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+new Date(DR.e).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))),
-    onBack:onClose,
-    headerExtra:h(ExportDropdown,{
-      title:'Store Rankings',
-      filename:'rankings_'+new Date().toISOString().slice(0,10),
-      rows:sorted.map(s=>({
-        Store: sName(s.loc),
-        [m.l]: m.fmt(m.fn(s)),
-        'Labor %': s.p.laborPct!=null?((s.p.laborPct*100).toFixed(2)+'%'):'—',
-        'TPPH': s.p.tpph!=null?s.p.tpph.toFixed(2):'—',
-        'OEPE': s.p.oepe?Math.round(s.p.oepe)+'s':'—',
-        'Sales': s.p.sales>0?f$(s.p.sales):'—',
-      })),
-    }),
-  },
+  // Was RoutePanelShell's title/subtitle/headerExtra -- now an ordinary top row, same content.
+  return div({},
+      div({style:{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',padding:'0 0 10px'}},
+        div({style:{flex:1,minWidth:160,fontSize:11,color:'var(--text3)'}},
+          DR&&('Period: '+(DR.label||new Date(DR.s).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+new Date(DR.e).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})))),
+        h(ExportDropdown,{
+          title:'Store Rankings',
+          filename:'rankings_'+new Date().toISOString().slice(0,10),
+          rows:sorted.map(s=>({
+            Store: sName(s.loc),
+            [m.l]: m.fmt(m.fn(s)),
+            'Labor %': s.p.laborPct!=null?((s.p.laborPct*100).toFixed(2)+'%'):'—',
+            'TPPH': s.p.tpph!=null?s.p.tpph.toFixed(2):'—',
+            'OEPE': s.p.oepe?Math.round(s.p.oepe)+'s':'—',
+            'Sales': s.p.sales>0?f$(s.p.sales):'—',
+          })),
+        }),
+      ),
       onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',background:'var(--surf2)',marginBottom:6}},
         span({style:{fontSize:'8px',color:'var(--text3)',alignSelf:'center',marginRight:4}},'Filter period:'),
         DR_PRESETS.map(p=>btn({key:p.id,className:'btn btn-sm',
@@ -2393,7 +2406,12 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
           if (metric==='gc' && !s.isGroup && lyq && lyq.reliable===null && val<=-999) fmt='no LY';
           const color=lyFlagged?'var(--text3)':i===0?'var(--warn)':i<3?'#34d399':i>=sorted.length-3?'var(--crit)':'var(--text)';
           return div({key:s.loc,style:{display:'flex',alignItems:'center',gap:12,padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',cursor:s.isGroup?'default':'pointer',background:'transparent'},
-            onClick:s.isGroup?undefined:()=>{onSelectStore(s);onClose();}},
+            // onSelectStore alone (no separate onClose call) -- the merged host's own
+            // onSelectStore, threaded down from App.js, already navigates AND closes the
+            // Leaderboards route panel (goStore(s);goRoute(null)), same as Record Days/
+            // Top-Bottom's own onSelectStore. Matches this app's existing convention rather
+            // than a second, redundant close call.
+            onClick:s.isGroup?undefined:()=>onSelectStore(s)},
             div({style:{fontFamily:'var(--mono)',fontSize:'13px',fontWeight:700,color,minWidth:24,textAlign:'right'}},i+1),
             div({style:{flex:1}},
               div({style:{fontWeight:600,fontSize:'12px',display:'flex',alignItems:'center',gap:5}},
@@ -2407,6 +2425,78 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
           );
         })
       )
+  );
+}
+
+// ── Leaderboards (dispatch #203) ────────────────────────────────────────────
+// Merges three panels that all shared the 🏆 icon and a "who's leading/lagging" framing --
+// Rankings (this file's own RankingTab, above), Record Days (record-day.js's RecordDayTab), and
+// Top/Bottom Performers (top-bottom-performers.js's TopBottomTab) -- into one panel with three
+// clearly labeled modes, per the owner's live approval this session. They answer three genuinely
+// different questions (current-period cross-store rank / all-time single best day-week-month per
+// store / distribution of over- vs under-performers on one metric), so this is NOT a
+// harvest-and-retire merge like most of this session's other panel merges -- each mode keeps its
+// full original computation and UI untouched (see the "Was X" comments on RankingTab/RecordDayTab/
+// TopBottomTab above), closer in spirit to how Signals hosts LiveOps/Scanner/Signal Lab as
+// distinct tabs over one shell. 'ranking' survives as the registry id/route -- the most-established
+// of the three (already kind:'nav', route:true, section:'reports') -- with 'record-day' and
+// 'top-bottom' retired to kind:'internal' in panel-registry.js (old modal ids still redirect here,
+// selecting the right mode, at App.js's onOpenModal). 'top-bottom' is also promoted out of Test
+// Kitchen in the same move, per CLAUDE.md's standing one-field `kind` flip promotion rule.
+//
+// NOT shared across modes, deliberately: each mode keeps its OWN location scope and OWN window/
+// period controls, rather than one lifted-up shared control. Checked before assuming otherwise
+// (CLAUDE.md's "check whether a helper exists"/"shared vs not" precedent from dispatch #197):
+// Rankings has no LocationSelector at all (it has a group-by-patch/operator/state dimension
+// instead, a materially different scoping model); Record Days' LocationSelector scopes an
+// ALL-TIME computation; Top-Bottom's scopes a WINDOWED one -- three different meanings for
+// "which stores," so a shared picker would either be wrong for two of the three or would need to
+// silently mean different things depending which mode is active. Same reasoning applies to the
+// window/period pickers: Rankings' DR_PRESETS (Today/Yest/LW/L2W/MTD/L4W/L6W) and Top-Bottom's
+// WINDOW_PRESETS (LW/L4W/L6W/MTD) are close but not identical, and Record Days doesn't have a
+// "window" at all in the same sense (its windowDays only bounds the Recent Breaks tab, not the
+// all-time record scan itself) -- forcing one picker onto all three would silently change what at
+// least one of them means.
+// perm on each mode -- 'top-bottom' carries its pre-merge analytics.district gate (stricter
+// than Rankings/Record Days' analytics.store), same as it had as a standalone panel. The merge
+// itself only widened WHERE you reach it from (one nav entry instead of three); it must not
+// widen WHO can see it -- filtered below the same way SCHED_TABS/SchedulingHubPanel already
+// gates a stricter-perm tab inside a looser-perm hub (App.js).
+const LEADERBOARD_MODES = [
+  { key:'ranking',    label:'🏆 Rankings',    perm:'analytics.store' },
+  { key:'record-day', label:'🏆 Record Days', perm:'analytics.store' },
+  { key:'top-bottom', label:'🏆 Top/Bottom',  perm:'analytics.district' },
+];
+
+function LeaderboardPanel({stores, ds, settings, dateRange, onDateChange, defaultMetric, mode, onModeChange, onSelectStore, onClose, perm}) {
+  const allowed = LEADERBOARD_MODES.filter(m => !perm || perm(m.perm));
+  const firstAllowed = (allowed[0] && allowed[0].key) || 'ranking';
+  const [localMode, setLocalMode] = useState(allowed.some(m=>m.key===mode) ? mode : firstAllowed);
+  // Sync if the caller's mode changes (e.g. a different nav/deep-link source re-opens this panel
+  // on a different mode) -- same pattern RankingTab already uses for defaultMetric above. Falls
+  // back to firstAllowed rather than trusting the caller's mode blindly -- a stale deep link or a
+  // caller bug asking for 'top-bottom' must not bypass the perm filter above.
+  React.useEffect(()=>{ if(mode) setLocalMode(allowed.some(m=>m.key===mode) ? mode : firstAllowed); },[mode]);
+  const setMode = (m) => { setLocalMode(m); onModeChange && onModeChange(m); };
+
+  return h(RoutePanelShell,{
+    title:'🏆 Leaderboards',
+    subtitle:'Current rankings · all-time records · top & bottom performers — three distinct leaderboard questions, one home',
+    onBack:onClose,
+  },
+    div({style:{display:'flex',gap:6,padding:'0 0 16px',flexWrap:'wrap',borderBottom:'.5px solid var(--bdr)',marginBottom:16}},
+      ...allowed.map(md=>btn({
+        key:md.key, className:'btn btn-sm',
+        style:{fontSize:'11px',fontWeight:600,padding:'6px 14px',
+          background:localMode===md.key?'rgba(245,188,0,.14)':'transparent',
+          color:localMode===md.key?'var(--gold)':'var(--text3)',
+          borderColor:localMode===md.key?'rgba(245,188,0,.4)':'var(--bdr)'},
+        onClick:()=>setMode(md.key)},
+        md.label)),
+    ),
+    localMode==='ranking'    && h(RankingTab,    {stores,ds,settings,dateRange,onDateChange,defaultMetric,onSelectStore}),
+    localMode==='record-day' && h(RecordDayTab,  {stores,ds}),
+    localMode==='top-bottom' && allowed.some(m=>m.key==='top-bottom') && h(TopBottomTab,  {stores,ds,onSelectStore}),
   );
 }
 
@@ -3447,7 +3537,7 @@ export {
   useChart, TT, AX, LEG, SalesChart, OpsRadar, TrendChart,
   wxIcon, ForecastRow, ForecastTable,
   Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, generatePlan, ActionPlanTab,
-  StoreCard, DistrictGrid, OrgView, ExportDropdown, RankingView,
+  StoreCard, DistrictGrid, OrgView, ExportDropdown, LeaderboardPanel, RankingTab,
   UnifiedTargetsPanel, MonthlyTargetManager, EventCalendar,
   OpsBarChart, CompareRadarChart, CompareLineChart,
 };

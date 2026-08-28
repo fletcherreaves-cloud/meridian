@@ -4,7 +4,6 @@ import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { dKey, businessDate } from '../utils/date.js';
 import { fN } from '../utils/fmt.js';
 import { metricSeries, dailyDataFreshness } from '../engine/metric-source.js';
-import { ModalShell, Z } from '../components/ModalShell.js';
 // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
 // standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
 // at all before this dispatch.
@@ -12,12 +11,15 @@ import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '
 
 // ExportDropdown lives in store-dash.js -- a 145 KB module (+ the chart.js/auto runtime it
 // pulls in) that App.js deliberately keeps OUT of the entry chunk via a dynamic `import()`
-// (#232 Finding 3). record-day.js itself IS statically imported by App.js (RecordDayPanel is
-// not behind lazyPanel()), so a top-level `import {ExportDropdown} from './store-dash.js'` here
-// would drag that whole module back into the entry chunk for every user on every load -- exactly
-// the regression #232 fixed elsewhere. React.lazy defers the actual import() to first render of
-// this component, which only happens once the panel is open AND has data to export, so the
-// entry-chunk footprint stays a small lazy() stub, not the module itself (measured in the PR body).
+// (#232 Finding 3). Before dispatch #203, record-day.js was itself statically imported by App.js
+// (RecordDayPanel was not behind lazyPanel()), so a top-level `import {ExportDropdown} from
+// './store-dash.js'` here would have dragged that whole module back into the entry chunk for
+// every user on every load -- exactly the regression #232 fixed elsewhere. Dispatch #203 folded
+// this file's content (now RecordDayTab) into store-dash.js's LeaderboardPanel as a mode, and
+// store-dash.js is itself only ever reached through a lazy dynamic import -- so record-day.js is
+// no longer in the entry chunk at all, and this file could now import ExportDropdown directly.
+// Left as React.lazy anyway: it's still correct (just no longer load-bearing for the entry-chunk
+// budget) and touching it isn't this dispatch's job.
 const LazyExportDropdown = React.lazy(() =>
   import('./store-dash.js').then(m => ({ default: m.ExportDropdown }))
 );
@@ -475,7 +477,9 @@ function scopeRecordData(data, locs) {
 
 const S = {
   // overlay/panel/hdr (hand-rolled backdrop + close button) removed -- dispatch #130 replaced
-  // them with the shared ModalShell (panel-contract conformance; see RecordDayPanel below).
+  // them with the shared ModalShell; dispatch #203 then peeled ModalShell off too, folding this
+  // panel into the merged Leaderboards host as RecordDayTab (see that export below) -- host owns
+  // the shell now.
   tabs:    { display:'flex',gap:2,padding:'0 20px',borderBottom:'.5px solid var(--bdr)',flexShrink:0,background:'var(--surf)' },
   tab:     (active) => ({ padding:'10px 16px',fontSize:13,fontWeight:600,cursor:'pointer',border:'none',background:'none',color:active?'var(--acc)':'var(--txt3)',borderBottom:active?'2px solid var(--acc)':'2px solid transparent',transition:'color .15s' }),
   heroGrid:{ display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14 },
@@ -1170,8 +1174,17 @@ function buildFullReportHtml(data, windowDays) {
   return html;
 }
 
-// ── Main Panel ────────────────────────────────────────────────────────────────
-
+// ── Record Days tab (dispatch #203) ─────────────────────────────────────────
+// Was RecordDayPanel, a standalone ModalShell overlay with its own header/subHeader chrome
+// (title/subtitle/Export/Print/Reset in headerExtra, LocationSelector+tab-strip in subHeader).
+// Dispatch #203 merged Record Days into the Rankings panel (store-dash.js's LeaderboardPanel) as
+// a mode alongside Rankings and Top/Bottom Performers, per the owner-approved "Signals-style hub"
+// shape -- one shell, several tabs, each keeping its full existing behavior. RecordDayTab is the
+// SAME body this file always computed (computeRecords/scopeRecordData/every tab component below
+// are byte-identical), just with the ModalShell wrapper peeled off: what was headerExtra/
+// subHeader content now renders as ordinary rows at the top of this component's own return, since
+// the host (LeaderboardPanel) owns the outer RoutePanelShell and doesn't have a subHeader slot
+// (RoutePanelShell has no such prop -- see components/ModalShell.js). No computation changed.
 const TABS = [
   { key:'overview',  label:'Overview' },
   { key:'recent',    label:'Recent Breaks' },
@@ -1181,7 +1194,7 @@ const TABS = [
   { key:'topdays',   label:'Top Days' },
 ];
 
-export function RecordDayPanel({ stores, ds, onClose }) {
+export function RecordDayTab({ stores, ds }) {
   const [windowDays, setWindowDays] = useState(60);
   const [tab,        setTab]        = useState('overview');
   const [resetKey,   setResetKey]   = useState(0);
@@ -1232,16 +1245,14 @@ export function RecordDayPanel({ stores, ds, onClose }) {
     else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
   }, [viewData, windowDays]);
 
-  return h(ModalShell, {
-    title: 'Record Day Intelligence',
-    icon: '🏆',
-    onClose,
-    maxWidth: 1400,
-    zIndex: Z.nested,
-    subtitle: viewData
-      ? `${viewData.totalStores} stores${scope.level!=='all'?' in scope':''} · data through ${fDate(dKey(viewData.dataEnd))} · records accumulate across uploads`
-      : 'Upload sales data to track records',
-    headerExtra: div({ style:{ display:'flex',alignItems:'center',gap:8,flexWrap:'wrap' } },
+  return div({},
+    // Was ModalShell's headerExtra (title/subtitle row + Export/Print/Reset actions) --
+    // presentation-only move, same content, now an ordinary top row.
+    div({ style:{ display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'0 0 12px' } },
+      div({ style:{ flex:1,minWidth:200,fontSize:11,color:'var(--txt3)' } },
+        viewData
+          ? `${viewData.totalStores} stores${scope.level!=='all'?' in scope':''} · data through ${fDate(dKey(viewData.dataEnd))} · records accumulate across uploads`
+          : 'Upload sales data to track records'),
       viewData && h(React.Suspense, { fallback: h('button',{ style:{...S.ghostBtn, opacity:.5}, disabled:true }, '⬇ Export') },
         h(LazyExportDropdown, { btnClassName:undefined, rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
       ),
@@ -1254,31 +1265,31 @@ export function RecordDayPanel({ stores, ds, onClose }) {
           )
         : h('button',{ style:S.dangerBtn, onClick:()=>setConfirmReset(true) }, 'Reset Records'),
     ),
-    subHeader: div({},
-      (stores && stores.length > 0) && div({ style:{ padding:'8px 20px 6px', borderBottom:'.5px solid var(--bdr)' } },
-        h(LocationSelector, { stores, invOrgCoords:INV_ORG_COORDS, storeNames:STORE_NAMES, value:scope, onChange:setScope, mode:'progressive' })),
-      div({ style:S.tabs },
-        ...TABS.map(t =>
-          h('button',{ key:t.key, style:S.tab(tab===t.key), onClick:()=>setTab(t.key) },
-            t.label + (t.key==='recent' && recentCount ? ` (${recentCount})` : ''),
-          ),
+    // Was ModalShell's subHeader (LocationSelector + tab strip) -- same content, same order.
+    (stores && stores.length > 0) && div({ style:{ padding:'0 0 10px' } },
+      h(LocationSelector, { stores, invOrgCoords:INV_ORG_COORDS, storeNames:STORE_NAMES, value:scope, onChange:setScope, mode:'progressive' })),
+    div({ style:{ ...S.tabs, padding:0, marginBottom:16 } },
+      ...TABS.map(t =>
+        h('button',{ key:t.key, style:S.tab(tab===t.key), onClick:()=>setTab(t.key) },
+          t.label + (t.key==='recent' && recentCount ? ` (${recentCount})` : ''),
         ),
       ),
     ),
-    bodyStyle: viewData
-      ? { padding:'20px 24px', display:'flex', flexDirection:'column', gap:22 }
-      : { display:'flex', alignItems:'center', justifyContent:'center' },
-  },
-    !viewData && div({ style:{ color:'var(--txt3)', fontSize:14 } },
-      'No sales data loaded. Upload your data to begin tracking records.'),
-    viewData && viewData.totalStores===0 && div({ style:{ color:'var(--txt3)', fontSize:13, padding:'8px 0' } },
-      'No stores in this scope have record data yet.'),
-    viewData && viewData.totalStores>0 && tab==='overview' && h(HeroGrid, { data:viewData, breakIndex }),
-    viewData && viewData.totalStores>0 && tab==='recent'   && h(RecentBreakersTab, { data:viewData, windowDays, onWindowChange:setWindowDays }),
-    viewData && viewData.totalStores>0 && tab==='sales'    && h(SalesVolumeTab,     { data:viewData, breakIndex }),
-    viewData && viewData.totalStores>0 && tab==='speed'    && h(SpeedTab,            { data:viewData, breakIndex }),
-    viewData && viewData.totalStores>0 && tab==='dow'      && h(DOWTab,              { data:viewData, breakIndex }),
-    viewData && viewData.totalStores>0 && tab==='topdays'  && h(TopDaysTab,          { data:viewData, breakIndex }),
+    // Was ModalShell's bodyStyle-driven wrapper -- same padding/layout, applied locally now.
+    div({ style: viewData
+      ? { display:'flex', flexDirection:'column', gap:22 }
+      : { display:'flex', alignItems:'center', justifyContent:'center', minHeight:200 } },
+      !viewData && div({ style:{ color:'var(--txt3)', fontSize:14 } },
+        'No sales data loaded. Upload your data to begin tracking records.'),
+      viewData && viewData.totalStores===0 && div({ style:{ color:'var(--txt3)', fontSize:13, padding:'8px 0' } },
+        'No stores in this scope have record data yet.'),
+      viewData && viewData.totalStores>0 && tab==='overview' && h(HeroGrid, { data:viewData, breakIndex }),
+      viewData && viewData.totalStores>0 && tab==='recent'   && h(RecentBreakersTab, { data:viewData, windowDays, onWindowChange:setWindowDays }),
+      viewData && viewData.totalStores>0 && tab==='sales'    && h(SalesVolumeTab,     { data:viewData, breakIndex }),
+      viewData && viewData.totalStores>0 && tab==='speed'    && h(SpeedTab,            { data:viewData, breakIndex }),
+      viewData && viewData.totalStores>0 && tab==='dow'      && h(DOWTab,              { data:viewData, breakIndex }),
+      viewData && viewData.totalStores>0 && tab==='topdays'  && h(TopDaysTab,          { data:viewData, breakIndex }),
+    ),
   );
 }
 

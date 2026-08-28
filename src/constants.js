@@ -556,7 +556,10 @@ const QSR_DAR_FIELDS = {
 // stay intact; hiding only removes the nav entry. `id` = onOpenModal id. The forecast /
 // engineered-diagnostic cluster is deliberately NOT here (standing directive: always shown).
 const OPTIONAL_PANELS = [
-  { id:'record-day',    label:'Record Days',        icon:'🏆', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Best-ever sales / volume record days per store.' },
+  // record-day — REMOVED from this Panel Manager toggle list (dispatch #203, 2026-08-28): it no
+  // longer has its own sidebar entry to toggle, having been folded into the Leaderboards panel
+  // ('ranking') as its Record Days mode. Still registered in panel-registry.js as kind:'internal'
+  // so old deep links redirect there. Same pattern as perf-calc's dispatch #199 retirement below.
   { id:'revintel',      label:'Revenue',            icon:'◈',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Revenue intelligence deep-dive by store/segment.' },
   // perf-calc — REMOVED from this Panel Manager toggle list (dispatch #199, 2026-08-28): it no
   // longer has a sidebar entry to toggle, having been folded into Performance Review ->
