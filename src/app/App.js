@@ -235,7 +235,10 @@ const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => 
 // Cost (FOBAnalysisPanel) as an "End of Month" mode; analytics.js now React.lazy()-loads
 // fob-eom.js itself, directly, only when that mode is actually opened (see FOBEOMPanelLazy in
 // analytics.js) — same lazy-load discipline this used to get from being its own lazyPanel().
-const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
+// EOMSupervisorPanel — dispatch #202: no longer its own lazyPanel entry here. It's still used,
+// but only as a "Supervisor Rollup" tab inside EOMDashboardPanel (src/views/eom-dashboard.js
+// imports it directly from eom-supervisor.js) — same "absorbed into the hub, no standalone
+// entry point" pattern as CountCyclePanel/count-cycle-panel.js above.
 const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 // #230, R6 (dispatch16): the About modal's changelog list — the only consumer of the
 // MERIDIAN_CHANGELOG array (src/app/changelog/, one file per version), lazy for the same reason
@@ -794,14 +797,19 @@ function App() {
   // showTargetsEditor removed — dispatch #135 item 3 moved this UI into Performance Review ->
   // Customize -> Targets (perfReviewsEntry below drives the redirect for old deep links).
   const [perfReviewsEntry, setPerfReviewsEntry] = useState(null); // {tab, section} | null — one-shot deep-link target for PerformanceReviewsPanel
-  // eomInitialMode (dispatch #189) — one-shot deep-link target for EOMDashboardPanel, same
-  // pattern as perfReviewsEntry above. Only ever set to 'compliance', when redirecting the
-  // retired count-cycle route (see the routePanel initializer/onRouteChange effect below and
-  // the modal==='count-cycle' branch further down). Self-contained lazy initializer (reads
-  // location.search directly, not derived from routePanel's own state) so a hard page load on
-  // a legacy `?panel=count-cycle` URL has the right value on EOMDashboardPanel's VERY FIRST
-  // render — routePanel's own initializer (below) already resolves to 'eom-dashboard' just as
-  // synchronously on that same first render, so the panel mounts with both correct together.
+  // eomInitialMode (dispatch #189, extended by dispatch #202) — one-shot deep-link target for
+  // EOMDashboardPanel, same pattern as perfReviewsEntry above. Set to 'compliance' when
+  // redirecting the retired count-cycle route (see the routePanel initializer/onRouteChange
+  // effect below and the modal==='count-cycle' branch further down), or to 'supervisor' when
+  // redirecting the retired eom-summary route (modal==='eom-summary' branch). Self-contained
+  // lazy initializer (reads location.search directly, not derived from routePanel's own state)
+  // so a hard page load on a legacy `?panel=count-cycle` URL has the right value on
+  // EOMDashboardPanel's VERY FIRST render — routePanel's own initializer (below) already
+  // resolves to 'eom-dashboard' just as synchronously on that same first render, so the panel
+  // mounts with both correct together. eom-summary never had its own `?panel=` route (it was a
+  // showX/ModalShell toggle, not URL-addressable), so only count-cycle needs this URL-sniffing
+  // branch — the eom-summary redirect only ever fires via the live onOpenModal('eom-summary')
+  // call path, never a cold page load.
   const [eomInitialMode, setEomInitialMode] = useState(() =>
     (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
       && new URLSearchParams(location.search).get('panel') === 'count-cycle') ? 'compliance' : null);
@@ -893,7 +901,9 @@ function App() {
   const [showAudit,    setShowAudit]   = useState(false);
   const [showBrief,    setShowBrief]   = useState(false);
   // showMorningBrief — dispatch #192: replaced by routePanel==='morning-brief' (see routePanel above).
-  const [showEOMSummary,   setShowEOMSummary]   = useState(false); // EOM Supervisor Summary
+  // showEOMSummary — dispatch #202: removed. EOM Supervisor Summary is now a tab inside
+  // EOMDashboardPanel (eomInitialMode==='supervisor'), same "no standalone showX state any more"
+  // shape as showEOMDash below.
   // showEOMDash — Dispatch #55 Part B: replaced by routePanel==='eom-dashboard' (see routePanel above).
   const [showAbout, setShowAbout] = useState(false); // About/Changelog modal
   const [showPVSA,     setShowPVSA]    = useState(false);
@@ -2880,7 +2890,7 @@ function App() {
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
-    showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
+    showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
@@ -2910,7 +2920,7 @@ function App() {
       setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
-      setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
+      setShowModelAssign(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
       setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
@@ -2980,7 +2990,11 @@ function App() {
         if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='morning-brief')  perm('analytics.brief')&&goRoute('morning-brief');
-        if(modal==='eom-summary')    perm('analytics.district')&&setShowEOMSummary(true);
+        // eom-summary RETIRED (dispatch #202) — redirects into eom-dashboard's Supervisor
+        // Rollup tab (eomInitialMode==='supervisor'), same pattern as count-cycle below. Same
+        // perm as before ('analytics.district') and identical to eom-dashboard's own registry
+        // perm — no widening, no narrowing.
+        if(modal==='eom-summary')    perm('analytics.district')&&(setEomInitialMode('supervisor'),goRoute('eom-dashboard'));
         if(modal==='eom-dashboard')  perm('analytics.district')&&goRoute('eom-dashboard');
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
@@ -3587,14 +3601,12 @@ function App() {
         // showMorningBrief — Dispatch #192: moved to the routePanel gate in the main content
         // area (wrapped directly in RoutePanelShell there; see routePanel==='morning-brief' —
         // MorningBriefPanel had no internal chrome to strip).
-        showEOMSummary&&h(ModalShell,{
-      icon:'📊',title:'EOM Supervisor Summary',
-      subtitle:'Monthly P&L variance by store — filter by supervisor, operator, or all',
-      onClose:()=>setShowEOMSummary(false),maxWidth:1140,zIndex:Z.nested,bodyStyle:{padding:0},
-      backdropClassName:'mf-eom-print-modal',cardClassName:'mf-eom-print-card',headerClassName:'mf-eom-modal-chrome'
-    },
-          h(EOMSupervisorPanel,{ds,settings,supabase})
-    ),
+        // showEOMSummary's own ModalShell — REMOVED (dispatch #202): EOM Supervisor Summary is
+        // now EOMDashboardPanel's Supervisor Rollup tab (routePanel==='eom-dashboard',
+        // eomInitialMode==='supervisor' for the redirect). Its print-CSS class hooks
+        // (mf-eom-print-modal/mf-eom-print-card/mf-eom-modal-chrome) moved with it — supplied by
+        // RoutePanelShell's className/headerClassName props inside eom-dashboard.js now, not by
+        // this ModalShell's backdropClassName/cardClassName/headerClassName.
         // eom-dashboard — Dispatch #55 Part B: moved to the routePanel gate in the main content
         // area (RoutePanelShell now lives inside EOMDashboardPanel itself; see routePanel==='eom-dashboard').
         showAudit&&selStore&&h(ModalShell,{

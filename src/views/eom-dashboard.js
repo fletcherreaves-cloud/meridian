@@ -18,7 +18,7 @@ import {
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
   saveEomSnapshots, loadEomSnapshots, saveEomSecondaryReview, loadEomSecondaryReview,
   saveEomCountException, deleteEomCountException, loadEomCountExceptions,
-  createEomShareLink,
+  createEomShareLink, supabase,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { ledgerScopeDiff, closeWindowStartFor, itemCloseWindowRecount } from '../engine/eom-ledger-baseline.js';
@@ -46,6 +46,10 @@ import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } f
 // Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
 // count-cycle.js route/panel; see count-cycle-panel.js's own header for the full story).
 import { CountCycleSection } from './count-cycle-panel.js';
+// Dispatch #202 — EOM Supervisor Summary folded in as a "Supervisor Rollup" tab (harvested from
+// the retired standalone eom-summary route/panel; see eom-supervisor.js's own header for the
+// full story, including the print-CSS class-hook and permission-scoping notes).
+import { EOMSupervisorPanel } from './eom-supervisor.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -2602,14 +2606,22 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
   // shared (dispatch #97/#98/#112), two different lenses on it: 'progress'/Cadence is the
   // district table with FOB variance trace; 'compliance'/Count Cycle is the exceptions-first,
   // plain-language per-store card view the standalone panel harvested.
+  // 'supervisor' (dispatch #202) — EOM Supervisor Summary folded in as a district-wide P&L
+  // variance rollup, harvested from the retired standalone eom-summary panel. Same "own
+  // self-contained section, no shared filter state with the other tabs" shape as Schedule
+  // Retention's rollup tab (schedule-retention.js's ScheduleRetentionRollupSection) — it brings
+  // its own period/group controls (see the mode==='supervisor' branch below, which hides
+  // PanelChrome's location/date/export/actions bands rather than showing two unrelated pickers
+  // side by side).
   const tabsSlot = div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
-    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle']].map(([k, label]) =>
+    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle'], ['supervisor', 'Supervisor Rollup']].map(([k, label]) =>
       h('button', {
         key: k, onClick: () => setMode(k),
         title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared'
           : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)'
           : k === 'progress' ? 'Year-round: last-count freshness + FOB/diagnosis results'
-          : 'Weekly compliance — every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first',
+          : k === 'compliance' ? 'Weekly compliance — every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first'
+          : 'Monthly P&L variance by store — filter by supervisor, operator, or all',
         style: {
           background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
           border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
@@ -2671,24 +2683,51 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
     ? `Count-completion mode · count window is the last 3 days (from the ${countWindowStart(period).getDate()})`
     : mode === 'compliance'
     ? 'Weekly Count Cycle · every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first'
+    : mode === 'supervisor'
+    ? 'Monthly P&L variance by store — filter by supervisor, operator, or all'
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
-    + (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : '');
+    + (mode === 'supervisor' ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
 
+  // Dispatch #202: mode==='supervisor' brings its own period/group controls (EOMSupervisorPanel's
+  // internal month+year+groupType pickers) — an entirely different filter dimension from the
+  // shared scope/patch/oneStore + period controls every other mode reads. Showing both at once
+  // would put two unrelated location/period pickers on screen; hide PanelChrome's location/date/
+  // export/action bands for this mode and keep only the tab strip, same "own header per section"
+  // shape ScheduleRetentionRollupSection uses relative to its sibling tab.
+  const supervisorMode = mode === 'supervisor';
+  // Print-CSS class hooks (see eom-supervisor.js's PRINT_STYLE comment) — only meaningful while
+  // supervisor mode's own Print button can be clicked; harmless no-ops otherwise (they only take
+  // effect under body.eom-printing, which nothing else in this panel ever sets).
   return h(RoutePanelShell, {
     title: '📦 Inventory Control', subtitle: subtitleText, onBack: onClose,
     bodyStyle: { padding: '20px' },
+    className: supervisorMode ? 'mf-eom-print-modal mf-eom-print-card' : undefined,
+    headerClassName: supervisorMode ? 'mf-eom-modal-chrome' : undefined,
   },
 
-    h(PanelChrome, { location: locationSlot, dateControl: dateControlSlot, exportSlot: exportSlotContent, actions: actionsSlot, tabs: tabsSlot }),
+    div({ className: 'eom-no-print' },
+      h(PanelChrome, {
+        location: supervisorMode ? undefined : locationSlot,
+        dateControl: supervisorMode ? undefined : dateControlSlot,
+        exportSlot: supervisorMode ? undefined : exportSlotContent,
+        actions: supervisorMode ? undefined : actionsSlot,
+        tabs: tabsSlot,
+      })),
 
     // Count Cycle (mode==='compliance') renders its OWN compact summary line inline
     // (CountCycleSection) instead of these tiles — SummaryTiles only knows the EOM/Cadence
     // shapes (dispatch #98 fixed exactly this "wrong tiles for the mode" bug for Cadence;
     // giving Count Cycle a third undefined branch here would reintroduce it, not extend it).
-    mode !== 'compliance' && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
+    // Supervisor Rollup (dispatch #202) is excluded the same way — its P&L variance data has no
+    // relationship to SummaryTiles' EOM/Cadence shapes either.
+    mode !== 'compliance' && !supervisorMode && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
 
-    // "ready for review" notification banner
-    readyForReview.length > 0 && div({
+    // "ready for review" notification banner — unconditional on mode (matches the existing
+    // scoreboard/eom/progress/compliance precedent, no new per-mode judgment introduced here).
+    // Wrapped in 'eom-no-print' (dispatch #202) so it doesn't leak into Supervisor Rollup's own
+    // print output, which never carried this banner in the standalone panel it was folded from —
+    // a no-op for every other mode's print (openPrintWindow, unrelated to body.eom-printing).
+    readyForReview.length > 0 && div({ className: 'eom-no-print' }, div({
       style: {
         display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px',
         padding: '10px 14px', borderRadius: '8px',
@@ -2700,7 +2739,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
         div({ style: { fontWeight: 700, color: '#4ade80', fontSize: '13px' } },
           `${readyForReview.length} store${readyForReview.length !== 1 ? 's' : ''} ready for review`),
         div({ style: { fontSize: '12px', color: 'var(--text2)', marginTop: '2px' } },
-          readyForReview.map(r => r.name).join(', ') + ' — count ≥90%. Set Diagnosis to "In review" to begin.'))),
+          readyForReview.map(r => r.name).join(', ') + ' — count ≥90%. Set Diagnosis to "In review" to begin.')))),
 
     // Cadence view (mode==='progress') → weekly-cadence monitor above the store table (Notes 40
     // #1). Renders only when it has cadence data; hidden in Scoreboard/EOM/Count Cycle modes —
@@ -2723,10 +2762,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
         : h(CountCycleSection, { rows: complianceOnHand, period })
       : null,
 
-    // mode==='compliance' short-circuits this entire EOM-completion/scoreboard chain — its
-    // content (loading/empty/table) is all about EOM+FOB data, not weekly count compliance,
-    // and CountCycleSection above already handles its own loading/empty states.
-    mode === 'compliance' ? null
+    // Supervisor Rollup (mode==='supervisor', dispatch #202) — self-contained, same shape as
+    // Count Cycle above: EOMSupervisorPanel is unchanged (harvested verbatim from the retired
+    // standalone eom-summary panel), reads ds/settings/supabase directly, and owns its own
+    // period/group filters + loading/empty states rather than this panel's `rows`/`loading`.
+    supervisorMode ? h(EOMSupervisorPanel, { ds, settings, supabase }) : null,
+
+    // mode==='compliance'/'supervisor' short-circuit this entire EOM-completion/scoreboard
+    // chain — its content (loading/empty/table) is all about EOM+FOB data, not weekly count
+    // compliance or district P&L variance, and CountCycleSection/EOMSupervisorPanel above
+    // already handle their own loading/empty states.
+    mode === 'compliance' || supervisorMode ? null
     : (loading || fobPending) ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
           allRows.length === 0
