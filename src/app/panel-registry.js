@@ -71,7 +71,16 @@ export const PANELS = [
   { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'internal', section:'planning' },
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
-  { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analysis' },
+  // corr-explorer — RETIRED as a standalone/optional panel (dispatch #195, 2026-08-28): its
+  // engine (plain Pearson) was replaced by Scanner's own statistics (Pearson+Spearman+effect-
+  // size floor+Benjamini-Hochberg FDR, src/engine/correlation-stats.js) and its presentation
+  // was folded into Signals as a "Correlations" tab (signals.js's CorrelationsTab) — the
+  // owner's own "Good with merge" resolution (memory/decisions-panel-inventory-2026-08-10.md).
+  // kind:'internal' keeps the id registered (satisfies panel-registry.test.js's dispatch<->
+  // registry pairing) without a Panel Manager toggle or sidebar entry, so onOpenModal
+  // ('corr-explorer') still redirects into Signals' Correlations tab instead of no-oping if
+  // anything still calls it. Same pattern as calendar-manager's retirement (dispatch #191).
+  { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'internal', section:'analysis' },
   // Crew Schedule Lookup (dispatch #123) -- search an employee, see their upcoming schedule.
   // perm:'analytics.store' (dispatch #125, RBAC re-decision) -- was 'security.view' when the
   // panel gated behind an identity-reveal step; the owner reversed that ("no reason to hide

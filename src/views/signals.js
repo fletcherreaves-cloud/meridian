@@ -7,7 +7,17 @@ import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, ensureLazyFillWide } from '../engine/metric-source.js';
-import { STORE_NAMES } from '../constants.js';
+import { STORE_NAMES, sNameC, getKB } from '../constants.js';
+import { dKey } from '../utils/date.js';
+// Correlations tab (dispatch #195, 2026-08-28) — merges the retired standalone "Metric
+// Correlations" panel (corr-explorer) in here, keeping its layout/interaction model but
+// running it on Scanner's own statistics instead of the plain-Pearson math it used to have.
+// CORR_TARGETS/CORR_PREDICTORS is the same small predictor catalog District Lens
+// (analytics.js) uses, lifted out so this file doesn't statically import that much larger
+// module. pearson/spearman/pValueFromR/benjaminiHochberg are Scanner's own stats, imported
+// directly rather than via signal-registry.js's re-export (see correlation-stats.js's header).
+import { CORR_TARGETS, CORR_PREDICTORS } from '../engine/correlation-predictors.js';
+import { pearson, spearman, pValueFromR, benjaminiHochberg, SCANNER_DEFAULT_MIN_ABS_R, SCANNER_DEFAULT_ALPHA } from '../engine/correlation-stats.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -18,6 +28,12 @@ const LazyExportDropdown = React.lazy(() =>
 );
 
 const h = React.createElement;
+// div/span/btn — small shorthand aliases, added for the merged Correlations tab (dispatch
+// #195) which ports its JSX-like body from analytics.js's MetricCorrelationExplorer verbatim;
+// that file uses this exact convention. Scoped to a few tags actually used by the ported code.
+const div = (p, ...c) => h('div', p, ...c);
+const span = (p, ...c) => h('span', p, ...c);
+const btn = (p, ...c) => h('button', p, ...c);
 const { useState: uSt, useMemo: uM, useEffect: uE, useCallback: uCB } = React;
 
 const amber = '#f59e0b', grn = '#10b981', red = '#ef4444', muted = '#6b7280', blue = '#60a5fa';
@@ -1517,6 +1533,233 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
   );
 }
 
+// ── Correlations tab (dispatch #195, 2026-08-28) ────────────────────────────────
+// Retired standalone panel folded in here: same layout/interaction model as the old
+// MetricCorrelationExplorer (analytics.js), same CORR_TARGETS/CORR_PREDICTORS catalog, but the
+// correlation math is now Scanner's own (pearson/spearman/pValueFromR/benjaminiHochberg from
+// correlation-stats.js) instead of MetricCorrelationExplorer's own plain-Pearson-plus-ad-hoc-
+// t-test. What changed, concretely:
+//   - r itself is computed by the SAME formula either way (Pearson), so r values are identical.
+//   - The old per-row "Significance" column read an uncorrected t-test on that single test in
+//     isolation (t > 2.6 'strong' / > 1.96 'sig'). That's gone. In its place: a p-value for r
+//     (pValueFromR) is computed for every predictor tested against this target, then
+//     Benjamini-Hochberg FDR-corrects across that whole batch at once (Scanner's own default
+//     alpha, .05) -- so "significant" here accounts for the fact that ~9 tests were run, not
+//     just one. This is the actual guardrail: with 9 tests at alpha=.05, an uncorrected
+//     significance column can and does show "strong"/"significant" on a pair that doesn't
+//     survive the correction.
+//   - Spearman rho is now computed alongside Pearson r for every row. A large gap between them
+//     (>= .25) is flagged "non-linear" -- a relationship Pearson alone can understate.
+//   - Scanner's own effect-size floor (|r| >= .35) is surfaced per row, and the "Top Findings"
+//     hero card (previously gated on a bare |r| > .25) is now gated on BOTH the effect-size
+//     floor AND FDR significance -- the two guardrails together, so the headline can't show a
+//     correlation that fails either one.
+//   - Everything else -- the per-store/per-target selection, the plain-English finding
+//     sentences, the strength bars, the expandable per-metric detail, the raw-stats table -- is
+//     unchanged presentation, per the "merge the engine, keep the presentation" decision
+//     (memory/decisions-panel-inventory-2026-08-10.md).
+function CorrelationsTab({ ds }) {
+  const LOCS = uM(() => Object.keys(STORE_NAMES).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])), []);
+  const [selLoc, setSelLoc] = uSt(LOCS[0]);
+  const [target, setTarget] = uSt('sales');
+  const [showRaw, setShowRaw] = uSt(false);
+  const [expandedId, setExpandedId] = uSt(null);
+
+  const correlations = uM(() => {
+    const lR = (ds?.laborRows || []).filter(r => String(r.loc) === selLoc && r.sales > 0);
+    const oR = (ds?.opsRows || []).filter(r => String(r.loc) === selLoc);
+    const cR = (ds?.ctrlRows || []).filter(r => String(r.loc) === selLoc);
+    const byDate = {};
+    const dk = d => dKey(d);
+    lR.forEach(r => { byDate[dk(r.date)] = { ...byDate[dk(r.date)], ...r }; });
+    oR.forEach(r => { byDate[dk(r.date)] = { ...byDate[dk(r.date)], ...r }; });
+    cR.forEach(r => { byDate[dk(r.date)] = { ...byDate[dk(r.date)], ...r }; });
+    const joined = Object.values(byDate).filter(r => r.sales > 0);
+    const tFn = CORR_TARGETS.find(t2 => t2.id === target)?.fn || (r => r.sales);
+    if (joined.length < 10) return [];
+
+    const scored = CORR_PREDICTORS.map(pred => {
+      const paired = joined.map(r => ({ x: pred.fn(r), y: tFn(r) }))
+        .filter(({ x, y }) => x != null && x > 0 && y > 0 && !isNaN(x) && !isNaN(y));
+      const r = pearson(paired);
+      const n = paired.length;
+      return { ...pred, r, n, p: pValueFromR(r, n), paired };
+    }).filter(row => row.r != null);
+
+    benjaminiHochberg(scored, SCANNER_DEFAULT_ALPHA);
+
+    return scored.map(row => {
+      const rho = spearman(row.paired);
+      return {
+        ...row, rho,
+        effectOk: Math.abs(row.r) >= SCANNER_DEFAULT_MIN_ABS_R,
+        divergent: rho != null && Math.abs(row.r - rho) >= 0.25,
+      };
+    }).sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  }, [ds, selLoc, target]);
+
+  const kbEntry = uM(() => getKB(selLoc), [selLoc]);
+  const storeName = sNameC(selLoc);
+  const targetObj = CORR_TARGETS.find(t => t.id === target);
+
+  const strengthInfo = absR => {
+    if (absR > 0.7) return { label: 'Very Strong', bars: 5, col: '#34d399', bg: 'rgba(52,211,153,.08)', bdr: 'rgba(52,211,153,.2)' };
+    if (absR > 0.4) return { label: 'Moderate', bars: 3, col: '#f59e0b', bg: 'rgba(245,158,11,.08)', bdr: 'rgba(245,158,11,.2)' };
+    if (absR > 0.2) return { label: 'Some Link', bars: 2, col: '#94a3b8', bg: 'rgba(148,163,184,.06)', bdr: 'rgba(148,163,184,.15)' };
+    return { label: 'Minimal', bars: 1, col: '#475569', bg: 'transparent', bdr: 'var(--bdr)' };
+  };
+
+  const findingSentence = c => {
+    const tL = (targetObj?.l || 'sales').toLowerCase();
+    if (c.r > 0.1) return `Higher ${c.shortL} tends to occur on better-${tL} days`;
+    if (c.r < -0.1) return `Lower ${c.shortL} tends to occur on better-${tL} days`;
+    return `${c.shortL} shows no clear directional pattern with ${tL}`;
+  };
+
+  const srcIcon = s => s === 'ops' ? '⚡' : s === 'labor' ? '👷' : '📋';
+  const srcLabel = s => s === 'ops' ? 'Operations' : s === 'labor' ? 'Labor' : 'Controls';
+  // Scanner-confirmed hero: both guardrails, not just a bare |r| threshold (see header note).
+  const top2 = correlations.filter(c => c.effectOk && c.fdrSig).slice(0, 2);
+
+  return div({ style: { display: 'flex', flexDirection: 'column', gap: 12 } },
+
+    div({ style: { fontSize: 12, color: muted, marginBottom: 4 } },
+      'Which operational metrics actually link to your results — in plain English, ranked by strength, guarded by Scanner\'s effect-size floor (|r| ≥ .35) and Benjamini–Hochberg FDR correction across every predictor tested for this target.'),
+
+    // ── Store + target selectors ─────────────────────────────────────────
+    div({ style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)' } },
+      span({ style: { fontSize: 10, color: 'var(--text3)', fontWeight: 500 } }, 'Store:'),
+      h('select', { value: selLoc, onChange: e => setSelLoc(e.target.value),
+        style: { background: 'var(--surf)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', color: 'var(--text)', fontSize: 10, padding: '4px 8px' } },
+        LOCS.map(l => h('option', { key: l, value: l }, sNameC(l)))
+      ),
+      span({ style: { fontSize: 10, color: 'var(--text3)', fontWeight: 500, marginLeft: 8 } }, 'What do you want to understand?'),
+      ...CORR_TARGETS.map(t => btn({ key: t.id,
+        style: { padding: '5px 14px', borderRadius: 'var(--r)', border: '.5px solid', fontSize: 11,
+          fontWeight: target === t.id ? 700 : 400, cursor: 'pointer',
+          background: target === t.id ? 'var(--adim)' : 'transparent',
+          color: target === t.id ? 'var(--amber)' : 'var(--text2)',
+          borderColor: target === t.id ? 'rgba(245,158,11,.4)' : 'var(--bdr)' },
+        onClick: () => { setTarget(t.id); setExpandedId(null); } }, t.emoji + ' ' + t.l))
+    ),
+
+    kbEntry?.notes && div({ style: { padding: '6px 12px', background: 'rgba(96,165,250,.05)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)', fontSize: 9, color: '#93c5fd', lineHeight: 1.5 } },
+      '📍 ', kbEntry.notes.slice(0, 160) + (kbEntry.notes.length > 160 ? '…' : '')),
+
+    // Empty state
+    correlations.length === 0 && div({ style: { textAlign: 'center', padding: '60px 20px', color: 'var(--text3)' } },
+      div({ style: { fontSize: 36, marginBottom: 12 } }, '📊'),
+      div({ style: { fontSize: 13, fontWeight: 600, color: 'var(--text2)', marginBottom: 6 } }, 'No data for ' + storeName),
+      div({ style: { fontSize: 11, lineHeight: 1.7 } }, 'Load an Operations Report for this store to see which metrics move the needle here. At least 10 days of data required.')
+    ),
+
+    correlations.length > 0 && div(null,
+
+      // ── Top Findings hero card ──────────────────────────────────
+      top2.length > 0 && div({ style: { background: 'rgba(245,158,11,.05)', border: '.5px solid rgba(245,158,11,.2)', borderRadius: 'var(--rl)', padding: '14px 16px', marginBottom: 12 } },
+        div({ style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.8px', color: 'var(--amber)', marginBottom: 10 } }, '⭐ Top Findings at ' + storeName + ' — effect-size + FDR confirmed'),
+        ...top2.map((c, i) => {
+          const si = strengthInfo(Math.abs(c.r));
+          return div({ key: c.id, style: { display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: i > 0 ? 10 : 0, paddingTop: i > 0 ? 10 : 0, borderTop: i > 0 ? '.5px solid rgba(245,158,11,.15)' : 'none' } },
+            div({ style: { fontSize: 22, flexShrink: 0 } }, srcIcon(c.src)),
+            div({ style: { flex: 1 } },
+              div({ style: { fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 3 } }, c.l),
+              div({ style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.55, marginBottom: 4 } }, findingSentence(c)),
+              div({ style: { fontSize: 10, color: 'var(--text3)', fontStyle: 'italic', lineHeight: 1.5 } }, c.action)
+            ),
+            div({ style: { flexShrink: 0, textAlign: 'right' } },
+              div({ style: { fontSize: 11, fontWeight: 700, color: si.col, marginBottom: 2 } }, '● ' + si.label),
+              div({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Based on ' + c.n + ' days'),
+              div({ style: { fontSize: 8, color: grn, marginTop: 2 } }, '✓ q=' + (c.qValue != null ? c.qValue.toFixed(3) : '—'))
+            )
+          );
+        })
+      ),
+
+      // ── All metrics ranked ──────────────────────────────────────
+      div({ style: { fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.8px', color: 'var(--text3)', marginBottom: 8, marginTop: 8 } },
+        'All Metrics — Ranked by Strength of Connection'),
+
+      div({ style: { display: 'flex', flexDirection: 'column', gap: 5 } },
+        ...correlations.map((c, idx) => {
+          const si = strengthInfo(Math.abs(c.r));
+          const isExpanded = expandedId === c.id;
+          const isTop = idx < 2 && c.effectOk && c.fdrSig;
+          return div({ key: c.id, style: { border: '.5px solid ' + (isTop ? si.bdr : 'var(--bdr)'), borderRadius: 'var(--r)', overflow: 'hidden', background: isTop ? si.bg : 'var(--surf2)' } },
+
+            div({ style: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer' }, onClick: () => setExpandedId(isExpanded ? null : c.id) },
+              div({ style: { fontSize: 18, flexShrink: 0 } }, srcIcon(c.src)),
+              div({ style: { flex: 1, minWidth: 0 } },
+                div({ style: { fontSize: 11, fontWeight: 600, color: 'var(--text)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 } },
+                  c.l,
+                  c.effectOk && c.fdrSig && span({ title: 'Meets Scanner\'s effect-size floor and survives FDR correction', style: { fontSize: 9, color: grn, fontWeight: 700 } }, '✓ confirmed'),
+                  c.divergent && span({ title: 'Pearson r and Spearman ρ diverge — the relationship may be non-linear', style: { fontSize: 9, color: amber, fontWeight: 700 } }, '⚠ non-linear')
+                ),
+                div({ style: { fontSize: 10, color: 'var(--text3)' } }, findingSentence(c))
+              ),
+              div({ style: { display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 } },
+                div({ style: { display: 'flex', gap: 2 } },
+                  ...Array.from({ length: 5 }, (_, i) => div({ key: i, style: { width: 7, height: 18, borderRadius: 2, background: i < si.bars ? si.col : 'rgba(148,163,184,.18)' } }))
+                ),
+                div({ style: { minWidth: 72, textAlign: 'right' } },
+                  div({ style: { fontSize: 10, fontWeight: 700, color: si.col } }, '● ' + si.label),
+                  div({ style: { fontSize: 8, color: 'var(--text3)' } }, '(' + c.n + ' days)')
+                )
+              ),
+              div({ style: { fontSize: 12, color: 'var(--text3)', flexShrink: 0, marginLeft: 4, transition: 'transform .15s', transform: isExpanded ? 'rotate(180deg)' : 'none' } }, '▾')
+            ),
+
+            isExpanded && div({ style: { borderTop: '.5px solid var(--bdr)', padding: '12px 14px', background: 'rgba(0,0,0,.12)' } },
+              div({ style: { fontSize: 11, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 10 } }, c.note),
+              div({ style: { background: 'rgba(245,158,11,.07)', border: '.5px solid rgba(245,158,11,.18)', borderRadius: 'var(--r)', padding: '7px 11px', fontSize: 10, color: 'var(--amber)', fontWeight: 600, lineHeight: 1.5, marginBottom: 8 } },
+                '💡 What to focus on: ' + c.action),
+              div({ style: { fontSize: 8, color: 'var(--text3)', fontFamily: 'var(--mono)', lineHeight: 1.8 } },
+                'Source: ' + srcLabel(c.src) + '  ·  ' + c.n + ' matched days  ·  Pearson r = ' + (c.r > 0 ? '+' : '') + c.r.toFixed(3) +
+                (c.rho != null ? '  ·  Spearman ρ = ' + (c.rho > 0 ? '+' : '') + c.rho.toFixed(3) : '') +
+                '  ·  p = ' + (c.p != null ? c.p.toFixed(4) : 'n/a') +
+                '  ·  FDR q = ' + (c.qValue != null ? c.qValue.toFixed(4) : 'n/a') +
+                '  ·  ' + (c.fdrSig ? 'FDR-significant' : 'not FDR-significant') +
+                (c.effectOk ? '  ·  meets effect-size floor' : '  ·  below effect-size floor'))
+            )
+          );
+        })
+      ),
+
+      // ── Footer / raw toggle ─────────────────────────────────────
+      div({ style: { marginTop: 12, padding: '10px 12px', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 'var(--r)' } },
+        div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 } },
+          div({ style: { fontSize: 10, color: 'var(--text3)', lineHeight: 1.65, flex: 1 } },
+            span({ style: { fontWeight: 600, color: 'var(--text2)' } }, 'How to read this: '),
+            'Strength shows how consistently a metric and your outcome move together. "Very Strong" = reliable pattern across many days. "✓ confirmed" means the pair clears Scanner\'s effect-size floor (|r| ≥ .35) AND survives Benjamini–Hochberg correction across every predictor tested for this target — the same guardrails the Scanner tab uses for its district-wide sweep. ',
+            span({ style: { fontStyle: 'italic' } }, 'A strong link doesn\'t mean one causes the other — but it\'s worth investigating.')
+          ),
+          btn({ className: 'btn btn-sm', style: { fontSize: 9, flexShrink: 0, alignSelf: 'flex-start' }, onClick: () => setShowRaw(r => !r) },
+            showRaw ? 'Hide raw stats' : '📊 Show raw statistics')
+        ),
+        showRaw && h('div', { style: { overflowX: 'auto', marginTop: 10 } },
+          h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: 9, borderTop: '.5px solid var(--bdr)', paddingTop: 8 } },
+            h('thead', null, h('tr', null,
+              ...['Metric', 'Source', 'n', 'Pearson r', 'Spearman ρ', 'p', 'FDR q', 'Significance'].map((l, i) =>
+                h('th', { key: i, style: { padding: '4px 8px', textAlign: i > 1 ? 'right' : 'left', color: 'var(--text3)', fontSize: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.4px', borderBottom: '.5px solid var(--bdr)' } }, l))
+            )),
+            h('tbody', null, ...correlations.map(c => h('tr', { key: c.id, style: { borderBottom: '.5px solid var(--bdr)' } },
+              h('td', { style: { padding: '4px 8px', color: 'var(--text2)', fontSize: 9 } }, c.l),
+              h('td', { style: { padding: '4px 8px', color: 'var(--text3)', fontSize: 8 } }, srcLabel(c.src)),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, c.n),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: c.r > 0 ? '#34d399' : 'var(--crit)' } }, (c.r > 0 ? '+' : '') + c.r.toFixed(3)),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, c.rho != null ? (c.rho > 0 ? '+' : '') + c.rho.toFixed(3) : '—'),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, c.p != null ? c.p.toFixed(4) : '—'),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, c.qValue != null ? c.qValue.toFixed(4) : '—'),
+              h('td', { style: { padding: '4px 8px', textAlign: 'right', color: c.effectOk && c.fdrSig ? '#34d399' : 'var(--text3)', fontSize: 9 } },
+                c.effectOk && c.fdrSig ? '● Confirmed' : c.fdrSig ? '● FDR-sig, weak effect' : '○ Not significant')
+            )))
+          )
+        )
+      )
+    )
+  );
+}
+
 // ── CSAT Drivers tab (v4.535) ───────────────────────────────────────────────
 // Laser-focused: what moves customer satisfaction? Uses scanCsatDrivers — the
 // WITHIN-STORE correlation is the headline (each store centered on its own mean,
@@ -1892,8 +2135,13 @@ function liveOpsPrintHtml(data) {
     (anomalyRows.length ? reportSection('Baseline Anomalies', reportTable(['Store', 'Hour Slot', 'vs Mean'], anomalyRows)) : ''));
 }
 
-export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar }) {
-  const [tab, setTab] = uSt('liveops');
+// Valid Signals tabs, for the initialTab guard below — same "validate against a known list"
+// pattern as PlanningHubPanel/SchedulingHubPanel's initialTab (App.js). 'corr' added dispatch
+// #195: the retired corr-explorer panel redirects here via App.js's signalsInitialTab.
+const SIGNALS_TAB_IDS = ['liveops', 'projacc', 'parkoepe', 'builtin', 'lab', 'scanner', 'corr', 'csat', 'graveyard'];
+
+export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar, initialTab }) {
+  const [tab, setTab] = uSt(SIGNALS_TAB_IDS.includes(initialTab) ? initialTab : 'liveops');
   const [expanded, setExpanded] = uSt(null);
   const [filterDomain, setFilterDomain] = uSt(null);
   const [filterLoc, setFilterLoc] = uSt(null);
@@ -2042,6 +2290,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
+      h('button', { onClick: () => setTab('corr'), style: TAB_STYLE(tab === 'corr') }, '🔗 Correlations'),
       h('button', { onClick: () => setTab('csat'), style: TAB_STYLE(tab === 'csat') }, '😊 CSAT Drivers'),
       h('button', { onClick: () => setTab('graveyard'), style: TAB_STYLE(tab === 'graveyard', true) }, `⚰ Graveyard${graveyardCount ? ` (${graveyardCount})` : ''}`),
     ),
@@ -2123,6 +2372,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // ── SCANNER TAB ───────────────────────────────────────────────────────────
     tab === 'scanner' && h(ScannerTab, { ds, onTrack: handleNewSignal, onExportReady: setScannerData }),
+    tab === 'corr' && h(CorrelationsTab, { ds }),
 
     // ── CSAT DRIVERS TAB ──────────────────────────────────────────────────────
     tab === 'csat' && h(CsatDriversTab, { ds, onTrack: handleNewSignal }),

@@ -144,7 +144,9 @@ const MultiStoreComparison= lazyPanel(() => _storeAnalytics().then(m => ({ defau
 // here regardless of this group; that one export moved to model-health-badge.js so this split
 // actually holds. AIInsightsTab isn't here — it was imported in App.js and never rendered.
 const _analytics = () => import('../views/analytics.js');
-const MetricCorrelationExplorer = lazyPanel(() => _analytics().then(m => ({ default: m.MetricCorrelationExplorer })));
+// MetricCorrelationExplorer — RETIRED (dispatch #195, 2026-08-28): merged into Signals as the
+// Correlations tab (signals.js's CorrelationsTab, now Scanner-statistics-powered). See
+// panel-registry.js's comment on corr-explorer.
 const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
 const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-performers.js').then(m => ({ default: m.TopBottomPerformers })));
 const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
@@ -803,6 +805,9 @@ function App() {
   const [planningTab, setPlanningTab] = useState('targets');
   // showSchedHub — Dispatch #55 Part B: replaced by routePanel==='sched-hub' (see routePanel above).
   const [schedTab, setSchedTab] = useState('scheduling');
+  // signalsTab (dispatch #195, 2026-08-28) — same lifted-tab pattern as schedTab/planningTab
+  // above. The retired corr-explorer id redirects into Signals' 'corr' tab via this.
+  const [signalsTab, setSignalsTab] = useState('liveops');
   // forecastReportsTab (dispatch #106 Phase B) — which of ForecastReportsPanel's two internal
   // tabs to open, same pattern as schedTab/planningTab above. The 'fcst-accuracy'/
   // 'lifelenz-bridge' hub-tab dispatch branches below set this before routing to
@@ -813,7 +818,8 @@ function App() {
   const togglePanelVis = (id) => setPanelVis(v => { const n = { ...v, [id]: !v[id] }; savePanelVis(n); return n; });
   const setAllPanelVis = (on) => setPanelVis(() => { const n = {}; OPTIONAL_PANELS.forEach(p => { n[p.id] = on; }); savePanelVis(n); return n; });
   const [showPerfCalc,    setShowPerfCalc]    = useState(false);
-  const [showCorrExplorer,setShowCorrExplorer]= useState(false);
+  // showCorrExplorer — RETIRED (dispatch #195, 2026-08-28): corr-explorer merged into Signals'
+  // Correlations tab; see signalsTab above and the modal handler below.
   const [showDistrictLens,setShowDistrictLens]= useState(false);
   const [showModelAssign, setShowModelAssign] = useState(false);
   const [showOnePager,    setShowOnePager]    = useState(false);
@@ -2846,7 +2852,7 @@ function App() {
     showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
-    showCompare||showCorrExplorer||showDARDaypart||
+    showCompare||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
@@ -2869,7 +2875,7 @@ function App() {
       if(routePanel){goRoute(null);return;}
       setShowAIScan(false);setShowAbout(false);
       setShowAudit(false);setShowBrief(false);setShowCompare(false);
-      setShowCorrExplorer(false);setShowDARDaypart(false);
+      setShowDARDaypart(false);
       // Dispatch #72 A3 -- setShowDev/setShowInsights never existed (no matching useState
       // anywhere in this file): an unconditional ReferenceError on EVERY Escape press, which
       // aborted every setter after it in this single function call -- so the "Escape always
@@ -3037,9 +3043,12 @@ function App() {
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
         if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
         if(modal==='perf-calc')      perm('analytics.store')&&setShowPerfCalc(true);
-        if(modal==='corr-explorer')  perm('analytics.store')&&setShowCorrExplorer(true);
+        // corr-explorer — RETIRED id (dispatch #195, 2026-08-28), redirects into Signals'
+        // Correlations tab (Scanner-statistics-powered) rather than doing nothing; see
+        // panel-registry.js's comment on this id.
+        if(modal==='corr-explorer')  perm('analytics.store')&&(setSignalsTab('corr'),goRoute('signals'));
         if(modal==='unified-targets') perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
-        if(modal==='signals')        perm('analytics.store')&&goRoute('signals');
+        if(modal==='signals')        perm('analytics.store')&&(setSignalsTab('liveops'),goRoute('signals'));
         if(modal==='smart-targets-v2')perm('analytics.store')&&(setPlanningTab('smart'),setShowPlanningHub(true));
         if(modal==='labor-analysis')  perm('analytics.store')&&(setSchedTab('analysis'),goRoute('sched-hub'));
         if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
@@ -3250,7 +3259,7 @@ function App() {
       routePanel==='signals'&&h(RoutePanelShell,{
         title:'📡 Signals',
         onBack:()=>goRoute(null),
-      }, h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar})),
+      }, h(SignalsPanel,{ds,signals,customSignalDefs,onCustomDefsChange:setCustomSignalDefs,darRows,refreshDar,initialTab:signalsTab})),
       routePanel==='promo-roi'&&h(PromoRoiPanel,{ds,userEvents,onClose:()=>goRoute(null)}),
       routePanel==='morning-brief'&&h(RoutePanelShell,{
         icon:'☀️',
@@ -3273,7 +3282,8 @@ function App() {
     // Panel Manager (Notes 24): show/hide + reference for optional/experimental panels
     showPanelManager&&h(PanelManagerPanel,{vis:panelVis,perm,onToggle:togglePanelVis,onShowAll:()=>setAllPanelVis(true),onHideAll:()=>setAllPanelVis(false),onClose:()=>setShowPanelManager(false)}),
     showPerfCalc&&h(PerformanceCalculator,{stores,ds,settings,onClose:()=>setShowPerfCalc(false)}),
-    showCorrExplorer&&h(MetricCorrelationExplorer,{stores,ds,settings,onClose:()=>setShowCorrExplorer(false)}),
+    // MetricCorrelationExplorer render line — RETIRED (dispatch #195, 2026-08-28): see
+    // signalsTab above and the corr-explorer modal handler.
     showDistrictLens&&h(DistrictLensPanel,{stores,ds,settings,onClose:()=>setShowDistrictLens(false)}),
     showModelAssign&&h(ModelAssignmentPanel,{stores,ds,settings,userEvents,onClose:()=>setShowModelAssign(false)}),
     showOnePager&&h(StoreOnePager,{stores,ds,settings,onClose:()=>setShowOnePager(false)}),

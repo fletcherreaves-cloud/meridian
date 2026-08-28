@@ -559,7 +559,9 @@ const OPTIONAL_PANELS = [
   { id:'record-day',    label:'Record Days',        icon:'🏆', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Best-ever sales / volume record days per store.' },
   { id:'revintel',      label:'Revenue',            icon:'◈',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Revenue intelligence deep-dive by store/segment.' },
   { id:'perf-calc',     label:'Performance Calc',   icon:'🧮', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Ad-hoc performance / score calculator.' },
-  { id:'corr-explorer', label:'Metric Correlations',icon:'🔗', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Explore correlation between any two metrics (also in the Signals Scanner).' },
+  // corr-explorer — REMOVED from this Panel Manager toggle list (dispatch #195, 2026-08-28): it
+  // no longer has a sidebar entry to toggle, having been folded into Signals' Correlations tab.
+  // Still registered in panel-registry.js as kind:'internal' so old deep links redirect there.
   { id:'compare',       label:'Store Compare',      icon:'⇄',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Side-by-side comparison of two or more stores.' },
   { id:'gm-brief',      label:'GM Letters',         icon:'👨‍💼', perm:'analytics.store',   cat:'Store & Analytics', blurb:'Auto-drafted GM coaching letters.' },
   { id:'channel-intel', label:'Channel Intel',      icon:'📊', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Channel-mix intelligence (DT / digital / delivery / kiosk).' },
