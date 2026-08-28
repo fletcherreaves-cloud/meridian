@@ -11,6 +11,13 @@
 // per this repo's "would this verification still pass if the change were reverted" standing
 // rule: a test that only checks the `embedded` prop is read, without asserting the backdrop is
 // actually absent/present in the DOM, could pass unchanged with the fix half-wired.
+//
+// UPDATED (dispatch #206, URL migration batch 3, 2026-08-28): the standalone call shape was
+// converted to route:true (routePanel==='loc-intel') — its hand-rolled position:fixed/inset:0/
+// rgba(0,0,0 backdrop + '✕' close button were replaced by RoutePanelShell (a '←' Back button,
+// no backdrop). The second/third tests below were re-written against the new shape rather than
+// deleted, so a revert of the RoutePanelShell conversion still fails loudly here. The embedded
+// call shape (first test) is completely unchanged by that conversion.
 import { describe, it, expect, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -51,7 +58,7 @@ describe('#200 LocationIntelligence — embedded prop controls backdrop/close-bu
     expect(closeBtn).toBeFalsy();
   });
 
-  it('embedded absent (App.js\'s standalone "Market Intelligence" nav panel) is UNCHANGED — still a full-screen modal with its own close button', async () => {
+  it('embedded absent (App.js\'s standalone "Market Intelligence" nav panel) now renders via RoutePanelShell — no backdrop, a "←" Back button instead of "✕"', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -62,13 +69,16 @@ describe('#200 LocationIntelligence — embedded prop controls backdrop/close-bu
       }));
     });
     const outer = container.firstElementChild;
-    expect(outer.style.position).toBe('fixed');
-    expect(outer.style.inset).toBe('0');
+    expect(outer.style.position).not.toBe('fixed');
+    expect(outer.style.background).not.toContain('rgba');
+    expect(container.textContent).toContain('Location Intelligence');
     const closeBtn = [...container.querySelectorAll('button')].find(b => b.textContent.trim() === '✕');
-    expect(closeBtn).toBeTruthy();
+    expect(closeBtn).toBeFalsy();
+    const backBtn = [...container.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Back');
+    expect(backBtn).toBeTruthy();
   });
 
-  it('clicking the backdrop spacer still closes the standalone (non-embedded) modal', async () => {
+  it('clicking the RoutePanelShell Back button still closes the standalone (non-embedded) panel', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -79,8 +89,8 @@ describe('#200 LocationIntelligence — embedded prop controls backdrop/close-bu
         scope: 'district', onClose: () => { closed = true; },
       }));
     });
-    const spacer = container.firstElementChild.firstElementChild; // the click-to-close strip above the card
-    await act(async () => { spacer.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const backBtn = [...container.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Back');
+    await act(async () => { backBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(closed).toBe(true);
   });
 });

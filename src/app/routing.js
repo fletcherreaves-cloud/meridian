@@ -33,6 +33,15 @@ const PARAM = 'panel';
 // saved `?panel=time-punches` link redirects here to 'crew-schedule', and App.js separately reads
 // the RAW query param once on mount to seed CrewSchedulePanel's `initialTab` so the redirected
 // panel opens straight into the Punches tab, not the default Schedule one.
+//
+// NOTE (dispatch #206) — 'feature-requests' (retired as a nav entry by dispatch #194, merged
+// into 'task-queue') deliberately does NOT get an entry here. Unlike leader-one-pager/
+// time-punches, 'feature-requests' was never itself route:true (kind:'internal', no `?panel=`
+// URL was ever pushed for it), so there is no legacy `panel` query-string value to redirect —
+// its "deep link" is the separate onOpenModal('feature-requests') mechanism (App.js's modal===
+// dispatcher, e.g. a nav pill or a SAGE-ticket reference), which already redirects into
+// goRoute('task-queue') directly in that dispatcher. Adding it here would be solving a URL-param
+// problem that was never real for this id.
 const LEGACY_PANEL_REDIRECTS = { 'leader-one-pager': 'above-store', 'time-punches': 'crew-schedule' };
 
 // A route id is valid only if the registry marks it route:true — an unknown or non-route value

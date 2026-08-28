@@ -109,8 +109,8 @@ export const PANELS = [
   { id:'dialedin', label:'DI Calibration', icon:'◎', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:4 },
   { id:'dicompare', label:'DI Compare', icon:'⚡', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:7 },
   { id:'district-lens', label:'District Lens', icon:'🌐', perm:'analytics.district', kind:'optional', section:'analytics' },
-  { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics' },
-  { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics' },
+  { id:'dt-sos', label:'DT Speed of Service', icon:'🚗', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
+  { id:'news', label:'Local News', icon:'📰', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   // count-cycle CONVERTED 2026-08-28 (dispatch #189, owner-approved 2026-08-10) from a
   // standalone route:true entry to kind:'hub-tab' -- same "opens a hub and selects a tab, no
   // sidebar entry of its own" pattern this registry already uses for fcst-accuracy/
@@ -214,7 +214,7 @@ export const PANELS = [
   // Dispatch #54 Job A found this had NO sidebar entry at all (only reachable via ?modal=inventory
   // deep link). Job B's Inventory & Food Cost section gives it a real one for the first time --
   // the owner's own list explicitly named it ("plus Inventory and Product Mix").
-  { id:'inventory', label:'Inventory', icon:'📦', perm:'analytics.store', kind:'nav', section:'inventory-food-cost' },
+  { id:'inventory', label:'Inventory', icon:'📦', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'kb', label:'Knowledge Base', icon:'📖', perm:null, kind:'nav', section:'admin' },
   { id:'labor-allocation', label:'Labor Allocation', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
   { id:'labor-analysis', label:'Labor Analysis', icon:'', perm:'analytics.store', kind:'hub-tab', section:'scheduling' },
@@ -232,12 +232,12 @@ export const PANELS = [
   // by the merge) and routes to 'forecast-reports'. Its own panel component (LifeLenzBridgePanel,
   // src/features/lifelenz.js) is unchanged.
   { id:'lifelenz-bridge', label:'MBI vs LifeLenz Accuracy', icon:'🌉', perm:'analytics.forecasting', kind:'hub-tab', section:'forecasting' },
-  { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics' },
+  { id:'loc-intel', label:'Market Intelligence', icon:'🗺', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   { id:'metric-lineage', label:'Metric Lineage', icon:'🔍', perm:null, kind:'nav', section:'admin' },
   { id:'model-assign', label:'Forecast Models', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:3 },
   { id:'monthly-proj', label:'Monthly Proj', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'morning-brief', label:'Daily Brief', icon:'☀️', perm:'analytics.brief', kind:'nav', section:'daily', route:true },
-  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics' },
+  { id:'my-reports', label:'My Reports', icon:'🗂', perm:'analytics.dashboard', kind:'nav', section:'analytics', route:true },
   { id:'one-pager', label:'Store One-Pager', icon:'📄', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   // Opportunity $ v1 (memory/design-opportunity-dollars.md) -- flagship "every performance gap
   // becomes recoverable dollars" panel. kind:'test-kitchen' with its real eventual section:
@@ -315,7 +315,7 @@ export const PANELS = [
   { id:'skills-matrix', label:'Skills Matrix', icon:'', perm:'analytics.store', kind:'hub-tab', section:'people' },
   { id:'smart-targets', label:'Smart Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   { id:'smart-targets-v2', label:'Smart Targets V2', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
-  { id:'smg-voice', label:'Guest Voice', icon:'💬', perm:'analytics.store', kind:'nav', section:'operations' },
+  { id:'smg-voice', label:'Guest Voice', icon:'💬', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'store-kb', label:'Store Kb', icon:'', perm:'analytics.store', kind:'internal', section:'admin' },
   { id:'targets', label:'Targets', icon:'', perm:null, kind:'internal', section:'planning' },
   // Targets Editor (dispatch #132 item 3) -- company/state/patch/store override cascade for
@@ -329,7 +329,7 @@ export const PANELS = [
   // Dispatch #194 -- absorbed Feature Requests (id:'feature-requests', retired above): the panel
   // now carries a `type` field ('task' | 'feature_request') distinguishing the two entry kinds
   // within one list. See src/views/task-queue.js's header comment for the merge shape.
-  { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
+  { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics', route:true },
   // time-punches — RETIRED as a standalone/nav route (dispatch #197, 2026-08-28, owner live in
   // this session: "Crew Schedule and Time punches can be merged to same page also. It makes
   // sense."). Was built (dispatch #138) as an explicit companion to 'crew-schedule' just above --

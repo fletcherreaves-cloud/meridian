@@ -15,6 +15,7 @@ import { oepeSeconds } from '../utils/oepe.js';
 // src/ and requires new alpha tints go through this helper instead (safe for both hex-literal and
 // var() colors; a raw `+'66'` silently drops on a var() color per #351/#368).
 import { withAlpha } from './patch-heatmap.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 // Dispatch #136 Part 1 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ chart.js/
 // auto, which this panel already pulls in directly) that this session's established pattern
@@ -712,52 +713,46 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   }, [rows, activeLocs, station, rangeLabel, trendLabel, sorted, stationData, hourData, daypartData,
       districtAvg, totalTrans, bestStore, worstStore, bestDp, worstDp]);
 
-  return div({ style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.82)', zIndex:460,
-    display:'flex', flexDirection:'column', paddingTop:20 }},
-    div({ style:{ flex:'0 0 20px', cursor:'pointer' }, onClick:onClose }),
-    div({ style:{ flex:1, background:'var(--surf)', maxWidth:1020, margin:'0 auto',
-      width:'calc(100% - 32px)', borderRadius:'var(--rl) var(--rl) 0 0',
-      display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 -8px 40px rgba(0,0,0,.4)' }},
-
-      // Header
-      div({ style:{ padding:'10px 16px', borderBottom:'.5px solid var(--bdr)', flexShrink:0,
-        background:'var(--surf2)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }},
-        span({ style:{ fontSize:'18px' }}, '🚗'),
-        div({ style:{ flex:1 }},
-          div({ style:{ fontSize:'14px', fontWeight:800, color:'var(--text)' }}, 'Speed of Service'),
-          div({ style:{ fontSize:'9px', color:'var(--text3)' }},
-            'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · ' +
-            'DT/FC/Kitchen thresholds are each store\'s own target (tOepe/tR2p/tKvst) +40s amber buffer · ' +
-            'Beverage has no target yet — shown as a dashed "(default)" band'),
-        ),
-        h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),
-        h('select', { value:orgFilter, onChange:e=>setOrgFilter(e.target.value), style:selStyle },
-          h('option', { value:'all' }, 'All Stores'),
-          h('option', { value:'fl'  }, 'Florida'),
-          h('option', { value:'ok'  }, 'Oklahoma'),
-          h('optgroup', { label:'— Patches —' },
-            ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
-              h('option', { key:name, value:'__patch__'+name },
-                name.split(' ')[0] + ' Patch (' + locs.length + ' stores)'))),
-          h('optgroup', { label:'— Florida —' },
-            ...ALL_LOCS.filter(l =>  FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
-              .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
-          h('optgroup', { label:'— Oklahoma —' },
-            ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
-              .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
-        ),
-        // Dispatch #136 Part 1 -- Export (CSV/JSON, current station + on-screen sort) and Print
-        // Report (full district document -- station/store/weekly-trend/daypart/hour tables, not
-        // just a chart image). Hidden while loading/empty, matching this session's other panels.
-        !loading && rows.length > 0 && h(React.Suspense, {
-          fallback: h('button', { className:'btn btn-sm', style:{ opacity:.5 }, disabled:true }, '⬇ Export') },
-          h(LazyExportDropdown, { rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
-        ),
-        !loading && rows.length > 0 && btn({ className:'btn btn-sm', onClick:handlePrintReport }, '🖨 Print Report'),
-        btn({ className:'btn btn-sm', style:{ color:'var(--text3)' }, onClick:onClose }, '✕'),
+  // route:true (dispatch #206, URL migration batch 3) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop + sheet + '✕' close
+  // button (same treatment as this batch's other backdrop conversions, and dispatch #205/#192's
+  // precedents). The date-range control, org filter select, and export/print buttons move into
+  // headerExtra — no sub-header controls bar to relocate into the body here.
+  return h(RoutePanelShell, {
+    icon: '🚗',
+    title: 'Speed of Service',
+    subtitle:
+      'Order-to-serve by station (DT · front counter · kitchen · beverage) · from qsr_daily_activity · ' +
+      'DT/FC/Kitchen thresholds are each store\'s own target (tOepe/tR2p/tKvst) +40s amber buffer · ' +
+      'Beverage has no target yet — shown as a dashed "(default)" band',
+    onBack: onClose,
+    headerExtra: div({ style:{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }},
+      h(DateRangeControl, { presets: DATE_RANGE_PRESETS, value: dateRange, onChange: setDateRange }),
+      h('select', { value:orgFilter, onChange:e=>setOrgFilter(e.target.value), style:selStyle },
+        h('option', { value:'all' }, 'All Stores'),
+        h('option', { value:'fl'  }, 'Florida'),
+        h('option', { value:'ok'  }, 'Oklahoma'),
+        h('optgroup', { label:'— Patches —' },
+          ...Object.entries(supervisorGroups() || {}).map(([name, locs]) =>
+            h('option', { key:name, value:'__patch__'+name },
+              name.split(' ')[0] + ' Patch (' + locs.length + ' stores)'))),
+        h('optgroup', { label:'— Florida —' },
+          ...ALL_LOCS.filter(l =>  FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
+            .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
+        h('optgroup', { label:'— Oklahoma —' },
+          ...ALL_LOCS.filter(l => !FL_LOCS.has(l)).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]))
+            .map(l => h('option', { key:l, value:l }, STORE_NAMES[l]))),
       ),
-
-      // Content
+      // Dispatch #136 Part 1 -- Export (CSV/JSON, current station + on-screen sort) and Print
+      // Report (full district document -- station/store/weekly-trend/daypart/hour tables, not
+      // just a chart image). Hidden while loading/empty, matching this session's other panels.
+      !loading && rows.length > 0 && h(React.Suspense, {
+        fallback: h('button', { className:'btn btn-sm', style:{ opacity:.5 }, disabled:true }, '⬇ Export') },
+        h(LazyExportDropdown, { rows:exportSpec.rows, columns:exportSpec.columns, title:exportSpec.title, filename:exportSpec.filename }),
+      ),
+      !loading && rows.length > 0 && btn({ className:'btn btn-sm', onClick:handlePrintReport }, '🖨 Print Report'),
+    ),
+  },
       loading
         ? div({ style:{ flex:1, display:'flex', alignItems:'center', justifyContent:'center',
             color:'var(--text3)', fontSize:'11px' }}, 'Loading DT history…')
@@ -950,6 +945,5 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
               `Store trend = 2nd half of period vs 1st half (▲ faster, ▼ slower).`
             ),
           )
-    )
   );
 }

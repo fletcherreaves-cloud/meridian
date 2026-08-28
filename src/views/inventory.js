@@ -3,6 +3,7 @@ import * as React from 'react';
 import { INV_ORG_COORDS, STORE_NAMES, sName, sNameC, whoRan } from '../constants.js';
 import { INV_MASTER, classifyInvArea, parseInvUOM } from '../parsers/inventory-parse.js';
 import { loadQsrInventorySummary } from '../lib/supabase.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 // Local, not imported from attention-now.js (same one-liner as unpad there) — importing a
 // React-hook-heavy view module just for this would drag its whole dependency graph into
@@ -488,83 +489,76 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
     style:{fontSize:'9px',color:activeSection===n?'#000':(col||'var(--text3)')},
     onClick:()=>setActiveSection(n)},label+(count?' ('+count+')':''));
 
-  // Both branches share the same bottom-sheet chrome (click-catcher strip, header
-  // row, ✕ close style) so the close affordance never changes shape between states.
-  if(!locs.length) return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
-    div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',
-      maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
-      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',
-        gap:8,flexShrink:0,background:'var(--surf2)'}},
-        div({style:{fontSize:'13px',fontWeight:800,color:'var(--gold)',flex:1}},'📦 Inventory Intelligence'),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
-      ),
-      div({style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center'}},
-        cloudRows===null
-          ?div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-              div({style:{fontSize:'12px'}},'Loading…'))
-          :div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
-              div({style:{fontSize:40,marginBottom:12}},'📦'),
-              div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Inventory Data'),
-              div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:1.6}},
-                cloudErr
-                  ?('☁ Auto-sync failed: '+cloudErr+'. ')
-                  :('☁ No auto data yet for any location this period. '),
-                'You can still drop inventory files (e.g. 3708 - Inventory Summary and Usage.xlsx) as a manual fallback.',
-                div(null,'Each location needs its own file. Filename must start with the location number.'))))));
+  // route:true (dispatch #206, URL migration batch 3) — RoutePanelShell replaces this
+  // component's own hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrops (this empty-state
+  // early return AND the main panel body below) + sheet + '✕' close button — same "two hand-
+  // rolled backdrops under one component" shape OperatorSummaryPanel/FOBAnalysisPanel had under
+  // dispatch #205/#188.
+  if(!locs.length) return h(RoutePanelShell,{icon:'📦',title:'Inventory Intelligence',onBack:onClose},
+    div({style:{display:'flex',alignItems:'center',justifyContent:'center',minHeight:200}},
+      cloudRows===null
+        ?div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
+            div({style:{fontSize:'12px'}},'Loading…'))
+        :div({style:{textAlign:'center',color:'var(--text3)',padding:40}},
+            div({style:{fontSize:40,marginBottom:12}},'📦'),
+            div({style:{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:8}},'No Inventory Data'),
+            div({style:{fontSize:'11px',color:'var(--text3)',lineHeight:1.6}},
+              cloudErr
+                ?('☁ Auto-sync failed: '+cloudErr+'. ')
+                :('☁ No auto data yet for any location this period. '),
+              'You can still drop inventory files (e.g. 3708 - Inventory Summary and Usage.xlsx) as a manual fallback.',
+              div(null,'Each location needs its own file. Filename must start with the location number.')))));
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:460,display:'flex',flexDirection:'column',paddingTop:24}},
-    div({style:{flex:'0 0 24px',cursor:'pointer'},onClick:onClose}),
-    div({style:{flex:1,background:'var(--surf)',display:'flex',flexDirection:'column',overflow:'hidden',
-      maxWidth:1200,margin:'0 auto',width:'calc(100% - 32px)',borderRadius:'var(--rl) var(--rl) 0 0',boxShadow:'0 -8px 40px rgba(0,0,0,.4)'}},
-      // ── Header ──────────────────────────────────────────────────────────
-      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',
-        gap:8,flexShrink:0,background:'var(--surf2)',flexWrap:'wrap'}},
-        div({style:{fontSize:'13px',fontWeight:800,color:'var(--gold)',flexShrink:0}},'📦 Inventory Intelligence'),
-        // #214: visible (not tooltip-only) data-source state — a failed cloud read must not
-        // look like an empty one, same rule the FOB panel's fix established.
-        cloudRows===null
-          ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,color:'var(--text3)',
-              border:'.5px solid var(--bdr)'}},'☁ loading…')
-          :cloudErr
-          ?span({title:cloudErr,style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
-              color:'var(--crit)',background:'rgba(244,63,94,.12)',border:'.5px solid rgba(244,63,94,.4)'}},'⚠ auto-sync failed')
-          :hasCloud
-          ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
-              color:'#34d399',background:'rgba(52,211,153,.1)',border:'.5px solid rgba(52,211,153,.35)'}},
-              '☁ cloud auto'+(manualFillCount>0?' + '+manualFillCount+' manual gap-fill':''))
-          :span({title:'qsr_inventory_summary returned 0 rows — showing manual upload only',
-              style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
-              color:'#f59e0b',background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)'}},'☁ no cloud data yet'),
-        unrecognizedClasses.length>0&&span({
-          title:'cls values not matching the expected vocabulary: '+unrecognizedClasses.join(', ')+' — these items only appear under "All Classes", not their specific filter',
-          style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,color:'#f59e0b',
-            background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)',cursor:'help'}},
-          '⚠ '+unrecognizedClasses.length+' unrecognized class'+(unrecognizedClasses.length!==1?'es':'')),
-        h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-          style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-            color:'var(--text)',fontSize:'10px',padding:'3px 6px',maxWidth:180}},
-          locs.map(l=>h('option',{key:l,value:l},sNameC(l)))),
-        div({style:{display:'flex',gap:2}},
-          INV_CLASS_FILTERS.map(f=>btn({key:f.key,className:'btn btn-sm'+(classFilter===f.key?' btn-a':''),
-            style:{fontSize:'8.5px',padding:'2px 7px'},onClick:()=>setClassFilter(f.key)},f.label))),
-        div({style:{display:'flex',alignItems:'center',gap:6,marginLeft:'auto'}},
-          div({style:{fontSize:'8.5px',color:'var(--text3)'}},'Overstock:'),
-          h('input',{type:'number',min:1,max:90,value:threshold,onChange:e=>setThreshold(+e.target.value||14),
-            style:{width:48,background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-              color:'var(--text)',fontSize:'10px',padding:'2px 5px',textAlign:'center'}}),
-          div({style:{fontSize:'8.5px',color:'var(--text3)'}},'day threshold')
-        ),
-        btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#10b981',borderColor:'rgba(16,185,129,.3)'},
-          onClick:()=>generateInventoryReportHTML(selLoc,locRows,svc,prod,overstk,
-            // Individual export: only show this location as sender
-            (transfers||[]).filter(r=>r.sendLoc===selLoc),
-            threshold,excldWrap,settings)},'📄 Export Location'),
-        btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
-          title:'Export all loaded locations in one combined report',
-          onClick:()=>generateBulkInventoryReport(effRows,threshold,excldWrap,classFilter,settings)},'📄 Export All Locations'),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
+  return h(RoutePanelShell,{
+    icon:'📦',
+    title:'Inventory Intelligence',
+    headerExtra:div({style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+      // #214: visible (not tooltip-only) data-source state — a failed cloud read must not
+      // look like an empty one, same rule the FOB panel's fix established.
+      cloudRows===null
+        ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,color:'var(--text3)',
+            border:'.5px solid var(--bdr)'}},'☁ loading…')
+        :cloudErr
+        ?span({title:cloudErr,style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
+            color:'var(--crit)',background:'rgba(244,63,94,.12)',border:'.5px solid rgba(244,63,94,.4)'}},'⚠ auto-sync failed')
+        :hasCloud
+        ?span({style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
+            color:'#34d399',background:'rgba(52,211,153,.1)',border:'.5px solid rgba(52,211,153,.35)'}},
+            '☁ cloud auto'+(manualFillCount>0?' + '+manualFillCount+' manual gap-fill':''))
+        :span({title:'qsr_inventory_summary returned 0 rows — showing manual upload only',
+            style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,
+            color:'#f59e0b',background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)'}},'☁ no cloud data yet'),
+      unrecognizedClasses.length>0&&span({
+        title:'cls values not matching the expected vocabulary: '+unrecognizedClasses.join(', ')+' — these items only appear under "All Classes", not their specific filter',
+        style:{fontSize:'8px',padding:'2px 6px',borderRadius:3,fontWeight:700,color:'#f59e0b',
+          background:'rgba(245,158,11,.1)',border:'.5px solid rgba(245,158,11,.35)',cursor:'help'}},
+        '⚠ '+unrecognizedClasses.length+' unrecognized class'+(unrecognizedClasses.length!==1?'es':'')),
+      h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
+        style:{background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+          color:'var(--text)',fontSize:'10px',padding:'3px 6px',maxWidth:180}},
+        locs.map(l=>h('option',{key:l,value:l},sNameC(l)))),
+      div({style:{display:'flex',gap:2}},
+        INV_CLASS_FILTERS.map(f=>btn({key:f.key,className:'btn btn-sm'+(classFilter===f.key?' btn-a':''),
+          style:{fontSize:'8.5px',padding:'2px 7px'},onClick:()=>setClassFilter(f.key)},f.label))),
+      div({style:{display:'flex',alignItems:'center',gap:6}},
+        div({style:{fontSize:'8.5px',color:'var(--text3)'}},'Overstock:'),
+        h('input',{type:'number',min:1,max:90,value:threshold,onChange:e=>setThreshold(+e.target.value||14),
+          style:{width:48,background:'var(--surf3)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
+            color:'var(--text)',fontSize:'10px',padding:'2px 5px',textAlign:'center'}}),
+        div({style:{fontSize:'8.5px',color:'var(--text3)'}},'day threshold')
       ),
+      btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#10b981',borderColor:'rgba(16,185,129,.3)'},
+        onClick:()=>generateInventoryReportHTML(selLoc,locRows,svc,prod,overstk,
+          // Individual export: only show this location as sender
+          (transfers||[]).filter(r=>r.sendLoc===selLoc),
+          threshold,excldWrap,settings)},'📄 Export Location'),
+      btn({className:'btn btn-sm',style:{fontSize:'9px',color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
+        title:'Export all loaded locations in one combined report',
+        onClick:()=>generateBulkInventoryReport(effRows,threshold,excldWrap,classFilter,settings)},'📄 Export All Locations'),
+    ),
+    onBack:onClose,
+    bodyStyle:{display:'flex',flexDirection:'column',overflow:'hidden'},
+  },
       // ── Section tabs ─────────────────────────────────────────────────────
       div({style:{padding:'7px 16px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:6,flexWrap:'wrap',
         background:'var(--mid2)',flexShrink:0}},
@@ -670,7 +664,6 @@ function InventoryIntelligence({stores,ds,settings,onClose}){
                 th({key:i,style:{...thStyle,textAlign:i>=5?'right':'left'}},h_)))),
               h('tbody',null,transfers.map((r,i)=>tRow(r,i))))))
       )
-    )
   );
 }
 
