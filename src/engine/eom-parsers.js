@@ -238,7 +238,11 @@ export function mapRawItemInfo(detail = {}) {
     primaryVdrName: detail.primary_vdr_name ?? null,
     primaryVdr: detail.primary_vdr != null ? String(detail.primary_vdr) : null,
     midRangeYield: detail.mid_range_yield != null ? Number(detail.mid_range_yield) : null,
-    recipeItem: detail.recipe_item === true || detail.recipe_item === 'Y',
+    // The real live-captured response (memory/dispatch-184.md) sends this as the JSON
+    // integer 1/0, not a boolean or 'Y'/'N' string — `=== true`/`=== 'Y'` alone would
+    // silently read every real item as false. Accept all three representations QSRSoft's
+    // other Y/N-flag fields (e.g. on_pos) are known to use across this API family.
+    recipeItem: detail.recipe_item === true || detail.recipe_item === 'Y' || detail.recipe_item === 1 || detail.recipe_item === '1',
     currentUpt: detail.current_upt != null ? Number(detail.current_upt) : null,
     // Lists — stored as JSONB verbatim (matching qsr_raw_item_detail.history's precedent),
     // not normalized further in this first slice.

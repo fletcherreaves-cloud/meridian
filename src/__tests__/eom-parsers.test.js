@@ -128,7 +128,7 @@ describe('mapRawItemInfo', () => {
       full_wrin: '00005-086', long_desc: '100% PURE BEEF', invty_category_type: 'Food',
       case_qty: 40, latest_case_price: 62.15, case_price_avg: 61.02,
       primary_vdr_name: 'Martin Brower', primary_vdr: '1042', mid_range_yield: 91.6,
-      recipe_item: true, current_upt: 3.14,
+      recipe_item: 1, current_upt: 3.14, // real API sends 1/0, not true/'Y' -- dispatch #184's own captured sample
       menu_items: [{ item_number: '5001', item_name: 'HAMBURGER', recipe_serving_factor: 1, on_pos: 'Y' }],
       menu_item_combos: [{ main_item_number: '5001', combo_item_number: '9001', quantity: 1 }],
       upt_hist: [{ dt: 'July 2019', price: 2.98 }],
