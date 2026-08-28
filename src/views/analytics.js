@@ -26,7 +26,6 @@ import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.j
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
 import { CoachingModal } from './coaching-modal.js';
-import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
