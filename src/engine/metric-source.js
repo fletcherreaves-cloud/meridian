@@ -318,11 +318,18 @@ export const METRIC_SOURCES = {
   tRedACnt:       { mode: 'any', srcs: [['opsCashRows', 'tRedACnt'], ['ctrlRows', 'tRedACnt']] },
   tRedBCnt:       { mode: 'any', srcs: [['opsCashRows', 'tRedBCnt'], ['ctrlRows', 'tRedBCnt']] },
 
-  // Average check — manual Labor, then emailed Glimpse / Cash Sheet / Sales Ledger.
+  // Average check — emailed Glimpse / Cash Sheet / Sales Ledger, then manual Labor last.
   // 'pos' because a real avg check is never legitimately 0.
   // derive: sales ÷ gc — added for the Sum/Sum rollup (dispatch #77's numerator/denominator gap);
-  // both inputs already resolve auto-first through their own chains, so this also gives avgCheck
-  // a real fallback for any day covered by neither of the 4 precomputed sources above.
+  // both inputs already resolve auto-first through their own chains (sales/gc lead with the
+  // DAR, qsrActSummaryRows), so this is also a real, always-available fallback.
+  // ⚠️ RESOLUTION PRIORITY IS NOT srcs' DECLARATION ORDER for this one metric (dispatch #182):
+  // metricSeriesWithSource special-cases 'avgCheck' (see _avgCheckSeries) to try this derive
+  // BEFORE laborRows specifically — laborRows is the only manual source in this chain, and the
+  // shared `_derive` mechanism every other derive-using metric here uses is unconditionally
+  // last-resort (runs only after ALL of srcs, laborRows included, has been checked), which
+  // would leave a stale manual value ranked ahead of an always-fresh DAR-backed number for any
+  // day laborRows happens to cover. That shared mechanism is untouched for every other metric.
   avgCheck:       { mode: 'pos', direction: 'higher', srcs: [['glimpseRows', 'avgCheck'], ['cashRows', 'avgCheck'], ['salesLedgerRows', 'avgCheck'], ['laborRows', 'avgCheck']],
                     derive: { inputs: ['sales', 'gc'], fn: (s, g) => (g > 0 ? s / g : null), kind: 'ratio' } },
 
@@ -786,10 +793,91 @@ export function metricDaily(ds, loc, date, key) {
 // of a bare number — dispatch #64 needs to know WHICH source answered (to keep a provenance
 // column honest), not just the resolved value. metricSeries (below) is a thin wrapper that
 // strips this down to { dateKey: value }, so every existing caller keeps its exact contract.
+// avgCheck-ONLY resolver — see the `key === 'avgCheck'` branch in metricSeriesWithSource
+// for why this exists instead of a `srcs` reorder. Mirrors the generic loop's per-day,
+// per-source lookup (same `_srcIdx`/`_srcDates`/`_ok`/`_dk` primitives, same "first hit for
+// the day wins" semantics) in three passes instead of one:
+//   1. every `srcs` entry EXCEPT `laborRows` (glimpseRows, cashRows, salesLedgerRows today —
+//      whatever avgCheck's chain holds besides the one manual source), in their declared order.
+//   2. the derive (sales ÷ gc) for any day still unresolved — reuses `spec.derive.fn` and
+//      recurses through `metricSeriesWithSource` for the `sales`/`gc` inputs exactly as the
+//      shared `_derive` helper does, so the ratio math can never drift from it.
+//   3. `laborRows` (or whichever `srcs` entries are manual-fed) LAST, for anything still
+//      unresolved — now genuinely last-resort instead of ranked ahead of the derive.
+// If avgCheck's own `srcs` array is ever edited so it no longer contains `laborRows`, this
+// degrades gracefully to precomputed-then-derive with no manual pass — never a crash.
+function _avgCheckSeries(ds, loc, range, spec, _depth) {
+  const out = {};
+  const L = String(loc);
+  const rs = _dk(range.s), re = _dk(range.e);
+  for (const [src] of spec.srcs) if (LAZY_FILL_SOURCES.includes(src)) _triggerLazyFill(src);
+
+  const isManualSrc = s => MANUAL_FED_SOURCES.includes(s);
+  const precomputed = spec.srcs.filter(([src]) => !isManualSrc(src));
+  const manual = spec.srcs.filter(([src]) => isManualSrc(src));
+
+  // Pass 1 — precomputed auto/emailed sources, auto-first (same as the generic loop).
+  const dates = new Set();
+  for (const [src] of precomputed) {
+    for (const dk of (_srcDates(ds, src)[L] || [])) {
+      if (dk >= rs && dk <= re) dates.add(dk);
+    }
+  }
+  for (const dk of dates) {
+    for (const [src, field] of precomputed) {
+      const rows = _srcIdx(ds, src)[L + '_' + dk];
+      if (rows) {
+        let hit = false;
+        for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) { out[dk] = { value: v, source: src, field }; hit = true; break; } }
+        if (hit) break;
+      }
+    }
+  }
+
+  // Pass 2 — the derive, ahead of the manual source (this is the actual fix).
+  if (spec.derive && _depth <= 3) {
+    const parts = spec.derive.inputs.map(k => metricSeriesWithSource(ds, loc, range, k, _depth + 1));
+    const derivedDays = new Set(parts.flatMap(p => Object.keys(p)));
+    for (const dk of derivedDays) {
+      if (out[dk] != null) continue;                    // pass 1 already answered
+      const vals = parts.map(p => p[dk]?.value);
+      if (vals.some(v => v == null)) continue;           // incomplete inputs → no value
+      const v = spec.derive.fn(...vals);
+      if (_ok(v, spec.mode)) out[dk] = { value: v, source: 'derived', field: 'avgCheck' };
+    }
+  }
+
+  // Pass 3 — the manual source(s), now genuinely last-resort.
+  for (const [src, field] of manual) {
+    for (const dk of (_srcDates(ds, src)[L] || [])) {
+      if (dk < rs || dk > re || out[dk] != null) continue;
+      const rows = _srcIdx(ds, src)[L + '_' + dk];
+      if (rows) for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) { out[dk] = { value: v, source: src, field }; break; } }
+    }
+  }
+
+  return out;
+}
+
 export function metricSeriesWithSource(ds, loc, range, key, _depth = 0) {
   const spec = METRIC_SOURCES[key];
   const out = {};
   if (!ds || !spec) return out;
+
+  // avgCheck-ONLY early return — dispatch #182. avgCheck's derive (sales ÷ gc) is an
+  // always-available, DAR-backed computation (both inputs resolve auto-first through their
+  // OWN chains — see the comment on METRIC_SOURCES.avgCheck) and should outrank `laborRows`,
+  // the one purely-manual source in avgCheck's chain, instead of only filling days nothing
+  // in `srcs` covers at all. A plain `srcs` reorder can't do this: the generic loop below
+  // checks every entry in `spec.srcs` (laborRows included) before `_derive` ever runs, for
+  // EVERY metric that uses `derive` — so `derive` is structurally last-resort regardless of
+  // where anything sits in `srcs`. Rather than changing that shared order (which would move
+  // for every other derive-using metric here too — oepe, r2p, laborPct, spph, cashOSPct,
+  // discPct, tRedAPct/tRedBPct, fobPct, and more), this branch gives ONLY avgCheck a
+  // different priority, by calling a dedicated resolver instead of falling into the generic
+  // path below. Every other key reaches the untouched generic code beneath this branch,
+  // unchanged. See _avgCheckSeries just above metricSeriesWithSource.
+  if (key === 'avgCheck') return _avgCheckSeries(ds, loc, range, spec, _depth);
 
   // ── DERIVED metrics ────────────────────────────────────────────────────────
   // Some metrics are not carried by ANY stream but are computable from ones that are.
