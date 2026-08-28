@@ -148,7 +148,8 @@ const _analytics = () => import('../views/analytics.js');
 // Correlations tab (signals.js's CorrelationsTab, now Scanner-statistics-powered). See
 // panel-registry.js's comment on corr-explorer.
 const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
-const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-performers.js').then(m => ({ default: m.TopBottomPerformers })));
+// TopBottomPerformers -- RETIRED as its own lazyPanel (dispatch #203, 2026-08-28): merged into
+// LeaderboardPanel (below) as a mode; see panel-registry.js's comment on 'top-bottom'.
 const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
 const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
 const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
@@ -184,7 +185,9 @@ const PreForecastBrief   = lazyPanel(() => _projections().then(m => ({ default: 
 const _storeDash = () => import('../views/store-dash.js');
 const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })));
 const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })));
-const RankingView           = lazyPanel(() => _storeDash().then(m => ({ default: m.RankingView })));
+// LeaderboardPanel (dispatch #203) -- merges Rankings/Record Days/Top-Bottom Performers into one
+// route:true panel with three modes; see store-dash.js's own comment on LeaderboardPanel.
+const LeaderboardPanel       = lazyPanel(() => _storeDash().then(m => ({ default: m.LeaderboardPanel })));
 // PerformanceCalculator — dispatch #199 moved this UI into Performance Review -> Customize ->
 // Calculator (see performance-reviews.js's PerformanceCalculatorSection usage). No longer a
 // standalone lazy-loaded panel here; 'perf-calc' deep-links now redirect into perf-reviews below.
@@ -235,7 +238,10 @@ const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => 
 // Cost (FOBAnalysisPanel) as an "End of Month" mode; analytics.js now React.lazy()-loads
 // fob-eom.js itself, directly, only when that mode is actually opened (see FOBEOMPanelLazy in
 // analytics.js) — same lazy-load discipline this used to get from being its own lazyPanel().
-const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
+// EOMSupervisorPanel — dispatch #202: no longer its own lazyPanel entry here. It's still used,
+// but only as a "Supervisor Rollup" tab inside EOMDashboardPanel (src/views/eom-dashboard.js
+// imports it directly from eom-supervisor.js) — same "absorbed into the hub, no standalone
+// entry point" pattern as CountCyclePanel/count-cycle-panel.js above.
 const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 // #230, R6 (dispatch16): the About modal's changelog list — the only consumer of the
 // MERIDIAN_CHANGELOG array (src/app/changelog/, one file per version), lazy for the same reason
@@ -289,7 +295,11 @@ import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } f
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
-import { RecordDayPanel } from '../views/record-day.js';
+// RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
+// LeaderboardPanel (store-dash.js) as a mode, now reached only through that lazy chunk. This also
+// fixes a pre-existing entry-chunk quirk this file's own header comment used to flag: record-
+// day.js was previously one of the few views/ modules statically imported here instead of behind
+// lazyPanel() (see record-day.js's own updated header comment for the before/after).
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
@@ -790,18 +800,27 @@ function App() {
   // showRanking removed — dispatch #192: replaced by routePanel==='ranking' (see routePanel
   // gate below). rankingDefault stays local state (still passed through as defaultMetric).
   const [rankingDefault, setRankingDefault] = useState('score');
+  // leaderboardMode (dispatch #203) -- which of Rankings/Record Days/Top-Bottom the merged
+  // LeaderboardPanel opens on. Same pattern as rankingDefault just above: local state, synced
+  // into the panel via a prop, set by onOpenModal for the three ids that now all route here.
+  const [leaderboardMode, setLeaderboardMode] = useState('ranking');
   const [showTargets, setShowTargets]  = useState(false);
   // showTargetsEditor removed — dispatch #135 item 3 moved this UI into Performance Review ->
   // Customize -> Targets (perfReviewsEntry below drives the redirect for old deep links).
   const [perfReviewsEntry, setPerfReviewsEntry] = useState(null); // {tab, section} | null — one-shot deep-link target for PerformanceReviewsPanel
-  // eomInitialMode (dispatch #189) — one-shot deep-link target for EOMDashboardPanel, same
-  // pattern as perfReviewsEntry above. Only ever set to 'compliance', when redirecting the
-  // retired count-cycle route (see the routePanel initializer/onRouteChange effect below and
-  // the modal==='count-cycle' branch further down). Self-contained lazy initializer (reads
-  // location.search directly, not derived from routePanel's own state) so a hard page load on
-  // a legacy `?panel=count-cycle` URL has the right value on EOMDashboardPanel's VERY FIRST
-  // render — routePanel's own initializer (below) already resolves to 'eom-dashboard' just as
-  // synchronously on that same first render, so the panel mounts with both correct together.
+  // eomInitialMode (dispatch #189, extended by dispatch #202) — one-shot deep-link target for
+  // EOMDashboardPanel, same pattern as perfReviewsEntry above. Set to 'compliance' when
+  // redirecting the retired count-cycle route (see the routePanel initializer/onRouteChange
+  // effect below and the modal==='count-cycle' branch further down), or to 'supervisor' when
+  // redirecting the retired eom-summary route (modal==='eom-summary' branch). Self-contained
+  // lazy initializer (reads location.search directly, not derived from routePanel's own state)
+  // so a hard page load on a legacy `?panel=count-cycle` URL has the right value on
+  // EOMDashboardPanel's VERY FIRST render — routePanel's own initializer (below) already
+  // resolves to 'eom-dashboard' just as synchronously on that same first render, so the panel
+  // mounts with both correct together. eom-summary never had its own `?panel=` route (it was a
+  // showX/ModalShell toggle, not URL-addressable), so only count-cycle needs this URL-sniffing
+  // branch — the eom-summary redirect only ever fires via the live onOpenModal('eom-summary')
+  // call path, never a cold page load.
   const [eomInitialMode, setEomInitialMode] = useState(() =>
     (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
       && new URLSearchParams(location.search).get('panel') === 'count-cycle') ? 'compliance' : null);
@@ -879,7 +898,8 @@ function App() {
   // routePanel above) as one of ForecastReportsPanel's two internal tabs.
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
-  const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
+  // showTopBottom — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
+  // opened via routePanel==='ranking' + leaderboardMode==='top-bottom' instead.
   const [showOpportunity,setShowOpportunity] = useState(false); // Opportunity $ v1
   // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle', then dispatch
   // #189 folded that route into routePanel==='eom-dashboard' (see routePanel above) as
@@ -893,7 +913,9 @@ function App() {
   const [showAudit,    setShowAudit]   = useState(false);
   const [showBrief,    setShowBrief]   = useState(false);
   // showMorningBrief — dispatch #192: replaced by routePanel==='morning-brief' (see routePanel above).
-  const [showEOMSummary,   setShowEOMSummary]   = useState(false); // EOM Supervisor Summary
+  // showEOMSummary — dispatch #202: removed. EOM Supervisor Summary is now a tab inside
+  // EOMDashboardPanel (eomInitialMode==='supervisor'), same "no standalone showX state any more"
+  // shape as showEOMDash below.
   // showEOMDash — Dispatch #55 Part B: replaced by routePanel==='eom-dashboard' (see routePanel above).
   const [showAbout, setShowAbout] = useState(false); // About/Changelog modal
   const [showPVSA,     setShowPVSA]    = useState(false);
@@ -952,7 +974,8 @@ function App() {
   const [showSMGVoice,        setShowSMGVoice]        = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
   // showPerfReviews — Dispatch #55 Part B: replaced by routePanel==='perf-reviews' (see routePanel above).
-  const [showRecordDay,       setShowRecordDay]       = useState(false);
+  // showRecordDay — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
+  // opened via routePanel==='ranking' + leaderboardMode==='record-day' instead.
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
   const [showDeliveryMix,     setShowDeliveryMix]     = useState(false);
   const [showScheduling,      setShowScheduling]      = useState(false);
@@ -2880,10 +2903,10 @@ function App() {
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
-    showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
+    showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPriorityBrief||showProjBriefSA||
-    showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2910,11 +2933,11 @@ function App() {
       setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
-      setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
+      setShowModelAssign(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
-      setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
@@ -2971,7 +2994,7 @@ function App() {
       onSaveSession: handleSaveSession,
       onRestoreSession: handleRestoreSession,
       onOpenModal: (modal) => {
-        if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),goRoute('ranking'));
+        if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),setLeaderboardMode('ranking'),goRoute('ranking'));
         if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
         if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
         // Scheduling hub (Notes 24): one modal, tabs. Legacy per-panel ids deep-link to the right tab.
@@ -2980,7 +3003,11 @@ function App() {
         if(modal==='delivery-mix')    perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='scheduling')      perm('analytics.store')&&(setSchedTab('scheduling'),goRoute('sched-hub'));
         if(modal==='morning-brief')  perm('analytics.brief')&&goRoute('morning-brief');
-        if(modal==='eom-summary')    perm('analytics.district')&&setShowEOMSummary(true);
+        // eom-summary RETIRED (dispatch #202) — redirects into eom-dashboard's Supervisor
+        // Rollup tab (eomInitialMode==='supervisor'), same pattern as count-cycle below. Same
+        // perm as before ('analytics.district') and identical to eom-dashboard's own registry
+        // perm — no widening, no narrowing.
+        if(modal==='eom-summary')    perm('analytics.district')&&(setEomInitialMode('supervisor'),goRoute('eom-dashboard'));
         if(modal==='eom-dashboard')  perm('analytics.district')&&goRoute('eom-dashboard');
         if(modal==='brief')          perm('analytics.brief')&&(()=>{
           if(selStore) setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]});
@@ -2993,7 +3020,19 @@ function App() {
         if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
-        if(modal==='top-bottom')     perm('analytics.district')&&setShowTopBottom(true);
+        // 'top-bottom' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
+        // redirects into it on the Top/Bottom mode, same "route to the hub, select the tab"
+        // pattern as crew-schedule/time-punches (#197) above. Kept on its original
+        // analytics.district perm (stricter than Rankings/Record Days' analytics.store). This
+        // gate only covers the deep-link entry point -- the real protection (a user who is
+        // already inside LeaderboardPanel via the looser 'ranking' perm cannot click into the
+        // Top/Bottom mode tab in the first place) is LEADERBOARD_MODES' own perm filter in
+        // store-dash.js, mirroring SCHED_TABS/SchedulingHubPanel's established per-tab gate
+        // pattern (App.js's own SCHED_TABS above). Found and fixed in PM verification 2026-08-28
+        // -- the original #203 PR only gated this modal-id path and left the tab-strip itself
+        // unfiltered, which would have let any analytics.store user reach Top/Bottom content
+        // through ordinary navigation.
+        if(modal==='top-bottom')     perm('analytics.district')&&(setLeaderboardMode('top-bottom'),goRoute('ranking'));
         if(modal==='opportunity-dollars') perm('analytics.district')&&setShowOpportunity(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
@@ -3072,7 +3111,9 @@ function App() {
         if(modal==='channel-intel')  perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
-        if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
+        // 'record-day' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
+        // redirects into it on the Record Days mode, same pattern as 'top-bottom' above.
+        if(modal==='record-day')     perm('analytics.store')&&(setLeaderboardMode('record-day'),goRoute('ranking'));
         // 'perf-calc' — dispatch #199: no longer its own panel, redirects into Performance
         // Review -> Customize -> Calculator, same pattern as 'targets-editor' above. Gated on
         // reviews.customize (the Customize tab's real gate), not the panel's old broader
@@ -3180,6 +3221,7 @@ function App() {
         onOpenModal:(modal)=>{
           if(modal==='ranking'||modal.startsWith('ranking:')){
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
+            setLeaderboardMode('ranking');
             goRoute('ranking');
           }
           else if(modal==='settings')setShowSettings&&setShowSettings(true);
@@ -3290,7 +3332,7 @@ function App() {
       // (same treatment as count-cycle-panel.js got in dispatch #55 Part B), so it's called
       // directly too.
       routePanel==='attention'&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles}),
-      routePanel==='ranking'&&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
+      routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,perm,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',
         onBack:()=>goRoute(null),
@@ -3313,7 +3355,8 @@ function App() {
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
     showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:perm('users.manage.all')?()=>setShowAdminPanel(true):null}),
     // showRanking — Dispatch #192: moved to the routePanel gate in the main content area
-    // (RoutePanelShell now lives inside RankingView itself; see routePanel==='ranking').
+    // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
+    // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
     // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
     showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
@@ -3357,11 +3400,11 @@ function App() {
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     // perf-reviews — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
-    showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
+    // showRecordDay/showTopBottom — RETIRED (dispatch #203): merged into LeaderboardPanel, see
+    // routePanel==='ranking' in the main content area above.
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
-    showTopBottom&&h(TopBottomPerformers,{stores,ds,onSelectStore:s=>{goStore(s);setShowTopBottom(false);},onClose:()=>setShowTopBottom(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
@@ -3587,14 +3630,12 @@ function App() {
         // showMorningBrief — Dispatch #192: moved to the routePanel gate in the main content
         // area (wrapped directly in RoutePanelShell there; see routePanel==='morning-brief' —
         // MorningBriefPanel had no internal chrome to strip).
-        showEOMSummary&&h(ModalShell,{
-      icon:'📊',title:'EOM Supervisor Summary',
-      subtitle:'Monthly P&L variance by store — filter by supervisor, operator, or all',
-      onClose:()=>setShowEOMSummary(false),maxWidth:1140,zIndex:Z.nested,bodyStyle:{padding:0},
-      backdropClassName:'mf-eom-print-modal',cardClassName:'mf-eom-print-card',headerClassName:'mf-eom-modal-chrome'
-    },
-          h(EOMSupervisorPanel,{ds,settings,supabase})
-    ),
+        // showEOMSummary's own ModalShell — REMOVED (dispatch #202): EOM Supervisor Summary is
+        // now EOMDashboardPanel's Supervisor Rollup tab (routePanel==='eom-dashboard',
+        // eomInitialMode==='supervisor' for the redirect). Its print-CSS class hooks
+        // (mf-eom-print-modal/mf-eom-print-card/mf-eom-modal-chrome) moved with it — supplied by
+        // RoutePanelShell's className/headerClassName props inside eom-dashboard.js now, not by
+        // this ModalShell's backdropClassName/cardClassName/headerClassName.
         // eom-dashboard — Dispatch #55 Part B: moved to the routePanel gate in the main content
         // area (RoutePanelShell now lives inside EOMDashboardPanel itself; see routePanel==='eom-dashboard').
         showAudit&&selStore&&h(ModalShell,{

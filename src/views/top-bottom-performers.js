@@ -10,7 +10,6 @@
 // offered here at all -- PERFORMER_METRICS only lists rankable keys (see that file's own guard
 // test cross-checking it against rankableMetricKeys()).
 import * as React from 'react';
-import { ModalShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { Bar } from './visit-readiness.js';
@@ -57,7 +56,15 @@ function PerformerRow({ rank, row, metric, rows, direction, onSelect }) {
   );
 }
 
-export function TopBottomPerformers({ stores, ds, onClose, onSelectStore }) {
+// Was TopBottomPerformers, a standalone ModalShell overlay. Dispatch #203 merged it into the
+// Leaderboards panel (store-dash.js's LeaderboardPanel) as a mode alongside Rankings and Record
+// Days -- and, per CLAUDE.md's standing promotion rule, promoted it out of Test Kitchen in the
+// same move (kind:'test-kitchen' -> kind:'internal' in panel-registry.js; it's reachable through
+// the merged Leaderboards nav entry now, not hidden behind ⚗ TEST KITCHEN). TopBottomTab is the
+// SAME body this file always computed (rankPerformers/normalize/PerformerRow unchanged) with the
+// ModalShell wrapper peeled off -- what was the title/subtitle row now renders as an ordinary top
+// row, since the host owns the outer RoutePanelShell.
+export function TopBottomTab({ stores, ds, onSelectStore }) {
   const { useState, useMemo } = React;
   const [metricKey, setMetricKey] = useState('sales');
   const [scope, setScope] = useState({ level: 'all', id: null });
@@ -78,10 +85,10 @@ export function TopBottomPerformers({ stores, ds, onClose, onSelectStore }) {
   const top = rows.slice(0, 5);
   const bottom = rows.length > 5 ? rows.slice(-5).reverse() : [];
 
-  return h(ModalShell, {
-    title: '🏆 Top/Bottom Performers', onClose, maxWidth: 720,
-    subtitle: 'Ranked at the individual store — never a cross-store average',
-  },
+  return div({},
+    // Was ModalShell's title/subtitle -- now an ordinary top row, same text.
+    div({ style: { padding: '0 0 10px', fontSize: 11, color: 'var(--text3)' } },
+      'Ranked at the individual store — never a cross-store average'),
     // Dispatch #104 -- 16 metrics as a flat pill row read as two wrapped rows in the owner's
     // screenshot ("cleaner look"). A <select> keeps identical semantics (one metricKey, one
     // active choice) in one line.
@@ -121,7 +128,7 @@ export function TopBottomPerformers({ stores, ds, onClose, onSelectStore }) {
         ? 'Figures are the true period total (Σ ÷ Σ) over the window, not a daily average. n = days used.'
         : 'Figures are the daily average over the window, not the period total — ratios are not '
           + 'volume-weighted. n = days of data.'),
-    div({ style: { overflowY: 'auto', flex: 1 } },
+    div({ style: {} },
       !direction ? div({ style: { padding: 20, fontSize: 12, color: 'var(--text3)' } },
         'This metric has no ruled direction yet — not rankable.') :
       !rows.length ? div({ style: { padding: 20, fontSize: 12, color: 'var(--text3)' } },

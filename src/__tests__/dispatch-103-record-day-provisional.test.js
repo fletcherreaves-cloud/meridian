@@ -5,7 +5,7 @@
 // math over a day whose DAR rows only covered through 15:00; the owner's own later export had
 // two more, slower, hours that would very likely have pushed the true full-day number worse).
 //
-// Renders the REAL RecordDayPanel/RecentBreakersTab consumer (not an isolated helper), per this
+// Renders the REAL RecordDayTab/RecentBreakersTab consumer (not an isolated helper), per this
 // repo's "would this verification still pass if reverted?" standing rule -- a test that only
 // imports computeRecords could pass unchanged with the panel's rendering of `isProvisional`
 // deleted. Mocks src/engine/metric-source.js the same way forms-panel.test.js mocks its loader,
@@ -45,13 +45,13 @@ vi.mock('../engine/metric-source.js', () => ({
   },
 }));
 
-import { RecordDayPanel } from '../views/record-day.js';
+import { RecordDayTab } from '../views/record-day.js';
 
 function baseDs() {
   return { loaded: true, storeIds: [LOC], laborRows: [] };
 }
 
-describe('#103 RecordDayPanel — same-day completeness gate, rendered through the real panel', () => {
+describe('#103 RecordDayTab — same-day completeness gate, rendered through the real panel', () => {
   let container, root;
   beforeEach(() => {
     container = document.createElement('div');
@@ -69,7 +69,7 @@ describe('#103 RecordDayPanel — same-day completeness gate, rendered through t
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-24T15:00:00')); // 3pm CT-ish, well after the 4am cutover -> business date 2026-08-24
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
     // Switch to the Recent Breaks tab.
     const tabs = [...container.querySelectorAll('button')];
@@ -89,7 +89,7 @@ describe('#103 RecordDayPanel — same-day completeness gate, rendered through t
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-24T15:00:00'));
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
     const tabs = [...container.querySelectorAll('button')];
     const speedTab = tabs.find(b => b.textContent.includes('Speed of Service'));
@@ -104,7 +104,7 @@ describe('#103 RecordDayPanel — same-day completeness gate, rendered through t
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-24T15:00:00'));
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
 
     // Now the trading day has closed and the DAR caught up: 08-24's OEPE settles at 101s
@@ -118,7 +118,7 @@ describe('#103 RecordDayPanel — same-day completeness gate, rendered through t
     root = createRoot(container);
     vi.setSystemTime(new Date('2026-08-25T09:00:00'));
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
     const tabs = [...container.querySelectorAll('button')];
     const speedTab = tabs.find(b => b.textContent.includes('Speed of Service'));
@@ -133,7 +133,7 @@ describe('#103 RecordDayPanel — same-day completeness gate, rendered through t
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-24T15:00:00'));
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
     const tabs = [...container.querySelectorAll('button')];
     const salesTab = tabs.find(b => b.textContent.includes('Sales & Volume'));

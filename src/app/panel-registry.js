@@ -120,7 +120,20 @@ export const PANELS = [
   // component (CountCycleSection, src/views/count-cycle-panel.js) is reused as-is, not deleted.
   { id:'count-cycle', label:'Count Cycle', icon:'📋', perm:'analytics.store', kind:'hub-tab', section:'inventory-food-cost' },
   { id:'eom-dashboard', label:'Inventory Control', icon:'📦', perm:'analytics.district', kind:'nav', section:'inventory-food-cost', route:true },
-  { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'nav', section:'operations' },
+  // eom-summary RETIRED 2026-08-28 (dispatch #202, owner-approved) — folded into the Inventory
+  // Control hub (eom-dashboard.js) as a new "Supervisor Rollup" mode/tab, alongside Scoreboard/
+  // EOM Count/Cadence/Count Cycle, same "harvest-then-remove" pattern dispatch #189 used for
+  // count-cycle (below). kind:'internal' (no sidebar entry any more) but the id stays registered
+  // so panel-registry.test.js's dispatch<->registry pairing keeps passing, and
+  // onOpenModal('eom-summary') (App.js) still resolves — it now redirects into eom-dashboard's
+  // Supervisor Rollup tab instead of opening the old standalone ModalShell. section: updated to
+  // 'inventory-food-cost' (its real new home, matching eom-dashboard's own section) rather than
+  // left at the stale 'operations' — CLAUDE.md's "section: must be truthful even when nothing
+  // renders it" rule, same correction count-cycle's own entry made below.
+  // Permission scoping (measured, not assumed — dispatch #202's explicit check): eom-summary's
+  // perm was already 'analytics.district', identical to eom-dashboard's own registry-level perm
+  // above — no widening, no narrowing, no internal gate needed for the new tab.
+  { id:'eom-summary', label:'EOM Supervisor', icon:'📊', perm:'analytics.district', kind:'internal', section:'inventory-food-cost' },
   // fcst-accuracy CONVERTED 2026-08-24 (dispatch #106 Phase B) from a standalone route:true
   // entry to kind:'hub-tab' -- same "opens a hub and selects a tab, no sidebar entry of its
   // own" pattern this registry already uses for sched-summary/labor-analysis/skills-matrix
@@ -260,8 +273,18 @@ export const PANELS = [
   { id:'proj-brief', label:'Proj Brief', icon:'', perm:'analytics.forecasting', kind:'internal', section:'daily' },
   { id:'promo-roi', label:'Promo / Discount ROI', icon:'🎟️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'pvsa', label:'Proj vs Actuals', icon:'◑', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', tkOrder:2 },
-  { id:'ranking', label:'Rankings', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports', route:true },
-  { id:'record-day', label:'Record Days', icon:'🏆', perm:'analytics.store', kind:'optional', section:'analytics' },
+  // 'ranking' -- dispatch #203 merged Record Days and Top/Bottom Performers into this panel as
+  // modes (store-dash.js's LeaderboardPanel); relabeled Rankings -> Leaderboards to reflect the
+  // three questions it now answers. Survived as the id/route because it was the most-established
+  // of the three (already kind:'nav', route:true here, vs record-day's 'optional' and
+  // top-bottom's 'test-kitchen' below).
+  { id:'ranking', label:'Leaderboards', icon:'🏆', perm:'analytics.store', kind:'nav', section:'reports', route:true },
+  // 'record-day' -- RETIRED (dispatch #203, 2026-08-28): folded into 'ranking' (LeaderboardPanel)
+  // as its Record Days mode. kind:'internal' (id kept for the dispatch<->registry pairing test,
+  // same "kept registered so old deep links redirect" pattern as channel-intel/time-punches);
+  // onOpenModal('record-day') now redirects into LeaderboardPanel's Record Days mode instead of
+  // no-oping. See store-dash.js's LeaderboardPanel header comment for the full reasoning.
+  { id:'record-day', label:'Record Days', icon:'🏆', perm:'analytics.store', kind:'internal', section:'analytics' },
   { id:'report', label:'Date-Range Report', icon:'📅', perm:null, kind:'nav', section:'daily', route:true },
   { id:'revintel', label:'Revenue', icon:'◈', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'sage', label:'SAGE', icon:'🧠', perm:null, kind:'nav', section:'analytics' },
@@ -328,7 +351,13 @@ export const PANELS = [
   // Dispatch #77 -- gated on analytics.district (a general leaderboard, not a Security panel;
   // must NOT inherit security.view), kind:'test-kitchen' with its real eventual section:'analytics'
   // set from day one, per the standing rule (promotion is a `kind:` flip only, dispatch #61).
-  { id:'top-bottom', label:'Top/Bottom Performers', icon:'🏆', perm:'analytics.district', kind:'test-kitchen', section:'analytics', tkOrder:12 },
+  // 'top-bottom' -- RETIRED from Test Kitchen (dispatch #203, 2026-08-28): folded into 'ranking'
+  // (LeaderboardPanel) as its Top/Bottom mode, promoting it out of Test Kitchen in the same move
+  // per CLAUDE.md's standing one-field `kind` flip promotion rule -- kind:'test-kitchen' ->
+  // kind:'internal' rather than 'nav', since it no longer has its own nav entry (it's reachable
+  // through 'ranking' now). tkOrder dropped (no longer a Test Kitchen panel). Same "kept
+  // registered so old deep links redirect" pattern as record-day just above.
+  { id:'top-bottom', label:'Top/Bottom Performers', icon:'🏆', perm:'analytics.district', kind:'internal', section:'analytics' },
   { id:'unified-targets', label:'Unified Targets', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'operations' },
   { id:'why-engine', label:'Why Engine', icon:'🔬', perm:'analytics.ai', kind:'optional', section:'analysis' },

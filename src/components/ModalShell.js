@@ -104,11 +104,17 @@ export function ModalShell({
 // REPLACES the view instead of interrupting it (memory/dispatch-27.md's rule). No backdrop, no
 // maxWidth cap, no centering — App.js's own content-area wrapper already supplies the scroll
 // container every other top-level view relies on, so this only needs to be a header + body.
-export function RoutePanelShell({ title, subtitle, icon, onBack, headerExtra, bodyStyle, children }) {
+// className/headerClassName (dispatch #202) — same print-targeted-hooks shape ModalShell above
+// already carries (see its own comment), added here because eom-summary.js's @media print rules
+// (previously keyed to a standalone ModalShell's backdrop/card/header classNames) now need to
+// key off RoutePanelShell instead, once EOM Supervisor folds into the Inventory Control hub as a
+// tab. Both default to undefined so every existing RoutePanelShell caller is unaffected.
+export function RoutePanelShell({ title, subtitle, icon, onBack, headerExtra, bodyStyle, className, headerClassName, children }) {
   return div(
-    { style: { display: 'flex', flexDirection: 'column', minHeight: '60vh' } },
+    { className, style: { display: 'flex', flexDirection: 'column', minHeight: '60vh' } },
     div(
       {
+        className: headerClassName,
         style: {
           padding: '4px 0 14px', borderBottom: '.5px solid var(--bdr)',
           display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14,

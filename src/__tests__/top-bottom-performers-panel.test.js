@@ -3,7 +3,7 @@
 // Dispatch #77 Step 3 -- Top/Bottom Performers is built entirely on the Step 1/2 direction
 // registry (engine/metric-source.js's METRIC_SOURCES `direction`). This is the "would this
 // verification still pass if reverted" bar the dispatch itself sets: renders the ACTUAL
-// TopBottomPerformers consumer, not rankPerformers() directly, so a bug in the panel's own
+// TopBottomTab consumer, not rankPerformers() directly, so a bug in the panel's own
 // sort/render wiring (e.g. hardcoding ascending order regardless of direction) fails this test
 // even though the engine function underneath would still be correct.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -11,7 +11,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 
-import { TopBottomPerformers } from '../views/top-bottom-performers.js';
+import { TopBottomTab } from '../views/top-bottom-performers.js';
 import { INV_ORG_COORDS } from '../constants.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -90,7 +90,7 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
   // Asserted on the rendered panel, not on a constant, so deleting the caption fails this.
   it('states on its surface that the figure is a daily average, not the period total', () => {
     const ds = mkFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: STORES, ds })); });
     const txt = container.textContent;
     expect(txt).toContain('daily average over the window');
     expect(txt).toContain('not the period total');
@@ -98,7 +98,7 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
 
   it('ranks by the higher-better metric (sales) with the higher store first', () => {
     const ds = mkFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: STORES, ds })); });
     // Sales is the default metric -- A (1000/day) must outrank B (500/day).
     expect(rankedLocs()).toEqual(['90001', '90002']);
   });
@@ -107,7 +107,7 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
   // selection semantics; only the picker's DOM shape changed.
   it('flips the ranking end-for-end when switching to a lower-better metric (Labor %) via the metric dropdown', () => {
     const ds = mkFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: STORES, ds })); });
     const select = container.querySelector('select');
     expect(select).toBeTruthy();
     const opt = [...select.options].find(o => o.textContent === 'Labor %');
@@ -122,7 +122,7 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
 
   it('excludes the thin (n=1) store from the ranked list instead of silently ranking it', () => {
     const ds = mkFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: STORES, ds })); });
     const text = container.textContent;
     expect(text).toContain('Insufficient data');
     expect(text).toContain('90003');
@@ -142,7 +142,7 @@ describe('Top/Bottom Performers (dispatch #77 Step 3)', () => {
   // always use mean-of-daily makes this fail (the sum-basis text would never appear).
   it('switches to the true period-total (Sum/Sum) disclaimer once the metric\'s numerator and denominator both resolve', () => {
     const ds = mkRatioSumFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: RATIO_STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: RATIO_STORES, ds })); });
     const select = container.querySelector('select');
     const opt = [...select.options].find(o => o.textContent === 'Labor %');
     act(() => {
@@ -197,7 +197,7 @@ describe('Top/Bottom Performers -- FOB % (dispatch #104)', () => {
 
   it('offers FOB % as a selectable metric and ranks the lower (better) store first', () => {
     const ds = mkFobFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: FOB_STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: FOB_STORES, ds })); });
     const select = container.querySelector('select');
     const opt = [...select.options].find(o => o.textContent === 'FOB %');
     expect(opt).toBeTruthy();
@@ -211,7 +211,7 @@ describe('Top/Bottom Performers -- FOB % (dispatch #104)', () => {
 
   it('ranks FOB % on the true Σnumerator/Σdenominator period basis, not mean-of-daily', () => {
     const ds = mkFobFixture();
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: FOB_STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: FOB_STORES, ds })); });
     const select = container.querySelector('select');
     const opt = [...select.options].find(o => o.textContent === 'FOB %');
     act(() => {
@@ -251,7 +251,7 @@ describe('Top/Bottom Performers -- location selector progressive reveal (dispatc
   const pillButtons = () => [...container.querySelectorAll('button')];
 
   it('shows only All + State pills by default -- no Patch or Store pills yet', () => {
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: REAL_STORES, ds: {}, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: REAL_STORES, ds: {} })); });
     const labels = pillButtons().map(b => b.textContent);
     expect(labels).toContain('All Locations');
     expect(labels).toContain('OK');
@@ -262,7 +262,7 @@ describe('Top/Bottom Performers -- location selector progressive reveal (dispatc
   });
 
   it('clicking a State pill reveals that state\'s Patch pills, still no Store pills', () => {
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: REAL_STORES, ds: {}, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: REAL_STORES, ds: {} })); });
     const okBtn = pillButtons().find(b => b.textContent === 'OK');
     act(() => { okBtn.click(); });
     const labels = pillButtons().map(b => b.textContent);
@@ -275,7 +275,7 @@ describe('Top/Bottom Performers -- location selector progressive reveal (dispatc
 
   it('clicking a Patch pill reveals that patch\'s Store pills, and selecting one scopes the ranking to it', () => {
     const ds = mkFixtureForLoc(okLoc1);
-    act(() => { root.render(React.createElement(TopBottomPerformers, { stores: REAL_STORES, ds, onClose: () => {} })); });
+    act(() => { root.render(React.createElement(TopBottomTab, { stores: REAL_STORES, ds })); });
     act(() => { pillButtons().find(b => b.textContent === 'OK').click(); });
     const patchBtn = pillButtons().find(b => b.textContent === INV_ORG_COORDS[okLoc1].sup);
     act(() => { patchBtn.click(); });

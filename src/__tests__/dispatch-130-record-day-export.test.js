@@ -2,7 +2,7 @@
 // @ts-nocheck
 // Dispatch #130 -- Record Day Intelligence print/export/PDF.
 //
-// Renders the REAL RecordDayPanel (not an isolated tabExportSpec helper) and drives the REAL
+// Renders the REAL RecordDayTab (not an isolated tabExportSpec helper) and drives the REAL
 // ExportDropdown -- lazy-loaded via React.lazy from store-dash.js, exactly the production path
 // -- through two different tabs, per this repo's "would this verification still pass if the
 // change were reverted?" rule (CLAUDE.md): a test that only imports a pure export-spec function
@@ -34,9 +34,9 @@ vi.mock('../engine/metric-source.js', () => ({
   },
 }));
 
-import { RecordDayPanel } from '../views/record-day.js';
+import { RecordDayTab } from '../views/record-day.js';
 
-// Pre-warm the dynamic import() RecordDayPanel's React.lazy(...) targets (store-dash.js, for
+// Pre-warm the dynamic import() RecordDayTab's React.lazy(...) targets (store-dash.js, for
 // ExportDropdown) so the module is already in the loader's cache before any test renders the
 // panel -- otherwise the first render's Suspense fallback can outlast a short flush loop while
 // esbuild/vitest transforms the 145 KB module for the first time.
@@ -55,7 +55,7 @@ async function flushLazy() {
   }
 }
 
-describe('#130 RecordDayPanel -- print/export reflects the currently active tab, via the real Export button', () => {
+describe('#130 RecordDayTab -- print/export reflects the currently active tab, via the real Export button', () => {
   let container, root, downloads, origCreateElement;
 
   beforeEach(() => {
@@ -102,7 +102,7 @@ describe('#130 RecordDayPanel -- print/export reflects the currently active tab,
 
   it('exporting from the Speed tab produces a speed-scoped filename, not a stale one', async () => {
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
     await switchTab('Speed of Service');
     await clickExportCsv();
@@ -113,7 +113,7 @@ describe('#130 RecordDayPanel -- print/export reflects the currently active tab,
 
   it('exporting from the Top Days tab (after visiting Speed first) produces a top-days-scoped filename', async () => {
     await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
+      root.render(React.createElement(RecordDayTab, { stores: [{ loc: LOC }], ds: baseDs() }));
     });
     // Visit Speed first, then switch to Top Days -- the regression this guards against is the
     // export staying pinned to whichever tab happened to be active when Export first mounted.
@@ -128,13 +128,8 @@ describe('#130 RecordDayPanel -- print/export reflects the currently active tab,
     expect(last).not.toMatch(/speed/);
   });
 
-  it('uses ModalShell -- no hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop', async () => {
-    await act(async () => {
-      root.render(React.createElement(RecordDayPanel, { stores: [{ loc: LOC }], ds: baseDs(), onClose: () => {} }));
-    });
-    // ModalShell's own close button carries aria-label="Close"; the panel's old hand-rolled
-    // '✕' button had no such label.
-    const closeBtn = container.querySelector('button[aria-label="Close"]');
-    expect(closeBtn).toBeTruthy();
-  });
+  // The old "uses ModalShell -- no hand-rolled backdrop" assertion moved: dispatch #203 peeled
+  // ModalShell off this component entirely (it's no longer a standalone shell-owning panel, just
+  // body content for the merged LeaderboardPanel host) -- see dispatch-203-leaderboard-merge.
+  // test.js for the equivalent host-level shell assertion (RoutePanelShell's Back button).
 });

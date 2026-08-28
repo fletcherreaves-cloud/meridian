@@ -1,4 +1,24 @@
 // @ts-nocheck
+// EOM Supervisor Summary — district-level monthly P&L variance rollup by store/supervisor/
+// operator. Dispatch #202 (2026-08-28): folded into the Inventory Control hub
+// (src/views/eom-dashboard.js) as a new "Supervisor Rollup" mode/tab, alongside
+// Scoreboard/EOM Count/Cadence/Count Cycle — same "harvest-then-remove" move dispatch #189 did
+// for Count Cycle (CountCycleSection, count-cycle-panel.js). The retired standalone route id
+// (eom-summary, panel-registry.js) redirects into this tab; see EOMDashboardPanel's
+// eomInitialMode==='supervisor' handling and App.js's onOpenModal('eom-summary') branch.
+// EOMSupervisorPanel itself (the component below) is unchanged in substance — it was already
+// content-only (no ModalShell/backdrop of its own; App.js's old showEOMSummary state supplied
+// the ModalShell wrapper externally), so it slots into EOMDashboardPanel's RoutePanelShell body
+// exactly like it slotted into the old standalone modal. Its own on-page print mechanism (below)
+// still works unmodified — the class hooks it targets are now supplied by RoutePanelShell's
+// className/headerClassName props instead of ModalShell's (see PRINT_STYLE's comment).
+//
+// Permission scoping (dispatch #202's explicit check): eom-summary's own perm was already
+// 'analytics.district' — identical to eom-dashboard's registry-level perm (panel-registry.js).
+// Measured, not assumed: there is no privilege mismatch to gate around here, unlike
+// SchedulingHubPanel's sched-hub (analytics.store) hosting one stricter-perm tab
+// (labor-analytics, analytics.labor) that IS internally gated via SCHED_TABS' own perm filter
+// (App.js). Folding this tab in widens nothing and narrows nothing.
 import * as React from 'react';
 import { STORE_NAMES, sNameC, DEF_SETTINGS } from '../constants.js';
 import { loadEbosMonthlyByStore } from '../lib/supabase.js';
@@ -626,9 +646,13 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 // ── Print styles ──────────────────────────────────────────────────────────────
 const PRINT_STYLE = `
 @media print {
-  /* Print ONLY the EOM summary as a clean full-page report. The summary is a MODAL, so we hide every other
-     child of the app root and strip the modal's own chrome — using display:none (NOT visibility) so no blank
-     space or phantom pages remain, and NO absolute positioning (so multi-page paginates in every browser).
+  /* Print ONLY the EOM summary as a clean full-page report. Dispatch #202: this panel is now a tab
+     inside the Inventory Control hub (RoutePanelShell, not its own ModalShell) — the class hooks
+     below (.mf-eom-print-modal/.mf-eom-print-card/.mf-eom-modal-chrome) are supplied by
+     EOMDashboardPanel via RoutePanelShell's className/headerClassName props (ModalShell.js), same
+     names, same shapes, just a different owner. We hide every other child of the app root and strip
+     the hub's own chrome — using display:none (NOT visibility) so no blank space or phantom pages
+     remain, and NO absolute positioning (so multi-page paginates in every browser).
      Scoped to body.eom-printing (set by the Print button, cleared on afterprint) so no other screen breaks. */
   body.eom-printing { background: #fff !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body.eom-printing .mf-app-root > *:not(.mf-eom-print-modal) { display: none !important; }

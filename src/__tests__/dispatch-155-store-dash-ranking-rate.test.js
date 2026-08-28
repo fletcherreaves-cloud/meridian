@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // @ts-nocheck
-// Dispatch #155 — renders the actual RankingView panel (not just the engine). DR_PRESETS
+// Dispatch #155 — renders the actual RankingTab panel (not just the engine). DR_PRESETS
 // includes a preset literally called 'today' ({s:d,e:d}, d=new Date()), a real, user-reachable
 // single-DAY selection — every other preset ends on addDR(new Date(),-1) (yesterday), so 'today'
 // is the only one that can include the current, still-open business day.
@@ -18,7 +18,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import { RankingView } from '../views/store-dash.js';
+import { RankingTab } from '../views/store-dash.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -35,7 +35,7 @@ function mkStore(loc, name) {
   };
 }
 
-describe("RankingView TPPH uses the Σ/Σ rollup for the 'Today' preset, ignoring a stale precomputed field (dispatch #155)", () => {
+describe("RankingTab TPPH uses the Σ/Σ rollup for the 'Today' preset, ignoring a stale precomputed field (dispatch #155)", () => {
   let container, root;
   afterEach(() => { act(() => { root?.unmount(); }); container?.remove(); });
 
@@ -53,9 +53,9 @@ describe("RankingView TPPH uses the Σ/Σ rollup for the 'Today' preset, ignorin
       ],
     };
     act(() => {
-      root.render(React.createElement(RankingView, {
+      root.render(React.createElement(RankingTab, {
         stores: [mkStore('10422', 'Test Store')], ds, settings: {}, dateRange: { s: today, e: today },
-        onDateChange: NOOP, defaultMetric: 'tpph', onSelectStore: NOOP, onClose: NOOP,
+        onDateChange: NOOP, defaultMetric: 'tpph', onSelectStore: NOOP,
       }));
     });
 
