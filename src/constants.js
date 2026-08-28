@@ -564,7 +564,9 @@ const OPTIONAL_PANELS = [
   // Still registered in panel-registry.js as kind:'internal' so old deep links redirect there.
   { id:'compare',       label:'Store Compare',      icon:'⇄',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Side-by-side comparison of two or more stores.' },
   { id:'gm-brief',      label:'GM Letters',         icon:'👨‍💼', perm:'analytics.store',   cat:'Store & Analytics', blurb:'Auto-drafted GM coaching letters.' },
-  { id:'channel-intel', label:'Channel Intel',      icon:'📊', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Channel-mix intelligence (DT / digital / delivery / kiosk).' },
+  // channel-intel — REMOVED from this Panel Manager toggle list (dispatch #201, 2026-08-28): it
+  // no longer has a sidebar entry to toggle, having been folded into 3PO Delivery's Overview
+  // tab. Still registered in panel-registry.js as kind:'internal' so old deep links redirect there.
   { id:'dar-daypart',   label:'DAR Analysis',       icon:'⏱', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Daypart-level DAR (daily activity) analysis.' },
   { id:'pmix',          label:'Product Mix',        icon:'🍔', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Product-mix breakdown by store/period.' },
   { id:'district-lens', label:'District Lens',      icon:'🌐', perm:'analytics.district', cat:'Store & Analytics', blurb:'District-wide lens / rollup view.' },

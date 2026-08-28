@@ -69,7 +69,16 @@ export const PANELS = [
   // onOpenModal('calendar-manager') below still redirects into Events & Tags' Calendar mode rather
   // than silently no-oping if anything still calls it.
   { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'internal', section:'planning' },
-  { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
+  // channel-intel — RETIRED as a standalone/optional panel (dispatch #201, 2026-08-28): its
+  // 5-channel overview (ChannelIntelligencePanel, formerly src/views/analytics.js) was folded
+  // into 3PO Delivery (delivery-mix.js's DeliveryMixPanel) as that panel's Overview tab — an
+  // overview + platform-drill-down pairing on the same Delivery slice. delivery-mix survives as
+  // the nav entry (already kind:'nav'; channel-intel was kind:'optional', Panel Manager only).
+  // kind:'internal' keeps the id registered (satisfies panel-registry.test.js's dispatch<->
+  // registry pairing) without a Panel Manager toggle, so onOpenModal('channel-intel') still
+  // redirects into DeliveryMixPanel's default (Overview) tab instead of no-oping. Same pattern
+  // as calendar-manager's (#191) and corr-explorer's (#195) retirements.
+  { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'internal', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
   // corr-explorer — RETIRED as a standalone/optional panel (dispatch #195, 2026-08-28): its
   // engine (plain Pearson) was replaced by Scanner's own statistics (Pearson+Spearman+effect-
