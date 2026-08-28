@@ -370,7 +370,8 @@ function ProfileMenu({ userRole, settings, onOpenModal, onSaveSession, onOpenAdm
         }),
         onLoadFiles && (!perm||perm('data.upload')) && item('↑', 'Load files', onLoadFiles),
         onSaveSession && item('💾', 'Save session to file', onSaveSession),
-        onOpenModal && item('❔', 'Help & guide', ()=>onOpenModal('help')),
+        onOpenModal && item('🧭', 'Workflow guide', ()=>onOpenModal('workflow')),
+        onOpenModal && item('?', 'Troubleshooting', ()=>onOpenModal('troubleshoot')),
         // User management moved into Settings → Users (Notes 54) — still reachable via the ⚙ gear.
         onToggleBeta && item('⚗', betaMode ? 'Show Test Kitchen' : 'Hide Test Kitchen', onToggleBeta),
         div({ style:{ borderTop:'.5px solid var(--bdr)', margin:'4px 0' } }),

@@ -195,6 +195,8 @@ const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-rev
 // lazy-loaded panel here; 'targets-editor' deep-links now redirect into perf-reviews below.
 const NewsPanel = lazyPanel(() => import('../views/news-panel.js').then(m => ({ default: m.NewsPanel })));
 const SecurityPanel = lazyPanel(() => import('../views/security-panel.js').then(m => ({ default: m.SecurityPanel })));
+// TroubleshootingPanel — dispatch #196: the app's real "Help" (two modes, End User/Developer).
+const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js').then(m => ({ default: m.TroubleshootingPanel })));
 // CountCyclePanel — dispatch #189: no longer its own lazyPanel entry here. It's still used,
 // but only as CountCycleSection, a tab inside EOMDashboardPanel (src/views/eom-dashboard.js
 // imports it directly from count-cycle-panel.js) — same "absorbed into the hub, no standalone
@@ -877,7 +879,8 @@ function App() {
   const [visitReadyInit,setVisitReadyInit]=useState(null);  // scope from a saved report (My Reports)
   const [showSchedSum,  setShowSchedSum]  =useState(false); // Weekly Schedule Summary
   // showDICompare — Dispatch27: replaced by routePanel==='dicompare' (see routePanel above).
-  const [showHelp,     setShowHelp]    = useState(false);
+  const [showWorkflow,     setShowWorkflow]    = useState(false);
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false); // dispatch #196 — new Troubleshooting panel
   const [showTutorial, setShowTutorial] = useState(() => shouldShowTutorial());
   const [briefScope,   setBriefScope]  = useState({scope:'district',label:'District'});
   const [lockedProjections, setLockedProjections] = useState(()=>{
@@ -2848,7 +2851,7 @@ function App() {
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
     showCompare||showCorrExplorer||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
-    showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
+    showGMBrief||showWorkflow||showTroubleshoot||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||
@@ -2877,7 +2880,7 @@ function App() {
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
-      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowHelp(false);
+      setShowDtSoS(false);setShowGradedVisits(false);setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowInventory(false);setShowKB(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);setShowLocIntel(false);
       setShowModelAssign(false);setShowEOMSummary(false);setShowOnePager(false);
@@ -3010,7 +3013,8 @@ function App() {
         // Performance Review -> Customize -> Targets so an old deep link doesn't 404.
         if(modal==='targets-editor') perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'targets'}),goRoute('perf-reviews'));
         if(modal==='events')         (setEventsMode('list'),setShowEvents(true));
-        if(modal==='help')           setShowHelp(true);
+        if(modal==='workflow')       setShowWorkflow(true);
+        if(modal==='troubleshoot')   setShowTroubleshoot(true);
         if(modal==='kb')             setShowKB(true);
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&setShowLocIntel(true);
@@ -3084,10 +3088,11 @@ function App() {
         betaMode,
         onToggleBeta: perm('users.manage.all') ? toggleBetaMode : null,
         onOpenModal: (modal) => {
-          if(modal==='settings')   setShowSettings(true);
-          if(modal==='help')       setShowHelp(true);
-          if(modal==='proj-brief') setShowProjBriefSA(true);
-          if(modal==='sage')       {setShowSage(true);setSageMin(false);}
+          if(modal==='settings')     setShowSettings(true);
+          if(modal==='workflow')     setShowWorkflow(true);
+          if(modal==='troubleshoot') setShowTroubleshoot(true);
+          if(modal==='proj-brief')   setShowProjBriefSA(true);
+          if(modal==='sage')         {setShowSage(true);setSageMin(false);}
         }
       }),
 
@@ -3428,12 +3433,12 @@ function App() {
     },
       h(ProjectionVsActualsReport,{stores,ds,settings,userEvents,onClose:()=>setShowPVSA(false)})
     ),
-    showHelp&&h(ModalShell,{
+    showWorkflow&&h(ModalShell,{
       title:'📖 Meridian — Workflow Guide',
-      onClose:()=>setShowHelp(false),maxWidth:800,zIndex:Z.nested,
+      onClose:()=>setShowWorkflow(false),maxWidth:800,zIndex:Z.nested,
       bodyStyle:{padding:'16px 20px',fontSize:'11px',lineHeight:1.7},
       headerExtra:btn({
-        onClick:()=>{setShowHelp(false);resetTutorial();setShowTutorial(true);},
+        onClick:()=>{setShowWorkflow(false);resetTutorial();setShowTutorial(true);},
         style:{padding:'5px 12px',fontSize:11,fontWeight:700,
           background:'var(--amber)',color:'#000',border:'none',borderRadius:6,cursor:'pointer'}
       },'▶ Start Tour')
@@ -3488,6 +3493,7 @@ function App() {
             )
           ))
     ),
+    showTroubleshoot&&h(TroubleshootingPanel,{onClose:()=>setShowTroubleshoot(false)}),
     showBrief&&h(ModalShell,{
       icon:'🧠',title:'Intelligence Brief — '+briefScope.label,
       subtitle:'AI-powered analysis · Sales trends · Ops correlations · Actionable coaching roadmap',

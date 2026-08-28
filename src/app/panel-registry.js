@@ -146,7 +146,27 @@ export const PANELS = [
   // Owner-answered 2026-08-21 (dispatch #54 Job B): "They would be more Operations" -- moved out
   // of People alongside visit-readiness below.
   { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations' },
-  { id:'help', label:'Help', icon:'?', perm:null, kind:'nav', section:'admin' },
+  // Dispatch #196 -- the former single 'help' entry split in two, and BOTH now carry the
+  // real section:'help' (not 'admin') -- SECTIONS below has always declared a 'help' section
+  // (label 'Help') that no panel actually used until now, exactly the "inert section" pattern
+  // CLAUDE.md's own kind/section rule warns about. Grouped together here out of declaration
+  // order on purpose, same precedent as the Planning cluster above (panelsForSection() renders
+  // in array order, and this pairing -- "learn the app" then "fix the app" -- is a deliberate
+  // reading order, not alphabetical).
+  //   'workflow' (was 'help') -- the daily/weekly onboarding checklist. Its modal already
+  //   titled itself "Workflow Guide" and its content was already workflow-shaped; only the
+  //   registry label/id were stale. id CHANGED (help -> workflow): this app has no URL-based
+  //   ?modal= deep-linking for non-route panels (checked -- no `searchParams`/`get('modal')`
+  //   reads anywhere), every "deep link" is an in-code onOpenModal('help') call site, and all
+  //   three were found and updated in the same PR (App.js's two onOpenModal chains, shell.js's
+  //   user-menu item) -- so a stale id costing a truthful label forever was the worse trade,
+  //   not a broken bookmark.
+  { id:'workflow', label:'Workflow', icon:'🧭', perm:null, kind:'nav', section:'help' },
+  // 'troubleshoot' -- the genuinely NEW panel (no prior surface existed anywhere in the app).
+  // Two modes (End User / Developer), src/views/troubleshooting.js. Inherits the '?' icon
+  // 'help' used to carry -- the owner's own framing is "Help should MEAN troubleshooting", so
+  // the icon universally read as "help" now sits on the panel that actually does that job.
+  { id:'troubleshoot', label:'Troubleshooting', icon:'?', perm:null, kind:'nav', section:'help' },
   // Dispatch #54 Job A found this had NO sidebar entry at all (only reachable via ?modal=inventory
   // deep link). Job B's Inventory & Food Cost section gives it a real one for the first time --
   // the owner's own list explicitly named it ("plus Inventory and Product Mix").
@@ -320,6 +340,9 @@ export const SECTIONS = [
   { id:'forecasting',        label:'Forecasting and Labor Projections' },
   { id:'forms',              label:'Forms' },
   { id:'intelligence',       label:'Intelligence' },
+  // Dispatch #196: this section id existed since Job B (2026-08-21) but no panel ever set
+  // section:'help' -- inert, exactly the pattern CLAUDE.md's kind/section rule warns about.
+  // Now truthfully populated by 'workflow' and 'troubleshoot' (see PANELS above).
   { id:'help',               label:'Help' },
   { id:'admin',              label:'Admin' },
 ];
