@@ -268,8 +268,7 @@ const LaborAllocationPanel = lazyPanel(() => import('../views/labor-allocation.j
 import { ScheduleSummaryPanel } from '../views/schedule-summary.js';
 import { SkillsMatrixPanel } from '../views/skills-matrix.js';
 const SagePanel = lazyPanel(() => import('../views/sage.js').then(m => ({ default: m.SagePanel })));
-import { FeatureRequestsPanel } from '../views/feature-requests.js';
-import { TaskQueuePanel } from '../views/task-queue.js';
+import { TaskQueuePanel } from '../views/task-queue.js'; // dispatch #194: absorbed Feature Requests -- see the panel's own header comment
 // #232 Finding 2: gated behind showDtSoS, statically imported. Its own chart.js/auto import was
 // the third of the three paths pulling Chart.js into the entry chunk — see the comment on the
 // dead top-of-file Chart import above.
@@ -949,8 +948,10 @@ function App() {
   const [showSage,            setShowSage]            = useState(false);
   const [sageMin,             setSageMin]             = useState(false); // SAGE minimized to a floating pill (session keeps running)
   const [sageBusy,            setSageBusy]            = useState(false); // SAGE is streaming/thinking (drives the pill's red/green light)
-  const [showFeatureRequests, setShowFeatureRequests] = useState(false);
   const [showTaskQueue,       setShowTaskQueue]       = useState(false);
+  // dispatch #194: pre-selects Task Queue's type filter when opened via the old
+  // ?modal=feature-requests deep link (or the Feature Request destination of SAGE's 🐞 Log).
+  const [tqInitialType,       setTqInitialType]       = useState(null);
   const [showStoreKB,         setShowStoreKB]         = useState(false);
   // showFcstRef — Dispatch #121: replaced by routePanel==='fcst-ref' (see routePanel above).
   // showFcstAccuracy — Dispatch27: replaced by routePanel==='fcst-accuracy', then dispatch #106
@@ -2856,7 +2857,7 @@ function App() {
     showEOMSummary||showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPerfCalc||showPriorityBrief||showProjBriefSA||
     showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showFeatureRequests||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showTargets||showUnifiedTargets||showWhyEngine||showChannelIntel||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2891,7 +2892,7 @@ function App() {
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
-      setShowFeatureRequests(false);setShowFormsLibrary(false);
+      setShowFormsLibrary(false);
       setShowFormsPrint(false);setShowMetricLineage(false);
       setShowReportSubs(false);
       setShowStoreVlhConfig(false);setShowTaskQueue(false);setShowTutorial(false);
@@ -3049,8 +3050,10 @@ function App() {
         if(modal==='labor-allocation') perm('analytics.store')&&(setSchedTab('allocation'),goRoute('sched-hub'));
         if(modal==='skills-matrix')   perm('analytics.store')&&(setSchedTab('skills'),goRoute('sched-hub'));
         if(modal==='sage')              {setShowSage(true);setSageMin(false);}
-        if(modal==='feature-requests')  setShowFeatureRequests(true);
-        if(modal==='task-queue')        setShowTaskQueue(true);
+        // dispatch #194: Feature Requests retired into Task Queue -- redirect the old deep link
+        // into the merged panel, pre-filtered to feature_request entries.
+        if(modal==='feature-requests')  {setTqInitialType('feature_request');setShowTaskQueue(true);}
+        if(modal==='task-queue')        {setTqInitialType(null);setShowTaskQueue(true);}
         if(modal==='attention')      goRoute('attention');
         if(modal==='forms-print')    setShowFormsPrint(true);
         // 'leader-one-pager' is no longer a registry id (dispatch #190 folded it into
@@ -3364,8 +3367,7 @@ function App() {
       span({style:{fontFamily:"'Syne',sans-serif",fontWeight:900,fontSize:'13px',color:'var(--text)'}},'🧠 SAGE'),
       span({style:{fontSize:'10px',fontWeight:700,color:sageBusy?'#ef4444':'#10b981'}},sageBusy?'working…':'ready'),
     ),
-    showFeatureRequests&&h(FeatureRequestsPanel,{ds,settings,onClose:()=>setShowFeatureRequests(false)}),
-    showTaskQueue&&h(TaskQueuePanel,{onClose:()=>setShowTaskQueue(false)}),
+    showTaskQueue&&h(TaskQueuePanel,{settings,initialType:tqInitialType,onClose:()=>setShowTaskQueue(false)}),
     showPriorityBrief&&h(DistrictPriorityBrief,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowPriorityBrief(false);},onClose:()=>setShowPriorityBrief(false)}),
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),

@@ -126,7 +126,16 @@ export const PANELS = [
   // choosing it over the dispatch's other candidate, "Forecasting Center". Not a proposal
   // anymore; do not re-open the naming question. See memory/dispatch-106.md's Resolution section.
   { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
-  { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
+  // feature-requests -- RETIRED as a nav entry (dispatch #194, 2026-08-28, owner-approved
+  // 2026-08-10): its content (SEED_ITEMS roadmap history, the Supabase-backed submit/vote/
+  // dev-notes flow, category/priority taxonomy) was harvested into Task Queue as a `type` field
+  // ('task' | 'feature_request') -- src/views/task-queue.js's own header comment has the full
+  // merge shape. Same pattern as calendar-manager just above: kind:'internal' keeps the id
+  // registered (satisfies panel-registry.test.js's dispatch<->registry pairing) with no sidebar
+  // link of its own, so the old ?modal=feature-requests deep link still redirects (into Task
+  // Queue, pre-filtered to type:'feature_request' -- App.js's onOpenModal) instead of doing
+  // nothing.
+  { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'internal', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   // Dispatch #188 -- merged into Food Cost as an "End of Month" mode (per the owner's
   // 2026-08-10 decision, memory/decisions-panel-inventory-2026-08-10.md). kind:'internal'
@@ -262,6 +271,9 @@ export const PANELS = [
   // pattern as fcst-accuracy/lifelenz-bridge above. Old deep links (modal==='targets-editor')
   // now open perf-reviews and select Customize > Targets instead of a standalone panel.
   { id:'targets-editor', label:'Targets Editor', icon:'🎯', perm:'reviews.customize', kind:'hub-tab', section:'people' },
+  // Dispatch #194 -- absorbed Feature Requests (id:'feature-requests', retired above): the panel
+  // now carries a `type` field ('task' | 'feature_request') distinguishing the two entry kinds
+  // within one list. See src/views/task-queue.js's header comment for the merge shape.
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
   // Time Punches (dispatch #138) -- real qsr_punch_times clock punches (shift+meal), the pull's
   // own output had NO UI anywhere until this panel (owner: "where do i find the time punches").

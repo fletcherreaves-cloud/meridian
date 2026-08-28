@@ -81,12 +81,33 @@ async function activeItemsFor(loc, cutoff) {
 }
 
 /** This store's own qsr_menu_items catalog item_numbers, if the table has rows for it. */
+// PAGINATED — dispatch #193 finding: a single fetch with `limit: '20000'` and no Range header
+// silently truncates at PostgREST's server-side db-max-rows cap (measured live, 2026-08-28: a
+// direct curl for qsr_menu_items?loc=eq.0003708&limit=20000 with NO Range header returned
+// `content-range: 0-999/*` — exactly 1000 rows, not 20000, no error). A store's full catalog is
+// ~5,466 rows (dispatch #186), so the un-paginated version of this function silently truncated
+// EVERY store's cross-reference to its first 1000 catalog rows, understating "in-catalog" (this
+// bug produced in-catalog=140 for store 3708 against the true ~329 — see
+// memory/finding-menu-item-activity-subset-2026-08-28.md's own 329/331 number, which came from
+// the CAPTURE FILE path, not this DB path, so it was never affected). Same class of bug as the
+// `loadQsrActSummary` 1000-row truncation CLAUDE.md already documents — a different script, same
+// silent cap.
 async function catalogItemNumbersFromDb(loc) {
-  const resp = await sbFetch('qsr_menu_items', { select: 'item_number', loc: `eq.${loc}`, limit: '20000' });
-  if (!resp.ok) return null; // table doesn't exist yet, or another error — fall back
-  const rows = await resp.json();
-  if (!Array.isArray(rows) || !rows.length) return null;
-  return new Set(rows.filter(r => r.item_number != null).map(r => Number(r.item_number)));
+  const items = new Map(); // item_number, not yet deduped by value — Set() below dedupes at the end
+  const PAGE = 1000;
+  let sawAny = false;
+  for (let from = 0; ; from += PAGE) {
+    const url = `${URL}/rest/v1/qsr_menu_items?${new URLSearchParams({ select: 'item_number', loc: `eq.${loc}` })}`;
+    const resp = await fetch(url, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, Range: `${from}-${from + PAGE - 1}` } });
+    if (!resp.ok) return sawAny ? new Set(items.keys()) : null; // table doesn't exist, or another error — fall back
+    const rows = await resp.json();
+    if (!Array.isArray(rows)) return sawAny ? new Set(items.keys()) : null;
+    if (rows.length) sawAny = true;
+    for (const r of rows) if (r.item_number != null) items.set(Number(r.item_number), true);
+    if (rows.length < PAGE) break;
+  }
+  if (!sawAny) return null; // table has no rows for this store yet — caller falls back to proxy
+  return new Set(items.keys());
 }
 
 async function main() {
