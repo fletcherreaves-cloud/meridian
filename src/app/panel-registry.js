@@ -48,15 +48,27 @@ export const PANELS = [
   { id:'attention', label:'Needs Attention', icon:'🔴', perm:null, kind:'nav', section:'daily' },
   { id:'brief', label:'Forecast Brief', icon:'🔭', perm:'analytics.brief', kind:'nav', section:'analytics' },
   // Planning cluster, in the owner's own stated order (dispatch #54 Job B, 2026-08-21): "Planning
-  // (the hub, keeping its five tabs) · Calendar · Events & Tags · Event Impact" -- four sidebar
-  // links, the hub NOT exploded (its five internal tabs stay kind:'hub-tab', see monthly-proj/
-  // pace-target/etc below). Grouped physically together here (not alphabetical, like the rest of
-  // this array) because panelsForSection() renders in PANELS declaration order and this order is
-  // an explicit owner decision, not incidental.
+  // (the hub, keeping its five tabs) · Events & Tags · Event Impact" -- three sidebar links, the
+  // hub NOT exploded (its five internal tabs stay kind:'hub-tab', see monthly-proj/pace-target/
+  // etc below). Grouped physically together here (not alphabetical, like the rest of this array)
+  // because panelsForSection() renders in PANELS declaration order and this order is an explicit
+  // owner decision, not incidental.
+  // (Was four links through 2026-08-27: Calendar merged into Events & Tags as its Calendar mode,
+  // dispatch #191, 2026-08-28, re-confirming the original 2026-08-10 merge decision -- see
+  // memory/decisions-panel-inventory-2026-08-10.md and memory/dispatch-191.md. calendar-manager
+  // stays registered below, kind:'internal', purely so a stray dispatch to the old id still
+  // redirects instead of doing nothing -- it is not a fifth link.)
   { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning' },
-  { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'nav', section:'planning' },
   { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
   { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'planning' },
+  // calendar-manager — RETIRED as a nav entry (dispatch #191, 2026-08-28): its distinct capability
+  // (month grid, recurring rules, AI-search/bulk-import pending review) was harvested into Events
+  // & Tags as a Calendar mode (App.js's EventsAndTagsPanel), CalendarManagerPanel component itself
+  // unchanged (features/calendar.js). kind:'internal' keeps the id registered (satisfies
+  // panel-registry.test.js's dispatch<->registry pairing) without a sidebar link, so
+  // onOpenModal('calendar-manager') below still redirects into Events & Tags' Calendar mode rather
+  // than silently no-oping if anything still calls it.
+  { id:'calendar-manager', label:'Calendar', icon:'📅', perm:'analytics.dashboard', kind:'internal', section:'planning' },
   { id:'channel-intel', label:'Channel Intel', icon:'📊', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'compare', label:'Store Compare', icon:'⇄', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'corr-explorer', label:'Metric Correlations', icon:'🔗', perm:'analytics.store', kind:'optional', section:'analysis' },
