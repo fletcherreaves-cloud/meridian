@@ -53,14 +53,17 @@ describe('registerTypeBreakdown', () => {
     expect(Object.keys(out)).toEqual([]);
   });
 
-  it('keys by loc::token, never by the raw employee name (identity-vault invariant)', () => {
+  it('keys by loc::token, not by the raw employee name — token stays the join/grouping key even though dispatch #200 also carries the name (empName) on each value', () => {
     const rows = [
       row({ emp: 'Real Person Name', empToken: 'tok-real', registerType: 'cashier' }),
       row({ emp: 'Real Person Name', empToken: 'tok-real', registerType: 'preparer' }),
     ];
     const out = registerTypeBreakdown(rows);
     expect(Object.keys(out)).toEqual(['0043380::tok-real']);
-    expect(JSON.stringify(out)).not.toContain('Real Person Name');
+    // Dispatch #200 (Task Group B) intentionally carries the plaintext name through now — the
+    // KEY is still the token (this test's own point), but the VALUE legitimately contains the
+    // name, same as analyzeRegisterAudit's own employee objects (register-audit-identity.test.js).
+    expect(out['0043380::tok-real'].byType.cashier.empName).toBe('Real Person Name');
   });
 
   it('analyzeRegisterAudit itself now carries registerTypes per employee, additive to the existing shape', () => {

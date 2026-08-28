@@ -558,7 +558,10 @@ const QSR_DAR_FIELDS = {
 const OPTIONAL_PANELS = [
   { id:'record-day',    label:'Record Days',        icon:'🏆', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Best-ever sales / volume record days per store.' },
   { id:'revintel',      label:'Revenue',            icon:'◈',  perm:'analytics.store',    cat:'Store & Analytics', blurb:'Revenue intelligence deep-dive by store/segment.' },
-  { id:'perf-calc',     label:'Performance Calc',   icon:'🧮', perm:'analytics.store',    cat:'Store & Analytics', blurb:'Ad-hoc performance / score calculator.' },
+  // perf-calc — REMOVED from this Panel Manager toggle list (dispatch #199, 2026-08-28): it no
+  // longer has a sidebar entry to toggle, having been folded into Performance Review ->
+  // Customize -> Calculator. Still registered in panel-registry.js as kind:'hub-tab' so old
+  // deep links redirect there. Same pattern as corr-explorer's dispatch #195 retirement below.
   // corr-explorer — REMOVED from this Panel Manager toggle list (dispatch #195, 2026-08-28): it
   // no longer has a sidebar entry to toggle, having been folded into Signals' Correlations tab.
   // Still registered in panel-registry.js as kind:'internal' so old deep links redirect there.

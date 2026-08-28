@@ -1,31 +1,52 @@
 // @ts-nocheck
 export default {version:'5.240', date:'2026-08-28', changes:[
-  'Dispatch #201 -- merged Channel Intel into 3PO Delivery: an overview + drill-down pairing on ' +
-  'the same Delivery slice. Channel Intel (ChannelIntelligencePanel, formerly src/views/' +
-  'analytics.js) was a 5-channel Drive-Thru/Breakfast/Delivery/MOP/Kiosk sales-mix overview; 3PO ' +
-  'Delivery (src/views/delivery-mix.js) is the platform-level DoorDash/UberEats/Grubhub drill-down ' +
-  'on that overview\'s Delivery bar specifically. delivery-mix.js survives as the nav entry ' +
-  '(already kind:\'nav\'; Channel Intel was kind:\'optional\', a Panel Manager toggle) with ' +
-  'Channel Intel\'s overview folded in as DeliveryMixPanel\'s new, default "Channel Overview" tab ' +
-  '-- land on the wide mix, click through to "Delivery Platforms" for the platform breakdown of ' +
-  'just the Delivery bar. Computations are unchanged and NOT unified (out of scope): Channel ' +
-  'Overview still reads ds.laborByLoc (Operations Report Sales-sheet channel columns), Delivery ' +
-  'Platforms still reads ds.cashRows (QSRSoft Cash Sheet, cloud auto-pulled) -- ported verbatim, ' +
-  'with two dead CSS-var-name fixes (var(--surface) -> var(--surf), var(--text1) -> var(--text); ' +
-  'neither token exists anywhere in meridian.css, so those rules were silently falling back to ' +
-  'inherited styling in the original panel -- not a computation change). channel-intel retired to ' +
-  'kind:\'internal\' in panel-registry.js (id kept for the dispatch<->registry pairing test) and ' +
-  'removed from constants.js\'s OPTIONAL_PANELS toggle list -- same "kept registered so old deep ' +
-  'links redirect" pattern as calendar-manager\'s (#191) and corr-explorer\'s (#195) retirements; ' +
-  'onOpenModal(\'channel-intel\') now redirects into DeliveryMixPanel\'s default Overview tab ' +
-  'instead of no-oping. Bonus, opportunistic panel-contract pass while already rewriting this ' +
-  'panel\'s render: delivery-mix.js\'s hand-rolled position:fixed/inset:0/rgba(0,0,0 backdrop is ' +
-  'gone, replaced by the shared ModalShell; its results table now scrolls horizontally on mobile ' +
-  'instead of clipping (overflowX:\'auto\'). Entry chunk budget: unaffected (both panels are lazy) ' +
-  '-- eager total 546.03 KB gzip vs a 546.10 KB baseline measured on the same pre-merge tree ' +
-  '(budget 850 KB); delivery-mix.js\'s own lazy chunk grew 2.64 -> 4.84 KB gzip absorbing the ' +
-  'overview logic, analytics.js shrank 92.09 -> 89.95 KB gzip losing it -- net movement between ' +
-  'two lazy chunks, no change to what loads eagerly. (Landed as v5.239 in the same-session PR, ' +
-  'then renumbered to v5.240 resolving an add/add conflict with dispatch #198\'s own 5.239.js, ' +
-  'merged to origin/main moments earlier -- see this PR\'s commit history.)',
+  'Dispatch #199 -- merged Performance Calculator into Performance Reviews\' Customize tab, the ' +
+  'same "harvest-then-remove" move dispatch #135 item 3 already did for Targets Editor. Checked ' +
+  'first whether the calculator\'s own scoring logic duplicated or diverged from review-engine.js\'s ' +
+  'rateMetric/ratingColor/computeScores, per the dispatch\'s explicit ask -- it does neither: ' +
+  'store-dash.js\'s PerformanceCalculator never imported those functions (grep-verified). They ' +
+  'score a PERSON\'s review against 1-4 rating bands from a KPI actual-vs-target deviation; the ' +
+  'calculator projects a STORE\'s operational metrics (OEPE seconds -> drive-thru cars/hour -> ' +
+  'guest-count conversion -> daily sales -> labor hours -> TPPH) from three slider inputs through a ' +
+  'fixed throughput formula. "Performance Calculator" and "Performance Reviews" share a name and a ' +
+  'section:\'people\', not an engine -- there was nothing to reconcile or switch over, so the move ' +
+  'is a pure relocation with the throughput math ported verbatim (new src/views/performance-' +
+  'calculator.js, PerformanceCalculatorSection, content-only -- no ModalShell/fixed-overlay/close ' +
+  'button, same pattern as targets-editor.js\'s TargetsEditorSection). New "Calculator" sub-tab ' +
+  'added to Performance Reviews\' Customize tab alongside Weights/Thresholds/Targets/Competencies/' +
+  'Logos. perf-calc retired to kind:\'hub-tab\' in panel-registry.js (kept its id so panel-' +
+  'registry.test.js\'s dispatch<->registry pairing still passes) and removed from constants.js\'s ' +
+  'OPTIONAL_PANELS toggle list; onOpenModal(\'perf-calc\') now redirects into Performance Reviews\' ' +
+  'Customize > Calculator via the existing perfReviewsEntry lifted-tab state (#135\'s mechanism, ' +
+  'reused rather than duplicated).' +
+  '\n\n' +
+  'RBAC note, flagged rather than silently absorbed: perf-calc was gated on perm:\'analytics.store\' ' +
+  '(true for every role, opt-in via Panel Manager). Performance Reviews\' Customize tab is gated on ' +
+  'perm:\'reviews.customize\', true only for Admin/Owner/Developer. Folding perf-calc into Customize ' +
+  '-- per this dispatch\'s explicit instruction to match #135\'s exact destination -- narrows who can ' +
+  'reach it: Supervisor/Manager/VP/GM/SM_AM_DM could previously enable and use it and now cannot ' +
+  'reach it at all (the redirect checks perm(\'reviews.customize\'), so it silently no-ops for them, ' +
+  'the same behavior #135\'s redirect already established for targets-editor). This is a real access-' +
+  'control side effect of matching the specified target location, not a change made unprompted; the ' +
+  'owner may want a broader-audience home for it later, but this dispatch\'s scope was the merge, ' +
+  'not an RBAC redesign.' +
+  '\n\n' +
+  'Panel-contract pass on the merged surface: the hand-rolled position:fixed/inset:0/rgba(0,0,0 ' +
+  'overlay + its own \'✕\' close button are gone (folded into an already-RoutePanelShell-wrapped ' +
+  'tab with no chrome of its own -- backdrop-bypass ratchet CEILING 68 -> 67, re-measured fresh, not ' +
+  'copied); the fixed 280px-sidebar two-column slider layout became a wrapping flex layout so it ' +
+  'stacks instead of overflowing on mobile. Two dead imports (getKB, lastClosedBusinessDay) removed ' +
+  'from store-dash.js now that PerformanceCalculator no longer lives there.' +
+  '\n\n' +
+  'New test: dispatch-199-perf-calc-customize.test.js renders the REAL PerformanceReviewsPanel -> ' +
+  'CustomizePanel -> PerformanceCalculatorSection chain (not an isolated helper, per this repo\'s ' +
+  '"would this verification still pass if reverted?" rule) and asserts the real calculator content ' +
+  '(sliders, Projected Impact, Impact Chain) renders under Customize > Calculator, both via a tab ' +
+  'click and via the initialTab/initialCustomizeSection redirect props.' +
+  '\n\n' +
+  'Verification: full suite 297/297 files, 3092/3092 tests passing (one unrelated flaky test in ' +
+  'dispatch-141-retention-rollup.test.js under full-suite parallel load, confirmed passing 17/17 in ' +
+  'isolation -- not touched by this change). npm run build clean; eager payload 546.04 KB / 850 KB ' +
+  'gzip budget (303.96 KB headroom) -- folding a lazy standalone panel into an already-lazy one is ' +
+  'close to size-neutral.',
 ]}
