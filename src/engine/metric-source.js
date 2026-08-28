@@ -538,9 +538,44 @@ Object.assign(METRIC_SOURCES, DERIVED_METRICS);
 // columns AND a report has been parsed since — see supabase/schema-glimpse-meals.sql.
 // Until then this chain resolves from Controls/Audit exactly as before, so wiring it early
 // is safe.
+//
+// 🔴 CASHIER-ONLY + SUMMED-ACROSS-EMPLOYEES on the auditRows leg of empMealAmt/mgrMealAmt/
+// mgrMealCnt (dispatch #183, memory/finding-audit-rows-registertype-duplication-2026-08-28.md).
+// Two compounding bugs, both fixed by this leg's [src, field, filter, 'sum'] tuple:
+//
+// 1) Register-type duplication. Dispatch #59 gave audit_rows one row per (loc,date,emp,
+//    register_type) — Cashier/Manager/Preparer, three separate API calls concatenated — on the
+//    audited assumption that every field genuinely differs by register, matching the existing
+//    "sum across types" design (register-audit.js's analyzeRegisterAudit). That holds for
+//    drawer-specific fields (drawerSales/drawerGC: measured genuinely different per type, e.g.
+//    one employee's Manager-call sales ≠ their Preparer-call sales the same day) — but NOT for
+//    meal $ fields. Live-measured (#181/#183): the Manager-type and Preparer-type API calls
+//    return IDENTICAL emp_meal_disc/mgr_meal_amt/mgr_meal_cnt values to each other for every
+//    store sampled (redistributed across different employee names within the day) — a QSRSoft
+//    report-shape quirk, not real incremental register activity. `_auditCashierOnly` below
+//    drops the Manager/Preparer legs.
+// 2) Per-employee grain treated as one row. auditRows is one row per EMPLOYEE (multiple cashier
+//    rows on any real day) — every other source in this chain (glimpseRows/ctrlRows) is one row
+//    per (loc,date). Before this fix, metricDaily/metricSeriesWithSource's "first row with a
+//    value wins" resolution (correct for every store-day-grain source) silently returned ONE
+//    arbitrary employee's meal $ as if it were the whole store's daily total — whichever
+//    employee's row happened to sort first, since loadAuditRows only orders by date. The 'sum'
+//    aggregation mode sums the field across every employee's Cashier-type row for the day.
+//
+// Fixed TOGETHER: Cashier-only alone regressed the per-day match rate (24%/10% — a single
+// employee's Cashier row is a worse proxy for the store total than the old three-type blend was
+// by coincidence); summed-cashier-only is what actually reconstructs the store-day total, and
+// that is what was verified: 98.0% empMealAmt / 97.8% mgrMealAmt same-day match against
+// qsr_cash_sheet over 2026-08-01..08-24, all 27 stores (647 store-days) — up from #181's
+// 71.3%/67.5%, well clear of the dispatch's ~90% bar. 26/27 stores land at ≥90%; only loc 10422
+// (66.7%) lags, not chased further here. NOT re-verified or fixed here: the same Manager==
+// Preparer duplication was also measured on posOverAmt (register-audit.js's own summed total),
+// a real, separate, unresolved lead for a future dispatch — see the finding doc's "not fixed
+// here" section before assuming register-audit.js's other summed fields are safe.
+const _auditCashierOnly = r => (r.registerType || 'cashier') === 'cashier';
 Object.assign(METRIC_SOURCES, {
-  empMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'empMealAmt'], ['ctrlRows', 'empMealAmt'], ['auditRows', 'empMealDisc']] },
-  mgrMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealAmt'], ['ctrlRows', 'mgrMealAmt'], ['auditRows', 'mgrMealAmt']] },
+  empMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'empMealAmt'], ['ctrlRows', 'empMealAmt'], ['auditRows', 'empMealDisc', _auditCashierOnly, 'sum']] },
+  mgrMealAmt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealAmt'], ['ctrlRows', 'mgrMealAmt'], ['auditRows', 'mgrMealAmt', _auditCashierOnly, 'sum']] },
   manualRefAmt: { mode: 'pos', srcs: [['ctrlRows', 'manualRefAmt'], ['auditRows', 'manualRefAmt']] },
   // Deposit $ — ctrl_rows carries it with 41,287 non-zero rows. It was on the manual-only
   // list purely because I checked the EMAILED streams and never checked whether the
@@ -551,7 +586,7 @@ Object.assign(METRIC_SOURCES, {
   // employee-count equivalent there (emp_meal_ch is a charge, not a count), so that one
   // is Glimpse-only until another source appears.
   empMealCnt:   { mode: 'pos', srcs: [['glimpseRows', 'empMealCnt']] },
-  mgrMealCnt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealCnt'], ['auditRows', 'mgrMealCnt']] },
+  mgrMealCnt:   { mode: 'pos', srcs: [['glimpseRows', 'mgrMealCnt'], ['auditRows', 'mgrMealCnt', _auditCashierOnly, 'sum']] },
 });
 
 export const MANUAL_ONLY_METRICS = {
@@ -764,15 +799,49 @@ function _srcIdx(ds, src) {
   return ds[cacheKey];
 }
 
+// Resolves one (src, field) leg's value for a single (loc,date)'s row array. Two aggregation
+// modes, selected by the srcs tuple's 4th element:
+//   'first' (default) — the existing "first row that has a real value wins" behaviour, correct
+//     for every source EXCEPT auditRows, which is one row per (loc,date,EMPLOYEE,register_type)
+//     rather than one row per (loc,date) like every other source this engine reads. Taking the
+//     first employee's row as "the store's day total" was always silently wrong on any day with
+//     more than one employee on the filtered register type — auditRows' per-employee grain never
+//     matched the store-day grain every other source (and this metric) actually needs.
+//   'sum' — sums `field` across every row in the array that passes `rowFilter` (or all rows, if
+//     no filter). Used by the auditRows leg of empMealAmt/mgrMealAmt/mgrMealCnt (dispatch #183,
+//     memory/finding-audit-rows-registertype-duplication-2026-08-28.md) to correctly total a
+//     store-day's meal $ across all cashier-type employee rows, cashier-only per that finding.
+//     A day whose filtered rows sum to a non-positive total (mode 'pos') is treated as "no value
+//     from this source," same as a single-row 0 would be — falls through to the next source.
+function _resolveLeg(rows, field, mode, rowFilter, aggMode) {
+  if (!rows) return undefined;
+  if (aggMode === 'sum') {
+    let sum = 0, any = false;
+    for (const r of rows) {
+      if (rowFilter && !rowFilter(r)) continue;
+      const v = r[field];
+      if (v != null && !isNaN(v)) { sum += v; any = true; }
+    }
+    return (any && _ok(sum, mode)) ? sum : undefined;
+  }
+  for (const r of rows) {
+    if (rowFilter && !rowFilter(r)) continue;
+    const v = r[field];
+    if (_ok(v, mode)) return v;
+  }
+  return undefined;
+}
+
 // Single-day value for a metric at (loc, date), auto-first. Returns null if no source has it.
 export function metricDaily(ds, loc, date, key) {
   const spec = METRIC_SOURCES[key];
   if (!ds || !spec) return null;
   if (spec.srcs) for (const [src] of spec.srcs) if (LAZY_FILL_SOURCES.includes(src)) _triggerLazyFill(src);
   const dkey = String(loc) + '_' + _dk(date);
-  for (const [src, field] of spec.srcs) {
+  for (const [src, field, rowFilter, aggMode] of spec.srcs) {
     const rows = _srcIdx(ds, src)[dkey];
-    if (rows) for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) return v; }
+    const v = _resolveLeg(rows, field, spec.mode, rowFilter, aggMode);
+    if (v !== undefined) return v;
   }
   return null;
 }
@@ -836,9 +905,10 @@ export function metricSeriesWithSource(ds, loc, range, key, _depth = 0) {
     }
   }
   for (const dk of dates) {
-    for (const [src, field] of spec.srcs) {
+    for (const [src, field, rowFilter, aggMode] of spec.srcs) {
       const rows = _srcIdx(ds, src)[L + '_' + dk];
-      if (rows) { let hit = false; for (const r of rows) { const v = r[field]; if (_ok(v, spec.mode)) { out[dk] = { value: v, source: src, field }; hit = true; break; } } if (hit) break; }
+      const v = _resolveLeg(rows, field, spec.mode, rowFilter, aggMode);
+      if (v !== undefined) { out[dk] = { value: v, source: src, field }; break; }
     }
   }
   // LAST RESORT: compute the metric for days no source could answer. A precomputed value
