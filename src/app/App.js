@@ -148,7 +148,8 @@ const _analytics = () => import('../views/analytics.js');
 // Correlations tab (signals.js's CorrelationsTab, now Scanner-statistics-powered). See
 // panel-registry.js's comment on corr-explorer.
 const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ default: m.DistrictLensPanel })));
-const TopBottomPerformers       = lazyPanel(() => import('../views/top-bottom-performers.js').then(m => ({ default: m.TopBottomPerformers })));
+// TopBottomPerformers -- RETIRED as its own lazyPanel (dispatch #203, 2026-08-28): merged into
+// LeaderboardPanel (below) as a mode; see panel-registry.js's comment on 'top-bottom'.
 const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
 const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
 const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
@@ -184,7 +185,9 @@ const PreForecastBrief   = lazyPanel(() => _projections().then(m => ({ default: 
 const _storeDash = () => import('../views/store-dash.js');
 const DistrictGrid         = lazyPanel(() => _storeDash().then(m => ({ default: m.DistrictGrid })));
 const OrgView               = lazyPanel(() => _storeDash().then(m => ({ default: m.OrgView })));
-const RankingView           = lazyPanel(() => _storeDash().then(m => ({ default: m.RankingView })));
+// LeaderboardPanel (dispatch #203) -- merges Rankings/Record Days/Top-Bottom Performers into one
+// route:true panel with three modes; see store-dash.js's own comment on LeaderboardPanel.
+const LeaderboardPanel       = lazyPanel(() => _storeDash().then(m => ({ default: m.LeaderboardPanel })));
 // PerformanceCalculator — dispatch #199 moved this UI into Performance Review -> Customize ->
 // Calculator (see performance-reviews.js's PerformanceCalculatorSection usage). No longer a
 // standalone lazy-loaded panel here; 'perf-calc' deep-links now redirect into perf-reviews below.
@@ -292,7 +295,11 @@ import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } f
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
 import { getOrgRoles, syncOrgRolesFromSupabase, hasPermission } from '../engine/permissions.js';
 import { SignOutBtn } from '../components/AuthGate.js';
-import { RecordDayPanel } from '../views/record-day.js';
+// RecordDayPanel -- RETIRED as a standalone import (dispatch #203, 2026-08-28): merged into
+// LeaderboardPanel (store-dash.js) as a mode, now reached only through that lazy chunk. This also
+// fixes a pre-existing entry-chunk quirk this file's own header comment used to flag: record-
+// day.js was previously one of the few views/ modules statically imported here instead of behind
+// lazyPanel() (see record-day.js's own updated header comment for the before/after).
 import { DatePicker, AppSidebar, AppTopbar } from '../app/shell.js';
 import { SwingAlarm } from '../components/SwingAlarm.js';
 import { ModalShell, RoutePanelShell, Z } from '../components/ModalShell.js';
@@ -793,6 +800,10 @@ function App() {
   // showRanking removed — dispatch #192: replaced by routePanel==='ranking' (see routePanel
   // gate below). rankingDefault stays local state (still passed through as defaultMetric).
   const [rankingDefault, setRankingDefault] = useState('score');
+  // leaderboardMode (dispatch #203) -- which of Rankings/Record Days/Top-Bottom the merged
+  // LeaderboardPanel opens on. Same pattern as rankingDefault just above: local state, synced
+  // into the panel via a prop, set by onOpenModal for the three ids that now all route here.
+  const [leaderboardMode, setLeaderboardMode] = useState('ranking');
   const [showTargets, setShowTargets]  = useState(false);
   // showTargetsEditor removed — dispatch #135 item 3 moved this UI into Performance Review ->
   // Customize -> Targets (perfReviewsEntry below drives the redirect for old deep links).
@@ -887,7 +898,8 @@ function App() {
   // routePanel above) as one of ForecastReportsPanel's two internal tabs.
   const [showCompare, setShowCompare]  = useState(false);
   const [showRevIntel,setShowRevIntel] = useState(false);
-  const [showTopBottom,setShowTopBottom] = useState(false); // Dispatch #77 Step 3
+  // showTopBottom — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
+  // opened via routePanel==='ranking' + leaderboardMode==='top-bottom' instead.
   const [showOpportunity,setShowOpportunity] = useState(false); // Opportunity $ v1
   // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle', then dispatch
   // #189 folded that route into routePanel==='eom-dashboard' (see routePanel above) as
@@ -962,7 +974,8 @@ function App() {
   const [showSMGVoice,        setShowSMGVoice]        = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
   // showPerfReviews — Dispatch #55 Part B: replaced by routePanel==='perf-reviews' (see routePanel above).
-  const [showRecordDay,       setShowRecordDay]       = useState(false);
+  // showRecordDay — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
+  // opened via routePanel==='ranking' + leaderboardMode==='record-day' instead.
   const [showAdminPanel,      setShowAdminPanel]      = useState(false);
   const [showDeliveryMix,     setShowDeliveryMix]     = useState(false);
   const [showScheduling,      setShowScheduling]      = useState(false);
@@ -2892,8 +2905,8 @@ function App() {
     showLocIntel||showModelAssign||
     showOnePager||showOperatorSummary||showPMix||showPVSA||showPace||showYearly||showVisitReady||showSchedSum||
     showPriorityBrief||showProjBriefSA||
-    showRevIntel||showTopBottom||showOpportunity||showSettings||showSmartTargets||showStoreKB||
-    showTargets||showUnifiedTargets||showWhyEngine||showRecordDay||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
+    showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
+    showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showDeliveryMix||showScheduling||showSMGVoice||showMonthlyProj||showFormsCompletion||showSage||showGradedVisits||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPlanningHub||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
   // Whatever caused this specific freeze, the deeper problem was that a
@@ -2923,8 +2936,8 @@ function App() {
       setShowModelAssign(false);setShowOnePager(false);
       setShowOperatorSummary(false);setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
-      setShowRevIntel(false);setShowTopBottom(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
-      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowRecordDay(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
+      setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowDeliveryMix(false);setShowScheduling(false);setShowSMGVoice(false);setShowMonthlyProj(false);setShowSage(false);setShowPlanningHub(false);setShowPanelManager(false);
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
       setShowDistrictLens(false);setShowEventImpact(false);
@@ -2981,7 +2994,7 @@ function App() {
       onSaveSession: handleSaveSession,
       onRestoreSession: handleRestoreSession,
       onOpenModal: (modal) => {
-        if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),goRoute('ranking'));
+        if(modal==='ranking'||modal.startsWith('ranking:')) perm('analytics.store')&&(setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score'),setLeaderboardMode('ranking'),goRoute('ranking'));
         if(modal==='aiscan')         perm('analytics.ai')&&setShowAIScan(p=>!p);
         if(modal==='why-engine')     perm('analytics.ai')&&setShowWhyEngine(true);
         // Scheduling hub (Notes 24): one modal, tabs. Legacy per-panel ids deep-link to the right tab.
@@ -3007,7 +3020,14 @@ function App() {
         if(modal==='planning')          perm('analytics.store')&&(setPlanningTab('targets'),setShowPlanningHub(true));
         if(modal==='monthly-proj')      perm('analytics.store')&&(setPlanningTab('monthly'),setShowPlanningHub(true));
         if(modal==='district-lens')  perm('analytics.district')&&setShowDistrictLens(true);
-        if(modal==='top-bottom')     perm('analytics.district')&&setShowTopBottom(true);
+        // 'top-bottom' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
+        // redirects into it on the Top/Bottom mode, same "route to the hub, select the tab"
+        // pattern as crew-schedule/time-punches (#197) above. Kept on its original
+        // analytics.district perm (stricter than Rankings/Record Days' analytics.store) --
+        // LeaderboardPanel itself still opens under analytics.store via the 'ranking' id/perm, so
+        // a user without analytics.district who somehow reaches this exact modal id just falls
+        // through the perm() gate as before, unchanged behavior.
+        if(modal==='top-bottom')     perm('analytics.district')&&(setLeaderboardMode('top-bottom'),goRoute('ranking'));
         if(modal==='opportunity-dollars') perm('analytics.district')&&setShowOpportunity(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
@@ -3086,7 +3106,9 @@ function App() {
         if(modal==='channel-intel')  perm('analytics.store')&&setShowDeliveryMix(true);
         if(modal==='dar-daypart')    perm('analytics.store')&&setShowDARDaypart(true);
         if(modal==='pmix')           perm('analytics.store')&&setShowPMix(true);
-        if(modal==='record-day')     perm('analytics.store')&&setShowRecordDay(true);
+        // 'record-day' — dispatch #203: merged into LeaderboardPanel as a mode; old modal id
+        // redirects into it on the Record Days mode, same pattern as 'top-bottom' above.
+        if(modal==='record-day')     perm('analytics.store')&&(setLeaderboardMode('record-day'),goRoute('ranking'));
         // 'perf-calc' — dispatch #199: no longer its own panel, redirects into Performance
         // Review -> Customize -> Calculator, same pattern as 'targets-editor' above. Gated on
         // reviews.customize (the Customize tab's real gate), not the panel's old broader
@@ -3194,6 +3216,7 @@ function App() {
         onOpenModal:(modal)=>{
           if(modal==='ranking'||modal.startsWith('ranking:')){
             setRankingDefault(modal.includes(':')?modal.split(':')[1]:'score');
+            setLeaderboardMode('ranking');
             goRoute('ranking');
           }
           else if(modal==='settings')setShowSettings&&setShowSettings(true);
@@ -3304,7 +3327,7 @@ function App() {
       // (same treatment as count-cycle-panel.js got in dispatch #55 Part B), so it's called
       // directly too.
       routePanel==='attention'&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null),onCoachingSaved:refreshCoachingCycles}),
-      routePanel==='ranking'&&h(RankingView,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
+      routePanel==='ranking'&&h(LeaderboardPanel,{stores,ds,settings,dateRange,onDateChange:setDateRange,defaultMetric:rankingDefault,mode:leaderboardMode,onModeChange:setLeaderboardMode,onSelectStore:s=>{goStore(s);goRoute(null);},onClose:()=>goRoute(null)}),
       routePanel==='security'&&h(RoutePanelShell,{
         title:'🔒 Security',
         onBack:()=>goRoute(null),
@@ -3327,7 +3350,8 @@ function App() {
   , // Modals rendered at root of the flex layout (position:fixed, so location in tree doesn't matter)
     showSettings &&h(Settings, {settings,onUpdate:saveSettings,onClose:()=>setShowSettings(false),userRole,onClearAll:handleClearAll,onOpenStoreNotes:()=>setShowStoreKB(true),onOpenAdmin:perm('users.manage.all')?()=>setShowAdminPanel(true):null}),
     // showRanking — Dispatch #192: moved to the routePanel gate in the main content area
-    // (RoutePanelShell now lives inside RankingView itself; see routePanel==='ranking').
+    // (RoutePanelShell now lives inside LeaderboardPanel itself; see routePanel==='ranking').
+    // Dispatch #203 then merged Record Days/Top-Bottom Performers into that same panel as modes.
     showTargets  &&h(MonthlyTargetManager,{userTargets,mergedTargets,onUpdate:saveUserTargets,onClose:()=>setShowTargets(false),ds}),
     // Planning hub (Notes 24): Targets / Monthly / Pace / Yearly / Smart Targets as lazy tabs
     showPlanningHub&&h(PlanningHubPanel,{ds,stores,settings,customSignalDefs,initialTab:planningTab,onClose:()=>setShowPlanningHub(false)}),
@@ -3371,11 +3395,11 @@ function App() {
     showWhyEngine&&h(WhyEnginePanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,onClose:()=>setShowWhyEngine(false)}),
     // perf-reviews — Dispatch #55 Part B: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside PerformanceReviewsPanel itself; see routePanel==='perf-reviews').
-    showRecordDay&&h(RecordDayPanel,{stores,ds,onClose:()=>setShowRecordDay(false)}),
+    // showRecordDay/showTopBottom — RETIRED (dispatch #203): merged into LeaderboardPanel, see
+    // routePanel==='ranking' in the main content area above.
     showAdminPanel&&h(AdminPanel,{onClose:()=>setShowAdminPanel(false),orgRoles,setOrgRoles}),
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
-    showTopBottom&&h(TopBottomPerformers,{stores,ds,onSelectStore:s=>{goStore(s);setShowTopBottom(false);},onClose:()=>setShowTopBottom(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
