@@ -632,6 +632,34 @@ function _logMfEventsWrite(label, obj) {
   } catch {}
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// EVENTS & TAGS  (merged with Calendar Manager — dispatch #191, 2026-08-28)
+// ════════════════════════════════════════════════════════════════════════════════
+// Owner-approved merge (memory/decisions-panel-inventory-2026-08-10.md), re-confirmed directly
+// 2026-08-28 after an apparent-but-mistaken reversal was flagged (memory/dispatch-191.md). The
+// two source panels are additive, not competing, so neither was rewritten — this is a thin mode
+// switch over both, the same "one shell, mode tabs swap the body" shape as EOMDashboardPanel
+// (eom-dashboard.js): EventCalendar (store-dash.js, "List" mode) is the REACTIVE view — every
+// tagged event, searchable/filterable/sortable, inline edit/remove, holiday auto-tag, CSV/print
+// export. CalendarManagerPanel (features/calendar.js, "Calendar" mode) is the PROACTIVE view —
+// month grid, recurring rules, AI-search + bulk-import pending review. `mode`/`onModeChange` are
+// owned by App (not local state here) so a saved-report launch (ReportSubscriptions' onLaunch,
+// 'calendar' report) and the retired calendar-manager dispatch id (see onOpenModal below) can
+// both open straight into Calendar mode from outside this component.
+function EventsAndTagsPanel({stores, ds, settings, userEvents, onUpdate, onClose, mode, onModeChange, initialScope}) {
+  const toggle = div({style:{display:'flex',gap:3}},
+    ...[['list','📋 List'],['calendar','📆 Calendar']].map(([id,l]) =>
+      btn({key:id, className:'btn btn-sm', style:{fontSize:'9px',fontWeight:mode===id?700:400,
+          background:mode===id?'var(--adim)':'transparent',
+          color:mode===id?'var(--amber)':'var(--text3)',
+          border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
+        onClick:()=>onModeChange(id)}, l))
+  );
+  return mode==='calendar'
+    ? h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate,onClose,initialScope,viewToggle:toggle})
+    : h(EventCalendar,{userEvents,onUpdate,onClose,stores,viewToggle:toggle});
+}
+
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
   // from production React, so the v4.917 attempt recorded nothing at all in the deployed app.
@@ -785,7 +813,10 @@ function App() {
   const [showDARDaypart,  setShowDARDaypart]  = useState(false);
   const [showPMix,        setShowPMix]        = useState(false);
   const [showEvents, setShowEvents]    = useState(false);
-  const [showCalendarManager, setShowCalendarManager] = useState(false);
+  // eventsMode (dispatch #191, 2026-08-28) — 'list' | 'calendar'. Replaces the old
+  // showCalendarManager boolean now that Calendar Manager is a mode of Events & Tags rather than
+  // its own panel; see EventsAndTagsPanel above and the calInitScope reuse below.
+  const [eventsMode, setEventsMode] = useState('list');
   const [showEventImpact, setShowEventImpact] = useState(false);
   // showAboveStore — dispatch #160: replaced by routePanel==='above-store' (see routePanel
   // above) as part of the panel-contract pass (memory/panel-contract.md item 1/4) —
@@ -2795,7 +2826,7 @@ function App() {
     showDistrictLens||showEventImpact||
     showFormsLibrary||showFormsPrint||showMetricLineage||
     showReportSubs||showStoreVlhConfig||showTaskQueue||showTutorial||
-    showCalendarManager||showCompare||showCorrExplorer||showDARDaypart||
+    showCompare||showCorrExplorer||showDARDaypart||
     showDataManager||showDialedIn||showDtSoS||showEvents||
     showGMBrief||showHelp||showInventory||showKB||showLFZGap||showLaborAnalytics||
     showLocIntel||showModelAssign||
@@ -2817,7 +2848,7 @@ function App() {
       // a view that's no longer showing any of them.
       if(routePanel){goRoute(null);return;}
       setShowAIScan(false);setShowAbout(false);setShowAttention(false);
-      setShowAudit(false);setShowBrief(false);setShowCalendarManager(false);setShowCompare(false);
+      setShowAudit(false);setShowBrief(false);setShowCompare(false);
       setShowCorrExplorer(false);setShowDARDaypart(false);
       // Dispatch #72 A3 -- setShowDev/setShowInsights never existed (no matching useState
       // anywhere in this file): an unconditional ReferenceError on EVERY Escape press, which
@@ -2960,7 +2991,7 @@ function App() {
         // 'targets-editor' — dispatch #135 item 3: no longer its own panel, redirects into
         // Performance Review -> Customize -> Targets so an old deep link doesn't 404.
         if(modal==='targets-editor') perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'targets'}),goRoute('perf-reviews'));
-        if(modal==='events')         setShowEvents(true);
+        if(modal==='events')         (setEventsMode('list'),setShowEvents(true));
         if(modal==='help')           setShowHelp(true);
         if(modal==='kb')             setShowKB(true);
         if(modal==='smart-targets')  setShowSmartTargets(true);
@@ -2977,7 +3008,9 @@ function App() {
         if(modal==='store-kb')       perm('analytics.store')&&setShowStoreKB(true);
         if(modal==='one-pager')      perm('analytics.store')&&setShowOnePager(true);
         if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
-        if(modal==='calendar-manager') perm('analytics.dashboard')&&setShowCalendarManager(true);
+        // calendar-manager — RETIRED id (dispatch #191, 2026-08-28), redirects into Events & Tags'
+        // Calendar mode rather than doing nothing; see panel-registry.js's comment on this id.
+        if(modal==='calendar-manager') perm('analytics.dashboard')&&(setEventsMode('calendar'),setShowEvents(true));
         if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
         if(modal==='above-store')    perm('analytics.district')&&goRoute('above-store');
         if(modal==='my-reports')     perm('analytics.dashboard')&&setShowReportSubs(true);
@@ -3209,15 +3242,19 @@ function App() {
     showVisitReady&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{setShowVisitReady(false);setVisitReadyInit(null);}}),
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
-    showEvents   &&h(EventCalendar,{userEvents,onUpdate:saveUserEvents,onClose:()=>setShowEvents(false),stores}),
-    showCalendarManager&&h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,initialScope:calInitScope,onClose:()=>{setShowCalendarManager(false);setCalInitScope(null);}}),
+    // Events & Tags — merged with Calendar Manager (dispatch #191): EventsAndTagsPanel switches
+    // between EventCalendar ('list') and CalendarManagerPanel ('calendar') via eventsMode, both
+    // still full components, unmodified beyond the shared viewToggle header slot.
+    showEvents   &&h(EventsAndTagsPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,
+      mode:eventsMode,onModeChange:setEventsMode,initialScope:calInitScope,
+      onClose:()=>{setShowEvents(false);setEventsMode('list');setCalInitScope(null);}}),
     showEventImpact&&h(EventImpactPanel,{onClose:()=>setShowEventImpact(false)}),
     // showAboveStore — Dispatch #160: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside AboveStoreOnePager itself; see routePanel==='above-store').
     showReportSubs&&h(ReportSubscriptions,{onClose:()=>setShowReportSubs(false),
       onLaunch:(sub)=>{
         setShowReportSubs(false);
-        if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setShowCalendarManager(true); }
+        if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsMode('calendar'); setShowEvents(true); }
         else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); setShowVisitReady(true); }
         else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
       }}),

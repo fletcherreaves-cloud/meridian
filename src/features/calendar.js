@@ -22,6 +22,13 @@ const tr   = (props, ...c) => h('tr',     props, ...c);
 // ════════════════════════════════════════════════════════════════════════════════
 // CALENDAR MANAGER  (v4.200 — Calendar System)
 // ════════════════════════════════════════════════════════════════════════════════
+// Merged into "Events & Tags" as its Calendar mode (dispatch #191, 2026-08-28) — no longer its
+// own nav entry/registry id (`calendar-manager` retired). This component is unchanged; App.js's
+// EventsAndTagsPanel wrapper switches between this and EventCalendar (store-dash.js, the List
+// mode) via the viewToggle prop below. Comments below still say "hub"/standalone panel language
+// from before the merge — accurate about what this component DOES, just not about how it's
+// reached any more.
+//
 // The proactive hub for managing known future events across the district —
 // the piece that converts the event system from reactive (tag what already
 // happened) to proactive (know what's coming before it happens). Three parts:
@@ -42,7 +49,12 @@ const tr   = (props, ...c) => h('tr',     props, ...c);
 // Why Engine when it's built) sees these events identically to a manually
 // tagged one — no separate code path to keep in sync.
 // ─────────────────────────────────────────────────────────────────────────────
-function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClose, initialScope}) {
+// viewToggle (dispatch #191, 2026-08-28) — optional ReactNode, the List/Calendar mode switcher
+// rendered by the merged EventsAndTagsPanel wrapper (App.js) so this panel and its sibling
+// EventCalendar (views/store-dash.js, "Events & Tags") can be swapped without either owning the
+// other's state. Undefined/falsy when CalendarManagerPanel is rendered standalone — nothing
+// renders in that case.
+function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClose, initialScope, viewToggle}) {
   const {useState:uSt, useMemo:uM, useRef:uR} = React;
   const today = new Date();
   const [viewY, setViewY] = uSt(today.getFullYear());
@@ -704,6 +716,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
           title:'Generate the retail/shopping calendar — OK tax-free weekend, FL back-to-school holiday, Black Friday / Small Business Saturday / Cyber Monday. Reviewed before anything is written.',
           onClick:()=>{setShowBulk(true);setBulkError('');setBulkBusy(false);onRetailGenerate();}},
           '🛍 Retail Events'),
+        viewToggle,
         btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
       ),
 
