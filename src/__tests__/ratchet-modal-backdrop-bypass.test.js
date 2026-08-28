@@ -48,8 +48,12 @@ const ROOTS = ['src/views', 'src/features'];
 // panel body) sitting UNDER the RoutePanelShell App.js already wrapped it in — real double
 // chrome, not just an extra backdrop pattern. Both removed; RoutePanelShell now lives inside the
 // component (same "shell inside the component" pattern as sched-hub/count-cycle/etc), matching
-// the count this test measured fresh on this dispatch's own branch.
-const CEILING = 73;
+// the count this test measured fresh on this dispatch's own branch. Lowered 73 → 70 by dispatch
+// #192 (URL migration batch 1): AttentionPanel (analytics.js), RankingView (store-dash.js) and
+// PromoRoiPanel (promo-roi.js) each hand-rolled this exact backdrop shape and were converted to
+// RoutePanelShell as part of their route:true conversion
+// (routePanel==='attention'/'ranking'/'promo-roi').
+const CEILING = 70;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

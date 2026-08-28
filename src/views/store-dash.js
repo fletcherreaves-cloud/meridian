@@ -17,6 +17,7 @@ import { TH, f$, fPct, fP, fN, grade, gLbl, gCol, escapeHtml as esc } from '../u
 import { ymKey, loadTargetsV2, saveTargetsV2, migrateTargetsToV2 } from '../engine/monthly-targets-v2.js';
 import { lastPriceChangeByStore } from '../engine/price-events.js';
 import { TOL_METRICS, TOL_SPEC, tolValuesForLoc, tolFobMonthly, tolMergedTarget, tolStatus, TOL_STATUS_COLOR, TOL_STATUS_ICON } from '../engine/tolerance-status.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 const {useState, useEffect, useCallback, useMemo, useRef} = React;
 const h    = React.createElement;
@@ -2333,28 +2334,24 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
       return m.higherBetter===false?va-vb:vb-va;
     });
 
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
-    div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:640,display:'flex',flexDirection:'column',maxHeight:'88vh',overflow:'hidden'}},
-      div({style:{padding:'10px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
-        div({style:{fontSize:'14px',fontWeight:800,color:'var(--text)'}},'🏆 District Rankings'),
-        DR&&div({style:{fontSize:'8px',color:'var(--text3)',padding:'2px 7px',borderRadius:3,background:'rgba(255,255,255,.05)',border:'.5px solid var(--bdr)',marginLeft:4}},
-          'Period: '+(DR.label||new Date(DR.s).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+new Date(DR.e).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))),
-        div({style:{display:'flex',gap:6,alignItems:'center',marginLeft:'auto'}},
-          h(ExportDropdown,{
-            title:'Store Rankings',
-            filename:'rankings_'+new Date().toISOString().slice(0,10),
-            rows:sorted.map(s=>({
-              Store: sName(s.loc),
-              [m.l]: m.fmt(m.fn(s)),
-              'Labor %': s.p.laborPct!=null?((s.p.laborPct*100).toFixed(2)+'%'):'—',
-              'TPPH': s.p.tpph!=null?s.p.tpph.toFixed(2):'—',
-              'OEPE': s.p.oepe?Math.round(s.p.oepe)+'s':'—',
-              'Sales': s.p.sales>0?f$(s.p.sales):'—',
-            })),
-          }),
-          btn({onClick:onClose,style:{background:'none',border:'none',color:'var(--text2)',fontSize:20,cursor:'pointer'}},'✕'))
-      ),
-      onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',background:'var(--surf2)'}},
+  return h(RoutePanelShell,{
+    title:'🏆 District Rankings',
+    subtitle:DR&&('Period: '+(DR.label||new Date(DR.s).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' – '+new Date(DR.e).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))),
+    onBack:onClose,
+    headerExtra:h(ExportDropdown,{
+      title:'Store Rankings',
+      filename:'rankings_'+new Date().toISOString().slice(0,10),
+      rows:sorted.map(s=>({
+        Store: sName(s.loc),
+        [m.l]: m.fmt(m.fn(s)),
+        'Labor %': s.p.laborPct!=null?((s.p.laborPct*100).toFixed(2)+'%'):'—',
+        'TPPH': s.p.tpph!=null?s.p.tpph.toFixed(2):'—',
+        'OEPE': s.p.oepe?Math.round(s.p.oepe)+'s':'—',
+        'Sales': s.p.sales>0?f$(s.p.sales):'—',
+      })),
+    }),
+  },
+      onDateChange&&div({style:{padding:'5px 14px',borderBottom:'.5px solid var(--bdr)',display:'flex',gap:3,flexWrap:'wrap',background:'var(--surf2)',marginBottom:6}},
         span({style:{fontSize:'8px',color:'var(--text3)',alignSelf:'center',marginRight:4}},'Filter period:'),
         DR_PRESETS.map(p=>btn({key:p.id,className:'btn btn-sm',
           style:{fontSize:'8px',padding:'2px 6px',
@@ -2410,7 +2407,6 @@ function RankingView({stores, ds, settings, dateRange, onDateChange, defaultMetr
           );
         })
       )
-    )
   );
 }
 

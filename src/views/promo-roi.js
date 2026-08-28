@@ -18,6 +18,7 @@
 import * as React from 'react';
 import { computePromoDiscountRoi } from '../engine/promo-roi.js';
 import { STORE_NAMES } from '../constants.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 
 // Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -246,29 +247,27 @@ export function PromoRoiPanel({ ds, userEvents, onClose }) {
     if (hasExportable) openPrintReport(promoRoiPrintHtml(roi, marginPct, covWindow));
   }, [hasExportable, roi, marginPct, covWindow]);
 
-  return h('div', { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 } },
-    h('div', { style: { flex: '0 0 20px', cursor: 'pointer' }, onClick: onClose }),
-    h('div', { style: { flex: 1, background: 'var(--surf)', maxWidth: 1080, margin: '0 auto', width: 'calc(100% - 24px)', borderRadius: 'var(--rl) var(--rl) 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 -8px 40px rgba(0,0,0,.4)' } },
-      // Header
-      h('div', { style: { padding: '10px 16px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0, background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-        h('span', { style: { fontSize: 18 } }, '🎟️'),
-        h('div', { style: { flex: 1, minWidth: 180 } },
-          h('div', { style: { fontSize: 14, fontWeight: 800, color: 'var(--text)' } }, 'Promo / Discount ROI'),
-          h('div', { style: { fontSize: 9, color: 'var(--text3)' } }, 'Matched-day lift — real calendar-tagged promo days vs untagged days within each weekday. Directional, not a controlled trial.')),
-        h('span', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)' } }, 'Incremental margin'),
-        h('input', { type: 'range', min: 10, max: 60, step: 5, value: marginPct, onChange: e => setMarginPct(+e.target.value), style: { width: 90 } }),
-        h('span', { style: { fontSize: 11, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--amber)', width: 34 } }, marginPct + '%'),
-        // Dispatch #147 -- print/export toolbar, both levers at the current margin setting.
-        exportSpec && h('div', { style: { display: 'flex', gap: 6 } },
-          h(React.Suspense, {
-            fallback: h('button', { className: 'btn btn-sm', style: { opacity: .5 }, disabled: true }, '⬇ Export') },
-            h(LazyExportDropdown, { rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename }),
-          ),
-          h('button', { className: 'btn btn-sm', onClick: handlePrintReport }, '🖨 Print Report'),
+  return h(RoutePanelShell, {
+    title: 'Promo / Discount ROI',
+    icon: '🎟️',
+    subtitle: 'Matched-day lift — real calendar-tagged promo days vs untagged days within each weekday. Directional, not a controlled trial.',
+    onBack: onClose,
+    headerExtra: h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+      h('span', { style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)' } }, 'Incremental margin'),
+      h('input', { type: 'range', min: 10, max: 60, step: 5, value: marginPct, onChange: e => setMarginPct(+e.target.value), style: { width: 90 } }),
+      h('span', { style: { fontSize: 11, fontWeight: 800, fontFamily: 'var(--mono)', color: 'var(--amber)', width: 34 } }, marginPct + '%'),
+      // Dispatch #147 -- print/export toolbar, both levers at the current margin setting.
+      exportSpec && h('div', { style: { display: 'flex', gap: 6 } },
+        h(React.Suspense, {
+          fallback: h('button', { className: 'btn btn-sm', style: { opacity: .5 }, disabled: true }, '⬇ Export') },
+          h(LazyExportDropdown, { rows: exportSpec.rows, columns: exportSpec.columns, title: exportSpec.title, filename: exportSpec.filename }),
         ),
-        h('button', { className: 'btn btn-sm', style: { color: 'var(--text3)' }, onClick: onClose }, '✕')),
+        h('button', { className: 'btn btn-sm', onClick: handlePrintReport }, '🖨 Print Report'),
+      ),
+    ),
+  },
       // Body
-      h('div', { style: { flex: 1, overflowY: 'auto', padding: '14px 16px' } },
+      h('div', { style: { padding: '0 0 14px' } },
         (!roi || roi.nRecords < 20) ? h('div', { style: { padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 } },
           h('div', { style: { fontSize: 26, marginBottom: 10 } }, '🎟️'),
           'Not enough daily promo/discount data loaded yet. This reads the auto-synced Daily Glimpse (promo) and Controls (discount) streams — sync or upload a few weeks and it fills in.')
@@ -295,5 +294,5 @@ export function PromoRoiPanel({ ds, userEvents, onClose }) {
           h(LeverSection, { title: 'Promotions', icon: '🎉', data: roi.promo, marginRate: roi.marginRate }),
           h(LeverSection, { title: 'Discounts', icon: '🏷️', data: roi.discount, marginRate: roi.marginRate }),
           h('div', { style: { fontSize: 9, color: 'var(--text3)', lineHeight: 1.6, marginTop: 6 } },
-            '⚙ Matched-day design controls for weekday; the tagged/untagged split is a verified-exogenous calendar fact, not a function of the sales it measures. Still association with controls, not a randomized trial — treat as a directional screen for where to dig. Incremental margin is a district assumption you set above; per-store product mix varies.')))));
+            '⚙ Matched-day design controls for weekday; the tagged/untagged split is a verified-exogenous calendar fact, not a function of the sales it measures. Still association with controls, not a randomized trial — treat as a directional screen for where to dig. Incremental margin is a district assumption you set above; per-store product mix varies.'))));
 }
