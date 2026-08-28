@@ -27,7 +27,13 @@ const PARAM = 'panel';
 // unknown id — so it's redirected here to the id that now hosts it. App.js separately reads the
 // RAW (pre-redirect) query param once on mount to seed AboveStoreOnePager's `initialView` so the
 // redirected panel opens directly in Leadership Cascade scope, not the default Rollup one.
-const LEGACY_PANEL_REDIRECTS = { 'leader-one-pager': 'above-store' };
+//
+// Dispatch #197 (2026-08-28) — 'time-punches' (Time Punches) retired the same way, merged into
+// 'crew-schedule' (Crew Schedule Lookup) as a Punches tab. Same shape as leader-one-pager: a
+// saved `?panel=time-punches` link redirects here to 'crew-schedule', and App.js separately reads
+// the RAW query param once on mount to seed CrewSchedulePanel's `initialTab` so the redirected
+// panel opens straight into the Punches tab, not the default Schedule one.
+const LEGACY_PANEL_REDIRECTS = { 'leader-one-pager': 'above-store', 'time-punches': 'crew-schedule' };
 
 // A route id is valid only if the registry marks it route:true — an unknown or non-route value
 // in the URL (a stale link, a typo, someone hand-editing the query string) fails safe to "no
