@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   mapVarianceRows, mapYieldGroups, parseYieldRange, yieldBandFor, yieldStatus,
   mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers, flagUnmatchedTransfers,
-  mapRawItemHistory,
+  mapRawItemHistory, mapRawItemInfo,
 } from '../engine/eom-parsers.js';
 
 describe('mapVarianceRows', () => {
@@ -119,5 +119,46 @@ describe('mapRawItemHistory', () => {
     expect(m.counts[0].difference).toBeCloseTo(-1947.88);
     expect(m.counts[0].manager).toBe('Cinthya a - e9755633');
     expect(m.counts[0].isCount).toBe(true);
+  });
+});
+
+describe('mapRawItemInfo', () => {
+  it('extracts recipe/serving-factor, combo composition, and current cost fields (dispatch #184)', () => {
+    const detail = {
+      full_wrin: '00005-086', long_desc: '100% PURE BEEF', invty_category_type: 'Food',
+      case_qty: 40, latest_case_price: 62.15, case_price_avg: 61.02,
+      primary_vdr_name: 'Martin Brower', primary_vdr: '1042', mid_range_yield: 91.6,
+      recipe_item: 1, current_upt: 3.14, // real API sends 1/0, not true/'Y' -- dispatch #184's own captured sample
+      menu_items: [{ item_number: '5001', item_name: 'HAMBURGER', recipe_serving_factor: 1, on_pos: 'Y' }],
+      menu_item_combos: [{ main_item_number: '5001', combo_item_number: '9001', quantity: 1 }],
+      upt_hist: [{ dt: 'July 2019', price: 2.98 }],
+    };
+    const m = mapRawItemInfo(detail);
+    expect(m.wrin).toBe('00005-086');
+    expect(m.descr).toBe('100% PURE BEEF');
+    expect(m.invtyCategoryType).toBe('Food');
+    expect(m.caseQty).toBe(40);
+    expect(m.latestCasePrice).toBeCloseTo(62.15);
+    expect(m.casePriceAvg).toBeCloseTo(61.02);
+    expect(m.primaryVdrName).toBe('Martin Brower');
+    expect(m.primaryVdr).toBe('1042');
+    expect(m.midRangeYield).toBeCloseTo(91.6);
+    expect(m.recipeItem).toBe(true);
+    expect(m.currentUpt).toBeCloseTo(3.14);
+    expect(m.menuItems).toHaveLength(1);
+    expect(m.menuItems[0].recipe_serving_factor).toBe(1);
+    expect(m.menuItemCombos).toHaveLength(1);
+    expect(m.menuItemCombos[0].main_item_number).toBe('5001');
+    expect(m.uptHist).toHaveLength(1);
+  });
+
+  it('defaults missing arrays/fields safely (an item with no combos, no history)', () => {
+    const m = mapRawItemInfo({ full_wrin: '00029-009', long_desc: 'SALT/NON-IODIZED' });
+    expect(m.menuItems).toEqual([]);
+    expect(m.menuItemCombos).toEqual([]);
+    expect(m.uptHist).toEqual([]);
+    expect(m.recipeItem).toBe(false);
+    expect(m.caseQty).toBeNull();
+    expect(m.primaryVdr).toBeNull();
   });
 });
