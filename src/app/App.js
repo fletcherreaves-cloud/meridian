@@ -224,7 +224,10 @@ import { AdminPanel } from '../views/admin.js';
 // was the other static importer defeating a lazy import (above-store-onepager.js, 55KB).
 const ReportSubscriptions = lazyPanel(() => import('../views/report-subscriptions.js').then(m => ({ default: m.ReportSubscriptions })));
 const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
-const FOBEOMPanel = lazyPanel(() => import('../views/fob-eom.js').then(m => ({ default: m.FOBEOMPanel })));
+// FOBEOMPanel — Dispatch #188: no longer its own top-level lazyPanel() entry. Merged into Food
+// Cost (FOBAnalysisPanel) as an "End of Month" mode; analytics.js now React.lazy()-loads
+// fob-eom.js itself, directly, only when that mode is actually opened (see FOBEOMPanelLazy in
+// analytics.js) — same lazy-load discipline this used to get from being its own lazyPanel().
 const EOMSupervisorPanel = lazyPanel(() => import('../views/eom-supervisor.js').then(m => ({ default: m.EOMSupervisorPanel })));
 const EOMDashboardPanel = lazyPanel(() => import('../views/eom-dashboard.js').then(m => ({ default: m.EOMDashboardPanel })));
 // #230, R6 (dispatch16): the About modal's changelog list — the only consumer of the
@@ -840,7 +843,27 @@ function App() {
   const [showLocIntel,     setShowLocIntel]     = useState(false);
   const [showInventory,    setShowInventory]    = useState(false);
   // showFOB — Dispatch #55 Part B: replaced by routePanel==='fob-analysis' (see routePanel above).
-  // showFOBEOM — Dispatch #55 Part B: replaced by routePanel==='fob-eom' (see routePanel above).
+  // showFOBEOM — Dispatch #55 Part B: replaced by routePanel==='fob-eom', then Dispatch #188
+  // folded fob-eom into fob-analysis as a mode (see fobAnalysisInitialMode below and
+  // FOBAnalysisPanel's own 'eom' mode in analytics.js).
+  // fobAnalysisInitialMode — Dispatch #188: one-shot deep-link target for FOBAnalysisPanel,
+  // same shape/purpose as perfReviewsEntry/aboveStoreInit above. Set to 'eom' by the
+  // modal==='fob-eom' branch (End of Month nav click) and by the routePanel==='fob-eom' redirect
+  // effect (old ?panel=fob-eom bookmark) below, so both entry points land on the EOM mode
+  // instead of the default Food Cost analysis mode. Reset to null on close so a later, ordinary
+  // Food Cost open doesn't inherit a stale EOM landing.
+  const [fobAnalysisInitialMode, setFobAnalysisInitialMode] = useState(null);
+  // Dispatch #188 — the actual ?panel=fob-eom redirect. 'fob-eom' stays route:true in
+  // panel-registry.js on purpose (see that file's own comment) SOLELY so an old bookmark or
+  // in-app goRoute('fob-eom') call still validates through routing.js's parseRoute()/
+  // isRoutePanelId() and lands routePanel==='fob-eom' — then this effect immediately redirects
+  // it into fob-analysis with the EOM mode preselected, rather than leaving the old id as a
+  // real destination (which would put fob-eom back in ROUTE_IDS as a second live page for the
+  // same content). Runs on mount (initial URL) and on every routePanel change (in-app
+  // goRoute('fob-eom') calls, browser back/forward through old history entries).
+  React.useEffect(() => {
+    if(routePanel==='fob-eom'){setFobAnalysisInitialMode('eom');goRoute('fob-analysis');}
+  }, [routePanel]);
   const [showSMGVoice,        setShowSMGVoice]        = useState(false);
   const [showLaborAnalytics,  setShowLaborAnalytics]  = useState(false);
   // showPerfReviews — Dispatch #55 Part B: replaced by routePanel==='perf-reviews' (see routePanel above).
@@ -3082,10 +3105,13 @@ function App() {
       }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
       // Dispatch #55 Part B (Job C Batch 1) — six overlay-to-page conversions. sched-hub,
       // perf-reviews and eom-dashboard carry RoutePanelShell inside their own component (they
-      // already rendered their own header chrome); fob-analysis and fob-eom had no internal
-      // chrome, so they're wrapped in RoutePanelShell directly here. count-cycle (its own
-      // seventh entry in this batch) was retired by dispatch #189, folded into eom-dashboard
-      // as a tab — see eomInitialMode below.
+      // already rendered their own header chrome). fob-analysis ORIGINALLY had no internal
+      // chrome and was wrapped in RoutePanelShell directly here too — Dispatch #188 moved
+      // RoutePanelShell inside FOBAnalysisPanel itself (same "shell inside the component"
+      // pattern as this line's own siblings) while merging fob-eom into it as an EOM mode, so it
+      // renders unwrapped below now, same shape as sched-hub. count-cycle (its own seventh entry
+      // in this batch) was retired by dispatch #189, folded into eom-dashboard as a tab — see
+      // eomInitialMode below.
       routePanel==='sched-hub'&&h(SchedulingHubPanel,{ds,stores,settings,perm,initialTab:schedTab,onClose:()=>goRoute(null)}),
       routePanel==='perf-reviews'&&h(PerformanceReviewsPanel,{stores,ds,settings,userRole,orgRoles,
         initialTab:perfReviewsEntry?.tab, initialCustomizeSection:perfReviewsEntry?.section,
@@ -3104,16 +3130,13 @@ function App() {
       routePanel==='leader-one-pager'&&h(OnePagerPanel,{ds,stores,settings,onClose:()=>goRoute(null)}),
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='time-punches'&&h(TimePunchesPanel,{stores,onClose:()=>goRoute(null)}),
-      routePanel==='fob-analysis'&&h(RoutePanelShell,{
-        title:'Food Cost',
-        icon:'🥗',
-        onBack:()=>goRoute(null),
-      }, h(FOBAnalysisPanel,{stores,ds,settings,onClose:()=>goRoute(null)})),
-      routePanel==='fob-eom'&&h(RoutePanelShell,{
-        title:'End of Month',
-        icon:'📋',
-        onBack:()=>goRoute(null),
-      }, h(FOBEOMPanel,{stores,ds,settings,onClose:()=>goRoute(null)})),
+      // routePanel==='fob-eom' never renders here on purpose — the useEffect above (near
+      // fobAnalysisInitialMode's declaration) redirects it into fob-analysis before this
+      // switch is reached, so by the time this render runs routePanel is already
+      // 'fob-analysis' again with fobAnalysisInitialMode==='eom'.
+      routePanel==='fob-analysis'&&h(FOBAnalysisPanel,{stores,ds,settings,
+        initialMode:fobAnalysisInitialMode,
+        onClose:()=>{setFobAnalysisInitialMode(null);goRoute(null);}}),
       // fcst-ref — Dispatch #121: converted from a small ModalShell+iframe (maxWidth:1100) to a
       // real route, per memory/panel-contract.md's standing "convert while you're in here"
       // rule + the owner's explicit ask. Underlying content stays the static iframed HTML file
@@ -3184,9 +3207,10 @@ function App() {
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
     showLocIntel&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>setShowLocIntel(false)}),
     showInventory&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>setShowInventory(false)}),
-    // fob-analysis / fob-eom — Dispatch #55 Part B: moved to the routePanel gates in the main
-    // content area (wrapped directly in RoutePanelShell there; see routePanel==='fob-analysis'
-    // / routePanel==='fob-eom' — neither component had internal chrome to strip).
+    // fob-analysis — Dispatch #55 Part B: moved to the routePanel gate in the main content area
+    // (see routePanel==='fob-analysis'). Dispatch #188 later merged fob-eom into it as an EOM
+    // mode and moved RoutePanelShell inside FOBAnalysisPanel itself, same as this comment block's
+    // other "shell inside the component" siblings.
     showSMGVoice&&h(SMGVoicePanel,{ds,stores,voicePerf:ds?.smgVoicePerf||[],voiceDaypart:ds?.voiceDaypart||[],onBackfillComments:backfillSmgComments,onClose:()=>setShowSMGVoice(false)}),
     showDeliveryMix&&h(DeliveryMixPanel,{ds,onClose:()=>setShowDeliveryMix(false)}),
     showSignals&&h(ModalShell,{
@@ -3239,7 +3263,7 @@ function App() {
     showOperatorSummary&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>setShowOperatorSummary(false)}),
     showStoreKB&&h(StoreKBEditor,{onClose:()=>setShowStoreKB(false),ds}),
     // showFcstRef ModalShell — Dispatch #121: converted to routePanel==='fcst-ref' (see the
-    // routePanel gate above, near fob-eom) using RoutePanelShell instead.
+    // routePanel gates above, near fob-analysis) using RoutePanelShell instead.
     showDtSoS&&h(DTSpeedOfServicePanel,{stores,onClose:()=>setShowDtSoS(false)}),
     showGradedVisits&&h(GradedVisitsPanel,{ds,onClose:()=>setShowGradedVisits(false)}),
     showAttention&&h(AttentionPanel,{stores,ds,dateRange,swingAcks,swingItems,onSelectStore:s=>{goStore(s);setShowAttention(false);},onClose:()=>setShowAttention(false),onCoachingSaved:refreshCoachingCycles}),

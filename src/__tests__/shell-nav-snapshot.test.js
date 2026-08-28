@@ -79,13 +79,15 @@ function renderNavTexts(permFn) {
 // the People section -- panelsForSection() preserves PANELS' declaration order, and 'time-punches'
 // is declared alphabetically after 'targets-editor'/'task-queue' (i.e. after 'security', the
 // section's other two nav members), not adjacent to 'crew-schedule'.
-// Re-captured again 2026-08-28 for dispatch #189: 'count-cycle' (Count Cycle) converted from a
-// standalone kind:'nav'/route:true sidebar entry to kind:'hub-tab' (folded into Inventory
-// Control as a tab) -- same demotion #106/#140 did for fcst-accuracy/lifelenz-bridge/
-// sched-retention. 'Count Cycle' and its 📋 icon drop out of this snapshot entirely (📋 has
-// other owners -- End of Month/Graded Visits/Performance Reviews -- so it stays in the DOM via
-// those, just not via this label any more).
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🕐','Time Punches','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// Re-captured again 2026-08-28 for BOTH dispatch #188 and #189, landing together: 'fob-eom'
+// (End of Month) converted from a standalone kind:'nav'/route:true entry to kind:'internal'
+// (folded into Food Cost as an EOM mode, dispatch #188), and 'count-cycle' (Count Cycle)
+// converted from a standalone kind:'nav'/route:true entry to kind:'hub-tab' (folded into
+// Inventory Control as a tab, dispatch #189) -- same demotion #106/#140 did for
+// fcst-accuracy/lifelenz-bridge/sched-retention. Both 'End of Month' and 'Count Cycle' drop out
+// of this snapshot entirely; their shared 📋 icon stays in the DOM via other owners (Graded
+// Visits/Performance Reviews), just not via either of these labels any more.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🕐','Time Punches','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -105,20 +107,29 @@ describe('AppSidebar renders the section-driven nav (dispatch #54 Job B)', () =>
     expect(slice).toEqual(['Planning', '🎯', 'Planning', '📅', 'Calendar', '◷', 'Events & Tags', '📈', 'Event Impact']);
   });
 
-  it('Inventory & Food Cost holds all six named panels -- four real nav entries plus Count Cycle (hub-tab) and Product Mix (reachable once enabled)', () => {
+  it('Inventory & Food Cost holds all six named panels -- three real nav entries plus End of Month (internal) and Count Cycle (hub-tab) and Product Mix (reachable once enabled)', () => {
+    // Dispatch #188 -- fob-eom dropped out of the sidebar: still section:'inventory-food-cost'
+    // (truthful per CLAUDE.md's "section: must be truthful even when nothing renders it" rule)
+    // but kind:'internal' now, not kind:'nav' -- it's reachable only via Food Cost's own EOM
+    // mode / the ?panel=fob-eom redirect, never its own sidebar entry.
+    // Dispatch #189 -- count-cycle dropped out of the sidebar too: kind:'hub-tab' (same
+    // "section stays truthful even though nothing renders it" rule), reachable only via
+    // Inventory Control's Count Cycle tab.
     const invFoodCost = ['fob-analysis', 'fob-eom', 'eom-dashboard', 'count-cycle', 'inventory', 'pmix']
       .map(id => PANEL_BY_ID[id].section);
     expect(invFoodCost.every(s => s === 'inventory-food-cost')).toBe(true);
-    // count-cycle's section stays truthful even though nothing renders it here (dispatch #189
-    // converted it to kind:'hub-tab', panel-contract's own "section must be truthful even when
-    // nothing renders it" rule) -- pmix stays kind:'optional' (Panel Manager toggle) -- the
-    // other four are ordinary always-visible nav entries, confirmed present in the rendered
-    // text above.
+    expect(PANEL_BY_ID['fob-eom'].kind).toBe('internal');
+    expect(PANEL_BY_ID['count-cycle'].kind).toBe('hub-tab');
+    // Only pmix stays kind:'optional' (Panel Manager toggle) -- the other three (fob-analysis,
+    // eom-dashboard, inventory) are ordinary always-visible nav entries, confirmed present in
+    // the rendered text above.
     const texts = renderNavTexts();
-    for (const label of ['Food Cost', 'End of Month', 'Inventory Control', 'Inventory']) {
+    for (const label of ['Food Cost', 'Inventory Control', 'Inventory']) {
       expect(texts).toContain(label);
     }
-    // Count Cycle no longer has its own sidebar entry -- reachable via Inventory Control's tab.
+    // Neither End of Month nor Count Cycle has its own sidebar entry any more -- both reachable
+    // only via their respective host panel's mode/tab.
+    expect(texts).not.toContain('End of Month');
     expect(texts).not.toContain('Count Cycle');
   });
 });
@@ -170,13 +181,18 @@ const HIDDEN_WHEN_DENIED = {
   // OTHER hub-tab siblings) never appeared here either.
   // dispatch #138 (2026-08-25) added 'Time Punches' (perm analytics.store, unique 🕐 icon) to the
   // People section, joining this list.
+  // dispatch #188 (2026-08-28) dropped 'End of Month' from this list -- fob-eom is kind:'internal'
+  // now (no sidebar entry of its own, folded into Food Cost as a mode), so denying
+  // analytics.store no longer hides that text node; its shared 📋 icon stays (Graded Visits/
+  // Performance Reviews still render it).
   // dispatch #189 (2026-08-28) converted 'Count Cycle' to kind:'hub-tab' (folded into
   // Inventory Control), same "renders nowhere in the sidebar any more" demotion as 'Training
-  // Retention' above -- 'Count Cycle' drops out of this list. Its 📋 icon stays IN the DOM
-  // regardless (End of Month/Graded Visits/Performance Reviews all still carry it, none of
-  // them gated by analytics.store alone -- End of Month and Graded Visits ARE, so 📋 was never
-  // removable by this denial in the first place; unaffected either way).
-  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Time Punches', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🕐', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // Retention' above -- 'Count Cycle' also drops out of this list. Both landed together, so
+  // this list loses both entries at once; the shared 📋 icon stays IN the DOM regardless
+  // (Graded Visits and Performance Reviews carry it too, neither gated by analytics.store alone
+  // -- Graded Visits IS, so 📋 was never removable by this denial in the first place; unaffected
+  // either way).
+  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Time Punches', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🕐', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to

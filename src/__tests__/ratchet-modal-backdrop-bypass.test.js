@@ -42,7 +42,14 @@ const ROOTS = ['src/views', 'src/features'];
 // same dispatch, but its zIndex:4000 sat between `inset:0,` and `background:'rgba(0,0,0` on that
 // one line, so this regex never counted it in the first place — its removal doesn't move this
 // number, even though it's the same anti-pattern fixed the same way.
-const CEILING = 75;
+// Lowered 75 → 73 by dispatch #188 (End of Month → Food Cost merge, panel-contract opportunistic
+// check): FOBAnalysisPanel (src/views/analytics.js) had TWO of its own hand-rolled
+// position:fixed/inset:0/rgba(0,0,0 backdrops (the loading-state early return, and the main
+// panel body) sitting UNDER the RoutePanelShell App.js already wrapped it in — real double
+// chrome, not just an extra backdrop pattern. Both removed; RoutePanelShell now lives inside the
+// component (same "shell inside the component" pattern as sched-hub/count-cycle/etc), matching
+// the count this test measured fresh on this dispatch's own branch.
+const CEILING = 73;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 
