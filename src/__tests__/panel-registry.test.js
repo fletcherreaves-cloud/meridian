@@ -194,8 +194,8 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the fourteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160, minus #140 and #189)', () => {
-    // Ratchet, not a ceiling: adding a sixteenth route panel is a real routing change (a new
+  it('is exactly the thirteen panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160, minus #140, #189 and #190)', () => {
+    // Ratchet, not a ceiling: adding a fourteenth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
     // original four (dicompare/fcst-accuracy/proj/report) were Dispatch27 Workstream E;
@@ -221,10 +221,14 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // to RoutePanelShell inside each component (thirteen -> fifteen). Dispatch #189 (owner-
     // approved 2026-08-10) then converted 'count-cycle' (Count Cycle) to kind:'hub-tab', folded
     // into 'eom-dashboard' (Inventory Control) as a tab -- same "route:true -> hub-tab" demotion
-    // #106/#140 did above (fifteen -> fourteen).
+    // #106/#140 did above (fifteen -> fourteen). Dispatch #190 then merged 'leader-one-pager'
+    // INTO 'above-store' behind a Rollup/Leadership scope selector (owner's 2026-08-10 "three
+    // one-pagers -> two" decision) -- its content survives as LeadershipCascadeBody
+    // (one-pager.js), embedded rather than separately routed, so that registry entry retires too
+    // (fourteen -> thirteen) while 'above-store' itself is unchanged here.
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'crew-schedule', 'dicompare', 'eom-dashboard', 'fcst-ref', 'fob-analysis', 'fob-eom',
-      'forecast-reports', 'leader-one-pager', 'perf-reviews', 'proj', 'report', 'sched-hub', 'time-punches',
+      'forecast-reports', 'perf-reviews', 'proj', 'report', 'sched-hub', 'time-punches',
     ]);
   });
 

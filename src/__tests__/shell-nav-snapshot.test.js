@@ -79,15 +79,17 @@ function renderNavTexts(permFn) {
 // the People section -- panelsForSection() preserves PANELS' declaration order, and 'time-punches'
 // is declared alphabetically after 'targets-editor'/'task-queue' (i.e. after 'security', the
 // section's other two nav members), not adjacent to 'crew-schedule'.
-// Re-captured again 2026-08-28 for BOTH dispatch #188 and #189, landing together: 'fob-eom'
+// Re-captured again 2026-08-28 for dispatch #188, #189 and #190, landing together: 'fob-eom'
 // (End of Month) converted from a standalone kind:'nav'/route:true entry to kind:'internal'
-// (folded into Food Cost as an EOM mode, dispatch #188), and 'count-cycle' (Count Cycle)
-// converted from a standalone kind:'nav'/route:true entry to kind:'hub-tab' (folded into
-// Inventory Control as a tab, dispatch #189) -- same demotion #106/#140 did for
-// fcst-accuracy/lifelenz-bridge/sched-retention. Both 'End of Month' and 'Count Cycle' drop out
-// of this snapshot entirely; their shared 📋 icon stays in the DOM via other owners (Graded
-// Visits/Performance Reviews), just not via either of these labels any more.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🕐','Time Punches','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+// (folded into Food Cost as an EOM mode, dispatch #188); 'count-cycle' (Count Cycle) converted
+// from a standalone kind:'nav'/route:true entry to kind:'hub-tab' (folded into Inventory
+// Control as a tab, dispatch #189) -- same demotion #106/#140 did for fcst-accuracy/
+// lifelenz-bridge/sched-retention; and 'leader-one-pager' (Leadership One-Pager) retired
+// entirely (folded into Above-Store One-Pager behind a Rollup/Leadership scope selector,
+// dispatch #190). All three drop out of this snapshot entirely; their shared 📋 icon stays in
+// the DOM via other owners (Graded Visits/Performance Reviews), just not via any of these
+// labels any more.
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🕐','Time Punches','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
