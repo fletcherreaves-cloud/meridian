@@ -52,8 +52,17 @@ const ROOTS = ['src/views', 'src/features'];
 // #192 (URL migration batch 1): AttentionPanel (analytics.js), RankingView (store-dash.js) and
 // PromoRoiPanel (promo-roi.js) each hand-rolled this exact backdrop shape and were converted to
 // RoutePanelShell as part of their route:true conversion
-// (routePanel==='attention'/'ranking'/'promo-roi').
-const CEILING = 69;
+// (routePanel==='attention'/'ranking'/'promo-roi'). Lowered 70 → 69 by dispatch #195 (Metric
+// Correlations/Scanner merge): MetricCorrelationExplorer (analytics.js) hand-rolled this exact
+// backdrop; it wasn't converted to a shell, it was retired outright — folded into Signals
+// (already RoutePanelShell-wrapped) as a plain tab with no chrome of its own, same as every
+// other Signals tab (ScannerTab, CsatDriversTab, etc).
+// Lowered 69 → 68 by dispatch #194 (Feature Requests → Task Queue merge, landed on main
+// concurrently with #195): src/views/feature-requests.js was deleted outright (harvested into
+// Task Queue, not converted in place), and its own hand-rolled backdrop went with the file.
+// Measured fresh against this merge per the standing "never copy a number" rule — #195's branch
+// alone would have measured 69, but merging in #194's already-landed deletion drops it one more.
+const CEILING = 68;
 
 const PATTERN = /position:\s*['"]fixed['"]\s*,\s*inset:\s*0\s*,\s*background:\s*['"]rgba\(0,0,0/;
 

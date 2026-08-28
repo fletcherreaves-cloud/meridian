@@ -25,6 +25,7 @@ import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
+import { CORR_TARGETS, CORR_PREDICTORS } from '../engine/correlation-predictors.js';
 import { CoachingModal } from './coaching-modal.js';
 
 const h=React.createElement;
@@ -318,53 +319,10 @@ function computeFOBMetrics(fobRows, allTargets, selLoc, selMonth){
 // sales/GC outcomes. Shows which levers most drive results.
 // Computed from all available ctrlRows + laborRows + opsRows.
 // ─── Correlation analysis — module-level shared constants ────────────────────
-const CORR_TARGETS = [
-  {id:'sales',  l:'Daily Sales',    emoji:'💰', fn:r=>r.sales},
-  {id:'gc',     l:'Guest Count',    emoji:'👥', fn:r=>r.gc||0},
-  {id:'avgChk', l:'Avg Check Size', emoji:'🧾', fn:r=>r.avgCheck||0},
-];
-
-const CORR_PREDICTORS = [
-  {id:'oepe',    l:'Drive-Thru Speed (OEPE)',       shortL:'OEPE',       src:'ops',   lowerBetter:true,  fn:r=>r.oepe,
-   action:'Reduce wait times — faster service lets you handle more orders per hour.',
-   note:'Lower OEPE means faster service. On your highest-sales days, speed of service typically drives more throughput. This is usually the most direct operational lever for daily sales.'},
-  {id:'park',    l:'Park Rate',                     shortL:'Park %',     src:'ops',   lowerBetter:true,  fn:r=>r.park,
-   action:'Review park rate alongside actual guest count to understand day-type patterns.',
-   note:'A high park rate can inflate apparent wait times. Its relationship to sales varies — high park on high-sales days may just mean the store is busy, not that parking causes sales.'},
-  {id:'r2p',     l:'Receipt to Print (R2P)',         shortL:'R2P',        src:'ops',   lowerBetter:true,  fn:r=>r.r2p,
-   action:'Target faster R2P as a front counter service quality indicator — slow R2P signals assembly or kitchen delays that affect guest experience.',
-   note:'R2P measures front counter speed: the time from when the receipt prints (order placed) to when the order appears ready on the export monitor. A lower R2P means guests are being served faster at the counter. Strong links to sales suggest faster counter service drives more throughput on busy days.'},
-  {id:'labor',   l:'Labor Percentage',              shortL:'Labor %',    src:'labor', lowerBetter:true, fn:r=>r.laborPct,
-   // Dispatch #77 -- owner-ruled 2026-08-23: labor has a target, at/below is good, over is bad,
-   // no two-sided third state. This entry read lowerBetter:false, disagreeing with every other
-   // declaration site in the app (store-dash.js, one-pager-data.js, analytics.js's own target
-   // table 27 lines later). The action/note prose below stays -- the nuance it describes is real
-   // -- but it does not change the metric's direction. See memory/dispatch-77.md.
-   action:'Balance staffing carefully — too lean hurts service quality; too heavy compresses margin.',
-   note:'Labor % tends to be high on slow days (fixed cost spread across fewer sales) and can also be high on very busy days with surge staffing. Context and trend matter more than the number alone.'},
-  {id:'tpph',    l:'Transactions Per Person Hour',  shortL:'TPPH',       src:'labor', lowerBetter:false, fn:r=>r.tpph,
-   action:'Optimize scheduling so your staffed hours align with when customers actually arrive.',
-   note:'Higher TPPH means your labor hours are being used when customers are there. It tends to be higher during well-run peak periods and lower on quiet shifts.'},
-  {id:'otHrs',   l:'Overtime Hours',                shortL:'OT Hours',   src:'labor', lowerBetter:true,  fn:r=>r.otHrs,
-   action:'Review staffing plans — consistent OT signals scheduling gaps or unexpected demand surges.',
-   note:'High overtime usually means planned coverage fell short of demand. Chronic OT can erode service quality and crew morale over time.'},
-  {id:'cashOS',  l:'Cash Over/Short',               shortL:'Cash O/S',   src:'ctrl',  lowerBetter:true,  fn:r=>r.cashOSPct,
-   action:'Monitor as a controls signal, especially on high-volume days when register handling gets rushed.',
-   note:'Cash variance tends to increase on fast-paced high-traffic days. A strong correlation here can indicate your controls are being stressed on busy days.'},
-  {id:'tRedA',   l:'Voids (T-Red After)',           shortL:'Voids %',    src:'ctrl',  lowerBetter:true,  fn:r=>r.tRedAPct,
-   action:'Address order accuracy training — frequent voids slow the line and frustrate guests.',
-   note:'High void rates often indicate order errors, which require the cashier to stop and fix the ticket. This slows throughput and can negatively impact service perception.'},
-  {id:'discPct', l:'Discount Rate',                 shortL:'Discount %', src:'ctrl',  lowerBetter:true, fn:r=>r.discPct,
-   // Dispatch #77 -- owner-ruled 2026-08-23: lower-better, same simplification as Labor % above.
-   // This entry read lowerBetter:false, disagreeing with every other declaration site (store-
-   // dash.js's two tables, analytics.js's own target table 27 lines later). Action/note prose
-   // stays. See memory/dispatch-77.md.
-   action:'Analyze whether promotions are driving new visits or just discounting customers who would have come anyway.',
-   note:'Higher discount days often bring more guest counts but at a lower average check size. Understanding which promotions drive incremental traffic is key.'},
-  {id:'fobPct',  l:'Food Cost (FOB %)',             shortL:'FOB %',      src:'ctrl',  lowerBetter:true,  fn:r=>r.fobPct,
-   action:'Review waste, portion control, and ordering accuracy to manage food cost.',
-   note:'Food cost is primarily a profitability metric. Its link to daily sales volume is usually indirect — but high FOB on low-sales days signals waste and portion control issues.'},
-];
+// CORR_TARGETS/CORR_PREDICTORS moved to src/engine/correlation-predictors.js under dispatch
+// #195 (2026-08-28) — shared with the merged Correlations tab in Signals (signals.js) without
+// that tab needing a static import of this whole (8000+ line) module. Still used here by
+// computeAllCorrelations/computeMetricAverages/DistrictLensPanel below, unchanged.
 
 const corrPearson = (xs, ys) => {
   if(xs.length < 10) return null;
@@ -432,235 +390,6 @@ function computeMetricAverages(ds) {
     });
   });
   return result;
-}
-
-function MetricCorrelationExplorer({stores, ds, settings, onClose}) {
-  const {useState:uSt, useMemo:uM} = React;
-  const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
-  const [selLoc, setSelLoc] = uSt(LOCS[0]);
-  const [target, setTarget] = uSt('sales');
-  const [showRaw, setShowRaw] = uSt(false);
-  const [expandedId, setExpandedId] = uSt(null);
-
-  const correlations = uM(()=>{
-    const lR=(ds.laborRows||[]).filter(r=>String(r.loc)===selLoc&&r.sales>0);
-    const oR=(ds.opsRows||[]).filter(r=>String(r.loc)===selLoc);
-    const cR=(ds.ctrlRows||[]).filter(r=>String(r.loc)===selLoc);
-    const byDate={};
-    const dk=d=>dKey(d);
-    lR.forEach(r=>{byDate[dk(r.date)]={...byDate[dk(r.date)],...r};});
-    oR.forEach(r=>{byDate[dk(r.date)]={...byDate[dk(r.date)],...r};});
-    cR.forEach(r=>{byDate[dk(r.date)]={...byDate[dk(r.date)],...r};});
-    const joined=Object.values(byDate).filter(r=>r.sales>0);
-    const tFn=CORR_TARGETS.find(t2=>t2.id===target)?.fn||(r=>r.sales);
-    if(joined.length<10) return [];
-    return CORR_PREDICTORS.map(p=>{
-      const paired=joined.map(r=>({x:p.fn(r),y:tFn(r)}))
-        .filter(({x,y})=>x!=null&&x>0&&y>0&&!isNaN(x)&&!isNaN(y));
-      const r=corrPearson(paired.map(d=>d.x),paired.map(d=>d.y));
-      const n=paired.length;
-      const t=r!=null&&n>2?Math.abs(r)*Math.sqrt(n-2)/Math.sqrt(1-r*r):null;
-      const sig=t!=null&&n>=10?(t>2.6?'strong':t>1.96?'sig':'weak'):null;
-      return{...p,r,n,sig,paired};
-    }).filter(p=>p.r!=null).sort((a,b)=>Math.abs(b.r)-Math.abs(a.r));
-  },[ds,selLoc,target]);
-
-  const kbEntry = uM(()=>getKB(selLoc),[selLoc]);
-  const storeName = sNameC(selLoc);
-  const targetObj = CORR_TARGETS.find(t=>t.id===target);
-
-  const strengthInfo = absR => {
-    if(absR>0.7) return {label:'Very Strong',bars:5,col:'#34d399',bg:'rgba(52,211,153,.08)',bdr:'rgba(52,211,153,.2)'};
-    if(absR>0.4) return {label:'Moderate',   bars:3,col:'#f59e0b',bg:'rgba(245,158,11,.08)',bdr:'rgba(245,158,11,.2)'};
-    if(absR>0.2) return {label:'Some Link',  bars:2,col:'#94a3b8',bg:'rgba(148,163,184,.06)',bdr:'rgba(148,163,184,.15)'};
-    return              {label:'Minimal',    bars:1,col:'#475569',bg:'transparent',bdr:'var(--bdr)'};
-  };
-
-  const findingSentence = c => {
-    const tL=(targetObj?.l||'sales').toLowerCase();
-    if(c.r>0.1)  return `Higher ${c.shortL} tends to occur on better-${tL} days`;
-    if(c.r<-0.1) return `Lower ${c.shortL} tends to occur on better-${tL} days`;
-    return `${c.shortL} shows no clear directional pattern with ${tL}`;
-  };
-
-  const srcIcon  = s=>s==='ops'?'⚡':s==='labor'?'👷':'📋';
-  const srcLabel = s=>s==='ops'?'Operations':s==='labor'?'Labor':'Controls';
-  const top2 = correlations.slice(0,2).filter(c=>Math.abs(c.r)>0.25);
-
-  return div({style:{position:'fixed',inset:0,background:'rgba(0,0,0,.82)',zIndex:456,
-    display:'flex',alignItems:'flex-start',justifyContent:'center',
-    padding:'20px 16px',overflowY:'auto'}},
-    div({style:{background:'var(--surf)',border:'.5px solid var(--bdr2)',borderRadius:'var(--rl)',
-      width:'100%',maxWidth:860,display:'flex',flexDirection:'column',
-      boxShadow:'0 20px 60px rgba(0,0,0,.5)',overflow:'hidden'}},
-
-      // ── Header ──────────────────────────────────────────────────────
-      div({style:{padding:'12px 16px',borderBottom:'.5px solid var(--bdr)',
-        background:'var(--surf2)',display:'flex',alignItems:'center',gap:10}},
-        span({style:{fontSize:'20px'}},'🔗'),
-        div({style:{flex:1}},
-          div({style:{fontSize:'13px',fontWeight:800,color:'var(--text)'}},'What Moves the Needle?'),
-          div({style:{fontSize:'9px',color:'var(--text3)',marginTop:1}},
-            'Which operational metrics actually link to your results — in plain English, ranked by strength')
-        ),
-        h('select',{value:selLoc,onChange:e=>setSelLoc(e.target.value),
-          style:{background:'var(--surf)',border:'.5px solid var(--bdr)',borderRadius:'var(--r)',
-            color:'var(--text)',fontSize:'10px',padding:'4px 8px'}},
-          LOCS.map(l=>h('option',{key:l,value:l},sNameC(l)))
-        ),
-        btn({className:'btn btn-sm',style:{color:'var(--text3)'},onClick:onClose},'✕')
-      ),
-
-      // ── Target selector ─────────────────────────────────────────────
-      div({style:{padding:'10px 16px',borderBottom:'.5px solid var(--bdr)',
-        background:'var(--surf2)',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}},
-        span({style:{fontSize:'10px',color:'var(--text3)',fontWeight:500,marginRight:4}},'What do you want to understand?'),
-        ...CORR_TARGETS.map(t=>btn({key:t.id,
-          style:{padding:'5px 14px',borderRadius:'var(--r)',border:'.5px solid',fontSize:'11px',
-            fontWeight:target===t.id?700:400,cursor:'pointer',
-            background:target===t.id?'var(--adim)':'transparent',
-            color:target===t.id?'var(--amber)':'var(--text2)',
-            borderColor:target===t.id?'rgba(245,158,11,.4)':'var(--bdr)'},
-          onClick:()=>{setTarget(t.id);setExpandedId(null);}},t.emoji+' '+t.l))
-      ),
-
-      // ── KB note ─────────────────────────────────────────────────────
-      kbEntry.notes&&div({style:{padding:'6px 16px',borderBottom:'.5px solid var(--bdr)',
-        background:'rgba(96,165,250,.05)',fontSize:'9px',color:'#93c5fd',lineHeight:1.5}},
-        '📍 ',kbEntry.notes.slice(0,160)+(kbEntry.notes.length>160?'…':'')),
-
-      // ── Body ─────────────────────────────────────────────────────────
-      div({style:{overflowY:'auto',padding:'14px 16px',display:'flex',flexDirection:'column',gap:12}},
-
-        // Empty state
-        correlations.length===0&&div({style:{textAlign:'center',padding:'60px 20px',color:'var(--text3)'}},
-          div({style:{fontSize:'36px',marginBottom:12}},'📊'),
-          div({style:{fontSize:'13px',fontWeight:600,color:'var(--text2)',marginBottom:6}},'No data for '+storeName),
-          div({style:{fontSize:'11px',lineHeight:1.7}},'Load an Operations Report for this store to see which metrics move the needle here. At least 10 days of data required.')
-        ),
-
-        correlations.length>0&&div(null,
-
-          // ── Top Findings hero card ──────────────────────────────────
-          top2.length>0&&div({style:{background:'rgba(245,158,11,.05)',
-            border:'.5px solid rgba(245,158,11,.2)',borderRadius:'var(--rl)',
-            padding:'14px 16px',marginBottom:4}},
-            div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',
-              letterSpacing:'.8px',color:'var(--amber)',marginBottom:10}},'⭐ Top Findings at '+storeName),
-            ...top2.map((c,i)=>{
-              const si=strengthInfo(Math.abs(c.r));
-              return div({key:c.id,style:{display:'flex',alignItems:'flex-start',gap:12,
-                marginTop:i>0?10:0,paddingTop:i>0?10:0,
-                borderTop:i>0?'.5px solid rgba(245,158,11,.15)':'none'}},
-                div({style:{fontSize:'22px',flexShrink:0}},srcIcon(c.src)),
-                div({style:{flex:1}},
-                  div({style:{fontSize:'12px',fontWeight:700,color:'var(--text)',marginBottom:3}},c.l),
-                  div({style:{fontSize:'11px',color:'var(--text2)',lineHeight:1.55,marginBottom:4}},findingSentence(c)),
-                  div({style:{fontSize:'10px',color:'var(--text3)',fontStyle:'italic',lineHeight:1.5}},c.action)
-                ),
-                div({style:{flexShrink:0,textAlign:'right'}},
-                  div({style:{fontSize:'11px',fontWeight:700,color:si.col,marginBottom:2}},'● '+si.label),
-                  div({style:{fontSize:'9px',color:'var(--text3)'}},'Based on '+c.n+' days')
-                )
-              );
-            })
-          ),
-
-          // ── All metrics ranked ──────────────────────────────────────
-          div({style:{fontSize:'9px',fontWeight:700,textTransform:'uppercase',
-            letterSpacing:'.8px',color:'var(--text3)',marginBottom:8,marginTop:8}},
-            'All Metrics — Ranked by Strength of Connection'),
-
-          div({style:{display:'flex',flexDirection:'column',gap:5}},
-            ...correlations.map((c,idx)=>{
-              const si=strengthInfo(Math.abs(c.r));
-              const isExpanded=expandedId===c.id;
-              const isTop=idx<2&&Math.abs(c.r)>0.25;
-              return div({key:c.id,style:{border:'.5px solid '+(isTop?si.bdr:'var(--bdr)'),
-                borderRadius:'var(--r)',overflow:'hidden',
-                background:isTop?si.bg:'var(--surf2)'}},
-
-                // Main row
-                div({style:{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',
-                  cursor:'pointer'},
-                  onClick:()=>setExpandedId(isExpanded?null:c.id)},
-                  div({style:{fontSize:'18px',flexShrink:0}},srcIcon(c.src)),
-                  div({style:{flex:1,minWidth:0}},
-                    div({style:{fontSize:'11px',fontWeight:600,color:'var(--text)',marginBottom:2}},c.l),
-                    div({style:{fontSize:'10px',color:'var(--text3)'}},findingSentence(c))
-                  ),
-                  // Strength bars (5 segments)
-                  div({style:{display:'flex',alignItems:'center',gap:6,flexShrink:0}},
-                    div({style:{display:'flex',gap:2}},
-                      ...Array.from({length:5},(_,i)=>
-                        div({key:i,style:{width:7,height:18,borderRadius:2,
-                          background:i<si.bars?si.col:'rgba(255,255,255,.07)'}})
-                      )
-                    ),
-                    div({style:{minWidth:72,textAlign:'right'}},
-                      div({style:{fontSize:'10px',fontWeight:700,color:si.col}},'● '+si.label),
-                      div({style:{fontSize:'8px',color:'var(--text3)'}},'('+c.n+' days)')
-                    )
-                  ),
-                  div({style:{fontSize:'12px',color:'var(--text3)',flexShrink:0,marginLeft:4,
-                    transition:'transform .15s',transform:isExpanded?'rotate(180deg)':'none'}},'▾')
-                ),
-
-                // Expanded detail
-                isExpanded&&div({style:{borderTop:'.5px solid var(--bdr)',padding:'12px 14px',
-                  background:'rgba(0,0,0,.12)'}},
-                  div({style:{fontSize:'11px',color:'var(--text2)',lineHeight:1.7,marginBottom:10}},c.note),
-                  div({style:{background:'rgba(245,158,11,.07)',border:'.5px solid rgba(245,158,11,.18)',
-                    borderRadius:'var(--r)',padding:'7px 11px',fontSize:'10px',
-                    color:'var(--amber)',fontWeight:600,lineHeight:1.5,marginBottom:8}},
-                    '💡 What to focus on: '+c.action),
-                  div({style:{fontSize:'8px',color:'var(--text3)',fontFamily:'var(--mono)'}},
-                    'Source: '+srcLabel(c.src)+'  ·  '+c.n+' matched days  ·  r = '+(c.r>0?'+':'')+c.r.toFixed(3)+'  ·  Sig: '+(c.sig||'n/a'))
-                )
-              );
-            })
-          ),
-
-          // ── Footer / raw toggle ─────────────────────────────────────
-          div({style:{marginTop:12,padding:'10px 12px',background:'rgba(255,255,255,.025)',
-            border:'.5px solid var(--bdr)',borderRadius:'var(--r)'}},
-            div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}},
-              div({style:{fontSize:'10px',color:'var(--text3)',lineHeight:1.65,flex:1}},
-                span({style:{fontWeight:600,color:'var(--text2)'}},'How to read this: '),
-                'Strength shows how consistently a metric and your outcome move together. "Very Strong" = reliable pattern across many days. "Minimal" = no clear pattern found. ',
-                span({style:{fontStyle:'italic'}},
-                  'A strong link doesn\'t mean one causes the other — but it\'s worth investigating.')
-              ),
-              btn({className:'btn btn-sm',style:{fontSize:'9px',flexShrink:0,alignSelf:'flex-start'},
-                onClick:()=>setShowRaw(r=>!r)},
-                showRaw?'Hide raw stats':'📊 Show raw statistics')
-            ),
-            showRaw&&h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'9px',
-              marginTop:10,borderTop:'.5px solid var(--bdr)',paddingTop:8}},
-              h('thead',null,h('tr',null,
-                ...['Metric','Source','Days (n)','r value','Significance'].map((l,i)=>
-                  h('th',{key:i,style:{padding:'4px 8px',textAlign:i>1?'right':'left',
-                    color:'var(--text3)',fontSize:'8px',fontWeight:700,
-                    textTransform:'uppercase',letterSpacing:'.4px',
-                    borderBottom:'.5px solid var(--bdr)'}},l))
-              )),
-              h('tbody',null,...correlations.map(c=>h('tr',{key:c.id,
-                style:{borderBottom:'.5px solid var(--bdr)'}},
-                h('td',{style:{padding:'4px 8px',color:'var(--text2)',fontSize:'9px'}},c.l),
-                h('td',{style:{padding:'4px 8px',color:'var(--text3)',fontSize:'8px'}},srcLabel(c.src)),
-                h('td',{style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',color:'var(--text3)'}},c.n),
-                h('td',{style:{padding:'4px 8px',textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
-                  color:c.r>0?'#34d399':'var(--crit)'}},(c.r>0?'+':'')+c.r.toFixed(3)),
-                h('td',{style:{padding:'4px 8px',textAlign:'right',
-                  color:c.sig==='strong'?'#34d399':c.sig==='sig'?'#f59e0b':'var(--text3)',fontSize:'9px'}},
-                  c.sig==='strong'?'● Statistically strong':c.sig==='sig'?'● Significant':'○ Weak / unclear')
-              )))
-            )
-          )
-        )
-      )
-    )
-  );
 }
 
 // ─── DISTRICT LENS PANEL ─────────────────────────────────────────────────────
@@ -8865,4 +8594,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, MetricCorrelationExplorer, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel };
+export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, ChannelIntelligencePanel, MonthlyProjectionsPanel, StoreVlhConfigPanel };
