@@ -89,6 +89,10 @@ export const PANELS = [
   // header for the full reasoning). This is now ORDINARY panel RBAC -- the same nav-gate key
   // Labor Tools/Scheduling/Calendar Manager use, backstopped by the table's own accessible_locs
   // RLS (supabase/schema-lifelenz-shift-assignments.sql), not a panel-specific gate.
+  // Dispatch #197 (2026-08-28): now the survivor of a merge with 'time-punches' (retired below,
+  // kind:'internal') -- the panel is a Schedule/Punches tab strip, this id/label/route is
+  // unchanged. Chosen as the surviving id/anchor per the dispatch's own default (the
+  // earlier/more-established of the two, #123 vs #138) -- nothing found that argued otherwise.
   { id:'crew-schedule', label:'Crew Schedule', icon:'🗓', perm:'analytics.store', kind:'nav', section:'people', route:true },
   { id:'dar-daypart', label:'DAR Analysis', icon:'⏱', perm:'analytics.store', kind:'optional', section:'analytics' },
   { id:'data-manager', label:'Data Manager', icon:'🗄', perm:'data.upload', kind:'nav', section:'admin' },
@@ -284,14 +288,24 @@ export const PANELS = [
   // now carries a `type` field ('task' | 'feature_request') distinguishing the two entry kinds
   // within one list. See src/views/task-queue.js's header comment for the merge shape.
   { id:'task-queue', label:'Task Queue', icon:'⚡', perm:null, kind:'nav', section:'analytics' },
-  // Time Punches (dispatch #138) -- real qsr_punch_times clock punches (shift+meal), the pull's
-  // own output had NO UI anywhere until this panel (owner: "where do i find the time punches").
-  // Companion to 'crew-schedule' just above (same section:'people', same route:true, same
-  // ordinary panel RBAC -- perm:'analytics.store' backstopped by the table's own accessible_locs
-  // RLS, supabase/schema-qsr-punch-times.sql) -- deliberately NOT a stricter gate, since this data
-  // class is un-tokenized by the same owner directive (dispatch #126) that un-tokenized Crew
-  // Schedule Lookup (dispatch #125). Names render directly, no reveal-click step.
-  { id:'time-punches', label:'Time Punches', icon:'🕐', perm:'analytics.store', kind:'nav', section:'people', route:true },
+  // time-punches — RETIRED as a standalone/nav route (dispatch #197, 2026-08-28, owner live in
+  // this session: "Crew Schedule and Time punches can be merged to same page also. It makes
+  // sense."). Was built (dispatch #138) as an explicit companion to 'crew-schedule' just above --
+  // same section:'people', same route:true, same ordinary panel RBAC (perm:'analytics.store'
+  // backstopped by qsr_punch_times' own accessible_locs RLS, supabase/schema-qsr-punch-times.sql),
+  // same un-tokenized-name convention (dispatch #126, same directive as Crew Schedule's #125) --
+  // and that pairing is exactly why the owner asked for the merge. Its content is now the
+  // "Punches" tab of CrewSchedulePanel (src/views/crew-schedule-panel.js, which imports the
+  // TimePunchesTab body directly from src/views/time-punches-panel.js). kind:'internal' keeps the
+  // id registered (satisfies panel-registry.test.js's dispatch<->registry pairing check) without a
+  // sidebar entry, so onOpenModal('time-punches') still redirects into 'crew-schedule''s Punches
+  // tab instead of dying -- same pattern as corr-explorer's retirement just above. `route:true` is
+  // DROPPED here (a real bookmarked `?panel=time-punches` link still resolves, via routing.js's
+  // LEGACY_PANEL_REDIRECTS, which redirects it to 'crew-schedule' at the URL-parsing layer -- same
+  // mechanism as 'leader-one-pager', not the kind:'internal'-alone pattern corr-explorer/
+  // calendar-manager use, because unlike those two this id WAS already its own route:true entry
+  // with real bookmarkable links to preserve).
+  { id:'time-punches', label:'Time Punches', icon:'🕐', perm:'analytics.store', kind:'internal', section:'people' },
   // Dispatch #77 -- gated on analytics.district (a general leaderboard, not a Security panel;
   // must NOT inherit security.view), kind:'test-kitchen' with its real eventual section:'analytics'
   // set from day one, per the standing rule (promotion is a `kind:` flip only, dispatch #61).
