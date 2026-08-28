@@ -57,8 +57,20 @@ begin
   end if;
 end $$;
 
+-- Full set is the union of BOTH live vocabularies task-queue.js actually writes (verified
+-- against src/views/task-queue.js's TASK_STATUSES/FR_STATUSES/STATUS_META, not assumed):
+-- task: backlog/ready/in_progress/done/blocked, plus the scrapped action (line ~740); feature
+-- request: idea/planned/in-progress/completed/declined -- note 'in-progress' (hyphen) and
+-- 'completed' are genuinely different strings from the task vocab's 'in_progress'/'done', by
+-- design (STATUS_META's own comment: "status stays in each backing table's own native
+-- vocabulary"). The first shipped version of this constraint (dispatch #194) omitted
+-- 'in-progress'/'completed', which passed this file's own idempotent re-run cleanly (an ALTER
+-- CHECK add always "succeeds") but broke on the very next real write of either value -- caught
+-- live 2026-08-28 when the companion migration script's insert failed with
+-- "violates check constraint tasks_status_check". A clean SQL run is not proof the constraint is
+-- CORRECT, only that it's syntactically valid -- this needed an actual write to surface.
 alter table public.tasks add constraint tasks_status_check
-  check (status in ('backlog','ready','in_progress','done','blocked','scrapped','idea','planned','declined'));
+  check (status in ('backlog','ready','in_progress','done','blocked','scrapped','idea','planned','in-progress','completed','declined'));
 
 create index if not exists tasks_type_idx on public.tasks (type);
 
