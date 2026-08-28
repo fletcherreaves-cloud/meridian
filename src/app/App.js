@@ -3098,8 +3098,10 @@ function App() {
         if(modal==='inventory')      perm('analytics.store')&&goRoute('inventory');
         // 'count-cycle' — dispatch #189: no longer its own panel, redirects into Inventory
         // Control's Count Cycle tab (mirrors 'targets-editor' just above) so an old deep link
-        // doesn't 404.
-        if(modal==='count-cycle')    perm('analytics.store')&&(setEomInitialMode('compliance'),goRoute('eom-dashboard'));
+        // doesn't 404. Gated on 'analytics.district' (not 'analytics.store') to match
+        // eom-dashboard's own registry perm — this redirect must not be looser than the hub
+        // it opens (see eom-summary just above, same perm for the same reason).
+        if(modal==='count-cycle')    perm('analytics.district')&&(setEomInitialMode('compliance'),goRoute('eom-dashboard'));
         if(modal==='news')           perm('analytics.store')&&goRoute('news');
         if(modal==='fob-analysis')   perm('analytics.store')&&goRoute('fob-analysis');
         if(modal==='fob-eom')        perm('analytics.store')&&goRoute('fob-eom');
