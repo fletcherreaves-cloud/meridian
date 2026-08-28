@@ -109,7 +109,14 @@ export const PANELS = [
   { id:'forecast-reports', label:'Forecast Reports', icon:'🎯', perm:'analytics.forecasting', kind:'test-kitchen', section:'forecasting', route:true, tkOrder:5 },
   { id:'feature-requests', label:'Feature Requests', icon:'💡', perm:null, kind:'nav', section:'analytics' },
   { id:'fob-analysis', label:'Food Cost', icon:'🥗', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
-  { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
+  // Dispatch #188 -- merged into Food Cost as an "End of Month" mode (per the owner's
+  // 2026-08-10 decision, memory/decisions-panel-inventory-2026-08-10.md). kind:'internal'
+  // (no sidebar entry any more; open it from Food Cost's own mode tabs) but route:true is
+  // DELIBERATELY kept -- not just left over -- so an old ?panel=fob-eom bookmark still
+  // validates through routing.js's isRoutePanelId() and reaches the routePanel==='fob-eom'
+  // redirect effect in App.js (goRoute('fob-analysis') + initial EOM mode) instead of 404ing
+  // to the default view. Removing route:true here would silently break that link.
+  { id:'fob-eom', label:'End of Month', icon:'📋', perm:'analytics.store', kind:'internal', section:'inventory-food-cost', route:true },
   // QSRSoft Forms dashboard, Slice 2 of 3 -- kind:'test-kitchen' since Slice 3's pull script
   // (the data source) hasn't shipped yet; the panel renders an honest empty state against a real
   // read, not fake data. Promote to kind:'nav' once Slice 3 lands and the owner has seen it live.

@@ -79,7 +79,7 @@ function renderNavTexts(permFn) {
 // the People section -- panelsForSection() preserves PANELS' declaration order, and 'time-punches'
 // is declared alphabetically after 'targets-editor'/'task-queue' (i.e. after 'security', the
 // section's other two nav members), not adjacent to 'crew-schedule'.
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📋','End of Month','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🕐','Time Punches','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Rankings','Planning','🎯','Planning','📅','Calendar','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📊','EOM Supervisor','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📋','Count Cycle','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','🕐','Time Punches','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','💡','Feature Requests','📋','Leadership One-Pager','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','🏆','Top/Bottom Performers','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','?','Help','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -99,16 +99,22 @@ describe('AppSidebar renders the section-driven nav (dispatch #54 Job B)', () =>
     expect(slice).toEqual(['Planning', '🎯', 'Planning', '📅', 'Calendar', '◷', 'Events & Tags', '📈', 'Event Impact']);
   });
 
-  it('Inventory & Food Cost holds all six named panels -- five real nav entries plus Product Mix reachable once enabled', () => {
+  it('Inventory & Food Cost holds all five named panels -- four real nav entries plus Product Mix reachable once enabled', () => {
+    // Dispatch #188 -- fob-eom dropped out of this count: still section:'inventory-food-cost'
+    // (truthful per CLAUDE.md's "section: must be truthful even when nothing renders it" rule)
+    // but kind:'internal' now, not kind:'nav' -- it's reachable only via Food Cost's own EOM
+    // mode / the ?panel=fob-eom redirect, never its own sidebar entry. Six names, five sections.
     const invFoodCost = ['fob-analysis', 'fob-eom', 'eom-dashboard', 'count-cycle', 'inventory', 'pmix']
       .map(id => PANEL_BY_ID[id].section);
     expect(invFoodCost.every(s => s === 'inventory-food-cost')).toBe(true);
-    // Only pmix stays kind:'optional' (Panel Manager toggle) -- the other five are ordinary
+    expect(PANEL_BY_ID['fob-eom'].kind).toBe('internal');
+    // Only pmix stays kind:'optional' (Panel Manager toggle) -- the other four are ordinary
     // always-visible nav entries, confirmed present in the rendered text above.
     const texts = renderNavTexts();
-    for (const label of ['Food Cost', 'End of Month', 'Inventory Control', 'Count Cycle', 'Inventory']) {
+    for (const label of ['Food Cost', 'Inventory Control', 'Count Cycle', 'Inventory']) {
       expect(texts).toContain(label);
     }
+    expect(texts).not.toContain('End of Month');
   });
 });
 
@@ -159,7 +165,11 @@ const HIDDEN_WHEN_DENIED = {
   // OTHER hub-tab siblings) never appeared here either.
   // dispatch #138 (2026-08-25) added 'Time Punches' (perm analytics.store, unique 🕐 icon) to the
   // People section, joining this list.
-  'analytics.store': ['3PO Delivery', 'Count Cycle', 'Crew Schedule', 'DT Speed of Service', 'End of Month', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Time Punches', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🕐', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // dispatch #188 (2026-08-28) dropped 'End of Month' from this list -- fob-eom is kind:'internal'
+  // now (no sidebar entry of its own, folded into Food Cost as a mode), so denying
+  // analytics.store no longer hides that text node; its shared 📋 icon stays (Count Cycle/
+  // Graded Visits still render it).
+  'analytics.store': ['3PO Delivery', 'Count Cycle', 'Crew Schedule', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Local News', 'Market Intelligence', 'Promo / Discount ROI', 'Rankings', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Time Punches', 'Visit Readiness', '✅', '🎟️', '💬', '📡', '📰', '🕐', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
