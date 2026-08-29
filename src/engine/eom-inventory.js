@@ -483,6 +483,108 @@ function _titleClass(k) {
   return { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product', other: 'Other' }[k] || k;
 }
 
+// ── Count-completion notification detection (dispatch #209) ────────────────────
+// Generalizes the existing `notified_90` fire-once pattern (scripts/qsrsoft-onhand-pull.mjs —
+// overall ~90% "believes done") to PER-CLASS completion, with the owner's exact wait/stale/
+// not-started rules (memory/dispatch-209.md, "The exact rules", transcribed verbatim there):
+//   1. Food+Condiment are usually counted together — wait for BOTH complete before notifying,
+//      UNLESS a long period has passed with only one done (the "stale" timeout), in which case
+//      notify anyway showing the stalled class's real status.
+//   2. Paper is usually a separate day — the moment it completes, notify (independent trigger),
+//      but ALWAYS include current Food/Condiment/Non-Product status in that same notification.
+//   3. A class with zero items in the store's catalog is "not applicable" (never a fake 0%); a
+//      touched-but-unfinished class is "in progress" with its real %; an untouched class with
+//      real items is "not started" — never blank/missing. Every notification names every
+//      relevant class's status, not just the trigger class(es).
+//   4. Fire-once per store+period+trigger-kind — a later run must never re-notify for the same
+//      transition even though the done-flags stay true for the rest of the month.
+//
+// Pure + asOf-parameterized (no Date.now() coupling) so it is deterministic to unit test. The
+// caller (scripts/qsrsoft-onhand-pull.mjs) owns persistence: it must fold `triggerKinds` into
+// the store's `notified_classes` marker (and stamp `${cls}_done_at` on first true) when it
+// upserts `eom_count_status` — this function only DECIDES, it does not write anything.
+export const NOTIFY_STALE_HOURS = 3; // default wait on a stalled Food/Condiment pairing (rule 1)
+const NOTIFY_CLASS_KEYS = ['food', 'condiment', 'paper', 'nonproduct'];
+
+// Rule 3's four-way classification for one class, for a notification payload. Never returns a
+// fake 0% for a class with no items in the store's catalog — that's "not_applicable", distinct
+// from "not_started" (real items, zero counted).
+function classNotifyStatus(byClass, k) {
+  const b = byClass && byClass[k];
+  if (!b || !b.total) return { status: 'not_applicable', pct: null, total: 0, counted: 0 };
+  if (b.counted === 0) return { status: 'not_started', pct: 0, total: b.total, counted: 0 };
+  if (b.done) return { status: 'complete', pct: b.pct, total: b.total, counted: b.counted };
+  return { status: 'in_progress', pct: b.pct, total: b.total, counted: b.counted };
+}
+
+// `prevStatus` — the store's PRIOR `eom_count_status` row (about to be overwritten this run):
+//   needs `food_done/condiment_done/paper_done/nonproduct_done`, the matching `*_done_at`
+//   timestamps, and `notified_classes` (the fire-once marker — an array of trigger-kind strings
+//   already fired for this store+period, e.g. `['paper']`).
+// `newProgress` — this run's fresh `computeCountProgress()` output.
+// Returns `{ shouldNotify:true, triggerClasses, triggerKinds, reasons, classStatuses }` or
+// `null` when there is nothing to notify this run (fire-once already consumed every trigger
+// that is currently satisfied, or nothing is complete/stale enough yet).
+export function detectCountNotifications(prevStatus, newProgress, { staleHours = NOTIFY_STALE_HOURS, asOf = new Date() } = {}) {
+  const prev = prevStatus || {};
+  const byClass = (newProgress && newProgress.byClass) || {};
+  const now = asOf instanceof Date ? asOf : new Date(asOf);
+
+  // Every relevant class's status, always (rule 3) — one shared payload reused by every trigger.
+  const classStatuses = {};
+  for (const k of NOTIFY_CLASS_KEYS) classStatuses[k] = classNotifyStatus(byClass, k);
+
+  const isDone = k => !!(byClass[k] && byClass[k].done);
+  const wasDone = k => !!prev[`${k}_done`];
+  // The timestamp to reason about for class k: the stamp already on the prior row if it was
+  // already done coming into this run, else "now" if it just flipped true THIS run, else null
+  // (not done at all). The actual stamping into `${k}_done_at` is the caller's job (Task 2's
+  // schema) — this only reads what the caller already knows plus what just became true.
+  const doneAt = k => {
+    const stamp = prev[`${k}_done_at`];
+    if (stamp) return new Date(stamp);
+    return (isDone(k) && !wasDone(k)) ? now : null;
+  };
+  const alreadyFired = kind => Array.isArray(prev.notified_classes) && prev.notified_classes.includes(kind);
+
+  const firing = []; // { kind, classes, reason }
+
+  // ── Rule 1: Food + Condiment pairing ────────────────────────────────────────
+  if (!alreadyFired('food_condiment')) {
+    if (isDone('food') && isDone('condiment')) {
+      // Both read complete (whether they flipped true in the same run, or one arrived after the
+      // other was already done) — fire immediately, no need to wait for the stale timer.
+      firing.push({ kind: 'food_condiment', classes: ['food', 'condiment'], reason: 'both_complete' });
+    } else if (isDone('food') !== isDone('condiment')) {
+      // Exactly one done, the other still isn't — hold off unless the done one has been sitting
+      // long enough (owner: "a long period... since it last submitted") that the store likely
+      // isn't coming back to finish the pair today. Notify with the stalled class's REAL status
+      // (never "not started" just because it's the one holding things up — rule 3 reserves that
+      // for a class with zero counted items).
+      const doneClass = isDone('food') ? 'food' : 'condiment';
+      const at = doneAt(doneClass);
+      if (at && (now - at) > staleHours * 3600 * 1000) {
+        firing.push({ kind: 'food_condiment', classes: [doneClass], reason: 'stale_timeout' });
+      }
+    }
+  }
+
+  // ── Rule 2: Paper — independent trigger ─────────────────────────────────────
+  if (!alreadyFired('paper') && isDone('paper')) {
+    firing.push({ kind: 'paper', classes: ['paper'], reason: 'paper_complete' });
+  }
+
+  if (!firing.length) return null;
+
+  return {
+    shouldNotify: true,
+    triggerClasses: [...new Set(firing.flatMap(f => f.classes))],
+    triggerKinds: firing.map(f => f.kind),
+    reasons: firing.map(f => f.reason),
+    classStatuses,
+  };
+}
+
 // ── Store status roll-up (for the EOM dashboard + notification trigger) ────────
 // Combines count progress with a FOB snapshot into one dashboard row per store.
 export function buildStoreStatus({ loc, period, onHandRows, fobSnapshot, asOf } = {}) {

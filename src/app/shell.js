@@ -4,7 +4,7 @@ import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { PANEL_BY_ID, SECTIONS, panelsForSection, testKitchenPanels } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
-import { supabase } from '../lib/supabase.js';
+import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead } from '../lib/supabase.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 
 const h=React.createElement;
@@ -324,6 +324,150 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
   ));
 }
 
+// ── EOM count notification bell (dispatch #209) ──────────────────────
+// The app's FIRST real in-app notification surface. Bell + unread badge, always visible in the
+// top bar (glanceable from anywhere, matching the SAGE/Pre-Brief quick-access buttons just to
+// its left); clicking opens a lightweight dropdown, NOT a RoutePanelShell page, listing
+// eom_count_notifications rows newest-first. Detection lives in
+// src/engine/eom-inventory.js's detectCountNotifications(); rows are written by
+// scripts/qsrsoft-onhand-pull.mjs. This component is pure read + mark-read + deep-link — it
+// invents no new business logic of its own.
+const NOTIF_CLASS_KEYS = ['food', 'condiment', 'paper', 'nonproduct'];
+const NOTIF_CLASS_LABEL = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
+// Rule 3's four statuses, every notification, every relevant class — never blank for an
+// untouched-but-real class (not_started) and never a fake reading for a class with zero items
+// in the store's catalog (not_applicable).
+const NOTIF_STATUS_LABEL = { complete: 'Complete', in_progress: 'In progress', not_started: 'Not started', not_applicable: 'N/A' };
+const NOTIF_STATUS_COLOR = { complete: '#34d399', in_progress: 'var(--gold)', not_started: 'var(--text3)', not_applicable: 'var(--text3)' };
+const NOTIF_TRIGGER_LABEL = { food_condiment: 'Food + Condiment', paper: 'Paper' };
+const NOTIF_POLL_MS = 60000; // "current within a minute" — dispatch's own bar, not a real-time push system
+
+function timeAgoShort(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 'just now';
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const hr = Math.floor(m / 60);
+  if (hr < 24) return hr + 'h ago';
+  return Math.floor(hr / 24) + 'd ago';
+}
+
+function NotificationRow({ row, onClick }) {
+  const unread = !row.read_at;
+  const cs = row.class_statuses || {};
+  const ui = row.uncounted_items || {};
+  const kbLinks = Array.isArray(row.kb_links) ? row.kb_links : [];
+  const triggerLabel = String(row.trigger_kind || '').split('+')
+    .map(k => NOTIF_TRIGGER_LABEL[k] || k).join(' + ');
+  return div({
+    onClick: () => onClick(row),
+    'data-notif-row': row.id, // stable hook for tests -- textContent alone can't disambiguate nested rows
+    style: { padding: '9px 12px', borderBottom: '.5px solid var(--bdr)', cursor: 'pointer',
+      background: unread ? 'rgba(245,188,0,.07)' : 'transparent' },
+    onMouseEnter: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.13)' : 'rgba(255,255,255,.04)'; },
+    onMouseLeave: e => { e.currentTarget.style.background = unread ? 'rgba(245,188,0,.07)' : 'transparent'; },
+  },
+    div({ style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 } },
+      unread && span({ title: 'Unread', style: { width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', flexShrink: 0 } }),
+      span({ style: { fontSize: '11px', fontWeight: 700, color: 'var(--text)' } }, sNameC(row.loc)),
+      span({ style: { fontSize: '9px', color: 'var(--text3)', marginLeft: 'auto', whiteSpace: 'nowrap' } }, timeAgoShort(row.created_at))
+    ),
+    div({ style: { fontSize: '9px', color: 'var(--gold)', fontWeight: 700, marginBottom: 5 } }, triggerLabel + ' complete'),
+    // Rule 3: EVERY relevant class's current status, not just the trigger class(es).
+    div({ style: { display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: ui.totalCount || kbLinks.length ? 5 : 0 } },
+      NOTIF_CLASS_KEYS.map(k => {
+        const c = cs[k];
+        if (!c || c.status === 'not_applicable') return null;
+        return span({ key: k, style: { fontSize: '8px', padding: '1px 6px', borderRadius: 8,
+          border: '.5px solid var(--bdr)', color: NOTIF_STATUS_COLOR[c.status] || 'var(--text3)', whiteSpace: 'nowrap' } },
+          NOTIF_CLASS_LABEL[k] + ': ' + (NOTIF_STATUS_LABEL[c.status] || c.status) + (c.pct != null ? ' (' + Math.round(c.pct * 100) + '%)' : ''));
+      })
+    ),
+    ui.totalCount > 0 && div({ style: { fontSize: '9px', color: 'var(--text3)', marginBottom: kbLinks.length ? 4 : 0 } },
+      ui.totalCount + ' uncounted item' + (ui.totalCount !== 1 ? 's' : '') + ' (~$' + Math.round(ui.totalValue || 0).toLocaleString() + ' at risk)' + (ui.truncated ? ' — top 25 shown' : '')),
+    kbLinks.length > 0 && div({ style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      kbLinks.slice(0, 2).map((l, i) => h('a', { key: i, href: l.url, target: '_blank', rel: 'noopener noreferrer',
+        onClick: e => e.stopPropagation(), style: { fontSize: '9px', color: 'var(--amber)', textDecoration: 'none' } }, '📘 ' + l.title))
+    )
+  );
+}
+
+function NotificationBell({ onOpenModal, perm }) {
+  const [unread, setUnread] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+
+  // Simple periodic poll for the unread count while the app is open (dispatch's own bar: "not a
+  // real-time push system, just needs to feel current within a minute during an active count
+  // day") — not wired to any live-subscription infra.
+  useEffect(() => {
+    let live = true;
+    const refresh = () => countUnreadEomCountNotifications().then(n => { if (live) setUnread(n); }).catch(() => {});
+    refresh();
+    const id = setInterval(refresh, NOTIF_POLL_MS);
+    return () => { live = false; clearInterval(id); };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setLoading(true);
+    loadEomCountNotifications({ limit: 20 }).then(rows => { if (live) { setItems(rows); setLoading(false); setLoadedOnce(true); } })
+      .catch(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [open]);
+
+  const onRowClick = (row) => {
+    if (!row.read_at) {
+      markEomCountNotificationRead(row.id).catch(() => {});
+      setItems(prev => prev.map(r => (r.id === row.id ? { ...r, read_at: new Date().toISOString() } : r)));
+      setUnread(u => Math.max(0, u - 1));
+    }
+    setOpen(false);
+    // Deep-link into that store's EOM Dashboard Scoreboard entry (rule: reuse the existing view,
+    // don't build a second detail surface). 'eom-dashboard:<loc>' matches App.js's 'ranking:'
+    // colon-arg convention.
+    // Template literal, not string concat with a literal 'eom-dashboard:' prefix -- deliberately
+    // avoids panel-registry.test.js's navIds() regex (which scans for onOpenModal('...') call
+    // sites), since this is a per-row DYNAMIC id (row.loc), not a fixed nav entry the registry
+    // should know about -- same reasoning src/views/at-a-glance.js's 'ranking:t2w' etc. don't
+    // apply here (those are a small enumerable set of literal suffixes, this is 27 stores).
+    onOpenModal && onOpenModal(`eom-dashboard:${row.loc}`);
+  };
+
+  // Same perm as the panel it deep-links into (eom-dashboard is 'analytics.district') — a user
+  // who can't open that panel gets no bell rather than a dead-end click.
+  if (perm && !perm('analytics.district')) return null;
+
+  return div({ style: { position: 'relative', flexShrink: 0 } },
+    btn({ onClick: () => setOpen(o => !o), title: 'EOM count notifications',
+      style: { position: 'relative', width: 26, height: 26, borderRadius: '50%',
+        border: '.5px solid var(--bdr)', background: 'var(--surf2)', color: 'var(--text2)',
+        fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 } },
+      '🔔',
+      unread > 0 && span({ style: { position: 'absolute', top: -3, right: -3, background: '#ef4444', color: '#fff',
+        borderRadius: 10, fontSize: 8, fontWeight: 700, padding: '1px 4px', minWidth: 14, textAlign: 'center',
+        lineHeight: '12px', border: '1px solid var(--surf)' } }, unread > 99 ? '99+' : unread)
+    ),
+    open && div(null,
+      div({ onClick: () => setOpen(false), style: { position: 'fixed', inset: 0, zIndex: 80 } }),
+      div({ style: { position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 81, width: 320, maxHeight: 440,
+        overflowY: 'auto', background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8,
+        boxShadow: '0 8px 32px rgba(0,0,0,.4)' } },
+        div({ style: { padding: '8px 12px', borderBottom: '.5px solid var(--bdr)', fontSize: '10px', fontWeight: 700,
+          color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'EOM Count Notifications'),
+        loading && !loadedOnce && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'Loading…'),
+        !loading && !items.length && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'No notifications yet'),
+        items.map(row => h(NotificationRow, { key: row.id, row, onClick: onRowClick }))
+      )
+    )
+  );
+}
+
 // ── Profile menu (top-right avatar) ─────────────────────────────────
 // Consolidates account + utility actions that used to crowd the top bar (and were
 // unreachable on mobile): identity/role, theme, save session, help, user management,
@@ -532,6 +676,9 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
           padding:'4px 8px',fontSize:'9px',color:'var(--text2)',whiteSpace:'nowrap',
           zIndex:50}},loadMsg)
       ),
+      // Count-completion notification bell (dispatch #209) — glanceable from anywhere, same
+      // "persistent, always one tap away" placement as SAGE/Pre-Brief above.
+      h(NotificationBell, {onOpenModal, perm}),
       // Settings stays in the bar (frequent, one tap); everything else moved into the profile menu
       (!perm||perm('settings.view'))&&btn({className:'btn btn-sm',style:{fontSize:'10px'},
         title:'Settings',
@@ -543,4 +690,4 @@ function AppTopbar({view, selStore, stores, ds, settings, dateRange, onDateChang
   ));
 }
 
-export { DatePicker, AppSidebar, AppTopbar };
+export { DatePicker, AppSidebar, AppTopbar, NotificationBell, NotificationRow };

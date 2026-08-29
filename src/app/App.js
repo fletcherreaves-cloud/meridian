@@ -822,6 +822,12 @@ function App() {
   const [eomInitialMode, setEomInitialMode] = useState(() =>
     (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
       && new URLSearchParams(location.search).get('panel') === 'count-cycle') ? 'compliance' : null);
+  // eomInitialStore — dispatch #209: the notification bell deep-links a specific store's
+  // Scoreboard entry (onOpenModal('eom-dashboard:<loc>'), same `id:arg` convention 'ranking:'
+  // already uses above). Separate from eomInitialMode since the two vary independently (a
+  // notification always wants mode:'scoreboard' but a specific store; count-cycle/eom-summary
+  // want a mode but never a specific store).
+  const [eomInitialStore, setEomInitialStore] = useState(null);
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   // showPlanningHub — dispatch #207: replaced by routePanel==='planning' (see routePanel above).
   const [planningTab, setPlanningTab] = useState('targets');
@@ -3020,7 +3026,10 @@ function App() {
         // perm as before ('analytics.district') and identical to eom-dashboard's own registry
         // perm — no widening, no narrowing.
         if(modal==='eom-summary')    perm('analytics.district')&&(setEomInitialMode('supervisor'),goRoute('eom-dashboard'));
-        if(modal==='eom-dashboard')  perm('analytics.district')&&goRoute('eom-dashboard');
+        // eom-dashboard — dispatch #209: `eom-dashboard:<loc>` deep-links a notification into
+        // that store's Scoreboard entry (mirrors the 'ranking:' colon-arg convention above).
+        if(modal==='eom-dashboard'||modal.startsWith('eom-dashboard:'))
+          perm('analytics.district')&&(setEomInitialMode('scoreboard'),setEomInitialStore(modal.includes(':')?modal.split(':')[1]:null),goRoute('eom-dashboard'));
         if(modal==='brief')          perm('analytics.brief')&&(selStore?setBriefScope({scope:'store',label:sNameC(selStore),locs:[selStore]}):setBriefScope({scope:'district',label:settings.districtNameShort||'District',locs:null}),goRoute('brief'));
         if(modal==='priority-brief') perm('analytics.brief')&&setShowPriorityBrief(true);
         if(modal==='operator-summary')  perm('analytics.district')&&goRoute('operator-summary');
@@ -3188,6 +3197,13 @@ function App() {
           if(modal==='troubleshoot') setShowTroubleshoot(true);
           if(modal==='proj-brief')   setShowProjBriefSA(true);
           if(modal==='sage')         {setShowSage(true);setSageMin(false);}
+          // dispatch #209 — the notification bell (NotificationBell, inside AppTopbar) deep-
+          // links a fired notification into that store's Scoreboard entry. Same colon-arg +
+          // perm gate as the sidebar's own 'eom-dashboard:' handler above (AppSidebar's
+          // onOpenModal) — kept a separate branch here rather than sharing one function since
+          // AppTopbar's onOpenModal is intentionally the small, top-bar-only subset.
+          if(modal==='eom-dashboard'||modal.startsWith('eom-dashboard:'))
+            perm('analytics.district')&&(setEomInitialMode('scoreboard'),setEomInitialStore(modal.includes(':')?modal.split(':')[1]:null),goRoute('eom-dashboard'));
         }
       }),
 
@@ -3295,7 +3311,8 @@ function App() {
         dataReady:cloudStreamsReady,
         onClose:()=>{setPerfReviewsEntry(null);goRoute(null);}}),
       routePanel==='eom-dashboard'&&h(EOMDashboardPanel,{stores,ds,settings,initialMode:eomInitialMode,
-        onClose:()=>{setEomInitialMode(null);goRoute(null);}}),
+        initialStore:eomInitialStore,
+        onClose:()=>{setEomInitialMode(null);setEomInitialStore(null);goRoute(null);}}),
       // above-store — Dispatch #160 (panel-contract pass): RoutePanelShell now lives inside
       // AboveStoreOnePager itself, same "shell inside the component" pattern as sched-hub/
       // perf-reviews/eom-dashboard above. aboveStoreInit stays local App state (My Reports
