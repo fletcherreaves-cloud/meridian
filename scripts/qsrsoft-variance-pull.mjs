@@ -31,7 +31,12 @@
 // Optional:
 //   VARIANCE_PERIOD=YYYY-MM  — override the period (default: current month UTC)
 //   VARIANCE_STORES=3708,... — subset of NSNs (default: all 27)
+//   VARIANCE_FORCE=1         — run even outside the count-window/daily-slot gate (dispatch #210)
 //   QSRSOFT_DEBUG=1
+//
+// Cadence (dispatch #210): once daily year-round (~10:00-12:00 UTC slot), accelerated to
+// hourly during the EOM count window (last 3 days of month, 8am-6pm CT) — the SAME gate
+// qsrsoft-onhand-pull.mjs uses, reused from scripts/lib/count-window.mjs. See runMode().
 //
 // Token refresh: v3.myqsrsoft.com → Inventory → Variance Stat → DevTools → Network →
 //   any prod.ebos.qsrsoft.com/api/inv/ request → copy X-Auth-Token → update QSRSOFT_EBOS_TOKEN.
@@ -41,6 +46,7 @@ import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
+import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
 import {
   mapVarianceRows, mapYieldGroups, yieldBandFor,
   mapWasteEvents, mapTransferLines, mapRawItemHistory, mapRawItemInfo,
@@ -50,6 +56,35 @@ import { tokenizeRows } from '../src/engine/identity-vault.js';
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
+const FORCE       = process.env.VARIANCE_FORCE === '1';
+
+// ── Cadence gate (dispatch #210) ───────────────────────────────────────────────
+// Daily year-round PLUS hourly during the EOM count window (last 3 days of month,
+// 8am-6pm CT) — the exact same window/business-hours gate qsrsoft-onhand-pull.mjs uses,
+// reused (not reimplemented) from scripts/lib/count-window.mjs. The workflow's cron
+// fires hourly year-round now (qsrsoft-variance-pull.yml); this gate is the sole
+// authority on whether a landed run actually does work outside the count window, so the
+// rest-of-month cadence stays once-daily.
+const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
+const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
+// Outside the count window, only fire in a WINDOW around the original once-daily slot
+// (10:30 UTC), not an exact-minute match — GitHub's scheduled runs are sparse and
+// delayed (see qsrsoft-onhand-pull.mjs's own PROGRESS_SNAPSHOT_WINDOW precedent), so an
+// exact-hour check could miss the daily pull entirely on a day no run lands in that
+// hour. The now-hourly cron (":15" past the hour, offset from on-hand's :00/:30 to avoid
+// clustering both pulls at the same instant) gives multiple chances to land in-window.
+const DAILY_SLOT_HOUR = Number(process.env.VARIANCE_DAILY_HOUR ?? 10);
+const DAILY_SLOT_WINDOW = Number(process.env.VARIANCE_DAILY_WINDOW ?? 2); // hours
+function isDailySlot(now = new Date()) {
+  const h = now.getUTCHours();
+  return h >= DAILY_SLOT_HOUR && h < DAILY_SLOT_HOUR + DAILY_SLOT_WINDOW;
+}
+// Should this invocation do a pull at all, and in which mode?
+function runMode(now = new Date()) {
+  if (FORCE) return 'forced';
+  if (inCountWindow(now)) return inCtBusinessHours(now, CT_START, CT_END) ? 'count-window' : null; // hourly, last 3 days, 8a–6p CT only
+  return isDailySlot(now) ? 'daily' : null; // once daily the rest of the month
+}
 
 const STORE_NSNS = (process.env.VARIANCE_STORES
   ? process.env.VARIANCE_STORES.split(',').map(s => s.trim())
@@ -416,6 +451,12 @@ async function runPeriod(period, token) {
 }
 
 async function main() {
+  const mode = runMode();
+  if (!mode) {
+    console.log(`[variance-pull] skipping — outside count window and not the daily slot (${DAILY_SLOT_HOUR}:00-${DAILY_SLOT_HOUR + DAILY_SLOT_WINDOW}:00 UTC). VARIANCE_FORCE=1 to override.`);
+    return;
+  }
+  console.log(`[variance-pull] mode=${mode}`);
   const token = await resolveEbosToken();
   const periods = periodsToRun();
   if (periods.length > 1) console.log(`[variance-pull] backfill ${periods.length} periods: ${periods.join(', ')}`);
@@ -428,4 +469,11 @@ async function main() {
   if (worstCode) process.exit(worstCode);
 }
 
-main().catch(err => { console.error('[variance-pull] fatal:', err); process.exit(1); });
+// Exported for src/__tests__/qsrsoft-variance-pull-window.test.js — a real behavioral test of
+// the dispatch #210 gate, not just a source-text regex. Guarded the same way
+// qsrsoft-punch-times-pull.mjs already is, so importing this module for its pure functions
+// doesn't also fire off a live Playwright/eBOS run.
+export { runMode, isDailySlot };
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => { console.error('[variance-pull] fatal:', err); process.exit(1); });
+}
