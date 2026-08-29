@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { oepeSeconds, oepeWithParkSeconds } from '../utils/oepe.js';
 import { tokenizeRows } from '../engine/identity-vault.js';
+import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
 const KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -3108,6 +3109,40 @@ export async function loadUserSetting(key) {
     .select('value').eq('user_id', user.id).eq('key', key).maybeSingle();
   if (error) return null;
   return data?.value ?? null;
+}
+
+// ── EOM digest schedule config (dispatch #217) ────────────────────────────────
+// App-WIDE (not per-user) setting — which roll-up levels the daily scheduled EOM digest
+// emails, and at what UTC hour — so it lives in org_config, not user_settings, matching how
+// this app already stores supervisorGroups/orgAssignments under org_config.key='app_settings'
+// (read by scripts/eom-digest-send.mjs's bootstrapLiveOrg()). New key, 'eom_digest_config',
+// rather than overloading 'app_settings'. No new migration: org_config already has the RLS
+// this needs ("config: authenticated read" / "config: admin/supervisor write", schema.sql).
+// DEFAULT_EOM_DIGEST_CONFIG (src/engine/eom-digest.js) is the SAME literal both this loader and
+// the Node-side scripts/eom-digest-send.mjs's loadDigestConfig() fall back to — a fresh install
+// with no saved row must behave identically to #215's original hardcoded district+patch/6pm CT
+// behavior until someone actually changes it.
+export async function loadEomDigestConfig() {
+  if (!supabase) return DEFAULT_EOM_DIGEST_CONFIG;
+  const { data, error } = await supabase.from('org_config')
+    .select('data').eq('key', 'eom_digest_config').maybeSingle();
+  if (error) { console.warn('[supabase] loadEomDigestConfig:', error.message); return DEFAULT_EOM_DIGEST_CONFIG; }
+  if (!data?.data) return DEFAULT_EOM_DIGEST_CONFIG;
+  const levels = Array.isArray(data.data.levels) && data.data.levels.length ? data.data.levels : DEFAULT_EOM_DIGEST_CONFIG.levels;
+  const sendHourUtc = Number.isInteger(data.data.sendHourUtc) ? data.data.sendHourUtc : DEFAULT_EOM_DIGEST_CONFIG.sendHourUtc;
+  return { levels, sendHourUtc };
+}
+
+export async function saveEomDigestConfig({ levels, sendHourUtc } = {}) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const payload = {
+    levels: Array.isArray(levels) && levels.length ? levels : DEFAULT_EOM_DIGEST_CONFIG.levels,
+    sendHourUtc: Number.isInteger(sendHourUtc) ? sendHourUtc : DEFAULT_EOM_DIGEST_CONFIG.sendHourUtc,
+  };
+  const { error } = await supabase.from('org_config')
+    .upsert({ key: 'eom_digest_config', data: payload, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) { console.warn('[supabase] saveEomDigestConfig:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
 }
 
 // ── Web Push subscriptions (dispatch #216) ────────────────────────────────────

@@ -35,6 +35,16 @@ import { lastDayOfPeriod } from './eom-inventory.js';
 export const DIGEST_CLASS_ORDER = ['food', 'condiment', 'paper', 'nonproduct'];
 export const DIGEST_CLASS_LABELS = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
 
+// Dispatch #217 — today's hardcoded scheduled-send behavior (district+patch, 6pm CT/23:00 UTC),
+// now the DEFAULT when nobody has ever saved an org_config 'eom_digest_config' row. Both readers
+// of that row — src/lib/supabase.js's loadEomDigestConfig() (browser) and
+// scripts/eom-digest-send.mjs's loadDigestConfig() (plain Node) — import this ONE constant
+// instead of each hardcoding the same literal a second time, since supabase.js can't be imported
+// from a Node script (it reads import.meta.env, Vite-only) and the dispatch's own "no drift
+// between the two defaults" requirement is better met by one shared value than by two hand-kept
+// copies. This file is already the shared pure engine both consumers import.
+export const DEFAULT_EOM_DIGEST_CONFIG = { levels: ['district', 'patch'], sendHourUtc: 23 };
+
 // Group key used for a store with no live patch/org assignment — lands here rather than
 // silently vanishing from every roll-up (dispatch #215 Task 2's explicit unassigned-store
 // requirement).

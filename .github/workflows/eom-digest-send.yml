@@ -3,16 +3,19 @@ name: EOM Digest Send (roll-up email)
 # Dispatch #215 Task 3 — rolls per-store EOM count-completion + FOB(+target) data up to
 # District / Patch and emails ONE digest per (level, group) via scripts/eom-digest-send.mjs.
 #
-# CADENCE — a starting guess, not a locked-in decision (say so explicitly per the dispatch): the
-# owner asked for "timed emails" without naming a schedule, so this defaults to ONCE DAILY at
-# 6pm CT (23:00 UTC) during the active count window (scripts/lib/count-window.mjs's
-# inCountWindow() — same gate qsrsoft-onhand-pull.mjs already uses — does the actual filtering;
-# the cron just gives it a landing point once a day). 6pm CT was picked as "after most of a
-# business day's counting has happened, in time for a leader to react before day's end" — retune
-# freely once the owner has seen a real digest land.
+# CADENCE (dispatch #217 — levels + send hour are now configurable, org_config key
+# 'eom_digest_config', settable from the EOM Digest modal's "⚙️ Scheduled send" row): this
+# workflow now runs HOURLY, and scripts/eom-digest-send.mjs itself self-gates on whether the
+# CURRENT UTC hour matches the configured `sendHourUtc` (default 23 = 6pm CT, #215's original
+# hardcoded value) — the same "cron is just a landing point, the script does the real
+# filtering" pattern already used for inCountWindow() below. Running hourly instead of once
+# daily is what makes a *configured* hour meaningful without editing this YAML every time
+# someone changes the setting in the UI; 23 of 24 hourly runs simply no-op via the new hour
+# gate, matching how scripts/qsrsoft-onhand-pull.mjs already self-gates on its own count-window
+# check rather than relying on cron granularity alone.
 on:
   schedule:
-    - cron: '0 23 * * *'   # 23:00 UTC = 6:00pm CT (CDT) / 5:00pm CT (CST) — inCountWindow() still gates whether this run actually sends
+    - cron: '0 * * * *'   # hourly — eom-digest-send.mjs's own hour-gate (org_config 'eom_digest_config'.sendHourUtc) decides which run actually sends; inCountWindow() still gates the count-window too
   workflow_dispatch:
     inputs:
       level:
