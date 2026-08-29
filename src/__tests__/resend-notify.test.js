@@ -140,6 +140,58 @@ describe('buildEmailContent — dispatch #213 Task 3, FOB section', () => {
   });
 });
 
+describe('buildEmailContent — dispatch #214, FOB tool links "Investigate further" sub-section', () => {
+  const FOB_SNAP = {
+    sales: 100000, comp: 400, raw: 300, cond: 150, emp: 100, statv: 800, unex: 250,
+    fob: 2000, fobPct: 0.02, asOf: '2026-08-28',
+  };
+  const TOOL_LINKS = [
+    { title: 'Variance Stat/Yields (F)', url: 'https://v3.myqsrsoft.com/cimt/inventory/stat-variance?location=11657&tab=varianceStat&start=2026-08-01&period=M&class=F' },
+    { title: 'Waste (this store)', url: 'https://v3.myqsrsoft.com/cimt/inventory/waste?location=11657' },
+  ];
+
+  it('renders "Investigate further" with the given links, as its own sub-section distinct from FOB components and Helpful links', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP, fob_tool_links: TOOL_LINKS };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).toContain('Investigate further');
+    expect(html).toContain('Variance Stat/Yields (F)');
+    expect(html).toContain('stat-variance?location=11657');
+    expect(html).toContain('Waste (this store)');
+    // Comes after the FOB components ("Variance Stat" the component label), and before the
+    // existing "Helpful links" block — its own sub-section, not mixed into either.
+    const compsIdx = html.indexOf('Variance Stat:'); // fobSectionHtml's component line
+    const investigateIdx = html.indexOf('Investigate further');
+    const helpfulIdx = html.indexOf('Helpful links');
+    expect(compsIdx).toBeGreaterThan(-1);
+    expect(investigateIdx).toBeGreaterThan(compsIdx);
+    expect(helpfulIdx).toBeGreaterThan(investigateIdx);
+  });
+
+  it('renders NOTHING (no "Investigate further" header) when fob_tool_links is an empty array', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP, fob_tool_links: [] };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).not.toContain('Investigate further');
+  });
+
+  it('renders NOTHING when fob_tool_links is null', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP, fob_tool_links: null };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).not.toContain('Investigate further');
+  });
+
+  it('renders NOTHING when fob_tool_links is absent from the row entirely', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).not.toContain('Investigate further');
+  });
+
+  it('renders NOTHING when the FOB section itself is absent (no fob_snapshot), even if fob_tool_links were somehow present', () => {
+    const row = { ...ROW, fob_snapshot: null, fob_tool_links: TOOL_LINKS };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).not.toContain('Investigate further');
+  });
+});
+
 describe('buildSmsBody', () => {
   it('is short plain text, store name, trigger class(es), a decision-relevant status line, no KB links, no HTML', () => {
     const body = buildSmsBody(ROW, STORE_INFO);

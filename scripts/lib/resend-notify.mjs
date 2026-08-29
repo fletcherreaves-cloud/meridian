@@ -44,6 +44,19 @@ const FOB_COMPONENTS = [
   ['cond', 'Condiments'], ['emp', 'Emp/Mgr Meals'], ['unex', 'Unexplained'],
 ];
 
+// dispatch #214 — the six FOB investigation-tool links (row.fob_tool_links, built by
+// qsrsoft-onhand-pull.mjs's fobToolLinks()) as their own visually distinct "Investigate further"
+// sub-section directly under the FOB components — NOT mixed into the existing "Helpful links"
+// block at the bottom of the email (buildEmailContent()'s own row.kb_links rendering, untouched).
+// Renders nothing (no header, no placeholder) when the array is empty or absent — same
+// no-caveat-no-placeholder discipline as fobSectionHtml() itself.
+function fobToolLinksHtml(links) {
+  if (!links || !links.length) return '';
+  const items = links.map(l => `<li><a href="${l.url}">${l.title}</a></li>`).join('');
+  return `<h4 style="margin:12px 0 6px;font-size:13px;color:#444">Investigate further</h4>
+<ul style="margin:0 0 4px;padding-left:20px;font-size:13px">${items}</ul>`;
+}
+
 // Renders nothing when row.fob_snapshot is absent (stale/missing FOB pull, per the owner's
 // freshness rule) — no caveat, no placeholder header, just skip the section entirely.
 //
@@ -70,7 +83,8 @@ function fobSectionHtml(row) {
   }).join('');
   return `<h3 style="margin:16px 0 8px">FOB (Food Over Base)</h3>
 <p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
-<ul style="margin:0 0 4px;padding-left:20px">${compLines}</ul>`;
+<ul style="margin:0 0 4px;padding-left:20px">${compLines}</ul>
+${fobToolLinksHtml(row.fob_tool_links)}`;
 }
 
 // 'food_condiment' -> 'Food + Condiment', 'paper' -> 'Paper'

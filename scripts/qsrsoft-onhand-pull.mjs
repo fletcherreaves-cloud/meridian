@@ -90,6 +90,54 @@ export function kbLinksForClasses(classes, nsn, dateStr) {
   return [...seen.values()];
 }
 
+// ── FOB investigation tool links (dispatch #214) ────────────────────────────────
+// NOT KB articles — live links into QSRSoft's own inventory-investigation tools (Variance
+// Stat/Yields, Waste, Transfers, Raw Items, Purchases, Inventory Analysis), owner-supplied
+// verbatim (memory/dispatch-214.md). Diagnostically tied to a FOB number, not to "how do I
+// count" — a SEPARATE array from kbLinksForClasses()'s "Helpful links" set (untouched by this
+// dispatch) and rendered only alongside the FOB section itself (resend-notify.mjs's
+// fobSectionHtml()), never mixed into "Helpful links". Two of the six (Variance Stat/Yields,
+// Inventory Analysis) take a per-class `class=<letter>` param and get one link PER triggered FOB
+// class (Food and/or Condiment — reuses CLASS_LETTER, never redefined here); the other four
+// (Waste/Transfers/Raw Items/Purchases) are class-agnostic, exactly as the owner's own example
+// URLs show — no invented class/date params where his examples had none.
+//
+// Class-variant judgment call (the dispatch's own open question, raised explicitly rather than
+// silently decided): a food_condiment trigger keeps BOTH class letters for Variance Stat and
+// Inventory Analysis (up to 8 links total) rather than capping to "the worse offender". Checked
+// whether that cap was cheaply derivable from fobTargetReport/buildFobTargetReport()'s
+// comps/topDriver (src/engine/fob-report.js) — it is NOT: that data is keyed by FOB dollar
+// COMPONENT (statv/comp/raw/cond/emp/unex — cost categories), not by inventory CLASS
+// (Food/Condiment); the two axes don't map onto each other, so "worse class" would be a new,
+// unproven computation, not a reuse of existing math. The owner asked for these six tools by
+// name — trust him to skim 8 links rather than silently under-deliver on an explicit request.
+//
+// Returns [] ENTIRELY (not just the per-class links) when triggerClasses has no Food/Condiment
+// member — all six tools are FOB-diagnostic and irrelevant to a Paper/Non-Product-only trigger,
+// same "show nothing rather than something irrelevant" discipline the freshness gate already
+// uses. `nsn` = unpadLoc(loc) (owner's own example used the unpadded `3708`); `period` is this
+// run's own `YYYY-MM`; `dateStr` is this run's own businessDate(), both already threaded through
+// buildNotificationRow since #213.
+export function fobToolLinks(nsn, triggerClasses, period, dateStr) {
+  const fobClasses = (triggerClasses || []).filter(c => FOB_CLASSES.includes(c));
+  if (!fobClasses.length) return [];
+  const start = `${period}-01`;
+  const links = [];
+  for (const c of fobClasses) {
+    const letter = CLASS_LETTER[c] || 'F';
+    links.push({ title: `Variance Stat/Yields (${letter})`, url: `https://v3.myqsrsoft.com/cimt/inventory/stat-variance?location=${nsn}&tab=varianceStat&start=${start}&period=M&class=${letter}` });
+  }
+  links.push({ title: 'Waste (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/waste?location=${nsn}` });
+  links.push({ title: 'Transfers (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/transfers?location=${nsn}&tab=transfers&start=${start}&end=${dateStr}` });
+  links.push({ title: 'Raw Items (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/raw-item-information?location=${nsn}&start=${start}&end=${dateStr}` });
+  links.push({ title: 'Purchases (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/purchases?location=${nsn}&tab=approvePending` });
+  for (const c of fobClasses) {
+    const letter = CLASS_LETTER[c] || 'F';
+    links.push({ title: `Inventory Analysis (${letter})`, url: `https://v3.myqsrsoft.com/cimt/inventory/inventory-analysis?location=${nsn}&class=${letter}&start=${start}&end=${dateStr}` });
+  }
+  return links;
+}
+
 // dispatch #216 — the third delivery channel: a real push to every subscribed device (no
 // per-role routing yet, matching #211/#215's own "everyone gets it for now" scope — this app
 // doesn't have per-role notification recipients modeled). `supabase` guarded null-check matches
@@ -151,7 +199,10 @@ const UNCOUNTED_ITEMS_CAP = 25;
 // threaded through to the per-class On-Hand link. `fobTargetReport` (dispatch #215 Task 1) —
 // buildFobTargetReport()'s output (target/gapPP/overTarget/comps/topDriver), or null/undefined
 // when no target resolved OR fobSnapshot itself is absent (target math is meaningless without a
-// fresh actual to compare it to).
+// fresh actual to compare it to). `fob_tool_links` (dispatch #214) — the six investigation-tool
+// links, built ONLY alongside a fresh fobSnapshot (the same gate fob_snapshot/fob_target already
+// use — never a second freshness check), else null; matches the fob_snapshot/fob_target
+// null-when-stale pattern so resend-notify.mjs's "empty or absent" check covers this the same way.
 export function buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr, fobTargetReport) {
   const scoped = (diag.uncounted || [])
     .filter(u => detection.triggerClasses.includes(u.cls))
@@ -170,6 +221,7 @@ export function buildNotificationRow(loc, period, detection, diag, fobSnapshot, 
     kb_links: kbLinksForClasses(detection.triggerClasses, unpadLoc(loc), dateStr),
     fob_snapshot: fobSnapshot || null,
     fob_target: fobTargetReport || null,
+    fob_tool_links: fobSnapshot ? fobToolLinks(unpadLoc(loc), detection.triggerClasses, period, dateStr) : null,
   };
 }
 
