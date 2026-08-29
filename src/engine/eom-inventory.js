@@ -144,8 +144,11 @@ export const BELIEVES_DONE_PCT = 0.90;
 // A class is treated as complete at this fraction.
 export const CLASS_DONE_PCT = 0.98;
 
-// The most recent count/submit date on an On-Hand row (or null).
-function countedDate(row) {
+// The most recent count/submit date on an On-Hand row (or null). Exported (dispatch #213) so
+// scripts/qsrsoft-onhand-pull.mjs's FOB-freshness check reuses this "counted or submitted,
+// whichever is later" logic verbatim instead of a second copy — every other consumer of this
+// semantics (computeCountProgress/diagnoseIncompleteCount below) stays on the same function.
+export function countedDate(row) {
   const c = row.lastCounted ? new Date(row.lastCounted) : null;
   const s = row.lastSubmitted ? new Date(row.lastSubmitted) : null;
   if (c && s) return c > s ? c : s;
