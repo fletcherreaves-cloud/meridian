@@ -43,8 +43,17 @@ dollar-weighted (`fobByStore` in `src/views/eom-dashboard.js`). It's a real down
 **once/day (~6am CT)** → a count finalizing mid-day (settling stat variance → moving FOB) didn't show
 until next morning (Chipley read 3.47 vs QSRSoft 3.58). **Fixed:** `qsrsoft-pull.yml` now pulls FOB
 **3×/day (11/18/22 UTC = 6a/1p/5p CT)**; the script re-pulls a recent window so later runs backfill.
-- **Owner idea (follow-up): autopull FOB the instant a store's count completes.** The on-hand pull
-  already fires `notified_90` (fireNow) exactly when a store crosses "believes done" — so in
-  `scripts/qsrsoft-onhand-pull.mjs`, on any fireNow, dispatch `qsrsoft-pull.yml` (FOB) via the GitHub
-  REST API (`gh workflow run` / `actions:write`). Marginal gain over 3×/day (hours → minutes); build
-  if the owner wants instant. The dashboard's "data as of" stamp already exposes the FOB snapshot date.
+- **✅ SHIPPED (dispatch #210, 2026-08-29).** `scripts/qsrsoft-onhand-pull.mjs`'s
+  `triggerFobPullIfPossible()` now dispatches `qsrsoft-pull.yml` via the GitHub REST API
+  (`actions/workflows/qsrsoft-pull.yml/dispatches`, `actions: write` on the default
+  `GITHUB_TOKEN` — workflow_dispatch is exempt from the token's normal
+  "won't trigger further runs" restriction, no separate PAT needed) the instant ANY
+  store's `st._fireNow` (the same `notified_90` cross-90% trigger) fires this run, at most
+  once per script run. Wired off the single existing `notified_90` trigger, not a
+  per-class one — dispatch #209 (EOM count-completion notifications, which was going to
+  add finer-grained per-class fire-once events) was still doc-only on `main` when this
+  landed, so there was nothing finer to wire onto yet. **If #209 lands its per-class
+  triggers later, revisit whether this should fire per-class instead of on the single
+  aggregate `notified_90` flag** — left as a note here rather than blocking on it.
+  Tested with a mocked `fetch` (no live network) in
+  `src/__tests__/qsrsoft-onhand-pull-fob-nudge.test.js`.

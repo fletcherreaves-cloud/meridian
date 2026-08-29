@@ -1,73 +1,86 @@
 // @ts-nocheck
 export default {version:'5.250', date:'2026-08-29', changes:[
-  'Dispatch #209 -- EOM count-completion notifications: the app\'s FIRST real in-app notification ' +
-  'system, built during an active 3-day EOM count cycle. Owner, live: "can we setup a smart ' +
-  'notification for when a store is perceived to complete with any class of count?"' +
+  'Dispatch #210 -- EOM pull cadence tightened + a real scheduled-run reliability watchdog. ' +
+  'Owner asked whether the on-hand count + Variance Stat pulls could run more often during the ' +
+  '3-day EOM count window; the same morning the QSRSoft Daily Activity Pull silently failed to ' +
+  'fire for its ~3am/~5am CT scheduled runs (confirmed live via the GitHub Actions API: no run ' +
+  'exists between 01:57-11:52 UTC while sibling pulls ran fine) -- a documented GitHub behavior ' +
+  '(scheduled cron triggers are best-effort and can be silently dropped), not a script bug. That ' +
+  'reframed a simple cadence bump into cadence + reliability together.' +
   '\n\n' +
-  'Detection: new detectCountNotifications(prevStatus, newProgress) in src/engine/eom-inventory.js ' +
-  '-- a pure transition-detection layer on top of the ALREADY-BUILT computeCountProgress()/ ' +
-  'diagnoseIncompleteCount() engine (no math changed there). Implements the owner\'s exact rules, ' +
-  'transcribed verbatim in memory/dispatch-209.md: Food+Condiment wait for BOTH complete before ' +
-  'notifying, UNLESS the done one has been sitting >3h (NOTIFY_STALE_HOURS) with the other still ' +
-  'incomplete, in which case it fires anyway showing the stalled class\'s REAL % (never a fake ' +
-  '"not started" just because it\'s holding the pair up); Paper fires independently the moment it ' +
-  'completes, and that notification ALWAYS carries Food/Condiment/Non-Product\'s current status too ' +
-  '(every notification is a full-cycle snapshot, not just the trigger class); every relevant class ' +
-  'gets one of four honest statuses on every notification -- not_applicable (zero items in the ' +
-  'store\'s catalog), not_started (real items, zero counted), in_progress (real %), complete -- ' +
-  'never blank/missing for an untouched-but-real class. Fire-once via a new notified_classes jsonb ' +
-  'array on eom_count_status (generalizes the existing notified_90 pattern from one shared flag to ' +
-  'one marker per trigger-kind), plus new food_done_at/condiment_done_at/paper_done_at/ ' +
-  'nonproduct_done_at timestamp columns (stamped once, never overwritten) that the stale-timeout ' +
-  'rule reasons against. 18 unit tests (src/__tests__/eom-count-notifications.test.js) cover every ' +
-  'named rule combination: both-together-immediate, one-then-stale, one-then-other-arrives-before- ' +
-  'stale (fires as both_complete, not stale_timeout), paper-alone, not-started-vs-not-applicable, ' +
-  'and no-refire.' +
+  'Cadence: qsrsoft-onhand-pull.yml now fires every 30 min (":00"+":30" cron lines) during the ' +
+  'existing 8am-6pm CT / last-3-days-of-month window -- NOT 15 min, deliberately, to avoid ' +
+  'doubling exposure to the same silent-drop risk for marginal freshness gain now that the ' +
+  'watchdog below is a backstop. The in-script inCountWindow()/inCtBusinessHours() gate (now ' +
+  'extracted to scripts/lib/count-window.mjs so qsrsoft-variance-pull.mjs can reuse it verbatim ' +
+  'rather than reimplementing it) stays the sole authority on whether a landed run does real work ' +
+  '-- the cron change only makes more runs LAND, it carries none of the window logic. ' +
+  'qsrsoft-variance-pull.mjs gained a window-gate it never had (was daily-only, 30 10 * * * ' +
+  'year-round): a new hourly cron line (offset :15, avoiding the on-hand pull\'s :00/:30 to reduce ' +
+  'clustering) now fires year-round, and the script\'s own runMode() decides real work -- ' +
+  'accelerate to hourly during the count window (same gate as on-hand), stay once-daily the rest ' +
+  'of the month (a [10,12) UTC WINDOW around the original 10:30 slot, not an exact-minute match, ' +
+  'per the same "GitHub runs are sparse and delayed" reasoning on-hand\'s own progress-snapshot ' +
+  'already uses). Real timing already measured this session and cited rather than re-measured: ' +
+  'on-hand ~130-142s, variance-pull up to 671s (11 min) -- both comfortable even at the tighter ' +
+  'cadence, and this is a public repo (unlimited standard-runner minutes).' +
   '\n\n' +
-  'Schema (supabase/schema-eom-count-notifications.sql, ⚠️ NEEDS THE OWNER TO RUN IT MANUALLY in ' +
-  'the Supabase SQL editor before real rows can be written -- same handoff pattern as every other ' +
-  'new-table dispatch): the five eom_count_status columns above, plus a new eom_count_notifications ' +
-  'table (trigger_kind, class_statuses jsonb, uncounted_items jsonb capped to the top 25 by ' +
-  'valueAtRisk with a totalCount/totalValue/truncated flag so nothing silently drops, kb_links jsonb, ' +
-  'read_at), tenant_id + full tenant-scoped RLS replicating schema-qsr-menu-item-activity.sql\'s exact ' +
-  'pattern (current_tenant_id()/set_tenant_id()). Idempotent; also folded into schema.sql\'s own ' +
-  'eom_count_status CREATE TABLE so the schema-drift ratchet stays green.' +
+  'Concurrency: both workflows gained `concurrency: {group: <name>-${{github.ref}}, ' +
+  'cancel-in-progress: false}` (queue, don\'t cancel -- every write in both scripts is an ' +
+  'idempotent upsert on a stable PK, so a cancelled mid-write run is strictly worse than a queued ' +
+  'one). Neither had a concurrency block before, independent of the cadence change.' +
   '\n\n' +
-  'Wiring (scripts/qsrsoft-onhand-pull.mjs): computeCountProgress() is now computed ONCE per store ' +
-  'per run and shared between detectCountNotifications() and the existing status-row builder (no ' +
-  'more double pass over the same on-hand rows); a fired detection calls diagnoseIncompleteCount() ' +
-  'scoped to the trigger class(es) for the uncounted-items payload and inserts into ' +
-  'eom_count_notifications. QSRSoft KB grounding is LIVE-CONFIRMED against qsrsoft_kb (service-role ' +
-  'read, 2026-08-29) -- "What are the Best Counting Practices Using the Mobile Inventory App" and ' +
-  '"Physical Inventory" are the two real matching articles in the corpus (no Paper- or Non-Product- ' +
-  'specific article exists, so those classes point at the same two general-counting links plus, for ' +
-  'Non-Product, "On Hand Inventory"); real titles/URLs, not guessed. diagnoseIncompleteCount\'s ' +
-  'already-computed lateBulk/lateBulkDay signal rides along inside class_statuses (no new column). ' +
-  'An explicit named comment marks the exact future send_email(row)/send_sms(row) hook point right ' +
-  'after the insert -- out of scope for this dispatch per the owner\'s own message, no fake provider ' +
-  'code stubbed. A scoped integration test (eom-count-notifications-pull.test.js) proves a real ' +
-  'notification row lands with the right shape end-to-end, including the fire-once path across two ' +
-  'simulated runs.' +
+  'New watchdog: .github/workflows/scheduled-pull-watchdog.yml + scripts/scheduled-pull-' +
+  'watchdog.mjs, every 30 min. Explicitly NOT a replacement for sync-failure-watch.yml (which ' +
+  'watches a workflow that RAN and FAILED) -- this catches the DIFFERENT failure mode from ' +
+  'today\'s incident: a run that never started at all, so there is no workflow_run event for ' +
+  'that watcher to see. Reads src/engine/stream-freshness.js\'s STREAMS array as the source of ' +
+  'truth for which streams are critical (no second hand-maintained list); a small additive ' +
+  'mapping, scripts/lib/scheduled-pull-registry.mjs, carries only what STREAMS\' browser-side ' +
+  '`dsField` can\'t -- the Supabase table/date-column to query directly and the owning .yml ' +
+  'workflow file to re-dispatch -- keyed by the SAME `key`, with a test asserting the two files\' ' +
+  'key sets are identical in both directions so they can\'t drift apart. Staleness = ' +
+  '(cadenceDays*24h + 16h grace) -- deliberately generous, not a hair-trigger: these are DATE- ' +
+  'grain columns pulled once a morning, so the normal pre-next-pull age is already well into the ' +
+  '24-30h range, and 16h grace is a reasoned default (not a live-measured one, flagged as such) ' +
+  'pending real detections to calibrate against. A genuinely stale stream gets ONE automatic ' +
+  'workflow_dispatch retrigger via the GitHub REST API (actions:write on the default GITHUB_TOKEN ' +
+  '-- workflow_dispatch is one of the two events explicitly exempt from the token\'s normal ' +
+  '"won\'t trigger further runs" restriction, so no separate PAT), tracked via a GitHub issue ' +
+  '(same mechanism sync-failure-watch.yml already uses for its own state); still stale next cycle ' +
+  'escalates with a comment instead of retriggering again (a workflow failing for a REAL reason ' +
+  'is sync-failure-watch.yml\'s job once it runs and reports failure) -- and the issue auto-closes ' +
+  'once the stream recovers. The watchdog itself is now scheduled, so it was added to sync-' +
+  'failure-watch.yml\'s own watched-workflows list (its own test requires every cron workflow to ' +
+  'be watched).' +
   '\n\n' +
-  'UI (src/app/shell.js): a bell + unread-count badge in the top bar (NotificationBell, next to the ' +
-  'SAGE/Pre-Brief quick-access buttons, same "always one tap away" placement), 60s poll for the ' +
-  'unread count -- not a real-time push system. Clicking opens a lightweight dropdown (NOT a ' +
-  'RoutePanelShell page) listing eom_count_notifications newest-first: store name, trigger class(es), ' +
-  'every relevant class\'s status/%, collapsed uncounted-item count + $ at risk, and the real KB ' +
-  'link(s). Clicking a row marks it read and deep-links into that store\'s EOM Dashboard Scoreboard ' +
-  'entry (new eom-dashboard:<loc> colon-arg, App.js\'s eomInitialStore state seeding ' +
-  'EOMDashboardPanel\'s existing oneStore filter -- reuses the existing Scoreboard view per the ' +
-  'owner\'s own "don\'t build a second detail surface" instruction, does not build a new one). ' +
-  'Render-level test (eom-count-notification-bell.test.js) mounts the REAL component with fixture ' +
-  'data -- unread badge, dropdown open/load, rule-3 not_started-vs-in_progress rendering on the same ' +
-  'row, KB link real title/url, mark-read + deep-link on click, no double mark-read on an already- ' +
-  'read row.' +
+  'Task 4 (cheap nice-to-have) made it in: qsrsoft-onhand-pull.mjs now nudges QSRSoft FOB Pull ' +
+  '(qsrsoft-pull.yml) via workflow_dispatch the instant any store crosses "believes done" this ' +
+  'run, instead of waiting for FOB\'s own 3x/day schedule -- wired off the existing notified_90 ' +
+  'trigger (dispatch #209\'s finer-grained per-class triggers were doc-only on `main` as of this ' +
+  'dispatch, checked live, so nothing to wire onto yet; a per-class version can follow once #209 ' +
+  'lands). At most one dispatch per script run.' +
   '\n\n' +
-  'Speed check: entry+eager-preload payload 523.77 KB gzip vs the 850 KB budget (326 KB headroom); ' +
-  'recent baseline was ~522 KB -- the bell/badge is a new always-loaded shell component (not lazy- ' +
-  'loadable the way a panel is), so this is real, small, expected growth, reported per the standing ' +
-  'speed-check rule rather than left unmeasured.' +
+  'Verification: real behavioral tests throughout, not source-text regexes, per this repo\'s ' +
+  '"would this verification still pass if reverted" rule -- qsrsoft-variance-pull.mjs and ' +
+  'qsrsoft-onhand-pull.mjs both gained the same import.meta.url-guarded-main() pattern ' +
+  'qsrsoft-punch-times-pull.mjs already used, so their real gate/nudge functions are imported and ' +
+  'exercised directly (mocked fetch/Supabase, no live network) rather than only asserted by ' +
+  'inspection. New: count-window.test.js (the extracted pure gate), qsrsoft-variance-pull-' +
+  'window.test.js (the new window-gate end to end, including "the new hourly cron landing mid-' +
+  'month at an off-slot hour stays a no-op"), scheduled-pull-registry.test.js (STREAMS<->registry ' +
+  'parity + every workflowFile resolves to a real file), scheduled-pull-watchdog.test.js (a ' +
+  'genuinely stale stream really issues a workflow_dispatch POST to the RIGHT workflow AND opens ' +
+  'an issue; a fresh stream makes zero API calls; a still-stale stream with an issue already open ' +
+  'escalates via comment and does NOT dispatch a second time; recovery closes the issue), ' +
+  'qsrsoft-onhand-pull-fob-nudge.test.js (the Task 4 nudge fires with the right URL/body when ' +
+  'GITHUB_TOKEN/GITHUB_REPOSITORY are set, no-ops cleanly without them, never throws on a failed ' +
+  'call). Live smoke-testing the actual tightened cadence against real GitHub Actions runs is ' +
+  'this worktree\'s one open item -- it cannot push or dispatch workflows itself (isolated ' +
+  'worktree, PM handles push/PR/merge), so that observation window is the PM\'s to run post-merge.' +
   '\n\n' +
-  'Full suite: 3168/3168 (one unrelated retention-rollup test flaked under full-suite parallel load ' +
-  'and passed clean in isolation -- not touched by this change, not re-run to hide it).',
+  'Full suite: 308 files / 3177 tests passing (5 new test files). Build clean; eager payload ' +
+  '522.25 KB gzip (budget 850 KB, headroom 327.75 KB) -- unchanged, as expected, since this ' +
+  'dispatch is workflow YAML + scripts/, no src/ app-bundle changes.',
 ]};
+
