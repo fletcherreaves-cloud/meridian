@@ -72,7 +72,11 @@ export async function sendWebPush(subscription, payload) {
       }
       return false;
     }
-    console.warn(`[webpush-notify] push send failed: ${(e && e.message) || e}`);
+    // PM diagnostic addition — web-push's WebPushError carries the actual HTTP status/body from
+    // the browser's push service (FCM/Mozilla/Apple), but the generic e.message alone ("Received
+    // unexpected response code") hides which one and why. Log both so a real failure is
+    // diagnosable from the workflow logs alone, not just "it failed."
+    console.warn(`[webpush-notify] push send failed${status ? ` (status ${status})` : ''}: ${(e && e.message) || e}${e && e.body ? ` — body: ${e.body}` : ''}`);
     return false;
   }
 }
