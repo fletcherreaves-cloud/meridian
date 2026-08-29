@@ -17,10 +17,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const sendEmailMock = vi.fn().mockResolvedValue(true);
 const sendSmsMock = vi.fn().mockResolvedValue(true);
-vi.mock('../../scripts/lib/resend-notify.mjs', () => ({
-  sendEmailNotification: (...args) => sendEmailMock(...args),
-  sendSmsViaCarrierGateway: (...args) => sendSmsMock(...args),
-}));
+// PM hotfix (found during dispatch #214 verification, pre-existing since #216): this mock used
+// to replace resend-notify.mjs entirely, which silently dropped its triggerLabel export once
+// #216's sendPushNotifications() (qsrsoft-onhand-pull.mjs) started calling it too. Keep every
+// real export via importOriginal and override only the two send functions this test actually
+// wants mocked — the same pattern this repo's own vi.mock docs prescribe for a partial mock.
+vi.mock('../../scripts/lib/resend-notify.mjs', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    sendEmailNotification: (...args) => sendEmailMock(...args),
+    sendSmsViaCarrierGateway: (...args) => sendSmsMock(...args),
+  };
+});
 
 import { deliverNotifications, notifyRow, buildNotificationRow } from '../../scripts/qsrsoft-onhand-pull.mjs';
 import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications } from '../engine/eom-inventory.js';

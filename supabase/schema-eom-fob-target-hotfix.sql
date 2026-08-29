@@ -1,0 +1,23 @@
+-- ── HOTFIX: eom_count_notifications.fob_target column was never migrated — dispatch #215 ───────
+-- Found during PM verification of dispatch #214 (2026-08-29), NOT part of #214's own scope.
+--
+-- Dispatch #215's buildNotificationRow() (scripts/qsrsoft-onhand-pull.mjs) added
+-- `fob_target: fobTargetReport || null` to every row inserted into eom_count_notifications — but
+-- no migration ever added a `fob_target` column to that table. Live-confirmed (service-role
+-- REST, PGRST204 "Could not find the 'fob_target' column of 'eom_count_notifications' in the
+-- schema cache") that this has caused EVERY insert to eom_count_notifications to fail silently
+-- since #215 merged (~2026-08-29 16:44 UTC) — the field is present as a key on every row
+-- (even as `null`), so every insert in the batch is rejected by PostgREST's schema check.
+--
+-- Impact, precisely (don't overstate it): scripts/qsrsoft-onhand-pull.mjs's insert error is
+-- caught and logged as a warning, not fatal — and deliverNotifications(notificationRows) runs
+-- UNCONDITIONALLY regardless of the insert's error, so real email/SMS/push sends (#211/#216)
+-- have kept firing correctly throughout. What broke: the eom_count_notifications table itself
+-- received NO new rows since #215 merged, so the in-app NotificationBell (which reads this
+-- table) and any historical/audit view of fired notifications went silently stale for that
+-- window. The fire-once guard (notified_classes on eom_count_status, a separate upsert earlier
+-- in the same run) was unaffected and kept working correctly throughout — no duplicate sends.
+--
+-- Idempotent (`add column if not exists`) — safe to run anytime, including a second time.
+-- ⚠️ HANDOFF — run this in the Supabase SQL editor, same as every other new-column migration.
+alter table public.eom_count_notifications add column if not exists fob_target jsonb;
