@@ -38,10 +38,13 @@ import {
   computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT,
   FOB_CLASSES, normClass, countedDate, fobSnapshotByStore,
 } from '../src/engine/eom-inventory.js';
+// dispatch #215 Task 1 — reuse fob-report.js's own comps/overTarget/gapPP/topDriver math
+// (never a third hand-rolled version of it) for the notification's target-vs-actual section.
+import { buildStoreFobReport } from '../src/engine/fob-report.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
 import { sendEmailNotification, sendSmsViaCarrierGateway } from './lib/resend-notify.mjs';
-import { STORE_NAMES, unpadLoc } from '../src/constants.js';
+import { STORE_NAMES, DEFAULT_TARGETS, unpadLoc } from '../src/constants.js';
 
 // ── Count-completion notifications (dispatch #209) ────────────────────────────
 // QSRSoft KB grounding — confirmed LIVE against qsrsoft_kb 2026-08-29 (service-role read,
@@ -108,8 +111,11 @@ const UNCOUNTED_ITEMS_CAP = 25;
 // `fobSnapshot` (dispatch #213 Task 3) — the store's fobSnapshotByStore() output when the
 // freshness check passed, or null/undefined when it didn't (or the trigger doesn't touch
 // Food/Condiment at all). `dateStr` (dispatch #213 amendment) — this run's own businessDate(),
-// threaded through to the per-class On-Hand link.
-export function buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr) {
+// threaded through to the per-class On-Hand link. `fobTargetReport` (dispatch #215 Task 1) —
+// buildFobTargetReport()'s output (target/gapPP/overTarget/comps/topDriver), or null/undefined
+// when no target resolved OR fobSnapshot itself is absent (target math is meaningless without a
+// fresh actual to compare it to).
+export function buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr, fobTargetReport) {
   const scoped = (diag.uncounted || [])
     .filter(u => detection.triggerClasses.includes(u.cls))
     .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
@@ -126,6 +132,7 @@ export function buildNotificationRow(loc, period, detection, diag, fobSnapshot, 
     },
     kb_links: kbLinksForClasses(detection.triggerClasses, unpadLoc(loc), dateStr),
     fob_snapshot: fobSnapshot || null,
+    fob_target: fobTargetReport || null,
   };
 }
 
@@ -135,7 +142,9 @@ const DEBUG       = process.env.QSRSOFT_DEBUG === '1';
 const FORCE       = process.env.ONHAND_FORCE === '1';
 const TYPES       = (process.env.ONHAND_TYPES || 'F,C,P,N').split(',').map(s => s.trim()).filter(Boolean);
 
-const STORE_NSNS = [
+// Exported (dispatch #215 Task 3) — scripts/eom-digest-send.mjs reads the exact same 27-store
+// list rather than a second copy that could drift.
+export const STORE_NSNS = [
   3708, 5183, 5985, 6178, 6838, 6972,
   10034, 10422, 10915, 11657, 13113, 18213,
   20475, 24471, 29760, 31357, 32525, 33109,
@@ -584,6 +593,82 @@ export async function fetchFobSnapshotForStore(loc, period) {
   return { snap, updatedAt: latestRow?.updated_at ? new Date(latestRow.updated_at) : null };
 }
 
+// ── FOB targets alongside components (dispatch #215 Task 1) ───────────────────
+// `t` shape below is the SAME one computeFoodCostHeadline() (src/views/store-cockpit.js) reads:
+// target: t.tFOBTarget (headline), compTarget: {statv,comp,raw,cond,emp,unex} from
+// t.tStatLoss/tCompWaste/tRawWaste/tCondiment/tEmpFood/tUnex. This resolves that same `t` for a
+// bare Node script, which (unlike the browser) has no `settings.targets`/App.js startup merge.
+//
+// SCOPE (a real judgment call, not mechanical — stated per the dispatch): resolves
+// DEFAULT_TARGETS[loc] (src/constants.js, imported the same way this file already imports
+// STORE_NAMES/unpadLoc from it) with a LIVE monthly_targets override for this exact (loc, year,
+// month) layered on top when one exists — monthly_targets is the table Projections/Performance
+// Review already treat as the current-period source of truth for these exact fields (see
+// src/lib/supabase.js's loadMonthlyTargets, same column names used below). Deliberately does
+// NOT also consult yearly_targets or target_overrides (the separate company/state/patch/store
+// cascade, src/engine/target-overrides.js) — those sit at other tiers of the app's real
+// precedence (review-engine.js's mergedTargetsForLocMonth: DEFAULT_TARGETS < yearly <
+// monthly < target_overrides), but pulling that whole 4-tier resolution into this script for a
+// v1 email section risks importing review-engine.js's heavier transitive graph (metric-source.js,
+// one-pager-data.js, schedule-summary.js, assignment-graph.js) into a Playwright pull script for
+// a nice-to-have upgrade. monthly_targets is the tier an owner/GM actually edits mid-month
+// (Projections' own "apply Smart Targets to the OFFICIAL monthly_targets" flow), so it's the one
+// most likely to matter here. Report this scope choice in the PR body — a later dispatch can
+// extend to the full cascade if a store's Targets-editor override should also show here.
+async function fetchMonthlyTargetOverride(unpaddedLoc, year, month) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('monthly_targets')
+    .select('comp_waste_pct,raw_waste_pct,condiment_pct,emp_food_pct,stat_loss_pct,unex_diff_pct,fob_target_pct')
+    .eq('loc', unpaddedLoc).eq('year', year).eq('month', month).maybeSingle();
+  if (error) { console.warn('[monthly_targets] load error:', error.message); return null; }
+  return data || null;
+}
+
+export async function resolveFobTargets(loc, period) {
+  const u = unpadLoc(loc);
+  const base = { ...(DEFAULT_TARGETS[u] || {}) };
+  const [year, month] = String(period).split('-').map(Number);
+  const override = await fetchMonthlyTargetOverride(u, year, month);
+  if (override) {
+    // Never let a present-but-null column erase a good default (same _stripNullTargets
+    // discipline src/lib/supabase.js's loadMonthlyTargets uses).
+    if (override.comp_waste_pct  != null) base.tCompWaste = override.comp_waste_pct;
+    if (override.raw_waste_pct   != null) base.tRawWaste  = override.raw_waste_pct;
+    if (override.condiment_pct   != null) base.tCondiment = override.condiment_pct;
+    if (override.emp_food_pct    != null) base.tEmpFood   = override.emp_food_pct;
+    if (override.stat_loss_pct   != null) base.tStatLoss  = override.stat_loss_pct;
+    if (override.unex_diff_pct   != null) base.tUnex      = override.unex_diff_pct;
+    if (override.fob_target_pct  != null) base.tFOBTarget = override.fob_target_pct;
+  }
+  return base;
+}
+
+// Builds the target-vs-actual read for the notification's FOB section, via buildStoreFobReport()
+// (src/engine/fob-report.js) — the SAME comps/overTarget/gapPP/topDriver math the FOB Report
+// panel and Store Cockpit already show, never a second hand-rolled version. `fobSnap` is
+// fobSnapshotByStore()'s per-store output (the same object attached as fob_snapshot); `t` is
+// resolveFobTargets()'s output. Returns null when no FOB% target is resolvable — omit the
+// target comparison rather than guess, matching #213's own freshness-gate philosophy (show
+// nothing sooner than show something wrong).
+export function buildFobTargetReport(loc, period, fobSnap, t) {
+  if (!fobSnap || !t || t.tFOBTarget == null) return null;
+  const compActual = fobSnap.sales ? {
+    statv: fobSnap.statv / fobSnap.sales, comp: fobSnap.comp / fobSnap.sales, raw: fobSnap.raw / fobSnap.sales,
+    cond: fobSnap.cond / fobSnap.sales, emp: fobSnap.emp / fobSnap.sales, unex: fobSnap.unex / fobSnap.sales,
+  } : null;
+  const compTarget = { statv: t.tStatLoss, comp: t.tCompWaste, raw: t.tRawWaste, cond: t.tCondiment, emp: t.tEmpFood, unex: t.tUnex };
+  const report = buildStoreFobReport(String(loc), {
+    name: STORE_NAMES[unpadLoc(loc)] || loc, org: null, patch: null,
+    fob: fobSnap, target: Number(t.tFOBTarget), monthly: { [period]: fobSnap.fobPct },
+    varRows: [], compActual, compTarget,
+  });
+  // `fobPct` (not `target`) — matches src/engine/eom-digest.js's roll-up shape (Task 2), which
+  // reads `s.fobTarget.fobPct` when computing a group's avg gap/over-target count; keeping both
+  // Task 1 and Task 2 consumers on the same field name avoids a silent shape mismatch where the
+  // roll-up's FOB-vs-target aggregation would quietly exclude every store.
+  return { fobPct: report.target, gapPP: report.gapPP, overTarget: report.overTarget, comps: report.comps, topDriver: report.topDriver };
+}
+
 async function main() {
   const mode = runMode();
   if (!mode) {
@@ -650,6 +735,7 @@ async function main() {
         // trigger touches Food and/or Condiment (FOB_CLASSES — the only classes that feed FOB),
         // and only when the store's latest qsr_fob pull is at least as recent as the count itself.
         let fobSnapshot = null;
+        let fobTargetReport = null; // dispatch #215 Task 1 — only ever set alongside a fresh fobSnapshot
         const fobRelevant = detection.triggerClasses.some(c => FOB_CLASSES.includes(c));
         if (fobRelevant) {
           // Nudge the FOB pull regardless of whether THIS run's freshness check passes below —
@@ -660,11 +746,13 @@ async function main() {
             const fobResult = await fetchFobSnapshotForStore(loc, period);
             if (fobResult && isFobFresh(fobResult.updatedAt, completedAt)) {
               fobSnapshot = fobResult.snap;
+              const t = await resolveFobTargets(loc, period);
+              fobTargetReport = buildFobTargetReport(loc, period, fobSnapshot, t);
             }
           }
         }
-        notificationRows.push(buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr));
-        console.log(`  🔔 ${nsn}: count-completion notification — ${detection.triggerKinds.join('+')} (${detection.reasons.join('/')})${fobSnapshot ? ' + fresh FOB snapshot' : ''}`);
+        notificationRows.push(buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr, fobTargetReport));
+        console.log(`  🔔 ${nsn}: count-completion notification — ${detection.triggerKinds.join('+')} (${detection.reasons.join('/')})${fobSnapshot ? ' + fresh FOB snapshot' : ''}${fobTargetReport ? ' + target' : ''}`);
       }
       const st = buildStatusRow(loc, period, prevStatus[loc], p, detection?.triggerKinds);
       // #210 Task 4: nudge the FOB pull the instant a store crosses believes-done this run.
