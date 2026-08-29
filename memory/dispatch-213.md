@@ -35,7 +35,29 @@ In `scripts/qsrsoft-onhand-pull.mjs`:
   `https://v3.myqsrsoft.com/cimt/inventory/inventory?location=${nsn}&tab=itemsToInventory&countFrequency=A&temperatureZone=all&class=all&rangeIndicator=all&duplicatePrefix=false` }`
   — use the unpadded NSN (`unpadLoc(loc)`, already imported in this file), matching the owner's own
   example (`location=3708`, not a zero-padded 7-digit form).
-- `KB_ON_HAND` is untouched — the owner did not flag it, only the two above.
+- **AMENDMENT (2026-08-29, live mid-build)** — `KB_ON_HAND` is no longer untouched. The owner
+  followed up with more direct tool links, including a per-store, per-date, per-class **On-Hand**
+  report link: `https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory?location=3708&class=F&recipe=all&nonzero=true&duplicates=false&date=2026-08-29`
+  — `3708`/`F`/`2026-08-29` are that example's own store/class/date, all three substitute per
+  notification. Replace `KB_ON_HAND` the same way `KB_PHYSICAL_INVENTORY` was just made dynamic:
+  `{ title: 'On-Hand Inventory (this store)', url:
+  `https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory?location=${nsn}&class=${classLetter}&recipe=all&nonzero=true&duplicates=false&date=${dateStr}` }`.
+  `nsn` = same unpadded NSN as Physical Inventory. `dateStr` = this run's own `businessDate()`
+  value (already computed in `main()`, needs threading down to `kbLinksForClasses`/
+  `buildNotificationRow` alongside `nsn`). `classLetter` = the single QSRSoft class code (`F`/`C`/
+  `P`/`N`) for the relevant class — this script already uses that exact same F/C/P/N vocabulary
+  for `TYPES`/`ONHAND_TYPES` (`food→F, condiment→C, paper→P, nonproduct→N`, matching `CLASS_ORDER`
+  in `resend-notify.mjs`'s own order) — confirm that exact mapping against `mapOnHandRow()`'s
+  `invty_class` strings ("Food"/"Condiment"/"Paper"/"Non-Product") before trusting it, per this
+  repo's measure-don't-reason rule, rather than assuming the order lines up. Build one On-Hand
+  link per triggered class (a `food_condiment` trigger gets both an `F` and a `C` on-hand link, not
+  one link for an arbitrary single class).
+- **Also deferred (2026-08-29 follow-up, NOT this dispatch)**: the owner separately supplied direct
+  tool links for **Variance Stat/Yields**, **Transfers**, **Waste**, **Purchases**, **Raw Items**,
+  and **Inventory Analysis** (all `v3.myqsrsoft.com/cimt/inventory/...`, same `location=`-param
+  pattern, several also date-ranged). These are real and valuable but need their own class-mapping
+  design (which trigger class each belongs under, and for the date-ranged ones, what window to
+  default to) — explicitly out of scope for #213, tracked as dispatch #214. Do not add them here.
 - Update the one call site (`buildNotificationRow()`) to pass the store's NSN through — `loc` is
   already a param there; derive `nsn` from it the same way the rest of this file already does
   (`unpadLoc(loc)`).
