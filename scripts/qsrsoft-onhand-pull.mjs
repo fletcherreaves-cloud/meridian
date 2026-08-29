@@ -37,6 +37,8 @@ import { createClient } from '@supabase/supabase-js';
 import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
+import { sendEmailNotification, sendSmsViaCarrierGateway } from './lib/resend-notify.mjs';
+import { STORE_NAMES, unpadLoc } from '../src/constants.js';
 
 // ── Count-completion notifications (dispatch #209) ────────────────────────────
 // QSRSoft KB grounding — confirmed LIVE against qsrsoft_kb 2026-08-29 (service-role read,
@@ -57,6 +59,23 @@ export function kbLinksForClasses(classes) {
   const seen = new Map();
   for (const c of (classes || [])) for (const link of (KB_LINKS_BY_CLASS[c] || [])) seen.set(link.url, link);
   return [...seen.values()];
+}
+
+// Dispatch #211 — deliver a single fired notification over BOTH channels (email + SMS-via-
+// carrier-gateway). Exported (rather than inlined in the run loop below) so the hook-point
+// wiring itself is unit-testable against a mocked resend-notify module, per this repo's own
+// "would this verification still pass if the change were reverted" rule — a test that only
+// exercises resend-notify.mjs directly could not tell "wired in" from "wired in, then deleted".
+export async function notifyRow(row) {
+  const storeInfo = { loc: row.loc, name: STORE_NAMES[unpadLoc(row.loc)] || row.loc };
+  await sendEmailNotification(row, storeInfo);
+  await sendSmsViaCarrierGateway(row, storeInfo);
+}
+
+// Every fired notification gets BOTH channels (owner asked for both, not a per-notification
+// choice) — no per-row filtering or channel selection here.
+export async function deliverNotifications(rows) {
+  for (const row of (rows || [])) await notifyRow(row);
 }
 
 // Build the eom_count_notifications row for a fired detection. `diag` is this store's
@@ -604,11 +623,11 @@ async function main() {
     const { error } = await supabase.from('eom_count_notifications').insert(notificationRows);
     if (error) console.warn('[eom_count_notifications] insert error (table may not exist yet — run supabase/schema-eom-count-notifications.sql):', error.message);
     else console.log(`[onhand-pull] notifications: ${notificationRows.length} fired`);
-    // ── FUTURE HOOK — email/SMS delivery (out of scope for dispatch #209) ──────────────────────
-    // Once the owner provides a provider + recipient, a future dispatch adds
-    // send_email(row)/send_sms(row) calls right here, once per row in notificationRows, right
-    // after the insert above succeeds. Nothing else in this file needs to change for that —
-    // detection/persistence and delivery are already separate steps.
+    // ── Email/SMS delivery (dispatch #211) — real Resend sends, once per row, after the insert
+    // above succeeds. See notifyRow()/deliverNotifications() above and scripts/lib/resend-
+    // notify.mjs for the send functions themselves. Neither send throws; a delivery failure is
+    // logged and does not affect the insert already committed above or the rest of this run.
+    await deliverNotifications(notificationRows);
   }
 
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);

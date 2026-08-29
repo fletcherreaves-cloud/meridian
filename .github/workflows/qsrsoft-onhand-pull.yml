@@ -37,6 +37,10 @@ on:
         description: '#357-B2/3 — log the On-Hand API raw field set + one record once (1 = on)'
         required: false
         default: '0'
+      send_test_notification:
+        description: 'Dispatch #211 smoke test — send ONE real test email + text via Resend instead of running the real pull (1 = on)'
+        required: false
+        default: '0'
 
 # Queue, don't cancel (dispatch #210) — every write in qsrsoft-onhand-pull.mjs is an
 # idempotent upsert on a stable PK, so a queued run is harmless; a CANCELLED mid-write
@@ -74,11 +78,20 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browser
+        if: ${{ github.event.inputs.send_test_notification != '1' }}
         run: npx playwright install chromium --with-deps
 
+      - name: Send live test notification (dispatch #211 smoke test)
+        if: ${{ github.event.inputs.send_test_notification == '1' }}
+        run: node scripts/test-eom-notification-send.mjs
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+
       - name: Pull QSRSoft On-Hand Inventory
+        if: ${{ github.event.inputs.send_test_notification != '1' }}
         run: node scripts/qsrsoft-onhand-pull.mjs
         env:
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
           VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
