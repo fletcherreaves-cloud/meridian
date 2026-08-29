@@ -40,18 +40,32 @@
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY.
 // Optional:
-//   DIGEST_FORCE=1        — send even outside the active count window
-//   DIGEST_LEVEL=district|patch|org|all — which level(s) to send (default: district + patch)
+//   DIGEST_FORCE=1        — send even outside the active count window AND outside the
+//                           configured send hour (see loadDigestConfig()/hourGatePasses()
+//                           below, dispatch #217) — used by the on-demand "Generate Report"
+//                           panel action, which always passes an explicit DIGEST_LEVEL too.
+//   DIGEST_LEVEL=district|patch|org|all — which level(s) to send. When unset, defaults to
+//                           the org_config-configured levels (loadDigestConfig(), dispatch
+//                           #217) rather than a hardcoded district+patch — see levelsToRun().
 //   DIGEST_PERIOD=YYYY-MM — override the period (default: current month)
 //   DIGEST_DATE=YYYY-MM-DD— override the business date queried (default: today UTC)
 //   QSRSOFT_DEBUG=1
+//
+// Cadence (dispatch #217): the workflow's cron now runs HOURLY
+// (.github/workflows/eom-digest-send.yml) and this script self-gates on whether the current
+// UTC hour matches org_config's configured `sendHourUtc` (loadDigestConfig()/
+// hourGatePasses() below) — the same "cron just gives it a landing point, the script does
+// the real filtering" pattern inCountWindow() already uses, and the same self-gating
+// scripts/qsrsoft-onhand-pull.mjs uses for its own count-window check. 23 of 24 hourly runs
+// simply no-op via this gate; DIGEST_FORCE=1 bypasses it exactly like it already bypasses
+// inCountWindow().
 
 import { createClient } from '@supabase/supabase-js';
 import {
   STORE_NAMES, unpadLoc, getStoreOrg, supervisorOf,
   setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups,
 } from '../src/constants.js';
-import { buildEomDigest, DIGEST_CLASS_ORDER } from '../src/engine/eom-digest.js';
+import { buildEomDigest, DIGEST_CLASS_ORDER, DEFAULT_EOM_DIGEST_CONFIG } from '../src/engine/eom-digest.js';
 import {
   STORE_NSNS, fetchFobSnapshotForStore, isFobFresh, resolveFobTargets, buildFobTargetReport,
 } from './qsrsoft-onhand-pull.mjs';
@@ -62,12 +76,27 @@ const DEBUG = process.env.QSRSOFT_DEBUG === '1';
 const FORCE = process.env.DIGEST_FORCE === '1';
 const LEVEL_ARG = (process.env.DIGEST_LEVEL || '').trim().toLowerCase();
 const ALL_LEVELS = ['district', 'patch', 'org'];
-// Default = district + patch (dispatch #215 Task 3's own "at minimum: district-wide + every
-// patch" — org-level was explicitly left as an easy opt-in, not on by default, for a first pass).
-function levelsToRun() {
+// Default source is now the loaded org_config, not a hardcoded literal (dispatch #217) — but
+// DIGEST_LEVEL, when explicitly set, still wins unconditionally. This is what the on-demand
+// panel send relies on (it always passes an explicit level via trigger-dar-sync's `digest`
+// workflow entry) — that path is untouched by this change, it never reaches the config branch.
+// Pure + takes `config` as a parameter (default DEFAULT_EOM_DIGEST_CONFIG) rather than reading
+// a module-scope "loaded config" variable, so tests can call it directly with a fixture.
+export function levelsToRun(config = DEFAULT_EOM_DIGEST_CONFIG) {
   if (LEVEL_ARG === 'all') return ALL_LEVELS;
   if (ALL_LEVELS.includes(LEVEL_ARG)) return [LEVEL_ARG];
-  return ['district', 'patch'];
+  const levels = config && Array.isArray(config.levels) && config.levels.length ? config.levels : null;
+  return levels || DEFAULT_EOM_DIGEST_CONFIG.levels;
+}
+
+// True when `now`'s UTC hour matches the configured send hour, OR force is set — force
+// bypasses this exactly like it already bypasses inCountWindow() above (dispatch #217's own
+// requirement: an on-demand click must never be blocked by "it's not the configured hour
+// yet"). Pure, explicit `now`/`force` params (no env reads inside) so a test can pin a fixed
+// instant, mirroring how scripts/lib/count-window.mjs's own functions take `now` explicitly.
+export function hourGatePasses(sendHourUtc, now = new Date(), force = false) {
+  if (force) return true;
+  return now.getUTCHours() === sendHourUtc;
 }
 
 // Guarded, not unconditional — matches qsrsoft-onhand-pull.mjs's own module-scope pattern (its
@@ -92,6 +121,22 @@ export async function bootstrapLiveOrg() {
   const a = (remote.orgAssignments && remote.orgAssignments.length) ? remote.orgAssignments : seedAssignmentsFromGroups(remote.supervisorGroups);
   setLiveAssignments(a);
   return true;
+}
+
+// ── Digest schedule config (dispatch #217) ─────────────────────────────────────
+// Mirrors bootstrapLiveOrg()'s own org_config read pattern above — same file, same query
+// shape, just a different key ('eom_digest_config' vs 'app_settings') — and falls back to
+// the SAME literal default as src/lib/supabase.js's loadEomDigestConfig() (both import
+// DEFAULT_EOM_DIGEST_CONFIG from src/engine/eom-digest.js), so a fresh install with no saved
+// row behaves identically whether the config is read from the browser or from this script.
+export async function loadDigestConfig() {
+  if (!supabase) return DEFAULT_EOM_DIGEST_CONFIG;
+  const { data, error } = await supabase.from('org_config').select('data').eq('key', 'eom_digest_config').maybeSingle();
+  if (error) { console.warn('[eom-digest-send] eom_digest_config load error:', error.message); return DEFAULT_EOM_DIGEST_CONFIG; }
+  if (!data?.data) return DEFAULT_EOM_DIGEST_CONFIG;
+  const levels = Array.isArray(data.data.levels) && data.data.levels.length ? data.data.levels : DEFAULT_EOM_DIGEST_CONFIG.levels;
+  const sendHourUtc = Number.isInteger(data.data.sendHourUtc) ? data.data.sendHourUtc : DEFAULT_EOM_DIGEST_CONFIG.sendHourUtc;
+  return { levels, sendHourUtc };
 }
 
 // ── Per-store data loads ────────────────────────────────────────────────────────
@@ -197,9 +242,15 @@ async function main() {
     console.log('[eom-digest-send] skipping — outside the active EOM count window. DIGEST_FORCE=1 to override.');
     return;
   }
+  const config = await loadDigestConfig();
+  const now = new Date();
+  if (!FORCE && !hourGatePasses(config.sendHourUtc, now)) {
+    console.log(`[eom-digest-send] skipping — current UTC hour ${now.getUTCHours()} != configured sendHourUtc ${config.sendHourUtc}. DIGEST_FORCE=1 to override.`);
+    return;
+  }
   const dateStr = businessDate();
   const period = periodFor(dateStr);
-  console.log(`[eom-digest-send] period ${period} · date ${dateStr} · levels [${levelsToRun().join(',')}]`);
+  console.log(`[eom-digest-send] period ${period} · date ${dateStr} · levels [${levelsToRun(config).join(',')}]`);
 
   const gotLiveOrg = await bootstrapLiveOrg();
   if (DEBUG) console.log('[eom-digest-send] live org bootstrap:', gotLiveOrg ? 'OK' : 'fell back to seed');
@@ -209,7 +260,7 @@ async function main() {
   if (!rows.length) { console.log('[eom-digest-send] nothing to send'); return; }
 
   let sent = 0, failed = 0;
-  for (const level of levelsToRun()) {
+  for (const level of levelsToRun(config)) {
     const digest = buildEomDigest(rows, { level, period, asOf: new Date() });
     for (const group of digest.groups) {
       const ok = await sendDigestEmail(group, level);

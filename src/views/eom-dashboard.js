@@ -15,6 +15,7 @@ import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
+  loadEomDigestConfig, saveEomDigestConfig,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
   saveEomSnapshots, loadEomSnapshots, saveEomSecondaryReview, loadEomSecondaryReview,
   saveEomCountException, deleteEomCountException, loadEomCountExceptions,
@@ -73,6 +74,18 @@ function lastPeriods(period, n = 6) {
 
 // Small toolbar button (Save CSV / Print) shared by the scan modals.
 const MODAL_TOOLBTN = { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '11px', fontWeight: 600, color: 'var(--text2)', background: 'var(--surf3)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '4px 9px', cursor: 'pointer' };
+
+// dispatch #217 — labels a stored UTC hour (org_config 'eom_digest_config'.sendHourUtc) in CT
+// for the "⚙️ Scheduled send" hour picker, e.g. utcHourToCtLabel(23) -> "6:00 PM CT". Uses
+// TODAY's date so the label reflects whichever of CDT/CST is currently in effect — this repo's
+// own cron comments do the same manual CT↔UTC translation elsewhere (e.g. this file's own
+// eom-digest-send.yml comment), and the dispatch is explicit that DST-aware precision beyond
+// what a single hour dropdown reasonably implies isn't needed here (the value STORED is always
+// the plain UTC hour; only the on-screen label moves with DST).
+function utcHourToCtLabel(hourUtc) {
+  const d = new Date(); d.setUTCHours(hourUtc, 0, 0, 0);
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit', hourCycle: 'h12' }).format(d) + ' CT';
+}
 
 // ── Save / print helpers (dependency-free) ────────────────────────────────────
 const _csvCell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -1628,6 +1641,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [digestLevel, setDigestLevel] = useState('district');
   const [digestSending, setDigestSending] = useState(false);
   const [digestMsg, setDigestMsg] = useState(null);
+  // dispatch #217 — "⚙️ Scheduled send" row inside this SAME modal: which levels the DAILY
+  // scheduled email includes + what UTC hour it sends, independent of digestLevel above
+  // (that's just which level the user is currently VIEWING here — don't conflate the two).
+  // Loaded fresh every time the modal opens (openDigest below) so the fields reflect the real
+  // stored org_config row, never a silent reset to defaults.
+  const [schedLevels, setSchedLevels] = useState(['district', 'patch']);
+  const [schedHourUtc, setSchedHourUtc] = useState(23);
+  const [schedLoaded, setSchedLoaded] = useState(false);
+  const [schedSaving, setSchedSaving] = useState(false);
+  const [schedMsg, setSchedMsg] = useState(null);
 
   // Load the editable diagnosis-flow config once on mount.
   useEffect(() => { loadEomDiagConfig().then(c => { if (c) setDiagCfg(c); }).catch(() => {}); }, []);
@@ -1940,7 +1963,18 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const digestAutoLevel = patch ? 'patch' : (scope !== 'all' ? 'org' : 'district');
   const digest = useMemo(() => buildEomDigest(digestStoreRows, { level: digestOpen ? digestLevel : digestAutoLevel, period }),
     [digestStoreRows, digestLevel, digestAutoLevel, period, digestOpen]);
-  const openDigest = useCallback(() => { setDigestLevel(digestAutoLevel); setDigestMsg(null); setDigestOpen(true); }, [digestAutoLevel]);
+  const openDigest = useCallback(() => {
+    setDigestLevel(digestAutoLevel); setDigestMsg(null); setDigestOpen(true);
+    // Load the real stored schedule config fresh on every open (dispatch #217) — never trust
+    // whatever was left in state from a previous open, and never silently show the hardcoded
+    // default as if it were confirmed-saved.
+    setSchedLoaded(false); setSchedMsg(null);
+    loadEomDigestConfig().then(cfg => {
+      setSchedLevels(Array.isArray(cfg?.levels) && cfg.levels.length ? cfg.levels : ['district', 'patch']);
+      setSchedHourUtc(Number.isInteger(cfg?.sendHourUtc) ? cfg.sendHourUtc : 23);
+      setSchedLoaded(true);
+    }).catch(() => setSchedLoaded(true));
+  }, [digestAutoLevel]);
   const sendDigest = useCallback(async () => {
     setDigestSending(true); setDigestMsg(null);
     try {
@@ -1950,6 +1984,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     } catch (e) { setDigestMsg({ ok: false, text: `✗ ${e.message || 'failed'}` }); }
     finally { setDigestSending(false); }
   }, [digestLevel, digest.groups.length]);
+  const toggleSchedLevel = useCallback((k) => {
+    setSchedLevels(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]);
+  }, []);
+  const saveSched = useCallback(async () => {
+    setSchedSaving(true); setSchedMsg(null);
+    try {
+      const r = await saveEomDigestConfig({ levels: schedLevels, sendHourUtc: schedHourUtc });
+      setSchedMsg(r?.saved ? { ok: true, text: '✓ Saved.' } : { ok: false, text: `✗ ${r?.error || 'save failed'}` });
+    } catch (e) { setSchedMsg({ ok: false, text: `✗ ${e.message || 'failed'}` }); }
+    finally { setSchedSaving(false); }
+  }, [schedLevels, schedHourUtc]);
 
   // FOB Report — printable (→ PDF) + CSV export, so it can go into a DO/GM review.
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
@@ -3063,6 +3108,34 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
           }, digestSending ? '📧 Sending…' : `📧 Email ${digest.groups.length} group${digest.groups.length === 1 ? '' : 's'}`)),
         digestMsg ? div({ style: { fontSize: '11px', color: digestMsg.ok ? '#4ade80' : 'var(--crit)', marginBottom: '10px' } }, digestMsg.text) : null,
         div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '12px' } }, `Reporting ${period} · scope: ${scopeLabel()} · view updates live from data already on screen; nothing is emailed until you click Send.`),
+        // ⚙️ Scheduled send (dispatch #217) — which levels the DAILY auto email includes + what
+        // hour it sends. Deliberately separate from the level tabs above: those pick what THIS
+        // MODAL is showing you right now; this picks what goes out automatically every day,
+        // regardless of what a viewer happens to have open at the time.
+        div({ style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '10px 12px', marginBottom: '14px' } },
+          div({ style: { fontWeight: 700, fontSize: '12px', color: 'var(--text)', marginBottom: '8px' } }, '⚙️ Scheduled send'),
+          !schedLoaded
+            ? div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'Loading current schedule…')
+            : div(null,
+                div({ style: { display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', marginBottom: '8px' } },
+                  [['district', 'District'], ['patch', 'Patch'], ['org', 'Market']].map(([k, label]) =>
+                    h('label', { key: k, style: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--text2)', cursor: 'pointer' } },
+                      h('input', { type: 'checkbox', checked: schedLevels.includes(k), onChange: () => toggleSchedLevel(k) }),
+                      label)),
+                  div({ style: { display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' } },
+                    span({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'Send at'),
+                    h('select', {
+                      value: schedHourUtc, onChange: e => setSchedHourUtc(Number(e.target.value)),
+                      style: { fontSize: '12px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '5px', padding: '3px 6px' },
+                    }, Array.from({ length: 24 }, (_, hUtc) => h('option', { key: hUtc, value: hUtc }, utcHourToCtLabel(hUtc)))))),
+                div({ style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+                  h('button', {
+                    onClick: saveSched, disabled: schedSaving || schedLevels.length === 0,
+                    style: { ...MODAL_TOOLBTN, cursor: schedSaving ? 'wait' : 'pointer' },
+                    title: 'Save which levels the daily scheduled email includes and what UTC hour it sends',
+                  }, schedSaving ? 'Saving…' : 'Save schedule'),
+                  schedLevels.length === 0 ? span({ style: { fontSize: '11px', color: 'var(--crit)' } }, 'Pick at least one level') : null,
+                  schedMsg ? span({ style: { fontSize: '11px', color: schedMsg.ok ? '#4ade80' : 'var(--crit)' } }, schedMsg.text) : null))),
         div({ style: { overflowX: 'auto' } }, digest.groups.length
           ? digest.groups.map(groupCard)
           : div({ style: { color: 'var(--text3)', fontSize: '12px' } }, 'No stores with EOM data in the current scope.')));
