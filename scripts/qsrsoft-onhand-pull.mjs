@@ -4,7 +4,8 @@
 // Pulls the On-Hand raw-items report from prod.ebos.qsrsoft.com for all 27 stores.
 // On-Hand is the count-progress signal: each item's last_counted / last_submitted
 // date tells us if/when it was counted. During the last 3 days of the month we pull
-// hourly so we can see when each store finishes its EOM count.
+// every 30 minutes (dispatch #210, tightened from hourly) so we can see when each store
+// finishes its EOM count.
 //
 // Endpoint (confirmed 2026-07-26):
 //   GET /api/inv/{nsn}/on_hand/rawitems?date=YYYY-MM-DD&type={F|C|P|N}&recipe=all
@@ -35,6 +36,7 @@ import { createClient } from '@supabase/supabase-js';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
 import { computeCountProgress, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
+import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -63,12 +65,9 @@ function periodFor(dateStr) {
   return process.env.ONHAND_PERIOD || dateStr.slice(0, 7); // 'YYYY-MM'
 }
 
-// True only in the last 3 calendar days of the month.
-function inCountWindow() {
-  const now = new Date();
-  const lastDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-  return now.getUTCDate() >= lastDay - 2;
-}
+// inCountWindow/centralHour/inCtBusinessHours moved to ./lib/count-window.mjs (dispatch
+// #210) so qsrsoft-variance-pull.mjs can reuse the EXACT same gate instead of a second
+// copy — this file still owns CT_START/CT_END/the env-tunable defaults below.
 
 // Year-round "progress mode" snapshot: outside the count window we still take ONE
 // light On-Hand pull per day (in a morning UTC WINDOW) so `last_counted` freshness
@@ -93,20 +92,14 @@ function isProgressSnapshotHour() {
 // DST-safe via America/Chicago. A manual/on-demand run (FORCE=1) overrides this anytime.
 const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
 const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
-// hourCycle explicitly 'h23' (NOT just hour12:false) -- hour12:false alone leaves midnight's
-// rendering ("00" vs "24") to the runtime's default hourCycle resolution, which is NOT portable
-// across Node/ICU versions (this exact pattern broke main's CI for seven commits via
-// src/engine/forms-completion.js -- see dispatch #60, memory/dispatch-60-ci-node-parity.md).
-// Currently latent here (CT_START/CT_END never span midnight, so "00" vs "24" both fail the
-// range check the same way) but fixed anyway so it can't become live the day either bound changes.
-function centralHour() {
-  return Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', hour: 'numeric' }).format(new Date()));
-}
-function inCtBusinessHours() { const h = centralHour(); return h >= CT_START && h < CT_END; }
 // Should this invocation do a pull at all, and in which mode?
+// Cadence (dispatch #210): the workflow's own cron now fires every 30 min during the
+// count window (see qsrsoft-onhand-pull.yml) — this gate is still the sole authority on
+// whether a landed run does real work; the cron change only makes MORE runs land, it
+// carries none of the window logic itself.
 function runMode() {
   if (FORCE) return 'forced';
-  if (inCountWindow()) return inCtBusinessHours() ? 'count-window' : null; // hourly, last 3 days, 8a–6p CT only
+  if (inCountWindow()) return inCtBusinessHours(new Date(), CT_START, CT_END) ? 'count-window' : null; // every 30 min, last 3 days, 8a–6p CT only
   if (isProgressSnapshotHour()) return 'progress'; // one daily snapshot, year-round
   return null;                                   // skip
 }
@@ -374,6 +367,49 @@ function buildStatusRow(loc, period, ohRows, prev) {
   };
 }
 
+// #210 Task 4 / memory/project-eom-scoreboard-notify.md: the instant a store crosses
+// "believes done" (>=90% counted), nudge the FOB pull immediately instead of waiting for
+// its own 3x/day schedule (qsrsoft-pull.yml) — an EOM count finalizing is exactly the
+// kind of intraday change that pull's own schedule comment already anticipates catching
+// "within hours, not next morning". Wired off the SAME notified_90 trigger
+// buildStatusRow() already computes (fireNow = crossed BELIEVES_DONE_PCT and wasn't
+// already notified) — dispatch #209 (EOM count-completion notifications) was still
+// doc-only on `main` as of this dispatch (checked live: only memory/dispatch-209.md
+// exists, no script changes), so there are no finer-grained per-class fire-once events to
+// hook yet. A per-class version (food/condiment/paper/nonproduct each independently
+// crossing done) can follow once #209 lands those triggers — note left here rather than
+// duplicating trigger-detection logic ahead of that work.
+//
+// At most once per SCRIPT RUN even if multiple stores cross this run — qsrsoft-pull.yml
+// has no per-store subset input, so a second dispatch in the same run would only be a
+// wasted duplicate call, not a mistake, but there's no reason to make it.
+async function triggerFobPullIfPossible() {
+  const token = process.env.GITHUB_TOKEN;
+  const repoFull = process.env.GITHUB_REPOSITORY;
+  if (!token || !repoFull) {
+    console.log('[onhand-pull] believes-done fired but no GITHUB_TOKEN/GITHUB_REPOSITORY in this environment — skipping FOB pull nudge');
+    return;
+  }
+  const [owner, repo] = repoFull.split('/');
+  const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/qsrsoft-pull.yml/dispatches`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (res.ok) console.log('[onhand-pull] ✓ nudged QSRSoft FOB Pull (qsrsoft-pull.yml) via workflow_dispatch — a store just crossed believes-done');
+    else console.warn(`[onhand-pull] FOB pull nudge HTTP ${res.status}`);
+  } catch (e) {
+    console.warn(`[onhand-pull] FOB pull nudge failed: ${e.message}`);
+  }
+}
+
 async function main() {
   const mode = runMode();
   if (!mode) {
@@ -387,6 +423,7 @@ async function main() {
   console.log(`[onhand-pull] mode=${mode} · date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${STORE_NSNS.length} stores`);
 
   let totalSaved = 0, storesWithData = 0, authFailed = false;
+  let anyBelievesDoneFired = false; // #210 Task 4 — nudge the FOB pull if any store crosses this run
   const statusRows = [];
   const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
   const sessionRows = [];   // append-only count-session history (one row / store / count date / class)
@@ -426,7 +463,7 @@ async function main() {
         lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : null,
       }));
       const st = buildStatusRow(loc, period, ohForEngine, prevStatus[loc]);
-      if (st._fireNow) console.log(`  🔔 ${nsn}: crossed ${Math.round(BELIEVES_DONE_PCT * 100)}% — store believes count is done`);
+      if (st._fireNow) { console.log(`  🔔 ${nsn}: crossed ${Math.round(BELIEVES_DONE_PCT * 100)}% — store believes count is done`); anyBelievesDoneFired = true; }
       delete st._fireNow;
       // Append a timestamped snapshot to the progress log (deduped to one row per store per hour).
       const nowIso = new Date().toISOString();
@@ -449,6 +486,7 @@ async function main() {
     if (error) console.warn('[eom_count_status] upsert error:', error.message);
     else console.log(`[onhand-pull] status upserted for ${statusRows.length} stores`);
   }
+  if (anyBelievesDoneFired) await triggerFobPullIfPossible(); // #210 Task 4
 
   // Append the timestamped completion snapshots (per store per hour) — builds the trajectory.
   if (progressLog.length) {
@@ -487,7 +525,13 @@ async function main() {
   if (code) process.exit(code);
 }
 
-main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
+// Exported for src/__tests__/qsrsoft-onhand-pull-fob-nudge.test.js — guarded the same way
+// qsrsoft-punch-times-pull.mjs/qsrsoft-variance-pull.mjs already are, so importing this
+// module for its pure/network-mockable functions doesn't also fire off a live run.
+export { runMode, triggerFobPullIfPossible };
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
+}
 
 // ── Count-session derivation ─────────────────────────────────────────────────
 // Groups a store's on-hand rows into sessions by last_counted, one row per class, and

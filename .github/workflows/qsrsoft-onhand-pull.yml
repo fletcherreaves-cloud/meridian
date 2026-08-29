@@ -1,13 +1,20 @@
 name: QSRSoft On-Hand Pull (EOM count-progress)
 
-# Hourly, but the script itself skips unless we're in the last 3 days of the month
-# (GitHub cron can't express "last N days of month"). During the count window this
-# gives ~hourly snapshots so we can see when each store finishes counting.
+# Every 30 minutes (dispatch #210, tightened from hourly), but the script itself skips
+# unless we're in the last 3 days of the month AND it's 8am-6pm CT (GitHub cron can't
+# express "every 30 min only within a hard date+hour gate" directly, so this uses two
+# top-of-hour/half-hour cron lines and leaves the actual gating to the script's own
+# inCountWindow()/inCtBusinessHours() — see scripts/lib/count-window.mjs). During the
+# count window this gives ~30-min snapshots so we can see when each store finishes
+# counting; NOT tightened to 15 min — that would double exposure to GitHub's documented
+# silent-scheduled-run-drop behavior (see scheduled-pull-watchdog.yml, added the same
+# dispatch as a backstop for exactly that failure mode) for only marginal freshness gain.
 # Manual runs can force any time via the `force` input.
 
 on:
   schedule:
-    - cron: '0 * * * *'   # top of every hour (UTC); in-script window gate does the filtering
+    - cron: '0 * * * *'    # :00 every hour (UTC); in-script window gate does the filtering
+    - cron: '30 * * * *'   # :30 every hour (UTC) — the other half of the 30-min cadence
   workflow_dispatch:
     inputs:
       force:
@@ -30,6 +37,25 @@ on:
         description: '#357-B2/3 — log the On-Hand API raw field set + one record once (1 = on)'
         required: false
         default: '0'
+
+# Queue, don't cancel (dispatch #210) — every write in qsrsoft-onhand-pull.mjs is an
+# idempotent upsert on a stable PK, so a queued run is harmless; a CANCELLED mid-write
+# run is worse than a queued one. Matters more now that the 30-min cadence makes a
+# still-running prior invocation (real runs measured ~130-142s, well under 30 min, but
+# not zero-risk) more likely to overlap the next scheduled trigger.
+concurrency:
+  group: qsrsoft-onhand-pull-${{ github.ref }}
+  cancel-in-progress: false
+
+# actions:write (dispatch #210 Task 4) -- lets the script nudge QSRSoft FOB Pull
+# (qsrsoft-pull.yml) via workflow_dispatch the instant a store crosses "believes done"
+# on its count, instead of waiting for that pull's own 3x/day schedule. workflow_dispatch
+# is one of the two events (repository_dispatch is the other) GitHub explicitly exempts
+# from the default GITHUB_TOKEN's "won't trigger further workflow runs" restriction, so
+# no separate PAT is needed.
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   pull:
@@ -64,6 +90,7 @@ jobs:
           ONHAND_DATE:               ${{ github.event.inputs.date   || ''  }}
           QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}
           DUMP_RAW_FIELDS:           ${{ github.event.inputs.dump_raw_fields || '0' }}
+          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload debug screenshots
         if: always()

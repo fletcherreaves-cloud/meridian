@@ -1,0 +1,72 @@
+# Scheduled-Run Reliability Watchdog
+#
+# WHY THIS EXISTS: on 2026-08-29 the QSRSoft Daily Activity Pull silently failed to fire
+# for its two morning scheduled runs (~3am and ~5am CT) — not a failure, the workflow
+# simply never STARTED (confirmed via the GitHub Actions API: no run exists between
+# 01:57 UTC and manual intervention at 11:52 UTC, while sibling pull workflows ran fine
+# in the same window). This matches GitHub's own documented behavior: scheduled cron
+# triggers are best-effort and can be silently dropped under platform load, and a repo
+# with many workflows clustered at the same top-of-hour times (this one) is more exposed
+# to it. A second, independent measurement the same day found zero runs landing in the
+# on-hand pull's own daily progress-snapshot window on 2026-08-28.
+#
+# This is a NARROWER, DIFFERENT check than sync-failure-watch.yml, which watches for a
+# workflow that RAN and FAILED (`workflow_run` + conclusion=failure). That watcher has no
+# way to see a run that never started at all — there is no `workflow_run` event to
+# listen for. This one instead reads the DATA each critical stream is supposed to
+# produce (scripts/scheduled-pull-watchdog.mjs, keyed off src/engine/stream-freshness.js's
+# STREAMS registry) and asks "is it as fresh as it should be by now" — independent of
+# whether any run even started. Neither file replaces the other; do not merge them.
+#
+# Detection + retrigger logic (staleness math, GitHub REST calls, at-most-one-retrigger-
+# per-incident throttle via a tracking issue) all live in the script — see its own header
+# comment for the full design.
+
+name: Scheduled-Run Reliability Watchdog
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 min
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+concurrency:
+  group: scheduled-pull-watchdog-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write    # workflow_dispatch is exempt from the usual GITHUB_TOKEN "won't
+                     # trigger further runs" restriction (repository_dispatch is the
+                     # only other exemption) — actions:write is all that's needed here,
+                     # no separate PAT.
+  issues: write      # the retrigger throttle + escalation signal (Task 3.4) track state
+                     # via a GitHub issue, the same mechanism sync-failure-watch.yml uses.
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check scheduled-pull freshness, retrigger any genuine no-show
+        run: node scripts/scheduled-pull-watchdog.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}

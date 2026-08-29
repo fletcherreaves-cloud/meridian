@@ -3,14 +3,26 @@ name: QSRSoft Variance Pull (EOM diagnosis data)
 # Pulls the food-cost diagnosis inputs (Variance Stat + Yields, Waste, Transfers)
 # for all 27 stores into Supabase so the EOM Dashboard + diagnosis engine are
 # cloud-fresh on every device. Daily during the month; the EOM count/diagnosis
-# window is when it matters most, but daily keeps the current-period picture live
-# for weekly Raw-Items monitoring too. Manual runs can target any period.
+# window (last 3 days of month, 8am-6pm CT) is when it matters most, so dispatch #210
+# accelerates to hourly there — same window/business-hours gate qsrsoft-onhand-pull.mjs
+# already used, reused (not reimplemented) via scripts/lib/count-window.mjs. GitHub cron
+# can't express "hourly only within a hard date+hour gate", so this fires hourly
+# year-round and leaves the script's own runMode() gate to decide whether a landed run
+# does real work outside the window (once-daily, in a WINDOW around the original 10:30
+# UTC slot — see qsrsoft-variance-pull.mjs's DAILY_SLOT_HOUR/WINDOW). The hourly cron is
+# offset to :15 past the hour (on-hand fires at :00/:30) to avoid clustering both pulls
+# at the same instant. Manual runs can target any period and force any time.
 
 on:
   schedule:
-    - cron: '30 10 * * *'   # 10:30 UTC daily (after the other 10:00 pulls land)
+    - cron: '30 10 * * *'   # 10:30 UTC daily slot (after the other 10:00 pulls land)
+    - cron: '15 * * * *'    # hourly, offset :15 -- in-script window gate decides real work
   workflow_dispatch:
     inputs:
+      force:
+        description: 'Run even outside the count-window/daily-slot gate (1 = on)'
+        required: false
+        default: '1'
       period:
         description: 'Period to pull (YYYY-MM, default: current month)'
         required: false
@@ -31,6 +43,15 @@ on:
         description: 'One-time raw-field dump of raw_detail events (1 = on) — reveals hidden columns'
         required: false
         default: '0'
+
+# Queue, don't cancel (dispatch #210) — every write in qsrsoft-variance-pull.mjs is an
+# idempotent upsert on a stable PK, so a queued run is harmless; a CANCELLED mid-write
+# run is worse than a queued one. Real runs have measured up to 671s (11 min), so an
+# hourly cadence makes overlap with the next trigger a real (if still comfortable)
+# possibility rather than a theoretical one.
+concurrency:
+  group: qsrsoft-variance-pull-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   pull:
@@ -61,6 +82,7 @@ jobs:
           QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          VARIANCE_FORCE:            ${{ github.event.inputs.force || '0' }}
           VARIANCE_PERIOD:           ${{ github.event.inputs.period || '' }}
           VARIANCE_BACKFILL:         ${{ github.event.inputs.backfill || '' }}
           VARIANCE_STORES:           ${{ github.event.inputs.stores || '' }}
