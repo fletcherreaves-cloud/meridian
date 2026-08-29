@@ -1,0 +1,19 @@
+-- ── EOM count-completion notification FOB snapshot — dispatch #213 ─────────────────────────────
+-- Owner live feedback on the shipped EOM count-completion email (dispatch #209/#211): "how hard
+-- would it be to show there fob and components as well. Would need to ensure the data pull is as
+-- recent or or newer than the in-hand for it to return the right data."
+--
+-- Adds one new jsonb column to the existing eom_count_notifications table (schema-eom-count-
+-- notifications.sql) — the FOB snapshot (fobPct, fob $, and the six components comp/raw/cond/
+-- emp/statv/unex) attached to a fired notification ONLY when the store's latest qsr_fob row's
+-- updated_at is at or after the count-completion time of the store's Food+Condiment on-hand
+-- items this run (scripts/qsrsoft-onhand-pull.mjs's foodCondimentCountCompletedAt() +
+-- fetchFobSnapshotForStore()). Stale or missing FOB is stored as null — resend-notify.mjs's
+-- buildEmailContent() renders no FOB section at all when this column is null, per the owner's
+-- explicit "don't show wrong numbers" rule.
+--
+-- ⚠️ HANDOFF — this file needs to be run manually in the Supabase SQL editor before the FOB
+-- section can write real data (same pattern as every other new-column migration in this repo,
+-- e.g. schema-eom-count-notifications.sql's own header). Idempotent (`add column if not
+-- exists`) — safe to run anytime, including a second time.
+alter table public.eom_count_notifications add column if not exists fob_snapshot jsonb;

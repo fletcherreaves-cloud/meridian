@@ -31,6 +31,7 @@ const ROW = {
   kb_links: [
     { title: 'Physical Inventory', url: 'https://support.qsrsoft.com/hc/en-us/articles/35675285615127-Physical-Inventory' },
   ],
+  fob_snapshot: null,
 };
 const STORE_INFO = { loc: '0011657', name: 'Purcell' };
 
@@ -71,6 +72,23 @@ describe('buildEmailContent', () => {
     expect(html).toContain('Physical Inventory');
   });
 
+  it('dispatch #213 Task 1 — shows the item name AND the WRIN together when descr exists', () => {
+    const row = { ...ROW, uncounted_items: { items: [
+      { wrin: 'A1', descr: 'Frozen Patties', cls: 'condiment', valueAtRisk: 430.5 },
+    ], totalCount: 1, totalValue: 430.5, truncated: false } };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).toContain('Frozen Patties (A1)');
+  });
+
+  it('dispatch #213 Task 1 — falls back to the WRIN alone when descr is missing', () => {
+    const row = { ...ROW, uncounted_items: { items: [
+      { wrin: 'A9', descr: null, cls: 'condiment', valueAtRisk: 5 },
+    ], totalCount: 1, totalValue: 5, truncated: false } };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).toContain('<li>A9');
+    expect(html).not.toContain('A9 (A9)');
+  });
+
   it('caps inline items at 10 and notes the true total when more exist', () => {
     const items = Array.from({ length: 15 }, (_, i) => ({ wrin: `X${i}`, descr: `Item ${i}`, cls: 'food', valueAtRisk: 10 }));
     const row = { ...ROW, uncounted_items: { items, totalCount: 15, totalValue: 150, truncated: true } };
@@ -79,6 +97,46 @@ describe('buildEmailContent', () => {
     expect(html).toContain('Item 9');
     expect(html).not.toContain('Item 10');
     expect(html).toMatch(/top 10 of 15/);
+  });
+});
+
+describe('buildEmailContent — dispatch #213 Task 3, FOB section', () => {
+  const FOB_SNAP = {
+    sales: 100000, comp: 400, raw: 300, cond: 150, emp: 100, statv: 800, unex: 250,
+    fob: 2000, fobPct: 0.02, asOf: '2026-08-28',
+  };
+
+  it('renders the FOB headline + all six components when fob_snapshot is present (fresh)', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).toContain('FOB');
+    expect(html).toContain('2%'); // fobPct 0.02 -> 2%
+    expect(html).toContain('$2,000'); // fob $
+    expect(html).toContain('Variance Stat');
+    expect(html).toContain('$800');
+    expect(html).toContain('Completed Waste');
+    expect(html).toContain('$400');
+    expect(html).toContain('Raw Waste');
+    expect(html).toContain('$300');
+    expect(html).toContain('Condiments');
+    expect(html).toContain('$150');
+    expect(html).toContain('Emp/Mgr Meals');
+    expect(html).toContain('$100');
+    expect(html).toContain('Unexplained');
+    expect(html).toContain('$250');
+  });
+
+  it('renders NO FOB section at all when fob_snapshot is null (stale/missing)', () => {
+    const row = { ...ROW, fob_snapshot: null };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).not.toContain('FOB (Food Over Base)');
+    expect(html).not.toContain('Variance Stat');
+  });
+
+  it('renders NO FOB section when fob_snapshot is absent from the row entirely', () => {
+    const { fob_snapshot, ...rowWithoutFob } = ROW;
+    const { html } = buildEmailContent(rowWithoutFob, STORE_INFO);
+    expect(html).not.toContain('FOB (Food Over Base)');
   });
 });
 

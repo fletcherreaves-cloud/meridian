@@ -34,7 +34,10 @@ import { chromium } from 'playwright';
 import { COVER_FRAC, sessionQualities, sessionLabel } from '../src/engine/count-cycle.js';
 import { createClient } from '@supabase/supabase-js';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
-import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
+import {
+  computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT,
+  FOB_CLASSES, normClass, countedDate, fobSnapshotByStore,
+} from '../src/engine/eom-inventory.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
 import { sendEmailNotification, sendSmsViaCarrierGateway } from './lib/resend-notify.mjs';
@@ -43,21 +46,37 @@ import { STORE_NAMES, unpadLoc } from '../src/constants.js';
 // ── Count-completion notifications (dispatch #209) ────────────────────────────
 // QSRSoft KB grounding — confirmed LIVE against qsrsoft_kb 2026-08-29 (service-role read,
 // real title/html_url from the corpus, not guessed): the corpus has exactly one "Best Counting
-// Practices" article and one "Physical Inventory" article; no Paper- or Non-Product-specific
-// article exists, so those classes point at the same two general-counting articles plus (for
-// Non-Product) the On-Hand Inventory report article.
-const KB_BEST_COUNTING = { title: 'What are the Best Counting Practices Using the Mobile Inventory App', url: 'https://support.qsrsoft.com/hc/en-us/articles/360046512394-What-are-the-Best-Counting-Practices-Using-the-Mobile-Inventory-App' };
-const KB_PHYSICAL_INVENTORY = { title: 'Physical Inventory', url: 'https://support.qsrsoft.com/hc/en-us/articles/35675285615127-Physical-Inventory' };
-const KB_ON_HAND = { title: 'On Hand Inventory', url: 'https://support.qsrsoft.com/hc/en-us/articles/34843618887831-On-Hand-Inventory' };
-const KB_LINKS_BY_CLASS = {
-  food:       [KB_BEST_COUNTING, KB_PHYSICAL_INVENTORY],
-  condiment:  [KB_BEST_COUNTING, KB_PHYSICAL_INVENTORY],
-  paper:      [KB_PHYSICAL_INVENTORY, KB_BEST_COUNTING],
-  nonproduct: [KB_ON_HAND, KB_BEST_COUNTING],
-};
-export function kbLinksForClasses(classes) {
+// Practices" article. Dispatch #213 replaced its URL with the owner's own corrected
+// search-results link (verbatim, including the `utf8=✓` query param — not re-encoded) and
+// turned BOTH the Physical Inventory and On-Hand Inventory links from static KB articles into
+// live, per-store (and for On-Hand, per-date/per-class) links straight into QSRSoft's own
+// counting/reporting tool, since that's what the owner actually asked for over a generic article.
+const KB_BEST_COUNTING = { title: 'What are the Best Counting Practices Using the Mobile Inventory App', url: 'https://support.qsrsoft.com/hc/en-us/search?utf8=✓&query=Best+counting+practices' };
+// dispatch #213 — normClass()'s own single-letter mapping (F=food, C=condiment, P=paper,
+// else=nonproduct — src/engine/eom-inventory.js) confirms food→F/condiment→C/paper→P/
+// nonproduct→N is the real QSRSoft class-code vocabulary this script already speaks
+// (TYPES/ONHAND_TYPES default 'F,C,P,N'), not an assumption.
+const CLASS_LETTER = { food: 'F', condiment: 'C', paper: 'P', nonproduct: 'N' };
+// NOT a KB article — a live link into QSRSoft's own counting tool, parameterized by this store's
+// own NSN (unpadded, matching the owner's own example `location=3708`).
+function physicalInventoryLink(nsn) {
+  return { title: 'Physical Inventory (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/inventory?location=${nsn}&tab=itemsToInventory&countFrequency=A&temperatureZone=all&class=all&rangeIndicator=all&duplicatePrefix=false` };
+}
+// NOT a KB article either — a live link into QSRSoft's On-Hand report, per store/date/class
+// (dispatch #213 amendment). One link per triggered class, since the class param changes the URL.
+function onHandLink(nsn, cls, dateStr) {
+  const classLetter = CLASS_LETTER[cls] || 'F';
+  return { title: 'On-Hand Inventory (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory?location=${nsn}&class=${classLetter}&recipe=all&nonzero=true&duplicates=false&date=${dateStr}` };
+}
+export function kbLinksForClasses(classes, nsn, dateStr) {
+  const linksByClass = {
+    food:       [KB_BEST_COUNTING, physicalInventoryLink(nsn), onHandLink(nsn, 'food', dateStr)],
+    condiment:  [KB_BEST_COUNTING, physicalInventoryLink(nsn), onHandLink(nsn, 'condiment', dateStr)],
+    paper:      [physicalInventoryLink(nsn), KB_BEST_COUNTING, onHandLink(nsn, 'paper', dateStr)],
+    nonproduct: [onHandLink(nsn, 'nonproduct', dateStr), KB_BEST_COUNTING],
+  };
   const seen = new Map();
-  for (const c of (classes || [])) for (const link of (KB_LINKS_BY_CLASS[c] || [])) seen.set(link.url, link);
+  for (const c of (classes || [])) for (const link of (linksByClass[c] || [])) seen.set(link.url, link);
   return [...seen.values()];
 }
 
@@ -86,7 +105,11 @@ export async function deliverNotifications(rows) {
 // leftover items, not the still-in-progress partner's (which is already fully described by its
 // %, in class_statuses).
 const UNCOUNTED_ITEMS_CAP = 25;
-export function buildNotificationRow(loc, period, detection, diag) {
+// `fobSnapshot` (dispatch #213 Task 3) — the store's fobSnapshotByStore() output when the
+// freshness check passed, or null/undefined when it didn't (or the trigger doesn't touch
+// Food/Condiment at all). `dateStr` (dispatch #213 amendment) — this run's own businessDate(),
+// threaded through to the per-class On-Hand link.
+export function buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr) {
   const scoped = (diag.uncounted || [])
     .filter(u => detection.triggerClasses.includes(u.cls))
     .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
@@ -101,7 +124,8 @@ export function buildNotificationRow(loc, period, detection, diag) {
       totalValue: scoped.reduce((s, u) => s + u.valueAtRisk, 0),
       truncated: scoped.length > items.length,
     },
-    kb_links: kbLinksForClasses(detection.triggerClasses),
+    kb_links: kbLinksForClasses(detection.triggerClasses, unpadLoc(loc), dateStr),
+    fob_snapshot: fobSnapshot || null,
   };
 }
 
@@ -503,6 +527,63 @@ async function triggerFobPullIfPossible() {
   }
 }
 
+// ── FOB freshness check (dispatch #213 Task 3) ─────────────────────────────────
+// The store-level "count-completion time" that feeds FOB: the max last_counted/last_submitted
+// across this store's Food+Condiment on-hand items (FOB_CLASSES) THIS run — reuses
+// eom-inventory.js's own countedDate()/normClass() rather than re-deriving "counted or
+// submitted, whichever is later" a second time.
+export function foodCondimentCountCompletedAt(ohForEngineRows) {
+  let latest = null;
+  for (const r of (ohForEngineRows || [])) {
+    if (!FOB_CLASSES.includes(normClass(r.cls))) continue;
+    const d = countedDate(r);
+    if (d && (!latest || d > latest)) latest = d;
+  }
+  return latest;
+}
+
+// The literal freshness rule, exactly as the owner stated it: the FOB pull is "as recent or
+// newer than the in-hand [count]" iff its updated_at falls AT OR AFTER the count's own
+// completion time. Both real timestamps, compared directly — no fudge/grace window (out of
+// scope per dispatch #213 unless a concrete reason surfaces). Pulled out as its own pure,
+// exported function so it's unit-testable without a live Supabase round-trip.
+export function isFobFresh(fobUpdatedAt, countCompletedAt) {
+  if (!fobUpdatedAt || !countCompletedAt) return false;
+  const a = fobUpdatedAt instanceof Date ? fobUpdatedAt : new Date(fobUpdatedAt);
+  const b = countCompletedAt instanceof Date ? countCompletedAt : new Date(countCompletedAt);
+  if (isNaN(a) || isNaN(b)) return false;
+  return a.getTime() >= b.getTime();
+}
+
+// Fetches this store's qsr_fob rows for the period and reduces them through the SAME
+// fobSnapshotByStore() aggregation the app uses everywhere else (never a second hand-rolled sum
+// — the FOB-30x bug this function's own doc-comment warns about). Also surfaces the LATEST row's
+// own `updated_at` (the real per-row pull timestamp — explicitly set on every upsert in
+// scripts/qsrsoft-pull.mjs, not just a DB default) since fobSnapshotByStore's return shape
+// doesn't carry it — needed here purely for the freshness comparison below, not a second
+// aggregation of the FOB dollars themselves.
+export async function fetchFobSnapshotForStore(loc, period) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('qsr_fob')
+    .select('loc,date,prod_sales_amt,comp_waste_amt,raw_waste_amt,condiments_amt,emp_mgr_meals_amt,stat_variance_amt,unexplained_amt,updated_at')
+    .eq('loc', loc)
+    .gte('date', `${period}-01`)
+    .lte('date', `${period}-31`)
+    .order('date', { ascending: false });
+  if (error) { console.warn('[qsr_fob] load error:', error.message); return null; }
+  if (!data || !data.length) return null;
+  const rows = data.map(r => ({
+    loc: r.loc, date: r.date,
+    prodSalesAmt: r.prod_sales_amt, compWasteAmt: r.comp_waste_amt, rawWasteAmt: r.raw_waste_amt,
+    condimentsAmt: r.condiments_amt, empMgrMealsAmt: r.emp_mgr_meals_amt,
+    statVarianceAmt: r.stat_variance_amt, unexplainedAmt: r.unexplained_amt,
+  }));
+  const snap = fobSnapshotByStore(rows, period)[loc];
+  if (!snap) return null;
+  const latestRow = data.reduce((best, r) => (!best || r.date > best.date) ? r : best, null);
+  return { snap, updatedAt: latestRow?.updated_at ? new Date(latestRow.updated_at) : null };
+}
+
 async function main() {
   const mode = runMode();
   if (!mode) {
@@ -517,6 +598,7 @@ async function main() {
 
   let totalSaved = 0, storesWithData = 0, authFailed = false;
   let anyBelievesDoneFired = false; // #210 Task 4 — nudge the FOB pull if any store crosses this run
+  let anyFoodCondimentTriggerFired = false; // dispatch #213 Task 3.5 — also nudge on a food/condiment-only trigger
   const statusRows = [];
   const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
   const sessionRows = [];   // append-only count-session history (one row / store / count date / class)
@@ -564,8 +646,25 @@ async function main() {
       const detection = detectCountNotifications(prevStatus[loc], p);
       if (detection) {
         const diag = diagnoseIncompleteCount(ohForEngine, { period, minValue: 0 });
-        notificationRows.push(buildNotificationRow(loc, period, detection, diag));
-        console.log(`  🔔 ${nsn}: count-completion notification — ${detection.triggerKinds.join('+')} (${detection.reasons.join('/')})`);
+        // dispatch #213 Task 3 — FOB + components section, freshness-gated: only when this run's
+        // trigger touches Food and/or Condiment (FOB_CLASSES — the only classes that feed FOB),
+        // and only when the store's latest qsr_fob pull is at least as recent as the count itself.
+        let fobSnapshot = null;
+        const fobRelevant = detection.triggerClasses.some(c => FOB_CLASSES.includes(c));
+        if (fobRelevant) {
+          // Nudge the FOB pull regardless of whether THIS run's freshness check passes below —
+          // that's what gives a LATER run's check a real chance to pass (Task 3.5).
+          anyFoodCondimentTriggerFired = true;
+          const completedAt = foodCondimentCountCompletedAt(ohForEngine);
+          if (completedAt) {
+            const fobResult = await fetchFobSnapshotForStore(loc, period);
+            if (fobResult && isFobFresh(fobResult.updatedAt, completedAt)) {
+              fobSnapshot = fobResult.snap;
+            }
+          }
+        }
+        notificationRows.push(buildNotificationRow(loc, period, detection, diag, fobSnapshot, dateStr));
+        console.log(`  🔔 ${nsn}: count-completion notification — ${detection.triggerKinds.join('+')} (${detection.reasons.join('/')})${fobSnapshot ? ' + fresh FOB snapshot' : ''}`);
       }
       const st = buildStatusRow(loc, period, prevStatus[loc], p, detection?.triggerKinds);
       // #210 Task 4: nudge the FOB pull the instant a store crosses believes-done this run.
@@ -592,7 +691,7 @@ async function main() {
     if (error) console.warn('[eom_count_status] upsert error:', error.message);
     else console.log(`[onhand-pull] status upserted for ${statusRows.length} stores`);
   }
-  if (anyBelievesDoneFired) await triggerFobPullIfPossible(); // #210 Task 4
+  if (anyBelievesDoneFired || anyFoodCondimentTriggerFired) await triggerFobPullIfPossible(); // #210 Task 4 + dispatch #213 Task 3.5
 
   // Append the timestamped completion snapshots (per store per hour) — builds the trajectory.
   if (progressLog.length) {

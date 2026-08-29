@@ -31,6 +31,31 @@ const STATUS_LABELS = { complete: 'Complete', in_progress: 'In Progress', not_st
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('en-US')}`;
 const pctOf = (cs) => (cs && cs.pct != null) ? `${Math.round(cs.pct * 100)}%` : '—';
 
+// dispatch #213 Task 3 — FOB + components section, matching src/engine/fob-report.js's own
+// money()/pp() formatting conventions verbatim (that file's consts aren't exported, so mirrored
+// here rather than diverging on a third format for the same data — pp() rounds a FRACTION to
+// percentage-points at 2dp, money() signs negatives as "-$N" not "$-N").
+const fobPp = (f) => Math.round((f || 0) * 10000) / 100;
+const fobMoney = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString('en-US');
+// Same order/labels as fob-report.js's own COMPONENTS — the six components fobSnapshotByStore
+// (eom-inventory.js) returns per store.
+const FOB_COMPONENTS = [
+  ['statv', 'Variance Stat'], ['comp', 'Completed Waste'], ['raw', 'Raw Waste'],
+  ['cond', 'Condiments'], ['emp', 'Emp/Mgr Meals'], ['unex', 'Unexplained'],
+];
+
+// Renders nothing when row.fob_snapshot is absent (stale/missing FOB pull, per the owner's
+// freshness rule) — no caveat, no placeholder header, just skip the section entirely.
+function fobSectionHtml(row) {
+  const fs = row.fob_snapshot;
+  if (!fs) return '';
+  const headline = fs.fobPct != null ? `${fobPp(fs.fobPct)}%` : '—';
+  const compLines = FOB_COMPONENTS.map(([k, label]) => `<li>${label}: ${fobMoney(fs[k])}</li>`).join('');
+  return `<h3 style="margin:16px 0 8px">FOB (Food Over Base)</h3>
+<p style="margin:0 0 8px">${headline} of sales — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
+<ul style="margin:0 0 4px;padding-left:20px">${compLines}</ul>`;
+}
+
 // 'food_condiment' -> 'Food + Condiment', 'paper' -> 'Paper'
 export function triggerLabel(triggerKind) {
   return String(triggerKind || '')
@@ -61,7 +86,7 @@ export function buildEmailContent(row, storeInfo) {
   const ui = row.uncounted_items || { items: [], totalCount: 0, totalValue: 0, truncated: false };
   const topItems = (ui.items || []).slice(0, 10);
   const itemLines = topItems.length
-    ? topItems.map(it => `<li>${it.descr || it.wrin}${it.cls ? ` [${CLASS_LABELS[it.cls] || it.cls}]` : ''} — ${money(it.valueAtRisk)}</li>`).join('')
+    ? topItems.map(it => `<li>${it.descr ? `${it.descr} (${it.wrin})` : it.wrin}${it.cls ? ` [${CLASS_LABELS[it.cls] || it.cls}]` : ''} — ${money(it.valueAtRisk)}</li>`).join('')
     : '<li>None — nothing outstanding for the triggering class(es).</li>';
   const moreNote = ui.totalCount > topItems.length
     ? `<p>Showing top ${topItems.length} of ${ui.totalCount} uncounted item(s), ${money(ui.totalValue)} total at risk.</p>`
@@ -76,6 +101,7 @@ export function buildEmailContent(row, storeInfo) {
 <h3 style="margin:0 0 8px">Uncounted items — ${trig}</h3>
 <ul style="margin:0 0 4px;padding-left:20px">${itemLines}</ul>
 ${moreNote}
+${fobSectionHtml(row)}
 ${links ? `<h3 style="margin:16px 0 8px">Helpful links</h3><ul style="padding-left:20px">${links}</ul>` : ''}
 </div>`;
 
