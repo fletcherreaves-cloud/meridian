@@ -120,12 +120,11 @@ function lastPeriods(period, n = 6) {
 }
 const statusOf = (deltaPP) => deltaPP == null ? 'flat' : deltaPP <= 0 ? 'good' : deltaPP <= 0.1 ? 'warn' : 'crit';
 
-// ════════════════════════════════════════ FOOD COST TAB ═══════════════════════════════════════
-export function FoodCostCockpitTab({ store, ds }) {
-  const loc = String(store.loc), t = store.t || {};
-
-  // FOB rows — same "read the copy App.js already loaded, fetch only if it genuinely isn't
-  // there yet" pattern eom-dashboard.js uses for ds.qsrFobRows (dispatch #211's perf fix).
+// ── Shared FOB rows loader — dispatch #208: same "read the copy App.js already loaded, fetch
+// only if it genuinely isn't there yet" pattern eom-dashboard.js uses for ds.qsrFobRows
+// (dispatch #211's perf fix), factored out so BOTH FoodCostCockpitTab and Overview's Tab Digest
+// Food Cost tile share the one fallback-fetch effect instead of two copies of it. ──────────────
+export function useFobRowsWithFallback(ds) {
   const dsFob = (ds && ds.qsrFobRows) || null;
   const [fobFallback, setFobFallback] = useState(null);
   useEffect(() => {
@@ -135,23 +134,70 @@ export function FoodCostCockpitTab({ store, ds }) {
     return () => { live = false; };
   }, [dsFob]);
   const fobRows = (dsFob && dsFob.length) ? dsFob : (fobFallback || []);
-  const fobPending = !(dsFob && dsFob.length) && fobFallback === null;
+  const pending = !(dsFob && dsFob.length) && fobFallback === null;
+  return { fobRows, pending };
+}
+
+// ── Shared period-resolution/report-assembly — dispatch #208: this used to live INLINE inside
+// FoodCostCockpitTab only (nowPeriod, lastPeriods(), monthlyByLoc, curSnap selection, the
+// compActual/compTarget build, buildStoreFobReport call). Factored into one exported helper so
+// Overview's Tab Digest Food Cost tile can get the same FOB %/gap/top-driver read without a
+// second copy of this ~40-line assembly (CLAUDE.md's "check whether a helper exists before
+// writing one" / never-duplicate-a-computation rule). `varRows` is OPTIONAL and defaults to
+// none — the full cockpit tab passes its own self-loaded item-level variance (masking/topItems
+// detail); a lighter caller (the Overview headline tile) can omit it entirely and still gets a
+// correct fobPct/gapPP/topDriver/actions[0] (buildStoreFobReport handles varRows:[] gracefully —
+// only the masking check and the statv action's example-item list go empty, never wrong).
+export function computeFoodCostHeadline(loc, fobRows, t, opts = {}) {
+  const { name, org, varRows } = opts;
+  const locS = String(loc);
+  const storeFobRows = (fobRows || []).filter(r => String(parseInt(r.loc, 10)) === locS);
+  if (!storeFobRows.length) return null;
+  const nowPeriod = new Date().toISOString().slice(0, 7);
+  const months = lastPeriods(nowPeriod, 6);
+  const byMonth = {};
+  for (const mo of months) byMonth[mo] = fobSnapshotByStore(storeFobRows, mo);
+  let reportPeriod = nowPeriod;
+  for (let i = months.length - 1; i >= 0; i--) { const f = byMonth[months[i]] || {}; if (Object.values(f).some(x => x && x.fobPct != null)) { reportPeriod = months[i]; break; } }
+  const monthlyByLoc = {};
+  for (const mo of months) { if (mo > reportPeriod) continue; const f = byMonth[mo] || {}; const row = f[locS] || Object.values(f)[0]; if (row && row.fobPct != null) monthlyByLoc[mo] = row.fobPct; }
+  const snap = byMonth[reportPeriod] || {};
+  const curSnap = snap[locS] || Object.values(snap)[0] || null;
+  if (!curSnap) return null;
+  const compActual = curSnap.sales ? {
+    statv: curSnap.statv / curSnap.sales, comp: curSnap.comp / curSnap.sales, raw: curSnap.raw / curSnap.sales,
+    cond: curSnap.cond / curSnap.sales, emp: curSnap.emp / curSnap.sales, unex: curSnap.unex / curSnap.sales,
+  } : null;
+  const compTarget = { statv: t.tStatLoss, comp: t.tCompWaste, raw: t.tRawWaste, cond: t.tCondiment, emp: t.tEmpFood, unex: t.tUnex };
+  const report = buildStoreFobReport(locS, {
+    name, org, patch: null, fob: curSnap, target: t.tFOBTarget != null ? Number(t.tFOBTarget) : null,
+    monthly: monthlyByLoc, varRows: (varRows || []).map(v => ({ descr: v.descr, wrin: v.wrin, dolDiff: v.dolDiff })),
+    compActual, compTarget,
+  });
+  return { ...report, reportPeriod };
+}
+
+// ════════════════════════════════════════ FOOD COST TAB ═══════════════════════════════════════
+export function FoodCostCockpitTab({ store, ds }) {
+  const loc = String(store.loc), t = store.t || {};
+
+  // FOB rows — shared hook (see useFobRowsWithFallback above).
+  const { fobRows, pending: fobPending } = useFobRowsWithFallback(ds);
   const storeFobRows = useMemo(() => fobRows.filter(r => String(parseInt(r.loc, 10)) === loc), [fobRows, loc]);
 
   // Report period — MTD if it has real (non-zero) FOB yet, else fall back to the latest
   // completed month, exactly like eom-dashboard.js's own FOB Report (owner's own review habit).
+  // (computeFoodCostHeadline resolves this the same way; recomputed here too so `reportPeriod`
+  // is available before varRows — which depends on it — can be fetched below.)
   const nowPeriod = new Date().toISOString().slice(0, 7);
-  const { reportPeriod, monthlyByLoc, curSnap } = useMemo(() => {
+  const { reportPeriod } = useMemo(() => {
     const months = lastPeriods(nowPeriod, 6);
     const byMonth = {};
     for (const mo of months) byMonth[mo] = fobSnapshotByStore(storeFobRows, mo);
     let rp = nowPeriod;
     for (let i = months.length - 1; i >= 0; i--) { const f = byMonth[months[i]] || {}; if (Object.values(f).some(x => x && x.fobPct != null)) { rp = months[i]; break; } }
-    const monthly = {};
-    for (const mo of months) { if (mo > rp) continue; const f = byMonth[mo] || {}; const row = f[loc] || Object.values(f)[0]; if (row && row.fobPct != null) monthly[mo] = row.fobPct; }
-    const snap = byMonth[rp] || {};
-    return { reportPeriod: rp, monthlyByLoc: monthly, curSnap: snap[loc] || Object.values(snap)[0] || null };
-  }, [storeFobRows, nowPeriod, loc]);
+    return { reportPeriod: rp };
+  }, [storeFobRows, nowPeriod]);
 
   // Item-level variance — self-loaded, scoped to this one store + period (loadQsrVarianceHistory
   // is the scoped reader; never the district-wide loadQsrVarianceStat this tab has no use for).
@@ -165,19 +211,8 @@ export function FoodCostCockpitTab({ store, ds }) {
     return () => { live = false; };
   }, [loc, reportPeriod]);
 
-  const report = useMemo(() => {
-    if (!curSnap) return null;
-    const compActual = curSnap.sales ? {
-      statv: curSnap.statv / curSnap.sales, comp: curSnap.comp / curSnap.sales, raw: curSnap.raw / curSnap.sales,
-      cond: curSnap.cond / curSnap.sales, emp: curSnap.emp / curSnap.sales, unex: curSnap.unex / curSnap.sales,
-    } : null;
-    const compTarget = { statv: t.tStatLoss, comp: t.tCompWaste, raw: t.tRawWaste, cond: t.tCondiment, emp: t.tEmpFood, unex: t.tUnex };
-    return buildStoreFobReport(loc, {
-      name: store.name, org: store.org, patch: null, fob: curSnap, target: t.tFOBTarget != null ? Number(t.tFOBTarget) : null,
-      monthly: monthlyByLoc, varRows: (varRows || []).map(v => ({ descr: v.descr, wrin: v.wrin, dolDiff: v.dolDiff })),
-      compActual, compTarget,
-    });
-  }, [curSnap, monthlyByLoc, varRows, t, loc, store.name, store.org]);
+  const report = useMemo(() => computeFoodCostHeadline(loc, storeFobRows, t, { name: store.name, org: store.org, varRows }),
+    [storeFobRows, varRows, t, loc, store.name, store.org]);
 
   // Day-by-day variance trace + biggest-jump callout — the flagship visual, zero new data.
   // annotateTouchpoints (real-count bracketing) is DEFERRED here — it needs
@@ -211,7 +246,7 @@ export function FoodCostCockpitTab({ store, ds }) {
   const scan = useMemo(() => (ds ? scanAllPairs(ds, { granularity: 'monthly', scopeLoc: loc }) : null), [ds, loc]);
   const foodCorr = useMemo(() => (scan ? scan.results.filter(r => r.xCat === 'Food Cost' || r.yCat === 'Food Cost').slice(0, 6) : []), [scan]);
 
-  if (fobPending && !curSnap) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'Loading Food Cost data…');
+  if (fobPending && !report) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'Loading Food Cost data…');
   if (!report) return div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'No FOB data resolved yet for this store — check the auto QSRSoft pull or upload a Food Cost report.');
 
   const gapPP = report.gapPP;

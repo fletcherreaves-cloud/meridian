@@ -6,17 +6,18 @@ import { forecastRange, modelAccuracy, modelHealthScore, _wxCache, forecastModel
 import { analyzeRegisterAudit, registerTypeBreakdown } from '../utils/register-audit.js';
 import { calibrateStore } from '../engine/backtest.js';
 import { lastClosedBusinessDay } from '../engine/swing-feed.js';
-import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable } from './store-dash.js';
+import { OpsBarChart, CompareRadarChart, CompareLineChart, analyzePeaks, fetchForecastWeather, normSlice, SalesChart, OpsRadar, TrendChart, Brief, OpsScorecard, CtrlScorecard, AITabInsight, PeaksTab, ActionPlanTab, ForecastTable, generatePlan } from './store-dash.js';
 import { AIInsightsTab } from './analytics.js';
 import { ModelHealthBadge } from './model-health-badge.js';
-import { LocationIntelligence } from '../features/location-intel.js';
-import { FoodCostCockpitTab, LaborCockpitTab } from './store-cockpit.js';
+import { LocationIntelligence, liComputeAll, liBuildRoadmap } from '../features/location-intel.js';
+import { FoodCostCockpitTab, LaborCockpitTab, useFobRowsWithFallback, computeFoodCostHeadline } from './store-cockpit.js';
 import { TH, f$, fPct, fP, grade } from '../utils/fmt.js';
 import { supabase } from '../lib/supabase.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
-import { metricSeries, metricAvg, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
+import { metricSeries, metricAvg, metricRate, ensureLazyFill, isLazyFillPending } from '../engine/metric-source.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { computeLaborGapSplit } from '../engine/labor-gap-split.js';
 // dispatch #200 (Task Group C) -- the same live-data record-computation engine record-day.js's
 // main-menu "Record Days" panel uses, reused (not re-derived) for StoreRecordsTab's week/month/
 // day-of-week depth. See StoreRecordsTab's own header comment for why only the computation +
@@ -1780,6 +1781,221 @@ function DaypartPaceCard({loc}) {
   );
 }
 
+// ── Tab Digest (dispatch #208) ──────────────────────────────────────────────────────────────
+// Owner, live: "let's add new data to overview tab to represent the new tabs and be all
+// inclusive!" One tile per District View tab NOT already represented in Overview's own KPI/
+// Findings sections. Scorecards (opsScore/ctrlScore — top KPI row), Intelligence Brief
+// (store.findings top severity — the Priority Findings section right above this row) and
+// Forecast Table (rangeTotal vs rangeLY — the Period Sales KPI card) are deliberately SKIPPED
+// here — already shown, via the same underlying data, elsewhere on this same tab. 3 Peaks (its
+// daypart-OEPE headline is already partially echoed in Shift Analysis's "3 Peaks x Labor Gap"
+// widget) and AI Insights (narrative-only, no single headline number) are deliberately excluded
+// too. See memory/dispatch-208.md for the full scoping.
+//
+// Same "headline number, one-line why, click through to the real thing" idiom
+// at-a-glance.js's ToleranceRollupTile/OpportunityTile establish at the district level, one
+// level down here per-store — and the same icon+label+big-mono-value+colored-dot+one-line-detail
+// VISUAL shape as this same tab's own "Metric Vitals" tiles a few sections above (digestTile
+// below clones that block's col/bg/bdr/dot logic), so this reads as a natural extension of
+// Overview's existing language, not a bolted-on new component.
+function digestTileStatus(ok, bad) {
+  const col = ok ? '#10b981' : bad ? '#ef4444' : '#f59e0b';
+  const bg  = ok ? 'rgba(16,185,129,.06)' : bad ? 'rgba(239,68,68,.06)' : 'rgba(245,158,11,.06)';
+  const bdr = ok ? 'rgba(16,185,129,.2)' : bad ? 'rgba(239,68,68,.2)' : 'rgba(245,158,11,.2)';
+  return {col, bg, bdr};
+}
+// `neutral` tiles (Location Intelligence's $ opportunity, Records' best-day figure) aren't a
+// vs-target pass/fail read — same amber/informational idiom OpportunityTile (at-a-glance.js)
+// uses for its own $ headline, rather than forcing a traffic-light verdict onto a number that
+// doesn't have one.
+function digestTile({key, icon, label, value, detail, ok, bad, neutral, onClick, innerRef}) {
+  let col, bg, bdr, dot;
+  if (neutral) { col = 'var(--amber)'; bg = 'rgba(245,158,11,.06)'; bdr = 'rgba(245,158,11,.2)'; dot = '●'; }
+  else { const s = digestTileStatus(ok, bad); col = s.col; bg = s.bg; bdr = s.bdr; dot = ok ? '●' : bad ? '●' : '◑'; }
+  return div({key, ref:innerRef, onClick, title:'Click to open the full ' + label + ' tab',
+    style:{background:bg, border:'.5px solid '+bdr, borderRadius:'var(--r)',
+      padding:'10px 12px', display:'flex', flexDirection:'column', gap:3, cursor:'pointer'}},
+    div({style:{display:'flex',alignItems:'center',gap:4,marginBottom:2}},
+      span({style:{fontSize:'13px'}},icon),
+      div({style:{fontSize:'8px',color:'var(--text3)',fontWeight:600,letterSpacing:'.4px',flex:1}},label),
+      span({style:{fontSize:'9px',color:col}},dot)
+    ),
+    div({style:{fontFamily:'var(--mono)',fontSize:'19px',fontWeight:800,color:col,lineHeight:1,letterSpacing:'-1px'}},value),
+    div({style:{fontSize:'8px',color:'var(--text3)',marginTop:2,lineHeight:1.4}},detail)
+  );
+}
+
+// Register Audit tile — the one genuine tradeoff (dispatch #208): ds.auditRows is a LAZY_FILL
+// source (metric-source.js), today only pulled on demand by RegisterAuditTab itself
+// (ensureLazyFill('auditRows')). Making Overview trigger the same fetch unconditionally on every
+// mount would fire a district-wide, 400-day audit_rows pull (loadAuditRows()'s own comment: this
+// table alone was ~150k of ~250k rows per login before #191 made it lazy, 23 sequential pages,
+// 10-18s late in a load) on EVERY single store-dash open, not just when Register Audit is
+// actually visited — for a district-touring session that's most opens, reintroducing almost
+// exactly the eager-load cost #191 removed. Measured this session (synthetic data at the
+// documented ~150k-row scale, this sandbox has no live Supabase credentials to time the network
+// leg itself): the CPU-side cost once rows exist is cheap (~12ms to filter+aggregate one store's
+// ~5.5k rows via analyzeRegisterAudit; ~309ms for the full district-wide aggregation over all
+// 150k) — so the fetch, not the aggregation, is what's worth deferring. Gated behind an
+// IntersectionObserver instead: the fetch only fires once this tile actually scrolls into view,
+// preserving #191's "load on demand" intent while still painting real data quickly for a normal
+// single-screen viewport where the digest row is already visible on mount.
+function RegisterAuditDigestTile({store, ds, setTab}) {
+  const loc = store.loc;
+  const [inView, setInView] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (inView) return;
+    if (typeof IntersectionObserver === 'undefined') { setInView(true); return; } // SSR/test env fallback
+    if (!ref.current) return;
+    const obs = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { setInView(true); obs.disconnect(); }
+    }, {threshold: 0.1});
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [inView]);
+
+  const [pending, setPending] = React.useState(true);
+  React.useEffect(() => {
+    if (!inView) return;
+    const stillPending = ensureLazyFill('auditRows');
+    setPending(stillPending);
+    if (!stillPending) return;
+    const id = setInterval(() => { if (!isLazyFillPending('auditRows')) { setPending(false); clearInterval(id); } }, 300);
+    return () => clearInterval(id);
+  }, [inView]);
+
+  const auditRows = (inView && ds && ds.auditRows) ? ds.auditRows.filter(r => r.loc === loc) : [];
+  const auditData = auditRows.length > 0 ? analyzeRegisterAudit(auditRows) : null;
+  const highRisk = auditData ? auditData.summary.highRisk : null;
+  const watchCount = auditData ? auditData.summary.watchCount : null;
+
+  return digestTile({
+    key:'register', icon:'🧾', label:'REGISTER AUDIT', innerRef:ref,
+    value: !inView ? '···' : (pending && !auditData) ? '…' : (highRisk!=null ? String(highRisk) : '—'),
+    detail: !inView ? 'Scrolls into view to load'
+      : (pending && !auditData) ? 'Loading…'
+      : auditData ? highRisk+' high-risk · '+watchCount+' watch · '+auditData.summary.employeeCount+' employees'
+      : 'No audit data yet for this store',
+    ok: highRisk===0 && watchCount===0, bad: highRisk!=null && highRisk>0,
+    onClick: () => setTab('register'),
+  });
+}
+
+function TabDigestRow({store, ds, settings, setTab}) {
+  const loc = store.loc, locS = String(loc), t = store.t || {};
+
+  // 1. Food Cost -> foodcost. FOB % vs target, gap pp, top driver. Shares the "read the ds copy,
+  // fetch only if genuinely missing" hook + the period-resolution/report-assembly helper with
+  // FoodCostCockpitTab (store-cockpit.js) — see that file's dispatch #208 comments.
+  const {fobRows, pending: fobPending} = useFobRowsWithFallback(ds);
+  const foodCostReport = React.useMemo(() => {
+    if (!fobRows.length) return null;
+    return computeFoodCostHeadline(loc, fobRows, t, {name: store.name, org: store.org});
+  }, [fobRows, loc, t, store.name, store.org]);
+
+  // 2. Labor & Scheduling -> laborsched. Crew Labor % vs target + gap, plus a SHORT one-clause
+  // planning-vs-execution read (LaborCockpitTab's own verdict is a full paragraph; this is the
+  // one-clause version, same computeLaborGapSplit numbers). ds.qsrActSummaryRows is already
+  // eagerly loaded — no new fetch.
+  const laborInfo = React.useMemo(() => {
+    const target = resolveLaborTarget(t);
+    const rows = ((ds && ds.qsrActSummaryRows) || []).filter(r => String(r.loc) === locS);
+    const splitWeeks = computeLaborGapSplit(rows).filter(w => String(w.loc) === locS);
+    const curWeek = splitWeeks.filter(w => w.complete).sort((a,b) => b.weekKey.localeCompare(a.weekKey))[0] || null;
+    const weekRange = curWeek ? {s:new Date(curWeek.weekStart+'T00:00:00'), e:addD(new Date(curWeek.weekStart+'T00:00:00'), 6)} : null;
+    const actualPct = (ds && weekRange) ? metricRate(ds, loc, weekRange, 'laborPct') : null;
+    const gapPP = (actualPct!=null && target!=null) ? (actualPct-target)*100 : null;
+    let shortVerdict = null;
+    if (curWeek && curWeek.planningGapHrs!=null && curWeek.executionGapHrs!=null) {
+      const planAbs = Math.abs(curWeek.planningGapHrs), execAbs = Math.abs(curWeek.executionGapHrs);
+      shortVerdict = planAbs>=execAbs ? 'Planning-driven, not the shift' : 'Execution-driven, not the schedule';
+    }
+    return {target, actualPct, gapPP, shortVerdict};
+  }, [ds, loc, locS, t]);
+
+  // 3. Location Intelligence -> intelligence. Total Opp/Year — sum of the roadmap's dollarOpp.
+  // liComputeAll/liBuildRoadmap were module-private in location-intel.js; dispatch #208 added
+  // both to that file's export list (pure addition, no logic change) so this tile can call them.
+  // Synchronous over already-loaded ds — no new fetch.
+  const liInfo = React.useMemo(() => {
+    if (!ds || !ds.loaded) return null;
+    const stats = liComputeAll(loc, ds, settings);
+    if (!stats) return null;
+    const roadmap = liBuildRoadmap(stats);
+    return {totalOpp: roadmap.reduce((s,o) => s+o.dollarOpp, 0), nOpps: roadmap.length, topCat: roadmap[0] ? roadmap[0].cat : null};
+  }, [ds, loc, settings]);
+
+  // 4. Records -> records. Best Day Sales, live engine (record-day.js's computeRecords/
+  // scopeRecordData, already imported into this file — no new import, no new fetch). Same 60-day
+  // default window StoreRecordsTab itself uses.
+  const recInfo = React.useMemo(() => {
+    if (!ds) return null;
+    const liveAll = computeRecords(ds, 60);
+    const scoped = scopeRecordData(liveAll, [loc]);
+    const rec = scoped && scoped.stores ? scoped.stores[loc] : null;
+    const recentBreaks = scoped ? scoped.recentBreakers.length : 0;
+    return rec ? {rec, recentBreaks} : null;
+  }, [ds, loc]);
+
+  // 5. Action Plan -> action. Top action by generatePlan's fixed priority order. Plain function
+  // over store/settings already in scope — no new fetch.
+  const topAction = React.useMemo(() => {
+    const plan = generatePlan(store, settings);
+    return (plan && plan.actions && plan.actions[0]) || null;
+  }, [store, settings]);
+
+  const tiles = [
+    digestTile({
+      key:'foodcost', icon:'🥫', label:'FOOD COST',
+      value: foodCostReport ? (foodCostReport.fobPct!=null ? fP(foodCostReport.fobPct) : '—') : (fobPending ? '…' : '—'),
+      detail: foodCostReport
+        ? 'target '+(foodCostReport.target!=null?fP(foodCostReport.target):'—')
+          +(foodCostReport.gapPP!=null?' · '+(foodCostReport.gapPP>=0?'+':'')+foodCostReport.gapPP.toFixed(2)+'pp':'')
+          +(foodCostReport.topDriver?' · driver: '+foodCostReport.topDriver.label:'')
+        : (fobPending ? 'Loading FOB data…' : 'No FOB data yet for this store'),
+      ok: foodCostReport ? (foodCostReport.target!=null && foodCostReport.overTarget===false) : false,
+      bad: foodCostReport ? (foodCostReport.gapPP!=null && foodCostReport.gapPP>0.5) : false,
+      onClick: () => setTab('foodcost'),
+    }),
+    digestTile({
+      key:'laborsched', icon:'👷', label:'LABOR & SCHEDULING',
+      value: laborInfo.actualPct!=null ? fP(laborInfo.actualPct) : '—',
+      detail: (laborInfo.target!=null ? 'target '+fP(laborInfo.target) : 'no target set')
+        + (laborInfo.gapPP!=null ? ' · '+(laborInfo.gapPP>=0?'+':'')+laborInfo.gapPP.toFixed(2)+'pp' : '')
+        + (laborInfo.shortVerdict ? ' · '+laborInfo.shortVerdict : ' · needs a complete pay week'),
+      ok: laborInfo.actualPct!=null && laborInfo.target!=null && laborInfo.actualPct<=laborInfo.target*1.01,
+      bad: laborInfo.actualPct!=null && laborInfo.target!=null && laborInfo.actualPct>laborInfo.target*1.03,
+      onClick: () => setTab('laborsched'),
+    }),
+    digestTile({
+      key:'intelligence', icon:'📊', label:'LOCATION INTELLIGENCE', neutral:true,
+      value: liInfo ? f$(Math.round(liInfo.totalOpp)) : '—',
+      detail: liInfo ? liInfo.nOpps+' opportunit'+(liInfo.nOpps===1?'y':'ies')+' identified/yr'+(liInfo.topCat?' · top: '+liInfo.topCat:'') : 'Needs more data',
+      onClick: () => setTab('intelligence'),
+    }),
+    digestTile({
+      key:'records', icon:'🏆', label:'RECORDS', neutral:true,
+      value: recInfo && recInfo.rec.sales && recInfo.rec.sales.day && recInfo.rec.sales.day.val ? rdF$2(recInfo.rec.sales.day.val) : '—',
+      detail: recInfo && recInfo.rec.sales && recInfo.rec.sales.day && recInfo.rec.sales.day.dk
+        ? 'Best day sales · '+rdFDate(recInfo.rec.sales.day.dk)+(recInfo.recentBreaks>0?' · '+recInfo.recentBreaks+' recent break'+(recInfo.recentBreaks===1?'':'s'):'')
+        : 'No live sales records yet',
+      onClick: () => setTab('records'),
+    }),
+    h(RegisterAuditDigestTile, {key:'register', store, ds, setTab}),
+    digestTile({
+      key:'action', icon:'📋', label:'ACTION PLAN',
+      value: topAction ? topAction.priority : 'CLEAR',
+      detail: topAction ? topAction.issue : 'No priority action items right now',
+      ok: !topAction || topAction.priority==='MAINTAIN',
+      bad: !!topAction && (topAction.priority==='CRITICAL' || topAction.priority==='HIGH'),
+      onClick: () => setTab('action'),
+    }),
+  ];
+
+  return div({style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:6,marginBottom:10}}, ...tiles);
+}
+
 // STORE DASHBOARD (SECTION 13)
 function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, userEvents, lockedProjections, onUpdateSettings}) {
   // #189: same pattern as AtAGlance (at-a-glance.js) — one of 4 possible active-panel views.
@@ -2144,6 +2360,9 @@ function StoreDash({store, ds, settings, allStores, onBack, onNav, dateRange, us
               )
         );
       })(),
+
+      // ── Tab Digest (dispatch #208) ───────────────────────────────
+      h(TabDigestRow, {store, ds, settings, setTab}),
 
       // ── Charts (collapsed by default) ───────────────────────────
       div(null,
