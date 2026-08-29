@@ -4,7 +4,7 @@ import { sName, sNameC, OPTIONAL_PANELS } from '../constants.js';
 import { PANEL_BY_ID, SECTIONS, panelsForSection, testKitchenPanels } from './panel-registry.js';
 import { addD, mwStart, nwStart, sodOf, eodOf, thisWeek, fmtDI, fmtRng, nDays, rngMode, weekStartOf } from '../utils/date.js';
 import { SignOutBtn, ChangePasswordBtn } from '../components/AuthGate.js';
-import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead } from '../lib/supabase.js';
+import { supabase, loadEomCountNotifications, countUnreadEomCountNotifications, markEomCountNotificationRead, upsertPushSubscription, deletePushSubscription } from '../lib/supabase.js';
 import { reportRender as _traceRender } from '../utils/click-trace.js';
 
 const h=React.createElement;
@@ -394,6 +394,108 @@ function NotificationRow({ row, onClick }) {
   );
 }
 
+// ── Device alerts (Web Push) — dispatch #216 ─────────────────────────────────
+// Standard base64url -> Uint8Array conversion (subscribe()'s applicationServerKey requires a
+// Uint8Array, not the raw VAPID public-key string) — small, well-known, not worth a dependency.
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+function isIOSDevice() {
+  return typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+function isStandaloneDisplay() {
+  return (typeof navigator !== 'undefined' && navigator.standalone === true)
+    || (typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+}
+
+// A small toggle inside the bell's dropdown, not a panel of its own — same "positioned div,
+// click-outside closes it" shape the dropdown it lives in already uses, so no ModalShell/
+// RoutePanelShell chrome applies here (panel-contract's close-button/date-picker/
+// LocationSelector/mobile-scroll items are about actual panels; this has none of those surfaces).
+function DeviceAlertsToggle() {
+  // 'checking' | 'unsupported' | 'ios-install' | 'denied' | 'off' | 'on'
+  const [state, setState] = useState('checking');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+        if (live) setState('unsupported'); return;
+      }
+      if (isIOSDevice() && !isStandaloneDisplay()) { if (live) setState('ios-install'); return; }
+      if (Notification.permission === 'denied') { if (live) setState('denied'); return; }
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (live) setState(sub ? 'on' : 'off');
+      } catch { if (live) setState('off'); }
+    })();
+    return () => { live = false; };
+  }, []);
+
+  const enable = async () => {
+    setBusy(true); setErr('');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setState('denied'); setBusy(false); return; }
+      const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+      if (!vapidKey) { setErr('Push isn\'t configured yet — ask the admin to finish the device-alerts setup.'); setBusy(false); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      });
+      const json = sub.toJSON();
+      const { saved, error } = await upsertPushSubscription({
+        endpoint: json.endpoint, p256dh: json.keys.p256dh, authKey: json.keys.auth, userAgent: navigator.userAgent,
+      });
+      if (!saved) { setErr(error || 'Could not save this device.'); setBusy(false); return; }
+      setState('on');
+    } catch (e) {
+      setErr(e?.message || 'Could not enable device alerts.');
+    }
+    setBusy(false);
+  };
+
+  const disable = async () => {
+    setBusy(true); setErr('');
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await deletePushSubscription(sub.endpoint);
+        await sub.unsubscribe();
+      }
+      setState('off');
+    } catch (e) {
+      setErr(e?.message || 'Could not disable device alerts.');
+    }
+    setBusy(false);
+  };
+
+  const row = { padding: '8px 12px', borderBottom: '.5px solid var(--bdr)', fontSize: '10px', color: 'var(--text2)' };
+  if (state === 'checking') return null; // avoid a flash of the wrong affordance
+  if (state === 'unsupported') return div({ style: row }, 'Device alerts aren\'t supported in this browser.');
+  if (state === 'ios-install') return div({ style: row }, 'Add Meridian to your Home Screen first, then reopen it from there to enable device alerts.');
+  if (state === 'denied') return div({ style: row }, 'Notifications are blocked for this site. Enable them in your browser/site settings to turn on device alerts.');
+  return div({ style: row },
+    btn({
+      onClick: state === 'on' ? disable : enable, disabled: busy,
+      style: { fontSize: '10px', fontWeight: 700, color: state === 'on' ? 'var(--amber)' : 'var(--text2)',
+        background: 'transparent', border: '.5px solid var(--bdr)', borderRadius: 6, padding: '4px 8px',
+        cursor: busy ? 'default' : 'pointer' },
+    }, busy ? 'Working…' : (state === 'on' ? '🔔 Device alerts on — tap to disable' : '🔔 Enable device alerts')),
+    err && div({ style: { color: '#fca5a5', marginTop: 4 } }, err)
+  );
+}
+
 function NotificationBell({ onOpenModal, perm }) {
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -460,6 +562,7 @@ function NotificationBell({ onOpenModal, perm }) {
         boxShadow: '0 8px 32px rgba(0,0,0,.4)' } },
         div({ style: { padding: '8px 12px', borderBottom: '.5px solid var(--bdr)', fontSize: '10px', fontWeight: 700,
           color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '.5px' } }, 'EOM Count Notifications'),
+        h(DeviceAlertsToggle, null),
         loading && !loadedOnce && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'Loading…'),
         !loading && !items.length && div({ style: { padding: '18px 12px', textAlign: 'center', fontSize: '11px', color: 'var(--text3)' } }, 'No notifications yet'),
         items.map(row => h(NotificationRow, { key: row.id, row, onClick: onRowClick }))

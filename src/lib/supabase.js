@@ -3110,6 +3110,33 @@ export async function loadUserSetting(key) {
   return data?.value ?? null;
 }
 
+// ── Web Push subscriptions (dispatch #216) ────────────────────────────────────
+// One row per device/browser (src/app/shell.js's NotificationBell "🔔 Enable device alerts"
+// toggle calls these). Requires supabase/schema-push-subscriptions.sql — RLS is scoped to
+// user_id = auth.uid(), NOT tenant_id, since a push subscription is inherently per-person, not
+// shared reference data (see that file's own comment). scripts/lib/webpush-notify.mjs is the
+// send-side reader (service role, bypasses RLS) — this is the client-side write/delete side only.
+export async function upsertPushSubscription({ endpoint, p256dh, authKey, userAgent }) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { saved: false, error: 'Not signed in' };
+  const { error } = await supabase.from('push_subscriptions').upsert({
+    user_id: user.id, endpoint, p256dh, auth_key: authKey, user_agent: userAgent || null,
+  }, { onConflict: 'user_id,endpoint' });
+  if (error) { console.warn('[push_subscriptions] upsert error:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
+export async function deletePushSubscription(endpoint) {
+  if (!supabase || !endpoint) return { deleted: false };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { deleted: false };
+  const { error } = await supabase.from('push_subscriptions')
+    .delete().eq('user_id', user.id).eq('endpoint', endpoint);
+  if (error) { console.warn('[push_subscriptions] delete error:', error.message); return { deleted: false, error: error.message }; }
+  return { deleted: true };
+}
+
 // ── Microsoft / Azure AD migration note ───────────────────────────────────────
 // To switch auth to Microsoft Entra ID (M365 SSO) later:
 //   1. In Supabase dashboard → Auth → Providers → Azure → enable + paste tenant/client

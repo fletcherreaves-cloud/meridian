@@ -43,8 +43,15 @@ import {
 import { buildStoreFobReport } from '../src/engine/fob-report.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
-import { sendEmailNotification, sendSmsViaCarrierGateway } from './lib/resend-notify.mjs';
+import { sendEmailNotification, sendSmsViaCarrierGateway, triggerLabel } from './lib/resend-notify.mjs';
+// dispatch #216 — real OS-level device alerts, the third channel alongside email/SMS above.
+import { sendWebPush } from './lib/webpush-notify.mjs';
 import { STORE_NAMES, DEFAULT_TARGETS, unpadLoc } from '../src/constants.js';
+
+// dispatch #216 — base URL the push notification's click-through deep-links into. Overridable
+// (MERIDIAN_APP_URL) for a future non-prod deploy; CLAUDE.md's own Stack table names this as the
+// one real production URL, so it's the correct hardcoded default, not a guess.
+const APP_URL = process.env.MERIDIAN_APP_URL || 'https://meridianbi.vercel.app';
 
 // ── Count-completion notifications (dispatch #209) ────────────────────────────
 // QSRSoft KB grounding — confirmed LIVE against qsrsoft_kb 2026-08-29 (service-role read,
@@ -83,15 +90,45 @@ export function kbLinksForClasses(classes, nsn, dateStr) {
   return [...seen.values()];
 }
 
+// dispatch #216 — the third delivery channel: a real push to every subscribed device (no
+// per-role routing yet, matching #211/#215's own "everyone gets it for now" scope — this app
+// doesn't have per-role notification recipients modeled). `supabase` guarded null-check matches
+// this file's own module-scope client (see its definition below main()'s helpers) — a test
+// importing notifyRow directly with no VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY in the
+// environment gets a clean no-op here, same as every other supabase-gated function in this file.
+async function sendPushNotifications(row, storeInfo) {
+  if (!supabase) return;
+  const { data, error } = await supabase.from('push_subscriptions').select('id,endpoint,p256dh,auth_key');
+  if (error) { console.warn('[onhand-pull] push_subscriptions read error:', error.message); return; }
+  const label = storeInfo.name && storeInfo.name !== storeInfo.loc ? `${storeInfo.name} (${storeInfo.loc})` : String(storeInfo.loc);
+  const trig = triggerLabel(row.trigger_kind);
+  // Same 'eom-dashboard:<loc>' deep-link shape the in-app bell already uses (App.js's
+  // eomInitialStore / onOpenModal('eom-dashboard:<loc>'), dispatch #209) — carried as a real
+  // URL (?panel=eom-dashboard&store=<loc>) since a push has to open a URL, not call a JS
+  // function. App.js reads this same `store` param on mount (see eomInitialStore's own
+  // initializer) so the two paths land on the identical panel state.
+  const payload = {
+    title: `${label} — ${trig} count complete`,
+    body: `EOM count update for ${row.period}. Tap to view the Scoreboard.`,
+    url: `${APP_URL}/?panel=eom-dashboard&store=${encodeURIComponent(row.loc)}`,
+  };
+  for (const sub of (data || [])) {
+    await sendWebPush({ id: sub.id, endpoint: sub.endpoint, p256dh: sub.p256dh, authKey: sub.auth_key }, payload);
+  }
+}
+
 // Dispatch #211 — deliver a single fired notification over BOTH channels (email + SMS-via-
 // carrier-gateway). Exported (rather than inlined in the run loop below) so the hook-point
 // wiring itself is unit-testable against a mocked resend-notify module, per this repo's own
 // "would this verification still pass if the change were reverted" rule — a test that only
 // exercises resend-notify.mjs directly could not tell "wired in" from "wired in, then deleted".
+// dispatch #216 extended this to a THIRD channel (sendPushNotifications, above) — comment left
+// as "BOTH" historically accurate to #211's own scope; see the #216 comment above for the add.
 export async function notifyRow(row) {
   const storeInfo = { loc: row.loc, name: STORE_NAMES[unpadLoc(row.loc)] || row.loc };
   await sendEmailNotification(row, storeInfo);
   await sendSmsViaCarrierGateway(row, storeInfo);
+  await sendPushNotifications(row, storeInfo);
 }
 
 // Every fired notification gets BOTH channels (owner asked for both, not a per-notification
