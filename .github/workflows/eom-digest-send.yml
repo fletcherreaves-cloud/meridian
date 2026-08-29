@@ -1,0 +1,76 @@
+name: EOM Digest Send (roll-up email)
+
+# Dispatch #215 Task 3 — rolls per-store EOM count-completion + FOB(+target) data up to
+# District / Patch and emails ONE digest per (level, group) via scripts/eom-digest-send.mjs.
+#
+# CADENCE — a starting guess, not a locked-in decision (say so explicitly per the dispatch): the
+# owner asked for "timed emails" without naming a schedule, so this defaults to ONCE DAILY at
+# 6pm CT (23:00 UTC) during the active count window (scripts/lib/count-window.mjs's
+# inCountWindow() — same gate qsrsoft-onhand-pull.mjs already uses — does the actual filtering;
+# the cron just gives it a landing point once a day). 6pm CT was picked as "after most of a
+# business day's counting has happened, in time for a leader to react before day's end" — retune
+# freely once the owner has seen a real digest land.
+on:
+  schedule:
+    - cron: '0 23 * * *'   # 23:00 UTC = 6:00pm CT (CDT) / 5:00pm CT (CST) — inCountWindow() still gates whether this run actually sends
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Which level(s) to send: district, patch, org, all, or blank for the default (district + patch)'
+        required: false
+        default: ''
+      force:
+        description: 'Send even outside the active count window (1 = on) — used by the on-demand "Generate Report" panel action'
+        required: false
+        default: '1'
+      period:
+        description: 'Override period (YYYY-MM, default: current month)'
+        required: false
+        default: ''
+      date:
+        description: 'Override the business date queried (YYYY-MM-DD, default: today UTC)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+# Queue, don't cancel — every write this script does (Resend sends) is a side effect, not a DB
+# write, but a cancelled mid-send run could plausibly send a partial set of the (level, group)
+# emails and never finish the rest; queuing avoids that half-sent state. Matches
+# qsrsoft-onhand-pull.yml's own reasoning for the same choice.
+concurrency:
+  group: eom-digest-send-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send EOM roll-up digest
+        run: node scripts/eom-digest-send.mjs
+        env:
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DIGEST_LEVEL:              ${{ github.event.inputs.level  || '' }}
+          DIGEST_FORCE:              ${{ github.event.inputs.force  || '0' }}
+          DIGEST_PERIOD:             ${{ github.event.inputs.period || '' }}
+          DIGEST_DATE:               ${{ github.event.inputs.date   || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}

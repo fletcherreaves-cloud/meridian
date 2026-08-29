@@ -46,13 +46,30 @@ const FOB_COMPONENTS = [
 
 // Renders nothing when row.fob_snapshot is absent (stale/missing FOB pull, per the owner's
 // freshness rule) — no caveat, no placeholder header, just skip the section entirely.
+//
+// dispatch #215 Task 1 — row.fob_target (buildFobTargetReport()'s output from
+// qsrsoft-onhand-pull.mjs, reusing fob-report.js's own comps/overTarget/gapPP/topDriver math —
+// no target math re-derived here) adds target-vs-actual alongside each number when present;
+// absent (no resolvable target for this store/period) falls back to the actual-only rendering
+// #213 shipped, unchanged.
 function fobSectionHtml(row) {
   const fs = row.fob_snapshot;
   if (!fs) return '';
-  const headline = fs.fobPct != null ? `${fobPp(fs.fobPct)}%` : '—';
-  const compLines = FOB_COMPONENTS.map(([k, label]) => `<li>${label}: ${fobMoney(fs[k])}</li>`).join('');
+  const tgt = row.fob_target || null;
+  const headlinePct = fs.fobPct != null ? `${fobPp(fs.fobPct)}%` : '—';
+  const targetLine = tgt && tgt.fobPct != null
+    ? ` <span style="color:#666">(target ${fobPp(tgt.fobPct)}%, ${tgt.gapPP > 0 ? '+' : ''}${tgt.gapPP}pp ${tgt.overTarget ? 'OVER' : 'under'})</span>`
+    : '';
+  const compByKey = new Map((tgt?.comps || []).map(c => [c.key, c]));
+  const compLines = FOB_COMPONENTS.map(([k, label]) => {
+    const c = compByKey.get(k);
+    const targetBit = c && c.tgtPP != null
+      ? ` <span style="color:#666">(target ${c.tgtPP}%, ${c.deltaPP > 0 ? '+' : ''}${c.deltaPP}pp)</span>`
+      : '';
+    return `<li>${label}: ${fobMoney(fs[k])}${targetBit}</li>`;
+  }).join('');
   return `<h3 style="margin:16px 0 8px">FOB (Food Over Base)</h3>
-<p style="margin:0 0 8px">${headline} of sales — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
+<p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
 <ul style="margin:0 0 4px;padding-left:20px">${compLines}</ul>`;
 }
 
@@ -128,7 +145,9 @@ export function buildSmsBody(row, storeInfo) {
   return body.length > 300 ? body.slice(0, 297) + '...' : body;
 }
 
-async function postResend({ to, subject, html, text }) {
+// Exported (dispatch #215 Task 3) so scripts/lib/eom-digest-notify.mjs's roll-up digest send
+// reuses the exact same Resend POST implementation rather than a second copy.
+export async function postResend({ to, subject, html, text }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn('[resend-notify] RESEND_API_KEY not set — skipping send to', to);

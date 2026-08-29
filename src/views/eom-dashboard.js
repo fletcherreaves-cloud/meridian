@@ -34,6 +34,7 @@ import {
   buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
+import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
@@ -1620,6 +1621,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     finally { setPulling(''); }
   }, []);
 
+  // dispatch #215 Task 4 — "📧 Generate Report" (view + send are two SEPARATE actions, per the
+  // panel's own owner-stated requirement). Digest state declared here; digestStoreRows/digest
+  // memos below (after fobReport/patchOfLoc exist).
+  const [digestOpen, setDigestOpen] = useState(false);
+  const [digestLevel, setDigestLevel] = useState('district');
+  const [digestSending, setDigestSending] = useState(false);
+  const [digestMsg, setDigestMsg] = useState(null);
+
   // Load the editable diagnosis-flow config once on mount.
   useEffect(() => { loadEomDiagConfig().then(c => { if (c) setDiagCfg(c); }).catch(() => {}); }, []);
   // Self-serve beverage-tower locs (integrity #47) — suppress the fountain-yield "loss" flag for
@@ -1902,6 +1911,45 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     };
     return { ...buildFobReport({ stores: rows, get }), reportPeriod };
   }, [rows, fobRows, varByLoc, prevVarByLoc, period, patchOfLoc]);
+
+  // dispatch #215 Task 2/4 — client-side roll-up digest input, built from data ALREADY loaded in
+  // this panel (rows/fobReport) — no new fetch. classStatusesFromProgress() (src/engine/
+  // eom-digest.js) adapts the SAME r.prog.byClass every row already carries (computeCountProgress,
+  // above); fobReport.stores[loc] (buildFobReport(), just above) already carries the exact
+  // gap/overTarget/comps/topDriver read Task 1 defines — reused verbatim as `fobTarget`, never a
+  // second target computation. uncountedValue sums the SAME per-class uncounted items
+  // diagnoseIncompleteCount() already put on r.uncountedByClass (allRows, above).
+  const digestStoreRows = useMemo(() => rows.map(r => {
+    const u = unpad(r.loc);
+    const uncountedValue = Object.values(r.uncountedByClass || {}).flat().reduce((s, it) => s + (Number(it.valueAtRisk) || 0), 0);
+    const fr = fobReport.stores[r.loc] || fobReport.stores[u] || null;
+    return {
+      loc: r.loc, name: r.name, org: r.org, patch: patchOfLoc(u),
+      classStatuses: classStatusesFromProgress(r.prog?.byClass),
+      uncountedValue,
+      fob: r.fobPct != null ? r.components : null,
+      fobTarget: fr ? { fobPct: fr.target, gapPP: fr.gapPP, overTarget: fr.overTarget, comps: fr.comps, topDriver: fr.topDriver } : null,
+    };
+  }), [rows, fobReport, patchOfLoc]);
+
+  // Level defaults to whatever the current scope/patch filter already narrows to (patch selected
+  // -> patch level; a state pill active -> org level; otherwise district) — reuses the SAME
+  // scope/patch picker every other mode in this panel already has (this file's own documented
+  // reason not to swap it for the shared LocationSelector — see the comment above locationSlot)
+  // rather than adding a second location control, per the panel-contract's scope requirement.
+  const digestAutoLevel = patch ? 'patch' : (scope !== 'all' ? 'org' : 'district');
+  const digest = useMemo(() => buildEomDigest(digestStoreRows, { level: digestOpen ? digestLevel : digestAutoLevel, period }),
+    [digestStoreRows, digestLevel, digestAutoLevel, period, digestOpen]);
+  const openDigest = useCallback(() => { setDigestLevel(digestAutoLevel); setDigestMsg(null); setDigestOpen(true); }, [digestAutoLevel]);
+  const sendDigest = useCallback(async () => {
+    setDigestSending(true); setDigestMsg(null);
+    try {
+      const r = await triggerSync('digest', { level: digestLevel });
+      if (r && r.error) setDigestMsg({ ok: false, text: `✗ ${r.error}` });
+      else setDigestMsg({ ok: true, text: `✓ Digest send started — ${digest.groups.length} email(s) going to the owner's own address (test phase — see Data Manager for delivery details).` });
+    } catch (e) { setDigestMsg({ ok: false, text: `✗ ${e.message || 'failed'}` }); }
+    finally { setDigestSending(false); }
+  }, [digestLevel, digest.groups.length]);
 
   // FOB Report — printable (→ PDF) + CSV export, so it can go into a DO/GM review.
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
@@ -2648,6 +2696,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         { label: '🔬 FOB Analysis', onClick: () => { setRiddleStore(null); setRiddleOpen(true); }, disabled: rows.length === 0, title: 'FOB Root-Cause Analysis — for the current scope: which stores\' RECOUNTS add loss (net-harmful = the coaching opportunities) and which stores hold the most CONSISTENT FOB month-to-month. Same math as the batch analysis; every number is decomposable.' },
         { label: '📊 FOB Report', onClick: () => { setFobRepStore(null); setFobRepOpen(true); }, disabled: rows.length === 0, title: 'FOB Report — all-location EOM-lean read for the current scope: OK/FL summary, biggest opportunities, then patch → store with each store\'s FOB vs target, month-over-month trend (improving/regressing), worst component, top item losers, a masking check, and a plain-language action plan. Reusable for one / all / patch.' },
         { label: '📣 Message all', onClick: openBulk, disabled: rows.length === 0, title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).' },
+        { label: '📧 Generate Report', onClick: openDigest, disabled: rows.length === 0, title: 'Roll up the current scope\'s count completion + FOB(vs target) to Patch / Market / District — view it here immediately, or send it as email(s) from the same panel.' },
       ],
     },
     {
@@ -2978,6 +3027,45 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
           // Hierarchy
           div({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px', marginBottom: '6px', borderTop: '1px solid var(--bdr2)', paddingTop: '10px' } }, 'By market → patch → store'),
           R.orgs.map(orgBlock));
+    })(),
+    // 📧 EOM Digest modal (dispatch #215 Task 2/4) — the roll-up view renders INLINE the instant
+    // it opens (pure buildEomDigest() call on data already in this panel, no fetch/Edge Function).
+    // "Send email(s)" is a SEPARATE, explicit action below — viewing never silently emails anyone.
+    digestOpen && (() => {
+      const levelTab = (k, label) => h('button', {
+        key: k, onClick: () => setDigestLevel(k),
+        style: {
+          background: digestLevel === k ? '#f5bc00' : 'var(--surf3)', color: digestLevel === k ? '#0f1117' : 'var(--text2)',
+          border: 'none', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+        },
+      }, label);
+      const classLine = (g) => DIGEST_CLASS_ORDER.map(k => {
+        const c = g.completion[k];
+        return `${DIGEST_CLASS_LABELS[k]} ${c.complete}/${c.total}`;
+      }).join(' · ');
+      const groupCard = (g) => div({ key: g.key, style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' } },
+        div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' } },
+          span({ style: { fontWeight: 800, fontSize: '13px', color: g.key === UNASSIGNED_KEY ? '#fb923c' : 'var(--text)' } }, g.label),
+          span({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${g.storeCount} store${g.storeCount === 1 ? '' : 's'}`),
+          g.fob.overTargetCount > 0 ? span({ style: { marginLeft: 'auto', fontSize: '11px', color: 'var(--crit)', fontWeight: 700 } }, `${g.fob.overTargetCount} over FOB target`) : null),
+        div({ style: { fontSize: '12.5px', color: 'var(--text2)', lineHeight: 1.5, marginBottom: '6px' } }, g.headline),
+        div({ style: { fontSize: '11px', color: 'var(--text3)' } }, classLine(g)),
+        g.fob.worstStores.length ? div({ style: { fontSize: '11px', color: 'var(--text2)', marginTop: '4px' } },
+          'Worst: ', g.fob.worstStores.slice(0, 3).map(s => `${s.name || s.loc} (+${s.gapPP}pp)`).join(', ')) : null);
+      return h(ModalShell, { title: `📧 EOM Digest — ${scopeLabel()}`, onClose: () => setDigestOpen(false), maxWidth: 720, closeOnBackdrop: true },
+        div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' } },
+          div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
+            levelTab('district', 'District'), levelTab('patch', 'Patch'), levelTab('org', 'Market')),
+          h('button', {
+            onClick: sendDigest, disabled: digestSending || digest.groups.length === 0,
+            style: { marginLeft: 'auto', ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399', cursor: digestSending ? 'wait' : 'pointer' },
+            title: 'Send one email per group at this level (Data Manager -> EOM Digest workflow) — separate from viewing above, always explicit',
+          }, digestSending ? '📧 Sending…' : `📧 Email ${digest.groups.length} group${digest.groups.length === 1 ? '' : 's'}`)),
+        digestMsg ? div({ style: { fontSize: '11px', color: digestMsg.ok ? '#4ade80' : 'var(--crit)', marginBottom: '10px' } }, digestMsg.text) : null,
+        div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '12px' } }, `Reporting ${period} · scope: ${scopeLabel()} · view updates live from data already on screen; nothing is emailed until you click Send.`),
+        div({ style: { overflowX: 'auto' } }, digest.groups.length
+          ? digest.groups.map(groupCard)
+          : div({ style: { color: 'var(--text3)', fontSize: '12px' } }, 'No stores with EOM data in the current scope.')));
     })(),
     // 🔬 FOB Root-Cause Analysis modal (Notes 41) — recount impact + FOB consistency, scoped + verifiable.
     riddleOpen && (() => {

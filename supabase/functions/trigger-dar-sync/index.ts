@@ -29,6 +29,12 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   // pull, same as every other auto-synced stream. Empty start_date/end_date -> the workflow's
   // own rolling-window default (DAYS_BACK/DAYS_RECENT), matching a manual click on any other row.
   secevents: { file: 'qsrsoft-security-events-pull.yml', label: 'Security Events', inputs: { days_back: '14', days_recent: '2', start_date: '', end_date: '', debug: '0' } },
+  // dispatch #215 Task 4 — on-demand EOM roll-up digest send (Data Manager / EOM Dashboard's
+  // "📧 Generate Report" -> Send action). force:'1' so a manual click sends regardless of the
+  // count-window gate scripts/eom-digest-send.mjs's scheduled run otherwise respects, matching
+  // the onhand/variance entries' own force:'1' pattern above. Inputs must stay in sync with
+  // .github/workflows/eom-digest-send.yml's own `workflow_dispatch.inputs` block.
+  digest: { file: 'eom-digest-send.yml', label: 'EOM Digest Report', inputs: { level: '', force: '1', period: '', date: '', debug: '0' } },
 };
 
 const CORS = {
