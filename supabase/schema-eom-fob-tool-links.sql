@@ -1,0 +1,21 @@
+-- ── EOM count-completion notification FOB investigation-tool links — dispatch #214 ─────────────
+-- Owner sent 7 real, direct QSRSoft tool links in one message; #213 built the per-store deep-link
+-- pattern and used 2 of them (Physical Inventory, On-Hand Inventory); the other 5 (Variance
+-- Stat/Yields, Transfers, Waste, Purchases, Raw Items) plus Inventory Analysis were explicitly
+-- deferred to "dispatch #214" — this is that dispatch.
+--
+-- Adds one new jsonb column to the existing eom_count_notifications table (schema-eom-count-
+-- notifications.sql) — an array of { title, url } links into QSRSoft's own inventory-
+-- investigation tools (scripts/qsrsoft-onhand-pull.mjs's fobToolLinks()), attached to a fired
+-- notification ONLY alongside a fresh fob_snapshot (same freshness gate as fob_snapshot/
+-- fob_target already use — schema-eom-fob-snapshot.sql for fob_snapshot; fob_target is a plain
+-- schema.sql column, added directly there). A Paper-only or Non-Product-only trigger, or a
+-- stale/missing FOB pull, stores this as null — resend-notify.mjs's
+-- fobSectionHtml() renders no "Investigate further" sub-section at all when this column is
+-- null/empty, per the same "don't show something irrelevant" discipline #213 established.
+--
+-- ⚠️ HANDOFF — this file needs to be run manually in the Supabase SQL editor before the
+-- "Investigate further" links can write real data (same pattern as every other new-column
+-- migration in this repo, e.g. schema-eom-fob-snapshot.sql's own header). Idempotent (`add
+-- column if not exists`) — safe to run anytime, including a second time.
+alter table public.eom_count_notifications add column if not exists fob_tool_links jsonb;

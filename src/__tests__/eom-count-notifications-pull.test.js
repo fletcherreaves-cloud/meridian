@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildNotificationRow, buildStatusRow, kbLinksForClasses,
-  foodCondimentCountCompletedAt, isFobFresh,
+  foodCondimentCountCompletedAt, isFobFresh, fobToolLinks,
 } from '../../scripts/qsrsoft-onhand-pull.mjs';
 import {
   computeCountProgress, diagnoseIncompleteCount, detectCountNotifications,
@@ -278,5 +278,81 @@ describe('buildNotificationRow — fob_snapshot passthrough (dispatch #213 Task 
     const diag = diagnoseIncompleteCount(rows, { period: PERIOD, minValue: 0 });
     const row = buildNotificationRow(LOC, PERIOD, detection, diag);
     expect(row.fob_snapshot).toBeNull();
+  });
+
+  it('populates fob_tool_links only when fobSnapshot is non-null, mirroring fob_snapshot/fob_target', () => {
+    const rows = mkRows({
+      foodCountedOn: [d(30), d(30), d(30), d(30)],
+      condimentCountedOn: [d(30), d(30), d(30)],
+    });
+    const p = computeCountProgress(rows, { period: PERIOD, asOf: ASOF });
+    const detection = detectCountNotifications({ notified_classes: [] }, p, { asOf: ASOF });
+    const diag = diagnoseIncompleteCount(rows, { period: PERIOD, minValue: 0 });
+    const snap = { fobPct: 0.03, fob: 3000, comp: 1, raw: 1, cond: 1, emp: 1, statv: 1, unex: 1 };
+
+    const withSnap = buildNotificationRow(LOC, PERIOD, detection, diag, snap, '2026-08-29');
+    expect(withSnap.fob_tool_links).not.toBeNull();
+    expect(withSnap.fob_tool_links.length).toBeGreaterThan(0);
+
+    const withoutSnap = buildNotificationRow(LOC, PERIOD, detection, diag);
+    expect(withoutSnap.fob_tool_links).toBeNull();
+  });
+});
+
+describe('fobToolLinks(nsn, triggerClasses, period, dateStr) — dispatch #214', () => {
+  it('a food-only trigger gets 1 Variance Stat + Waste + Transfers + Raw Items + Purchases + 1 Inventory Analysis = 6 links, all class=F', () => {
+    const links = fobToolLinks('3708', ['food'], '2026-08', '2026-08-29');
+    expect(links.length).toBe(6);
+    const varianceStat = links.find(l => l.title.startsWith('Variance Stat'));
+    const invAnalysis = links.find(l => l.title.startsWith('Inventory Analysis'));
+    expect(varianceStat.url).toContain('class=F');
+    expect(invAnalysis.url).toContain('class=F');
+    expect(links.some(l => l.title.startsWith('Waste'))).toBe(true);
+    expect(links.some(l => l.title.startsWith('Transfers'))).toBe(true);
+    expect(links.some(l => l.title.startsWith('Raw Items'))).toBe(true);
+    expect(links.some(l => l.title.startsWith('Purchases'))).toBe(true);
+  });
+
+  it('a food_condiment trigger gets BOTH class-letter variants for Variance Stat and Inventory Analysis (8 links total) — the dispatch\'s own open question, resolved as "keep both"', () => {
+    const links = fobToolLinks('3708', ['food', 'condiment'], '2026-08', '2026-08-29');
+    expect(links.length).toBe(8);
+    const varianceStatLetters = links.filter(l => l.title.startsWith('Variance Stat')).map(l => new URL(l.url).searchParams.get('class')).sort();
+    const invAnalysisLetters = links.filter(l => l.title.startsWith('Inventory Analysis')).map(l => new URL(l.url).searchParams.get('class')).sort();
+    expect(varianceStatLetters).toEqual(['C', 'F']);
+    expect(invAnalysisLetters).toEqual(['C', 'F']);
+    // Class-agnostic links still appear exactly once each, not duplicated per class.
+    expect(links.filter(l => l.title.startsWith('Waste')).length).toBe(1);
+    expect(links.filter(l => l.title.startsWith('Transfers')).length).toBe(1);
+    expect(links.filter(l => l.title.startsWith('Raw Items')).length).toBe(1);
+    expect(links.filter(l => l.title.startsWith('Purchases')).length).toBe(1);
+  });
+
+  it('a paper-only trigger returns an EMPTY array — these tools are FOB-irrelevant for that trigger', () => {
+    expect(fobToolLinks('3708', ['paper'], '2026-08', '2026-08-29')).toEqual([]);
+  });
+
+  it('a nonproduct-only trigger also returns an EMPTY array', () => {
+    expect(fobToolLinks('3708', ['nonproduct'], '2026-08', '2026-08-29')).toEqual([]);
+  });
+
+  it('every URL is built from the GIVEN nsn/period/dateStr, not hardcoded — two different NSNs produce two different URLs', () => {
+    const linksA = fobToolLinks('3708', ['food'], '2026-08', '2026-08-29');
+    const linksB = fobToolLinks('9999', ['food'], '2026-08', '2026-08-29');
+    for (let i = 0; i < linksA.length; i++) {
+      expect(linksA[i].url).toContain('location=3708');
+      expect(linksB[i].url).toContain('location=9999');
+      expect(linksA[i].url).not.toBe(linksB[i].url);
+    }
+  });
+
+  it('period/dateStr flow into the start/end query params, exact URLs match the owner-supplied shapes', () => {
+    const links = fobToolLinks('3708', ['food'], '2026-08', '2026-08-29');
+    const byTitle = Object.fromEntries(links.map(l => [l.title, l.url]));
+    expect(byTitle['Variance Stat/Yields (F)']).toBe('https://v3.myqsrsoft.com/cimt/inventory/stat-variance?location=3708&tab=varianceStat&start=2026-08-01&period=M&class=F');
+    expect(byTitle['Waste (this store)']).toBe('https://v3.myqsrsoft.com/cimt/inventory/waste?location=3708');
+    expect(byTitle['Transfers (this store)']).toBe('https://v3.myqsrsoft.com/cimt/inventory/transfers?location=3708&tab=transfers&start=2026-08-01&end=2026-08-29');
+    expect(byTitle['Raw Items (this store)']).toBe('https://v3.myqsrsoft.com/cimt/inventory/raw-item-information?location=3708&start=2026-08-01&end=2026-08-29');
+    expect(byTitle['Purchases (this store)']).toBe('https://v3.myqsrsoft.com/cimt/inventory/purchases?location=3708&tab=approvePending');
+    expect(byTitle['Inventory Analysis (F)']).toBe('https://v3.myqsrsoft.com/cimt/inventory/inventory-analysis?location=3708&class=F&start=2026-08-01&end=2026-08-29');
   });
 });
