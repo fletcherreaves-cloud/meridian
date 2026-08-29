@@ -820,15 +820,30 @@ function App() {
   // showX/ModalShell toggle, not URL-addressable), so only count-cycle needs this URL-sniffing
   // branch — the eom-summary redirect only ever fires via the live onOpenModal('eom-summary')
   // call path, never a cold page load.
-  const [eomInitialMode, setEomInitialMode] = useState(() =>
-    (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
-      && new URLSearchParams(location.search).get('panel') === 'count-cycle') ? 'compliance' : null);
+  // dispatch #216 — a Web Push click-through can't call onOpenModal('eom-dashboard:<loc>') the
+  // way the in-app bell does (there's no app running yet to call it in); it opens a real URL
+  // instead (scripts/qsrsoft-onhand-pull.mjs's sendPushNotifications builds
+  // '?panel=eom-dashboard&store=<loc>'). So on a cold load with that exact param pair present,
+  // seed BOTH eomInitialMode='scoreboard' and eomInitialStore=<loc> here — the same two states
+  // the bell's onOpenModal('eom-dashboard:<loc>') handler sets (see the modal==='eom-dashboard'
+  // branch further down), just sourced from the URL instead of an in-app call. Read raw params
+  // directly (not parseRoute, which only knows the panel id, not `store`) — same "read raw once
+  // on mount" pattern as the count-cycle legacy-redirect check just above.
+  const eomStoreFromUrl = (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
+    && new URLSearchParams(location.search).get('panel') === 'eom-dashboard')
+    ? new URLSearchParams(location.search).get('store') : null;
+  const [eomInitialMode, setEomInitialMode] = useState(() => {
+    if (typeof URLSearchParams !== 'undefined' && typeof location !== 'undefined'
+      && new URLSearchParams(location.search).get('panel') === 'count-cycle') return 'compliance';
+    return eomStoreFromUrl ? 'scoreboard' : null;
+  });
   // eomInitialStore — dispatch #209: the notification bell deep-links a specific store's
   // Scoreboard entry (onOpenModal('eom-dashboard:<loc>'), same `id:arg` convention 'ranking:'
   // already uses above). Separate from eomInitialMode since the two vary independently (a
   // notification always wants mode:'scoreboard' but a specific store; count-cycle/eom-summary
-  // want a mode but never a specific store).
-  const [eomInitialStore, setEomInitialStore] = useState(null);
+  // want a mode but never a specific store). dispatch #216 seeds this from the URL too — see
+  // eomStoreFromUrl above.
+  const [eomInitialStore, setEomInitialStore] = useState(() => eomStoreFromUrl);
   const [showUnifiedTargets, setShowUnifiedTargets] = useState(false);
   // showPlanningHub — dispatch #207: replaced by routePanel==='planning' (see routePanel above).
   const [planningTab, setPlanningTab] = useState('targets');
