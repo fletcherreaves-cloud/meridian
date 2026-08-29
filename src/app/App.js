@@ -151,6 +151,7 @@ const DistrictLensPanel         = lazyPanel(() => _analytics().then(m => ({ defa
 // TopBottomPerformers -- RETIRED as its own lazyPanel (dispatch #203, 2026-08-28): merged into
 // LeaderboardPanel (below) as a mode; see panel-registry.js's comment on 'top-bottom'.
 const OpportunityDollars        = lazyPanel(() => import('../views/opportunity-dollars.js').then(m => ({ default: m.OpportunityDollars })));
+const PricingEnginePanel        = lazyPanel(() => import('../views/pricing-engine.js').then(m => ({ default: m.PricingEnginePanel })));
 const WhyEnginePanel            = lazyPanel(() => _analytics().then(m => ({ default: m.WhyEnginePanel })));
 const FOBAnalysisPanel          = lazyPanel(() => _analytics().then(m => ({ default: m.FOBAnalysisPanel })));
 // ForecastAccuracyPanel — dispatch #106 Phase B: no longer given its own lazyPanel entry here.
@@ -906,6 +907,7 @@ function App() {
   // showTopBottom — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
   // opened via routePanel==='ranking' + leaderboardMode==='top-bottom' instead.
   const [showOpportunity,setShowOpportunity] = useState(false); // Opportunity $ v1
+  const [showPricingEngine,setShowPricingEngine] = useState(false); // Pricing Engine (dispatch #212)
   // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle', then dispatch
   // #189 folded that route into routePanel==='eom-dashboard' (see routePanel above) as
   // EOMDashboardPanel's Count Cycle tab (eomInitialMode==='compliance').
@@ -2919,7 +2921,7 @@ function App() {
     showModelAssign||
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
-    showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
+    showRevIntel||showOpportunity||showPricingEngine||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
@@ -2950,7 +2952,7 @@ function App() {
       setShowModelAssign(false);
       setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
-      setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowRevIntel(false);setShowOpportunity(false);setShowPricingEngine(false);setShowSettings(false);setShowSmartTargets(false);
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowScheduling(false);setShowMonthlyProj(false);setShowSage(false);setShowPanelManager(false);
       // setShowPlanningHub(false) — dispatch #207: replaced by routePanel==='planning' (see routePanel above); the routePanel!==null branch above already handles Escape for it.
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
@@ -3051,6 +3053,7 @@ function App() {
         // through ordinary navigation.
         if(modal==='top-bottom')     perm('analytics.district')&&(setLeaderboardMode('top-bottom'),goRoute('ranking'));
         if(modal==='opportunity-dollars') perm('analytics.district')&&setShowOpportunity(true);
+        if(modal==='pricing-engine') perm('analytics.store')&&setShowPricingEngine(true);
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
         if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
@@ -3475,6 +3478,7 @@ function App() {
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
+    showPricingEngine&&h(PricingEnginePanel,{stores,ds,onClose:()=>setShowPricingEngine(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),

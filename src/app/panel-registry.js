@@ -260,6 +260,12 @@ export const PANELS = [
   { id:'perf-calc', label:'Performance Calc', icon:'🧮', perm:'analytics.store', kind:'hub-tab', section:'people' },
   { id:'perf-reviews', label:'Performance Reviews', icon:'📋', perm:'reviews.view', kind:'nav', section:'people', route:true },
   { id:'pmix', label:'Product Mix', icon:'🍔', perm:'analytics.store', kind:'optional', section:'inventory-food-cost' },
+  // Dispatch #212 — first slice: per-item margin (menu price vs. unit_food_cost +
+  // unit_paper_cost) off qsr_product_mix, the same stream ProductMixPanel ('pmix' above)
+  // already lazy-fills. kind:'test-kitchen' for now; real eventual section given from day
+  // one (matches ProductMixPanel's own section:'inventory-food-cost'), per CLAUDE.md's
+  // panel-registry promotion rule -- flip kind: to ship it for real, nothing else.
+  { id:'pricing-engine', label:'Pricing Engine', icon:'💲', perm:'analytics.store', kind:'test-kitchen', section:'inventory-food-cost', tkOrder:14 },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
   // label/icon corrected 2026-08-21 (dispatch #54 Job A): was 'Proj Workflow'/lock, a stale
   // label from the PRUNED duplicate nav line in shell.js (the live line has said
