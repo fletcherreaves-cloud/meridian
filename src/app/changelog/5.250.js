@@ -83,3 +83,4 @@ export default {version:'5.250', date:'2026-08-29', changes:[
   '522.25 KB gzip (budget 850 KB, headroom 327.75 KB) -- unchanged, as expected, since this ' +
   'dispatch is workflow YAML + scripts/, no src/ app-bundle changes.',
 ]};
+

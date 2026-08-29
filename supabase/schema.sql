@@ -1990,6 +1990,15 @@ create table if not exists public.eom_count_status (
   condiment_done   boolean default false,
   paper_done       boolean default false,
   nonproduct_done  boolean default false,
+  -- dispatch #209 (schema-eom-count-notifications.sql) — stamped the FIRST time each class's
+  -- `done` flips true; never overwritten once set (same fire-once spirit as notified_90 below).
+  food_done_at       timestamptz,
+  condiment_done_at  timestamptz,
+  paper_done_at      timestamptz,
+  nonproduct_done_at timestamptz,
+  -- dispatch #209 — fire-once marker: trigger-kind strings already notified this period
+  -- (e.g. '["paper"]'), consumed by detectCountNotifications()'s alreadyFired() guard.
+  notified_classes jsonb default '[]'::jsonb,
   last_activity_at timestamptz,             -- max(last_counted/last_submitted) across items
   notified_90      boolean default false,   -- has the ~90-95% "believes done" alert fired
   notified_at      timestamptz,

@@ -1481,7 +1481,7 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // route (retired, folded into this panel's Count Cycle tab). null for every ordinary open;
 // App.js sets it to 'compliance' only when redirecting a legacy count-cycle link, same
 // one-shot-prop pattern as PerformanceReviewsPanel's initialTab/initialCustomizeSection.
-export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }) {
+export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore }) {
   const periods = useMemo(() => recentPeriods(4), []);
   const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
   const [loading, setLoading] = useState(true);
@@ -1541,7 +1541,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode }
   const [fobDollars, setFobDollars] = useState(false); // matrix: show $ vs % of sales
   const [fobSort, setFobSort] = useState('fob'); // matrix sort column
   const [scope, setScope] = useState('all'); // 'all' | 'FL' | 'OK' — state filter
-  const [oneStore, setOneStore] = useState(''); // '' = all stores in scope, else a single loc
+  // dispatch #209: a notification bell deep-link (initialStore) preselects a single store on
+  // mount, same "seed once, manual toggle overrides after" treatment as initialMode's own
+  // skipNextModeDefault below — the effect right after only re-defaults `mode`, it never
+  // touches oneStore again, so this initializer is the only place initialStore is consumed.
+  const [oneStore, setOneStore] = useState(initialStore || ''); // '' = all stores in scope, else a single loc
   const [patch, setPatch] = useState('');       // '' = all supervisors, else a supervisor's patch
   const patchGroups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
   const [mode, setMode] = useState(() => initialMode || defaultModeFor(defaultPeriod())); // 'scoreboard' | 'eom' | 'progress' | 'compliance'

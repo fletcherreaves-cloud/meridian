@@ -3874,6 +3874,40 @@ export async function loadEomCountStatus({ period } = {}) {
   }));
 }
 
+// ── EOM count-completion notifications (dispatch #209) ────────────────────────────
+// First real in-app notification system — see src/engine/eom-inventory.js's
+// detectCountNotifications() (detection) and scripts/qsrsoft-onhand-pull.mjs (fires + inserts).
+// These three are the read side, consumed by shell.js's NotificationBell.
+export async function loadEomCountNotifications({ limit = 20 } = {}) {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('eom_count_notifications')
+    .select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) { console.warn('[eom_count_notifications] load error:', error.message); return []; }
+  // loc arrives zero-padded ("0003708", matching qsr_onhand/eom_count_status) -- unpad it to the
+  // short form every other loader in this file normalizes to (String(parseInt(r.loc,10))), the
+  // same form STORE_NAMES/sNameC and eom-dashboard.js's own oneStore matching key off of. Left
+  // padded, sNameC() silently falls back to printing the raw loc instead of the store name (the
+  // exact ghost-mismatch eom-dashboard.js's own allRows comment already documents for FOB).
+  return (data || []).map(r => ({ ...r, loc: r.loc ? String(parseInt(r.loc, 10)) : r.loc }));
+}
+
+// head:true — count only, no rows fetched, so a 60s poll for the badge stays cheap.
+export async function countUnreadEomCountNotifications() {
+  if (!supabase) return 0;
+  const { count, error } = await supabase.from('eom_count_notifications')
+    .select('id', { count: 'exact', head: true }).is('read_at', null);
+  if (error) { console.warn('[eom_count_notifications] unread-count error:', error.message); return 0; }
+  return count || 0;
+}
+
+export async function markEomCountNotificationRead(id) {
+  if (!supabase || !id) return { saved: 0 };
+  const { error } = await supabase.from('eom_count_notifications')
+    .update({ read_at: new Date().toISOString() }).eq('id', id);
+  if (error) { console.warn('[eom_count_notifications] mark-read error:', error.message); return { saved: 0, error: error.message }; }
+  return { saved: 1 };
+}
+
 // ── EOM snapshots (baseline lock + day-2 change monitor) ─────────────────────────
 // A point-in-time LOCK of a store's full EOM state: FOB + all 6 components, per-item count qty /
 // on-hand $ / variance / last-counted, and per-class completion. Written after ~4am (auto cron) and

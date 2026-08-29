@@ -34,9 +34,57 @@ import { chromium } from 'playwright';
 import { COVER_FRAC, sessionQualities, sessionLabel } from '../src/engine/count-cycle.js';
 import { createClient } from '@supabase/supabase-js';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
-import { computeCountProgress, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
+import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT } from '../src/engine/eom-inventory.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
+
+// ── Count-completion notifications (dispatch #209) ────────────────────────────
+// QSRSoft KB grounding — confirmed LIVE against qsrsoft_kb 2026-08-29 (service-role read,
+// real title/html_url from the corpus, not guessed): the corpus has exactly one "Best Counting
+// Practices" article and one "Physical Inventory" article; no Paper- or Non-Product-specific
+// article exists, so those classes point at the same two general-counting articles plus (for
+// Non-Product) the On-Hand Inventory report article.
+const KB_BEST_COUNTING = { title: 'What are the Best Counting Practices Using the Mobile Inventory App', url: 'https://support.qsrsoft.com/hc/en-us/articles/360046512394-What-are-the-Best-Counting-Practices-Using-the-Mobile-Inventory-App' };
+const KB_PHYSICAL_INVENTORY = { title: 'Physical Inventory', url: 'https://support.qsrsoft.com/hc/en-us/articles/35675285615127-Physical-Inventory' };
+const KB_ON_HAND = { title: 'On Hand Inventory', url: 'https://support.qsrsoft.com/hc/en-us/articles/34843618887831-On-Hand-Inventory' };
+const KB_LINKS_BY_CLASS = {
+  food:       [KB_BEST_COUNTING, KB_PHYSICAL_INVENTORY],
+  condiment:  [KB_BEST_COUNTING, KB_PHYSICAL_INVENTORY],
+  paper:      [KB_PHYSICAL_INVENTORY, KB_BEST_COUNTING],
+  nonproduct: [KB_ON_HAND, KB_BEST_COUNTING],
+};
+export function kbLinksForClasses(classes) {
+  const seen = new Map();
+  for (const c of (classes || [])) for (const link of (KB_LINKS_BY_CLASS[c] || [])) seen.set(link.url, link);
+  return [...seen.values()];
+}
+
+// Build the eom_count_notifications row for a fired detection. `diag` is this store's
+// diagnoseIncompleteCount() output for the period (unscoped) — uncounted items are filtered
+// down to the trigger class(es) here (Task 3.1): for a just-completed class that's what's left
+// of its own residual ~2% (CLASS_DONE_PCT is 98%, not 100%) worth a final glance before close;
+// for a stale-timeout event the "done" class is the trigger, so this is that class's own
+// leftover items, not the still-in-progress partner's (which is already fully described by its
+// %, in class_statuses).
+const UNCOUNTED_ITEMS_CAP = 25;
+export function buildNotificationRow(loc, period, detection, diag) {
+  const scoped = (diag.uncounted || [])
+    .filter(u => detection.triggerClasses.includes(u.cls))
+    .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
+  const items = scoped.slice(0, UNCOUNTED_ITEMS_CAP);
+  return {
+    loc, period,
+    trigger_kind: detection.triggerKinds.join('+'),
+    class_statuses: { ...detection.classStatuses, lateBulk: diag.lateBulk, lateBulkDay: diag.lateBulkDay },
+    uncounted_items: {
+      items,
+      totalCount: scoped.length,
+      totalValue: scoped.reduce((s, u) => s + u.valueAtRisk, 0),
+      truncated: scoped.length > items.length,
+    },
+    kb_links: kbLinksForClasses(detection.triggerClasses),
+  };
+}
 
 const EBOS_BASE   = 'https://prod.ebos.qsrsoft.com';
 const EBOS_ORG_ID = 'a546d4ef-684a-4f25-8bc0-6580af068875';
@@ -52,7 +100,14 @@ const STORE_NSNS = [
   38609, 43380, 43701,
 ];
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Guarded, not unconditional — dispatch #209's own tests import this module directly for
+// buildNotificationRow()/buildStatusRow()/kbLinksForClasses() (no supabase/fetch dependency in
+// those functions themselves), matching the pattern scripts/qsrsoft-register-audit-pull.mjs
+// already uses for the identical reason. An unconditional createClient() call at module scope
+// would throw at import time in any environment missing these two env vars.
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 // ── Date + count-window helpers ───────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2, '0');
@@ -318,13 +373,27 @@ async function loadExistingStatus(period) {
   return m;
 }
 
+// A class's `*_done_at` (dispatch #209): stamped the FIRST time `done` flips true this run,
+// preserved unchanged forever after — never overwritten once set, matching notified_90/
+// notified_at's own fire-once spirit on this same table.
+export function classDoneAtStamp(prevStamp, isDoneNow, nowIso) {
+  if (prevStamp) return prevStamp;       // already stamped — never move it
+  return isDoneNow ? nowIso : null;       // first time true this run — stamp it; else still null
+}
+
 // Build the per-store status row from the app's engine (zero drift), preserving
 // human-set fields and firing the ~90% "believes done" trigger exactly once.
-function buildStatusRow(loc, period, ohRows, prev) {
-  const p = computeCountProgress(ohRows, { period, asOf: new Date() });
+// `p` is this store's ALREADY-COMPUTED computeCountProgress() output (dispatch #209: computed
+// once in main()'s loop so detectCountNotifications() and this function share it — no duplicate
+// pass over the same rows). `notifyTriggerKinds` is detectCountNotifications()'s triggerKinds
+// for THIS run (or undefined/[] if nothing fired) — folded into notified_classes so the next
+// run's fire-once guard sees it.
+export function buildStatusRow(loc, period, prev, p, notifyTriggerKinds) {
   const believes = p.itemsTotal > 0 && p.pctCounted >= BELIEVES_DONE_PCT;
   const alreadyNotified = prev?.notified_90 === true;
   const fireNow = believes && !alreadyNotified;
+  const nowIso = new Date().toISOString();
+  const notifiedClasses = Array.from(new Set([...(Array.isArray(prev?.notified_classes) ? prev.notified_classes : []), ...(notifyTriggerKinds || [])]));
   return {
     loc, period,
     items_total:      p.itemsTotal,
@@ -332,11 +401,16 @@ function buildStatusRow(loc, period, ohRows, prev) {
     pct_counted:      p.pctCounted,
     food_done:        !!p.byClass.food?.done,
     condiment_done:   !!p.byClass.condiment?.done,
-    paper_done:       !!p.byClass.paper?.done,
+    paper_done:        !!p.byClass.paper?.done,
     nonproduct_done:  !!p.byClass.nonproduct?.done,
+    food_done_at:       classDoneAtStamp(prev?.food_done_at, !!p.byClass.food?.done, nowIso),
+    condiment_done_at:  classDoneAtStamp(prev?.condiment_done_at, !!p.byClass.condiment?.done, nowIso),
+    paper_done_at:      classDoneAtStamp(prev?.paper_done_at, !!p.byClass.paper?.done, nowIso),
+    nonproduct_done_at: classDoneAtStamp(prev?.nonproduct_done_at, !!p.byClass.nonproduct?.done, nowIso),
+    notified_classes: notifiedClasses,
     last_activity_at: p.lastActivityAt instanceof Date ? p.lastActivityAt.toISOString() : (prev?.last_activity_at ?? null),
     notified_90:      alreadyNotified || fireNow,
-    notified_at:      fireNow ? new Date().toISOString() : (prev?.notified_at ?? null),
+    notified_at:      fireNow ? nowIso : (prev?.notified_at ?? null),
     // preserve human-set fields
     diagnosis_status: prev?.diagnosis_status ?? 'pending',
     comms_status:     prev?.comms_status ?? 'none',
@@ -345,7 +419,7 @@ function buildStatusRow(loc, period, ohRows, prev) {
     comms_note:       prev?.comms_note ?? null,
     fob_pct:          prev?.fob_pct ?? null,
     total_fc_pct:     prev?.total_fc_pct ?? null,
-    updated_at:       new Date().toISOString(),
+    updated_at:       nowIso,
     _fireNow:         fireNow, // internal, stripped before upsert
     // Timestamped completion snapshot for the per-location progress LOG (owner req 2026-07-30):
     // builds a trajectory of when each store counts each class through the cycle. Stripped
@@ -427,6 +501,7 @@ async function main() {
   const statusRows = [];
   const progressLog = [];   // timestamped per-store completion snapshots (one row / store / hour)
   const sessionRows = [];   // append-only count-session history (one row / store / count date / class)
+  const notificationRows = []; // dispatch #209 — fired count-completion notifications this run
   // #263: a store with zero on-hand items could be legitimately between count
   // cycles (nothing to report) or could be a fetch that errored on every type and
   // silently produced nothing. Only the second case is a failed unit -- track a
@@ -462,7 +537,19 @@ async function main() {
         lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : null,
         lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : null,
       }));
-      const st = buildStatusRow(loc, period, ohForEngine, prevStatus[loc]);
+      // Dispatch #209 — count-completion notifications. Computed ONCE here (against
+      // prevStatus[loc], the store's row from BEFORE this run's eom_count_status upsert) and
+      // shared with buildStatusRow below so the pure detection function and the status-row
+      // builder never disagree about what "done" means this run.
+      const p = computeCountProgress(ohForEngine, { period, asOf: new Date() });
+      const detection = detectCountNotifications(prevStatus[loc], p);
+      if (detection) {
+        const diag = diagnoseIncompleteCount(ohForEngine, { period, minValue: 0 });
+        notificationRows.push(buildNotificationRow(loc, period, detection, diag));
+        console.log(`  🔔 ${nsn}: count-completion notification — ${detection.triggerKinds.join('+')} (${detection.reasons.join('/')})`);
+      }
+      const st = buildStatusRow(loc, period, prevStatus[loc], p, detection?.triggerKinds);
+      // #210 Task 4: nudge the FOB pull the instant a store crosses believes-done this run.
       if (st._fireNow) { console.log(`  🔔 ${nsn}: crossed ${Math.round(BELIEVES_DONE_PCT * 100)}% — store believes count is done`); anyBelievesDoneFired = true; }
       delete st._fireNow;
       // Append a timestamped snapshot to the progress log (deduped to one row per store per hour).
@@ -508,6 +595,22 @@ async function main() {
     if (!failed) console.log(`[onhand-pull] count-sessions: ${saved} rows`);
   }
 
+  // Insert fired count-completion notifications (dispatch #209, supabase/schema-eom-count-
+  // notifications.sql). Plain insert, not upsert — each row is a distinct fired EVENT, not a
+  // per-store-per-period snapshot; detectCountNotifications()'s fire-once guard (notified_classes
+  // on eom_count_status, folded in above) is what stops a duplicate row from ever being built,
+  // not a DB constraint here.
+  if (notificationRows.length) {
+    const { error } = await supabase.from('eom_count_notifications').insert(notificationRows);
+    if (error) console.warn('[eom_count_notifications] insert error (table may not exist yet — run supabase/schema-eom-count-notifications.sql):', error.message);
+    else console.log(`[onhand-pull] notifications: ${notificationRows.length} fired`);
+    // ── FUTURE HOOK — email/SMS delivery (out of scope for dispatch #209) ──────────────────────
+    // Once the owner provides a provider + recipient, a future dispatch adds
+    // send_email(row)/send_sms(row) calls right here, once per row in notificationRows, right
+    // after the insert above succeeds. Nothing else in this file needs to change for that —
+    // detection/persistence and delivery are already separate steps.
+  }
+
   console.log(`[onhand-pull] ✓ ${totalSaved} item-rows across ${storesWithData} stores for ${period}`);
   if (process.env.DUMP_RAW_FIELDS === '1' && rawFieldTally.total) {
     const dist = [...rawFieldTally.activeVals.entries()].map(([k, n]) => `${JSON.stringify(k)}:${n}`).join(', ');
@@ -525,9 +628,10 @@ async function main() {
   if (code) process.exit(code);
 }
 
-// Exported for src/__tests__/qsrsoft-onhand-pull-fob-nudge.test.js — guarded the same way
-// qsrsoft-punch-times-pull.mjs/qsrsoft-variance-pull.mjs already are, so importing this
-// module for its pure/network-mockable functions doesn't also fire off a live run.
+// Only run main() when executed directly (not when imported for unit tests) — same guard
+// scripts/qsrsoft-register-audit-pull.mjs uses. Exported for both dispatch #209's and #210's
+// own test suites, which import this module directly for its pure/network-mockable functions
+// without also firing off a live run.
 export { runMode, triggerFobPullIfPossible };
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
