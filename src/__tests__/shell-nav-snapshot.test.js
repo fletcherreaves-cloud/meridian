@@ -127,7 +127,7 @@ function renderNavTexts(permFn) {
 // folded into 'ranking' as a mode) -- both the label and its 🏆 drop out of ⚗ TEST KITCHEN
 // entirely (🏆 is still present once, on Leaderboards in the Reports section, from 'ranking'
 // itself -- same "harvest, no other icon claims it in THIS section" shape as #194/#197's drops).
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','💲','Pricing Engine','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -259,7 +259,11 @@ const HIDDEN_WHEN_DENIED = {
   // behavior 'Scheduling & Labor' already demonstrates below (see the next test).
   // dispatch #203 (2026-08-28, same session) relabeled 'Rankings' -> 'Leaderboards' and added
   // '🏆' back into this list -- see the dispatch #77/#203 note above 'analytics.forecasting'.
-  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Promo / Discount ROI', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🏆', '🎟️', '💬', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
+  // 'Pricing Engine'/'💲' (dispatch #212, 2026-08-29) added -- kind:'test-kitchen',
+  // perm:'analytics.store' (looser than 'Opportunity $'/'💰', which is analytics.district),
+  // so it joins THIS hidden-set, same shape as every other analytics.store Test Kitchen
+  // panel (e.g. 'Form Completions' above).
+  'analytics.store': ['3PO Delivery', 'Crew Schedule', 'DT Speed of Service', 'Food Cost', 'Form Completions', 'Graded Visits', 'Guest Voice', 'Inventory', 'Leaderboards', 'Local News', 'Market Intelligence', 'Operations', 'Pricing Engine', 'Promo / Discount ROI', 'Scheduling', 'Scheduling & Labor', 'Signals', 'Store One-Pager', 'Visit Readiness', '✅', '🏆', '🎟️', '💬', '💲', '📡', '📰', '🗓', '🗺', '🚗', '🛡️', '🛵', '🥗'],
   'data.upload': ['Data Manager', '🗄'],
   // 'Targets Editor' (dispatch #132 item 3) is no longer a standalone nav entry as of dispatch
   // #135 item 3 -- it moved into Performance Review > Customize > Targets (converted to
@@ -365,8 +369,10 @@ describe('Part A membership diff (superseded) -- neither the old nor the renamed
     // predates that merge; the ratchet still belongs here as the single place the current
     // census is asserted. Dispatch #203 (2026-08-28) promoted 'Top/Bottom Performers' OUT of
     // Test Kitchen entirely (kind:'test-kitchen' -> kind:'internal', merged into 'ranking'/
-    // Leaderboards as a mode) -- 12 - 1 = 11, a deliberate shrink, not drift.
-    expect(testKitchenIds.length, 'ratchet: ids may change (dispatch #203 promoted one out), the CENSUS must not drift silently').toBe(11);
+    // Leaderboards as a mode) -- 12 - 1 = 11, a deliberate shrink, not drift. Dispatch #212
+    // (2026-08-29) added 'pricing-engine' (Pricing Engine, 💲) as a new kind:'test-kitchen'
+    // panel -- 11 + 1 = 12, a deliberate growth, not drift.
+    expect(testKitchenIds.length, 'ratchet: ids may change (dispatch #212 added one), the CENSUS must not drift silently').toBe(12);
     for (const p of testKitchenIds) expect(off).toContain(p.label);
 
     const html = ReactDOMServer.renderToStaticMarkup(h(AppSidebar, {
@@ -402,12 +408,14 @@ describe('the promotion test (dispatch #55 Part A / CLAUDE.md "kind is lifecycle
   // also hardcoded").
   const testKitchenPanels = Object.values(PANEL_BY_ID).filter(p => p.kind === 'test-kitchen');
 
-  it('covers all eleven current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
+  it('covers all twelve current Test Kitchen panels (ratchet: fails loudly if the census moves)', () => {
     // 13 -> 12: dispatch #106 Phase B merged fcst-accuracy + lifelenz-bridge (both
     // kind:'test-kitchen') into one new kind:'test-kitchen' entry, forecast-reports.
     // 12 -> 11: dispatch #203 promoted 'top-bottom' OUT of Test Kitchen (kind:'test-kitchen' ->
     // kind:'internal'), merged into 'ranking'/Leaderboards as a mode.
-    expect(testKitchenPanels.length).toBe(11);
+    // 11 -> 12: dispatch #212 (2026-08-29) added 'pricing-engine' (Pricing Engine) as a new
+    // kind:'test-kitchen' panel.
+    expect(testKitchenPanels.length).toBe(12);
   });
 
   it.each(testKitchenPanels.map(p => [p.id, p]))('promoting %s renders it under its own section header, exactly once, and no longer under Test Kitchen', (id, panel) => {
