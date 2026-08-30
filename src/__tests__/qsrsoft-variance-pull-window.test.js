@@ -6,12 +6,17 @@
 // (`if (import.meta.url === file://process.argv[1])`), so importing it for its exported
 // pure functions does not also fire off a live Playwright/eBOS run.
 //
-// Dummy Supabase env vars are set BEFORE import because the module still constructs a
-// module-scope `createClient(...)` -- createClient throws synchronously on a missing URL,
-// but never makes a network call at construction time, so a fake URL is safe here.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
+// CI FAILURE, root-caused and fixed 2026-08-30: this file used to set dummy Supabase env vars
+// "before" the import below on the theory that createClient() throws synchronously on a missing
+// URL. That never actually worked -- ES module `import` declarations are hoisted above every
+// other top-level statement in the SAME file regardless of source order, so the static import
+// below always ran before those process.env assignments, no matter which line looks earlier on
+// the page. It happened to pass locally in any shell that already had real Supabase env vars
+// exported, which is why it went unnoticed until a clean CI checkout (neither var set) hit it.
+// Fixed at the root instead of by re-ordering here: qsrsoft-variance-pull.mjs's own module-scope
+// `supabase` is now guarded (only calls createClient() when both env vars are actually present,
+// matching qsrsoft-onhand-pull.mjs's existing pattern for the identical reason), so importing it
+// for its pure runMode()/isDailySlot() exports no longer requires faking credentials at all.
 import { describe, it, expect } from 'vitest';
 import { runMode, isDailySlot } from '../../scripts/qsrsoft-variance-pull.mjs';
 

@@ -96,7 +96,18 @@ const STORE_NSNS = (process.env.VARIANCE_STORES
     38609, 43380, 43701,
   ]).map(String);
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Guarded, not unconditional — dispatch #210's own test (qsrsoft-variance-pull-window.test.js)
+// imports this module directly for runMode()/isDailySlot() (no supabase/fetch dependency in
+// those functions themselves), matching the pattern qsrsoft-onhand-pull.mjs already uses for the
+// identical reason. An unconditional createClient() call at module scope throws at import time
+// in any environment missing these two env vars — CI's own clean checkout has neither set, and
+// the test file's own "set a dummy value before importing" comment doesn't actually work: ES
+// module imports are hoisted above all other top-level code in the importING file regardless of
+// source order, so the module-scope createClient() call here always runs before that test file's
+// process.env assignment, no matter which line comes first on the page.
+const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
 
 const pad2 = n => String(n).padStart(2, '0');
 function currentPeriod() {

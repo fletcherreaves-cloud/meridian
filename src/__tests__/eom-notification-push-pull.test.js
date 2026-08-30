@@ -6,6 +6,20 @@
 // leaf dependencies (webpush-notify.mjs's sendWebPush + the supabase-js client factory), so
 // deleting the hook-point call would make these assertions fail rather than leave them passing
 // against an unused engine (this repo's own "would this verification still pass if reverted" rule).
+//
+// CI FAILURE, root-caused and fixed 2026-08-30: the process.env assignments below used to sit
+// above a STATIC `import ... from '../../scripts/qsrsoft-onhand-pull.mjs'` — but ES module
+// `import` declarations are hoisted above every other top-level statement in the SAME file
+// regardless of source order, so that import (and therefore qsrsoft-onhand-pull.mjs's own
+// module-scope `supabase = (url && key) ? createClient(...) : null` guard) always evaluated
+// BEFORE these assignments ran, no matter which line looks earlier on the page. In any
+// environment with neither real env var set (a clean CI checkout), the guard saw both as
+// undefined and `supabase` resolved to null — sendPushNotifications' own `if (!supabase) return`
+// then silently no-op'd, so sendWebPushMock was never called and every assertion below failed.
+// It passed locally in any shell that already had real Supabase env vars exported (this sandbox
+// included), which is why it went unnoticed until a clean CI checkout hit it. Fixed by switching
+// the qsrsoft-onhand-pull.mjs import to a dynamic import BELOW these assignments (see below) —
+// dynamic `import()` genuinely evaluates at the point it's written, unlike a static import.
 process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
 
@@ -38,7 +52,9 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import { deliverNotifications, notifyRow, buildNotificationRow } from '../../scripts/qsrsoft-onhand-pull.mjs';
+// Dynamic import, evaluated HERE (after the env-var assignments above), not hoisted like a
+// static import would be — see the header comment for why this matters.
+const { deliverNotifications, notifyRow, buildNotificationRow } = await import('../../scripts/qsrsoft-onhand-pull.mjs');
 import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications } from '../engine/eom-inventory.js';
 
 beforeEach(() => {
