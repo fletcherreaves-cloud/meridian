@@ -173,3 +173,122 @@ export function computeItemMargins(pmixRows, { locFilter, dateRange } = {}) {
   }
   return out;
 }
+
+// ── enrichItemMargins — waste/comp/promo enrichment (dispatch #220, 2026-08-30) ──────
+// Joins computeItemMargins()'s own output onto raw `qsr_menu_item_activity` rows
+// (dispatch #193/#212, schema-qsr-menu-item-activity.sql) on the SAME (loc, item_number)
+// key computeItemMargins() already returns as {loc, itemNumber}. See
+// memory/dispatch-220.md for the full live-confirmed row shape and rationale.
+//
+// ── Cost-basis rule (the one thing NOT to get wrong here) ─────────────────────
+// qsr_menu_item_activity carries its OWN food_cost/paper_cost columns, but dispatch #212
+// already established these are "the SAME QSRSoft-computed number already in
+// qsr_product_mix" -- i.e. a second copy of the same number, not a second source. This
+// function NEVER reads activityRows' own food_cost/paper_cost. It multiplies summed
+// waste/comp/promo UNITS by the ALREADY-JOINED margin row's own (foodCost+paperCost),
+// so a waste-dollar figure and a margin-dollar figure for the same item are always
+// computed from one cost number, never two independently-sourced ones that could drift
+// apart.
+//
+// ── Aggregation rule -- deliberately NOT the same as price/cost above ─────────
+// computeItemMargins()'s price/cost fields use the MOST RECENT day in the window only
+// (see file header -- an average across a reprice would blend two prices nobody actually
+// charges). Waste/comp/promo/activity are a genuinely different kind of data -- real
+// physical/operational counts, not a snapshot attribute -- so this function SUMS them
+// across every matching activity row in the window, full stop. Do not copy the
+// latest-day-only pattern here.
+//
+// ── activity, never sold, as the denominator ───────────────────────────────────
+// `sold` already EXCLUDES waste/comp/promo by construction (QSRSoft's own activity
+// breakdown: activity = sold + waste + emp_meal + mgr_meal + promo + ...). Dividing an
+// item's own waste by `sold` would inflate every item's waste-share by shrinking the
+// base it's measured against. `activity` is the fuller, undiminished denominator -- use
+// it for all three *PctOfActivity fields.
+//
+// ── null vs. 0 -- a real distinction, not an implementation detail ────────────
+// A margin-row item with NO matching activityRows in the window (never pulled yet, or
+// simply had zero activity of any kind that window) keeps every new field `null`. An
+// item that DID have activity rows but genuinely zero waste/comp/promo gets real `0`s.
+// Collapsing these to the same value would make "we don't have this item's activity
+// data yet" indistinguishable from "this item wastes nothing," which is a materially
+// different operational fact.
+//
+// activityRows: raw qsr_menu_item_activity rows -- accepts BOTH the raw DB/REST shape
+// (loc, item_number, date, activity, sold, emp_meal, mgr_meal, waste, promo) and a
+// loader's camelCase-mapped shape (itemNumber, empMeal, mgrMeal), same dual-shape
+// tolerance computeItemMargins() already established for pmixRows. loc is normLoc()'d
+// here exactly like computeItemMargins() normalizes marginRows' loc, so the two always
+// agree on the join key regardless of raw padding.
+//
+// opts.dateRange: {start, end} (or {s, e}) -- Date or ISO string, inclusive. Should
+// match the SAME window marginRows was computed over -- this function doesn't infer or
+// validate that; the caller (PricingEnginePanel) owns keeping the two windows aligned.
+//
+// Returns each margin row extended with wasteUnits/wasteDollars, compUnits/compDollars
+// (emp_meal+mgr_meal), promoUnits/promoDollars, wastePctOfActivity/compPctOfActivity/
+// promoPctOfActivity, and activityUnits (the summed `activity` denominator itself --
+// not in the dispatch's field list verbatim, kept for correct multi-store roll-ups, see
+// the comment at its assignment below). All null together when no activity row matched.
+export function enrichItemMargins(marginRows, activityRows, { dateRange } = {}) {
+  const start = dateRange && (dateRange.start ?? dateRange.s) != null ? _dayKey(dateRange.start ?? dateRange.s) : null;
+  const end   = dateRange && (dateRange.end   ?? dateRange.e) != null ? _dayKey(dateRange.end   ?? dateRange.e) : null;
+
+  // Sum waste/comp(emp_meal+mgr_meal)/promo/activity per (loc, item_number) across every
+  // matching activity row in [start,end] inclusive. hasRows distinguishes "summed to
+  // real zero" from "never had a matching row" (see null-vs-0 note above).
+  const sums = new Map(); // "loc|itemNumber" -> {waste, comp, promo, activity, hasRows}
+  for (const r of activityRows || []) {
+    if (!r) continue;
+    const itemNumberRaw = r.itemNumber ?? r.item_number;
+    if (itemNumberRaw == null || r.loc == null || r.date == null) continue;
+    const itemNumber = Number(itemNumberRaw);
+    if (!isFinite(itemNumber)) continue;
+    const loc = normLoc(r.loc);
+    const day = _dayKey(r.date);
+    if (start && day < start) continue;
+    if (end && day > end) continue;
+
+    const k = loc + '|' + itemNumber;
+    let a = sums.get(k);
+    if (!a) { a = { waste: 0, comp: 0, promo: 0, activity: 0, hasRows: false }; sums.set(k, a); }
+    a.hasRows = true;
+    a.waste    += Number(r.waste) || 0;
+    a.comp     += (Number(r.empMeal ?? r.emp_meal) || 0) + (Number(r.mgrMeal ?? r.mgr_meal) || 0);
+    a.promo    += Number(r.promo) || 0;
+    a.activity += Number(r.activity) || 0;
+  }
+
+  return (marginRows || []).map(m => {
+    const k = m.loc + '|' + Number(m.itemNumber);
+    const a = sums.get(k);
+    if (!a || !a.hasRows) {
+      return {
+        ...m,
+        wasteUnits: null, wasteDollars: null,
+        compUnits: null, compDollars: null,
+        promoUnits: null, promoDollars: null,
+        wastePctOfActivity: null, compPctOfActivity: null, promoPctOfActivity: null,
+        activityUnits: null,
+      };
+    }
+    // Cost basis: the ALREADY-JOINED margin row's own cost, never activityRows' cost cols.
+    const unitCost = (m.foodCost || 0) + (m.paperCost || 0);
+    return {
+      ...m,
+      wasteUnits: a.waste, wasteDollars: a.waste * unitCost,
+      compUnits: a.comp,   compDollars: a.comp * unitCost,
+      promoUnits: a.promo, promoDollars: a.promo * unitCost,
+      wastePctOfActivity: a.activity > 0 ? a.waste / a.activity : null,
+      compPctOfActivity:  a.activity > 0 ? a.comp  / a.activity : null,
+      promoPctOfActivity: a.activity > 0 ? a.promo / a.activity : null,
+      // Not in the dispatch's field list verbatim, but needed by any caller aggregating
+      // multiple stores' rows into one blended pct -- CLAUDE.md's own standing rule
+      // ("never average averages," dollar/unit-weight instead) applies to a rate like
+      // wastePctOfActivity exactly as it does to marginPct elsewhere in this file. Without
+      // the raw denominator a caller can only average the already-computed percentages,
+      // which is the exact anti-pattern that rule exists to prevent. PricingEnginePanel's
+      // aggregateAcrossStores uses this to do Σwaste/Σactivity correctly.
+      activityUnits: a.activity,
+    };
+  });
+}

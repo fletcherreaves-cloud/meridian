@@ -4,15 +4,28 @@
 // ProductMixPanel's Cloud tab already lazy-fills, src/views/labor-tools.js) — reuses its
 // lazy-fill/wide-range plumbing rather than a second ds.pmixRows fetch path. Math lives
 // in src/engine/pricing-engine.js (computeItemMargins) — this file is presentation only.
-// Elasticity/what-if simulation, multi-month margin TREND charting, and the
-// qsr_menu_item_activity waste/emp-meal enrichment are explicitly out of scope for this
-// slice — see memory/dispatch-212.md.
+// Elasticity/what-if simulation and multi-month margin TREND charting are still out of
+// scope for this panel — see memory/dispatch-212.md.
+//
+// ── Waste/comp/promo enrichment (dispatch #220, 2026-08-30) ────────────────────
+// qsr_menu_item_activity is a SEPARATE, tiny, fast-moving stream (27/27 stores, but only
+// 2 calendar days deep as of this dispatch, growing by one day/night) — deliberately NOT
+// folded into the pmixRows lazy-fill/wide-range machinery above, which is sized for a
+// multi-million-row table and re-fetches per range TIER, not per location scope. This
+// panel instead loads menu-item-activity rows directly (loadQsrMenuItemActivity(),
+// src/lib/supabase.js) keyed only to the same dateRange already computed for margins —
+// NOT re-fetched on location-scope changes, since enrichItemMargins() joins purely on
+// (loc, item_number) already present in marginRows; an unfiltered-by-loc activity fetch
+// still only ever matches the locs actually in scope. Own local loading state, same
+// idle/loading/loaded/error convention src/views/security-panel.js already uses for a
+// panel-local (non-ds) Supabase read.
 import * as React from 'react';
 import { ModalShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
-import { computeItemMargins } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins } from '../engine/pricing-engine.js';
+import { loadQsrMenuItemActivity } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
   ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded,
@@ -53,6 +66,14 @@ const pmixDate = r => (r.date instanceof Date ? r.date : new Date(r.date));
 // from those displayed weighted-mean inputs (so they stay exact even though the
 // displayed unit price is a weighted approximation across stores that may differ
 // slightly on price).
+// Dispatch #220 — waste/comp/promo dollars are already real $ amounts (unlike
+// marginPct, which needs a dollar-weighted blend to avoid averaging averages), so
+// summing them across stores is exact, not an approximation. The *PctOfActivity fields
+// are rates, though, and get the SAME dollar-weighting treatment marginPct already gets
+// below: Σwaste / Σactivity (via activityUnits), never a plain mean of each store's own
+// pct. hasActivity distinguishes "every store row was null (no activity data at all for
+// this item in scope)" from "summed to a real zero" — same null-vs-0 distinction
+// enrichItemMargins() itself makes at the single-store grain.
 function aggregateAcrossStores(rows) {
   const byItem = new Map();
   for (const r of rows) {
@@ -61,6 +82,8 @@ function aggregateAcrossStores(rows) {
       a = {
         itemNumber: r.itemNumber, descr: r.descr, volume: 0, totalContrib: 0,
         revenue: 0, priceRevenue: 0, foodCostVol: 0, paperCostVol: 0, storeRows: [],
+        wasteUnits: 0, wasteDollars: 0, compUnits: 0, compDollars: 0,
+        promoUnits: 0, promoDollars: 0, activityUnits: 0, hasActivity: false,
       };
       byItem.set(r.itemNumber, a);
     }
@@ -71,6 +94,13 @@ function aggregateAcrossStores(rows) {
     a.foodCostVol += r.foodCost * r.volume;
     a.paperCostVol += r.paperCost * r.volume;
     a.storeRows.push(r);
+    if (r.wasteUnits != null) {
+      a.hasActivity = true;
+      a.wasteUnits += r.wasteUnits; a.wasteDollars += r.wasteDollars;
+      a.compUnits += r.compUnits;   a.compDollars += r.compDollars;
+      a.promoUnits += r.promoUnits; a.promoDollars += r.promoDollars;
+      a.activityUnits += r.activityUnits || 0;
+    }
   }
   const out = [];
   for (const a of byItem.values()) {
@@ -83,6 +113,13 @@ function aggregateAcrossStores(rows) {
       marginDollars: menuPrice - foodCost - paperCost, // display-only, weighted-mean basis
       marginPct: a.revenue > 0 ? a.totalContrib / a.revenue : null, // dollar-weighted, exact
       volume: a.volume, totalContrib: a.totalContrib,
+      wasteUnits: a.hasActivity ? a.wasteUnits : null, wasteDollars: a.hasActivity ? a.wasteDollars : null,
+      compUnits: a.hasActivity ? a.compUnits : null, compDollars: a.hasActivity ? a.compDollars : null,
+      promoUnits: a.hasActivity ? a.promoUnits : null, promoDollars: a.hasActivity ? a.promoDollars : null,
+      activityUnits: a.hasActivity ? a.activityUnits : null,
+      wastePctOfActivity: a.hasActivity && a.activityUnits > 0 ? a.wasteUnits / a.activityUnits : null,
+      compPctOfActivity:  a.hasActivity && a.activityUnits > 0 ? a.compUnits  / a.activityUnits : null,
+      promoPctOfActivity: a.hasActivity && a.activityUnits > 0 ? a.promoUnits / a.activityUnits : null,
       storeRows: a.storeRows.sort((x, y) => y.totalContrib - x.totalContrib),
     });
   }
@@ -142,6 +179,68 @@ function RankedTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
           !rows.length
             ? tr(null, td({ colSpan: HEAD_COLS.length, style: { padding: 16, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'No items in this scope/range.'))
             : rows.map(row => h(ItemRow, {
+              key: row.itemNumber, row, wide,
+              expanded: expandedSet.has(row.itemNumber),
+              onToggle: () => onToggle(row.itemNumber),
+            })),
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Waste/comp/promo drain table (dispatch #220) ────────────────────────────────────
+// A separate row/table component rather than reusing ItemRow/RankedTable's fixed
+// HEAD_COLS -- the columns this table needs (Waste $, Waste %, Comp $, Promo $,
+// Activity) don't overlap with the margin tables' Price/Food+Paper/Margin columns, and
+// bolting an optional column set onto ItemRow would make both harder to read. Same
+// wide/expand-to-per-store-rows interaction as ItemRow, though, for a consistent feel.
+const DRAIN_HEAD_COLS = ['Item', '#', 'Store', 'Waste $', 'Waste %', 'Comp $', 'Promo $ (cost basis)', 'Activity'];
+
+function DrainRow({ row, wide, expanded, onToggle }) {
+  return [
+    tr({
+      key: row.itemNumber, onClick: wide ? onToggle : undefined,
+      style: { borderBottom: '.5px solid var(--bdr)', cursor: wide ? 'pointer' : 'default' },
+    },
+      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 600 } },
+        (wide ? (expanded ? '▾ ' : '▸ ') : '') + (row.descr || ('#' + row.itemNumber))),
+      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } }, '#' + row.itemNumber),
+      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } },
+        wide ? 'All stores' : sNameC(row.loc) || row.loc),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--crit)' } }, f$0(row.wasteDollars)),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, fPc(row.wastePctOfActivity)),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, f$0(row.compDollars)),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(row.promoDollars)),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, fN0(row.activityUnits)),
+    ),
+    wide && expanded && row.storeRows && row.storeRows.map(sr => tr({
+      key: row.itemNumber + '|' + sr.loc, style: { borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' },
+    },
+      td({ style: { padding: '4px 10px 4px 28px', fontSize: 10, color: 'var(--text3)' }, colSpan: 3 }, sNameC(sr.loc) || sr.loc),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(sr.wasteDollars)),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, fPc(sr.wastePctOfActivity)),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(sr.compDollars)),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(sr.promoDollars)),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, fN0(sr.activityUnits)),
+    )),
+  ];
+}
+
+function DrainTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
+  return div(null,
+    div({ style: { padding: '10px 14px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, title),
+    subtitle && div({ style: { padding: '0 14px 6px', fontSize: 9, color: 'var(--text3)' } }, subtitle),
+    div({ style: { overflowX: 'auto' } },
+      table({ style: { width: '100%', borderCollapse: 'collapse', minWidth: 640 } },
+        thead(null, tr(null, ...DRAIN_HEAD_COLS.map((c, i) => th({
+          key: c, style: { padding: '4px 10px', fontSize: 8.5, color: 'var(--text3)', textAlign: i >= 3 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '.5px solid var(--bdr2)' },
+        }, c)))),
+        tbody(null,
+          !rows.length
+            ? tr(null, td({ colSpan: DRAIN_HEAD_COLS.length, style: { padding: 16, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } },
+              'No waste/comp/promo activity data for this scope/range yet — qsr_menu_item_activity is a new stream, still shallow (a couple of days deep as of this feature) and growing daily.'))
+            : rows.map(row => h(DrainRow, {
               key: row.itemNumber, row, wide,
               expanded: expandedSet.has(row.itemNumber),
               onToggle: () => onToggle(row.itemNumber),
@@ -214,7 +313,34 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ds.pmixRows, locFilterKey, dateRange, wideNeededAndNotReady]);
 
-  const displayRows = uM(() => (wide ? aggregateAcrossStores(itemRows) : itemRows), [itemRows, wide]);
+  // ── Menu-item-activity load (dispatch #220) — keyed to dateRange ONLY, not
+  // locFilterKey/scope: enrichItemMargins() joins purely on (loc, item_number) already
+  // present in itemRows, so an unfiltered-by-loc activity fetch still only ever matches
+  // whatever's in scope. This means switching the LocationSelector re-filters instantly
+  // client-side instead of re-hitting Supabase, the same "fetch by window, filter loc in
+  // memory" shape the pmixRows lazy-fill above already uses.
+  const [activityState, setActivityState] = uSt('idle'); // idle | loading | loaded | error
+  const [activityRows, setActivityRows] = uSt([]);
+  uE(() => {
+    let cancelled = false;
+    setActivityState('loading');
+    loadQsrMenuItemActivity({ dateRange }).then(rows => {
+      if (cancelled) return;
+      setActivityRows(rows || []);
+      setActivityState('loaded');
+    }).catch(() => {
+      if (cancelled) return;
+      setActivityState('error');
+    });
+    return () => { cancelled = true; };
+  }, [dateRange]);
+
+  const enrichedItemRows = uM(
+    () => enrichItemMargins(itemRows, activityRows, { dateRange }),
+    [itemRows, activityRows, dateRange],
+  );
+
+  const displayRows = uM(() => (wide ? aggregateAcrossStores(enrichedItemRows) : enrichedItemRows), [enrichedItemRows, wide]);
 
   const scopeTotals = uM(() => {
     let contrib = 0, revenue = 0;
@@ -236,11 +362,38 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     .sort((a, b) => sortMode === 'high' ? b.totalContrib - a.totalContrib : a.totalContrib - b.totalContrib)
     .slice(0, 15), [displayRows, sortMode]);
 
+  // Dispatch #220 — ranked by wasteDollars + compDollars ONLY. promo is shown as its own
+  // column but deliberately left OUT of this sort key: its $ figure is the food-cost
+  // basis of promo'd units (a different kind of dollar figure than a true loss), and
+  // folding it into the same ranking would blur "what's actually getting thrown away or
+  // given away" against "what got sold at a discount but still generated real revenue."
+  const byDrain = uM(() => displayRows
+    .filter(r => r.wasteDollars != null || r.compDollars != null)
+    .slice()
+    .sort((a, b) => ((b.wasteDollars || 0) + (b.compDollars || 0)) - ((a.wasteDollars || 0) + (a.compDollars || 0)))
+    .slice(0, 15), [displayRows]);
+
   const scopeLabel = scope.level === 'all' ? 'District' : scope.level === 'store'
     ? (sNameC(scope.id) || scope.id) : (tree.storeLabel ? scope.id : scope.id);
 
   const heroLine = scopeTotals.blendedPct == null ? null
     : `${scopeLabel} blended margin ${fPc(scopeTotals.blendedPct)} — ${scopeTotals.belowThreshold ? scopeTotals.belowThreshold + ' item' + (scopeTotals.belowThreshold === 1 ? '' : 's') + ` below ${Math.round(MARGIN_CONCERN_PCT * 100)}%, chase those first` : `no items below ${Math.round(MARGIN_CONCERN_PCT * 100)}%, margins look healthy`}`;
+
+  // Say the number AND the decision (standing UI-voice rule) -- not a bare dollar figure.
+  const drainHeroLine = uM(() => {
+    const top = byDrain[0];
+    if (!top) return null;
+    const drain = (top.wasteDollars || 0) + (top.compDollars || 0);
+    if (drain <= 0) return null;
+    const wasteShare = top.wastePctOfActivity != null ? `, ${fPc(top.wastePctOfActivity)} of its own activity is waste` : '';
+    return `${top.descr || ('#' + top.itemNumber)}: ${f$0(drain)} in waste + comp this window${wasteShare} — check holding times / comp discipline.`;
+  }, [byDrain]);
+
+  const drainSubtitle = activityState === 'loading'
+    ? 'Loading waste/comp/promo activity…'
+    : activityState === 'error'
+      ? 'Could not load waste/comp/promo activity for this window — try reopening this panel.'
+      : 'Ranked by waste $ + comp $. Promo $ is the FOOD-COST basis of promo\'d units (cost, not the discount given) — a different kind of dollar figure, shown separately, not folded into this ranking. qsr_menu_item_activity is a new stream, still shallow (a couple of days deep as of this feature) and growing daily.';
 
   const body = (!hasCloudPMix && !pending)
     ? div({ style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text3)', padding: 40 } },
@@ -280,6 +433,15 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
         h(RankedTable, {
           title: '', subtitle: 'What actually moves the P&L — margin $ x volume. A thin-%-high-volume item can outrank a high-%-low-volume one here.',
           rows: byContrib, wide, expandedSet, onToggle: toggleExpand,
+        }),
+        drainHeroLine && div({ style: { padding: '12px 14px', margin: '14px 14px 0', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
+          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Biggest waste/comp/promo drain, this scope/range'),
+          div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, drainHeroLine),
+        ),
+        h(DrainTable, {
+          title: 'Waste / Comp / Promo Dollar Drains',
+          subtitle: drainSubtitle,
+          rows: byDrain, wide, expandedSet, onToggle: toggleExpand,
         }),
       );
 

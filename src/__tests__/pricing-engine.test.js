@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -169,5 +169,126 @@ describe('computeItemMargins — locFilter / dateRange / dual row shape', () => 
     expect(out[0].menuPrice).toBe(6.79);
     expect(out[0].volume).toBe(5);
     expect(out[0].foodCost).toBeCloseTo(1.3605, 6);
+  });
+});
+
+// ── enrichItemMargins — dispatch #220, waste/comp/promo enrichment ──────────────────
+describe('enrichItemMargins', () => {
+  // Raw qsr_menu_item_activity-shaped fixture (snake_case DB columns, per the
+  // dispatch/schema). Deliberately carries its OWN food_cost/paper_cost, DIFFERENT
+  // from the margin row's, so a test can prove those columns are never read.
+  function activityRow(over) {
+    return {
+      loc: '1001', store_menuitem_id: 555, date: '2026-08-27', item_number: 5,
+      activity: 100, sold: 90, emp_meal: 0, mgr_meal: 0, waste: 0, promo: 0,
+      free_choice_qty: 0, food_cost: 999, paper_cost: 999, total_cost: 1998,
+      ...over,
+    };
+  }
+  // One margin row for item 5 at loc 1001 — foodCost+paperCost = 1.4342, deliberately
+  // nothing like the activity row's own (wrong-on-purpose) food_cost/paper_cost of 999.
+  const marginRow = {
+    loc: '1001', itemNumber: 5, descr: 'Big Mac', menuPrice: 6.79,
+    foodCost: 1.3605, paperCost: 0.0737, marginDollars: 5.3558, marginPct: 0.789,
+    volume: 50, totalContrib: 267.79,
+  };
+
+  it('computes dollars = units x the MARGIN ROW\'s own cost, never activityRows\' food_cost/paper_cost', () => {
+    const activity = [activityRow({ waste: 10, emp_meal: 2, mgr_meal: 1, promo: 5, activity: 100 })];
+    const out = enrichItemMargins([marginRow], activity);
+    expect(out).toHaveLength(1);
+    const unitCost = 1.3605 + 0.0737; // marginRow's own foodCost+paperCost, NOT the 999s above
+    expect(out[0].wasteUnits).toBe(10);
+    expect(out[0].wasteDollars).toBeCloseTo(10 * unitCost, 6);
+    expect(out[0].compUnits).toBe(3); // emp_meal(2) + mgr_meal(1), summed together
+    expect(out[0].compDollars).toBeCloseTo(3 * unitCost, 6);
+    expect(out[0].promoUnits).toBe(5);
+    expect(out[0].promoDollars).toBeCloseTo(5 * unitCost, 6);
+    // Sanity: if activityRows' own (deliberately wrong) 999 cost columns had leaked in,
+    // wasteDollars would be 9990, nowhere near this.
+    expect(out[0].wasteDollars).toBeLessThan(100);
+  });
+
+  it('uses `activity`, not `sold`, as the denominator for the Pct fields', () => {
+    const activity = [activityRow({ waste: 8, activity: 100, sold: 20 })]; // sold is much smaller
+    const out = enrichItemMargins([marginRow], activity);
+    expect(out[0].wastePctOfActivity).toBeCloseTo(8 / 100, 6); // not 8/20
+  });
+
+  it('an item present in margins but ABSENT from activity rows gets null, not 0', () => {
+    const out = enrichItemMargins([marginRow], [activityRow({ item_number: 999 })]); // different item
+    expect(out).toHaveLength(1);
+    expect(out[0].wasteUnits).toBeNull();
+    expect(out[0].wasteDollars).toBeNull();
+    expect(out[0].compUnits).toBeNull();
+    expect(out[0].compDollars).toBeNull();
+    expect(out[0].promoUnits).toBeNull();
+    expect(out[0].promoDollars).toBeNull();
+    expect(out[0].wastePctOfActivity).toBeNull();
+    expect(out[0].compPctOfActivity).toBeNull();
+    expect(out[0].promoPctOfActivity).toBeNull();
+  });
+
+  it('a real-zero-waste item (activity rows exist, all zero) gets 0, distinguishable from the never-had-data case', () => {
+    const activity = [activityRow({ waste: 0, emp_meal: 0, mgr_meal: 0, promo: 0, activity: 100 })];
+    const out = enrichItemMargins([marginRow], activity);
+    expect(out[0].wasteUnits).toBe(0);
+    expect(out[0].wasteDollars).toBe(0);
+    expect(out[0].wasteUnits).not.toBeNull();
+  });
+
+  it('SUMS across every matching activity row in the window (multi-day) -- NOT last-day-only', () => {
+    // Deliberately mirrors the price/cost "latest day only" test above to prove this is
+    // a genuinely different aggregation rule for waste/comp/promo.
+    const activity = [
+      activityRow({ date: '2026-08-01', waste: 3, emp_meal: 1, mgr_meal: 0, promo: 2, activity: 50 }),
+      activityRow({ date: '2026-08-20', waste: 7, emp_meal: 0, mgr_meal: 1, promo: 1, activity: 50 }),
+    ];
+    const out = enrichItemMargins([marginRow], activity, { dateRange: { start: '2026-08-01', end: '2026-08-20' } });
+    expect(out[0].wasteUnits).toBe(10); // 3 + 7, summed across both days
+    expect(out[0].compUnits).toBe(2);   // (1+0) + (0+1)
+    expect(out[0].promoUnits).toBe(3);  // 2 + 1
+    expect(out[0].wastePctOfActivity).toBeCloseTo(10 / 100, 6); // activity summed too: 50+50
+  });
+
+  it('dateRange excludes activity rows outside [start,end] inclusive', () => {
+    const activity = [
+      activityRow({ date: '2026-07-01', waste: 999 }), // outside window
+      activityRow({ date: '2026-08-10', waste: 5, activity: 20 }),
+    ];
+    const out = enrichItemMargins([marginRow], activity, { dateRange: { start: '2026-08-01', end: '2026-08-20' } });
+    expect(out[0].wasteUnits).toBe(5); // the 999 row must not be counted
+  });
+
+  it('accepts a camelCase-mapped loader shape (itemNumber/empMeal/mgrMeal), same dual-shape tolerance as computeItemMargins', () => {
+    const activity = [{
+      loc: '0001001', storeMenuitemId: 555, date: new Date('2026-08-27T00:00:00'),
+      itemNumber: 5, activity: 40, sold: 30, empMeal: 2, mgrMeal: 0, waste: 4, promo: 0,
+    }];
+    const out = enrichItemMargins([marginRow], activity);
+    expect(out[0].wasteUnits).toBe(4);
+    expect(out[0].compUnits).toBe(2);
+  });
+
+  it('joins on normLoc()\'d loc regardless of raw padding differences', () => {
+    const activity = [activityRow({ loc: '0001001', waste: 6, activity: 30 })]; // padded
+    const out = enrichItemMargins([{ ...marginRow, loc: '1001' }], activity); // unpadded margin row
+    expect(out[0].wasteUnits).toBe(6);
+  });
+
+  it('an empty activityRows array yields null fields for every margin row, not a throw', () => {
+    const out = enrichItemMargins([marginRow], []);
+    expect(out[0].wasteUnits).toBeNull();
+  });
+
+  it('returns activityUnits (the raw summed denominator) alongside the Pct fields, null when unmatched', () => {
+    const activity = [
+      activityRow({ date: '2026-08-01', activity: 30 }),
+      activityRow({ date: '2026-08-20', activity: 20 }),
+    ];
+    const out = enrichItemMargins([marginRow], activity, { dateRange: { start: '2026-08-01', end: '2026-08-20' } });
+    expect(out[0].activityUnits).toBe(50); // summed, matching the Pct denominators
+    const unmatched = enrichItemMargins([marginRow], [activityRow({ item_number: 999 })]);
+    expect(unmatched[0].activityUnits).toBeNull();
   });
 });
