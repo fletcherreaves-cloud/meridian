@@ -10,11 +10,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildNotificationRow, buildStatusRow, kbLinksForClasses,
-  foodCondimentCountCompletedAt, isFobFresh, fobToolLinks,
+  foodCondimentCountCompletedAt, isFobFresh, fobToolLinks, toEngineRows,
 } from '../../scripts/qsrsoft-onhand-pull.mjs';
 import {
   computeCountProgress, diagnoseIncompleteCount, detectCountNotifications,
 } from '../engine/eom-inventory.js';
+import { buildEmailContent } from '../../scripts/lib/resend-notify.mjs';
 
 const PERIOD = '2026-08';
 const LOC = '0003708';
@@ -149,6 +150,68 @@ describe('pull-script integration — fire-once end to end via buildStatusRow', 
     expect(statusRow2.food_done_at).toBe(statusRow.food_done_at);
     expect(statusRow2.condiment_done_at).toBe(statusRow.condiment_done_at);
     expect(statusRow2.notified_classes).toEqual(['food_condiment']);
+  });
+});
+
+describe('dispatch #219 Task 1 — a real item descr flows end to end, DB row shape -> rendered email', () => {
+  it('toEngineRows() (the actual main() mapping) carries descr through diagnoseIncompleteCount -> buildNotificationRow -> buildEmailContent', () => {
+    // DB-shaped rows exactly like `deduped` (mapOnHandRow()'s output / a qsr_onhand row) — this
+    // is the real bug: descr existed here but was dropped on the way into the engine. Uses the
+    // REAL toEngineRows() export, not a re-implementation of its mapping, so a revert of the
+    // `descr: r.descr` fix in that function makes this test fail.
+    const deduped = [
+      { wrin: 'C1', descr: 'Ketchup Packets', cls: 'Condiment', on_hand_amt: 42, unit_price: 1,
+        total_units: 42, cases: 1, packs: 0, loose: 0, last_counted: null, last_submitted: null },
+      { wrin: 'C2', descr: 'Mustard Packets', cls: 'Condiment', on_hand_amt: 12, unit_price: 1,
+        total_units: 12, cases: 0, packs: 1, loose: 0, last_counted: d(30).toISOString().slice(0, 10), last_submitted: null },
+    ];
+
+    const ohForEngine = toEngineRows(deduped);
+    // The data-side fix itself: descr must survive the DB-shape -> engine-shape mapping.
+    expect(ohForEngine.find(r => r.wrin === 'C1').descr).toBe('Ketchup Packets');
+
+    // diagnoseIncompleteCount() — the real engine function (src/engine/eom-inventory.js), unmocked.
+    const diag = diagnoseIncompleteCount(ohForEngine, { period: PERIOD, minValue: 0 });
+    // C1 has no last_counted at all -> genuinely uncounted, so it's in diag.uncounted with its descr.
+    const uncountedC1 = diag.uncounted.find(u => u.wrin === 'C1');
+    expect(uncountedC1).toBeTruthy();
+    expect(uncountedC1.descr).toBe('Ketchup Packets');
+
+    // buildNotificationRow() — the real qsrsoft-onhand-pull.mjs export, unmocked. Only needs
+    // triggerClasses/triggerKinds/classStatuses off `detection`; the detection-firing logic
+    // itself (computeCountProgress/detectCountNotifications) is already covered by the describes
+    // above — this test's job is the descr plumbing, not re-proving when a class fires.
+    const detection = {
+      triggerClasses: ['condiment'], triggerKinds: ['condiment'],
+      classStatuses: { condiment: { status: 'in_progress', pct: 0.5, total: 2, counted: 1 } },
+    };
+    const row = buildNotificationRow(LOC, PERIOD, detection, diag);
+    const itemC1 = row.uncounted_items.items.find(u => u.wrin === 'C1');
+    expect(itemC1).toBeTruthy();
+    expect(itemC1.descr).toBe('Ketchup Packets');
+
+    // buildEmailContent() — the real resend-notify.mjs export, unmocked — proves the description
+    // text actually reaches the rendered HTML alongside the WRIN, not just an intermediate object.
+    const { html } = buildEmailContent(row, { loc: LOC, name: 'Cottondale' });
+    expect(html).toContain('Ketchup Packets (C1)');
+  });
+});
+
+describe('dispatch #219 Task 3 — onHandLink() title carries the class letter', () => {
+  it('every class gets a title that includes its own resolved class letter', () => {
+    const expectByClass = { food: '(F)', condiment: '(C)', paper: '(P)', nonproduct: '(N)' };
+    for (const [cls, suffix] of Object.entries(expectByClass)) {
+      const link = kbLinksForClasses([cls], '3708', '2026-08-29').find(l => l.title.startsWith('On-Hand'));
+      expect(link.title).toBe(`On-Hand Inventory ${suffix}`);
+    }
+  });
+
+  it('two different classes produce two genuinely different-looking titles, not just different URLs (the actual bug being fixed)', () => {
+    const links = kbLinksForClasses(['food', 'condiment'], '3708', '2026-08-29').filter(l => l.title.startsWith('On-Hand'));
+    expect(links.length).toBe(2);
+    const titles = links.map(l => l.title);
+    expect(new Set(titles).size).toBe(2); // previously both were 'On-Hand Inventory (this store)'
+    expect(titles).toEqual(expect.arrayContaining(['On-Hand Inventory (F)', 'On-Hand Inventory (C)']));
   });
 });
 

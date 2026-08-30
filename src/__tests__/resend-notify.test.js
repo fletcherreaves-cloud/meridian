@@ -140,6 +140,61 @@ describe('buildEmailContent — dispatch #213 Task 3, FOB section', () => {
   });
 });
 
+describe('buildEmailContent — dispatch #219 Task 2, FOB component breakdown as a table with Actual %', () => {
+  const FOB_SNAP = {
+    sales: 100000, comp: 400, raw: 300, cond: 150, emp: 100, statv: 800, unex: 250,
+    fob: 2000, fobPct: 0.02, asOf: '2026-08-28',
+  };
+  const FOB_TARGET = {
+    fobPct: 0.025, gapPP: -0.5, overTarget: false,
+    comps: [
+      { key: 'statv', label: 'Variance Stat', actualPP: 0.8, tgtPP: 0.5, deltaPP: 0.3 },
+      { key: 'comp', label: 'Completed Waste', actualPP: 0.4, tgtPP: 0.3, deltaPP: 0.1 },
+      { key: 'raw', label: 'Raw Waste', actualPP: 0.3, tgtPP: 0.3, deltaPP: 0 },
+      { key: 'cond', label: 'Condiments', actualPP: 0.15, tgtPP: 0.2, deltaPP: -0.05 },
+      { key: 'emp', label: 'Emp/Mgr Meals', actualPP: 0.1, tgtPP: 0.1, deltaPP: 0 },
+      { key: 'unex', label: 'Unexplained', actualPP: 0.25, tgtPP: 0.2, deltaPP: 0.05 },
+    ],
+    topDriver: null,
+  };
+
+  it('renders a real <table> (not a <ul>) with all 4 data columns per component when fob_target is present', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP, fob_target: FOB_TARGET };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).toContain('<table');
+    expect(html).not.toMatch(/<ul[^>]*>\s*<li>Variance Stat/); // old list rendering is gone
+    expect(html).toContain('>Component<');
+    expect(html).toContain('>Actual $<');
+    expect(html).toContain('>Actual %<');
+    expect(html).toContain('>Target %<');
+    // Variance Stat row: $800 actual, 0.8% actual (matches fs.statv/fs.sales), 0.5% target, +0.3pp delta.
+    expect(html).toContain('$800');
+    expect(html).toContain('0.8%');
+    expect(html).toContain('0.5%');
+    expect(html).toContain('+0.3pp');
+  });
+
+  it('renders Actual $ and Actual % even when fob_target is absent, with Target %/Δ as "—"', () => {
+    const row = { ...ROW, fob_snapshot: FOB_SNAP, fob_target: null };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).toContain('<table');
+    expect(html).toContain('$800'); // Actual $ still populated
+    expect(html).toContain('0.8%'); // Actual % derived from fs.statv/fs.sales, still populated
+    expect(html).toContain('0.4%'); // Completed Waste: 400/100000
+    // Every component's Target %/Δ cell reads em-dash: 6 rows x 2 columns = 12 dash cells.
+    const dashCells = (html.match(/>—<\/td>/g) || []).length;
+    expect(dashCells).toBe(12);
+  });
+
+  it('still renders nothing at all when fob_snapshot itself is absent, unchanged from #213', () => {
+    const row = { ...ROW, fob_snapshot: null, fob_target: FOB_TARGET };
+    const { html } = buildEmailContent(row, STORE_INFO);
+    expect(html).not.toContain('FOB (Food Over Base)');
+    expect(html).not.toContain('Variance Stat');
+    expect(html).not.toContain('>Actual %<');
+  });
+});
+
 describe('buildEmailContent — dispatch #214, FOB tool links "Investigate further" sub-section', () => {
   const FOB_SNAP = {
     sales: 100000, comp: 400, raw: 300, cond: 150, emp: 100, statv: 800, unex: 250,
@@ -159,7 +214,7 @@ describe('buildEmailContent — dispatch #214, FOB tool links "Investigate furth
     expect(html).toContain('Waste (this store)');
     // Comes after the FOB components ("Variance Stat" the component label), and before the
     // existing "Helpful links" block — its own sub-section, not mixed into either.
-    const compsIdx = html.indexOf('Variance Stat:'); // fobSectionHtml's component line
+    const compsIdx = html.indexOf('>Variance Stat<'); // fobSectionHtml's component table cell
     const investigateIdx = html.indexOf('Investigate further');
     const helpfulIdx = html.indexOf('Helpful links');
     expect(compsIdx).toBeGreaterThan(-1);

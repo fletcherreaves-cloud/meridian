@@ -74,9 +74,16 @@ function physicalInventoryLink(nsn) {
 }
 // NOT a KB article either — a live link into QSRSoft's On-Hand report, per store/date/class
 // (dispatch #213 amendment). One link per triggered class, since the class param changes the URL.
+// dispatch #219 Task 3 — a food_condiment trigger fires this twice (once per class), and both
+// used to render as the IDENTICAL title ('On-Hand Inventory (this store)'), so the email showed
+// what looked like the same link twice with no way to tell them apart. Title now carries the
+// resolved class letter, matching fobToolLinks()'s own '(F)'/'(C)' convention (dispatch #214) —
+// reuses the SAME CLASS_LETTER lookup already used for the URL's own class= param, never a
+// second mapping. Letters (not spelled-out 'Food'/'Condiment') chosen for consistency with #214's
+// existing links, which already appear in the very same email section.
 function onHandLink(nsn, cls, dateStr) {
   const classLetter = CLASS_LETTER[cls] || 'F';
-  return { title: 'On-Hand Inventory (this store)', url: `https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory?location=${nsn}&class=${classLetter}&recipe=all&nonzero=true&duplicates=false&date=${dateStr}` };
+  return { title: `On-Hand Inventory (${classLetter})`, url: `https://v3.myqsrsoft.com/cimt/inventory/on-hand-inventory?location=${nsn}&class=${classLetter}&recipe=all&nonzero=true&duplicates=false&date=${dateStr}` };
 }
 export function kbLinksForClasses(classes, nsn, dateStr) {
   const linksByClass = {
@@ -495,6 +502,24 @@ function mapOnHandRow(item, nsn, period) {
   };
 }
 
+// dispatch #219 Task 1 — DB-shaped `deduped` rows → the camelCase shape the engine
+// (computeCountProgress/diagnoseIncompleteCount, src/engine/eom-inventory.js) expects. Exported
+// (not left inline in main()'s loop) so an end-to-end test exercises the REAL mapping — including
+// the `descr` fix below — rather than a test re-implementing it, which couldn't tell "fixed" from
+// "fixed then reverted" (this repo's own "would this verification still pass if the change were
+// reverted" rule). Previously omitted `descr` entirely even though mapOnHandRow() (above) already
+// captures it correctly and diagnoseIncompleteCount() already reads it — so every uncounted item
+// in a live notification carried zero descr keys, and resend-notify.mjs's "show descr+wrin
+// together" rendering (#213) had nothing to render. `descr: r.descr` is the whole data-side fix.
+export function toEngineRows(deduped) {
+  return (deduped || []).map(r => ({
+    wrin: r.wrin, cls: r.cls, onHandAmt: r.on_hand_amt, unitPrice: r.unit_price, totalUnits: r.total_units,
+    cases: r.cases, packs: r.packs, loose: r.loose, descr: r.descr,
+    lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : null,
+    lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : null,
+  }));
+}
+
 async function upsertRows(rows) {
   if (!rows.length) return 0;
   const CHUNK = 500; let saved = 0;
@@ -805,13 +830,9 @@ async function main() {
       totalSaved += await upsertRows(deduped);
       storesWithData++;
       const loc = String(nsn).padStart(7, '0');
-      // engine expects camelCase (lastCounted as Date); map from the DB-shaped rows
-      const ohForEngine = deduped.map(r => ({
-        wrin: r.wrin, cls: r.cls, onHandAmt: r.on_hand_amt, unitPrice: r.unit_price, totalUnits: r.total_units,
-        cases: r.cases, packs: r.packs, loose: r.loose,
-        lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : null,
-        lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : null,
-      }));
+      // engine expects camelCase (lastCounted as Date); map from the DB-shaped rows (dispatch
+      // #219 Task 1 — extracted to toEngineRows() above, which now also carries descr).
+      const ohForEngine = toEngineRows(deduped);
       // Dispatch #209 — count-completion notifications. Computed ONCE here (against
       // prevStatus[loc], the store's row from BEFORE this run's eom_count_status upsert) and
       // shared with buildStatusRow below so the pure detection function and the status-row
