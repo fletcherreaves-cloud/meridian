@@ -1603,13 +1603,14 @@ export function autoPopulateKPIs(review, ds) {
     // NOT clip to "so far" for the current month. autoPopulateKPIs can genuinely be called
     // for a review of the current, still-in-progress month (a review actively being built
     // mid-period), so `range` here CAN include today's still-open business day — the exact
-    // shape metricRate exists for. kvsAvg/laborAvg stay on metricAvg: kvst/laborPct are not
-    // `kind:'ratio'` metrics (no declared numerator/denominator pair in METRIC_SOURCES), so
-    // metricSumRatio can't compute a Sum/Sum for them regardless — out of this dispatch's
-    // scope (oepe/r2p/tpph only).
+    // shape metricRate exists for. kvst joined oepe/r2p/tpph under dispatch #221 (now
+    // `kind:'ratio'` with kvstNumSec/kvstTransCnt legs), so kvsAvg is on metricRate too now.
+    // laborAvg stays on metricAvg: laborPct is not a `kind:'ratio'` metric (no declared
+    // numerator/denominator pair in METRIC_SOURCES), so metricSumRatio can't compute a
+    // Sum/Sum for it regardless — out of scope here.
     const oepeAvg  = metricRate(ds, loc, range, 'oepe');
     const r2pAvg   = metricRate(ds, loc, range, 'r2p');
-    const kvsAvg   = metricAvg(ds, loc, range, 'kvst');
+    const kvsAvg   = metricRate(ds, loc, range, 'kvst');
     const laborAvg = metricAvg(ds, loc, range, 'laborPct');
     // 2nd Side Healthy Usage (owner, 2026-08-26: "we need to populate it as well") — same
     // metricAvg auto-first pattern as kvsAvg just above, reading the already-registered

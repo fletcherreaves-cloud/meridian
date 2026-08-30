@@ -125,6 +125,22 @@ export const METRIC_SOURCES = {
                fn: (tot, store, held) => (tot - store - held) / 1000 } },
   r2pNumSec:  { mode: 'any', derive: { inputs: ['fcUntilServeUs', 'fcUntilClosedDrawerUs'],
                fn: (serve, drawer) => (serve - drawer) / 1000 } },
+  // KVS Time's raw legs (dispatch #221 — the gap #153 left: oepe/r2p got Sum/Sum, kvst didn't).
+  // _mfyTime/_mfyCnt are already summed per (loc,dt) by supabase.js's DAR loader (mfy1_untilserve+
+  // mfy2_untilserve, mfy1_trans_cnt+mfy2_trans_cnt — same reducer as _dtTotal/_dtCars above), and
+  // exposed on the SAME qsrActSummaryRows row shape — confirmed by reading both _finalizeQsrAct
+  // (hourly path) and _qsrActFromSummed (rollup-table path) in supabase.js: both carry
+  // _mfyTime/_mfyCnt through unchanged via `...r` spread onto the final row.
+  // kvstNumSec pre-scales to seconds HERE (one place), matching oepeNumSec/r2pNumSec's own
+  // pre-scaled-numerator shape — deliberately NOT deferred to kvst's derive.fn below. That choice
+  // is load-bearing, not cosmetic: metricSumRatio (below) sums numKey/denKey RAW and never calls
+  // the ratio metric's own derive.fn, so if the /1000 lived only in kvst's fn, Sum/Sum would read
+  // 1000x too large. Ground truth for the arithmetic is supabase.js's existing
+  // `kvst: r._mfyCnt > 0 ? r._mfyTime / r._mfyCnt / 1000 : null` — kvstNumSec = _mfyTime / 1000
+  // reproduces that exactly once kvst's derive.fn below does plain num/cnt.
+  kvstMfyTimeUs: { mode: 'any', srcs: [['qsrActSummaryRows', '_mfyTime']] },
+  kvstTransCnt:  { mode: 'any', srcs: [['qsrActSummaryRows', '_mfyCnt']] },
+  kvstNumSec:    { mode: 'any', derive: { inputs: ['kvstMfyTimeUs'], fn: (ms) => ms / 1000 } },
   // OEPE — manual Ops Report, then emailed Daily Glimpse, then the cloud-fresh DAR-derived
   // OEPE = (dt_untilserve − dt_untilstore − dt_heldtime) ÷ dt_trans_cnt, excluding parked/held
   // time (#183, reconciled r=0.9958 against a real QSRSoft Service report, 2026-08-11) so
@@ -138,7 +154,12 @@ export const METRIC_SOURCES = {
   // KVS Time per GC (seconds) — manual Ops, then emailed Glimpse, then the cloud-fresh DAR
   // (= total MFY serve time ÷ total MFY trans, reconciled to the DAR report's KVS Time Per GC
   // column). The KVS stations are the MFY make-lines, so the DAR carries it without a new field.
-  kvst:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']] },
+  // derive/kind:'ratio' (dispatch #221) — same rationale as oepe/r2p just above; kvstNumSec/
+  // kvstTransCnt are the confirmed real numerator/denominator legs (see the comment on those
+  // chains above for the scaling decision). srcs still win — derive is the Sum/Sum basis plus
+  // a same-shape fallback for a day with raw DAR components but no precomputed source.
+  kvst:      { mode: 'pos', direction: 'lower', srcs: [['glimpseRows', 'kvst'], ['opsServiceRows', 'kvst'], ['qsrActSummaryRows', 'kvst'], ['opsRows', 'kvst']],
+               derive: { inputs: ['kvstNumSec', 'kvstTransCnt'], fn: (num, cnt) => (cnt > 0 ? num / cnt : null), kind: 'ratio' } },
   // KVS Healthy Usage (2nd-side) as a 0–1 fraction — manual Ops calls it `kvsu`, the emailed
   // Daily Glimpse calls it `kvsHealthy`, and the auto-pulled DAR derives it from healthy/unhealthy
   // order-health counts (cloud-fresh, so recent windows fill even when the Glimpse email lags/omits

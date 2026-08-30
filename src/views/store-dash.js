@@ -2276,7 +2276,7 @@ function RankingTab({stores, ds, settings, dateRange, onDateChange, defaultMetri
         // a real, user-reachable selection here, not a theoretical edge case.
         tpph:     metricRate(ds,loc,DR,'tpph'),
         oepe:     metricRate(ds,loc,DR,'oepe'),
-        kvst:     metricAvg(ds,loc,DR,'kvst'),
+        kvst:     metricRate(ds,loc,DR,'kvst'), // dispatch #221 — kvst is now kind:'ratio' too
         park:     metricAvg(ds,loc,DR,'park'),
         otHrs:    metricAvg(ds,loc,DR,'otHrs'),
         cashOSPct:metricAvg(ds,loc,DR,'cashOSPct'),

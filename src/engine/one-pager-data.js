@@ -204,7 +204,7 @@ export function buildMetricNow(ds, fobRows, locs, range) {
       fobPct: (fob[L] || {}).fobPct ?? null,
       oepe: metricRate(ds, loc, range, 'oepe'),
       r2p: metricRate(ds, loc, range, 'r2p'),
-      kvst: metricAvg(ds, loc, range, 'kvst'),
+      kvst: metricRate(ds, loc, range, 'kvst'), // dispatch #221 — kvst is now kind:'ratio' too
       gcPerDay: gc.days ? gc.sum / gc.days : null,
     };
   }
@@ -317,7 +317,7 @@ export function buildReviewActuals(ds, locs, range) {
     // OSAT B2B = the "1"-rated share (worst box) — lower is better. Replaces the old Accuracy-B2B.
     osatB2B: meanField('osat1'),
     accB2B: meanField('accuracyB2B'),   // kept for any legacy reference
-    kvsPerGc: metricAvg(ds, locs, range, 'kvst'),           // KVS Time per GC (seconds)
+    kvsPerGc: metricRate(ds, locs, range, 'kvst'),          // KVS Time per GC (seconds) — dispatch #221, kind:'ratio'
     kvsHealthy: metricAvg(ds, locs, range, 'kvsHealthy'),   // KVS Healthy Usage (0–1 fraction) — Daily Glimpse
     kvsTimeTarget: tgtAvg('tKvst'),
     kvsHealthyTarget: tgtAvg('tKvsu'),
