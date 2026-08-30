@@ -141,6 +141,35 @@ describe('diagnoseIncompleteCount', () => {
     expect(accepted.byState.early.n).toBe(0);
     expect(accepted.uncounted[0].wrin).toBe('1');      // never-counted still flagged
   });
+  it('drops zero-substance never/early items (deactivated + zeroed WRINs) — nothing to recount', () => {
+    const rows = [
+      // Deactivated in QSRSoft, zeroed out, counted this period before the final window → 'early'
+      // with $0 value-at-risk (store 43380, WRIN 02373-015 APPLES/DICED). Should NOT be flagged.
+      { wrin: 'dead-1', cls: 'Food', descr: 'APPLES/DICED (Deactivated)', onHandAmt: 0, totalUnits: 0, lastCounted: d(2026, 7, 15) },
+      // Never counted at all, but also zero substance — same logic applies.
+      { wrin: 'dead-2', cls: 'Food', descr: 'Dead item, never counted', onHandAmt: 0, totalUnits: 0, lastCounted: null },
+      // Real gap: never counted, real value → still flagged.
+      { wrin: 'real-1', cls: 'Food', descr: 'Beef', onHandAmt: 500, totalUnits: 10, lastCounted: null },
+      // Zero $ but real units on hand (e.g. missing unit price) → still flagged, there's physical stock.
+      { wrin: 'real-2', cls: 'Food', descr: 'No price on file', onHandAmt: 0, totalUnits: 5, lastCounted: null },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    const wrins = diag.uncounted.map(u => u.wrin);
+    expect(wrins).not.toContain('dead-1');
+    expect(wrins).not.toContain('dead-2');
+    expect(wrins).toContain('real-1');
+    expect(wrins).toContain('real-2');
+  });
+  it('keeps zero-substance STALE items — the Obsolete/Discontinued/Inactive "verify & clear" bucket needs them', () => {
+    const rows = [
+      // Last counted in a PRIOR period, now zeroed out → 'stale'. Must stay so the store can
+      // formally deactivate it in QSRSoft — this is exactly what that bucket exists to catch.
+      { wrin: 'stale-dead', cls: 'Food', descr: 'Long-forgotten item', onHandAmt: 0, totalUnits: 0, lastCounted: d(2026, 6, 15) },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    expect(diag.uncounted.map(u => u.wrin)).toContain('stale-dead');
+    expect(diag.byState.stale.n).toBe(1);
+  });
   it('flags lateBulk when Food/Cond/Paper bulk-counted on the last day (owner 2nd/3rd-day-out rule)', () => {
     // Bulk counted on the last day (07/31) → late.
     const late = diagnoseIncompleteCount([

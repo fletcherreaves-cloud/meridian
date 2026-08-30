@@ -296,6 +296,14 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     })
     .filter(r => r.valueAtRisk >= minValue)
     .sort((a, b) => b.valueAtRisk - a.valueAtRisk);
+  // A never/early item with $0 on hand AND 0 units has nothing to recount — recounting it can't
+  // change anything, so it shouldn't read as an action item (store 43380, WRIN 02373-015
+  // APPLES/DICED: deactivated + zeroed out in QSRSoft, counted 8/15 [before the final window] →
+  // state 'early', $0 value-at-risk, still surfaced as "needs recounting" purely from its count
+  // date). `stale` is deliberately EXEMPT — that's the Obsolete/Discontinued/Inactive "verify &
+  // clear" bucket, which exists specifically to catch a zeroed residual so the store can formally
+  // deactivate it in QSRSoft; dropping zero-value items there would hide the exact rows it exists for.
+  uncounted = uncounted.filter(u => u.state === 'stale' || u.valueAtRisk > 0 || u.totalUnits > 0);
   // Count-date exception: the store's early count was approved as its EOM count → early-counted items
   // are accepted (dropped from the uncounted/flagged set). Stale/never are unaffected.
   if (acceptEarly) uncounted = uncounted.filter(u => u.state !== 'early');
