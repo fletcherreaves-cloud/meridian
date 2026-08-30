@@ -4738,6 +4738,60 @@ export async function loadPmixRows(daysBack = 40) {
   }));
 }
 
+// ── Menu Item Activity (waste/comp/promo) — dispatch #220 ──────────────────────────
+// `qsr_menu_item_activity` (schema-qsr-menu-item-activity.sql, dispatch #193) — one row
+// per (loc, store_menuitem_id, date), item_number denormalized for filtering without a
+// join back to qsr_menu_items. Feeds src/engine/pricing-engine.js's enrichItemMargins(),
+// joined onto computeItemMargins()'s own output on (loc, item_number).
+//
+// Paginated via the shared fetchAll() helper (dispatch #218's retry-a-transient-page-
+// failure logic included for free), NOT a hand-rolled loop — this table is already past
+// 4000+ rows total, well beyond PostgREST's default 1000-row response cap, and an
+// unpaginated `select` is the EXACT trap dispatch #220's own scoping pass caught live: a
+// first pass at measuring this table's coverage read only 6 stores because the query
+// silently truncated at 1000 rows, when the real, correctly-paginated count is 27/27
+// stores. Ship this loader wrong and that same false "only a few stores" read repeats.
+//
+// opts.loc: a single loc or array of locs (any padding — re-padded to 7 chars here,
+// matching how the pull script writes it, `pad7(nsn)`). Omit for no loc filter.
+// opts.dateRange: {start, end} (or {s, e}) — Date or ISO string, inclusive on the `date`
+// column (a plain date, not a timestamp — matches computeItemMargins()'s own _dayKey
+// convention of comparing 'YYYY-MM-DD' strings). Omit for no date filter (full table).
+export async function loadQsrMenuItemActivity({ loc, dateRange } = {}) {
+  if (!supabase) return [];
+  const toDay = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+  const start = dateRange && (dateRange.start ?? dateRange.s) != null ? toDay(dateRange.start ?? dateRange.s) : null;
+  const end   = dateRange && (dateRange.end   ?? dateRange.e) != null ? toDay(dateRange.end   ?? dateRange.e) : null;
+  const locs = loc == null ? null : (Array.isArray(loc) ? loc : [loc]).map(l => String(l).padStart(7, '0'));
+
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_menu_item_activity').select('*');
+    if (locs && locs.length) q = q.in('loc', locs);
+    if (start) q = q.gte('date', start);
+    if (end) q = q.lte('date', end);
+    return q.order('date', { ascending: false }).range(from, to);
+  }, 1000, 'qsr_menu_item_activity');
+
+  return (data || []).map(r => ({
+    loc:                   r.loc,
+    storeMenuitemId:       r.store_menuitem_id,
+    date:                  r.date,
+    itemNumber:            r.item_number,
+    activity:              r.activity,
+    sold:                  r.sold,
+    empMeal:               r.emp_meal,
+    mgrMeal:               r.mgr_meal,
+    waste:                 r.waste,
+    promo:                 r.promo,
+    freeChoiceQty:         r.free_choice_qty,
+    foodCost:              r.food_cost,
+    paperCost:             r.paper_cost,
+    totalCost:             r.total_cost,
+    lastCloseBusinessDate: r.last_close_business_date,
+    updatedAt:             r.updated_at,
+  }));
+}
+
 // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
 // of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
 // schema.sql) already scopes what a plain select() returns to whatever the logged-in user is
