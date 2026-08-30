@@ -1,5 +1,5 @@
 // @ts-nocheck
-export default {version:'5.269', date:'2026-08-30', changes:[
+export default {version:'5.270', date:'2026-08-30', changes:[
   'Dispatch #225 -- Inventory Control: shared LocationSelector + a real month picker across all 5 ' +
   'tabs (Scoreboard/EOM Count/Cadence/Count Cycle/Supervisor Rollup). Task 1 measured (not ' +
   'assumed) whether the panel\'s old blocker comment was still true: a per-store comparison of ' +
