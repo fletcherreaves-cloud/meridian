@@ -10,9 +10,9 @@ import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, supervisorGroups, operatorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
-import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
+import { LocationSelector, ActionMenus, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import {
-  loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus,
+  loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus, loadEomPeriods,
   loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   loadEomDigestConfig, saveEomDigestConfig,
@@ -1496,8 +1496,25 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // App.js sets it to 'compliance' only when redirecting a legacy count-cycle link, same
 // one-shot-prop pattern as PerformanceReviewsPanel's initialTab/initialCustomizeSection.
 export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore }) {
-  const periods = useMemo(() => recentPeriods(4), []);
   const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
+  // dispatch #225 Task 4 — real month picker: every period that actually has qsr_onhand/
+  // eom_count_status data, no arbitrary cap (replaces the old hardcoded "last 4 months"
+  // recentPeriods(4), which is kept below only as the graceful loading-state placeholder before
+  // the real list arrives, never as the final list). Fetched once per panel mount (empty deps),
+  // not on every period change — loadEomPeriods() itself is the one-time full-history scan.
+  const [fetchedPeriods, setFetchedPeriods] = useState(null); // null = still loading
+  useEffect(() => {
+    let alive = true;
+    loadEomPeriods().then(list => { if (alive && list && list.length) setFetchedPeriods(list); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const periods = useMemo(() => {
+    const list = fetchedPeriods || recentPeriods(4);
+    // The currently-selected period must always be a valid <select> option, even if it has no
+    // data yet (e.g. defaultPeriod() picked a brand-new month with no onhand snapshot posted
+    // yet) — never let the dropdown show a value that isn't one of its own options.
+    return list.includes(period) ? list : [period, ...list].sort().reverse();
+  }, [fetchedPeriods, period]);
   const [loading, setLoading] = useState(true);
   const [onHand, setOnHand] = useState([]);
   // #211 free perf win: was its own loadQsrFob() re-fetch of the full unscoped ~13k-row table
@@ -1562,6 +1579,29 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [oneStore, setOneStore] = useState(initialStore || ''); // '' = all stores in scope, else a single loc
   const [patch, setPatch] = useState('');       // '' = all supervisors, else a supervisor's patch
   const patchGroups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
+  // dispatch #225 Task 2 — shared LocationSelector. `scope`/`patch`/`oneStore` above stay the
+  // ACTUAL filtering state (every existing consumer in this file keeps reading them unchanged —
+  // this is a UI swap, not a re-derivation of scope); locSelValue/onLocSelChange are only a thin
+  // translation layer so the shared control can render/drive that same trio. Task 1's measured
+  // result (src/__tests__/dispatch-225-location-selector-patch-agreement.test.js — all 27 stores
+  // agree) confirmed it's safe to source Patch from the shared LocationSelector.
+  const locSelValue = useMemo(() => {
+    if (oneStore) return { level: 'store', id: oneStore };
+    if (patch) return { level: 'patch', id: patch };
+    if (scope !== 'all') return { level: 'state', id: scope };
+    return { level: 'all', id: null };
+  }, [scope, patch, oneStore]);
+  const onLocSelChange = useCallback((v) => {
+    if (!v || v.level === 'all') { setScope('all'); setPatch(''); setOneStore(''); return; }
+    if (v.level === 'state') { setScope(v.id); setPatch(''); setOneStore(''); return; }
+    if (v.level === 'patch') { setPatch(v.id); setScope('all'); setOneStore(''); return; }
+    if (v.level === 'store') { setOneStore(v.id); return; }
+  }, []);
+  // Resolved loc list for the shared control's current value — used to scope Supervisor Rollup
+  // (Task 3), which reads STORE_NAMES-keyed locs directly rather than the onhand-derived `rows`
+  // the other 4 tabs filter.
+  const locTree = useMemo(() => buildLocationHierarchy(stores, INV_ORG_COORDS, STORE_NAMES), [stores]);
+  const scopedLocs = useMemo(() => locationSelectorLocs(locSelValue, locTree), [locSelValue, locTree]);
   // dispatch #224 Task 3/5 — Operator rollup tier, same live-flat-map read as patchGroups above.
   const opGroups = useMemo(() => { try { return operatorGroups() || {}; } catch { return {}; } }, []);
   const operatorOfLoc = useCallback((u) => {
@@ -2070,15 +2110,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     return rows.map(r => r.map(csvCell).join(',')).join('\n');
   };
 
-  // Store-picker options: scoped by state + patch but NOT by the single-store selection, so the
-  // dropdown always lists every store you could switch to (not just the one already chosen).
-  const pickerStores = useMemo(() => {
-    const stateOf = (org) => org === 'emerald' ? 'FL' : 'OK';
-    const patchLocs = patch ? new Set((patchGroups[patch] || []).map(unpad)) : null;
-    return allRows.filter(r =>
-      (scope === 'all' || stateOf(r.org) === scope) &&
-      (!patchLocs || patchLocs.has(unpad(r.loc))));
-  }, [allRows, scope, patch, patchGroups]);
+  // dispatch #225 Task 2 — the bespoke store <select> this fed (options scoped by state+patch
+  // but not by the single-store selection) is gone, replaced by the shared LocationSelector's
+  // own Store tier, which renders directly off its own tree — no separate options list needed.
 
   // Chronic Offenders — on-demand district-wide scan. Explicit run only (reads many rows), scoped
   // to the current location filter. Which items are chronically bad on our own pattern principles?
@@ -2665,19 +2699,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const cycleSummary = useMemo(() => cycleSummaryFor(rows, cadenceByLoc), [rows, cadenceByLoc]);
 
   // ── Spine 1 step 2 (issue #126) — this panel migrates onto PanelChrome + the shared
-  // ActionMenus (the pilot named in the issue). The location/patch picker below is
-  // DELIBERATELY kept as bespoke markup rather than swapped to the shared LocationSelector:
-  // LocationSelector's patch tier sources from the static INV_ORG_COORDS[loc].sup seed
-  // (constants.js), while this panel's own patch filter correctly reads the LIVE supervisor
-  // assignment (supervisorGroups() -> orgAssignments() -> the settable _liveAssignments
-  // override — a real reassignment mechanism this app supports, not a hypothetical one).
-  // Confirmed these are two genuinely different data sources, not two names for the same
-  // thing; could not confirm from this sandbox whether they're currently in sync (an
-  // anon-key org_config read came back empty, which is ambiguous under RLS — not proof no
-  // live overrides exist). Swapping the patch source on that unverified assumption would risk
-  // silently mis-grouping a store on a financially-scoped filter (patch-scoped FOB reporting)
-  // the next time a supervisor reassignment happens. Left as-is; the state pills + collapsing
-  // the action wall into grouped menus below is the actual ask this step delivers.
+  // ActionMenus. dispatch #225 Task 1/2 — the location/patch picker below used to be kept as
+  // bespoke markup (state pills + a supervisorGroups()-fed patch <select>) on the theory that
+  // the shared LocationSelector's Patch tier read a stale static seed. Measured, not assumed
+  // (src/__tests__/dispatch-225-location-selector-patch-agreement.test.js): buildLocationHierarchy
+  // (PanelControls.js) resolves Patch via supervisorOf(), the SAME live orgAssignments()/
+  // whoRan() timeline supervisorGroups() (this panel's own source) is built on — dispatch #139
+  // already fixed the raw-static-read problem this comment used to warn about. All 27 real
+  // stores agree, store-for-store, so the shared LocationSelector is now the actual control;
+  // `scope`/`patch`/`oneStore` state stays exactly as every other consumer in this file already
+  // reads it (locSelValue/onLocSelChange above are only the translation layer).
   const dateControlSlot = h('select', {
     value: period, onChange: e => setPeriod(e.target.value),
     style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '13px' },
@@ -2689,35 +2720,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     style: { background: 'var(--surf3)', color: 'var(--text2)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: rows.length ? 'pointer' : 'not-allowed' },
   }, '⬇ CSV');
 
-  const locationSlot = div({ style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
-    [['all', 'All'], ['OK', 'Oklahoma'], ['FL', 'Florida']].map(([k, label]) => {
-      const active = scope === k;
-      return h('button', {
-        key: k, onClick: () => { setScope(k); setOneStore(''); setPatch(''); },
-        style: {
-          background: active ? '#f5bc00' : 'var(--surf3)', color: active ? '#0f1117' : 'var(--text2)',
-          border: `1px solid ${active ? '#f5bc00' : 'var(--bdr2)'}`, borderRadius: '999px',
-          padding: '5px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-        },
-      }, label);
-    }),
-    // Patch / operator (supervisor) filter — pin opportunity by patch. Cross-checks with scope.
-    Object.keys(patchGroups).length ? h('select', {
-      value: patch, onChange: e => { setPatch(e.target.value); setScope('all'); setOneStore(''); },
-      title: 'Filter to one supervisor / operator patch',
-      style: { background: patch ? '#f5bc00' : 'var(--surf3)', color: patch ? '#0f1117' : 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '999px', padding: '5px 12px', fontSize: '12px', fontWeight: 700, maxWidth: '200px' },
-    }, [
-      h('option', { key: '', value: '' }, 'All patches'),
-      ...Object.keys(patchGroups).sort().map(sup => h('option', { key: sup, value: sup }, `${sup} (${(patchGroups[sup] || []).length})`)),
-    ]) : null,
-    h('span', { style: { color: 'var(--text3)', fontSize: '12px', margin: '0 2px' } }, '·'),
-    h('select', {
-      value: oneStore, onChange: e => setOneStore(e.target.value),
-      style: { background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr2)', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', maxWidth: '220px' },
-    }, [
-      h('option', { key: '', value: '' }, `All stores in scope (${pickerStores.length})`),
-      ...pickerStores.map(r => h('option', { key: r.loc, value: r.loc }, r.name)),
-    ]),
+  // dispatch #225 Task 2 — the shared LocationSelector (All → State → Patch → Store, progressive
+  // reveal, same mode/pill styling every other consumer uses — feedback-selector-ui-standard.md).
+  // value/onChange are locSelValue/onLocSelChange above, which translate into the SAME scope/
+  // patch/oneStore state every downstream consumer in this file already reads — this replaces
+  // only the widget, not the filtering. "N shown" kept exactly as it was (owner-visible).
+  const locationSlot = div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
+    h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: locSelValue, onChange: onLocSelChange, mode: 'progressive' }),
     span({ style: { color: 'var(--text3)', fontSize: '12px' } }, `${rows.length} shown`));
 
   // mode toggle — EOM count-completion vs year-round cadence vs weekly compliance — is a
@@ -2813,12 +2822,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
     + (mode === 'supervisor' ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
 
-  // Dispatch #202: mode==='supervisor' brings its own period/group controls (EOMSupervisorPanel's
-  // internal month+year+groupType pickers) — an entirely different filter dimension from the
-  // shared scope/patch/oneStore + period controls every other mode reads. Showing both at once
-  // would put two unrelated location/period pickers on screen; hide PanelChrome's location/date/
-  // export/action bands for this mode and keep only the tab strip, same "own header per section"
-  // shape ScheduleRetentionRollupSection uses relative to its sibling tab.
+  // Dispatch #202 originally hid PanelChrome's location/date/export/action bands entirely for
+  // mode==='supervisor', since EOMSupervisorPanel brought its own internal month+year+groupType
+  // pickers — a second, unrelated pair of location/period controls on screen at once. Dispatch
+  // #225 Task 3/4 removed that internal month+year picker (EOMSupervisorPanel now takes the
+  // shared `period` + the shared LocationSelector's resolved `scopedLocs` as props instead, see
+  // eom-supervisor.js) — so location/date are no longer a second unrelated pair, they're the SAME
+  // shared controls every tab reads, and now show for Supervisor Rollup too. Its own groupType/
+  // selGroup toggle (a different axis — which rollup grouping, not which stores are in scope)
+  // stays inside EOMSupervisorPanel. Export/actions still only make sense for the 4-tab onhand-
+  // shaped `rows`/`allRows` data (CSV export, Reports/Scans/Monitor/Pulls), not Supervisor
+  // Rollup's own P&L variance rows — those two bands stay hidden for this mode.
   const supervisorMode = mode === 'supervisor';
   // Print-CSS class hooks (see eom-supervisor.js's PRINT_STYLE comment) — only meaningful while
   // supervisor mode's own Print button can be clicked; harmless no-ops otherwise (they only take
@@ -2832,8 +2846,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
     div({ className: 'eom-no-print' },
       h(PanelChrome, {
-        location: supervisorMode ? undefined : locationSlot,
-        dateControl: supervisorMode ? undefined : dateControlSlot,
+        location: locationSlot,
+        dateControl: dateControlSlot,
         exportSlot: supervisorMode ? undefined : exportSlotContent,
         actions: supervisorMode ? undefined : actionsSlot,
         tabs: tabsSlot,
@@ -2891,7 +2905,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // Count Cycle above: EOMSupervisorPanel is unchanged (harvested verbatim from the retired
     // standalone eom-summary panel), reads ds/settings/supabase directly, and owns its own
     // period/group filters + loading/empty states rather than this panel's `rows`/`loading`.
-    supervisorMode ? h(EOMSupervisorPanel, { ds, settings, supabase }) : null,
+    supervisorMode ? h(EOMSupervisorPanel, { ds, settings, supabase, period, scopedLocs }) : null,
 
     // mode==='compliance'/'supervisor' short-circuit this entire EOM-completion/scoreboard
     // chain — its content (loading/empty/table) is all about EOM+FOB data, not weekly count
