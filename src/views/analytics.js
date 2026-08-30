@@ -224,7 +224,7 @@ const FOB_COMP=[
   {key:'statVar',    tgt:'tStatLoss',   label:'Variance Stat',       icon:'📊', threshold:0.002,  lower:true,  qsrPage:'cash', qsrField:'Stat Var %'},
   {key:'unexplained',tgt:'tUnex',       label:'Unexplained',         icon:'❓', threshold:0.0005, lower:true,  qsrPage:'cash', qsrField:'Unexplained %'},
   {key:'fobPct',     tgt:'tFOBTarget',  label:'Food Over Base (FOB)',icon:'📈', threshold:0.003,  lower:true,  sep:true, qsrPage:'fob', qsrField:'FOB %'},
-  {key:'baseFoodPct',tgt:'tFOBBase',    label:'Base Food',           icon:'🥗', threshold:0.005,  lower:true,  qsrPage:'fob',  qsrField:'Base Food %'},
+  {key:'baseFoodPct',tgt:'tFOBBase',    label:'Base Food',           icon:'🥗', threshold:0.005,  lower:true,  actionable:false, qsrPage:'fob',  qsrField:'Base Food %'},
   {key:'discCoupon', tgt:'tDiscCoupPct',label:'Discounts / Coupons', icon:'🎫', threshold:0.003,  lower:false, note:'Lower is favorable — means more discount activity vs. sales', qsrPage:'fob', qsrField:'Disc Coupon %'},
   {key:'pLFoodPct',  tgt:'tFOBTotal',   label:'Total Food Cost',     icon:'💰', threshold:0.005,  lower:true,  isTotal:true, qsrPage:'fob', qsrField:'P & L Food Cost %'},
 ];
@@ -8394,4 +8394,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel };
+export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP };
