@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     // Default: return the snapshot + bump view telemetry (best-effort).
     sb.from('eom_share_links').update({ view_count: (link.view_count || 0) + 1, last_viewed_at: new Date().toISOString() }).eq('token', token).then(() => {});
     return json({
-      storeName: link.store_name, title: link.title, period: link.period,
+      loc: link.loc, storeName: link.store_name, title: link.title, period: link.period,
       fob: link.fob, recapMd: link.recap_md, fullMd: link.full_md,
       expiresAt: link.expires_at, createdAt: link.created_at,
       acknowledgedAt: link.acknowledged_at,

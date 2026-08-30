@@ -8,6 +8,7 @@ import { fetchSharedEom, refreshSharedEom, acknowledgeSharedEom } from '../lib/s
 import { mdToHtml } from '../utils/markdown.js';
 import { buildEomReport } from '../engine/eom-report-build.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
+import { fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { DEFAULT_TARGETS } from '../constants.js';
 
 const { useState, useEffect, useCallback } = React;
@@ -43,17 +44,48 @@ const span = (p, ...c) => h('span', p, ...c);
 const $ = v => (v == null || isNaN(v)) ? '—' : '$' + Math.round(v).toLocaleString();
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%';
 
-function FobStripLite({ fob }) {
+// Owner feedback: match the header-chip style already used elsewhere in the app (the EOM
+// Dashboard's own store-message draft, `FobStrip` in eom-dashboard.js) — percent as the primary,
+// bold focus for every component, dollar amount secondary, and the vs-target delta shown
+// alongside — rather than this view's own smaller, dollar-primary cells. Reuses
+// fobComponentDeltas() (eom-diagnosis.js, already in this file's bundle via buildEomReport()) for
+// the same actual-%/target-%/delta-pp math the dashboard's own diagnosis report uses — never a
+// second copy of that formula. `loc` looks up DEFAULT_TARGETS; a store with no seeded target just
+// shows the percent/dollar with no target line, same graceful-degradation the dashboard's own
+// FobStrip already follows for a component with no target set.
+function FobStripLite({ fob, loc }) {
   const f = fob || {};
   if (f.fob == null && f.fobPct == null) return null;
-  const box = { padding: '5px 10px', background: '#171a21', border: '1px solid #262b36', borderRadius: '7px', display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '84px' };
+  const targets = DEFAULT_TARGETS[unpad(loc)] || DEFAULT_TARGETS[String(loc)] || {};
+  const fobTgt = targets.tFOBTarget != null ? Number(targets.tFOBTarget) : null;
+  const deltas = fobComponentDeltas(f, targets); // [] when f.sales is falsy
+  const byKey = {}; for (const d of deltas) byKey[d.key] = d;
+  const box = { padding: '5px 10px', background: '#171a21', border: '1px solid #262b36', borderRadius: '7px', display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '90px' };
   const lab = { fontSize: '8.5px', color: '#78839a', textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap' };
   const big = (c) => ({ fontSize: '13px', fontWeight: 700, color: c || '#e7ebf3', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' });
-  const cell = (label, amt) => div({ style: box }, span({ style: lab }, label), span({ style: big() }, $(amt)), f.sales ? span({ style: { fontSize: '8.5px', color: '#78839a' } }, pct2(amt / f.sales)) : null);
+  const sub = { fontSize: '8.5px', color: '#78839a', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+  const cell = (label, key, amt) => {
+    const d = byKey[key];
+    const pctStr = d && d.pct != null ? pct2(d.pct) : (f.sales ? pct2(amt / f.sales) : '—');
+    const over = d && d.deltaPp != null && d.deltaPp > 0.005;
+    const color = d && d.deltaPp != null ? (over ? '#f87171' : '#4ade80') : undefined;
+    const tgtLine = d && d.tgtPct != null
+      ? `${d.deltaPp >= 0 ? '+' : ''}${d.deltaPp.toFixed(2)}pp (tgt ${(d.tgtPct * 100).toFixed(2)}%)` : null;
+    return div({ style: box },
+      span({ style: lab }, label),
+      span({ style: big(color) }, pctStr),
+      div({ style: { display: 'flex', gap: '4px' } }, span({ style: sub }, $(amt)), tgtLine ? span({ style: sub }, `· ${tgtLine}`) : null));
+  };
+  const fobOver = fobTgt != null && f.fobPct != null && f.fobPct > fobTgt;
   return div({ style: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' } },
-    div({ style: box }, span({ style: lab }, 'FOB'), span({ style: big('#f5bc00') }, `${pct2(f.fobPct)}`), span({ style: { fontSize: '9px', color: '#aab3c5' } }, $(f.fob))),
-    cell('Comp Waste', f.comp), cell('Raw Waste', f.raw), cell('Condiments', f.cond),
-    cell('Emp Meals', f.emp), cell('Stat Var', f.statv), cell('Unexplained', f.unex),
+    div({ style: box },
+      span({ style: lab }, 'FOB'),
+      span({ style: big(fobTgt != null ? (fobOver ? '#f87171' : '#4ade80') : '#f5bc00') }, `${pct2(f.fobPct)}`),
+      div({ style: { display: 'flex', gap: '4px' } },
+        span({ style: sub }, $(f.fob)),
+        fobTgt != null ? span({ style: sub }, `· ${f.fobPct >= fobTgt ? '+' : ''}${((f.fobPct - fobTgt) * 100).toFixed(2)}pp (tgt ${(fobTgt * 100).toFixed(2)}%)`) : null)),
+    cell('Comp Waste', 'comp', f.comp), cell('Raw Waste', 'raw', f.raw), cell('Condiments', 'cond', f.cond),
+    cell('Emp Meals', 'emp', f.emp), cell('Stat Var', 'statv', f.statv), cell('Unexplained', 'unex', f.unex),
     f.sales ? div({ style: box }, span({ style: lab }, 'Prod Sales'), span({ style: big() }, $(f.sales))) : null);
 }
 
@@ -119,7 +151,7 @@ export function EomShareView({ token }) {
       span({ style: { fontSize: '11px', color: '#78839a' } }, 'EOM report · view-only')),
     div({ style: { fontWeight: 700, fontSize: '20px', margin: '4px 0 14px' } }, `${data.storeName || ''} · ${data.title || `EOM FOB ${data.period}`}`),
 
-    h(FobStripLite, { fob: stripFob }),
+    h(FobStripLite, { fob: stripFob, loc: data.loc }),
 
     // Live-refresh bar: re-pull the freshest synced data (after the store corrects counts) + timestamp.
     div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' } },
