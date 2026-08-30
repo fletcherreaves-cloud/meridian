@@ -32,7 +32,7 @@ export function recipientFor(level, groupKey) {
 // long, and that's accepted per the dispatch, not capped preemptively (see main() below for
 // whether that has actually hit a real delivery-size problem).
 function storeSectionHtml(s) {
-  const table = fobComponentsTableHtml(s.fob, s.fobTarget);
+  const table = fobComponentsTableHtml(s.fob, s.fobTarget, s.countComplete);
   const items = s.recountItems || [];
   const recountRows = items.map(it =>
     `<tr><td style="padding:3px 10px 3px 0;border-bottom:1px solid #eee">${it.wrin || '—'}</td>` +
@@ -46,10 +46,10 @@ function storeSectionHtml(s) {
 <thead><tr style="text-align:left;border-bottom:2px solid #ccc"><th style="padding:3px 10px 3px 0">WRIN</th><th style="padding:3px 10px 3px 0">Description</th><th style="padding:3px 10px 3px 0">Class</th><th style="padding:3px 0">$ at risk</th></tr></thead>
 <tbody>${recountRows}</tbody>
 </table>`
-    : `<p style="margin:8px 0 4px;color:#4a4">No open recount opportunities — nothing a recount would still move.</p>`;
+    : `<p style="margin:8px 0 4px;color:#4a4">No uncounted-item gaps flagged — not a signal to skip the routine of recounting top stat/variance items for consistency.</p>`;
   return `<div style="margin:14px 0;padding-top:10px;border-top:1px solid #ddd">
 <h4 style="margin:0 0 6px">${s.name || s.loc}</h4>
-${table || '<p style="margin:0 0 8px;color:#888">No fresh FOB data for this store this period.</p>'}
+${table || '<p style="margin:0 0 8px;color:#888">No FOB data on record for this store yet.</p>'}
 ${recountHtml}
 </div>`;
 }

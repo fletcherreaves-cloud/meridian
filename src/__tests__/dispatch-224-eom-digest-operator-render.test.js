@@ -146,6 +146,6 @@ describe('dispatch #224 Task 5 — EOM Digest modal: Operator tab + per-store de
     const storeToggle = candidates.find(d => !candidates.some(other => other !== d && d.contains(other)));
     expect(storeToggle, 'collapsed store row for Ardmore-Broadway not found').toBeTruthy();
     await act(async () => { storeToggle.click(); });
-    expect(container.textContent).toMatch(/No fresh FOB data for this store this period/);
+    expect(container.textContent).toMatch(/No FOB data on record for this store yet/);
   });
 });

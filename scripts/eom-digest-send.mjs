@@ -68,7 +68,7 @@ import {
 import { buildEomDigest, DIGEST_CLASS_ORDER, DEFAULT_EOM_DIGEST_CONFIG } from '../src/engine/eom-digest.js';
 import { diagnoseIncompleteCount } from '../src/engine/eom-inventory.js';
 import {
-  STORE_NSNS, fetchFobSnapshotForStore, isFobFresh, resolveFobTargets, buildFobTargetReport, toEngineRows,
+  STORE_NSNS, fetchFobSnapshotForStore, resolveFobTargets, buildFobTargetReport, toEngineRows,
 } from './qsrsoft-onhand-pull.mjs';
 import { inCountWindow } from './lib/count-window.mjs';
 import { sendDigestEmail } from './lib/eom-digest-notify.mjs';
@@ -254,19 +254,23 @@ export async function buildStoreRows(period, asOf = new Date()) {
 
     const classStatuses = classStatusesFromStatusAndLog(status, log);
 
-    // FOB, freshness-gated the same way #213 gates it — food_done_at/condiment_done_at (already
-    // persisted on eom_count_status) stand in for "count completed at" here rather than
-    // re-scanning raw qsr_onhand rows a second time (see this file's header note).
-    let fob = null, fobTarget = null;
+    // food_done_at/condiment_done_at (already persisted on eom_count_status) stand in for "count
+    // completed at" — used here only to caption the FOB shown, not to gate whether it shows.
+    // Owner feedback (dispatch #224 follow-up): a store still finishing its count has whatever
+    // FOB snapshot exists for this period regardless — show it captioned "count in progress"
+    // rather than hiding the whole section until completion. Previously this was gated on
+    // isFobFresh(fobResult.updatedAt, completedAt), which required BOTH a completed count AND a
+    // snapshot posted after it, so an incomplete count meant nothing ever showed, even a real,
+    // useful in-progress number.
     const doneAts = [status?.food_done_at, status?.condiment_done_at].filter(Boolean).map(d => new Date(d)).filter(d => !isNaN(d));
     const completedAt = doneAts.length ? new Date(Math.max(...doneAts.map(d => d.getTime()))) : null;
-    if (completedAt) {
-      const fobResult = await fetchFobSnapshotForStore(loc, period);
-      if (fobResult && isFobFresh(fobResult.updatedAt, completedAt)) {
-        fob = fobResult.snap;
-        const t = await resolveFobTargets(loc, period);
-        fobTarget = buildFobTargetReport(loc, period, fob, t);
-      }
+    const countComplete = !!completedAt;
+    let fob = null, fobTarget = null;
+    const fobResult = await fetchFobSnapshotForStore(loc, period);
+    if (fobResult) {
+      fob = fobResult.snap;
+      const t = await resolveFobTargets(loc, period);
+      fobTarget = buildFobTargetReport(loc, period, fob, t);
     }
 
     // dispatch #224 Task 4 — recount opportunities: diagnoseIncompleteCount() on this store's raw
@@ -286,7 +290,7 @@ export async function buildStoreRows(period, asOf = new Date()) {
     rows.push({
       loc, name: STORE_NAMES[u] || loc, org: getStoreOrg(u), patch: supervisorOf(u), operator: operatorOf(u),
       classStatuses, uncountedValue: uncountedByLoc[loc] || uncountedByLoc[u] || 0,
-      fob, fobTarget, recountItems,
+      fob, fobTarget, countComplete, recountItems,
     });
   }
   return rows;

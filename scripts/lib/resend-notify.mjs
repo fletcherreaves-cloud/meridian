@@ -83,12 +83,18 @@ function fobToolLinksHtml(links) {
 // everywhere, no leaner rollup variant) — no divergence to force apart, so extraction is the clean
 // call, not a stretch. Returns '' when `fs` is absent (no fresh FOB snapshot), matching
 // fobSectionHtml()'s own no-caveat-no-placeholder discipline.
-export function fobComponentsTableHtml(fs, tgt) {
+// `countComplete` (dispatch #224 follow-up, owner feedback): whether THIS store's own count is
+// finished yet. A store still finishing its count still has whatever FOB snapshot exists for
+// this period — show it captioned "count in progress" instead of the caller hiding the whole
+// section until completion (the #213 single-store caller doesn't pass this — it never gated on
+// count completion in the first place, only on fs itself being present).
+export function fobComponentsTableHtml(fs, tgt, countComplete) {
   if (!fs) return '';
   const headlinePct = fs.fobPct != null ? `${fobPp(fs.fobPct)}%` : '—';
   const targetLine = tgt && tgt.fobPct != null
     ? ` <span style="color:#666">(target ${fobPp(tgt.fobPct)}%, ${tgt.gapPP > 0 ? '+' : ''}${tgt.gapPP}pp ${tgt.overTarget ? 'OVER' : 'under'})</span>`
     : '';
+  const caveat = countComplete === false ? ' <span style="color:#a60">(count in progress, not yet complete)</span>' : '';
   const compByKey = new Map((tgt?.comps || []).map(c => [c.key, c]));
   const cell = (s) => `<td style="padding:4px 10px 4px 0;border-bottom:1px solid #eee">${s}</td>`;
   const compRows = FOB_COMPONENTS.map(([k, label]) => {
@@ -101,7 +107,7 @@ export function fobComponentsTableHtml(fs, tgt) {
     return `<tr>${cell(label)}${cell(fobMoney(fs[k]))}${cell(actualPctStr)}${cell(tgtPctStr)}` +
       `<td style="padding:4px 0;border-bottom:1px solid #eee">${deltaStr}</td></tr>`;
   }).join('');
-  return `<p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
+  return `<p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}${caveat}</p>
 <table style="border-collapse:collapse;width:100%;font-size:13px;margin:0 0 4px">
 <thead><tr style="text-align:left;border-bottom:2px solid #ccc">` +
 `<th style="padding:4px 10px 4px 0">Component</th><th style="padding:4px 10px 4px 0">Actual $</th>` +

@@ -1815,6 +1815,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // a store just because its FOB row happened to carry padding.
     const fobRaw = fobByStore(fobRows, period);
     const fob = {}; for (const k in fobRaw) fob[unpad(k)] = fobRaw[k];
+    // Owner feedback: a store with zero qsr_fob rows THIS period (count not complete, or the
+    // pull simply hasn't landed yet) still has whatever its last snapshot was — show that
+    // instead of blanking, clearly marked `stalePeriod` so the renderer captions it rather than
+    // presenting it as current. Last resort only: never overrides a real current-period row.
+    const fobFallback = fobByStore(fobRows, null);
+    for (const k in fobFallback) {
+      const uk = unpad(k);
+      if (!fob[uk]) fob[uk] = { ...fobFallback[k], stalePeriod: true };
+    }
     const asOf = new Date();
     const locs = new Set([
       ...Object.keys(byLoc), ...Object.keys(varByLoc), ...Object.keys(wasteByLoc),
@@ -1848,6 +1857,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         fobPct: f.fobPct ?? null,
         fob$: f.fob ?? null,
         components: f,
+        countComplete: !!prog.believesDone,
         hasDiag: hasDiagData.has(loc),
         diagnosis: st.diagnosisStatus || 'pending',
         comms: st.commsStatus || 'none',
@@ -1978,6 +1988,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       uncountedValue,
       fob: r.fobPct != null ? r.components : null,
       fobTarget: fr ? { fobPct: fr.target, gapPP: fr.gapPP, overTarget: fr.overTarget, comps: fr.comps, topDriver: fr.topDriver } : null,
+      countComplete: !!r.countComplete,
       recountItems: r.recountItems || [],
     };
   }), [rows, fobReport, patchOfLoc, operatorOfLoc]);
@@ -3126,15 +3137,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       // shape feeds both, just two different render targets (React vs. HTML string).
       const th2 = (t, r) => h('th', { key: t, style: { textAlign: r ? 'right' : 'left', padding: '3px 8px 3px 0', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
       const td2 = (v, r) => h('td', { style: { textAlign: r ? 'right' : 'left', padding: '3px 8px 3px 0', color: 'var(--text2)' } }, v);
-      const fobCompsTable = (fob, fobTarget, comps) => {
-        if (!fob || fob.fobPct == null) return div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '2px 0 8px' } }, 'No fresh FOB data for this store this period.');
+      // Owner feedback (dispatch #224 follow-up): a store with no count-complete FOB snapshot
+      // YET still has the most recent number it has — showing nothing at all is worse than
+      // showing that number with a plain caveat. `fob.stalePeriod` (set upstream when this
+      // period has zero qsr_fob rows and the fallback reached back to the last one available,
+      // any period) and `countComplete` (this store's own believesDone) both drive the caption;
+      // only genuinely no-data-ever falls back to the blank message.
+      const fobCompsTable = (fob, fobTarget, comps, countComplete) => {
+        if (!fob || fob.fobPct == null) return div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '2px 0 8px' } }, 'No FOB data on record for this store yet.');
         const headlinePct = `${(fob.fobPct * 100).toFixed(2)}%`;
         const gapLine = fobTarget && fobTarget.fobPct != null
           ? ` · target ${(fobTarget.fobPct * 100).toFixed(2)}% · ${fobTarget.gapPP > 0 ? '+' : ''}${fobTarget.gapPP}pp ${fobTarget.overTarget ? 'OVER' : 'under'}`
           : '';
+        const caveat = fob.stalePeriod
+          ? ' · no fresh data posted this period yet — showing the last available snapshot'
+          : (countComplete === false ? ' · count in progress, not yet complete' : '');
         return div({ style: { marginBottom: '8px' } },
           div({ style: { fontSize: '11.5px', color: 'var(--text2)', marginBottom: '4px' } },
-            span({ style: { fontWeight: 700, color: fobTarget && fobTarget.overTarget ? 'var(--crit)' : 'var(--text)' } }, headlinePct), ' of sales', gapLine, fob.asOf ? ` (as of ${fob.asOf})` : ''),
+            span({ style: { fontWeight: 700, color: fobTarget && fobTarget.overTarget ? 'var(--crit)' : 'var(--text)' } }, headlinePct), ' of sales', gapLine, fob.asOf ? ` (as of ${fob.asOf})` : '', caveat),
           (comps && comps.length) ? div({ style: { overflowX: 'auto' } },
             h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } },
               h('thead', null, h('tr', null, th2('Component'), th2('Actual $', 1), th2('Actual %', 1), th2('Target %', 1), th2('Δ', 1))),
@@ -3146,7 +3166,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       };
       const RECOUNT_CLS_LABEL = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
       const recountList = (items) => {
-        if (!items || !items.length) return div({ style: { fontSize: '11px', color: '#4ade80' } }, 'No open recount opportunities — nothing a recount would still move.');
+        if (!items || !items.length) return div({ style: { fontSize: '11px', color: '#4ade80' } }, 'No uncounted-item gaps flagged — not a signal to skip the routine of recounting top stat/variance items for consistency.');
         return div(null,
           div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, margin: '2px 0 3px' } }, `Recount opportunities (${items.length})`),
           div({ style: { overflowX: 'auto' } },
@@ -3167,7 +3187,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             s.fob && s.fob.fobPct != null ? span({ style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: s.fobTarget && s.fobTarget.overTarget ? 'var(--crit)' : 'var(--text2)' } }, `${(s.fob.fobPct * 100).toFixed(2)}%`) : null,
             (s.recountItems || []).length ? span({ style: { fontSize: '10px', color: '#f5bc00', fontWeight: 700, border: '1px solid #f5bc00', borderRadius: '4px', padding: '0 5px' } }, `${s.recountItems.length} recount opp${s.recountItems.length === 1 ? '' : 's'}`) : null),
           isOpen ? div({ style: { padding: '2px 4px 12px 20px' } },
-            fobCompsTable(s.fob, s.fobTarget, s.fobComps),
+            fobCompsTable(s.fob, s.fobTarget, s.fobComps, s.countComplete),
             recountList(s.recountItems)) : null);
       };
       const groupCard = (g) => div({ key: g.key, style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' } },

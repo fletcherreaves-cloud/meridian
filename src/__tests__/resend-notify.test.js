@@ -216,6 +216,20 @@ describe('buildEmailContent — dispatch #219 Task 2, FOB component breakdown as
   it('fobComponentsTableHtml returns "" when fs is absent, matching fobSectionHtml\'s own no-caveat-no-placeholder discipline', () => {
     expect(fobComponentsTableHtml(null, FOB_TARGET)).toBe('');
   });
+
+  // Owner feedback (dispatch #224 follow-up): show the FOB snapshot a store has even before its
+  // count is complete, captioned rather than withheld. countComplete===false is the ONLY value
+  // that adds the caveat — undefined (every pre-existing caller, e.g. #213's single-store email)
+  // must render identically to before this param existed.
+  it('countComplete===false adds an in-progress caveat; omitting it (existing callers) renders unchanged', () => {
+    const withCaveat = fobComponentsTableHtml(FOB_SNAP, FOB_TARGET, false);
+    expect(withCaveat).toContain('count in progress, not yet complete');
+    const noCaveatExplicit = fobComponentsTableHtml(FOB_SNAP, FOB_TARGET, true);
+    expect(noCaveatExplicit).not.toContain('count in progress');
+    const noCaveatOmitted = fobComponentsTableHtml(FOB_SNAP, FOB_TARGET);
+    expect(noCaveatOmitted).not.toContain('count in progress');
+    expect(noCaveatOmitted).toBe(fobComponentsTableHtml(FOB_SNAP, FOB_TARGET, undefined));
+  });
 });
 
 describe('buildEmailContent — dispatch #214, FOB tool links "Investigate further" sub-section', () => {
