@@ -11,11 +11,11 @@ const inProgress = (pct = 0.5) => ({ status: 'in_progress', pct });
 const notStarted = () => ({ status: 'not_started', pct: 0 });
 const na = () => ({ status: 'not_applicable', pct: null });
 
-function store(loc, { name, org, patch, operator, food, condiment, paper = complete(), nonproduct = complete(), uncountedValue = 0, fob = null, fobTarget = null, recountItems } = {}) {
+function store(loc, { name, org, patch, operator, food, condiment, paper = complete(), nonproduct = complete(), uncountedValue = 0, fob = null, fobTarget = null, recountItems, countComplete } = {}) {
   return {
     loc, name: name || loc, org, patch, operator,
     classStatuses: { food, condiment, paper, nonproduct },
-    uncountedValue, fob, fobTarget, recountItems,
+    uncountedValue, fob, fobTarget, recountItems, countComplete,
   };
 }
 
@@ -165,6 +165,17 @@ describe('buildEomDigest — operator grouping (dispatch #224 Task 3)', () => {
 describe('buildEomDigest — fobComps / recountItems per-store fields (dispatch #224 Task 4)', () => {
   const tgt = { fobPct: 0.25, gapPP: 5, overTarget: true, comps: [{ key: 'statv', label: 'Variance Stat', actualPP: 4, tgtPP: 3, deltaPP: 1 }] };
 
+  it('countComplete passes through per-store, defaulting to false when the caller sends nothing', () => {
+    const rows = [
+      store('1', { patch: 'P1', food: complete(), condiment: complete(), countComplete: true }),
+      store('2', { patch: 'P1', food: complete(), condiment: complete() }),
+    ];
+    const d = buildEomDigest(rows, { level: 'patch' });
+    const byLoc = Object.fromEntries(d.groups[0].stores.map(s => [s.loc, s.countComplete]));
+    expect(byLoc['1']).toBe(true);
+    expect(byLoc['2']).toBe(false);
+  });
+
   it('fobComps is promoted from fobTarget.comps verbatim, without a second buildStoreFobReport() call', () => {
     const rows = [store('1', { patch: 'P1', food: complete(), condiment: complete(), fobTarget: tgt })];
     const d = buildEomDigest(rows, { level: 'patch' });
@@ -188,6 +199,23 @@ describe('buildEomDigest — fobComps / recountItems per-store fields (dispatch 
     const out = d.groups[0].stores[0].recountItems;
     expect(out.map(x => x.wrin).sort()).toEqual(['A1', 'A2']);
     expect(out.some(x => x.state === 'stale')).toBe(false);
+  });
+
+  it('recountItems excludes Non-Product items before the last day of the period — not due yet, so not a "recount this" opportunity (owner feedback)', () => {
+    const mixed = [
+      { wrin: 'F1', descr: 'Never counted food', cls: 'food', valueAtRisk: 100, state: 'never' },
+      { wrin: 'N1', descr: 'Never counted non-product', cls: 'nonproduct', valueAtRisk: 500, state: 'never' },
+    ];
+    const rows = [store('1', { patch: 'P1', food: complete(), condiment: complete(), recountItems: mixed })];
+    // 2026-07-15 — well before the period's last day (2026-07-31).
+    const early = buildEomDigest(rows, { level: 'patch', period: '2026-07', asOf: new Date(2026, 6, 15) });
+    const earlyOut = early.groups[0].stores[0].recountItems;
+    expect(earlyOut.map(x => x.wrin)).toEqual(['F1']); // N1 excluded — not due yet
+
+    // 2026-07-31 — the last day of the period, when Non-Product IS due.
+    const lastDay = buildEomDigest(rows, { level: 'patch', period: '2026-07', asOf: new Date(2026, 6, 31) });
+    const lastDayOut = lastDay.groups[0].stores[0].recountItems;
+    expect(lastDayOut.map(x => x.wrin).sort()).toEqual(['F1', 'N1']); // now due — included
   });
 
   it('recountItems defaults to [] when the caller sends nothing', () => {

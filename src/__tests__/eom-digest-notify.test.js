@@ -153,9 +153,9 @@ describe('buildDigestEmailContent — per-store detail (dispatch #224 Task 6)', 
     expect(html).toContain('30%');  // headline fobPct
   });
 
-  it('a store with no fresh FOB data shows the explicit fallback line, not a blank section', () => {
+  it('a store with no FOB data at all shows the explicit fallback line, not a blank section', () => {
     const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
-    expect(html).toContain('No fresh FOB data for this store this period.');
+    expect(html).toContain('No FOB data on record for this store yet.');
   });
 
   it('renders recount opportunities for a store that has them, with WRIN/Description/Class/$', () => {
@@ -165,9 +165,10 @@ describe('buildDigestEmailContent — per-store detail (dispatch #224 Task 6)', 
     expect(html).toContain('$123');
   });
 
-  it('a store with no open recount items shows the explicit "no open" line', () => {
+  it('a store with no open recount items shows the explicit "no gaps" line, framed as not a green light to skip routine recounts', () => {
     const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
-    expect(html).toContain('No open recount opportunities');
+    expect(html).toContain('No uncounted-item gaps flagged');
+    expect(html).toContain('skip the routine of recounting top stat/variance items');
   });
 
   it('renders a stale-state item if one somehow reached group.stores directly (this file trusts its input; the real exclusion gate is buildEomDigest() — see the end-to-end test below)', () => {

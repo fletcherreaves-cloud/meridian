@@ -23,8 +23,9 @@
 //       condiment:  { ... }, paper: { ... }, nonproduct: { ... },
 //     },
 //     uncountedValue: 1234.5,           // $ at risk still open across classes (0 if none)
-//     fob: { fobPct, fob, comp, raw, cond, emp, statv, unex, asOf } | null,   // fobSnapshotByStore() shape
+//     fob: { fobPct, fob, comp, raw, cond, emp, statv, unex, asOf, stalePeriod? } | null,   // fobSnapshotByStore() shape; `stalePeriod:true` when the caller fell back to the store's last snapshot from a PRIOR period because this period has no qsr_fob rows yet (owner feedback — show the last known number rather than blank, caption it instead of hiding it)
 //     fobTarget: { fobPct, gapPP, overTarget, comps, topDriver } | null,     // Task 1's buildFobTargetReport() output — fobPct here is the TARGET fraction (buildStoreFobReport()'s own `target`, renamed for symmetry with fob.fobPct above so this file's gap math reads one field name on both sides)
+//     countComplete: true|false,        // this store's own computeCountProgress().believesDone — lets a renderer caption an in-progress count instead of implying the FOB shown is final
 //     recountItems: [ { wrin, descr, cls, valueAtRisk, lastCounted, state, onHandAmt, totalUnits } ], // dispatch #224 Task 4 — diagnoseIncompleteCount()'s uncounted[] for this store, caller-filtered (this file re-filters, see rollupGroup below) to state !== 'stale'; optional, defaults to []
 //   }
 // classStatusesFromProgress() below adapts computeCountProgress()'s byClass output into
@@ -40,7 +41,7 @@
 // recountItems, re-filtered here to state !== 'stale' as the single authoritative gate — decision
 // 3 of dispatch #224 — so that exclusion holds even if a caller forgets to filter).
 
-import { lastDayOfPeriod } from './eom-inventory.js';
+import { lastDayOfPeriod, nonProductDueToday } from './eom-inventory.js';
 
 export const DIGEST_CLASS_ORDER = ['food', 'condiment', 'paper', 'nonproduct'];
 export const DIGEST_CLASS_LABELS = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
@@ -163,13 +164,21 @@ function rollupGroup(key, label, stores, { period, asOf } = {}) {
     stores: stores.map(s => ({
       loc: s.loc, name: s.name, org: s.org, patch: s.patch, operator: s.operator || null,
       classStatuses: s.classStatuses, uncountedValue: Number(s.uncountedValue) || 0,
-      fob: s.fob || null, fobTarget: s.fobTarget || null,
+      fob: s.fob || null, fobTarget: s.fobTarget || null, countComplete: !!s.countComplete,
       // dispatch #224 Task 4 — fobComps reuses fobTarget.comps verbatim (buildStoreFobReport()'s
       // own comps output, already computed by whichever caller built fobTarget) rather than
       // calling buildStoreFobReport() a second time here; recountItems is re-filtered to
       // state !== 'stale' regardless of what the caller sent, per decision 3.
       fobComps: (s.fobTarget && s.fobTarget.comps) || null,
-      recountItems: (Array.isArray(s.recountItems) ? s.recountItems : []).filter(it => it && it.state !== 'stale'),
+      // Owner feedback (dispatch #224 follow-up): Non-Product isn't due until the LAST day of
+      // the month (nonProductDueToday(), eom-inventory.js — the same rule the per-store
+      // diagnosis report already honors for its own "Finish today's count" section). Before
+      // then, an uncounted Non-Product item is EXPECTED, not a gap — listing it here tells a
+      // store to act on something that isn't due yet. Food/Condiment/Paper have no such
+      // due-date exception (they're due across the whole close window), so only Non-Product
+      // gets the extra check.
+      recountItems: (Array.isArray(s.recountItems) ? s.recountItems : []).filter(it =>
+        it && it.state !== 'stale' && (it.cls !== 'nonproduct' || nonProductDueToday(period, asOf))),
     })),
   };
 }
