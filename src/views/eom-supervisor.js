@@ -671,7 +671,21 @@ const PRINT_STYLE = `
 `;
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
-export function EOMSupervisorPanel({ ds, settings, supabase }) {
+// dispatch #225 Task 3/4 — `period` ('YYYY-MM', the SAME shared period every other Inventory
+// Control tab now reads — src/views/eom-dashboard.js) and `scopedLocs` (the resolved loc list
+// from the SAME shared LocationSelector every other tab now reads) replace this panel's former
+// own independent selYear/selMonth state + internal month/year picker and its own unscoped
+// `Object.keys(STORE_NAMES)` universe. Translated to {selYear, selMonth} at this boundary
+// (parsePeriod below) rather than rewriting computeStoreEOM/computeRollup's own selYear/selMonth-
+// keyed internals. groupType/selGroup (which rollup grouping) stays independent — a different
+// axis from scopedLocs (which stores are in scope at all); the two compose (see targetLocs).
+function parsePeriod(period) {
+  const m = /^(\d{4})-(\d{2})$/.exec(period || '');
+  const now = new Date();
+  if (!m) return { selYear: now.getFullYear(), selMonth: now.getMonth() + 1 };
+  return { selYear: +m[1], selMonth: +m[2] };
+}
+export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs }) {
   // Inject print styles once + reset the expand-all-for-print flag when the print dialog closes.
   uE(() => {
     const id = 'eom-print-style';
@@ -693,20 +707,18 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
     setTimeout(() => window.print(), 60);
   }, []);
 
-  const now = new Date();
-  // EOM Supervisor reviews a COMPLETED month's actuals — default to the LAST completed month,
-  // not the current (usually still-in-progress, near-empty) one. Defaulting to "now" made it
-  // easy to open this panel, export/copy Op Supplies without noticing the period, and read a
-  // 2-day-old current month as if it were a finished period (Notes 53, 2026-08-03 — this exact
-  // confusion happened this session on Aug 3rd, showing August instead of July).
-  const _defMonth = now.getMonth() === 0 ? 12 : now.getMonth();
-  const _defYear  = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
-  const [selYear,  setSelYear]  = uSt(_defYear);
-  const [selMonth, setSelMonth] = uSt(_defMonth);
+  // dispatch #225 Task 4 — selYear/selMonth are now DERIVED from the shared `period` prop
+  // (src/views/eom-dashboard.js's EOMDashboardPanel, one period picker for all 5 tabs), not
+  // independent state. This drops the old "default to last completed month" initializer (Notes
+  // 53) and the "sync selYear/selMonth to whatever monthly targets loaded" effect below it —
+  // both existed only to pick a sensible period when this panel owned its own period state;
+  // with one shared, user-controlled period picker at the top of the hub, EOMDashboardPanel's own
+  // defaultPeriod() is the single default and the owner's own selection is authoritative.
+  const { selYear, selMonth } = uM(() => parsePeriod(period), [period]);
   const [groupType, setGroupType] = uSt('supervisor'); // supervisor | operator | all
   const [selGroup, setSelGroup]   = uSt('all');
   const [expanded,   setExpanded]  = uSt(null);
-  const [manual,     setManual]    = uSt(() => loadManual(_defYear, _defMonth));
+  const [manual,     setManual]    = uSt(() => loadManual(selYear, selMonth));
   const [forPrint,   setForPrint]  = uSt(false);
   const [ebosByLoc,  setEbosByLoc] = uSt({});
 
@@ -729,15 +741,6 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
     loadEbosMonthlyByStore(selYear, selMonth).then(setEbosByLoc).catch(() => {});
   }, [selYear, selMonth]);
 
-  // Sync monthly targets month if available
-  uE(() => {
-    const meta = ds.monthlyTargetsMeta;
-    if (meta?.year && meta?.month) {
-      setSelYear(meta.year);
-      setSelMonth(meta.month);
-    }
-  }, [ds.monthlyTargetsMeta]);
-
   // Build group maps from settings or DEF_SETTINGS
   const supGroups = uM(() => {
     const sg = (settings?.supervisorGroups) || DEF_SETTINGS.supervisorGroups || {};
@@ -747,14 +750,24 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
     const og = (settings?.operators) || DEF_SETTINGS.operators || {};
     return Object.entries(og).map(([name, locs]) => ({ name, locs: locs.map(String) }));
   }, [settings]);
-  const allLocs = uM(() => Object.keys(STORE_NAMES).map(String), []);
+  // dispatch #225 Task 3 — the shared LocationSelector's resolved scope (`scopedLocs`, from
+  // EOMDashboardPanel) replaces the old unconditional `Object.keys(STORE_NAMES)` universe. Falls
+  // back to every store when the prop is absent/empty (defensive default; in practice the parent
+  // always resolves at least 'all' → every store).
+  const allLocs = uM(() => (scopedLocs && scopedLocs.length ? scopedLocs.map(String) : Object.keys(STORE_NAMES).map(String)), [scopedLocs]);
 
-  // Determine which stores to include based on group selection
+  // Determine which stores to include: groupType/selGroup (which rollup grouping) composes WITH
+  // the location scope above (which stores are in scope at all) — a location narrower must still
+  // apply even when a specific supervisor/operator patch is also selected, not get silently
+  // overridden by it (dispatch #225 verification requirement).
   const targetLocs = uM(() => {
-    if (groupType === 'all' || selGroup === 'all') return allLocs;
-    const groups = groupType === 'supervisor' ? supGroups : opGroups;
-    const g = groups.find(g => g.name === selGroup);
-    return g ? g.locs : allLocs;
+    const base = (groupType === 'all' || selGroup === 'all') ? allLocs : (() => {
+      const groups = groupType === 'supervisor' ? supGroups : opGroups;
+      const g = groups.find(g => g.name === selGroup);
+      return g ? g.locs : allLocs;
+    })();
+    const scopedSet = new Set(allLocs);
+    return base.filter(l => scopedSet.has(String(l)));
   }, [groupType, selGroup, supGroups, opGroups, allLocs]);
 
   // Compute per-store EOM data — targets resolved from ds.allMonthlyTargets by period
@@ -854,20 +867,11 @@ export function EOMSupervisorPanel({ ds, settings, supabase }) {
       // Controls row
       h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px' } },
 
-        // Month/Year picker
-        h('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
-          h('span', { style: { fontSize: '11px', color: muted } }, 'Period:'),
-          h('select', {
-            value: selMonth,
-            onChange: e => setSelMonth(+e.target.value),
-            style: ctrlStyle(),
-          }, MONTH_NAMES.map((m, i) => h('option', { key: i + 1, value: i + 1 }, m))),
-          h('select', {
-            value: selYear,
-            onChange: e => setSelYear(+e.target.value),
-            style: ctrlStyle(),
-          }, [2024, 2025, 2026, 2027].map(y => h('option', { key: y, value: y }, y))),
-        ),
+        // dispatch #225 Task 4 — the own month/year <select> pair that lived here is gone;
+        // Period is now the shared picker at the top of the Inventory Control hub
+        // (EOMDashboardPanel's dateControlSlot, PanelChrome's `dateControl` band), which this
+        // panel reads via the `period` prop (see parsePeriod above). monthLabel/selYear/selMonth
+        // below are unchanged reads, just now derived instead of independently settable here.
 
         // Group type toggle
         h('div', { style: { display: 'flex', gap: '3px' } },
