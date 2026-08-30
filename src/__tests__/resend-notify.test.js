@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   sendEmailNotification, sendSmsViaCarrierGateway, buildEmailContent, buildSmsBody,
-  triggerLabel, EMAIL_TO, SMS_TO,
+  triggerLabel, EMAIL_TO, SMS_TO, fobComponentsTableHtml,
 } from '../../scripts/lib/resend-notify.mjs';
 
 const ROW = {
@@ -192,6 +192,29 @@ describe('buildEmailContent — dispatch #219 Task 2, FOB component breakdown as
     expect(html).not.toContain('FOB (Food Over Base)');
     expect(html).not.toContain('Variance Stat');
     expect(html).not.toContain('>Actual %<');
+  });
+
+  // dispatch #224 Task 6 — fobComponentsTableHtml() extracted out of fobSectionHtml() so the EOM
+  // Digest roll-up's per-store loop (scripts/lib/eom-digest-notify.mjs) can call it directly. The
+  // tests just above already prove fobSectionHtml()'s OUTPUT is unchanged after the extraction
+  // (same table cells, same "—" fallback behavior); these prove the extracted function itself is
+  // usable standalone, with fs/tgt passed directly rather than wrapped in a row.
+  it('fobComponentsTableHtml(fs, tgt) renders the same table content as fobSectionHtml(), called directly', () => {
+    const html = fobComponentsTableHtml(FOB_SNAP, FOB_TARGET);
+    expect(html).toContain('<table');
+    expect(html).toContain('Variance Stat');
+    expect(html).toContain('$800');
+    expect(html).toContain('0.8%');
+    expect(html).toContain('0.5%');
+    expect(html).toContain('+0.3pp');
+    // It does NOT include the <h3> header or "Investigate further" links section — those are
+    // fobSectionHtml()'s own wrapper, not part of the extracted table.
+    expect(html).not.toContain('FOB (Food Over Base)');
+    expect(html).not.toContain('Investigate further');
+  });
+
+  it('fobComponentsTableHtml returns "" when fs is absent, matching fobSectionHtml\'s own no-caveat-no-placeholder discipline', () => {
+    expect(fobComponentsTableHtml(null, FOB_TARGET)).toBe('');
   });
 });
 

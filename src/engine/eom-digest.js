@@ -17,7 +17,7 @@
 //
 // ── Input shape: one entry per store in scope ──────────────────────────────────────
 //   {
-//     loc, name, org, patch,            // patch/org may be null/undefined — see UNASSIGNED_KEY
+//     loc, name, org, patch, operator,  // patch/org/operator may be null/undefined — see UNASSIGNED_KEY
 //     classStatuses: {                  // same shape buildNotificationRow() puts on
 //       food:       { status: 'complete'|'in_progress'|'not_started'|'not_applicable', pct },
 //       condiment:  { ... }, paper: { ... }, nonproduct: { ... },
@@ -25,10 +25,20 @@
 //     uncountedValue: 1234.5,           // $ at risk still open across classes (0 if none)
 //     fob: { fobPct, fob, comp, raw, cond, emp, statv, unex, asOf } | null,   // fobSnapshotByStore() shape
 //     fobTarget: { fobPct, gapPP, overTarget, comps, topDriver } | null,     // Task 1's buildFobTargetReport() output — fobPct here is the TARGET fraction (buildStoreFobReport()'s own `target`, renamed for symmetry with fob.fobPct above so this file's gap math reads one field name on both sides)
+//     recountItems: [ { wrin, descr, cls, valueAtRisk, lastCounted, state, onHandAmt, totalUnits } ], // dispatch #224 Task 4 — diagnoseIncompleteCount()'s uncounted[] for this store, caller-filtered (this file re-filters, see rollupGroup below) to state !== 'stale'; optional, defaults to []
 //   }
 // classStatusesFromProgress() below adapts computeCountProgress()'s byClass output into
 // the classStatuses shape for a caller that only has raw count progress (no notification
 // row yet — e.g. a store with no just-fired trigger this run still belongs in the roll-up).
+//
+// dispatch #224 — level now also accepts 'operator' (groups by the input row's own `operator`
+// field, same UNASSIGNED_KEY-never-drops-a-store contract as patch/org). Every per-store output
+// also carries `fobComps` (the SAME comps array buildStoreFobReport() already computed onto
+// fobTarget.comps — Task 1's buildFobTargetReport() return shape — promoted to a top-level field
+// so a renderer doesn't need to reach into fobTarget for it; null exactly when fobTarget itself
+// carries no comps, i.e. whenever fobTarget is null) and `recountItems` (the caller's
+// recountItems, re-filtered here to state !== 'stale' as the single authoritative gate — decision
+// 3 of dispatch #224 — so that exclusion holds even if a caller forgets to filter).
 
 import { lastDayOfPeriod } from './eom-inventory.js';
 
@@ -151,16 +161,23 @@ function rollupGroup(key, label, stores, { period, asOf } = {}) {
     doneFoodCond: doneFC, openFoodCond: openFC.map(s => ({ loc: s.loc, name: s.name })),
     daysLeft, headline,
     stores: stores.map(s => ({
-      loc: s.loc, name: s.name, org: s.org, patch: s.patch,
+      loc: s.loc, name: s.name, org: s.org, patch: s.patch, operator: s.operator || null,
       classStatuses: s.classStatuses, uncountedValue: Number(s.uncountedValue) || 0,
       fob: s.fob || null, fobTarget: s.fobTarget || null,
+      // dispatch #224 Task 4 — fobComps reuses fobTarget.comps verbatim (buildStoreFobReport()'s
+      // own comps output, already computed by whichever caller built fobTarget) rather than
+      // calling buildStoreFobReport() a second time here; recountItems is re-filtered to
+      // state !== 'stale' regardless of what the caller sent, per decision 3.
+      fobComps: (s.fobTarget && s.fobTarget.comps) || null,
+      recountItems: (Array.isArray(s.recountItems) ? s.recountItems : []).filter(it => it && it.state !== 'stale'),
     })),
   };
 }
 
-// buildEomDigest(storeRows, { level, period, asOf }) — level: 'patch' | 'org' | 'district'.
-// 'district' rolls every row into ONE group; 'patch'/'org' group by the store's own `patch`/
-// `org` field (a store with a null/blank value lands under UNASSIGNED_KEY, never dropped).
+// buildEomDigest(storeRows, { level, period, asOf }) — level: 'patch' | 'org' | 'operator' | 'district'.
+// 'district' rolls every row into ONE group; 'patch'/'org'/'operator' group by the store's own
+// `patch`/`org`/`operator` field (a store with a null/blank value lands under UNASSIGNED_KEY,
+// never dropped).
 export function buildEomDigest(storeRows, { level, period, asOf = new Date() } = {}) {
   const rows = Array.isArray(storeRows) ? storeRows : [];
 
@@ -168,7 +185,7 @@ export function buildEomDigest(storeRows, { level, period, asOf = new Date() } =
     return { level, period: period || null, groups: [rollupGroup('district', 'District', rows, { period, asOf })] };
   }
 
-  const field = level === 'org' ? 'org' : 'patch';
+  const field = level === 'org' ? 'org' : level === 'operator' ? 'operator' : 'patch';
   const byKey = new Map();
   for (const s of rows) {
     const raw = s?.[field];

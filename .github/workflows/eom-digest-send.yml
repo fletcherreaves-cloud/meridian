@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       level:
-        description: 'Which level(s) to send: district, patch, org, all, or blank for the default (district + patch)'
+        description: 'Which level(s) to send: district, patch, org, operator, all, or blank for the default (district + patch)'
         required: false
         default: ''
       force:

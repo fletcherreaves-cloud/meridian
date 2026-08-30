@@ -11,11 +11,11 @@ const inProgress = (pct = 0.5) => ({ status: 'in_progress', pct });
 const notStarted = () => ({ status: 'not_started', pct: 0 });
 const na = () => ({ status: 'not_applicable', pct: null });
 
-function store(loc, { name, org, patch, food, condiment, paper = complete(), nonproduct = complete(), uncountedValue = 0, fob = null, fobTarget = null } = {}) {
+function store(loc, { name, org, patch, operator, food, condiment, paper = complete(), nonproduct = complete(), uncountedValue = 0, fob = null, fobTarget = null, recountItems } = {}) {
   return {
-    loc, name: name || loc, org, patch,
+    loc, name: name || loc, org, patch, operator,
     classStatuses: { food, condiment, paper, nonproduct },
-    uncountedValue, fob, fobTarget,
+    uncountedValue, fob, fobTarget, recountItems,
   };
 }
 
@@ -128,6 +128,72 @@ describe('buildEomDigest — org grouping', () => {
     expect(fl.storeCount).toBe(1);
     expect(ok.label).toMatch(/Oklahoma/);
     expect(fl.label).toMatch(/Florida/);
+  });
+});
+
+describe('buildEomDigest — operator grouping (dispatch #224 Task 3)', () => {
+  const rows = [
+    store('1', { name: 'S1', operator: 'Ryan', food: complete(), condiment: complete() }),
+    store('2', { name: 'S2', operator: 'Ryan', food: complete(), condiment: complete() }),
+    store('3', { name: 'S3', operator: 'Jacob', food: notStarted(), condiment: notStarted() }),
+  ];
+
+  it('groups stores by their own operator field, one row per operator', () => {
+    const d = buildEomDigest(rows, { level: 'operator', period: '2026-08' });
+    const keys = d.groups.map(g => g.key).sort();
+    expect(keys).toEqual(['Jacob', 'Ryan']);
+    const ryan = d.groups.find(g => g.key === 'Ryan');
+    expect(ryan.storeCount).toBe(2);
+    expect(ryan.doneFoodCond).toBe(2);
+    const jacob = d.groups.find(g => g.key === 'Jacob');
+    expect(jacob.storeCount).toBe(1);
+    expect(jacob.doneFoodCond).toBe(0);
+  });
+
+  it('a store with no operator assignment lands under UNASSIGNED_KEY, not dropped (same contract as patch/org)', () => {
+    const withUnassigned = [...rows, store('4', { name: 'S4', operator: null, food: complete(), condiment: complete() })];
+    const d = buildEomDigest(withUnassigned, { level: 'operator', period: '2026-08' });
+    const totalStores = d.groups.reduce((s, g) => s + g.storeCount, 0);
+    expect(totalStores).toBe(4); // nobody vanished
+    const unassigned = d.groups.find(g => g.key === UNASSIGNED_KEY);
+    expect(unassigned).toBeTruthy();
+    expect(unassigned.storeCount).toBe(1);
+    expect(unassigned.stores[0].loc).toBe('4');
+  });
+});
+
+describe('buildEomDigest — fobComps / recountItems per-store fields (dispatch #224 Task 4)', () => {
+  const tgt = { fobPct: 0.25, gapPP: 5, overTarget: true, comps: [{ key: 'statv', label: 'Variance Stat', actualPP: 4, tgtPP: 3, deltaPP: 1 }] };
+
+  it('fobComps is promoted from fobTarget.comps verbatim, without a second buildStoreFobReport() call', () => {
+    const rows = [store('1', { patch: 'P1', food: complete(), condiment: complete(), fobTarget: tgt })];
+    const d = buildEomDigest(rows, { level: 'patch' });
+    expect(d.groups[0].stores[0].fobComps).toBe(tgt.comps); // same array reference — not re-derived
+  });
+
+  it('fobComps is null when fobTarget itself is null (no resolvable target)', () => {
+    const rows = [store('1', { patch: 'P1', food: complete(), condiment: complete(), fobTarget: null })];
+    const d = buildEomDigest(rows, { level: 'patch' });
+    expect(d.groups[0].stores[0].fobComps).toBeNull();
+  });
+
+  it('recountItems keeps never/early but PROVABLY excludes stale — the engine is the authoritative gate even if a caller forgets to filter', () => {
+    const mixed = [
+      { wrin: 'A1', descr: 'Never counted', cls: 'food', valueAtRisk: 100, state: 'never' },
+      { wrin: 'A2', descr: 'Early counted', cls: 'food', valueAtRisk: 50, state: 'early' },
+      { wrin: 'A3', descr: 'Stale residual', cls: 'food', valueAtRisk: 900, state: 'stale' },
+    ];
+    const rows = [store('1', { patch: 'P1', food: complete(), condiment: complete(), recountItems: mixed })];
+    const d = buildEomDigest(rows, { level: 'patch' });
+    const out = d.groups[0].stores[0].recountItems;
+    expect(out.map(x => x.wrin).sort()).toEqual(['A1', 'A2']);
+    expect(out.some(x => x.state === 'stale')).toBe(false);
+  });
+
+  it('recountItems defaults to [] when the caller sends nothing', () => {
+    const rows = [store('1', { patch: 'P1', food: complete(), condiment: complete() })];
+    const d = buildEomDigest(rows, { level: 'patch' });
+    expect(d.groups[0].stores[0].recountItems).toEqual([]);
   });
 });
 

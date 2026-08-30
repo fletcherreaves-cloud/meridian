@@ -651,6 +651,32 @@ function supervisorOf(loc, fallback) {
   return INV_ORG_COORDS[_unpadLoc(loc)]?.sup || null;
 }
 
+// ── Operator: live flat map (dispatch #224 Task 1) ────────────────────────────
+// Owner/operator groups mirror the SHAPE of supervisorGroups()/setLiveSupervisorGroups() above —
+// a flat { operator: [locs] } map, live-settable, seeded from DEF_SETTINGS.operators — but
+// deliberately NOT the fuller whoRan()/groupsAt() effective-dated timeline supervisorGroups()
+// itself is built on. The confirmed live Supabase shape (org_config.app_settings.operators) has
+// no per-operator start-dating at all, so mirroring the timeline half of the pattern would be
+// unrequested scope (dispatch #224 Task 1's explicit instruction) — build the simple mirror only;
+// if a future dispatch adds real tenure-dating to the Supabase shape, THAT'S the trigger to
+// promote this to whoRan/groupsAt, not before.
+let _liveOperatorGroups = null;   // null = "use the DEF_SETTINGS.operators seed" (same convention as _liveSupervisorGroups)
+function setLiveOperators(g) { if (g && typeof g === 'object' && Object.keys(g).length) _liveOperatorGroups = g; }
+// CURRENT operator map (live-or-seed) — what every consumer reads.
+function operatorGroups() { return _liveOperatorGroups || DEF_SETTINGS.operators; }
+// Live-first operator-of-ONE-store lookup, mirroring supervisorOf()'s own resolution shape:
+// supervisorOf() scans an effective-dated assignment LIST (whoRan()); operators have no such list
+// (see the flat-map note above), so this linear-scans the flat { operator: [locs] } map directly —
+// the closest equivalent "linear scan for this loc" given the simpler data shape. Returns the
+// operator owning `loc`, or `fallback` (default null) when no group lists it.
+function operatorOf(loc, fallback = null) {
+  const key = _unpadLoc(loc);
+  for (const [op, locs] of Object.entries(operatorGroups() || {})) {
+    if ((locs || []).some(l => _unpadLoc(l) === key)) return op;
+  }
+  return fallback;
+}
+
 // ── Store registry: Supabase-with-constants-fallback (Track-B onboarding plumbing) ──
 // STORE_NAMES/DEFAULT_TARGETS below are the seed (this owner's known-good values, and the
 // zero-Supabase-row fallback). A future tenant's registry lives in org_config key
@@ -675,4 +701,4 @@ function setLiveDefaultTargets(targets) {
 // reviews.reviewee_loc/orgAssignments() are unpadded, e.g. "3708") -- reusing this one
 // definition rather than a second copy, per the standing "check whether a helper exists
 // before writing one" rule (dispatch16, 2026-08-17).
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

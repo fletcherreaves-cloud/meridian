@@ -62,12 +62,13 @@
 
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import {
-  STORE_NAMES, unpadLoc, getStoreOrg, supervisorOf,
-  setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups,
+  STORE_NAMES, unpadLoc, getStoreOrg, supervisorOf, operatorOf,
+  setLiveSupervisorGroups, setLiveOperators, setLiveAssignments, seedAssignmentsFromGroups,
 } from '../src/constants.js';
 import { buildEomDigest, DIGEST_CLASS_ORDER, DEFAULT_EOM_DIGEST_CONFIG } from '../src/engine/eom-digest.js';
+import { diagnoseIncompleteCount } from '../src/engine/eom-inventory.js';
 import {
-  STORE_NSNS, fetchFobSnapshotForStore, isFobFresh, resolveFobTargets, buildFobTargetReport,
+  STORE_NSNS, fetchFobSnapshotForStore, isFobFresh, resolveFobTargets, buildFobTargetReport, toEngineRows,
 } from './qsrsoft-onhand-pull.mjs';
 import { inCountWindow } from './lib/count-window.mjs';
 import { sendDigestEmail } from './lib/eom-digest-notify.mjs';
@@ -75,7 +76,10 @@ import { sendDigestEmail } from './lib/eom-digest-notify.mjs';
 const DEBUG = process.env.QSRSOFT_DEBUG === '1';
 const FORCE = process.env.DIGEST_FORCE === '1';
 const LEVEL_ARG = (process.env.DIGEST_LEVEL || '').trim().toLowerCase();
-const ALL_LEVELS = ['district', 'patch', 'org'];
+// dispatch #224 Task 3 — 'operator' joins district/patch/org as a real on-demand + scheduled
+// level, matching .github/workflows/eom-digest-send.yml's `level` input and buildEomDigest()'s
+// new level branch (src/engine/eom-digest.js).
+const ALL_LEVELS = ['district', 'patch', 'org', 'operator'];
 // Default source is now the loaded org_config, not a hardcoded literal (dispatch #217) — but
 // DIGEST_LEVEL, when explicitly set, still wins unconditionally. This is what the on-demand
 // panel send relies on (it always passes an explicit level via trigger-dar-sync's `digest`
@@ -120,6 +124,8 @@ export async function bootstrapLiveOrg() {
   setLiveSupervisorGroups(remote.supervisorGroups);
   const a = (remote.orgAssignments && remote.orgAssignments.length) ? remote.orgAssignments : seedAssignmentsFromGroups(remote.supervisorGroups);
   setLiveAssignments(a);
+  // dispatch #224 Task 2 — same already-fetched app_settings row, one more field.
+  setLiveOperators(remote.operators);
   return true;
 }
 
@@ -175,6 +181,37 @@ async function loadLatestUncountedValueByLoc(period) {
   return m;
 }
 
+// dispatch #224 Task 4 — raw qsr_onhand rows for this period, grouped by loc (padded, matching
+// mapOnHandRow()'s own upsert shape) and mapped through toEngineRows() — the SAME DB-row -> engine-
+// row mapping qsrsoft-onhand-pull.mjs/eom-snapshot-pull.mjs already use, reused here rather than a
+// second hand-rolled mapping — so diagnoseIncompleteCount() (src/engine/eom-inventory.js) can run
+// on them exactly like it does client-side. This is net-new for this script: buildStoreRows()
+// below previously never loaded qsr_onhand at all (only the status/log/notifications SUMMARY
+// tables), because the roll-up digest had no per-item content to show before this dispatch.
+async function loadOnHandByLoc(period) {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('qsr_onhand').select('*').eq('period', period);
+  if (error) { console.warn('[qsr_onhand] load error:', error.message); return {}; }
+  const rawByLoc = {};
+  for (const r of (data || [])) (rawByLoc[String(r.loc)] || (rawByLoc[String(r.loc)] = [])).push(r);
+  const out = {};
+  for (const loc in rawByLoc) out[loc] = toEngineRows(rawByLoc[loc]);
+  return out;
+}
+
+// dispatch #224 Task 4 — count-date exceptions (an early count accepted AS the EOM count, see
+// eom-inventory.js's diagnoseIncompleteCount `acceptEarly` doc) for this period, presence-only
+// (loc -> true), mirroring eom-dashboard.js's own `!!exceptions[loc]` read of the same table —
+// so the email's recount-opportunities list agrees with what the app already shows for the same
+// store/period rather than drifting on a data source the app's diag call already accounts for.
+async function loadExceptionLocs(period) {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('eom_count_exceptions').select('loc').eq('period', period);
+  if (error) { console.warn('[eom_count_exceptions] load error:', error.message); return {}; }
+  const m = {}; for (const r of (data || [])) m[String(r.loc)] = true;
+  return m;
+}
+
 // Combines eom_count_status's done booleans with eom_count_progress_log's per-class pct into
 // eom-digest.js's classStatuses shape. Neither source alone carries both "is it done" AND "how
 // far along if not" — status has the fire-once-accurate done flag, the log has the finer pct.
@@ -199,8 +236,12 @@ export function classStatusesFromStatusAndLog(status, log) {
 // all-zero row).
 export async function buildStoreRows(period, asOf = new Date()) {
   await bootstrapLiveOrg();
-  const [statusByLoc, logByLoc, uncountedByLoc] = await Promise.all([
+  // dispatch #224 Task 4 — onHandByLoc/exceptionLocs are net-new loads (this script never read
+  // qsr_onhand before this dispatch — see loadOnHandByLoc()'s own header note); the other three
+  // are unchanged from #215.
+  const [statusByLoc, logByLoc, uncountedByLoc, onHandByLoc, exceptionLocs] = await Promise.all([
     loadEomCountStatusByLoc(period), loadLatestProgressLogByLoc(period), loadLatestUncountedValueByLoc(period),
+    loadOnHandByLoc(period), loadExceptionLocs(period),
   ]);
 
   const rows = [];
@@ -228,10 +269,24 @@ export async function buildStoreRows(period, asOf = new Date()) {
       }
     }
 
+    // dispatch #224 Task 4 — recount opportunities: diagnoseIncompleteCount() on this store's raw
+    // on-hand rows, same acceptEarly semantics the app's own diag call uses (count-date
+    // exceptions). src/engine/eom-digest.js's rollupGroup() re-filters to state !== 'stale' as the
+    // single authoritative gate (decision 3), so filtering again here is belt-and-suspenders, not
+    // load-bearing — but doing it here too keeps this array small even before it reaches that gate.
+    const ohRows = onHandByLoc[loc] || onHandByLoc[u] || [];
+    let recountItems = [];
+    if (ohRows.length) {
+      try {
+        const acceptEarly = !!(exceptionLocs[loc] || exceptionLocs[u]);
+        recountItems = diagnoseIncompleteCount(ohRows, { period, asOf, acceptEarly }).uncounted.filter(it => it.state !== 'stale');
+      } catch (e) { console.warn(`[eom-digest-send] diagnoseIncompleteCount failed for ${loc}:`, e.message); }
+    }
+
     rows.push({
-      loc, name: STORE_NAMES[u] || loc, org: getStoreOrg(u), patch: supervisorOf(u),
+      loc, name: STORE_NAMES[u] || loc, org: getStoreOrg(u), patch: supervisorOf(u), operator: operatorOf(u),
       classStatuses, uncountedValue: uncountedByLoc[loc] || uncountedByLoc[u] || 0,
-      fob, fobTarget,
+      fob, fobTarget, recountItems,
     });
   }
   return rows;

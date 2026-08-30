@@ -61,11 +61,18 @@ describe('levelsToRun(config) — dispatch #217: config-sourced default, DIGEST_
     expect(mod.levelsToRun({ levels: ['patch', 'org'], sendHourUtc: 23 })).toEqual(['district']);
   });
 
-  it('DIGEST_LEVEL="all" still overrides to every level regardless of config, unchanged from before this dispatch', async () => {
+  it('DIGEST_LEVEL="all" still overrides to every level regardless of config — now including operator (dispatch #224 Task 3)', async () => {
     process.env.DIGEST_LEVEL = 'all';
     vi.resetModules();
     const mod = await import('../../scripts/eom-digest-send.mjs');
-    expect(mod.levelsToRun({ levels: ['district'], sendHourUtc: 23 })).toEqual(['district', 'patch', 'org']);
+    expect(mod.levelsToRun({ levels: ['district'], sendHourUtc: 23 })).toEqual(['district', 'patch', 'org', 'operator']);
+  });
+
+  it('DIGEST_LEVEL="operator" (the on-demand panel\'s Operator-tab send) wins over the config unconditionally', async () => {
+    process.env.DIGEST_LEVEL = 'operator';
+    vi.resetModules();
+    const mod = await import('../../scripts/eom-digest-send.mjs');
+    expect(mod.levelsToRun({ levels: ['district', 'patch'], sendHourUtc: 23 })).toEqual(['operator']);
   });
 
   it('an unrecognized DIGEST_LEVEL value is ignored, falling through to the config (same as the pre-existing unrecognized-value behavior)', async () => {
