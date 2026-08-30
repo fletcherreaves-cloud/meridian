@@ -128,7 +128,7 @@ export function EomShareView({ token }) {
         live
           ? `Live${syncedAsOf ? ` · synced through ${syncedAsOf}` : ''}${refreshedAt ? ` · refreshed ${refreshedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`
           : 'As-sent snapshot — tap Refresh for the latest'),
-      (live && (live.syncedAsOf || refreshedAt)) ? span({ style: { fontSize: '10px', color: '#78839a' } }, '· corrections appear after the next sync') : null),
+      (live && (live.syncedAsOf || refreshedAt)) ? span({ style: { fontSize: '10px', color: '#78839a' } }, '· re-syncs from QSRSoft every ~30 min, 8a–6p CT during EOM close — a recount usually shows up within that window; tap Refresh to check') : null),
 
     ((src.fullMd && src.fullMd !== src.recapMd))
       ? div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' } },
