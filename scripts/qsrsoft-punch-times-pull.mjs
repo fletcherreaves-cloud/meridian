@@ -124,7 +124,7 @@
 // a spreadsheet, and QSRSoft doesn't export this report as a franchisee-facing download the way it
 // does Ops/FOB reports. Same reasoning register-audit-pull.mjs's own header gives for skipping it.
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
@@ -253,7 +253,7 @@ export function mapRow(r) {
 // pull.mjs's own reasoning: mapRow()/extractRows() are unit-tested by importing this module
 // directly, and vitest's environment has neither env var set.
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 // ── Identity resolution: geid → qsr_employee_tenure.full_employee_name → {employee_name,

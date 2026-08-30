@@ -7,23 +7,12 @@
 // deleting the hook-point call would make these assertions fail rather than leave them passing
 // against an unused engine (this repo's own "would this verification still pass if reverted" rule).
 //
-// CI FAILURE, root-caused and fixed 2026-08-30, two bugs:
-// 1. A static `import ... from '../../scripts/qsrsoft-onhand-pull.mjs'` is hoisted above every
-//    other top-level statement in this SAME file regardless of source order, so it always ran
-//    BEFORE the env-var setup below -- in a clean CI checkout (neither real var set),
-//    qsrsoft-onhand-pull.mjs's own `supabase = (url && key) ? createClient(...) : null` guard saw
-//    both as undefined, resolved to null, and sendPushNotifications()'s `if (!supabase) return`
-//    silently no-op'd -- so sendWebPushMock was never called and every assertion below failed.
-//    Fixed by switching that import to a dynamic import() placed after the env vars are set
-//    (below) -- a dynamic import genuinely evaluates where it's written.
-// 2. A raw `process.env.X = process.env.X || 'dummy'` assignment (as this used to be) mutates the
-//    real, PROCESS-WIDE process.env and is never undone -- Vitest does not reset process.env
-//    between test FILES sharing the same worker, so it can leak a dummy-but-valid-shaped
-//    Supabase URL/key into whatever runs after this file, poisoning an unrelated file's own real
-//    (unmocked) guarded createClient() call -- see dispatch-217-eom-digest-schedule.test.js's own
-//    header comment for the exact incident this caused on Node 20 (no native WebSocket). Using
-//    vi.stubEnv (this repo's own established pattern) + afterAll(vi.unstubAllEnvs) scopes the
-//    mutation to this file only.
+// This file's guarded qsrsoft-onhand-pull.mjs import needs both env vars truthy so its own
+// module-scope `supabase` (now via safeCreateClient, scripts/lib/safe-supabase-client.mjs)
+// constructs the mocked client below rather than resolving to null. vi.stubEnv (not a raw
+// process.env assignment) + afterAll(unstubAllEnvs) scopes that to this file only — belt-and-
+// suspenders on top of safeCreateClient's own fix, since a leaked dummy value can no longer crash
+// ANY script using that helper, but there's no reason to leak it regardless.
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
 vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
@@ -57,7 +46,9 @@ vi.mock('@supabase/supabase-js', () => ({
 }));
 
 // Dynamic import, evaluated HERE (after the env-var stubs above), not hoisted like a static
-// import would be — see the header comment (bug 1) for why this matters.
+// import would be — a static import would still see undefined env vars at its own hoisted
+// evaluation point regardless of vi.stubEnv, since ES module imports are hoisted above every
+// other top-level statement in the SAME file.
 const { deliverNotifications, notifyRow, buildNotificationRow } = await import('../../scripts/qsrsoft-onhand-pull.mjs');
 import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications } from '../engine/eom-inventory.js';
 

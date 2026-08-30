@@ -56,7 +56,7 @@
 // REAL reason, which is sync-failure-watch.yml's job once that workflow run completes and
 // reports failure. The issue is the louder signal this dispatch's Task 3.4 asks for.
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { STREAMS } from '../src/engine/stream-freshness.js';
 import { PULL_REGISTRY } from './lib/scheduled-pull-registry.mjs';
 
@@ -212,7 +212,7 @@ export async function closeIfRecovered(key, deps) {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   const token = process.env.GITHUB_TOKEN;
   const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
   if (!token || !owner || !repo) {

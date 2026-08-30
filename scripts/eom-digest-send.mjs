@@ -60,7 +60,7 @@
 // simply no-op via this gate; DIGEST_FORCE=1 bypasses it exactly like it already bypasses
 // inCountWindow().
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import {
   STORE_NAMES, unpadLoc, getStoreOrg, supervisorOf,
   setLiveSupervisorGroups, setLiveAssignments, seedAssignmentsFromGroups,
@@ -99,11 +99,11 @@ export function hourGatePasses(sendHourUtc, now = new Date(), force = false) {
   return now.getUTCHours() === sendHourUtc;
 }
 
-// Guarded, not unconditional — matches qsrsoft-onhand-pull.mjs's own module-scope pattern (its
-// tests import pure functions from this module without a live Supabase/RESEND credential).
-const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-  : null;
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs) — matches qsrsoft-onhand-pull.mjs's own
+// module-scope pattern (its tests import pure functions from this module without a live
+// Supabase/RESEND credential). Never throws, even on a leaked dummy-but-truthy env var from an
+// unrelated test file's stub — see that helper's own header for the real CI incident this fixes.
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const pad2 = n => String(n).padStart(2, '0');
 const fmtDate = d => `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;

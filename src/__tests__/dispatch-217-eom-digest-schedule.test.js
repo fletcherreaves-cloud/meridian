@@ -12,22 +12,14 @@
 // are the other genuinely pure pieces of this script (bootstrapLiveOrg/buildStoreRows/main
 // still require a live Supabase round-trip per that file's own note).
 //
-// CI FAILURE, root-caused and fixed 2026-08-30: a raw `process.env.X = process.env.X || 'dummy'`
-// assignment mutates the real, PROCESS-WIDE process.env and is never undone -- Vitest does not
-// reset process.env between test FILES sharing the same worker. That leaked a dummy-but-valid-
-// shaped Supabase URL/key out of this file into whatever ran after it in the same worker; on a
-// real CI run it poisoned scripts/lib/webpush-notify.mjs's own guarded `createClient()` call
-// (unrelated to this file, reached from a completely different test), which then constructed a
-// REAL SupabaseClient with the leaked dummy credentials -- and on Node 20 (no native WebSocket),
-// SupabaseClient's Realtime sub-client throws during that construction ("Node.js 20 detected
-// without native WebSocket support"). Using vi.stubEnv (this repo's own established pattern,
-// e.g. eom-digest-config.test.js) + an explicit afterAll(vi.unstubAllEnvs) scopes the mutation to
-// THIS file only, exactly like a real environment variable should behave in a test suite.
-import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
-vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
-vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
-afterAll(() => { vi.unstubAllEnvs(); });
-
+// No dummy env vars needed: eom-digest-send.mjs's module-scope `supabase` const goes through
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs), which never throws regardless of
+// what's in process.env at import time — see that helper's own header for the real CI incident
+// (env-var leakage across test files sharing a Vitest worker, which once poisoned a completely
+// unrelated script's client construction and crashed on Node 20's missing native WebSocket) this
+// closes. A raw `process.env.X = process.env.X || 'dummy'` assignment used to sit here — that was
+// itself the leak source, and removing the need for it removes the leak at its origin.
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { hourGatePasses } from '../../scripts/eom-digest-send.mjs';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 

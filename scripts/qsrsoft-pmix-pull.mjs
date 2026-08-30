@@ -72,7 +72,7 @@
 //           standing rule, same as #257/#259 did — do not assume it reaches that far),
 //           PMIX_STORE (comma-separated NSNs, default all 27).
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 
 const BASE   = 'https://api.reports.myqsrsoft.com';
@@ -92,7 +92,7 @@ const FAMILY_GROUPS = ['BREAKFAST_DRINK', 'BREAKFAST_SIDE', 'BREAKFAST_ENTREE', 
 const SELECT_COLS = ['soldQty', 'discQty', 'menuItemNumber', 'description', 'familyGroup', 'price',
   'dollarsSold', 'promoQty', 'offerAmt', 'unitFoodCost', 'unitPaperCost'].join(',');
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // Deliberately NOT importing savePmixRows from src/lib/supabase.js: that module reads
 // import.meta.env at load time (Vite-only), which is undefined under plain `node

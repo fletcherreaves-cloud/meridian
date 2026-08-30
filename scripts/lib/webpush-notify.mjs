@@ -23,16 +23,17 @@
 // never throws, so one bad subscription can't stop the loop calling it for the rest.
 
 import webpush from 'web-push';
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './safe-supabase-client.mjs';
 
 export const VAPID_SUBJECT = 'mailto:fletcher.reaves@mcreaves.com';
 
-// Guarded the same way qsrsoft-onhand-pull.mjs's own module-scope `supabase` const is (see that
-// file's comment) — an unconditional createClient() call would throw at import time in any
-// environment missing these two env vars, and this module is imported directly by unit tests.
-const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-  : null;
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs) — never throws, even on a leaked
+// dummy-but-truthy env var from an unrelated test file's stub (see that file's own header for
+// the real CI incident this fixes: a leaked dummy value once let this exact line construct a
+// real SupabaseClient, which crashed on Node 20's missing native WebSocket support during
+// Realtime setup, despite this module being imported directly by unit tests that never touch a
+// real network).
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 let configured = false;
 export function configureWebPush() {

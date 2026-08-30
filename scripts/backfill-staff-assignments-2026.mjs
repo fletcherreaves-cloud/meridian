@@ -33,7 +33,7 @@
 // Run AFTER supabase/schema.sql's staff_assignments extension has been applied (see that file's
 // header comment + this dispatch's PR body for the exact statements).
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { orgAssignments, unpadLoc } from '../src/constants.js';
 // Dispatch #162 (Performance Review continuity, build item #6) extracted this backfill's own
 // job-code classification into src/engine/tenure-roles.js — #162's departure-detection needed the
@@ -48,7 +48,7 @@ export {
 import { isActiveTenureRow, classifyRosterAssignment } from '../src/engine/tenure-roles.js';
 
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const BACKFILL_DATE_TAG = 'Backfilled 2026-08-26 (dispatch #150)';

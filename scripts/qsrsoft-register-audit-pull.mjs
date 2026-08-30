@@ -90,7 +90,7 @@
 //               QSRSOFT_AUDIT_DAYS_RECENT (rolling re-pull, default 4),
 //               QSRSOFT_AUDIT_START_DATE/END_DATE (explicit backfill), QSRSOFT_AUDIT_DEBUG=1
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
@@ -117,7 +117,7 @@ const DEBUG       = process.env.QSRSOFT_AUDIT_DEBUG === '1';
 // before a test could even reach mapRow(), the same class of bug fixed in dispatch #33's own
 // header (that dispatch's own note on why src/lib/supabase.js can't be imported here either).
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const fmtDate = d => d.toISOString().slice(0, 10);
