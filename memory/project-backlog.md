@@ -195,3 +195,26 @@ constant) is only resolved for the one field this issue scoped.
   10 days): subtract `dt_heldtime`, keep all cars in the denominator — `graded-visits.js:86`'s
   formula. `r(our gap, QSRSoft gap) = 0.9958`. The alternative (drop held cars from the
   denominator too) is ruled out. Don't re-derive this.
+
+## Idea logged for later (2026-08-30, owner) — native OS Share sheet
+
+Owner: *"In many apps and sites there is a share button that can be used to share the contents of
+a focused panel/view... It could arguably take place of and enhance our current print/export/etc.
+functions and add the ability to text, email, or perform any of the other current functions we do
+now... allow the user to select where they would like to share the data. For example, Notes app,
+office program, etc. Is this a possibility in this environment?"*
+
+**Yes — the Web Share API (`navigator.share()` / `navigator.canShare({files})`) is exactly this
+primitive.** It hands text, a URL, or actual files (PDF/CSV/image — construct real `File` objects)
+to the OS's native share sheet, which routes to whatever the user has registered (Messages, Mail,
+Notes, WhatsApp, AirDrop, a second app). Requires HTTPS (already true, Vercel) + a user gesture
+(a click handler — already true for every existing print/export button). **Not yet measured in
+this repo**, so re-check before scoping: browser support is real but uneven — strong on iOS
+Safari/Android Chrome (where most GMs likely open Meridian), partial on desktop Chrome/Edge
+(url+text yes, files OS-dependent), **absent on desktop Firefox**. So this is a progressive
+enhancement, not a replacement: feature-detect `navigator.share`/`navigator.canShare` and offer it
+alongside today's print/CSV/copy/email paths, not instead of them — a `RoutePanelShell`-level
+"Share" action that falls back to the existing per-panel affordance when unsupported would unify
+the UI without breaking desktop admins. Good candidate to scope as its own dispatch once the
+current EOM-reports batch (#227) and the recount-impact SAGE tool (#226) land — not scoped or
+built yet, logged here so it isn't lost.
