@@ -22,7 +22,7 @@ import {
   createEomShareLink, supabase,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
-import { ledgerScopeDiff, closeWindowStartFor, itemCloseWindowRecount } from '../engine/eom-ledger-baseline.js';
+import { ledgerScopeDiff, closeWindowStartFor, itemCloseWindowRecount, formatRecountReport } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
@@ -1659,6 +1659,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [monBusy, setMonBusy] = useState(false);
   const [mon, setMon] = useState(null);               // { diff, takenAt, nBaseline, error }
   const [monOpenRows, setMonOpenRows] = useState({});  // loc -> expanded item deltas
+  const [monCopied, setMonCopied] = useState(false);   // "Copy report" transient feedback (dispatch-226.md Task 4)
   const [monView, setMonView] = useState('progression'); // 'progression' (ledger-derived, v2) | 'diff' (snapshot)
   const [riddleOpen, setRiddleOpen] = useState(false);   // 🔬 FOB Root-Cause Analysis modal
   const [fobRepOpen, setFobRepOpen] = useState(false);   // 📊 FOB Report modal
@@ -2620,6 +2621,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     if (!diag) return;
     try { await navigator.clipboard.writeText(diag.report); setDiagCopied(true); } catch { setDiagCopied(false); }
   }, [diag]);
+
+  // Change Monitor "Copy report" (dispatch-226.md Task 4) -- narrative markdown of the SAME
+  // ledgerScopeDiff() output the panel above already renders, and the SAME shape SAGE's
+  // query_eom_recount_impact tool returns -- no separate calculation, so it can't drift.
+  const copyMonReport = useCallback(async () => {
+    if (!mon?.diff || !mon.ledger) return;
+    try { await navigator.clipboard.writeText(formatRecountReport(mon.diff, { period })); setMonCopied(true); setTimeout(() => setMonCopied(false), 1800); } catch { setMonCopied(false); }
+  }, [mon, period]);
 
   // District CSV export of the (filtered) all-stores table.
   const exportCSV = useCallback(() => {
@@ -3718,7 +3727,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
               [['progression', '📈 Progression'], ['diff', '📸 Baseline diff']].map(([k, l]) =>
                 h('button', { key: k, onClick: () => { setMonView(k); if (k === 'diff' && !mon && !monBusy) openMonitor(); },
                   style: { background: monView === k ? 'var(--accent,#f5bc00)' : 'var(--surf3)', color: monView === k ? '#0f1117' : 'var(--text2)', border: 'none', padding: '5px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' } }, l))),
-            monView === 'diff' ? h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh') : null),
+            monView === 'diff' ? h('button', { onClick: openMonitor, style: MODAL_TOOLBTN, disabled: monBusy }, monBusy ? '… Refreshing' : '↻ Refresh') : null,
+            monView === 'diff' && mon?.ledger && mon?.diff ? h('button', { onClick: copyMonReport, style: MODAL_TOOLBTN, title: 'Copy a shareable markdown report of this Change Monitor view' }, monCopied ? '✓ Copied' : '📋 Copy report') : null),
 
           monView === 'progression' ? h(VarianceProgressionView, { rows, progByLoc, nm, period })
           : monBusy ? div({ style: { color: 'var(--text3)', padding: '30px', textAlign: 'center' } }, 'Diffing live data against the baseline…')

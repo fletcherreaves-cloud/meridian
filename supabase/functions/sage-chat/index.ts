@@ -11,6 +11,14 @@ import { aggregateLaborSummary, LABOR_SUMMARY_NOTE } from './labor-summary-agg.j
 import { aggregateForecastSnapshots, districtForecastStats, FORECAST_SNAPSHOTS_NOTE } from './forecast-snapshots-agg.js';
 import { fetchAllRows } from './paginate.js';
 import { PROMO_ROI_METHOD_NOTE, DISCOUNT_ROI_NO_SIGNAL_NOTE } from './promo-roi-note.js';
+import { EOM_RECOUNT_NOTE } from './eom-recount-note.js';
+// dispatch-226.md Task 1 -- verified directly (deno run, real relative import + execution against
+// a synthetic fixture) that Deno CAN resolve and run a relative import reaching outside
+// supabase/functions/ into src/engine/. This is the FIRST edge function in this repo to do so --
+// every other cross-boundary case (promo-roi, forms, etc.) was hand-ported instead because that
+// was assumed impossible, never actually tested. Reused verbatim here for zero drift between what
+// the in-app EOM Dashboard's Change Monitor shows and what SAGE reports on the same data.
+import { closeWindowStartFor, ledgerScopeDiff } from '../../../src/engine/eom-ledger-baseline.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -194,6 +202,29 @@ Needs several weeks of daily data AND a promo calendar tagged for the requested 
         },
       },
       required: [],
+    },
+  },
+  {
+    name: 'query_eom_recount_impact',
+    description: `Analyze how EOM (end-of-month) inventory RECOUNTS affected FOB (food/beverage on-hand variance) for one month, read from the actual raw count ledger (qsr_raw_item_detail) -- the same engine the in-app EOM Dashboard's Change Monitor uses, so this always agrees with that panel.
+Use for questions shaped like: "how did stores that recounted their EOM items impact their final FOB", which stores recounted vs did nothing, which items drove a store's recount, whether a store's recounts helped or hurt its variance, "who's actually working their flagged items".
+Method (same-store, same-item, session-count vs final-count within the EOM close window -- the last 3 calendar days of the month): a store's FIRST count of an item in that window is its session baseline; a LATER count of that SAME item in the window is a recount, graded by whether the dollar variance moved toward or away from zero. Deliberately NOT a between-store comparison -- stores recount an item BECAUSE they saw a bad number on it, so ranking recounting stores against non-recounting ones would be confounded by that self-selection, not evidence of who counts better.
+IMPORTANT CAVEAT -- do not silently drop this: this tool measures FOB variance impact ONLY. Total food cost % / "Base Food %" is NOT present anywhere in Meridian's data model. If asked about "food cost" broadly (not just FOB), answer the FOB slice this tool gives you and say plainly that total food cost % cannot currently be measured in Meridian -- never imply this tool (or any other) covers it.
+Returns: district totals (stores improving/worsened/mixed/no-action, $ moved toward zero, $ moved away from zero) and, per store, an engagement verdict (did the store act on flagged items and did it work) plus its top recounted items.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        period: {
+          type: 'string',
+          description: 'EOM month to analyze, "YYYY-MM" (e.g. "2026-07"). Required -- this is a monthly EOM-close concept, not a date range. For "last month" compute YYYY-MM from today.',
+        },
+        locs: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Store loc IDs to filter. Omit for every store the caller can see.',
+        },
+      },
+      required: ['period'],
     },
   },
   {
@@ -626,6 +657,78 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     });
   }
 
+  if (name === 'query_eom_recount_impact') {
+    const period = String(input.period || '').trim();
+    if (!/^\d{4}-\d{1,2}$/.test(period)) return 'Provide a period as "YYYY-MM" (e.g. "2026-07"). This tool analyzes one EOM close at a time, not a date range.';
+    const locs = input.locs as string[] | undefined;
+
+    const { data, error } = await fetchAllRows(() => {
+      let q = sb
+        .from('qsr_raw_item_detail')
+        .select('loc,wrin,descr,item_class,history')
+        .eq('period', period)
+        // Full PK order (loc, period, wrin) -- required for offset paging, see paginate.js. period
+        // is already pinned by the eq() filter above, so loc+wrin alone give a deterministic total
+        // order over the filtered set.
+        .order('loc').order('wrin');
+      if (locs?.length && !allowed) q = q.in('loc', locs.map(l => String(l).padStart(7, '0')));
+      return q;
+      // Page size 200, not the 1000 default -- `history` is a heavy JSONB column (averaging
+      // ~22.5 KB/row); see loadQsrRawItemDetail's identical page-size rationale in
+      // src/lib/supabase.js (a 1000-row page hit a statement timeout under real load).
+    }, 200);
+    if (error) return `Database error: ${error.message}`;
+    if (!data?.length) return `No EOM count-ledger data found for ${period}. Either that period hasn't closed yet, or qsr_raw_item_detail has no rows for it yet (the automated variance pull runs daily/hourly -- this would be unusual for a month that has fully closed).`;
+
+    // Reshape into { unpaddedLoc -> rawItems[] }, the same convention eom-dashboard.js's rawByLoc
+    // uses -- so ledgerScopeDiff sees the identical input shape it gets client-side.
+    const rawByLoc: Record<string, Array<{ wrin: string; descr: string | null; cls: string | null; history: unknown[] }>> = {};
+    for (const r of data as Array<{ loc: string; wrin: string; descr: string | null; item_class: string | null; history: unknown[] }>) {
+      const k = normLoc(r.loc);
+      (rawByLoc[k] ||= []).push({ wrin: r.wrin, descr: r.descr, cls: r.item_class, history: Array.isArray(r.history) ? r.history : [] });
+    }
+    const closeStart = closeWindowStartFor(period, 3);
+    const perLoc: Record<string, { name: string; closeWindowStart: string | null }> = {};
+    for (const k of Object.keys(rawByLoc)) perLoc[k] = { name: STORE_NAMES[k] || `Store ${k}`, closeWindowStart: closeStart };
+
+    const diff = ledgerScopeDiff(rawByLoc, perLoc) as {
+      stores: Array<{
+        loc: string; name: string | null; nHelped: number; nHurt: number; nRecounted: number;
+        helpedDol: number; hurtDol: number; anyActivity: boolean;
+        items: Array<{ wrin: string; descr: string; baseVar: number; curVar: number; dMag: number; verdict: string; recounted: boolean; nRecounts: number }>;
+        engagement: { verdict: string; label: string; readLabel: string; netDol: number; nRecounted: number; acted: boolean };
+      }>;
+      nStores: number; improved: number; worsened: number; noAction: number; totalHelped: number; totalHurt: number; active: number;
+    };
+
+    const storesOut = diff.stores.map(s => ({
+      loc: s.loc, name: s.name || STORE_NAMES[s.loc] || `Store ${s.loc}`,
+      engagement: { verdict: s.engagement.verdict, label: s.engagement.label, read_label: s.engagement.readLabel, acted: s.engagement.acted },
+      n_recounted_items: s.nRecounted, n_helped_items: s.nHelped, n_hurt_items: s.nHurt,
+      helped_dollars: Math.round(s.helpedDol), hurt_dollars: Math.round(s.hurtDol), net_dollars: Math.round(s.engagement.netDol),
+      // Top 5 by |dMag| (ledgerScopeDiff/ledgerBaselineDiff already sorts items this way) among
+      // items that were actually recounted -- the items a "which items drove this" question needs.
+      top_recounted_items: s.items.filter(i => i.recounted).slice(0, 5).map(i => ({
+        wrin: i.wrin, descr: i.descr, base_variance: Math.round(i.baseVar), final_variance: Math.round(i.curVar),
+        moved_toward_zero_dollars: Math.round(-i.dMag), verdict: i.verdict, n_recounts: i.nRecounts,
+      })),
+    }));
+    const mixed = diff.stores.filter(s => s.engagement.verdict === 'mixed').length;
+
+    const sc = applyScope(storesOut, allowed);
+    return JSON.stringify({
+      period, close_window_start: closeStart,
+      district: {
+        store_count: diff.nStores, improved: diff.improved, worsened: diff.worsened, mixed, no_action: diff.noAction,
+        total_dollars_moved_toward_zero: Math.round(diff.totalHelped), total_dollars_moved_away_from_zero: Math.round(diff.totalHurt),
+        net_dollars: Math.round(diff.totalHelped - diff.totalHurt), active_stores: diff.active,
+      },
+      stores: sc.stores,
+      ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
+      note: EOM_RECOUNT_NOTE,
+    });
+  }
+
   if (name === 'search_qsr_kb') {
     const raw = String((input.query as string) || '').trim();
     if (!raw) return 'Provide a search query (a QSRSoft concept, report, metric, or how-to).';
@@ -909,6 +1012,7 @@ Deno.serve(async (req: Request) => {
                         : tu.name === 'query_labor_summary'    ? 'OT & staffing gap'
                         : tu.name === 'query_forecast_snapshots' ? 'forecast accuracy'
                         : tu.name === 'query_promo_roi'         ? 'promo/discount ROI'
+                        : tu.name === 'query_eom_recount_impact' ? 'EOM recount / FOB impact'
                         : tu.name === 'search_qsr_kb'          ? 'QSRSoft docs'
                         : tu.name === 'search_project_memory'  ? 'project memory'
                         : tu.name.replace(/_/g, ' ');
