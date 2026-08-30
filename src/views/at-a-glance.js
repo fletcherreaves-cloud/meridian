@@ -665,15 +665,19 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     // The old code used ONLY manual rows whenever ANY manual row fell in the range — so a
     // range spanning the last manual upload (e.g. MTD) dropped every auto day AFTER it, and
     // on load the tile flipped from current (auto, before laborRows arrived) back to the last
-    // manual date once laborRows loaded. Now: auto fills every day, manual overrides the same
-    // day it covers (an intentional upload), so recent days always show from the auto stream.
+    // manual date once laborRows loaded. The per-day-Map merge below (auto and manual each fill
+    // by (loc,date) key, union of both) is what fixed that — it does NOT depend on which side
+    // is last-write-wins, only on both sides being present at all. So (dispatch #223 / issue
+    // #362): auto now fills every day AND wins on any day it also covers, per this repo's
+    // standing auto-first rule (CLAUDE.md) — manual is last-resort fill only, for a (loc,date)
+    // auto doesn't cover yet.
     const inR=r=>r&&r.date&&inRange(r.date,effectiveDateRange);
     const manual=(ds?.laborRows||[]).filter(inR);
     const auto=(ds?.qsrActSummaryRows||[]).filter(inR);
     const k=r=>String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
     const m=new Map();
-    for(const r of auto)   m.set(k(r),r);   // auto/DAR fills every day (incl. the recent ones)
-    for(const r of manual) m.set(k(r),r);   // a manual upload intentionally overrides its own day
+    for(const r of manual) m.set(k(r),r);   // manual fills any day auto doesn't cover
+    for(const r of auto)   m.set(k(r),r);   // auto wins on any day it also covers
     return [...m.values()];
   }),[ds?.laborRows?.length,ds?.qsrActSummaryRows?.length,effectiveDateRange]);
 
@@ -798,16 +802,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
   };
   const opsEffective  = React.useMemo(()=>_mark('compute:opsEffective',()=>(_recentWeek(ds?.opsRows ||[]))),[ds?.opsRows?.length,effectiveDateRange]);
 
-  // Freshest-wins merge: union two same-shape row arrays by (loc, day). The
-  // primary (manual upload) overrides the secondary (auto pull/email) for the
-  // SAME day — a manual upload is an intentional override — while the auto source
-  // fills in every day the manual data doesn't cover (e.g. the days since the last
-  // manual upload). Net: whatever is freshest per date always shows.
+  // Generic (loc, day) union merge: `primary` wins on any day it covers, `secondary`
+  // fills every day `primary` doesn't cover. `primary`/`secondary` are just argument
+  // names — they carry no fixed meaning of "manual" or "auto"; each call site below
+  // decides which real array it passes as which, per this repo's standing auto-first
+  // rule (CLAUDE.md: manual uploads are last-resort fill only, never a primary source).
   const mergeFresh = (primary, secondary) => {
     const k = r => String(r.loc)+'|'+(r.date instanceof Date?r.date.toISOString().slice(0,10):String(r.date).slice(0,10));
     const m = new Map();
     for(const r of (secondary||[])) if(r&&r.date) m.set(k(r),r);
-    for(const r of (primary||[]))   if(r&&r.date) m.set(k(r),r); // manual overrides same-day auto
+    for(const r of (primary||[]))   if(r&&r.date) m.set(k(r),r); // primary wins on a shared day
     return [...m.values()];
   };
 
@@ -873,7 +877,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     }
     return [...byKey.values()];
   }),[ds?.glimpseRows?.length,ds?.cashRows?.length,ds?.opsCashRows?.length,ds?.qsrActSummaryRows?.length,ds?.opsLaborRows?.length]);
-  const ctrlEffective = React.useMemo(()=>_mark('compute:ctrlEffective',()=>(_recentWeek(mergeFresh(ds?.ctrlRows,ctrlAuto)))),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
+  // Dispatch #223 / issue #362 judgment call: this was mergeFresh(manual ctrlRows, ctrlAuto) —
+  // manual as primary, the identical auto-first inversion the issue named at
+  // labInRange/channelRows, just unflagged. Neither ctrlAuto's own header comment above nor
+  // anything else here documents manual-wins as an intentional Controls-specific choice; the
+  // nearby laborSec comment ("mergeFresh's whole-row override meant that manual $0 TPPH row
+  // entirely replaced the day's ctrlAuto row [with real TPPH]") shows this exact inversion
+  // already causing a real bug that was worked around at the consumption site rather than
+  // fixed here. Treated as the same bug and fixed in this dispatch: auto wins on a shared day,
+  // manual only fills a day auto doesn't cover.
+  const ctrlEffective = React.useMemo(()=>_mark('compute:ctrlEffective',()=>(_recentWeek(mergeFresh(ctrlAuto,ds?.ctrlRows)))),[ds?.ctrlRows?.length,ctrlAuto,effectiveDateRange]);
 
   // Service metrics (OEPE / KVS): manual Operations Report merged with auto Daily
   // Glimpse, freshest-per-day. R2P has no auto source, so it only shows from manual.
@@ -926,14 +939,16 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
     eatInSales: r.net_sales_eatin_amt, eatInGC: r.net_sales_eatin_qty,
   });
 
-  // Channel sales mix: manual labor channel rows, freshest-per-day over TWO auto sources
-  // (Sales Ledger, then Sales Mix filling whatever Ledger doesn't cover) — manual overrides
-  // the same day; each auto layer fills the gaps the layer above it leaves.
+  // Channel sales mix: two auto sources (Sales Ledger, then Sales Mix filling whatever
+  // Ledger doesn't cover), freshest-per-day, with manual labor channel rows as last-resort
+  // fill only (dispatch #223 / issue #362 — was inverted: manual used to win same-day over
+  // fresh auto) — the auto-combined layer wins on any day it covers; manual only fills a
+  // day neither auto source reaches yet.
   const channelRows = React.useMemo(()=>_mark('compute:channelRows',()=>{
     const lab=(ds?.laborRows||[]).filter(r=>r.dtSales||r.bfSales||r.mopSales||r.kioskSales);
     const led=(ds?.salesLedgerRows||[]);
     const mix=(ds?.opsSalesMixRows||[]).map(mixToChannelShape);
-    const merged=mergeFresh(lab,mergeFresh(led,mix)).filter(r=>inRange(r.date,effectiveDateRange));
+    const merged=mergeFresh(mergeFresh(led,mix),lab).filter(r=>inRange(r.date,effectiveDateRange));
     return {rows:merged,auto:lab.length===0&&(led.length>0||mix.length>0)};
   }),[ds?.laborRows?.length,ds?.salesLedgerRows?.length,ds?.opsSalesMixRows?.length,effectiveDateRange]);
 
