@@ -18,6 +18,21 @@ export const TH = {
   borderBottom: '.5px solid var(--bdr)', whiteSpace: 'nowrap',
 };
 
+// Alpha-blend a color for a tinted background/border, without breaking on a CSS custom
+// property. Moved here from patch-heatmap.js (#351/#368) — `color + hexSuffix` (e.g.
+// `status.color + '18'`) only produces valid CSS when `color` is a hex literal;
+// concatenating a hex alpha suffix onto a `var(...)` reference yields the literal invalid
+// string "var(--crit)18", which the browser silently drops (no console error), so the
+// tinted background/border disappears outright. Shared here (rather than importing across
+// view files) so a component split out specifically to stay small in the eager bundle
+// (model-health-badge.js's own header, #232) never has to statically import a large view
+// file just to reach one small pure function.
+export const withAlpha = (color, hexSuffix) => {
+  if (!color || !color.startsWith('var(')) return color + hexSuffix;
+  const pct = Math.round((parseInt(hexSuffix, 16) / 255) * 100);
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+};
+
 export const grade = s => s>=90?'A':s>=80?'B':s>=70?'C':s>=60?'D':'F';
 export const gLbl  = s => s>=90?'Elite':s>=80?'Strong':s>=70?'Solid':s>=60?'Developing':'Needs Attn';
 export const gCol  = s => s>=90?'#10b981':s>=80?'#84cc16':s>=70?'#eab308':s>=60?'#f97316':'#ef4444';

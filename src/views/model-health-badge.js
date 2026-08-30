@@ -8,6 +8,16 @@
 // file so nothing outside analytics.js reaches it for ModelHealthBadge anymore.
 import * as React from 'react';
 import { computeModelHealth } from '../engine/forecast.js';
+// #368 — health.gradeColor can be a hex literal (green) or a CSS var() reference (warn/crit,
+// per computeModelHealth's own gradeColor formula in forecast.js). withAlpha (moved to
+// utils/fmt.js under #368, alongside patch-heatmap.js's identical #351 fix) normalizes both:
+// concatenating a hex alpha suffix directly onto a var() reference (the old `+'22'`/`+'66'`
+// below) produces the literal invalid CSS string "var(--warn)22", silently dropped by the
+// browser with no console error — so any store graded below "excellent" (var(--warn) or
+// var(--crit)) lost its score-pill tint and border entirely. Imported from utils/fmt.js, not
+// patch-heatmap.js, so this file — split out of analytics.js specifically to stay small in the
+// eager bundle (see below) — never statically imports a large view module for one function.
+import { withAlpha } from '../utils/fmt.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -24,7 +34,7 @@ export function ModelHealthBadge({loc, settings, ds, showDetail}) {
       title:'Model Health Score — '+health.statement},
       // Score pill
       div({style:{display:'flex',alignItems:'center',gap:3,padding:'2px 7px',borderRadius:10,
-        background:health.gradeColor+'22',border:'.5px solid '+health.gradeColor+'66'}},
+        background:withAlpha(health.gradeColor,'22'),border:'.5px solid '+withAlpha(health.gradeColor,'66')}},
         div({style:{width:6,height:6,borderRadius:'50%',background:health.gradeColor,flexShrink:0}}),
         health.total!=null&&span({style:{fontWeight:700,fontSize:'9px',color:health.gradeColor}},health.total),
         span({style:{fontSize:'8px',color:health.gradeColor}},' '+health.gradeLabel)
