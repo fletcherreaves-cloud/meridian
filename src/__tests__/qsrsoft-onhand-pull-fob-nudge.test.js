@@ -6,10 +6,20 @@
 // qsrsoft-punch-times-pull.mjs/qsrsoft-variance-pull.mjs already are
 // (`if (import.meta.url === file://process.argv[1])`), so importing it here does not also
 // fire off a live Playwright/eBOS run.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
+//
+// vi.stubEnv (not a raw process.env assignment) + afterAll(unstubAllEnvs) so this file's dummy
+// credentials can't leak into process.env for whatever OTHER test file Vitest schedules next in
+// the same worker (a raw assignment here once did exactly that — see
+// dispatch-217-eom-digest-schedule.test.js's header for the real incident it caused on Node 20).
+// Note this is a SEPARATE concern from the describe block's own ORIG_ENV/afterEach below, which
+// only protects per-test mutations of OTHER env vars (GITHUB_TOKEN etc.) within this file — its
+// own ORIG_ENV snapshot is taken AFTER these two vars are already set, so it was never able to
+// undo them regardless.
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { triggerFobPullIfPossible } from '../../scripts/qsrsoft-onhand-pull.mjs';
 
 describe('triggerFobPullIfPossible() -- dispatch #210 Task 4', () => {

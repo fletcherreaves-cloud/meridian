@@ -6,12 +6,20 @@
 //
 // Real VAPID keys are stubbed (not real — configureWebPush() just needs both env vars present
 // to call webpush.setVapidDetails(), which is itself mocked below).
-process.env.VITE_VAPID_PUBLIC_KEY = process.env.VITE_VAPID_PUBLIC_KEY || 'test-public-key';
-process.env.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'test-private-key';
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+//
+// vi.stubEnv (not a raw process.env assignment) + afterAll(unstubAllEnvs) so these dummy values
+// can't leak into process.env for whatever OTHER test file Vitest schedules next in the same
+// worker — a raw assignment of VITE_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY once did exactly that
+// from a DIFFERENT file and poisoned an unrelated file's real (unmocked) createClient() call on
+// Node 20 (see dispatch-217-eom-digest-schedule.test.js's header for the incident). This file's
+// own @supabase/supabase-js mock below means its OWN run was never at risk — this is purely
+// about not being a source of the same leak for whatever runs after it.
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+vi.stubEnv('VITE_VAPID_PUBLIC_KEY', 'test-public-key');
+vi.stubEnv('VAPID_PRIVATE_KEY', 'test-private-key');
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
 const sendNotificationMock = vi.fn();
 const setVapidDetailsMock = vi.fn();

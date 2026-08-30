@@ -7,23 +7,27 @@
 // deleting the hook-point call would make these assertions fail rather than leave them passing
 // against an unused engine (this repo's own "would this verification still pass if reverted" rule).
 //
-// CI FAILURE, root-caused and fixed 2026-08-30: the process.env assignments below used to sit
-// above a STATIC `import ... from '../../scripts/qsrsoft-onhand-pull.mjs'` — but ES module
-// `import` declarations are hoisted above every other top-level statement in the SAME file
-// regardless of source order, so that import (and therefore qsrsoft-onhand-pull.mjs's own
-// module-scope `supabase = (url && key) ? createClient(...) : null` guard) always evaluated
-// BEFORE these assignments ran, no matter which line looks earlier on the page. In any
-// environment with neither real env var set (a clean CI checkout), the guard saw both as
-// undefined and `supabase` resolved to null — sendPushNotifications' own `if (!supabase) return`
-// then silently no-op'd, so sendWebPushMock was never called and every assertion below failed.
-// It passed locally in any shell that already had real Supabase env vars exported (this sandbox
-// included), which is why it went unnoticed until a clean CI checkout hit it. Fixed by switching
-// the qsrsoft-onhand-pull.mjs import to a dynamic import BELOW these assignments (see below) —
-// dynamic `import()` genuinely evaluates at the point it's written, unlike a static import.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// CI FAILURE, root-caused and fixed 2026-08-30, two bugs:
+// 1. A static `import ... from '../../scripts/qsrsoft-onhand-pull.mjs'` is hoisted above every
+//    other top-level statement in this SAME file regardless of source order, so it always ran
+//    BEFORE the env-var setup below -- in a clean CI checkout (neither real var set),
+//    qsrsoft-onhand-pull.mjs's own `supabase = (url && key) ? createClient(...) : null` guard saw
+//    both as undefined, resolved to null, and sendPushNotifications()'s `if (!supabase) return`
+//    silently no-op'd -- so sendWebPushMock was never called and every assertion below failed.
+//    Fixed by switching that import to a dynamic import() placed after the env vars are set
+//    (below) -- a dynamic import genuinely evaluates where it's written.
+// 2. A raw `process.env.X = process.env.X || 'dummy'` assignment (as this used to be) mutates the
+//    real, PROCESS-WIDE process.env and is never undone -- Vitest does not reset process.env
+//    between test FILES sharing the same worker, so it can leak a dummy-but-valid-shaped
+//    Supabase URL/key into whatever runs after this file, poisoning an unrelated file's own real
+//    (unmocked) guarded createClient() call -- see dispatch-217-eom-digest-schedule.test.js's own
+//    header comment for the exact incident this caused on Node 20 (no native WebSocket). Using
+//    vi.stubEnv (this repo's own established pattern) + afterAll(vi.unstubAllEnvs) scopes the
+//    mutation to this file only.
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
 const sendEmailMock = vi.fn().mockResolvedValue(true);
 const sendSmsMock = vi.fn().mockResolvedValue(true);
@@ -52,8 +56,8 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-// Dynamic import, evaluated HERE (after the env-var assignments above), not hoisted like a
-// static import would be — see the header comment for why this matters.
+// Dynamic import, evaluated HERE (after the env-var stubs above), not hoisted like a static
+// import would be — see the header comment (bug 1) for why this matters.
 const { deliverNotifications, notifyRow, buildNotificationRow } = await import('../../scripts/qsrsoft-onhand-pull.mjs');
 import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications } from '../engine/eom-inventory.js';
 

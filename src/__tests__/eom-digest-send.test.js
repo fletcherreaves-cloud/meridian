@@ -8,10 +8,17 @@
 // against production Supabase during this dispatch's own build (27/27 stores loaded, live org
 // bootstrap confirmed, all 7 real patches + district rolled up correctly) — see the PR body for
 // the full transcript. This file covers the one piece that's genuinely pure.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
+//
+// vi.stubEnv (not a raw process.env assignment) + afterAll(unstubAllEnvs) so this file's dummy
+// credentials can't leak into process.env for whatever OTHER test file Vitest schedules next in
+// the same worker -- a raw assignment here once did exactly that and poisoned an unrelated file's
+// real (unmocked) Supabase client construction on Node 20, see dispatch-217-eom-digest-schedule
+// .test.js's header comment for the full incident.
+import { describe, it, expect, vi, afterAll } from 'vitest';
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
-import { describe, it, expect } from 'vitest';
 import { classStatusesFromStatusAndLog } from '../../scripts/eom-digest-send.mjs';
 
 describe('classStatusesFromStatusAndLog', () => {

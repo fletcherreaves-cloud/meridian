@@ -11,10 +11,23 @@
 // eom-digest-send.test.js uses for classStatusesFromStatusAndLog — levelsToRun/hourGatePasses
 // are the other genuinely pure pieces of this script (bootstrapLiveOrg/buildStoreRows/main
 // still require a live Supabase round-trip per that file's own note).
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
+//
+// CI FAILURE, root-caused and fixed 2026-08-30: a raw `process.env.X = process.env.X || 'dummy'`
+// assignment mutates the real, PROCESS-WIDE process.env and is never undone -- Vitest does not
+// reset process.env between test FILES sharing the same worker. That leaked a dummy-but-valid-
+// shaped Supabase URL/key out of this file into whatever ran after it in the same worker; on a
+// real CI run it poisoned scripts/lib/webpush-notify.mjs's own guarded `createClient()` call
+// (unrelated to this file, reached from a completely different test), which then constructed a
+// REAL SupabaseClient with the leaked dummy credentials -- and on Node 20 (no native WebSocket),
+// SupabaseClient's Realtime sub-client throws during that construction ("Node.js 20 detected
+// without native WebSocket support"). Using vi.stubEnv (this repo's own established pattern,
+// e.g. eom-digest-config.test.js) + an explicit afterAll(vi.unstubAllEnvs) scopes the mutation to
+// THIS file only, exactly like a real environment variable should behave in a test suite.
+import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
 import { hourGatePasses } from '../../scripts/eom-digest-send.mjs';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 
