@@ -137,11 +137,13 @@ describe('buildEmailContent — FOB section renders target-vs-actual when fob_ta
 
   it('renders the headline gap and per-component target/delta', () => {
     const { html } = buildEmailContent(ROW, STORE_INFO);
-    expect(html).toContain('target 3.85%');
+    expect(html).toContain('target 3.85%'); // headline stays prose (dispatch #219 Task 2 untouched)
     expect(html).toContain('-1.85pp');
     expect(html).toContain('under');
     expect(html).toContain('Variance Stat');
-    expect(html).toMatch(/target 1\.05%/);
+    // dispatch #219 Task 2 — per-component target/delta now live in their own table columns
+    // rather than an inline "(target X%, +Ypp)" annotation, so assert the values, not the phrase.
+    expect(html).toContain('1.05%'); // Variance Stat's Target % cell
     expect(html).toMatch(/-0\.25pp/);
     expect(html).toMatch(/\+0\.2pp/); // comp's positive delta keeps its sign
   });

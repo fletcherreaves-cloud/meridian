@@ -65,6 +65,19 @@ function fobToolLinksHtml(links) {
 // no target math re-derived here) adds target-vs-actual alongside each number when present;
 // absent (no resolvable target for this store/period) falls back to the actual-only rendering
 // #213 shipped, unchanged.
+//
+// dispatch #219 Task 2 — owner: "add the result as a percent also... present this section as a
+// table." The per-component breakdown is now an HTML <table> (Component | Actual $ | Actual % |
+// Target % | Δ) instead of a <ul>; the headline paragraph above it is untouched prose. Actual %
+// is `c.actualPP` off row.fob_target.comps[i] — already computed by buildStoreFobReport() the
+// same way the headline % is, never re-derived here. Judgment call: when row.fob_target is
+// itself entirely absent (#215's "no resolvable target" case), there is no comps array to read
+// actualPP from at all, yet the owner's ask ("Actual $ AND Actual %") still applies in that case
+// too (see this dispatch's own verification bar) — so `actualFrac` falls back to fs[k]/fs.sales,
+// literally the same fraction buildFobTargetReport() itself feeds into buildStoreFobReport() as
+// compActual (qsrsoft-onhand-pull.mjs), just evaluated here instead of there, through this file's
+// own existing fobPp() rounding (already used for the headline %) rather than a divergent
+// formula. Target %/Δ still show "—" in that case — those genuinely don't exist without a target.
 function fobSectionHtml(row) {
   const fs = row.fob_snapshot;
   if (!fs) return '';
@@ -74,16 +87,26 @@ function fobSectionHtml(row) {
     ? ` <span style="color:#666">(target ${fobPp(tgt.fobPct)}%, ${tgt.gapPP > 0 ? '+' : ''}${tgt.gapPP}pp ${tgt.overTarget ? 'OVER' : 'under'})</span>`
     : '';
   const compByKey = new Map((tgt?.comps || []).map(c => [c.key, c]));
-  const compLines = FOB_COMPONENTS.map(([k, label]) => {
+  const cell = (s) => `<td style="padding:4px 10px 4px 0;border-bottom:1px solid #eee">${s}</td>`;
+  const compRows = FOB_COMPONENTS.map(([k, label]) => {
     const c = compByKey.get(k);
-    const targetBit = c && c.tgtPP != null
-      ? ` <span style="color:#666">(target ${c.tgtPP}%, ${c.deltaPP > 0 ? '+' : ''}${c.deltaPP}pp)</span>`
-      : '';
-    return `<li>${label}: ${fobMoney(fs[k])}${targetBit}</li>`;
+    const actualPctStr = c && c.actualPP != null
+      ? `${c.actualPP}%`
+      : (fs.sales ? `${fobPp(fs[k] / fs.sales)}%` : '—');
+    const tgtPctStr = c && c.tgtPP != null ? `${c.tgtPP}%` : '—';
+    const deltaStr = c && c.deltaPP != null ? `${c.deltaPP > 0 ? '+' : ''}${c.deltaPP}pp` : '—';
+    return `<tr>${cell(label)}${cell(fobMoney(fs[k]))}${cell(actualPctStr)}${cell(tgtPctStr)}` +
+      `<td style="padding:4px 0;border-bottom:1px solid #eee">${deltaStr}</td></tr>`;
   }).join('');
   return `<h3 style="margin:16px 0 8px">FOB (Food Over Base)</h3>
 <p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
-<ul style="margin:0 0 4px;padding-left:20px">${compLines}</ul>
+<table style="border-collapse:collapse;width:100%;font-size:13px;margin:0 0 4px">
+<thead><tr style="text-align:left;border-bottom:2px solid #ccc">` +
+`<th style="padding:4px 10px 4px 0">Component</th><th style="padding:4px 10px 4px 0">Actual $</th>` +
+`<th style="padding:4px 10px 4px 0">Actual %</th><th style="padding:4px 10px 4px 0">Target %</th>` +
+`<th style="padding:4px 0">Δ</th></tr></thead>
+<tbody>${compRows}</tbody>
+</table>
 ${fobToolLinksHtml(row.fob_tool_links)}`;
 }
 
