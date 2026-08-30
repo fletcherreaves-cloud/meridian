@@ -27,6 +27,7 @@ vi.mock('../lib/supabase.js', () => ({
     { loc: '3708', wrin: 'F1', descr: 'Food Item', cls: 'Food', onHandAmt: 10, active: true, lastCounted: null },
   ]),
   loadQsrFob: async () => [],
+  loadEomPeriods: async () => [],
   loadEomCountStatus: async () => [],
   saveEomCountStatus: async () => ({}),
   loadQsrVarianceStat: async () => [],

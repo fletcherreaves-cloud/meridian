@@ -41,6 +41,7 @@ vi.mock('../lib/supabase.js', () => ({
   supabase: fakeSupabase,
   loadQsrOnHand: async () => [],
   loadQsrFob: async () => [],
+  loadEomPeriods: async () => [],
   loadEomCountStatus: async () => [],
   saveEomCountStatus: async () => ({}),
   loadQsrVarianceStat: async () => [],
@@ -117,12 +118,20 @@ describe('dispatch #202 — Supervisor Rollup tab inside Inventory Control', () 
     expect(container.textContent).toMatch(/EOM Supervisor Summary/);
   });
 
-  it('supervisor mode hides the shared location/date/export/action controls (own filters only)', async () => {
+  it('dispatch #225: supervisor mode now shows the shared location/date controls (its own internal month/year picker is gone), but still hides the 4-tab-specific export/action bands', async () => {
     await renderPanel(root, { initialMode: 'supervisor' });
-    // PanelChrome's shared "Reports/Scans/Monitor/Pulls" ActionMenu group is FOB/EOM-specific and
-    // should not render in supervisor mode (own period/group controls instead — "Period:").
-    expect(container.textContent).not.toMatch(/Reports\s*Scans\s*Monitor\s*Pulls/);
-    expect(container.textContent).toMatch(/Period:/);
+    const text = container.textContent;
+    // PanelChrome's shared "Reports/Scans/Monitor/Pulls" ActionMenu group is 4-tab-specific
+    // (onhand-shaped rows/allRows) and still should not render in supervisor mode. (Note:
+    // EOMSupervisorPanel keeps its own unrelated "⬇ CSV" button — its Op Supplies export — so
+    // that text alone can't distinguish the hidden 4-tab export band; the title text can.)
+    expect(text).not.toMatch(/Reports\s*Scans\s*Monitor\s*Pulls/);
+    expect(container.querySelector('[title="Download the all-stores table as CSV"]')).toBeFalsy();
+    // dispatch #225 Task 3/4 — the shared LocationSelector + period picker (PanelChrome's
+    // location/dateControl bands) now render for supervisor mode too, replacing this panel's own
+    // former internal "Period:" month/year <select> pair (which no longer exists at all).
+    expect(text).not.toMatch(/Period:/);
+    expect(text).toMatch(/All Locations/);
   });
 
   it('supervisor mode short-circuits the EOM/Cadence SummaryTiles and completion table (no cross-talk)', async () => {

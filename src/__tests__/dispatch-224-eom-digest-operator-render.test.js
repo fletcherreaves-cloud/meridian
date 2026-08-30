@@ -26,6 +26,7 @@ vi.mock('../lib/supabase.js', () => ({
     { loc: '6178', wrin: 'F2', descr: 'Condiment Item Never Counted', cls: 'Condiment', onHandAmt: 25, active: true, lastCounted: null },
   ]),
   loadQsrFob: async () => [],
+  loadEomPeriods: async () => [],
   loadEomCountStatus: async () => [],
   saveEomCountStatus: async () => ({}),
   loadQsrVarianceStat: async () => [],

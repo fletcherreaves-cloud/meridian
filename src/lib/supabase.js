@@ -3976,6 +3976,27 @@ export async function loadEomCountStatus({ period } = {}) {
   }));
 }
 
+// Every 'YYYY-MM' period that has at least one qsr_onhand OR eom_count_status row for at least
+// one store, newest first — no arbitrary cap (dispatch #225 Task 4, replacing eom-dashboard.js's
+// old hardcoded "current month + prior 3" picker). Selects only the `period` column from each
+// table (never `select('*')`) to keep the full-history scan's payload bounded — PostgREST has no
+// server-side DISTINCT without an RPC/view, so this still walks every row via fetchAll's
+// pagination (5000/page — larger than the 1000 default since only one narrow column comes back
+// per row), but it runs once per panel mount (the calling component memoizes it), not on every
+// period change. eom_count_status is included because it's possible (if unlikely) for a period to
+// have a saved diagnosis/comms status without a surviving qsr_onhand snapshot for that period.
+export async function loadEomPeriods() {
+  if (!supabase) return [];
+  const [onHandRows, statusRows] = await Promise.all([
+    fetchAll((from, to) => supabase.from('qsr_onhand').select('period').range(from, to), 5000, 'qsr_onhand periods'),
+    fetchAll((from, to) => supabase.from('eom_count_status').select('period').range(from, to), 5000, 'eom_count_status periods'),
+  ]);
+  const set = new Set();
+  for (const r of onHandRows) if (r.period) set.add(r.period);
+  for (const r of statusRows) if (r.period) set.add(r.period);
+  return [...set].sort().reverse();
+}
+
 // ── EOM count-completion notifications (dispatch #209) ────────────────────────────
 // First real in-app notification system — see src/engine/eom-inventory.js's
 // detectCountNotifications() (detection) and scripts/qsrsoft-onhand-pull.mjs (fires + inserts).
