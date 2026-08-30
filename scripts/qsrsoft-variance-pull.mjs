@@ -42,7 +42,7 @@
 //   any prod.ebos.qsrsoft.com/api/inv/ request → copy X-Auth-Token → update QSRSOFT_EBOS_TOKEN.
 
 import { chromium } from 'playwright';
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
@@ -96,7 +96,13 @@ const STORE_NSNS = (process.env.VARIANCE_STORES
     38609, 43380, 43701,
   ]).map(String);
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs) — dispatch #210's own test
+// (qsrsoft-variance-pull-window.test.js) imports this module directly for runMode()/
+// isDailySlot() (no supabase/fetch dependency in those functions themselves), matching the
+// pattern qsrsoft-onhand-pull.mjs already uses for the identical reason. Never throws, even on a
+// leaked dummy-but-truthy env var from an unrelated test file's stub — see that helper's own
+// header for the real CI incident this fixes.
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const pad2 = n => String(n).padStart(2, '0');
 function currentPeriod() {

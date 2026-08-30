@@ -6,10 +6,17 @@
 // leaf dependencies (webpush-notify.mjs's sendWebPush + the supabase-js client factory), so
 // deleting the hook-point call would make these assertions fail rather than leave them passing
 // against an unused engine (this repo's own "would this verification still pass if reverted" rule).
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+//
+// This file's guarded qsrsoft-onhand-pull.mjs import needs both env vars truthy so its own
+// module-scope `supabase` (now via safeCreateClient, scripts/lib/safe-supabase-client.mjs)
+// constructs the mocked client below rather than resolving to null. vi.stubEnv (not a raw
+// process.env assignment) + afterAll(unstubAllEnvs) scopes that to this file only — belt-and-
+// suspenders on top of safeCreateClient's own fix, since a leaked dummy value can no longer crash
+// ANY script using that helper, but there's no reason to leak it regardless.
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
 const sendEmailMock = vi.fn().mockResolvedValue(true);
 const sendSmsMock = vi.fn().mockResolvedValue(true);
@@ -38,7 +45,11 @@ vi.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import { deliverNotifications, notifyRow, buildNotificationRow } from '../../scripts/qsrsoft-onhand-pull.mjs';
+// Dynamic import, evaluated HERE (after the env-var stubs above), not hoisted like a static
+// import would be — a static import would still see undefined env vars at its own hoisted
+// evaluation point regardless of vi.stubEnv, since ES module imports are hoisted above every
+// other top-level statement in the SAME file.
+const { deliverNotifications, notifyRow, buildNotificationRow } = await import('../../scripts/qsrsoft-onhand-pull.mjs');
 import { computeCountProgress, diagnoseIncompleteCount, detectCountNotifications } from '../engine/eom-inventory.js';
 
 beforeEach(() => {

@@ -32,7 +32,7 @@
 // schema-security-findings.sql have been applied, and after that day's qsrsoft-register-audit-
 // pull.yml / qsrsoft-variance-pull.yml / qsrsoft-pull.yml (qsr_fob) runs (this job's inputs).
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { evaluateRule } from '../src/engine/security-rules.js';
 import { personalBaseline, peerBaseline, storeBaseline, networkBaseline } from '../src/engine/security-baselines.js';
 import { daypartOf } from '../src/engine/labor-standard.js';
@@ -44,7 +44,7 @@ const DEFAULT_WINDOW_DAYS = 28;
 // #33's original note, repeated at #35/#37/#38): an unconditional createClient() at module scope
 // would crash the pure functions' own unit tests, which have no env vars set.
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const fmtDate = d => d.toISOString().slice(0, 10);

@@ -32,7 +32,7 @@
 
 import { chromium } from 'playwright';
 import { COVER_FRAC, sessionQualities, sessionLabel } from '../src/engine/count-cycle.js';
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
 import {
   computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT,
@@ -248,14 +248,15 @@ export const STORE_NSNS = [
   38609, 43380, 43701,
 ];
 
-// Guarded, not unconditional — dispatch #209's own tests import this module directly for
-// buildNotificationRow()/buildStatusRow()/kbLinksForClasses() (no supabase/fetch dependency in
-// those functions themselves), matching the pattern scripts/qsrsoft-register-audit-pull.mjs
-// already uses for the identical reason. An unconditional createClient() call at module scope
-// would throw at import time in any environment missing these two env vars.
-const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
-  : null;
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs) — dispatch #209's own tests import this
+// module directly for buildNotificationRow()/buildStatusRow()/kbLinksForClasses() (no supabase/
+// fetch dependency in those functions themselves), matching the pattern
+// scripts/qsrsoft-register-audit-pull.mjs already uses for the identical reason. Never throws,
+// even on a leaked dummy-but-truthy env var from an unrelated test file's stub — see that
+// helper's own header for the real CI incident this fixes (a leaked value once let a sibling
+// guarded script construct a real SupabaseClient, which crashed on Node 20's missing native
+// WebSocket support).
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 // ── Date + count-window helpers ───────────────────────────────────────────────
 const pad2 = n => String(n).padStart(2, '0');

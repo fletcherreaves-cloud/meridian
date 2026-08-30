@@ -6,9 +6,11 @@
 // qsrsoft-punch-times-pull.mjs/qsrsoft-variance-pull.mjs already are
 // (`if (import.meta.url === file://process.argv[1])`), so importing it here does not also
 // fire off a live Playwright/eBOS run.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
+//
+// No dummy env vars needed: triggerFobPullIfPossible() itself never touches supabase (fetch
+// only), and qsrsoft-onhand-pull.mjs's module-scope `supabase` const goes through
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs) regardless, which never throws no
+// matter what's in process.env at import time.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { triggerFobPullIfPossible } from '../../scripts/qsrsoft-onhand-pull.mjs';
 

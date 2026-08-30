@@ -53,7 +53,7 @@
 //   QSRSOFT_SECEVENTS_START_DATE / QSRSOFT_SECEVENTS_END_DATE — explicit backfill window
 //   QSRSOFT_SECEVENTS_DEBUG        — '1' for verbose (key-names-only) response-shape logging
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
 import { tokenizeRows } from '../src/engine/identity-vault.js';
@@ -104,7 +104,7 @@ const DEBUG       = process.env.QSRSOFT_SECEVENTS_DEBUG === '1';
 // Guarded, not unconditional -- see qsrsoft-register-audit-pull.mjs's identical comment. Keeps
 // this module importable (for its pure helpers) under vitest, where neither env var is set.
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const fmtDate = d => d.toISOString().slice(0, 10);

@@ -6,12 +6,10 @@
 // (`if (import.meta.url === file://process.argv[1])`), so importing it for its exported
 // pure functions does not also fire off a live Playwright/eBOS run.
 //
-// Dummy Supabase env vars are set BEFORE import because the module still constructs a
-// module-scope `createClient(...)` -- createClient throws synchronously on a missing URL,
-// but never makes a network call at construction time, so a fake URL is safe here.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
+// No dummy env vars needed: qsrsoft-variance-pull.mjs's module-scope `supabase` const goes
+// through safeCreateClient (scripts/lib/safe-supabase-client.mjs), which never throws regardless
+// of what's in process.env at import time — see that helper's own header for the real CI
+// incident (env-var leakage across test files sharing a Vitest worker) this closes.
 import { describe, it, expect } from 'vitest';
 import { runMode, isDailySlot } from '../../scripts/qsrsoft-variance-pull.mjs';
 

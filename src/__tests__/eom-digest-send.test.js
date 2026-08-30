@@ -8,9 +8,11 @@
 // against production Supabase during this dispatch's own build (27/27 stores loaded, live org
 // bootstrap confirmed, all 7 real patches + district rolled up correctly) — see the PR body for
 // the full transcript. This file covers the one piece that's genuinely pure.
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
+//
+// No dummy env vars needed: eom-digest-send.mjs's module-scope `supabase` const goes through
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs), which never throws regardless of
+// what's in process.env at import time — see that helper's own header for the real CI incident
+// (env-var leakage across test files sharing a Vitest worker) this closes.
 import { describe, it, expect } from 'vitest';
 import { classStatusesFromStatusAndLog } from '../../scripts/eom-digest-send.mjs';
 

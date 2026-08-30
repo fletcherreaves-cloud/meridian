@@ -44,7 +44,7 @@
 //                        from these same two secrets)
 // Optional: ROSTER_PERIOD=YYYY-MM · ROSTER_STORES=3708,… · QSRSOFT_DEBUG=1
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { parseEmployeeRosterApi, rosterCounts } from '../src/engine/people-reports.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
@@ -108,7 +108,7 @@ const STORE_NSNS = (process.env.ROSTER_STORES
 // module scope would throw at import time before a test could even reach them -- same pattern
 // qsrsoft-register-audit-pull.mjs already uses for its own mapRow()/extractRows() tests.
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const pad2 = n => String(n).padStart(2, '0');

@@ -56,7 +56,7 @@
 // 2) is the correct failure mode, backstopped by sync-failure-watch.yml below -- not a new
 // Excel-upload UI for data that was never on paper.
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { getFreshToken } from './lib/qsrsoft-auth.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { logPartitionCoverage, checkFreshness } from './_pipeline-contract.mjs';
@@ -84,7 +84,7 @@ const DEBUG       = process.env.QSRSOFT_FORMS_COMPLETION_DEBUG === '1';
 // qsrsoft-security-events-pull.mjs's identical comment: keeps this module importable (for
 // pullWithEscalation and the other pure helpers) under vitest, where neither env var is set.
 const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
 const fmtDate = d => d.toISOString().slice(0, 10);

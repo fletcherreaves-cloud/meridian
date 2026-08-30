@@ -11,9 +11,14 @@
 // eom-digest-send.test.js uses for classStatusesFromStatusAndLog — levelsToRun/hourGatePasses
 // are the other genuinely pure pieces of this script (bootstrapLiveOrg/buildStoreRows/main
 // still require a live Supabase round-trip per that file's own note).
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
+//
+// No dummy env vars needed: eom-digest-send.mjs's module-scope `supabase` const goes through
+// safeCreateClient (scripts/lib/safe-supabase-client.mjs), which never throws regardless of
+// what's in process.env at import time — see that helper's own header for the real CI incident
+// (env-var leakage across test files sharing a Vitest worker, which once poisoned a completely
+// unrelated script's client construction and crashed on Node 20's missing native WebSocket) this
+// closes. A raw `process.env.X = process.env.X || 'dummy'` assignment used to sit here — that was
+// itself the leak source, and removing the need for it removes the leak at its origin.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { hourGatePasses } from '../../scripts/eom-digest-send.mjs';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';

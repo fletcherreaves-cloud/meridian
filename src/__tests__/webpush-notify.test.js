@@ -5,13 +5,22 @@
 // mocked-dependency shape for this repo's Node-script libs.
 //
 // Real VAPID keys are stubbed (not real — configureWebPush() just needs both env vars present
-// to call webpush.setVapidDetails(), which is itself mocked below).
-process.env.VITE_VAPID_PUBLIC_KEY = process.env.VITE_VAPID_PUBLIC_KEY || 'test-public-key';
-process.env.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'test-private-key';
-process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://example.supabase.co';
-process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'test-key';
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// to call webpush.setVapidDetails(), which is itself mocked below). VITE_SUPABASE_URL/
+// SUPABASE_SERVICE_ROLE_KEY need to be truthy so webpush-notify.mjs's module-scope `supabase`
+// (via safeCreateClient, scripts/lib/safe-supabase-client.mjs) constructs the mocked client below
+// rather than resolving to null — this file's own expired-subscription tests assert the mocked
+// delete().eq() gets called.
+//
+// vi.stubEnv (not a raw process.env assignment) + afterAll(unstubAllEnvs) so these dummy values
+// can't leak into process.env for whatever OTHER test file Vitest schedules next in the same
+// worker — belt-and-suspenders on top of safeCreateClient's own fix (a leaked value can no longer
+// crash any script using that helper), but there's no reason to leak it regardless.
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+vi.stubEnv('VITE_VAPID_PUBLIC_KEY', 'test-public-key');
+vi.stubEnv('VAPID_PRIVATE_KEY', 'test-private-key');
+vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+afterAll(() => { vi.unstubAllEnvs(); });
 
 const sendNotificationMock = vi.fn();
 const setVapidDetailsMock = vi.fn();
