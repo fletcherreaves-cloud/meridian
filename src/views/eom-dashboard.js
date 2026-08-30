@@ -7,7 +7,7 @@
 // FOB comes from the qsr_fob stream (dollar-weighted, MTD). Diagnosis + comms state
 // persist to eom_count_status so the owner can track who was told what.
 import * as React from 'react';
-import { STORE_NAMES, getStoreOrg, supervisorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
+import { STORE_NAMES, getStoreOrg, supervisorGroups, operatorGroups, DEFAULT_TARGETS, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell, ModalShell } from '../components/ModalShell.js';
 import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus } from '../components/PanelControls.js';
@@ -1562,6 +1562,12 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [oneStore, setOneStore] = useState(initialStore || ''); // '' = all stores in scope, else a single loc
   const [patch, setPatch] = useState('');       // '' = all supervisors, else a supervisor's patch
   const patchGroups = useMemo(() => { try { return supervisorGroups() || {}; } catch { return {}; } }, []);
+  // dispatch #224 Task 3/5 — Operator rollup tier, same live-flat-map read as patchGroups above.
+  const opGroups = useMemo(() => { try { return operatorGroups() || {}; } catch { return {}; } }, []);
+  const operatorOfLoc = useCallback((u) => {
+    for (const op of Object.keys(opGroups || {})) if ((opGroups[op] || []).map(unpad).includes(u)) return op;
+    return null;
+  }, [opGroups]);
   const [mode, setMode] = useState(() => initialMode || defaultModeFor(defaultPeriod())); // 'scoreboard' | 'eom' | 'progress' | 'compliance'
   // Re-default the mode when the period changes (manual toggle still overrides after) — but
   // never override a legacy-redirect initialMode on the very first render (that useEffect
@@ -1641,6 +1647,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [digestLevel, setDigestLevel] = useState('district');
   const [digestSending, setDigestSending] = useState(false);
   const [digestMsg, setDigestMsg] = useState(null);
+  // dispatch #224 Task 5 — which store's FOB+components table / recount-opportunities list is
+  // expanded within the currently-open rollup group. Keyed `${group.key}|${loc}` so expanding a
+  // store in one group doesn't also expand the same loc's row in a different group card.
+  const [digestStoreOpen, setDigestStoreOpen] = useState(null);
   // dispatch #217 — "⚙️ Scheduled send" row inside this SAME modal: which levels the DAILY
   // scheduled email includes + what UTC hour it sends, independent of digestLevel above
   // (that's just which level the user is currently VIEWING here — don't conflate the two).
@@ -1815,16 +1825,26 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const prog = computeCountProgress(byLoc[loc] || [], { period, asOf, acceptEarly });
       // Specific still-uncounted items per class (Notes 35) — so a ≥90% class can show
       // exactly what's left (hover on the class chip + in the diagnosis/comms report).
+      // dispatch #224 Task 4 — same diagnoseIncompleteCount() call already made here; also keep
+      // its flat uncounted[] (state !== 'stale' only, decision 3) for the EOM Digest's per-store
+      // "recount opportunities" list, rather than a second diagnoseIncompleteCount() call.
       const incByClass = {};
-      try { for (const b of diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf, acceptEarly }).byClass) incByClass[b.cls] = b.items; } catch {}
+      let recountItems = [];
+      try {
+        const diag = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf, acceptEarly });
+        for (const b of diag.byClass) incByClass[b.cls] = b.items;
+        recountItems = diag.uncounted.filter(it => it.state !== 'stale');
+      } catch {}
       const f = fob[loc] || {};
       const st = statusMap[loc] || {};
       return {
         loc,
         name: nm(loc),
         org: getStoreOrg(unpad(loc)),
+        operator: operatorOfLoc(unpad(loc)),
         prog,
         uncountedByClass: incByClass,
+        recountItems,
         fobPct: f.fobPct ?? null,
         fob$: f.fob ?? null,
         components: f,
@@ -1840,7 +1860,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // counted first within a bucket, then name. Surfaces the stores actively in play.
     out.sort((a, b) => (SB_ORDER[sbBucket(a)] - SB_ORDER[sbBucket(b)]) || (a.prog.pctCounted - b.prog.pctCounted) || a.name.localeCompare(b.name));
     return out;
-  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData, exceptions]);
+  }, [byLoc, varByLoc, wasteByLoc, xferByLoc, fobRows, statusMap, period, hasDiagData, exceptions, operatorOfLoc]);
 
   // Freshest business date across the EOM streams feeding this view (As-of stamp).
   const dataAsOf = useMemo(() => {
@@ -1942,18 +1962,25 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // gap/overTarget/comps/topDriver read Task 1 defines — reused verbatim as `fobTarget`, never a
   // second target computation. uncountedValue sums the SAME per-class uncounted items
   // diagnoseIncompleteCount() already put on r.uncountedByClass (allRows, above).
+  // dispatch #224 Task 4 — recountItems is the SAME diagnoseIncompleteCount().uncounted (already
+  // state-filtered to !=='stale') allRows computed above, threaded straight through; fobComps is
+  // NOT set here — src/engine/eom-digest.js's rollupGroup() derives it from fobTarget.comps
+  // itself (already present just below), so there's nothing new to compute for it at this layer.
+  // operator: patch's own sibling field (Task 3), from the SAME live operatorGroups() read patch
+  // already uses supervisorGroups() for.
   const digestStoreRows = useMemo(() => rows.map(r => {
     const u = unpad(r.loc);
     const uncountedValue = Object.values(r.uncountedByClass || {}).flat().reduce((s, it) => s + (Number(it.valueAtRisk) || 0), 0);
     const fr = fobReport.stores[r.loc] || fobReport.stores[u] || null;
     return {
-      loc: r.loc, name: r.name, org: r.org, patch: patchOfLoc(u),
+      loc: r.loc, name: r.name, org: r.org, patch: patchOfLoc(u), operator: r.operator || operatorOfLoc(u),
       classStatuses: classStatusesFromProgress(r.prog?.byClass),
       uncountedValue,
       fob: r.fobPct != null ? r.components : null,
       fobTarget: fr ? { fobPct: fr.target, gapPP: fr.gapPP, overTarget: fr.overTarget, comps: fr.comps, topDriver: fr.topDriver } : null,
+      recountItems: r.recountItems || [],
     };
-  }), [rows, fobReport, patchOfLoc]);
+  }), [rows, fobReport, patchOfLoc, operatorOfLoc]);
 
   // Level defaults to whatever the current scope/patch filter already narrows to (patch selected
   // -> patch level; a state pill active -> org level; otherwise district) — reuses the SAME
@@ -3088,6 +3115,61 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         const c = g.completion[k];
         return `${DIGEST_CLASS_LABELS[k]} ${c.complete}/${c.total}`;
       }).join(' · ');
+      // dispatch #224 Task 5 — per-store FOB+components table (5 columns: Component | Actual $ |
+      // Actual % | Target % | Δ) + recount-opportunities list. No shared 5-column React renderer
+      // existed anywhere in the app before this dispatch (#219's own 5-column table lives ONLY in
+      // the email — resend-notify.mjs's fobSectionHtml() — this panel's existing FOB Report modal
+      // renders comps as a wrapped chip strip, not a table); writing ONE local renderer here and
+      // reusing it for every store in every rollup group is the "check before writing a second
+      // table renderer" call for the app side, mirrored on the email side by extracting
+      // fobComponentsTableHtml() out of resend-notify.mjs (Task 6) — the SAME comps/fobTarget
+      // shape feeds both, just two different render targets (React vs. HTML string).
+      const th2 = (t, r) => h('th', { key: t, style: { textAlign: r ? 'right' : 'left', padding: '3px 8px 3px 0', borderBottom: '1px solid var(--bdr2)', fontSize: '9.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
+      const td2 = (v, r) => h('td', { style: { textAlign: r ? 'right' : 'left', padding: '3px 8px 3px 0', color: 'var(--text2)' } }, v);
+      const fobCompsTable = (fob, fobTarget, comps) => {
+        if (!fob || fob.fobPct == null) return div({ style: { fontSize: '11px', color: 'var(--text3)', padding: '2px 0 8px' } }, 'No fresh FOB data for this store this period.');
+        const headlinePct = `${(fob.fobPct * 100).toFixed(2)}%`;
+        const gapLine = fobTarget && fobTarget.fobPct != null
+          ? ` · target ${(fobTarget.fobPct * 100).toFixed(2)}% · ${fobTarget.gapPP > 0 ? '+' : ''}${fobTarget.gapPP}pp ${fobTarget.overTarget ? 'OVER' : 'under'}`
+          : '';
+        return div({ style: { marginBottom: '8px' } },
+          div({ style: { fontSize: '11.5px', color: 'var(--text2)', marginBottom: '4px' } },
+            span({ style: { fontWeight: 700, color: fobTarget && fobTarget.overTarget ? 'var(--crit)' : 'var(--text)' } }, headlinePct), ' of sales', gapLine, fob.asOf ? ` (as of ${fob.asOf})` : ''),
+          (comps && comps.length) ? div({ style: { overflowX: 'auto' } },
+            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } },
+              h('thead', null, h('tr', null, th2('Component'), th2('Actual $', 1), th2('Actual %', 1), th2('Target %', 1), th2('Δ', 1))),
+              h('tbody', null, comps.map(c => h('tr', { key: c.key },
+                td2(c.label), td2(money(fob[c.key]), 1),
+                td2(c.actualPP != null ? `${c.actualPP}%` : '—', 1),
+                td2(c.tgtPP != null ? `${c.tgtPP}%` : '—', 1),
+                td2(c.deltaPP != null ? `${c.deltaPP > 0 ? '+' : ''}${c.deltaPP}pp` : '—', 1)))))) : null);
+      };
+      const RECOUNT_CLS_LABEL = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
+      const recountList = (items) => {
+        if (!items || !items.length) return div({ style: { fontSize: '11px', color: '#4ade80' } }, 'No open recount opportunities — nothing a recount would still move.');
+        return div(null,
+          div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, margin: '2px 0 3px' } }, `Recount opportunities (${items.length})`),
+          div({ style: { overflowX: 'auto' } },
+            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '11.5px' } },
+              h('thead', null, h('tr', null, th2('WRIN'), th2('Description'), th2('Class'), th2('$ at risk', 1))),
+              h('tbody', null, items.slice(0, 25).map((it, i) => h('tr', { key: i },
+                td2(it.wrin || '—'), td2(it.descr || '—'), td2(RECOUNT_CLS_LABEL[it.cls] || it.cls || '—'),
+                td2(money(it.valueAtRisk), 1)))))),
+          items.length > 25 ? div({ style: { fontSize: '10px', color: 'var(--text3)', marginTop: '2px' } }, `+${items.length - 25} more`) : null);
+      };
+      const storeRow = (g, s) => {
+        const rowKey = `${g.key}|${s.loc}`;
+        const isOpen = digestStoreOpen === rowKey;
+        return div({ key: s.loc, style: { borderTop: '1px solid var(--bdr)' } },
+          div({ onClick: () => setDigestStoreOpen(o => o === rowKey ? null : rowKey), style: { display: 'flex', alignItems: 'baseline', gap: '8px', padding: '5px 2px', cursor: 'pointer', flexWrap: 'wrap' } },
+            span({ style: { color: 'var(--text3)', fontSize: '10px' } }, isOpen ? '▾' : '▸'),
+            span({ style: { fontWeight: 600, color: 'var(--text)', minWidth: '140px' } }, s.name || s.loc),
+            s.fob && s.fob.fobPct != null ? span({ style: { fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: s.fobTarget && s.fobTarget.overTarget ? 'var(--crit)' : 'var(--text2)' } }, `${(s.fob.fobPct * 100).toFixed(2)}%`) : null,
+            (s.recountItems || []).length ? span({ style: { fontSize: '10px', color: '#f5bc00', fontWeight: 700, border: '1px solid #f5bc00', borderRadius: '4px', padding: '0 5px' } }, `${s.recountItems.length} recount opp${s.recountItems.length === 1 ? '' : 's'}`) : null),
+          isOpen ? div({ style: { padding: '2px 4px 12px 20px' } },
+            fobCompsTable(s.fob, s.fobTarget, s.fobComps),
+            recountList(s.recountItems)) : null);
+      };
       const groupCard = (g) => div({ key: g.key, style: { background: 'var(--surf2)', border: '1px solid var(--bdr2)', borderRadius: '8px', padding: '12px 14px', marginBottom: '10px' } },
         div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' } },
           span({ style: { fontWeight: 800, fontSize: '13px', color: g.key === UNASSIGNED_KEY ? '#fb923c' : 'var(--text)' } }, g.label),
@@ -3096,11 +3178,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         div({ style: { fontSize: '12.5px', color: 'var(--text2)', lineHeight: 1.5, marginBottom: '6px' } }, g.headline),
         div({ style: { fontSize: '11px', color: 'var(--text3)' } }, classLine(g)),
         g.fob.worstStores.length ? div({ style: { fontSize: '11px', color: 'var(--text2)', marginTop: '4px' } },
-          'Worst: ', g.fob.worstStores.slice(0, 3).map(s => `${s.name || s.loc} (+${s.gapPP}pp)`).join(', ')) : null);
+          'Worst: ', g.fob.worstStores.slice(0, 3).map(s => `${s.name || s.loc} (+${s.gapPP}pp)`).join(', ')) : null,
+        // dispatch #224 Task 5 — every store in the group, expandable to its full FOB+components
+        // table and recount-opportunities list (decision 2: full detail everywhere, no leaner
+        // variant even for a large District group).
+        g.stores.length ? div({ style: { marginTop: '8px' } }, g.stores.map(s => storeRow(g, s))) : null);
       return h(ModalShell, { title: `📧 EOM Digest — ${scopeLabel()}`, onClose: () => setDigestOpen(false), maxWidth: 720, closeOnBackdrop: true },
         div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' } },
           div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden' } },
-            levelTab('district', 'District'), levelTab('patch', 'Patch'), levelTab('org', 'Market')),
+            levelTab('district', 'District'), levelTab('patch', 'Patch'), levelTab('org', 'Market'), levelTab('operator', 'Operator')),
           h('button', {
             onClick: sendDigest, disabled: digestSending || digest.groups.length === 0,
             style: { marginLeft: 'auto', ...MODAL_TOOLBTN, color: '#34d399', borderColor: '#34d399', cursor: digestSending ? 'wait' : 'pointer' },
@@ -3118,7 +3204,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             ? div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'Loading current schedule…')
             : div(null,
                 div({ style: { display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', marginBottom: '8px' } },
-                  [['district', 'District'], ['patch', 'Patch'], ['org', 'Market']].map(([k, label]) =>
+                  [['district', 'District'], ['patch', 'Patch'], ['org', 'Market'], ['operator', 'Operator']].map(([k, label]) =>
                     h('label', { key: k, style: { display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', color: 'var(--text2)', cursor: 'pointer' } },
                       h('input', { type: 'checkbox', checked: schedLevels.includes(k), onChange: () => toggleSchedLevel(k) }),
                       label)),

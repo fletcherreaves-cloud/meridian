@@ -57,9 +57,6 @@ function fobToolLinksHtml(links) {
 <ul style="margin:0 0 4px;padding-left:20px;font-size:13px">${items}</ul>`;
 }
 
-// Renders nothing when row.fob_snapshot is absent (stale/missing FOB pull, per the owner's
-// freshness rule) — no caveat, no placeholder header, just skip the section entirely.
-//
 // dispatch #215 Task 1 — row.fob_target (buildFobTargetReport()'s output from
 // qsrsoft-onhand-pull.mjs, reusing fob-report.js's own comps/overTarget/gapPP/topDriver math —
 // no target math re-derived here) adds target-vs-actual alongside each number when present;
@@ -78,10 +75,16 @@ function fobToolLinksHtml(links) {
 // compActual (qsrsoft-onhand-pull.mjs), just evaluated here instead of there, through this file's
 // own existing fobPp() rounding (already used for the headline %) rather than a divergent
 // formula. Target %/Δ still show "—" in that case — those genuinely don't exist without a target.
-function fobSectionHtml(row) {
-  const fs = row.fob_snapshot;
+// dispatch #224 Task 6 — the headline paragraph + 5-column table extracted out of fobSectionHtml()
+// below into its own function, taking `fs`/`tgt` directly rather than a wrapping `row`, so it's
+// callable per-store inside the EOM Digest roll-up's loop over group.stores (eom-digest-notify.mjs)
+// as well as here for the single-store #213 notification email. Checked before extracting: the two
+// contexts want the IDENTICAL table (same fs/tgt shape, same columns, per decision 2 — full detail
+// everywhere, no leaner rollup variant) — no divergence to force apart, so extraction is the clean
+// call, not a stretch. Returns '' when `fs` is absent (no fresh FOB snapshot), matching
+// fobSectionHtml()'s own no-caveat-no-placeholder discipline.
+export function fobComponentsTableHtml(fs, tgt) {
   if (!fs) return '';
-  const tgt = row.fob_target || null;
   const headlinePct = fs.fobPct != null ? `${fobPp(fs.fobPct)}%` : '—';
   const targetLine = tgt && tgt.fobPct != null
     ? ` <span style="color:#666">(target ${fobPp(tgt.fobPct)}%, ${tgt.gapPP > 0 ? '+' : ''}${tgt.gapPP}pp ${tgt.overTarget ? 'OVER' : 'under'})</span>`
@@ -98,15 +101,24 @@ function fobSectionHtml(row) {
     return `<tr>${cell(label)}${cell(fobMoney(fs[k]))}${cell(actualPctStr)}${cell(tgtPctStr)}` +
       `<td style="padding:4px 0;border-bottom:1px solid #eee">${deltaStr}</td></tr>`;
   }).join('');
-  return `<h3 style="margin:16px 0 8px">FOB (Food Over Base)</h3>
-<p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
+  return `<p style="margin:0 0 8px">${headlinePct} of sales${targetLine} — ${fobMoney(fs.fob)} total${fs.asOf ? ` (as of ${fs.asOf})` : ''}</p>
 <table style="border-collapse:collapse;width:100%;font-size:13px;margin:0 0 4px">
 <thead><tr style="text-align:left;border-bottom:2px solid #ccc">` +
 `<th style="padding:4px 10px 4px 0">Component</th><th style="padding:4px 10px 4px 0">Actual $</th>` +
 `<th style="padding:4px 10px 4px 0">Actual %</th><th style="padding:4px 10px 4px 0">Target %</th>` +
 `<th style="padding:4px 0">Δ</th></tr></thead>
 <tbody>${compRows}</tbody>
-</table>
+</table>`;
+}
+
+// Renders nothing when row.fob_snapshot is absent (stale/missing FOB pull, per the owner's
+// freshness rule) — no caveat, no placeholder header, just skip the section entirely.
+function fobSectionHtml(row) {
+  const fs = row.fob_snapshot;
+  if (!fs) return '';
+  const table = fobComponentsTableHtml(fs, row.fob_target || null);
+  return `<h3 style="margin:16px 0 8px">FOB (Food Over Base)</h3>
+${table}
 ${fobToolLinksHtml(row.fob_tool_links)}`;
 }
 

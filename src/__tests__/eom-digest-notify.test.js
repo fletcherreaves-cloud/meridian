@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { recipientFor, buildDigestEmailContent, sendDigestEmail } from '../../scripts/lib/eom-digest-notify.mjs';
 import { EMAIL_TO } from '../../scripts/lib/resend-notify.mjs';
+import { buildEomDigest } from '../engine/eom-digest.js';
 
 const GROUP = {
   key: 'Mary Ratliff', label: 'Mary Ratliff', storeCount: 4,
@@ -99,6 +100,120 @@ describe('buildDigestEmailContent', () => {
     const { subject, html } = buildDigestEmailContent(district, 'district');
     expect(subject).toContain('District');
     expect(html).toContain('District EOM Digest');
+  });
+
+  it('labels an operator-level group correctly (dispatch #224 Task 3)', () => {
+    const op = { ...GROUP, key: 'Ryan Thorley', label: 'Ryan Thorley' };
+    const { subject, html } = buildDigestEmailContent(op, 'operator');
+    expect(subject).toContain('Operator');
+    expect(subject).toContain('Ryan Thorley');
+    expect(html).toContain('Operator EOM Digest');
+  });
+});
+
+// dispatch #224 Task 6 — per-store FOB+components table + recount-opportunities list, reusing
+// fobComponentsTableHtml() (resend-notify.mjs). Real consumer test (buildDigestEmailContent()
+// itself, not the extracted helper called directly) per this repo's "would this verification
+// still pass if reverted" rule — reverting the storesHtml wiring in eom-digest-notify.mjs would
+// leave these assertions failing even though fobComponentsTableHtml() itself still works fine.
+describe('buildDigestEmailContent — per-store detail (dispatch #224 Task 6)', () => {
+  const GROUP_WITH_STORES = {
+    ...GROUP,
+    stores: [
+      {
+        loc: '0006178', name: 'Chipley-St Rd 77', org: 'FL', patch: 'Brad Denley',
+        fob: { fobPct: 0.30, fob: 3000, comp: 200, raw: 200, cond: 200, emp: 200, statv: 200, unex: 200, asOf: '2026-08-29' },
+        fobTarget: { fobPct: 0.25, gapPP: 5, overTarget: true, comps: [{ key: 'statv', label: 'Variance Stat', actualPP: 4, tgtPP: 3, deltaPP: 1 }] },
+        fobComps: [{ key: 'statv', label: 'Variance Stat', actualPP: 4, tgtPP: 3, deltaPP: 1 }],
+        recountItems: [
+          { wrin: 'W1', descr: 'Never Counted Item', cls: 'food', valueAtRisk: 123.45, state: 'never' },
+          { wrin: 'W2', descr: 'Stale Residual Item', cls: 'food', valueAtRisk: 999, state: 'stale' },
+        ],
+      },
+      {
+        loc: '0006838', name: 'Defuniak Springs', org: 'FL', patch: 'Brad Denley',
+        fob: null, fobTarget: null, fobComps: null, recountItems: [],
+      },
+    ],
+  };
+
+  it('renders a per-store section per store, headed "Per-store detail"', () => {
+    const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
+    expect(html).toContain('Per-store detail');
+    expect(html).toContain('Chipley-St Rd 77');
+    expect(html).toContain('Defuniak Springs');
+  });
+
+  it('renders the 5-column FOB+components table for a store with fresh FOB data', () => {
+    const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
+    expect(html).toContain('Variance Stat');
+    expect(html).toContain('4%');   // actualPP
+    expect(html).toContain('3%');   // tgtPP
+    expect(html).toContain('+1pp'); // deltaPP
+    expect(html).toContain('30%');  // headline fobPct
+  });
+
+  it('a store with no fresh FOB data shows the explicit fallback line, not a blank section', () => {
+    const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
+    expect(html).toContain('No fresh FOB data for this store this period.');
+  });
+
+  it('renders recount opportunities for a store that has them, with WRIN/Description/Class/$', () => {
+    const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
+    expect(html).toContain('W1');
+    expect(html).toContain('Never Counted Item');
+    expect(html).toContain('$123');
+  });
+
+  it('a store with no open recount items shows the explicit "no open" line', () => {
+    const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
+    expect(html).toContain('No open recount opportunities');
+  });
+
+  it('renders a stale-state item if one somehow reached group.stores directly (this file trusts its input; the real exclusion gate is buildEomDigest() — see the end-to-end test below)', () => {
+    // Documents the actual design: storeSectionHtml() has no filter of its own, matching the
+    // dashboard's own storeRow rendering (src/views/eom-dashboard.js) — BOTH render layers trust
+    // src/engine/eom-digest.js's rollupGroup() as the single authoritative state!=='stale' gate,
+    // rather than duplicating the filter in every consumer. This fixture hand-builds `stores`
+    // (bypassing buildEomDigest() entirely), so it's the one case that DOES leak — proving there's
+    // exactly one real gate, not zero.
+    const { html } = buildDigestEmailContent(GROUP_WITH_STORES, 'patch');
+    expect(html).toContain('W2');
+  });
+
+  it('omits the "Per-store detail" section entirely when the group has no stores (unchanged from before this dispatch)', () => {
+    const { html } = buildDigestEmailContent(GROUP, 'patch'); // GROUP.stores === []
+    expect(html).not.toContain('Per-store detail');
+  });
+});
+
+// dispatch #224 — end-to-end: buildEomDigest() (the real engine) -> buildDigestEmailContent() (the
+// real email renderer), proving state:'stale' is excluded through the ACTUAL pipeline a live send
+// uses, not just at the engine's own return value (already covered by eom-digest.test.js) nor at
+// the render layer alone (the fixture-based test above, which deliberately bypasses the engine).
+describe('buildEomDigest() -> buildDigestEmailContent() — end-to-end stale exclusion (dispatch #224 verification)', () => {
+  it('a store with never/early/stale recount items emails only never/early — stale never appears in the sent HTML', () => {
+    const storeRow = {
+      loc: '6178', name: 'Chipley-St Rd 77', patch: 'Brad Denley',
+      classStatuses: {
+        food: { status: 'complete', pct: 1 }, condiment: { status: 'complete', pct: 1 },
+        paper: { status: 'complete', pct: 1 }, nonproduct: { status: 'complete', pct: 1 },
+      },
+      uncountedValue: 0, fob: null, fobTarget: null,
+      recountItems: [
+        { wrin: 'N1', descr: 'Never Item', cls: 'food', valueAtRisk: 50, state: 'never' },
+        { wrin: 'E1', descr: 'Early Item', cls: 'food', valueAtRisk: 25, state: 'early' },
+        { wrin: 'S1', descr: 'Stale Item', cls: 'food', valueAtRisk: 5000, state: 'stale' },
+      ],
+    };
+    const digest = buildEomDigest([storeRow], { level: 'patch', period: '2026-08' });
+    const group = digest.groups.find(g => g.key === 'Brad Denley');
+    expect(group).toBeTruthy();
+    const { html } = buildDigestEmailContent(group, 'patch');
+    expect(html).toContain('N1');
+    expect(html).toContain('E1');
+    expect(html).not.toContain('S1');
+    expect(html).not.toContain('Stale Item');
   });
 });
 

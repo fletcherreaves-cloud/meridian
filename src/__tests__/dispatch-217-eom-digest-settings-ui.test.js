@@ -106,7 +106,7 @@ describe('dispatch #217 — EOM Digest modal "⚙️ Scheduled send" row', () =>
     // Market checked, Patch unchecked (proves it isn't silently reset to the ['district','patch']
     // default while a real row exists).
     const boxes = [...container.querySelectorAll('input[type="checkbox"]')];
-    expect(boxes.length).toBe(3);
+    expect(boxes.length).toBe(4); // District/Patch/Market/Operator — dispatch #224 added the 4th
     const checkedLabels = boxes.filter(b => b.checked).map(b => b.closest('label').textContent);
     expect(checkedLabels).toEqual(['District', 'Market']);
   });
