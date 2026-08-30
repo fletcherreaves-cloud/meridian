@@ -9,9 +9,13 @@
 // error, and the element just loses its background/border. This shipped twice in one day as
 // #351 and #368.
 //
-// src/views/patch-heatmap.js#withAlpha(color, hexSuffix) is the fix: a hex literal keeps the
-// old suffix-concat behavior unchanged; a var() reference goes through color-mix() instead.
-// See src/__tests__/patch-heatmap-alpha.test.js for withAlpha's own unit coverage.
+// src/utils/fmt.js#withAlpha(color, hexSuffix) is the fix (moved there under #368 so
+// model-health-badge.js, a component split out of analytics.js specifically to stay small in
+// the eager bundle, doesn't have to statically import all of patch-heatmap.js just to reach it;
+// re-exported unchanged from patch-heatmap.js for its own existing call sites): a hex literal
+// keeps the old suffix-concat behavior unchanged; a var() reference goes through color-mix()
+// instead. See src/__tests__/patch-heatmap-alpha.test.js and
+// src/__tests__/dispatch-368-model-health-badge-alpha.test.js for withAlpha's own unit coverage.
 //
 // NOT a mandate to convert everything below. Most of the 93 sites counted here concatenate
 // onto a hex literal today (harmless — #10b981+'22' is valid CSS) and only become a live bug
@@ -41,10 +45,11 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = 'src';
-// Measured fresh against this branch, 2026-08-18. Fuzzy pattern (unlike R1/R3's clean literal
-// matches) — hand-reviewed every candidate hit before trusting this number. See PATTERN below
-// for exactly what counts as a hit.
-const CEILING = 89;
+// Measured fresh against this branch, 2026-08-18; lowered 89->87 under #368 (dispatch fixing
+// model-health-badge.js's own #351-shaped bug converted its 2 sites to withAlpha()). Fuzzy
+// pattern (unlike R1/R3's clean literal matches) — hand-reviewed every candidate hit before
+// trusting this number. See PATTERN below for exactly what counts as a hit.
+const CEILING = 87;
 
 // Matches `<value> + '<2 hex chars>'` (any quote style). Two shapes for <value>, alternated:
 //   1. A literal var() reference — 'var(--crit)' + '18' — the dispatch's own #351/#368 example.
@@ -86,13 +91,13 @@ function findHits() {
 }
 
 describe('R4: no new color+hex-suffix string concatenation (var() silently drops, see #351/#368)', () => {
-  it(`stays at exactly the measured ceiling (${CEILING}) — use withAlpha() (src/views/patch-heatmap.js) for new alpha-tinted colors instead`, () => {
+  it(`stays at exactly the measured ceiling (${CEILING}) — use withAlpha() (src/utils/fmt.js) for new alpha-tinted colors instead`, () => {
     const hits = findHits();
     if (hits.length > CEILING) {
       throw new Error(
         `${hits.length} color+hex-suffix concatenations in src/, ${hits.length - CEILING} more than ` +
         `the ceiling of ${CEILING}. New site(s):\n${hits.join('\n')}\n\n` +
-        `Use withAlpha(color, hexSuffix) (src/views/patch-heatmap.js) instead of concatenating a ` +
+        `Use withAlpha(color, hexSuffix) (src/utils/fmt.js) instead of concatenating a ` +
         `hex alpha suffix onto a color by hand — it handles both hex-literal and var() colors ` +
         `correctly. See #351/#368: the same concat trick that works on a hex literal produces the ` +
         `literal invalid string "var(--x)XX" on a var() reference, and the browser drops it silently.`

@@ -65,6 +65,7 @@ import { STORE_NAMES, sNameC, INV_ORG_COORDS, supervisorGroups } from '../consta
 import { unpad, fobByStoreLatest } from './attention-now.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { CoachingModal } from './coaching-modal.js';
+import { withAlpha } from '../utils/fmt.js';
 
 // #208 — which of this grid's dimensions have a coaching-loop metric behind them. Food cost
 // and labor only, per the issue's own scope discipline — Sales/Speed/Controls have no
@@ -87,15 +88,13 @@ const UNKNOWN_COLOR = 'var(--text3)';
 // browser silently drops, so critical cells lost their tinted background/border outright
 // (v5.023's hex->var(--crit) conversion regressed this; UNKNOWN_COLOR has had the same flaw,
 // border-only, since v4.984 — status.color was always var(--text3) for the 'unknown' case).
-// Normalizes both forms: a hex literal keeps the old suffix-concat behavior unchanged; a var()
-// reference goes through color-mix() instead, since a custom property can't be alpha-blended
-// by string concatenation (and reading its resolved value needs a DOM query these plain style
-// objects don't have access to).
-export const withAlpha = (color, hexSuffix) => {
-  if (!color || !color.startsWith('var(')) return color + hexSuffix;
-  const pct = Math.round((parseInt(hexSuffix, 16) / 255) * 100);
-  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
-};
+// #368 — moved to utils/fmt.js (a small, dependency-free shared module, imported above) so the
+// same fix could reach model-health-badge.js, which has the identical bug, without that file
+// statically importing this whole 400-line view module just to reach one pure function (its own
+// header comment exists specifically to avoid pinning a large module into the eager bundle).
+// Re-exported here unchanged so this file's own 6 call sites, plus dt-speedofservice.js/
+// troubleshooting.js (already importing it from this path), don't need to change.
+export { withAlpha };
 
 // Converts a "gap past target" into a 0-100 health band: 100 at/better than target,
 // linearly down to 0 once the gap reaches badAt (in the SAME unit as gap — pp or %).
