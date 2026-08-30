@@ -144,10 +144,50 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
   return data;
 }
 
+function _sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// Dispatch #218 — classify a single page-fetch error as worth retrying or not, before
+// fetchAll gives up on it. Reuses this file's own permanent-error precedent (_isMissingTable,
+// defined below — 42P01/PGRST205/"relation ... does not exist" — plus the 42703 bad-column
+// check used elsewhere in this file) rather than inventing a new classification: those mean
+// "this query is wrong" or "this table isn't migrated", and retrying never helps. Everything
+// else is treated as transient and retried: 57014 (Postgres statement-timeout SQLSTATE — this
+// repo's own CLAUDE.md names this exact code for this exact class of large-table read, and it's
+// the one already seen live on this table per loadQsrRawItemDetail's own comment), a raw
+// network/fetch-level failure with no `.code` at all (connection reset, egress/throttle cutoff),
+// and — deliberately — any OTHER unrecognized error shape: a wasted retry costs a couple
+// seconds, wrongly refusing to retry a transient failure costs a real DATA INCOMPLETE banner.
+// Exported for direct unit testing (this file's underscore-prefix = internal convention still
+// applies otherwise; see paged-parallel-count-fallback.test.js for the alternative — testing an
+// unexported internal through a real loader — used elsewhere in this file).
+export function _isRetryablePageError(error) {
+  if (!error) return false;
+  if (error.code === '42703') return false;       // bad column — query is wrong, won't self-heal
+  if (_isMissingTable(error)) return false;        // 42P01 / PGRST205 / "relation ... does not exist"
+  return true;                                     // 57014, no .code, or unrecognized shape
+}
+
+const _RETRY_DELAYS_MS = [500, 1500]; // up to 2 retries of the SAME page, increasing backoff
+
 async function fetchAll(builderFn, pageSize = 1000, label = '') {
   let all = [], from = 0;
   while (true) {
-    const { data, error } = await builderFn(from, from + pageSize - 1);
+    let { data, error } = await builderFn(from, from + pageSize - 1);
+    // Dispatch #218 — a single failed page used to be immediately fatal (see the fallback
+    // branch below, unchanged). Most page failures observed live (statement timeouts under
+    // concurrent startup load, egress/throttle blips) are transient — a fresh re-fetch of the
+    // SAME page moments later succeeds. Retry before falling through to the original
+    // warn/_recordDataError/_partial/break behavior, which stays exactly as it was for the
+    // "retries didn't help" (or "this was never retryable") case.
+    if (error && _isRetryablePageError(error)) {
+      for (const delay of _RETRY_DELAYS_MS) {
+        await _sleep(delay);
+        const retried = await builderFn(from, from + pageSize - 1);
+        if (!retried.error) { data = retried.data; error = null; break; }
+        error = retried.error;
+        if (!_isRetryablePageError(error)) break; // stop early if it turned out permanent
+      }
+    }
     // A mid-pagination error (e.g. a free-tier egress/throttle cutoff) previously returned
     // whatever pages loaded so far AS IF complete — silently dropping the rest of the rows.
     // On big reads ordered oldest-first that meant the NEWEST days vanished with no warning
