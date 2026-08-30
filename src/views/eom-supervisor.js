@@ -644,7 +644,11 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 }
 
 // ── Print styles ──────────────────────────────────────────────────────────────
-const PRINT_STYLE = `
+// Exported (dispatch #227) so the three new EOM report tabs (eom-missing-items-report.js /
+// eom-team-snapshot.js / eom-recount-report.js) reuse this EXACT print mechanism — same class
+// hooks (.eom-block/.eom-no-print/.eom-print-area/.eom-print-title), same body.eom-printing
+// scoping — instead of inventing a second one (the "don't build a second table renderer" rule).
+export const PRINT_STYLE = `
 @media print {
   /* Print ONLY the EOM summary as a clean full-page report. Dispatch #202: this panel is now a tab
      inside the Inventory Control hub (RoutePanelShell, not its own ModalShell) — the class hooks
@@ -669,6 +673,19 @@ const PRINT_STYLE = `
 }
 .eom-print-title { display: none; }
 `;
+
+// Idempotent style-tag injection (dispatch #227) — same '#eom-print-style' id this panel's own
+// useEffect below already uses, so whichever EOM report tab mounts first wins and every other
+// tab's call below is a no-op (getElementById short-circuits it). Exported so the three new
+// report tabs share ONE injected <style>, not one each.
+export function ensureEomPrintStyleInjected() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('eom-print-style')) return;
+  const s = document.createElement('style');
+  s.id = 'eom-print-style';
+  s.textContent = PRINT_STYLE;
+  document.head.appendChild(s);
+}
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 // dispatch #225 Task 3/4 — `period` ('YYYY-MM', the SAME shared period every other Inventory

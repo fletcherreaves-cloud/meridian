@@ -3,6 +3,7 @@ import {
   periodKey, daysInPeriod, countWindowStart, lastDayOfPeriod, inCountWindow,
   normClass, computeCountProgress, diagnoseIncompleteCount, rankVarianceFollowups,
   buildStoreStatus, buildIncompleteCountMessage, FOB_CLASSES, BELIEVES_DONE_PCT,
+  recommendationForState, STATE_RECOMMENDATION,
 } from '../engine/eom-inventory.js';
 
 const d = (y, m, day) => { const x = new Date(y, m - 1, day); x.setHours(0, 0, 0, 0); return x; };
@@ -326,5 +327,18 @@ describe('buildStoreStatus', () => {
     const rows = Array.from({ length: 10 }, (_, i) => ({ wrin: 's' + i, cls: 'Food', lastCounted: d(2026, 7, 20) }));
     const s = buildStoreStatus({ loc: '0001234', period: '2026-07', onHandRows: rows, asOf: d(2026, 7, 20) });
     expect(s.shouldNotify).toBe(false);
+  });
+});
+
+describe('recommendationForState (dispatch #227 — Missing-Items report)', () => {
+  it('maps never/early/stale to buildIncompleteCountMessage\'s own proven phrasing, not new copy', () => {
+    expect(recommendationForState('never')).toBe(STATE_RECOMMENDATION.never);
+    expect(recommendationForState('never')).toMatch(/no count on record this period/);
+    expect(recommendationForState('early')).toMatch(/predates the final count window/);
+    expect(recommendationForState('stale')).toMatch(/no count since a prior period/);
+  });
+  it('falls back safely for an unknown/missing state', () => {
+    expect(recommendationForState('bogus')).toMatch(/Review this item/);
+    expect(recommendationForState(undefined)).toMatch(/Review this item/);
   });
 });
