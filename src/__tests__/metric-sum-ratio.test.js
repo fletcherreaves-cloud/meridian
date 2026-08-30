@@ -12,10 +12,10 @@ import { describe, it, expect } from 'vitest';
 import { metricSumRatio, metricAvg, metricRate, rollupCapableMetricKeys, METRIC_SOURCES } from '../engine/metric-source.js';
 
 describe('rollupCapableMetricKeys', () => {
-  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165)', () => {
+  it('is exactly the 10 ratio metrics dispatch #77 named, plus spph/fobPct (dispatch #104), plus oepe/r2p (dispatch #153), plus dtMixPct (dispatch #165), plus kvst (dispatch #221)', () => {
     const keys = rollupCapableMetricKeys().sort();
     expect(keys).toEqual([
-      'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'dtMixPct', 'fobPct', 'laborPct',
+      'avgCheck', 'cashOSPct', 'compWaste', 'discPct', 'dtMixPct', 'fobPct', 'kvst', 'laborPct',
       'oepe', 'r2p', 'rawWaste', 'spph', 'statVar', 'tRedAPct', 'tRedBPct', 'tpph',
     ].sort());
   });
@@ -243,7 +243,7 @@ const RATIO_METRIC_ROWS = {
 
 describe('per-metric numerator/denominator assertions (dispatch #87 item 2)', () => {
   it('RATIO_METRIC_ROWS covers every rollup-capable metric not already tested above', () => {
-    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct', 'oepe', 'r2p']);
+    const covered = new Set([...Object.keys(RATIO_METRIC_ROWS), 'laborPct', 'discPct', 'fobPct', 'oepe', 'r2p', 'kvst']);
     for (const k of rollupCapableMetricKeys()) expect(covered.has(k), k).toBe(true);
   });
 
@@ -416,6 +416,94 @@ describe('metricSumRatio -- r2p (fcUntilServeUs/fcUntilClosedDrawerUs / fcTransC
     expect(perDayR2p[7]).toBeLessThan(minComplete);
     expect(sum.value).toBeGreaterThan(mean);
     expect(sum.value).toBeGreaterThanOrEqual(minComplete - 1);
+  });
+});
+
+// ── Dispatch #221 (2026-08-30) -- KVS Time: the exact gap #153 left behind (oepe/r2p got
+// Sum/Sum, kvst didn't). Same completeness-artifact mechanism, applied to KVS Time's raw legs
+// (kvstNumSec/kvstTransCnt, sourced from _mfyTime/_mfyCnt on qsrActSummaryRows). ────────────
+describe('metricSumRatio -- kvst (kvstNumSec/kvstTransCnt, dispatch #221)', () => {
+  it('derive.fn(num, cnt) === num / cnt -- pins input order and a plain division', () => {
+    const fn = METRIC_SOURCES.kvst.derive.fn;
+    expect(fn(700, 5)).toBeCloseTo(140, 5);
+  });
+
+  // ── LIVE cross-check (dispatch #221's verification bar, same method #153 used): real
+  // qsr_daily_activity_rollup values pulled 2026-08-30 via SUPABASE_SERVICE_ROLE_KEY REST,
+  // store 6178 (loc "0006178"), 2026-08-27 (a known-complete historical day -- 1,047 of 1,173
+  // projected transactions = 89.3% of plan). Proves the new chain
+  // (Σ_mfyTime/1000 ÷ Σ_mfyCnt) reproduces the SAME formula supabase.js already computes from
+  // the identical raw fields: `kvst: r._mfyCnt > 0 ? r._mfyTime / r._mfyCnt / 1000 : null`. ──
+  it('single-day Σnum/Σden matches the existing kvst formula exactly (live cross-check, store 6178, 2026-08-27)', () => {
+    const mfy_untilserve = 97816206, mfy_trans_cnt = 890;
+    const precomputedKvst = mfy_untilserve / mfy_trans_cnt / 1000;
+    const ds = { qsrActSummaryRows: [{ loc: '1', date: new Date('2026-08-27'),
+      _mfyTime: mfy_untilserve, _mfyCnt: mfy_trans_cnt }] };
+    const range = { s: new Date('2026-08-27'), e: new Date('2026-08-27') };
+    const sum = metricSumRatio(ds, '1', range, 'kvst');
+    expect(sum.n).toBe(1);
+    expect(sum.value).toBeCloseTo(precomputedKvst, 6);
+    expect(precomputedKvst).toBeCloseTo(109.906, 2); // pins the real measured value itself
+  });
+
+  it('a period with only complete days -- Sum/Sum stays close to mean-of-daily on a near-uniform-volume fixture (sanity check)', () => {
+    const ds = {
+      qsrActSummaryRows: [
+        { loc: '1', date: new Date('2026-08-27'), _mfyTime: 97816206, _mfyCnt: 890 },
+        { loc: '1', date: new Date('2026-08-28'), _mfyTime: 105172145, _mfyCnt: 996 },
+        { loc: '1', date: new Date('2026-08-29'), _mfyTime: 80754062, _mfyCnt: 804 },
+      ],
+    };
+    const range = { s: new Date('2026-08-27'), e: new Date('2026-08-29') };
+    const mean = metricAvg(ds, '1', range, 'kvst');
+    const sum = metricSumRatio(ds, '1', range, 'kvst');
+    // Real 3-day store-6178 window (complete days only) -- mean and Sum/Sum land within ~2s of
+    // each other here, unlike the in-progress-day case below.
+    expect(Math.abs(mean - sum.value)).toBeLessThan(2);
+  });
+
+  // The real store-6178 4-day window (2026-08-27..08-30) pulled live 2026-08-30 -- 2026-08-30
+  // (today, still in progress at pull time) sat at 155 of 847 projected transactions (18.3% of
+  // plan). Its own-day KVS reading (76.5s) IS the fastest of the window -- the same class of
+  // completeness artifact #153 found for R2P/OEPE, reproduced here for KVS Time. (A second
+  // store checked the same day, 3708, did NOT show this skew -- its in-progress reading sat
+  // mid-range -- so this is reported as a real but store/day-dependent artifact, not a
+  // universal one; the mechanism (mode:'any' full-24-slot zero-fill) is unconditional either
+  // way, which is why the fix does not depend on any one day happening to skew.)
+  it('a low-volume in-progress day pulls mean-of-daily toward it but Σ/Σ stays closer to the complete days (real 4-day store-6178 window, live 2026-08-30)', () => {
+    const days = [
+      ['2026-08-27', 97816206, 890],
+      ['2026-08-28', 105172145, 996],
+      ['2026-08-29', 80754062, 804],
+      // 2026-08-30: in-progress at pull time -- 155 of 847 projected transactions (18.3% of plan).
+      ['2026-08-30', 10479637, 137],
+    ];
+    const ds = { qsrActSummaryRows: days.map(([dt, time, cnt]) =>
+      ({ loc: '1', date: new Date(dt), _mfyTime: time, _mfyCnt: cnt })) };
+    const range = { s: new Date('2026-08-27'), e: new Date('2026-08-30') };
+    const perDayKvst = days.map(([, time, cnt]) => time / cnt / 1000);
+    const mean = metricAvg(ds, '1', range, 'kvst');
+    const sum = metricSumRatio(ds, '1', range, 'kvst');
+    const minComplete = Math.min(...perDayKvst.slice(0, 3));
+    expect(perDayKvst[3]).toBeLessThan(minComplete); // the partial day IS the window's fastest single reading
+    expect(mean).toBeLessThan(minComplete);           // mean-of-daily gets pulled down toward it
+    expect(sum.value).toBeGreaterThan(mean);           // Σ/Σ sits further from the artifact than mean-of-daily
+    expect(sum.value).toBeGreaterThanOrEqual(minComplete - 1); // Σ/Σ stays within the complete-day range
+  });
+
+  it('excludes a day missing one leg from the sum, rather than treating a missing input as zero', () => {
+    const ds = {
+      qsrActSummaryRows: [
+        { loc: '1', date: new Date('2026-08-27'), _mfyTime: 97816206, _mfyCnt: 890 },
+        // Missing _mfyCnt entirely (e.g. a row shape that never populated it) -- must NOT be
+        // treated as a 0-count day and must NOT contribute its _mfyTime to the sum unpaired.
+        { loc: '1', date: new Date('2026-08-28'), _mfyTime: 105172145 },
+      ],
+    };
+    const range = { s: new Date('2026-08-27'), e: new Date('2026-08-28') };
+    const sum = metricSumRatio(ds, '1', range, 'kvst');
+    expect(sum.n).toBe(1);
+    expect(sum.value).toBeCloseTo(97816206 / 890 / 1000, 5);
   });
 });
 
