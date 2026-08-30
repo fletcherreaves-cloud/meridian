@@ -30,10 +30,27 @@ describe('safeCreateClient — never throws (dispatch: CI env-var-leak fix, 2026
     expect(safeCreateClient('not-a-url', 'some-key')).toBeNull();
   });
 
-  it('constructs a real client object for a genuinely valid-looking URL/key pair — production behavior unchanged', () => {
-    const client = safeCreateClient('https://example.supabase.co', 'test-key');
-    expect(client).not.toBeNull();
-    expect(typeof client).toBe('object');
-    expect(typeof client.from).toBe('function');
+  // A valid-looking URL/key pair is NOT guaranteed to construct successfully — that's the whole
+  // point of this fix. On a Node version with no native WebSocket global (Node 20, CI's other
+  // matrix leg), @supabase/realtime-js's own construction throws even for genuinely real
+  // credentials, which is the exact failure safeCreateClient exists to swallow into null.
+  // Asserting unconditional success would re-encode the very Node-version dependency this helper
+  // removes. So: assert the UNIVERSAL contract (never throws) unconditionally, and assert the
+  // stronger "succeeds and returns a real client" only when this runtime actually has the
+  // capability the real library needs — checked directly (globalThis.WebSocket), not inferred
+  // from a Node major-version number.
+  it('never throws for a genuinely valid-looking URL/key pair, on any Node version', () => {
+    expect(() => safeCreateClient('https://example.supabase.co', 'test-key')).not.toThrow();
   });
+
+  const hasNativeWebSocket = typeof globalThis.WebSocket !== 'undefined';
+  (hasNativeWebSocket ? it : it.skip)(
+    'on a runtime with native WebSocket, constructs a real client object — production behavior unchanged',
+    () => {
+      const client = safeCreateClient('https://example.supabase.co', 'test-key');
+      expect(client).not.toBeNull();
+      expect(typeof client).toBe('object');
+      expect(typeof client.from).toBe('function');
+    }
+  );
 });
