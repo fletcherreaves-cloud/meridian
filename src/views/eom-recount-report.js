@@ -21,10 +21,18 @@
 // direction, per the owner's own "whether they improved or hurt final result" framing).
 //
 // Print mechanism reused verbatim from eom-supervisor.js (PRINT_STYLE, exported dispatch #227).
+//
+// 2026-08-31 (owner request) — location scope is already provided by the shared EOMDashboardPanel
+// chrome (LocationSelector, all → state → patch → store), confirmed still doing its job; this
+// added a "📋 Copy" button and grouped items by RESULT (verdictText) within each location (was a
+// flat table repeating a similar helped/hurt sentence once per row). groupRowsByLocationThenKey()
+// is shared with eom-missing-items-report.js so the two reports can't grow two different groupings
+// of the same idea.
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
 import { crossStoreConsistencyText } from '../engine/eom-ledger-baseline.js';
 import { ensureEomPrintStyleInjected } from './eom-supervisor.js';
+import { groupRowsByLocationThenKey } from './eom-report-grouping.js';
 
 const { useEffect, useState, useCallback } = React;
 const h = React.createElement;
@@ -33,6 +41,36 @@ const span = (p, ...c) => h('span', p, ...c);
 const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const VERDICT_COLOR = { helping: '#4ade80', hurting: 'var(--crit)', flat: 'var(--text3)', unknown: 'var(--text3)' };
+
+// Plain-text export (the "📋 Copy" button) — a pure function of the SAME grouped structure the
+// screen renders, so copied text can't disagree with what's on screen.
+export function formatRecountImpactText(rows, crossStore, { period, scopeLabel } = {}) {
+  const list = rows || [];
+  const nHelped = list.filter(r => r.verdict === 'helping').length;
+  const nHurt = list.filter(r => r.verdict === 'hurting').length;
+  const lines = [];
+  lines.push(`Recount-Impact Report — ${scopeLabel || 'all stores'} — ${period}`);
+  lines.push(`${list.length} recounted item${list.length === 1 ? '' : 's'} · ${nHelped} helped · ${nHurt} hurt · EOM close window (last 3 days)`);
+  if (crossStore && crossStore.length) {
+    lines.push('', `⚠ Cross-Store Inconsistency — ${crossStore.length} item${crossStore.length === 1 ? '' : 's'}`);
+    for (const x of crossStore) {
+      lines.push(`  ${x.descr || x.wrin} — ${x.nStores} stores, ${x.nHelped} helped (${money(x.helpedDol)}), ${x.nHurt} hurt (${money(x.hurtDol)})`);
+      for (const s of x.stores) lines.push(`    - ${s.storeName}: ${money(s.baseVar)} → ${money(s.curVar)} (${s.verdict})`);
+    }
+  }
+  if (!list.length) { lines.push('', 'No recounted items in this close window for the current scope.'); return lines.join('\n'); }
+  const byLoc = groupRowsByLocationThenKey(list, { key: 'verdictText' });
+  for (const loc of byLoc) {
+    lines.push('', `${loc.storeName} (${loc.org === 'emerald' ? 'FL' : 'OK'})`);
+    for (const g of loc.groups) {
+      lines.push(`  ${g.label}`);
+      for (const it of g.items) {
+        lines.push(`    - ${it.descr || it.wrin} (${DIGEST_CLASS_LABELS[it.cls] || it.cls}, ${money(it.baseVar)} → ${money(it.curVar)})`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
 
 export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) {
   useEffect(() => { ensureEomPrintStyleInjected(); }, []);
@@ -47,10 +85,18 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
     document.body.classList.add('eom-printing');
     setTimeout(() => window.print(), 60);
   }, []);
+  const [copied, setCopied] = useState(false);
+  const doCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(formatRecountImpactText(rows, crossStore, { period, scopeLabel }));
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard permission denied — silently a no-op, matches other panels' best-effort copy */ }
+  }, [rows, crossStore, period, scopeLabel]);
 
   const list = rows || [];
   const nHelped = list.filter(r => r.verdict === 'helping').length;
   const nHurt = list.filter(r => r.verdict === 'hurting').length;
+  const grouped = React.useMemo(() => groupRowsByLocationThenKey(list, { key: 'verdictText' }), [list]);
 
   const th = (t) => h('th', { key: t, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
   const tdR = (content) => h('td', { style: { padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, content);
@@ -66,7 +112,12 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
           span({ style: { color: '#4ade80', fontWeight: 700 } }, `${nHelped} helped`), ' · ',
           span({ style: { color: 'var(--crit)', fontWeight: 700 } }, `${nHurt} hurt`),
           ' · EOM close window (last 3 days)')),
-      div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' } },
+      div({ style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '10px' } },
+        h('button', {
+          onClick: doCopy,
+          title: 'Copy this report as text — grouped by location, then by result.',
+          style: { background: 'var(--surf3)', border: '1px solid var(--bdr2)', color: 'var(--text2)', borderRadius: '7px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 },
+        }, copied ? '✓ Copied' : '📋 Copy'),
         h('button', {
           onClick: doPrint,
           title: 'Print this report — every item recounted in the close window, sorted by class.',
@@ -102,24 +153,26 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
 
       list.length === 0
         ? div({ style: { color: 'var(--text3)', fontSize: '13px', padding: '20px 4px' } }, 'No recounted items in this close window for the current scope — either nothing was recounted, or the raw item-detail pull has not landed for these stores/period yet.')
-        : div({ className: 'eom-block', style: { overflowX: 'auto' } },
-            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } }, [
-              h('thead', { key: 'h' }, h('tr', null, [
-                th('Item'), th('Class'), th('# Recounted'), th('Baseline'), th('Post-Recount'), th('Δ'), th('Result'), th('Store'),
-              ])),
-              h('tbody', { key: 'b' }, list.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
-                h('td', { style: { padding: '5px 8px' } },
-                  div({ style: { color: 'var(--text)' } }, r.descr || r.wrin || '—'),
-                  r.wrin ? span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, r.wrin) : null),
-                h('td', { style: { padding: '5px 8px', color: 'var(--text2)' } }, DIGEST_CLASS_LABELS[r.cls] || r.cls || '—'),
-                tdR(r.nRecounts != null ? `↻ ${r.nRecounts}` : '—'),
-                tdR(r.baseVar != null ? money(r.baseVar) : '—'),
-                tdR(r.curVar != null ? money(r.curVar) : '—'),
-                tdR(r.dMag != null ? h('span', { style: { fontWeight: 700, color: VERDICT_COLOR[r.verdict] } }, `${r.dMag > 0 ? '+' : ''}${money(r.dMag)}`) : '—'),
-                h('td', { style: { padding: '5px 8px', maxWidth: '340px', color: VERDICT_COLOR[r.verdict] || 'var(--text2)', fontWeight: 600 } }, r.verdictText),
-                h('td', { style: { padding: '5px 8px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, r.storeName, span({ style: { fontSize: '10px', color: r.org === 'emerald' ? '#38bdf8' : '#f5bc00', marginLeft: '5px' } }, r.org === 'emerald' ? 'FL' : 'OK')),
-              ]))),
-            ])),
+        : div(null, ...grouped.map(loc => div({ key: loc.loc, className: 'eom-block', style: { marginBottom: '16px', overflowX: 'auto' } },
+            div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '6px' } },
+              span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, loc.storeName),
+              span({ style: { fontSize: '10px', color: loc.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, loc.org === 'emerald' ? 'FL' : 'OK')),
+            ...loc.groups.map((g, gi) => div({ key: gi, style: { marginBottom: '8px' } },
+              div({ style: { fontSize: '11.5px', fontWeight: 600, color: VERDICT_COLOR[g.items[0]?.verdict] || 'var(--text2)', marginBottom: '3px' } }, g.label),
+              h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } }, [
+                h('thead', { key: 'h' }, h('tr', null, [th('Item'), th('Class'), th('# Recounted'), th('Baseline'), th('Post-Recount'), th('Δ')])),
+                h('tbody', { key: 'b' }, g.items.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
+                  h('td', { style: { padding: '5px 8px' } },
+                    div({ style: { color: 'var(--text)' } }, r.descr || r.wrin || '—'),
+                    r.wrin ? span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, r.wrin) : null),
+                  h('td', { style: { padding: '5px 8px', color: 'var(--text2)' } }, DIGEST_CLASS_LABELS[r.cls] || r.cls || '—'),
+                  tdR(r.nRecounts != null ? `↻ ${r.nRecounts}` : '—'),
+                  tdR(r.baseVar != null ? money(r.baseVar) : '—'),
+                  tdR(r.curVar != null ? money(r.curVar) : '—'),
+                  tdR(r.dMag != null ? h('span', { style: { fontWeight: 700, color: VERDICT_COLOR[r.verdict] } }, `${r.dMag > 0 ? '+' : ''}${money(r.dMag)}`) : '—'),
+                ]))),
+              ])))),
+          )),
     ),
   );
 }
