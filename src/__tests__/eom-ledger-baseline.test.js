@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff, recountVerdictText } from '../engine/eom-ledger-baseline.js';
+import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff, recountVerdictText, formatRecountReport } from '../engine/eom-ledger-baseline.js';
 
 const item = (wrin, hist) => ({ wrin, descr: wrin, cls: 'food', history: hist });
 const cnt = (dt, tm, dolVar, { variance = null } = {}) => ({ isCount: true, source: 'inventory', dt, tm, difference: dolVar, variance });
@@ -207,5 +207,35 @@ describe('ledgerScopeDiff', () => {
     const ada = scope.stores.find(s => s.name === 'Ada');
     expect(ada.engagement.verdict).toBe('improving');
     expect(ada.nRecounted).toBe(1);
+  });
+});
+
+// dispatch-226.md Task 4 (optional) -- "Copy report" markdown export, a pure function of the SAME
+// ledgerScopeDiff() output the Change Monitor panel and SAGE's query_eom_recount_impact tool both
+// already compute, so it can't disagree with either surface.
+describe('formatRecountReport', () => {
+  it('names the district totals, honesty caveat, and per-store table -- not just item dumps', () => {
+    const rawByLoc = {
+      '18213': [item('a', [cnt('2026-07-30', '10:00', -300)])],
+      '6972': [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])],
+    };
+    const perLoc = {
+      '18213': { name: 'Lindsay', closeWindowStart: '2026-07-30' },
+      '6972': { name: 'Ada', closeWindowStart: '2026-07-30' },
+    };
+    const scope = ledgerScopeDiff(rawByLoc, perLoc);
+    const md = formatRecountReport(scope, { period: '2026-07' });
+    expect(md).toMatch(/2026-07/);
+    expect(md).toMatch(/1 of 2 stores improved/);
+    expect(md).toMatch(/total food cost %/i);         // the FOB-vs-total-food-cost honesty caveat travels with the report
+    expect(md).toMatch(/not a between-store comparison/i);
+    expect(md).toMatch(/\| Ada \|/);
+    expect(md).toMatch(/\| Lindsay \|/);
+    expect(md).toMatch(/Biggest movers/);
+  });
+
+  it('returns an empty string for a missing/malformed diff rather than throwing', () => {
+    expect(formatRecountReport(null)).toBe('');
+    expect(formatRecountReport({})).toBe('');
   });
 });

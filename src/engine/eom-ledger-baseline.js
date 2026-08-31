@@ -228,3 +228,49 @@ export function storeEngagement(diff, { flaggedWrins = [], fobDeltaPct = null, m
     netDol, fobDeltaPct, nRecounted: diff.nRecounted || 0,
   };
 }
+
+// ── Shareable markdown report (dispatch-226.md Task 4, optional) ─────────────────────────────
+// Formats a ledgerScopeDiff() result as narrative markdown -- district summary line, per-store
+// table, biggest-mover items -- similar in spirit to eom-diagnosis.js's formatDiagnosisReport().
+// A pure function of the SAME diff object the Change Monitor panel and SAGE's
+// query_eom_recount_impact tool already compute -- the report text is never a separate
+// calculation, so it can't drift from what either surface shows.
+export function formatRecountReport(diff, { period = '' } = {}) {
+  if (!diff || !diff.stores) return '';
+  const money = v => `$${Math.round(Math.abs(v || 0)).toLocaleString()}`;
+  const signed = v => `${v < 0 ? '-' : '+'}${money(v)}`;
+  const net = diff.totalHelped - diff.totalHurt;
+  const lines = [];
+  lines.push(`# EOM Recount Impact on FOB${period ? ` — ${period}` : ''}`);
+  lines.push('');
+  lines.push(
+    `**${diff.improved} of ${diff.nStores} stores improved** their FOB by recounting flagged items, `
+    + `${diff.worsened} made it worse, ${diff.noAction} took no action. `
+    + `District: ${money(diff.totalHelped)} moved toward zero, ${money(diff.totalHurt)} moved away — net ${signed(net)}.`
+  );
+  lines.push('');
+  lines.push(
+    '_Method: same-store, same-item, session-count vs final-count within the EOM close window '
+    + '(last 3 calendar days of the month) — not a between-store comparison, since a store '
+    + 'recounts an item BECAUSE it saw a bad number on it. This is FOB (inventory variance) '
+    + 'impact only — total food cost % / "Base Food %" is not in Meridian\'s data model._'
+  );
+  lines.push('');
+  lines.push('| Store | Verdict | Recounted | Helped | Hurt | Net |');
+  lines.push('|---|---|---:|---:|---:|---:|');
+  for (const s of diff.stores) {
+    const sNet = (s.helpedDol || 0) - (s.hurtDol || 0);
+    lines.push(`| ${s.name || s.loc} | ${s.engagement?.label || '—'} | ${s.nRecounted || 0} | ${money(s.helpedDol)} | ${money(s.hurtDol)} | ${signed(sNet)} |`);
+  }
+  const movers = [];
+  for (const s of diff.stores) for (const it of (s.items || [])) if (it.recounted) movers.push({ ...it, storeName: s.name || s.loc });
+  movers.sort((a, b) => Math.abs(b.dMag || 0) - Math.abs(a.dMag || 0));
+  if (movers.length) {
+    lines.push('');
+    lines.push('## Biggest movers');
+    for (const it of movers.slice(0, 10)) {
+      lines.push(`- **${it.storeName}** — ${it.descr} (${it.wrin}): ${signed(-(it.dMag || 0))} (${money(it.baseVar)} → ${money(it.curVar)}, ${it.verdict})`);
+    }
+  }
+  return lines.join('\n');
+}
