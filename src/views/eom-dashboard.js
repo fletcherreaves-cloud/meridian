@@ -36,6 +36,7 @@ import {
   scoreboardRowFields,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
+import { metricSeries, metricSumRatio } from '../engine/metric-source.js';
 import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
@@ -2665,6 +2666,31 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     });
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period, fountainBaselineByLoc]);
 
+  // Cash Controls — EOM/FOB linkage (2026-08-31, owner req): "at some point we have to link cash
+  // controls to food cost and report that as well." Generalized at the STORE level, never a
+  // register number or an employee name -- register-audit.js's own Register Audit report already
+  // does per-employee attribution BY DESIGN (dispatch #200 removed its redaction gate on purpose),
+  // so this section stays store-level and points there for the person-level dig-in instead of
+  // duplicating it. Sourced via metric-source.js's auto-first per-day helpers (CLAUDE.md's data-
+  // sourcing standard) -- never by filtering ctrlRows/cashRows/glimpseRows directly. discPct/
+  // tRedAPct/tRedBPct use metricSumRatio (true Sum-num/Sum-den) rather than metricAvg's mean-of-
+  // daily, since an in-progress "today" would otherwise distort a still-open EOM period the same
+  // way #153 found for OEPE/TPPH (CLAUDE.md's own "watch for incomplete DAR days" note). $/count
+  // metrics are plain period sums. manualRefAmt deliberately excluded -- its own METRIC_SOURCES
+  // chain can fall back to auditRows (the per-EMPLOYEE table), and this section must never
+  // silently pull an employee-attributed number into a store-level line.
+  const controlsRange = useMemo(() => ({ s: `${period}-01`, e: isoDay(reportAsOf) }), [period, reportAsOf]);
+  const controlsSummaryFor = useCallback((loc) => {
+    const sum = (key) => Object.values(metricSeries(ds, loc, controlsRange, key)).reduce((s, v) => s + (v || 0), 0);
+    const ratio = (key) => { const r = metricSumRatio(ds, loc, controlsRange, key); return r ? r.value : null; };
+    const cashOSAmt = sum('cashOSAmt'), posOverAmt = sum('posOverAmt');
+    const refundAmt = sum('cashRefAmt') + sum('cashlessRefAmt');
+    const tRedACnt = sum('tRedACnt'), tRedBCnt = sum('tRedBCnt');
+    const discPct = ratio('discPct'), tRedAPct = ratio('tRedAPct'), tRedBPct = ratio('tRedBPct');
+    const hasAny = Math.abs(cashOSAmt) >= 1 || posOverAmt >= 1 || refundAmt >= 1 || tRedACnt >= 1 || tRedBCnt >= 1 || discPct != null;
+    return hasAny ? { cashOSAmt, posOverAmt, refundAmt, tRedACnt, tRedBCnt, discPct, tRedAPct, tRedBPct } : null;
+  }, [ds, controlsRange]);
+
   const diagOptsFor = useCallback((loc, components) => {
     const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date(), acceptEarly: !!exceptions[loc] });
     const caseSzByWrin = {};
@@ -2677,8 +2703,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     const tg = { ...(DEFAULT_TARGETS[unpad(loc)] || {}), ...(monthlyOverrideFor(loc, period) || {}) };
     const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
     const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null, components: fobComponentDeltas(c, tg) } : null;
-    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null };
-  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions, monthlyOverrideFor]);
+    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null, controls: controlsSummaryFor(loc) };
+  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions, monthlyOverrideFor, controlsSummaryFor]);
 
   // Pure — returns the draft object with BOTH the abbreviated recap (default message, Notes 37 C1)
   // and the full report one click away. Reused by openDraft AND the bulk "Message all" generator.

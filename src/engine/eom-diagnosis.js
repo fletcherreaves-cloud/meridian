@@ -821,7 +821,7 @@ export function fobComponentDeltas(components, targets) {
 // integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
 // the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
 // `fob` = { pct, tgt, dollars, components? } for the FOB one-liner; `link` = optional "more detail" URL.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date(), exception = null } = {}) {
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date(), exception = null, controls = null } = {}) {
   // FOB-over-target driver analysis: which components exceed their own target (biggest gap first). Used
   // to explain an overage that item-level variance doesn't capture (raw waste, stat variance, condiments).
   const fobOver = !!(fob && fob.pct != null && fob.tgt != null && (fob.pct - fob.tgt) > 5e-5);
@@ -950,6 +950,36 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const d = exception.acceptedDate ? exception.acceptedDate : null;
     const by = exception.approvedBy && exception.approvedBy !== 'unspecified' ? exception.approvedBy : null;
     L.push(`> ⚠️ **Count-date exception granted** — this store's EOM count was accepted from an **early count**${d ? ` (dated ${d})` : ''}${by ? `, approved by ${by}` : ''}, off the standard final-window process. Numbers below reflect that accepted count.`, '');
+  }
+
+  // ── CASH CONTROLS — food-cost/FOB linkage (2026-08-31, owner req, verbatim): "at some point we
+  // have to link cash controls to food cost and report that as well." Discount % is the direct
+  // FOB-math link: FOB% = food$ ÷ sales$, so heavy discounting shrinks the denominator and can
+  // inflate FOB% without food cost itself actually rising. Cash O/S, POS overrides, refunds, and
+  // T-Reds are a broader store-health signal reported alongside FOB, not literal FOB inputs.
+  // Store-level ONLY -- never a register number or an employee name (owner, verbatim, reviewing a
+  // competitor sample that named specific cashiers by drawer: "generalize it and point managers
+  // to research further to identify the person responsible by using the register audit report").
+  // register-audit.js's own "Register Audit" report already does per-employee attribution BY
+  // DESIGN (dispatch #200 removed its redaction gate on purpose) -- this section stays generalized
+  // and points there instead of duplicating or re-deriving that breakdown.
+  if (controls) {
+    const rows = [];
+    if (controls.discPct != null) rows.push(`Discount **${(controls.discPct * 100).toFixed(2)}%** of net sales`);
+    if (Math.abs(controls.cashOSAmt) >= 1) rows.push(`Cash Over/Short **${money(controls.cashOSAmt)}**`);
+    if (controls.posOverAmt >= 1) rows.push(`POS Overrides **${money(controls.posOverAmt)}**`);
+    if (controls.refundAmt >= 1) rows.push(`Refunds **${money(controls.refundAmt)}**`);
+    if (controls.tRedACnt >= 1 || controls.tRedBCnt >= 1) {
+      const pctStr = p => p != null ? `${(p * 100).toFixed(2)}%` : '—';
+      rows.push(`T-Reds **${controls.tRedACnt} before** (${pctStr(controls.tRedAPct)}) → **${controls.tRedBCnt} after** (${pctStr(controls.tRedBPct)})`);
+    }
+    if (rows.length) {
+      L.push('## 💵 Cash Controls this period', '');
+      rows.forEach(r => L.push(`- ${r}`));
+      L.push('', '_Store-level totals only — not attributed to a specific register or employee. If any of ' +
+        'these look elevated, use the **Register Audit** report and floor-level cash-control management to ' +
+        'identify who\'s responsible._', '');
+    }
   }
 
   // ── TOP 5 — DO NOW (owner req #46, focused to FOOD + CONDIMENT only per owner — the profit-driver
