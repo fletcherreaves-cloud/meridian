@@ -251,3 +251,112 @@ export function buildStoreJourneys(rawItems = [], opts = {}) {
     .map((d) => buildItemJourney(d, opts))
     .sort((a, b) => Math.abs(b.netCountDollars) - Math.abs(a.netCountDollars));
 }
+
+// ── Swing ledger (owner req, 2026-08-31) ────────────────────────────────────────────────────────
+// Owner, verbatim: "take all the items that where lost during the month, which little hope of
+// recovering by a recount at eom... I want to see the accumulative total of those and what they
+// were and when it happened along with if a recount took place at the time or not and who the
+// counting manager was" — a flat, per-COUNT-EVENT ledger (not per-item), across the whole month,
+// with manager attribution and a running grand total. This is a new LENS over buildStoreJourneys()'s
+// existing per-item `counts[]` (already carries dt/tm/dollars/manager per count event) — no new
+// pull, no new grading concept, just flattened + classified.
+//
+// Per QSRSoft's own period-to-period anchoring (the same fact the Decision Guide table states): only
+// an item's LAST count of the period determines what carries into next month's opening. Any EARLIER
+// count's $ impact is superseded by whatever count follows it — it "washes out" of the final number
+// regardless of whether that later count was itself accurate. So for each item's count sequence:
+//   - every count except the last  → recovered: true  (a later count in this period superseded it)
+//   - the item's LAST count        → recovered: false, plus:
+//       - locked: true  if that last count landed BEFORE the close window started and the item
+//         hasn't been touched since — the period is ending, so there is no more time for a recount
+//         to change it (same test buildItemJourney's own breakPoint inference already uses).
+//       - locked: false if it's still inside the count window — still fixable with a recount now.
+export function storeSwingLedger(rawItems = [], { period, asOf, floor = 25 } = {}) {
+  const journeys = buildStoreJourneys(rawItems, { period, asOf });
+  const windowStart = period ? countWindowStart(period).getTime() : null;
+  const rows = [];
+  for (const j of journeys) {
+    const counts = j.counts || [];
+    counts.forEach((c, i) => {
+      if (Math.abs(c.dollars || 0) < floor) return;
+      const isLast = i === counts.length - 1;
+      const locked = isLast && windowStart != null && c.when != null && c.when < windowStart;
+      rows.push({
+        wrin: j.wrin, descr: j.descr, cls: j.itemClass, caseSz: j.caseSz, uom: j.uom,
+        dt: c.dt, tm: c.tm, when: c.when, dollars: c.dollars, unitVar: c.unitVar,
+        cases: (j.caseSz > 0 && c.unitVar != null) ? Math.abs(c.unitVar) / j.caseSz : null,
+        manager: c.manager,
+        recovered: !isLast,       // a later count this period superseded this swing
+        locked,                    // final count, before the window, nothing left to recount
+      });
+    });
+  }
+  rows.sort((a, b) => (a.when ?? 0) - (b.when ?? 0));
+  const totalDollars = rows.reduce((s, r) => s + r.dollars, 0);
+  // "Top swingers" — the coaching list (owner: "positively encouraging teams to recount top items
+  // at the time of the count"). Biggest single-event swings, independent of recovered/locked, since
+  // the point is in-process count discipline (catch it AT the count), not just the EOM outcome.
+  const topSwingers = [...journeys]
+    .filter(j => Math.abs(j.netCountDollars) >= floor)
+    .slice(0, 10)
+    .map(j => ({ wrin: j.wrin, descr: j.descr, cls: j.itemClass, caseSz: j.caseSz, netCountDollars: j.netCountDollars, nCounts: (j.counts || []).length }));
+  return { rows, totalDollars, topSwingers };
+}
+
+// ── Product reconstruction (owner req, 2026-08-31) ──────────────────────────────────────────────
+// Owner, verbatim: "another thing we used to do when troubleshooting was to try and recreate menu
+// items based on stat loss and variance. For example, if i was missing 100 pieces of fresh beef
+// and 110 regular buns and 98 slices of cheese, i would envision that as either 100 cheeseburgers
+// or 50 McDoubles possibly unaccounted for. It was useful information to watch on the floor for
+// procedures and check for controls issues at the register. To pull this off you only need to know
+// the recipes for each product, which we have now and just do a basic lookup conversion of how the
+// missing items could have disappeared if they were fully assembled products."
+//
+// Input: storeSwingLedger()'s `rows` (all material swings this period, locked or not — scoped by
+// the caller the same as the ledger itself) + a per-WRIN map of qsr_raw_item_info's `menuItems[]`
+// (recipe_serving_factor = units of this raw item per unit of the menu item, on_pos = currently
+// sellable). Only SHORTAGE swings (negative $ and negative unit variance) feed this — you can't
+// "recreate a product" from a gain.
+//
+// For each menu item a shortage's raw ingredient feeds, impliedServings = missingUnits ÷
+// recipe_serving_factor — "this much beef alone could be N burgers." A candidate only surfaces once
+// 2+ DIFFERENT shortages this period corroborate the SAME menu item (minCorroborating) — one
+// ingredient matching one recipe is a coincidence; beef AND buns AND cheese all pointing to ~100
+// units each is a real signal. `tight` = every contributing ingredient's implied count falls within
+// `tolerancePct` of the group's median — a loose spread (e.g. beef says 50, buns say 100) means the
+// recipe doesn't actually explain the shortage together, even though it corroborates on paper.
+export function reconstructMissingProducts(swingRows, rawItemInfoByWrin = {}, { tolerancePct = 0.35, minCorroborating = 2 } = {}) {
+  const shortages = (swingRows || []).filter(r => r.dollars < 0 && r.unitVar != null && r.unitVar < 0);
+  const candidates = {};
+  for (const s of shortages) {
+    const info = rawItemInfoByWrin[String(s.wrin)];
+    if (!info || !Array.isArray(info.menuItems)) continue;
+    const missingUnits = Math.abs(s.unitVar);
+    for (const mi of info.menuItems) {
+      const factor = Number(mi.recipe_serving_factor ?? mi.recipeServingFactor);
+      const onPos = mi.on_pos ?? mi.onPos;
+      if (onPos !== 'Y' || !(factor > 0)) continue;
+      const key = String(mi.item_number ?? mi.itemNumber);
+      if (!candidates[key]) candidates[key] = { itemNumber: key, description: mi.description, contributors: [] };
+      candidates[key].contributors.push({
+        wrin: s.wrin, descr: s.descr, dt: s.dt, missingUnits, servingFactor: factor,
+        impliedServings: missingUnits / factor,
+      });
+    }
+  }
+  const out = [];
+  for (const c of Object.values(candidates)) {
+    // One contributor per DISTINCT raw item, not per swing event — a single ingredient counted
+    // short twice this period shouldn't read as "two ingredients corroborate this recipe."
+    const byWrin = {};
+    for (const ct of c.contributors) if (!byWrin[ct.wrin] || ct.missingUnits > byWrin[ct.wrin].missingUnits) byWrin[ct.wrin] = ct;
+    const contributors = Object.values(byWrin);
+    if (contributors.length < minCorroborating) continue;
+    const vals = contributors.map(x => x.impliedServings).sort((a, b) => a - b);
+    const median = vals[Math.floor(vals.length / 2)];
+    const spread = median > 0 ? (vals[vals.length - 1] - vals[0]) / median : Infinity;
+    out.push({ itemNumber: c.itemNumber, description: c.description, contributors, estimatedUnits: median, tight: spread <= tolerancePct, spread });
+  }
+  out.sort((a, b) => (Number(b.tight) - Number(a.tight)) || (b.contributors.length - a.contributors.length) || (b.estimatedUnits - a.estimatedUnits));
+  return out;
+}

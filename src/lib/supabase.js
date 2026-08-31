@@ -3893,6 +3893,27 @@ export async function loadQsrRawItemDetail({ period, loc } = {}) {
   }));
 }
 
+// qsr_raw_item_info (dispatch #184) — a CURRENT-STATE recipe/BOM + cost snapshot per raw item, no
+// `period` column (the pull script keys it (loc, wrin) only, always overwriting to the latest
+// known values — see that dispatch's own header comment). `menu_items[]` is the recipe data this
+// loader exists for: which finished menu items this raw ingredient feeds, and at what
+// `recipe_serving_factor` (units of the raw item per unit of the menu item) — first real consumer
+// is the Count Swings report's product-reconstruction section (owner req, 2026-08-31).
+export async function loadQsrRawItemInfo({ loc } = {}) {
+  if (!supabase) return [];
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_raw_item_info').select('*').range(from, to);
+    if (loc) q = q.eq('loc', String(loc).padStart(7, '0'));
+    return q;
+  }, 500, 'qsr_raw_item_info');
+  return (data || []).map(r => ({
+    loc: String(parseInt(r.loc, 10)), wrin: r.full_wrin, descr: r.long_desc,
+    caseQty: r.case_qty != null ? Number(r.case_qty) : null,
+    menuItems: Array.isArray(r.menu_items) ? r.menu_items : [],
+    menuItemCombos: Array.isArray(r.menu_item_combos) ? r.menu_item_combos : [],
+  }));
+}
+
 // ── Inventory Summary & Usage ─────────────────────────────────────────────────
 export async function saveQsrInventorySummary(rows) {
   if (!supabase || !rows?.length) return { saved: 0, errors: [] };
