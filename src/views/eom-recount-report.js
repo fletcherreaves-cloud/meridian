@@ -98,7 +98,24 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
   const nHurt = list.filter(r => r.verdict === 'hurting').length;
   const grouped = React.useMemo(() => groupRowsByLocationThenKey(list, { key: 'verdictText' }), [list]);
 
-  const th = (t) => h('th', { key: t, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
+  // Fixed column widths (owner req, 2026-08-31: "need to align column headers and data please") —
+  // each location/verdict group renders its OWN <table> (so the "Helped: corrected a $X…" label can
+  // sit directly above just that group's rows), and under the default table-layout:auto every one of
+  // those tables sizes its columns independently off its OWN longest cell content. A short item name
+  // in one group and a long one in the next then push the SAME column to two different x-positions,
+  // so the report reads as misaligned even though each table is internally consistent. table-layout:
+  // fixed + a shared <colgroup> pins the 5 non-Item columns to the same width in every group's table;
+  // Item is left un-pinned (gets whatever's left) since it's the one column whose natural length
+  // varies most and shouldn't be truncated.
+  const COL_W = { cls: '70px', recounted: '96px', baseline: '90px', post: '96px', delta: '90px' };
+  const colgroup = () => h('colgroup', null,
+    h('col', { key: 'item' }),
+    h('col', { key: 'cls', style: { width: COL_W.cls } }),
+    h('col', { key: 'recounted', style: { width: COL_W.recounted } }),
+    h('col', { key: 'baseline', style: { width: COL_W.baseline } }),
+    h('col', { key: 'post', style: { width: COL_W.post } }),
+    h('col', { key: 'delta', style: { width: COL_W.delta } }));
+  const th = (t) => h('th', { key: t, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, t);
   const tdR = (content) => h('td', { style: { padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' } }, content);
 
   return div({ style: { padding: '16px', maxWidth: '1100px', margin: '0 auto' } },
@@ -159,11 +176,12 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
               span({ style: { fontSize: '10px', color: loc.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, loc.org === 'emerald' ? 'FL' : 'OK')),
             ...loc.groups.map((g, gi) => div({ key: gi, style: { marginBottom: '8px' } },
               div({ style: { fontSize: '11.5px', fontWeight: 600, color: VERDICT_COLOR[g.items[0]?.verdict] || 'var(--text2)', marginBottom: '3px' } }, g.label),
-              h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } }, [
+              h('table', { style: { width: '100%', minWidth: '640px', tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: '12.5px' } }, [
+                colgroup(),
                 h('thead', { key: 'h' }, h('tr', null, [th('Item'), th('Class'), th('# Recounted'), th('Baseline'), th('Post-Recount'), th('Δ')])),
                 h('tbody', { key: 'b' }, g.items.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
-                  h('td', { style: { padding: '5px 8px' } },
-                    div({ style: { color: 'var(--text)' } }, r.descr || r.wrin || '—'),
+                  h('td', { style: { padding: '5px 8px', overflow: 'hidden' } },
+                    div({ style: { color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.descr || r.wrin || '—'),
                     r.wrin ? span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, r.wrin) : null),
                   h('td', { style: { padding: '5px 8px', color: 'var(--text2)' } }, DIGEST_CLASS_LABELS[r.cls] || r.cls || '—'),
                   tdR(r.nRecounts != null ? `↻ ${r.nRecounts}` : '—'),

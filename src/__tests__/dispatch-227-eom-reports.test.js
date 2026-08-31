@@ -232,8 +232,11 @@ describe('dispatch #227 — Recount Impact report', () => {
     expect(text).toMatch(/↻ 1/);              // recounted once
     expect(text).toMatch(/\$-300/);            // baseline (money()'s own "$" + signed-number convention)
     expect(text).toMatch(/\$-80/);             // post-recount
-    // recountVerdictText()'s exact plain-language sentence for a $220 undercount correction.
-    expect(text).toMatch(/Helped: corrected a \$220 undercount\./);
+    // recountVerdictText()'s plain-language sentence for a $220 undercount correction — 2026-08-31
+    // added a clause explaining which way this moves food cost, so this only anchors the stable
+    // prefix rather than the full sentence (that exact wording is covered by
+    // eom-ledger-baseline.test.js's own recountVerdictText suite).
+    expect(text).toMatch(/Helped: corrected a \$220 undercount — the recount found MORE product/);
   });
 
   it('an unrecounted item (only ever counted once) does not appear in the list', async () => {

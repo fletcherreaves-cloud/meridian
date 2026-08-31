@@ -139,22 +139,28 @@ describe('ledgerBaselineDiff', () => {
 });
 
 describe('recountVerdictText (dispatch #227 — Recount-Impact report)', () => {
-  it('helping + undercount at session (baseVar<0) → "corrected a $X undercount"', () => {
+  it('helping + undercount at session (baseVar<0) → "corrected a $X undercount", explains it LOWERS food cost', () => {
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])];
     const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
-    expect(recountVerdictText(d.items[0])).toBe('Helped: corrected a $220 undercount.');
+    expect(recountVerdictText(d.items[0])).toBe(
+      "Helped: corrected a $220 undercount — the recount found MORE product on hand than the first count showed, which LOWERS this item's food cost for the period."
+    );
   });
 
-  it('helping + overcount at session (baseVar>=0) → "corrected a $X overcount"', () => {
+  it('helping + overcount at session (baseVar>=0) → "corrected a $X overcount", explains it RAISES food cost', () => {
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', 300), cnt('2026-08-01', '09:00', 80)])];
     const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
-    expect(recountVerdictText(d.items[0])).toBe('Helped: corrected a $220 overcount.');
+    expect(recountVerdictText(d.items[0])).toBe(
+      "Helped: corrected a $220 overcount — the recount found LESS product on hand than the first count showed, which RAISES this item's food cost for the period."
+    );
   });
 
   it('hurting → plain "moved further from expected usage" wording, not just a raw dollar direction', () => {
     const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -360)])];
     const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
-    expect(recountVerdictText(d.items[0])).toBe('Hurt: recount moved this further from expected usage (variance grew $60).');
+    expect(recountVerdictText(d.items[0])).toBe(
+      'Hurt: the second count moved this further from expected usage (variance grew $60) — likely a mis-count or a new loss between counts, worth a follow-up recount.'
+    );
   });
 
   it('flat → material-change-free wording (within the $25 floor)', () => {
