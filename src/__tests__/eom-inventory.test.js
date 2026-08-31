@@ -142,12 +142,17 @@ describe('diagnoseIncompleteCount', () => {
     expect(accepted.byState.early.n).toBe(0);
     expect(accepted.uncounted[0].wrin).toBe('1');      // never-counted still flagged
   });
-  it('drops zero-substance never/early items (deactivated + zeroed WRINs) — nothing to recount', () => {
+  it('drops zero-substance never/early items with no deactivation signal; a zero-substance item with a (Deactivated) descr still appears, but calmly (2026-08-31: descr-text detection supersedes "should NOT be flagged")', () => {
     const rows = [
-      // Deactivated in QSRSoft, zeroed out, counted this period before the final window → 'early'
-      // with $0 value-at-risk (store 43380, WRIN 02373-015 APPLES/DICED). Should NOT be flagged.
+      // Deactivated in QSRSoft (descr says so), zeroed out, counted this period before the final
+      // window. Originally (v5.268) this was dropped from `uncounted` entirely -- but that missed
+      // the actual point of the 'stale'/verify-and-clear bucket, which exists so a store can
+      // formally confirm+deactivate a zeroed residual (see the 2026-08-31 descr-text fix above).
+      // So this item now correctly APPEARS, routed to the calm 'stale' bucket, not dropped outright
+      // and not given the urgent "recount now" treatment either.
       { wrin: 'dead-1', cls: 'Food', descr: 'APPLES/DICED (Deactivated)', onHandAmt: 0, totalUnits: 0, lastCounted: d(2026, 7, 15) },
-      // Never counted at all, but also zero substance — same logic applies.
+      // Never counted at all, zero substance, and NO deactivation signal in its descr — genuinely
+      // nothing to act on, correctly dropped.
       { wrin: 'dead-2', cls: 'Food', descr: 'Dead item, never counted', onHandAmt: 0, totalUnits: 0, lastCounted: null },
       // Real gap: never counted, real value → still flagged.
       { wrin: 'real-1', cls: 'Food', descr: 'Beef', onHandAmt: 500, totalUnits: 10, lastCounted: null },
@@ -156,7 +161,9 @@ describe('diagnoseIncompleteCount', () => {
     ];
     const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
     const wrins = diag.uncounted.map(u => u.wrin);
-    expect(wrins).not.toContain('dead-1');
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(wrins).toContain('dead-1');
+    expect(byWrin['dead-1'].state).toBe('stale'); // calm verify-&-clear bucket, not urgent recount
     expect(wrins).not.toContain('dead-2');
     expect(wrins).toContain('real-1');
     expect(wrins).toContain('real-2');
@@ -184,6 +191,32 @@ describe('diagnoseIncompleteCount', () => {
     expect(byWrin['03663-024'].valueAtRisk).toBeCloseTo(1.47, 2); // abs() of the negative on-hand
     expect(byWrin['00076-126'].state).toBe('early'); // active item — real gap, unaffected
     expect(byWrin['19809-002'].state).toBe('early'); // active:null — not treated as inactive
+  });
+  it('reclassifies by descr text when `active` disagrees with it (2026-08-31 fix, Durant #5985 real data)', () => {
+    // Durant-US Hwy 70/22, real 2026-08 data: `active` alone still missed two real cases --
+    // Big Mac Sauce Cup shows active:null (not false, so the prior fix's `active===false` check
+    // never fired) and Caesar Sauce Pouch shows active:TRUE despite its own descr literally
+    // saying "(Deactivated)" -- QSRSoft's boolean column and its own text disagree. Both kept
+    // showing up in "recount now, real gap" framing. The descr text is the more reliable signal.
+    const rows = [
+      { wrin: '03663-024', cls: 'Condiment', descr: 'Big Mac Sauce Cup (Deactivated)', onHandAmt: -2.20, totalUnits: -15.5, lastCounted: d(2026, 7, 7), active: null },
+      { wrin: '18627-002', cls: 'Food', descr: 'Caesar Sauce Pouch (Deactivated)', onHandAmt: -1.37, totalUnits: -0.45, lastCounted: d(2026, 7, 22), active: true },
+      // Control: "(Obsolete N days left" is a COUNTDOWN, not a completed deactivation -- the item
+      // is still active right now and needs a normal current count. Must stay 'early', not 'stale'.
+      { wrin: '00076-126', cls: 'Food', descr: 'Fried Apple Pie', onHandAmt: 30.58, totalUnits: 111, lastCounted: d(2026, 7, 7), active: true },
+      { wrin: 'lid-1', cls: 'Paper', descr: 'LID/SIP LID/30OZ/CLD CUP (Obsolete 24 days left', onHandAmt: 5, totalUnits: 3, lastCounted: d(2026, 7, 7), active: true },
+      // Control: a fully-expired obsolete item (closed parens, no countdown remaining) must still
+      // route to stale purely off the descr text, even with active:null (isolates the descr path
+      // from the already-tested active===false path above).
+      { wrin: 'scooby-1', cls: 'Food', descr: 'SCOOBY/SCOOB/HM20/US (Obsolete)', onHandAmt: 2, totalUnits: 1, lastCounted: d(2026, 7, 7), active: null },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(byWrin['03663-024'].state).toBe('stale');
+    expect(byWrin['18627-002'].state).toBe('stale');
+    expect(byWrin['00076-126'].state).toBe('early');
+    expect(byWrin['lid-1'].state).toBe('early');
+    expect(byWrin['scooby-1'].state).toBe('stale');
   });
   it('keeps zero-substance STALE items — the Obsolete/Discontinued/Inactive "verify & clear" bucket needs them', () => {
     const rows = [

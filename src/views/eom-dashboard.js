@@ -1711,7 +1711,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [riddleStore, setRiddleStore] = useState(null);  // loc expanded to its harmful recount items
   const [secReview, setSecReview] = useState({});     // loc -> { status, note } (day-2 secondary review)
   // On-demand EOM pulls (Notes 35). A manual button forces the pull regardless of the
-  // count-window / 8a–6p-CT gate. Needs the trigger-dar-sync edge fn redeployed with the
+  // count-window / 8a–10p-CT gate (v5.278). Needs the trigger-dar-sync edge fn redeployed with the
   // onhand/variance allowlist entries (added in supabase/functions/trigger-dar-sync).
   const [pulling, setPulling] = useState('');   // '' | 'onhand' | 'variance'
   const [pullMsg, setPullMsg] = useState(null);  // { ok, text }
@@ -2951,7 +2951,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     {
       label: 'Pulls',
       items: [
-        { label: pulling === 'onhand' ? '↻ On-Hand…' : '↻ On-Hand', onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand', title: 'Pull fresh On-Hand count progress now (forces a run regardless of the count-window / 8a–6p CT gate)' },
+        { label: pulling === 'onhand' ? '↻ On-Hand…' : '↻ On-Hand', onClick: () => doPull('onhand', 'On-Hand'), disabled: pulling === 'onhand', title: 'Pull fresh On-Hand count progress now (forces a run regardless of the count-window / 8a–10p CT gate)' },
         { label: pulling === 'variance' ? '↻ Variance…' : '↻ Variance', onClick: () => doPull('variance', 'Variance'), disabled: pulling === 'variance', title: 'Pull fresh Variance / Raw-Item detail now' },
       ],
     },

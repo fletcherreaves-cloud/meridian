@@ -659,7 +659,16 @@ export const PRINT_STYLE = `
      remain, and NO absolute positioning (so multi-page paginates in every browser).
      Scoped to body.eom-printing (set by the Print button, cleared on afterprint) so no other screen breaks. */
   body.eom-printing { background: #fff !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body.eom-printing .mf-app-root > *:not(.mf-eom-print-modal) { display: none !important; }
+  /* 2026-08-31 fix: EOMDashboardPanel (and every other routePanel) renders inside App.js's
+     '.mf-main-content' scroll wrapper, NOT as a direct child of .mf-app-root — that wrapper is
+     itself a direct child with no exempting class, so the rule below used to hide IT, which blanked
+     the print modal nested inside it regardless of the modal's own class (a BLANK printed page, not
+     a truncated one — display:none on an ancestor hides descendants unconditionally). Exempting
+     .mf-main-content here and repeating the same "hide every other direct child" rule one level
+     down keeps exactly the print modal (and nothing else) visible, same pattern as before. */
+  body.eom-printing .mf-app-root > *:not(.mf-eom-print-modal):not(.mf-main-content) { display: none !important; }
+  body.eom-printing .mf-main-content { overflow: visible !important; height: auto !important; padding: 0 !important; }
+  body.eom-printing .mf-main-content > *:not(.mf-eom-print-modal) { display: none !important; }
   body.eom-printing .mf-eom-print-modal { position: static !important; inset: auto !important; background: #fff !important; padding: 0 !important; overflow: visible !important; display: block !important; z-index: auto !important; }
   body.eom-printing .mf-eom-print-card { background: #fff !important; border: none !important; border-radius: 0 !important; max-width: none !important; box-shadow: none !important; }
   body.eom-printing .mf-eom-print-card > div { overflow: visible !important; max-height: none !important; }

@@ -252,6 +252,21 @@ export function computeCountProgress(onHandRows, { period, asOf, acceptEarly = f
   };
 }
 
+// QSRSoft's `active` boolean is unreliable for detecting a truly-deactivated item (2026-08-31
+// finding, measured live): items whose OWN descr text says "(Deactivated)" show active:false OR
+// active:null OR even active:true (Durant #5985, Caesar Sauce Pouch WRIN 18627-002 — literally
+// "(Deactivated)" in its name, active:true) -- the boolean column and the vendor's own text
+// disagree with each other. The text is the more complete signal: surveyed live, every
+// "(Deactivated)" item and every "(Obsolete)" item (closed parens, no countdown) has active
+// false-or-null, never a case where the text says done but active is unambiguously "still good".
+// Deliberately does NOT match "(Obsolete N days left" -- that's a COUNTDOWN, meaning the item is
+// still active right now and will deactivate later; those items need a normal current count, not
+// verify-and-clear treatment (confirmed live: they show active:true in the large majority of cases).
+const _DEACTIVATED_DESCR_RE = /\((?:Deactivated|Obsolete)\)/i;
+function isDeactivatedByDescr(descr) {
+  return _DEACTIVATED_DESCR_RE.test(String(descr || ''));
+}
+
 // ── Incomplete-count diagnosis ────────────────────────────────────────────────
 // Which items/classes are still uncounted, ranked by their $ weight so the store
 // chases the ones that actually move food cost. Uncounted, high-value items are
@@ -292,7 +307,13 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
       // "recount now, real gap" framing meant for genuinely active items). Forcing 'stale' routes
       // it to the SAME "verify & clear" bucket real obsolete items already get -- consistent
       // everywhere this function's output is consumed (digest, dashboard, diagnosis report).
-      const state = r.active === false ? 'stale' : (!d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early'));
+      // 2026-08-31 sweep: `active===false` alone still missed real cases -- Durant #5985's own Big
+      // Mac Sauce Cup (active:null) and Caesar Sauce Pouch (active:true, despite its OWN descr
+      // literally saying "(Deactivated)") both slipped through and re-surfaced the exact same
+      // false-urgency bug the active-flag fix was meant to close. isDeactivatedByDescr() (above)
+      // is the more complete signal -- see its own comment for the live measurement.
+      const state = (r.active === false || isDeactivatedByDescr(r.descr || r.desc))
+        ? 'stale' : (!d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early'));
       return {
         wrin: r.wrin,
         descr: r.descr || r.desc,
