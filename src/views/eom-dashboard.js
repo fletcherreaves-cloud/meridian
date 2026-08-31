@@ -3032,6 +3032,30 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     headerClassName: printableMode ? 'mf-eom-modal-chrome' : undefined,
   },
 
+    // .md-rpt (rendered-markdown) styles, hoisted here so they're in the DOM regardless of which
+    // modal is open — this used to live inside the Diagnose modal's own JSX (`diag && h(ModalShell,
+    // ...)` below), so it only existed while THAT modal was mounted. The Draft/Store-Message modal
+    // (`draft && h(ModalShell, ...)`) uses the SAME className for its own markdown body but is a
+    // separate, mutually-exclusive modal — so its table never had these rules at all, borders
+    // included, no matter what color they were set to (2026-08-31, owner: grid lines still missing
+    // specifically under Draft > Store Message > Full Report after the --bdr2 color fix).
+    h('style', null, `.md-rpt{font-size:12.5px;line-height:1.5;color:var(--text);max-height:60vh;overflow:auto;background:var(--surf3);border:1px solid var(--bdr);border-radius:6px;padding:12px 14px}
+      .md-rpt h1{font-size:15px;margin:2px 0 6px;color:var(--text)}
+      .md-rpt h2{font-size:13px;margin:12px 0 4px;color:var(--text);border-bottom:1px solid var(--bdr);padding-bottom:3px}
+      .md-rpt table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:11.5px;border:1px solid var(--bdr2)}
+      .md-rpt th{background:var(--surf2);text-align:left;padding:3px 7px;border:1px solid var(--bdr2);color:var(--text2)}
+      .md-rpt td{padding:3px 7px;border:1px solid var(--bdr2)}
+      .md-rpt hr{border:none;border-top:1px solid var(--bdr);margin:14px 0}
+      .md-rpt ul,.md-rpt ol{margin:3px 0;padding-left:18px}
+      .md-rpt li{margin:2px 0}
+      .md-rpt p{margin:4px 0}
+      .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}
+      .md-rpt .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
+      .md-rpt .chip-warn{background:rgba(245,188,0,.14);border-color:#f5bc00;color:#f5bc00}
+      .md-rpt .chip-bad{background:rgba(244,63,94,.14);border-color:var(--crit);color:var(--crit)}
+      .md-rpt .chip-good{background:rgba(74,222,128,.14);border-color:#4ade80;color:#4ade80}
+      .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
+
     div({ className: 'eom-no-print' },
       h(PanelChrome, {
         location: locationSlot,
@@ -3621,22 +3645,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
         // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.
         div({ style: { fontSize: '12px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } }, 'FOB Analysis'),
-        h('style', null, `.md-rpt{font-size:12.5px;line-height:1.5;color:var(--text);max-height:60vh;overflow:auto;background:var(--surf3);border:1px solid var(--bdr);border-radius:6px;padding:12px 14px}
-          .md-rpt h1{font-size:15px;margin:2px 0 6px;color:var(--text)}
-          .md-rpt h2{font-size:13px;margin:12px 0 4px;color:var(--text);border-bottom:1px solid var(--bdr);padding-bottom:3px}
-          .md-rpt table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:11.5px;border:1px solid var(--bdr2)}
-          .md-rpt th{background:var(--surf2);text-align:left;padding:3px 7px;border:1px solid var(--bdr2);color:var(--text2)}
-          .md-rpt td{padding:3px 7px;border:1px solid var(--bdr2)}
-          .md-rpt hr{border:none;border-top:1px solid var(--bdr);margin:14px 0}
-          .md-rpt ul,.md-rpt ol{margin:3px 0;padding-left:18px}
-          .md-rpt li{margin:2px 0}
-          .md-rpt p{margin:4px 0}
-          .md-rpt code{background:var(--surf2);padding:1px 4px;border-radius:3px;font-size:11px}
-          .md-rpt .chip{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin:0 2px;border:1px solid}
-          .md-rpt .chip-warn{background:rgba(245,188,0,.14);border-color:#f5bc00;color:#f5bc00}
-          .md-rpt .chip-bad{background:rgba(244,63,94,.14);border-color:var(--crit);color:var(--crit)}
-          .md-rpt .chip-good{background:rgba(74,222,128,.14);border-color:#4ade80;color:#4ade80}
-          .md-rpt .chip-info{background:rgba(91,155,213,.14);border-color:#5b9bd5;color:#7fb0e0}`),
+        // .md-rpt styles are hoisted to the panel's top level (near the RoutePanelShell return)
+        // so they apply to every modal that uses this className, not just this one.
         h('div', { className: 'md-rpt', dangerouslySetInnerHTML: { __html: mdToHtml(diag.report) } }),
 
         // Action items now BELOW the analysis (owner reversed the order), each carrying its own
