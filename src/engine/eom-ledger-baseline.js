@@ -65,9 +65,23 @@ export function itemCloseWindowRecount(history, { closeWindowStart = null, floor
     onHand: h.qtyChange != null ? Number(h.qtyChange) : null, manager: h.manager || null, countSource: h.countSource || 'MobileApp',
   })).sort((a, b) => a.when - b.when);
   if (!counts.length) return null;
-  // Day-bindings: the last count of each day (same-day area entries collapse to the binding).
-  const byDay = {}; for (const c of counts) byDay[c.day] = c;
-  const allDayBindings = Object.keys(byDay).sort().map(d => byDay[d]);
+  // Day-bindings: NET every count of the day together (same-day area entries collapse to the binding).
+  // 2026-08-31 fix: this used to keep only the LAST raw entry of the day (`byDay[c.day] = c` overwrote
+  // on each iteration), discarding every earlier same-day submission's own $ impact. An item counted
+  // area-by-area submits several events in one day, each the IMPACT of that one submission, not the
+  // day's real ending variance -- a -$1,941 then +$1,988 pair nets to ~+$47, not a -$1,988 swing
+  // (owner-reported live example: McNuggets #32525, 2026-08-29). on-hand/manager/source still come
+  // from the day's LAST entry (on-hand is a running, replace-semantics total); only the $ and unit
+  // variance combine the whole day. Matches eom-count-sessions.js's own netDolVar model.
+  const byDay = {}; for (const c of counts) (byDay[c.day] || (byDay[c.day] = [])).push(c);
+  const allDayBindings = Object.keys(byDay).sort().map(d => {
+    const dayEntries = byDay[d];
+    const last = dayEntries[dayEntries.length - 1];
+    const dolVar = dayEntries.reduce((s, e) => s + e.dolVar, 0);
+    const unitVals = dayEntries.map(e => e.unitVar).filter(v => v != null);
+    const unitVar = unitVals.length ? unitVals.reduce((s, v) => s + v, 0) : null;
+    return { ...last, dolVar, unitVar, nEntries: dayEntries.length };
+  });
   const winBindings = winStart ? allDayBindings.filter(b => b.day >= winStart) : allDayBindings;
   // If never counted in the close window, its EOM number = its last overall count → flat, not recounted.
   const usable = winBindings.length ? winBindings : allDayBindings.slice(-1);

@@ -98,6 +98,35 @@ describe('itemRecounts', () => {
     expect(r.nEomHelped).toBe(1);       // 20→28 units found = loss cut −160 → −80
   });
 
+  it('McNuggets #32525 real numbers: the original walkthrough NETS its area entries, not just the raw last (2026-08-31 fix)', () => {
+    // 08:39:45 (-$1,941.05) then 09:01:20 (+$1,988.18), 21min apart, same window -- a normal two-area
+    // build-up. `original` must expose the net (~+$47), not the raw final entry's own -$1,988.18 (which
+    // read as a real -$1,988 swing before this fix — the owner-reported live example, and exactly what
+    // fed a wrong "Current Status" value into the Change Monitor Baseline tab / SAGE's recount-impact tool).
+    const hist = [ev('08/29/2026', '08:39:45', -1941.05, { variance: -21088 }), ev('08/29/2026', '09:01:20', 1988.18, { variance: 21600 })];
+    const r = itemRecounts(hist, storeDayWindows([{ history: hist }]));
+    const d = r.days[0];
+    expect(d.original.tm).toBe('09:01:20');           // last entry still supplies on-hand/timestamp
+    expect(d.original.dolVar).toBeCloseTo(47.13, 2);   // netted, not -1988.18
+    expect(d.original.unitVar).toBe(512);
+    expect(r.nRecounts).toBe(0);                       // still one session, not a recount
+  });
+
+  it('a later recount PASS with its own two area entries nets them into ONE recount record', () => {
+    const hist = [
+      ev('07/30/2026', '08:00', -300, { qty: 20, variance: -30 }),   // session, cost=$10
+      ev('07/30/2026', '15:00', -50, { qty: 27 }),                    // recount pass, area 1
+      ev('07/30/2026', '15:12', -30, { qty: 28 }),                    // recount pass, area 2, 12min later
+    ];
+    const r = itemRecounts(hist, storeDayWindows([{ history: hist }]), { officialVar: -80 });
+    const d = r.days[0];
+    expect(d.recounts).toHaveLength(1);                // ONE record, not two
+    expect(d.recounts[0].tm).toBe('15:12');             // last entry of the pass supplies on-hand/timestamp
+    expect(d.recounts[0].dolVar).toBe(-80);             // -50 + -30, netted
+    expect(d.recounts[0].onHand).toBe(28);
+    expect(d.recounts[0].direction).toBe('helped');     // 20→28 units found = loss cut −160 → −80
+  });
+
   it('cross-day counts are NOT recounts (weekly cadence)', () => {
     const hist = [ev('07/02/2026', '08:00', -100), ev('07/09/2026', '08:00', -80), ev('07/16/2026', '08:00', -60)];
     const r = itemRecounts(hist, storeDayWindows([{ history: hist }]));

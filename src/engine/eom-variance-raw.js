@@ -24,22 +24,36 @@ const tsOf = (dt, tm) => {
   return new Date(y, mo - 1, d, tM ? +tM[1] : 0, tM ? +tM[2] : 0).getTime();
 };
 
-// Per-item variance from the LATEST count event on or before `asOf`. Returns wrin -> { dolDiff (the $
-// variance), variance (unit variance), lastCounted (YYYY-MM-DD), at (ms) }.
+// Per-item variance from the LATEST count DAY on or before `asOf`, NETTED across every count event
+// that landed on that day. Returns wrin -> { dolDiff (the $ variance), variance (unit variance),
+// lastCounted (YYYY-MM-DD), at (ms) }.
+//
+// 2026-08-31 fix: this used to keep only the single latest count event's raw `difference`, discarding
+// any earlier same-day submission entirely. An item counted area-by-area (fries in 2-3 spots) submits
+// several events in one day, each carrying the $ IMPACT of that one submission, not the item's real
+// day-end variance -- a -$1,941 then +$1,988 pair is a normal two-area build-up that nets to ~+$47,
+// not a real -$1,988 swing (owner-reported live example: McNuggets #32525, 2026-08-29, 08:39/09:01).
+// Match eom-count-sessions.js's own netDolVar model (the reference implementation, already correct)
+// instead of re-deriving a second, drifted definition of "the day's variance".
 export function latestVarianceByWrin(rawItems, { asOf } = {}) {
   const cut = asOf == null ? Infinity : (asOf instanceof Date ? asOf.getTime() : Date.parse(asOf));
   const out = {};
   for (const r of (rawItems || [])) {
-    let best = null;
+    const eligible = [];
     for (const h of (r.history || [])) {
       if (!h || !h.isCount || !h.dt) continue;
       const when = tsOf(h.dt, h.tm);
       if (when == null || when > cut) continue;
-      if (!best || when > best.when) {
-        best = { when, difference: Number(h.difference) || 0, variance: h.variance != null ? Number(h.variance) : null, dt: String(h.dt).slice(0, 10) };
-      }
+      eligible.push({ when, dolVar: Number(h.difference) || 0, unitVar: h.variance != null ? Number(h.variance) : null, dt: String(h.dt).slice(0, 10) });
     }
-    if (best) out[String(r.wrin)] = { dolDiff: best.difference, variance: best.variance, lastCounted: best.dt, at: best.when };
+    if (!eligible.length) continue;
+    let latest = eligible[0];
+    for (const e of eligible) if (e.when > latest.when) latest = e;
+    const sameDay = eligible.filter(e => e.dt === latest.dt);
+    const dolDiff = sameDay.reduce((s, e) => s + e.dolVar, 0);
+    const unitVals = sameDay.map(e => e.unitVar).filter(v => v != null);
+    const variance = unitVals.length ? unitVals.reduce((s, v) => s + v, 0) : null;
+    out[String(r.wrin)] = { dolDiff, variance, lastCounted: latest.dt, at: latest.when };
   }
   return out;
 }
