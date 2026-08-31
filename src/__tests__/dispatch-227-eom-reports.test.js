@@ -38,6 +38,13 @@ const ONHAND = [
   { loc: '3708', wrin: 'F100', descr: 'Diced Onions', cls: 'Food', onHandAmt: 340, lastCounted: null },
   { loc: '3708', wrin: 'C200', descr: 'Ketchup Packets', cls: 'Condiment', onHandAmt: 55, lastCounted: null },
   { loc: '6178', wrin: 'P300', descr: 'Napkins', cls: 'Paper', onHandAmt: 12, lastCounted: null },
+  // 2026-08-31 fix fixtures — confirmed-deactivated (active:false), last counted well before this
+  // period so diagnoseIncompleteCount() routes them to 'stale' regardless of when the suite runs.
+  { loc: '3708', wrin: 'DEAD1', descr: 'Discontinued Item', cls: 'Food', onHandAmt: 0, totalUnits: 0, active: false, lastCounted: '2020-01-15' },
+  { loc: '3708', wrin: 'DEAD2', descr: 'Deactivated Syrup', cls: 'Food', onHandAmt: 8.4, totalUnits: 3, active: false, lastCounted: '2020-01-15' },
+  // Genuinely stale but no deactivation signal at all — the generic "verify and deactivate... or
+  // count if still active" line still applies here, unaffected by this fix.
+  { loc: '3708', wrin: 'STALE1', descr: 'Unclear Status Item', cls: 'Food', onHandAmt: 15, totalUnits: 2, lastCounted: '2020-01-15' },
 ];
 const FOB = [
   { loc: '3708', date: `${PERIOD}-15`, prodSalesAmt: 100000, compWasteAmt: 800, rawWasteAmt: 400, condimentsAmt: 300, empMgrMealsAmt: 100, statVarianceAmt: 200, unexplainedAmt: 200 },
@@ -161,6 +168,27 @@ describe('dispatch #227 — Missing Items report', () => {
     expect(labels).toContain('Missing Items');
     expect(labels).toContain('Team Snapshot');
     expect(labels).toContain('Recount Impact');
+  });
+
+  // 2026-08-31 (owner req, verbatim): "we need to solve for items that are already deactivated in
+  // the system to reflect such so as not to have managers waste their time chasing something
+  // already done" -- then, correcting his own ask: "we need to verify the on-hand is zero... yet
+  // we were showing an on-hand amount." Real render (not an isolated diagnoseIncompleteCount()
+  // call) so this proves the reframed text actually reaches the panel, not just the engine.
+  it('reframes a confirmed-deactivated item\'s recommendation by whether on-hand is ALSO zero', async () => {
+    await renderPanel(root);
+    await selectPeriod(container);
+    await clickTab(container, 'Missing Items');
+    const text = container.textContent;
+    // Confirmed deactivated (active:false), $0/0-units on hand — genuinely done.
+    expect(text).toMatch(/Already deactivated in QSRSoft, \$0 on hand — no action needed\./);
+    expect(text).toMatch(/Discontinued Item/);
+    // Confirmed deactivated (active:false) but STILL carrying a real residual — not done; needs
+    // the residual cleared, not the generic "verify and deactivate" line.
+    expect(text).toMatch(/still carrying \$8 on hand — zero it out/);
+    expect(text).toMatch(/Deactivated Syrup/);
+    // The generic, unconfirmed-stale line is still used for an item with no deactivation signal.
+    expect(text).toMatch(/Verify and deactivate in QSRSoft if no longer sold, or count if still active/);
   });
 });
 

@@ -3,7 +3,7 @@ import {
   periodKey, daysInPeriod, countWindowStart, lastDayOfPeriod, inCountWindow,
   normClass, computeCountProgress, diagnoseIncompleteCount, rankVarianceFollowups,
   buildStoreStatus, buildIncompleteCountMessage, FOB_CLASSES, BELIEVES_DONE_PCT,
-  recommendationForState, STATE_RECOMMENDATION,
+  recommendationForState, STATE_RECOMMENDATION, recommendationForItem,
 } from '../engine/eom-inventory.js';
 
 const d = (y, m, day) => { const x = new Date(y, m - 1, day); x.setHours(0, 0, 0, 0); return x; };
@@ -263,6 +263,60 @@ describe('diagnoseIncompleteCount', () => {
     const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
     expect(diag.uncounted.map(u => u.wrin)).toContain('stale-dead');
     expect(diag.byState.stale.n).toBe(1);
+  });
+  // 2026-08-31 (owner req, verbatim): "we need to solve for items that are already deactivated in
+  // the system to reflect such so as not to have managers waste their time chasing something
+  // already done." Then, correcting his own ask same conversation: "we need to verify the on-hand
+  // is zero. In the example i gave you the on-hand is at zero and it is deactivated. Yet we were
+  // showing an on-hand amount." So a confirmed-deactivated item is only "done" when its on-hand is
+  // ALSO zero — real Ada-Country Club data (LEMONS/Big Mac Sauce Cup, the same fixtures the
+  // active:false test above uses) still carries a nonzero residual and is NOT done.
+  it('marks a deactivated item done only when on-hand is ALSO zero; a nonzero residual still needs clearing', () => {
+    const rows = [
+      // Confirmed deactivated (active:false) with a real residual — real Ada data. Not done: still
+      // needs the residual zeroed out, which is a DIFFERENT action than "verify and deactivate".
+      { wrin: '00050-002', cls: 'Condiment', descr: 'LEMONS (Obsolete 4 days left', onHandAmt: 11.07, totalUnits: 10, lastCounted: d(2026, 7, 6), active: false },
+      // Confirmed deactivated (descr text) AND zeroed out — genuinely nothing left to do.
+      { wrin: 'dead-1', cls: 'Food', descr: 'APPLES/DICED (Deactivated)', onHandAmt: 0, totalUnits: 0, lastCounted: d(2026, 7, 15) },
+      // Stale but NOT confirmed deactivated (no active:false, no descr signal, no drop-from-pull) —
+      // the ambiguous case, unaffected by this fix, still gets the generic verify/deactivate line.
+      { wrin: 'stale-dead', cls: 'Food', descr: 'Long-forgotten item', onHandAmt: 0, totalUnits: 0, lastCounted: d(2026, 6, 15) },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+
+    expect(byWrin['00050-002'].deactivated).toBe(true);
+    expect(byWrin['00050-002'].noActionNeeded).toBe(false);
+    expect(recommendationForItem(byWrin['00050-002'])).toMatch(/still carrying \$11 on hand.*zero it out/);
+
+    expect(byWrin['dead-1'].deactivated).toBe(true);
+    expect(byWrin['dead-1'].noActionNeeded).toBe(true);
+    expect(recommendationForItem(byWrin['dead-1'])).toBe('Already deactivated in QSRSoft, $0 on hand — no action needed.');
+
+    expect(byWrin['stale-dead'].deactivated).toBe(false);
+    expect(recommendationForItem(byWrin['stale-dead'])).toBe(STATE_RECOMMENDATION.stale);
+
+    // A noActionNeeded item stays visible in the raw list (nothing silently disappears)...
+    expect(diag.uncounted.map(u => u.wrin)).toContain('dead-1');
+    // ...but drops out of the actionable byState/byClass tallies that feed "N items" counts/badges,
+    // so it stops inflating an "N items need attention" number. Only 00050-002 and stale-dead are
+    // still actionable → n=2, not 3.
+    expect(diag.byState.stale.n).toBe(2);
+    const foodClass = diag.byClass.find(c => c.cls === 'food');
+    // dead-1 (food, noActionNeeded) is excluded from the food class's actionable count...
+    expect(foodClass.count).toBe(1); // stale-dead only
+    // ...but its full item object is still in `items` for anything that lists them all.
+    expect(foodClass.items.map(u => u.wrin)).toContain('dead-1');
+  });
+  it('a non-fountain-related recommendationForItem() call for never/early states falls through to recommendationForState unchanged', () => {
+    const rows = [
+      { wrin: 'a', cls: 'Food', descr: 'Beef', onHandAmt: 500, totalUnits: 10, lastCounted: null }, // never
+      { wrin: 'b', cls: 'Food', descr: 'Fries', onHandAmt: 300, totalUnits: 5, lastCounted: d(2026, 7, 20) }, // early
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 31) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(recommendationForItem(byWrin['a'])).toBe(STATE_RECOMMENDATION.never);
+    expect(recommendationForItem(byWrin['b'])).toBe(STATE_RECOMMENDATION.early);
   });
   it('flags lateBulk when Food/Cond/Paper bulk-counted on the last day (owner 2nd/3rd-day-out rule)', () => {
     // Bulk counted on the last day (07/31) → late.

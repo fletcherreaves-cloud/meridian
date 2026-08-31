@@ -334,18 +334,33 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
       // literally saying "(Deactivated)") both slipped through and re-surfaced the exact same
       // false-urgency bug the active-flag fix was meant to close. isDeactivatedByDescr() (above)
       // is the more complete signal -- see its own comment for the live measurement.
-      const state = (r.active === false || isDeactivatedByDescr(r.descr || r.desc) || droppedFromCurrentPull(r))
+      const deactivated = r.active === false || isDeactivatedByDescr(r.descr || r.desc) || droppedFromCurrentPull(r);
+      const state = deactivated
         ? 'stale' : (!d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early'));
+      const totalUnits = Number(r.totalUnits) || 0;
+      const valueAtRisk = Math.abs(Number(r.onHandAmt) || (Number(r.unitPrice) || 0) * totalUnits);
       return {
         wrin: r.wrin,
         descr: r.descr || r.desc,
         cls: normClass(r.cls),
         // value at risk if this item is skipped — prior on-hand amount is the best proxy
-        valueAtRisk: Math.abs(Number(r.onHandAmt) || (Number(r.unitPrice) || 0) * (Number(r.totalUnits) || 0)),
+        valueAtRisk,
         lastCounted: d ? d.toISOString().slice(0, 10) : null,
         state,                                              // never | early | stale
         onHandAmt: Number(r.onHandAmt) || 0,
-        totalUnits: Number(r.totalUnits) || 0,
+        totalUnits,
+        // 2026-08-31 (owner req): "solve for items that are already deactivated in the system to
+        // reflect such so as not to have managers waste their time chasing something already done."
+        // `deactivated` is the SAME confirmed-inactive signal that already forces `state`, exposed
+        // separately here because it now needs to change what a stale item is TOLD to do, not just
+        // which bucket it lands in. `noActionNeeded` narrows that to the case where there's also
+        // nothing left to clear: a deactivated item with $0/0-units on hand is genuinely done — the
+        // owner's own correction: "we need to verify the on-hand is zero" first, because a
+        // deactivated item STILL carrying a real residual (LEMONS $11.07, Big Mac Sauce Cup -$1.47
+        // — the exact live Ada-Country Club cases the comment above already cites) is not done at
+        // all; it still needs the residual zeroed out before close.
+        deactivated,
+        noActionNeeded: deactivated && valueAtRisk === 0 && totalUnits === 0,
       };
     })
     .filter(r => r.valueAtRisk >= minValue)
@@ -362,8 +377,12 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   // are accepted (dropped from the uncounted/flagged set). Stale/never are unaffected.
   if (acceptEarly) uncounted = uncounted.filter(u => u.state !== 'early');
   // Tally by state so callers can separate true blanks from counted-early / obsolete-inactive items.
+  // `noActionNeeded` items (2026-08-31, owner req) are excluded from this tally deliberately — they
+  // stay in `uncounted` itself (still visible to a manager reading the list) but a confirmed-
+  // deactivated, $0-on-hand item is nothing left to act on, so it shouldn't inflate an "N items need
+  // attention" count/badge anywhere this tally feeds.
   const byState = { never: { n: 0, value: 0 }, early: { n: 0, value: 0 }, stale: { n: 0, value: 0 } };
-  for (const u of uncounted) { const b = byState[u.state]; if (b) { b.n++; b.value += u.valueAtRisk; } }
+  for (const u of uncounted) { if (u.noActionNeeded) continue; const b = byState[u.state]; if (b) { b.n++; b.value += u.valueAtRisk; } }
 
   // Late-count timing (owner 2026-07-31): Food/Condiment/Paper should be counted on the 2nd & 3rd day
   // out from EOM — NOT the last day (that's for Non-Product). If the store's BULK count of those classes
@@ -381,11 +400,15 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   for (const iso of Object.keys(fcDayTally)) { if (fcDayTally[iso] > fcBulkN || (fcDayTally[iso] === fcBulkN && iso > fcBulkDay)) { fcBulkN = fcDayTally[iso]; fcBulkDay = iso; } }
   const lateBulk = !!(lastIso && fcBulkDay && fcBulkDay === lastIso);
 
-  // Roll up by class so the message to the store is "Food: 12 items left ($430)".
+  // Roll up by class so the message to the store is "Food: 12 items left ($430)". `count`/
+  // `valueAtRisk` skip `noActionNeeded` items for the same reason as byState above — the class
+  // summary line is an ACTION count, and a confirmed-deactivated $0 item is not one; `items` still
+  // carries it so any full per-item listing built off byClass stays complete.
   const byClass = {};
   for (const u of uncounted) {
     const b = byClass[u.cls] || (byClass[u.cls] = { cls: u.cls, count: 0, valueAtRisk: 0, items: [] });
-    b.count++; b.valueAtRisk += u.valueAtRisk; b.items.push(u);
+    if (!u.noActionNeeded) { b.count++; b.valueAtRisk += u.valueAtRisk; }
+    b.items.push(u);
   }
 
   return {
@@ -555,6 +578,26 @@ export const STATE_RECOMMENDATION = {
 };
 export function recommendationForState(state) {
   return STATE_RECOMMENDATION[state] || 'Review this item\'s count status.';
+}
+
+// 2026-08-31 (owner req, verbatim): "we need to solve for items that are already deactivated in
+// the system to reflect such so as not to have managers waste their time chasing something already
+// done." STATE_RECOMMENDATION.stale's generic "verify and deactivate... or count if still active"
+// line is written for an AMBIGUOUS stale item — one we don't yet know is inactive. It's the wrong
+// instruction for an item diagnoseIncompleteCount() has ALREADY confirmed deactivated (`deactivated:
+// true`, via QSRSoft's own active flag / description text / a dropped-from-pull signal): asking a
+// manager to "verify and deactivate" something already deactivated is exactly the wasted-motion the
+// owner is describing. Reuses `recommendationForState` for every other case (never/early/an
+// unconfirmed stale item) rather than duplicating that copy.
+//   - deactivated + $0 on hand + 0 units (u.noActionNeeded) → genuinely done, no action.
+//   - deactivated but STILL carrying a residual (owner's own correction, same conversation: "we
+//     need to verify the on-hand is zero... yet we were showing an on-hand amount") → not done at
+//     all; the real remaining action is clearing that residual, not re-verifying deactivation.
+export function recommendationForItem(u) {
+  if (!u || u.state !== 'stale' || !u.deactivated) return recommendationForState(u && u.state);
+  if (u.noActionNeeded) return 'Already deactivated in QSRSoft, $0 on hand — no action needed.';
+  const amt = Math.round(Math.abs(u.onHandAmt ?? u.valueAtRisk ?? 0));
+  return `Deactivated in QSRSoft but still carrying $${amt.toLocaleString()} on hand — zero it out (waste/write-off) before close so it doesn't ride into next period.`;
 }
 
 function _titleClass(k) {

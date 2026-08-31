@@ -32,7 +32,7 @@ import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
   computeCountProgress, periodKey, daysInPeriod, countWindowStart, lastDayOfPeriod, BELIEVES_DONE_PCT, CLASS_DONE_PCT,
-  buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore, normClass, recommendationForState,
+  buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore, normClass, recommendationForItem,
   scoreboardRowFields,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
@@ -2442,7 +2442,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     for (const r of sortedRows) {
       for (const cls of DIGEST_CLASS_ORDER) {
         for (const it of (r.uncountedByClass[cls] || [])) {
-          out.push({ loc: r.loc, storeName: r.name, org: r.org, cls, ...it, recommendation: recommendationForState(it.state) });
+          out.push({ loc: r.loc, storeName: r.name, org: r.org, cls, ...it, recommendation: recommendationForItem(it) });
         }
       }
     }
