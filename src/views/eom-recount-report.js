@@ -31,10 +31,10 @@
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
 import { crossStoreConsistencyText } from '../engine/eom-ledger-baseline.js';
-import { ensureEomPrintStyleInjected, PrintGeneratingBanner } from './eom-supervisor.js';
+import { openPrintWindow } from './eom-supervisor.js';
 import { groupRowsByLocationThenKey } from './eom-report-grouping.js';
 
-const { useEffect, useState, useCallback } = React;
+const { useState, useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
@@ -72,19 +72,56 @@ export function formatRecountImpactText(rows, crossStore, { period, scopeLabel }
   return lines.join('\n');
 }
 
+// HTML export for the "🖨 Print" button (2026-08-31, real bug fix) — a pure function of the SAME
+// grouped structure formatRecountImpactText() and the on-screen render use, so it can't disagree
+// with either. Handed to openPrintWindow() (eom-supervisor.js), which opens a FRESH, isolated
+// window with plain static CSS and prints THAT instead of the live app — see openPrintWindow's own
+// comment for why: toggling body.eom-printing + window.print() against the live interactive DOM
+// reproducibly came back blank for the owner (single store AND all-locations both), and a real
+// investigation (Chromium reproduction at realistic scale, a CSS-custom-property-cascade
+// benchmark) found no structural bug and no measurable cost, so this sidesteps the mechanism
+// instead of chasing an unproven cause further.
+export function formatRecountImpactHtml(rows, crossStore, { period, scopeLabel } = {}) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const list = rows || [];
+  const nHelped = list.filter(r => r.verdict === 'helping').length;
+  const nHurt = list.filter(r => r.verdict === 'hurting').length;
+  let html = `<h1>Recount-Impact Report — ${esc(scopeLabel || 'all stores')}</h1>`;
+  html += `<div class="sub">${esc(period)} · ${list.length} recounted item${list.length === 1 ? '' : 's'} · ${nHelped} helped · ${nHurt} hurt · EOM close window (last 3 days)</div>`;
+  if (crossStore && crossStore.length) {
+    html += `<div class="block"><div class="grp">⚠ Cross-Store Inconsistency — ${crossStore.length} item${crossStore.length === 1 ? '' : 's'}</div>`;
+    for (const x of crossStore) {
+      html += `<div style="margin-bottom:8px"><b>${esc(x.descr || x.wrin)}</b> — ${x.nStores} stores, ${x.nHelped} helped (${esc(money(x.helpedDol))}), ${x.nHurt} hurt (${esc(money(x.hurtDol))})<br>`
+        + x.stores.map(s => `${esc(s.storeName)}: ${esc(money(s.baseVar))} → ${esc(money(s.curVar))} (${esc(s.verdict)})`).join(' &middot; ')
+        + `</div>`;
+    }
+    html += `</div>`;
+  }
+  if (!list.length) return html + '<p>No recounted items in this close window for the current scope.</p>';
+  const byLoc = groupRowsByLocationThenKey(list, { key: 'verdictText' });
+  for (const loc of byLoc) {
+    html += `<div class="block"><div class="loc-hdr">${esc(loc.storeName)} (${loc.org === 'emerald' ? 'FL' : 'OK'})</div>`;
+    for (const g of loc.groups) {
+      html += `<div class="grp">${esc(g.label)}</div><table><thead><tr><th>Item</th><th>Class</th><th># Recounted</th><th>Baseline</th><th>Post-Recount</th><th>&Delta;</th></tr></thead><tbody>`;
+      for (const r of g.items) {
+        html += `<tr><td>${esc(r.descr || r.wrin || '—')}${r.wrin ? ` <span class="mono" style="color:#999">(${esc(r.wrin)})</span>` : ''}</td>`
+          + `<td>${esc(DIGEST_CLASS_LABELS[r.cls] || r.cls || '—')}</td>`
+          + `<td>${r.nRecounts != null ? `&#8635; ${r.nRecounts}` : '—'}</td>`
+          + `<td>${r.baseVar != null ? esc(money(r.baseVar)) : '—'}</td>`
+          + `<td>${r.curVar != null ? esc(money(r.curVar)) : '—'}</td>`
+          + `<td class="${r.dMag > 0 ? 'g' : (r.verdict === 'hurting' ? 'r' : '')}">${r.dMag != null ? `${r.dMag > 0 ? '+' : ''}${esc(money(r.dMag))}` : '—'}</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+  }
+  return html;
+}
+
 export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) {
-  useEffect(() => { ensureEomPrintStyleInjected(); }, []);
-  const [forPrint, setForPrint] = useState(false);
-  useEffect(() => {
-    const after = () => { setForPrint(false); document.body.classList.remove('eom-printing'); };
-    window.addEventListener('afterprint', after);
-    return () => window.removeEventListener('afterprint', after);
-  }, []);
   const doPrint = useCallback(() => {
-    setForPrint(true);
-    document.body.classList.add('eom-printing');
-    setTimeout(() => window.print(), 60);
-  }, []);
+    openPrintWindow(`Recount-Impact Report — ${scopeLabel || 'all stores'}`, formatRecountImpactHtml(rows, crossStore, { period, scopeLabel }));
+  }, [rows, crossStore, period, scopeLabel]);
   const [copied, setCopied] = useState(false);
   const doCopy = useCallback(async () => {
     try {
@@ -121,7 +158,6 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
   return div({ style: { padding: '16px', maxWidth: '1100px', margin: '0 auto' } },
 
     div({ className: 'eom-no-print' },
-      h(PrintGeneratingBanner, { forPrint }),
       div({ style: { marginBottom: '14px' } },
         div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '4px' } }, 'Recount-Impact Report'),
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),

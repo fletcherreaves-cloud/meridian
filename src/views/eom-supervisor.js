@@ -709,19 +709,6 @@ export const PRINT_STYLE = `
 .eom-print-title { display: none; }
 `;
 
-// Idempotent style-tag injection (dispatch #227) — same '#eom-print-style' id this panel's own
-// useEffect below already uses, so whichever EOM report tab mounts first wins and every other
-// tab's call below is a no-op (getElementById short-circuits it). Exported so the three new
-// report tabs share ONE injected <style>, not one each.
-export function ensureEomPrintStyleInjected() {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById('eom-print-style')) return;
-  const s = document.createElement('style');
-  s.id = 'eom-print-style';
-  s.textContent = PRINT_STYLE;
-  document.head.appendChild(s);
-}
-
 // 2026-08-31 (owner-reported, real): window.print() is a SYNCHRONOUS browser call that freezes the
 // tab while it lays out the full printable DOM -- measured live on a real "all stores" report,
 // this took ~12 SECONDS (Chrome's own "[Violation] 'setTimeout' handler took 11941ms" + a
@@ -741,6 +728,47 @@ export function PrintGeneratingBanner({ forPrint }) {
     background: 'rgba(245,188,0,.12)', border: '1px solid rgba(245,188,0,.35)', color: '#a67c00',
     borderRadius: '7px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', fontWeight: 600,
   } }, '⏳ Generating the print preview — larger reports can take several seconds and the browser tab will look frozen. Please wait for the print dialog rather than reloading.');
+}
+
+// 2026-08-31 (owner-reported, real, same day as PrintGeneratingBanner above): even with the
+// warning banner, the owner's real print attempts on Missing Items / Recount Impact / Team
+// Snapshot / Count Swings kept coming back BLANK -- reproducibly, on both "all locations" and a
+// SINGLE store (ruling out report size), with the actual block duration varying wildly run to run
+// (3.8s to 11.9s) and a real-Chromium reproduction of App.js's exact DOM/CSS shape at realistic
+// scale finding no structural bug and no measurable cost from the CSS-custom-property cascade
+// theory (benchmarked: 0.1ms at 60,000 extra DOM elements, body-scoped vs modal-scoped variable
+// overrides identical). Root cause not found after real measurement at every turn -- so per the
+// owner's own steer, these four reports stop trying to print the LIVE, interactive app DOM in
+// place (toggling body.eom-printing + window.print()) and switch to the SAME isolated-window
+// mechanism this file's OWN "FOB Report"/"Count Reliability"/etc. buttons already use successfully
+// (moved here, exported, from eom-dashboard.js -- was a local, unexported helper there). A fresh
+// window.open() with plain static HTML + hardcoded print-safe CSS has no live React tree, no CSS
+// custom properties, no shared DOM with the rest of the app to go wrong -- and the main app tab
+// never blocks, since window.print() now runs against a small, isolated document instead of the
+// whole live app. Supervisor Rollup is NOT migrated -- its own forPrint is load-bearing for more
+// than the banner (expands every row, swaps editable cells for plain text) and was never confirmed
+// broken by the owner's testing, so it keeps PrintGeneratingBanner + the original mechanism.
+export function openPrintWindow(title, bodyHtml) {
+  try {
+    // NB: do NOT pass 'noopener' — with it window.open() returns null, so nothing gets written and
+    // the new tab stays blank white (owner Notes 38: "Print for summary report ... blank white page").
+    const w = window.open('', '_blank', 'width=900,height=1100');
+    if (!w) { console.warn('[eom] print window blocked'); return; }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+<style>body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;color:#111;margin:26px;font-size:12px;line-height:1.45}
+h1{font-size:17px;margin:0 0 3px}.sub{color:#666;font-size:11px;margin:0 0 16px}
+table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #cbcbcb;padding:5px 8px;text-align:left;vertical-align:top}
+th{background:#f1f1f1;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
+tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-monospace,Menlo,monospace}
+.block{margin-bottom:14px;break-inside:avoid} .loc-hdr{font-size:13px;font-weight:800;margin:14px 0 2px}
+.grp{font-weight:700;color:#1a1a1a;margin:8px 0 3px;font-size:11.5px}
+.badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:6px;border:1px solid}
+.badge-warn{background:#fff7e6;border-color:#f0b400;color:#8a6400}
+.badge-bad{background:#fdecec;border-color:#e05555;color:#a12020}
+@media print{.noprint{display:none}}</style></head><body>${bodyHtml}
+<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200)}<\/script></body></html>`);
+    w.document.close();
+  } catch (e) { console.warn('[eom] print failed', e); }
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────

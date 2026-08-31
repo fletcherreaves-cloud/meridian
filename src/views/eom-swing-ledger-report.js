@@ -22,10 +22,10 @@
 // Impact (groupRowsByLocationThenKey) so the three reports don't grow three different groupings.
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
-import { ensureEomPrintStyleInjected, PrintGeneratingBanner } from './eom-supervisor.js';
+import { openPrintWindow } from './eom-supervisor.js';
 import { groupRowsByLocationThenKey } from './eom-report-grouping.js';
 
-const { useEffect, useState, useCallback } = React;
+const { useState, useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
@@ -76,19 +76,59 @@ export function formatSwingLedgerText(rows, { period, scopeLabel, totalDollars, 
   return lines.join('\n');
 }
 
+// HTML export for the "🖨 Print" button (2026-08-31, real bug fix — see openPrintWindow's own
+// comment in eom-supervisor.js for the full story: toggling body.eom-printing + window.print()
+// against the live app DOM reproducibly came back blank for the owner, so these reports print an
+// isolated window instead).
+export function formatSwingLedgerHtml(rows, { period, scopeLabel, totalDollars, topSwingers, reconstructions } = {}) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const list = rows || [];
+  const locked = list.filter(r => r.locked);
+  const lockedTotal = locked.reduce((s, r) => s + r.dollars, 0);
+  let html = `<h1>Count-Swing Ledger — ${esc(scopeLabel || 'all stores')}</h1>`;
+  html += `<div class="sub">${esc(period)} · ${list.length} count swing${list.length === 1 ? '' : 's'} · net ${esc(money(totalDollars))} · ${locked.length} locked real loss${locked.length === 1 ? '' : 'es'} (${esc(money(lockedTotal))})</div>`;
+  if (topSwingers && topSwingers.length) {
+    html += `<div class="block"><div class="grp">🎯 Top items to recount at count time — biggest swings this period</div>`
+      + topSwingers.map(t => `${esc(t.descr || t.wrin)} (${esc(money(t.netCountDollars))} across ${t.nCounts} count${t.nCounts === 1 ? '' : 's'})`).join(' &middot; ')
+      + `</div>`;
+  }
+  if (reconstructions && reconstructions.length) {
+    html += `<div class="block"><div class="grp">🍔 Possible product reconstruction (basic recipe lookup, not a confirmed finding)</div>`;
+    for (const store of reconstructions) {
+      html += `<div class="loc-hdr" style="font-size:12px">${esc(store.storeName)} (${store.org === 'emerald' ? 'FL' : 'OK'})</div>`;
+      for (const c of store.candidates.slice(0, 8)) {
+        const volNote = c.plausible === false ? `, only ${c.recentSales} sold recently — unlikely` : (c.plausible === true ? `, ${c.recentSales} sold recently` : '');
+        html += `<div style="margin-bottom:4px">≈${Math.round(c.estimatedUnits)} ${esc(c.description)} <span class="badge ${c.tight ? '' : 'badge-warn'}">${c.tight ? 'tight fit' : 'loose fit'}</span> — ${c.contributors.length} ingredients agree${esc(volNote)}<br>`
+          + `<span style="font-size:10px;color:#666">${c.contributors.map(ct => `${esc(ct.descr || ct.wrin)}: ${Math.round(ct.missingUnits)} missing &rarr; ≈${ct.impliedServings.toFixed(1)}`).join(' &middot; ')}</span></div>`;
+      }
+    }
+    html += `</div>`;
+  }
+  if (!list.length) return html + '<p>No material count swings this period for the current scope.</p>';
+  const byLoc = groupRowsByLocationThenKey(list.map(r => ({ ...r, _status: statusLabel(r) })), { key: '_status' });
+  for (const loc of byLoc) {
+    html += `<div class="block"><div class="loc-hdr">${esc(loc.storeName)} (${loc.org === 'emerald' ? 'FL' : 'OK'})</div>`;
+    for (const g of loc.groups) {
+      html += `<div class="grp">${esc(g.label)}</div><table><thead><tr><th>Date</th><th>Item</th><th>Class</th><th>Qty / Cases</th><th>$ Swing</th><th>Counted by</th></tr></thead><tbody>`;
+      for (const it of g.items) {
+        html += `<tr><td>${esc(fmtDate(it.dt))}</td>`
+          + `<td>${esc(it.descr || it.wrin || '—')}${it.wrin ? ` <span class="mono" style="color:#999">(${esc(it.wrin)})</span>` : ''}</td>`
+          + `<td>${esc(DIGEST_CLASS_LABELS[it.cls] || it.cls || '—')}</td>`
+          + `<td>${it.unitVar != null ? `${it.unitVar > 0 ? '+' : ''}${Math.round(it.unitVar).toLocaleString()}${esc(cases(it))}` : '—'}</td>`
+          + `<td class="${it.dollars > 0 ? 'g' : 'r'}">${it.dollars > 0 ? '+' : ''}${esc(money(it.dollars))}</td>`
+          + `<td>${esc(it.manager || '—')}</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+  }
+  return html;
+}
+
 export function EOMSwingLedgerReportPanel({ rows, totalDollars, topSwingers, reconstructions, period, scopeLabel }) {
-  useEffect(() => { ensureEomPrintStyleInjected(); }, []);
-  const [forPrint, setForPrint] = useState(false);
-  useEffect(() => {
-    const after = () => { setForPrint(false); document.body.classList.remove('eom-printing'); };
-    window.addEventListener('afterprint', after);
-    return () => window.removeEventListener('afterprint', after);
-  }, []);
   const doPrint = useCallback(() => {
-    setForPrint(true);
-    document.body.classList.add('eom-printing');
-    setTimeout(() => window.print(), 60);
-  }, []);
+    openPrintWindow(`Count-Swing Ledger — ${scopeLabel || 'all stores'}`, formatSwingLedgerHtml(rows, { period, scopeLabel, totalDollars, topSwingers, reconstructions }));
+  }, [rows, period, scopeLabel, totalDollars, topSwingers, reconstructions]);
   const [copied, setCopied] = useState(false);
   const doCopy = useCallback(async () => {
     try {
@@ -108,7 +148,6 @@ export function EOMSwingLedgerReportPanel({ rows, totalDollars, topSwingers, rec
   return div({ style: { padding: '16px', maxWidth: '1100px', margin: '0 auto' } },
 
     div({ className: 'eom-no-print' },
-      h(PrintGeneratingBanner, { forPrint }),
       div({ style: { marginBottom: '14px' } },
         div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '4px' } }, 'Count-Swing Ledger'),
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),

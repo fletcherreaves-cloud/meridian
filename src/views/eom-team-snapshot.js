@@ -27,9 +27,9 @@ import * as React from 'react';
 import { DEFAULT_TARGETS } from '../constants.js';
 import { fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { scoreboardRowFields } from '../engine/eom-inventory.js';
-import { ensureEomPrintStyleInjected, PrintGeneratingBanner } from './eom-supervisor.js';
+import { openPrintWindow } from './eom-supervisor.js';
 
-const { useEffect, useState, useCallback } = React;
+const { useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
@@ -96,19 +96,62 @@ function FobChipsRollup({ rows, period, monthlyOverrideFor }) {
     div({ style: { ...box, minWidth: '70px' } }, span({ style: lab }, 'Stores'), span({ style: big() }, String(withFob.length))));
 }
 
+// HTML export for the "🖨 Print" button (2026-08-31, real bug fix — see openPrintWindow's own
+// comment in eom-supervisor.js for the full story: toggling body.eom-printing + window.print()
+// against the live app DOM reproducibly came back blank for the owner, so these reports print an
+// isolated window instead). This report had no Copy button / plain-text export to mirror, so this
+// mirrors FobChipsRollup's own math directly (single-store components + vs-target, or a
+// dollar-weighted multi-store rollup — never a mean of per-store %ages) rather than duplicating a
+// second copy of that logic that could drift from the on-screen version.
+function fobRollupHtml(rows, period, monthlyOverrideFor) {
+  const $$ = v => (v == null || isNaN(v)) ? '—' : '$' + Math.round(v).toLocaleString();
+  const withFob = (rows || []).filter(r => r.components && (r.components.fob != null || r.components.fobPct != null));
+  if (!withFob.length) return '';
+  if (withFob.length === 1) {
+    const r = withFob[0], f = r.components;
+    const targets = { ...(DEFAULT_TARGETS[unpad(r.loc)] || {}), ...((monthlyOverrideFor && monthlyOverrideFor(r.loc, period)) || {}) };
+    const fobTgt = targets.tFOBTarget != null ? Number(targets.tFOBTarget) : null;
+    const deltas = fobComponentDeltas(f, targets);
+    const byKey = {}; for (const d of deltas) byKey[d.key] = d;
+    let cells = `<b>FOB ${pct2(f.fobPct)}</b> (${$$(f.fob)}${fobTgt != null ? `, tgt ${(fobTgt * 100).toFixed(2)}%` : ''})`;
+    for (const [key, label] of COMPS) {
+      const d = byKey[key];
+      const pct = d && d.pct != null ? pct2(d.pct) : (f.sales ? pct2((f[key] || 0) / f.sales) : '—');
+      cells += ` &middot; ${label} ${pct} (${$$(f[key])})`;
+    }
+    if (f.sales) cells += ` &middot; Prod Sales ${$$(f.sales)}`;
+    return `<div class="block">${cells}</div>`;
+  }
+  const sum = { sales: 0, comp: 0, raw: 0, cond: 0, emp: 0, statv: 0, unex: 0 };
+  for (const r of withFob) { const f = r.components; for (const k of Object.keys(sum)) sum[k] += Number(f[k]) || 0; }
+  const fob = sum.comp + sum.raw + sum.cond + sum.emp + sum.statv + sum.unex;
+  const fobPct = sum.sales ? fob / sum.sales : null;
+  let cells = `<b>FOB (scope) ${pct2(fobPct)}</b> (${$$(fob)})`;
+  for (const [key, label] of COMPS) cells += ` &middot; ${label} ${sum.sales ? pct2(sum[key] / sum.sales) : '—'} (${$$(sum[key])})`;
+  if (sum.sales) cells += ` &middot; Prod Sales ${$$(sum.sales)}`;
+  cells += ` &middot; ${withFob.length} stores`;
+  return `<div class="block">${cells}</div>`;
+}
+export function formatTeamSnapshotHtml(rows, { period, scopeLabel, monthlyOverrideFor } = {}) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const list = rows || [];
+  let html = `<h1>EOM Team Snapshot — ${esc(scopeLabel || 'all stores')}</h1>`;
+  html += `<div class="sub">${esc(period)} · ${list.length} store${list.length === 1 ? '' : 's'}</div>`;
+  html += fobRollupHtml(list, period, monthlyOverrideFor);
+  if (!list.length) return html + '<p>No stores in the current scope.</p>';
+  html += '<table><thead><tr><th>Store</th><th>State</th><th>Count %</th><th>FOB %</th><th>FOB $</th></tr></thead><tbody>';
+  for (const r of list) {
+    const f = scoreboardRowFields(r);
+    html += `<tr><td>${esc(f.store)}</td><td>${esc(f.state)}</td><td>${f.countPct != null ? esc(pct2(f.countPct)) : '—'}</td>`
+      + `<td>${f.fobPct != null ? esc(pct2(f.fobPct)) : '—'}</td><td>${f.fobDollar != null ? esc('$' + Math.round(f.fobDollar).toLocaleString()) : '—'}</td></tr>`;
+  }
+  return html + '</tbody></table>';
+}
+
 export function EOMTeamSnapshotPanel({ rows, period, scopeLabel, monthlyOverrideFor }) {
-  useEffect(() => { ensureEomPrintStyleInjected(); }, []);
-  const [forPrint, setForPrint] = useState(false);
-  useEffect(() => {
-    const after = () => { setForPrint(false); document.body.classList.remove('eom-printing'); };
-    window.addEventListener('afterprint', after);
-    return () => window.removeEventListener('afterprint', after);
-  }, []);
   const doPrint = useCallback(() => {
-    setForPrint(true);
-    document.body.classList.add('eom-printing');
-    setTimeout(() => window.print(), 60);
-  }, []);
+    openPrintWindow(`EOM Team Snapshot — ${scopeLabel || 'all stores'}`, formatTeamSnapshotHtml(rows, { period, scopeLabel, monthlyOverrideFor }));
+  }, [rows, period, scopeLabel, monthlyOverrideFor]);
 
   const list = rows || [];
   const th = (t) => h('th', { key: t, style: { textAlign: 'left', padding: '6px 10px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
@@ -116,7 +159,6 @@ export function EOMTeamSnapshotPanel({ rows, period, scopeLabel, monthlyOverride
   return div({ style: { padding: '16px', maxWidth: '900px', margin: '0 auto' } },
 
     div({ className: 'eom-no-print' },
-      h(PrintGeneratingBanner, { forPrint }),
       div({ style: { marginBottom: '14px' } },
         div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '4px' } }, 'EOM Team Snapshot'),
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),
