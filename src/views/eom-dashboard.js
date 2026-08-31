@@ -13,7 +13,7 @@ import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus, loadEomPeriods,
-  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail, loadQsrRawItemInfo,
+  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail, loadQsrRawItemInfo, loadPmixSalesByItems,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   loadEomDigestConfig, saveEomDigestConfig,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
@@ -1637,6 +1637,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // data). Also supplies menuItems for reconstructMissingProducts().
   const [rawInfo, setRawInfo] = useState([]);
   useEffect(() => { loadQsrRawItemInfo({}).then(setRawInfo).catch(() => setRawInfo([])); }, []);
+  // Product-reconstruction plausibility (2026-08-31, same-day follow-up) — real recent sales for
+  // exactly the (loc, item_number) pairs the reconstruction candidates name, keyed 'loc:item' ->
+  // total units sold. Starts empty (no penalty/reward yet, every candidate reads plausible:null);
+  // populated by an effect declared after swingLedgerRows below, once that memo's first pass has
+  // produced a candidate list to fetch sales for. See that effect's own comment for the two-pass
+  // shape and why loadPmixSalesByItems (targeted), not loadPmixRows (district-wide), is used.
+  const [pmixSales, setPmixSales] = useState({});
   const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
   const [diagCopied, setDiagCopied] = useState(false);
   const [dispByWrin, setDispByWrin] = useState({}); // #38 verify-&-clear: wrin -> disposition
@@ -2507,7 +2514,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       // store's burger, so this must run per-store, not on the pooled `out` list.
       const info = rawInfoByLoc[r.loc];
       if (info) {
-        const candidates = reconstructMissingProducts(led.rows, info);
+        // salesByItem keyed by item_number for JUST this store, pulled out of the district-wide
+        // pmixSales map (keyed 'loc:item') — see the effect below this memo for how it's filled.
+        const salesByItem = {};
+        for (const k of Object.keys(pmixSales)) {
+          const [kloc, kitem] = k.split(':');
+          if (kloc === String(r.loc)) salesByItem[kitem] = pmixSales[k];
+        }
+        const candidates = reconstructMissingProducts(led.rows, info, { salesByItem: Object.keys(salesByItem).length ? salesByItem : null });
         if (candidates.length) reconstructions.push({ loc: r.loc, storeName: r.name, org: r.org, candidates });
       }
     }
@@ -2516,7 +2530,30 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // sorted worst-net-first, matching buildStoreJourneys()'s own ordering).
     topSwingers.sort((a, b) => Math.abs(b.netCountDollars || 0) - Math.abs(a.netCountDollars || 0));
     return { rows: out, totalDollars, topSwingers: topSwingers.slice(0, 10), reconstructions };
-  }, [rows, rawByLoc, rawInfoByLoc, period]);
+  }, [rows, rawByLoc, rawInfoByLoc, period, pmixSales]);
+
+  // Fetch real sales for exactly the (loc, item_number) pairs the FIRST pass above just named as
+  // candidates (2026-08-31, same-day follow-up to product reconstruction — owner: "your logic is
+  // valid about a low volume item, not likely the cause. more likely high volume items"). Runs
+  // AFTER swingLedgerRows so it has real candidates to target; when the fetch resolves, pmixSales
+  // updates, swingLedgerRows above re-runs (it depends on pmixSales), and the SAME candidates come
+  // back re-ranked by real sales volume — this effect does not itself change what surfaces, only
+  // what feeds the ranking. A stable, sorted key string (not the reconstructions array reference,
+  // which is a new array every render) keeps this from re-fetching every render.
+  const reconstructionPairsKey = useMemo(() => {
+    const pairs = [];
+    for (const store of swingLedgerRows.reconstructions) {
+      for (const c of store.candidates) pairs.push({ loc: store.loc, item: c.itemNumber });
+    }
+    return pairs;
+  }, [swingLedgerRows.reconstructions]);
+  useEffect(() => {
+    if (!reconstructionPairsKey.length) return;
+    let cancelled = false;
+    loadPmixSalesByItems(reconstructionPairsKey).then(sales => { if (!cancelled) setPmixSales(sales); }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(reconstructionPairsKey)]);
 
   // Cross-store recount consistency (2026-08-31, memory/scoping-sage-mcnuggets-learning-2026-08-31.md):
   // the SAME item recounted at multiple stores THIS scope/period, with some recounts helping and others

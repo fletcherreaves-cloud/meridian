@@ -56,7 +56,8 @@ export function formatSwingLedgerText(rows, { period, scopeLabel, totalDollars, 
     for (const store of reconstructions) {
       lines.push(`  ${store.storeName} (${store.org === 'emerald' ? 'FL' : 'OK'})`);
       for (const c of store.candidates.slice(0, 8)) {
-        lines.push(`    - ≈${Math.round(c.estimatedUnits)} ${c.description} (${c.tight ? 'tight fit' : 'loose fit'}, ${c.contributors.length} ingredients agree)`);
+        const volNote = c.plausible === false ? `, only ${c.recentSales} sold recently — unlikely` : (c.plausible === true ? `, ${c.recentSales} sold recently` : '');
+        lines.push(`    - ≈${Math.round(c.estimatedUnits)} ${c.description} (${c.tight ? 'tight fit' : 'loose fit'}, ${c.contributors.length} ingredients agree${volNote})`);
         for (const ct of c.contributors) lines.push(`        · ${ct.descr || ct.wrin}: ${Math.round(ct.missingUnits)} missing → ≈${ct.impliedServings.toFixed(1)}`);
       }
     }
@@ -165,11 +166,17 @@ export function EOMSwingLedgerReportPanel({ rows, totalDollars, topSwingers, rec
               div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '5px' } },
                 span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '12.5px' } }, store.storeName),
                 span({ style: { fontSize: '10px', color: store.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, store.org === 'emerald' ? 'FL' : 'OK')),
-              ...store.candidates.slice(0, 8).map((c, ci) => div({ key: ci, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${c.tight ? '#4ade80' : 'var(--text3)'}`, borderRadius: '7px', padding: '8px 12px', marginBottom: '6px', background: 'var(--surf2)', opacity: c.tight ? 1 : 0.75 } },
+              ...store.candidates.slice(0, 8).map((c, ci) => div({ key: ci, style: { border: '1px solid var(--bdr)', borderLeft: `3px solid ${c.plausible === false ? '#f87171' : (c.tight ? '#4ade80' : 'var(--text3)')}`, borderRadius: '7px', padding: '8px 12px', marginBottom: '6px', background: 'var(--surf2)', opacity: c.plausible === false ? 0.6 : (c.tight ? 1 : 0.75) } },
                 div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' } },
                   span({ style: { fontWeight: 700, color: 'var(--text)' } }, `≈${Math.round(c.estimatedUnits)} ${c.description}`),
                   span({ style: { fontSize: '10px', fontWeight: 700, color: c.tight ? '#4ade80' : '#f5bc00', textTransform: 'uppercase' } }, c.tight ? '✓ tight fit' : '~ loose fit'),
-                  span({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${c.contributors.length} ingredients agree`)),
+                  span({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${c.contributors.length} ingredients agree`),
+                  // Real-sales plausibility (2026-08-31, same-day follow-up) — a tight recipe-ratio
+                  // match doesn't mean much if the store barely sells the item; this shows the real
+                  // number so a manager can judge it themselves, same "show it, don't hide it" rule
+                  // the tight/loose badge already follows.
+                  c.recentSales != null ? span({ style: { fontSize: '10px', fontWeight: 700, color: c.plausible === false ? '#f87171' : 'var(--text3)', textTransform: 'uppercase' } },
+                    c.plausible === false ? `⚠ only ${c.recentSales} sold recently` : `${c.recentSales} sold recently`) : null),
                 div({ style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
                   ...c.contributors.map((ct, i) => span({ key: i, style: { fontSize: '10.5px', padding: '2px 7px', borderRadius: '5px', background: 'var(--surf3)', color: 'var(--text2)' } },
                     `${ct.descr || ct.wrin}: ${Math.round(ct.missingUnits)} missing → ≈${ct.impliedServings.toFixed(1)}`))))))))

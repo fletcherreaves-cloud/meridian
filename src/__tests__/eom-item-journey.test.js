@@ -216,4 +216,47 @@ describe('reconstructMissingProducts', () => {
     // so they can still surface, but beef must not appear among their contributors.
     for (const c of out) expect(c.contributors.some(x => x.wrin === 'BEEF')).toBe(false);
   });
+
+  // 2026-08-31, same-day follow-up: owner reported a live false positive (Pauls Valley-Ballard
+  // Rd's "Triple Stack" items surfacing for a 269-unit sausage patty shortage) that turned out to
+  // be a real, if low-volume, seller (measured via qsr_product_mix) — not a bug in on_pos
+  // filtering. Owner's own read once shown the real numbers: "your logic is valid about a low
+  // volume item, not likely the cause. more likely high volume items." So salesByItem doesn't gate
+  // candidates (on_pos already does that correctly) — it re-ranks implausible-volume ones below
+  // plausible ones, tight fit or not.
+  describe('salesByItem plausibility re-ranking', () => {
+    it('without salesByItem, ranking is unchanged (existing behavior/callers untouched)', () => {
+      const out = reconstructMissingProducts(SWINGS, RAW_ITEM_INFO);
+      expect(out[0].description).toBe('Cheeseburger');
+      expect(out.every(c => c.plausible === null)).toBe(true);
+      expect(out.every(c => c.recentSales === null)).toBe(true);
+    });
+
+    it('a tight-fit candidate implying far more than its real recent sales drops below a plausible one', () => {
+      // Cheeseburger (item 7) is the TIGHT fit (~100 implied) but has only sold 4 in the window —
+      // 100 is nowhere near plausible even at a generous 3x multiplier. McDouble (item 3426) is the
+      // LOOSE fit (~50 implied) but has genuinely sold plenty — a real, supportable volume.
+      const out = reconstructMissingProducts(SWINGS, RAW_ITEM_INFO, { salesByItem: { 7: 4, 3426: 200 } });
+      const burger = out.find(c => c.description === 'Cheeseburger');
+      const dbl = out.find(c => c.description === 'McDouble');
+      expect(burger.plausible).toBe(false);
+      expect(dbl.plausible).toBe(true);
+      // Plausibility outranks fit: McDouble (loose but plausible) now ranks ahead of Cheeseburger
+      // (tight but implausible), the opposite of the no-sales-data ranking above.
+      expect(out[0].description).toBe('McDouble');
+    });
+
+    it('a candidate with no sales data for its item stays neutral (plausible: null), not penalized', () => {
+      const out = reconstructMissingProducts(SWINGS, RAW_ITEM_INFO, { salesByItem: { 3426: 200 } }); // no entry for item 7
+      const burger = out.find(c => c.description === 'Cheeseburger');
+      expect(burger.plausible).toBeNull();
+      expect(burger.recentSales).toBeNull();
+    });
+
+    it('within the same plausibility tier, higher real sales volume ranks first', () => {
+      const out = reconstructMissingProducts(SWINGS, RAW_ITEM_INFO, { salesByItem: { 7: 500, 3426: 50 } }); // both plausible
+      expect(out[0].description).toBe('Cheeseburger'); // still tight AND now the higher-volume seller
+      expect(out[0].recentSales).toBe(500);
+    });
+  });
 });

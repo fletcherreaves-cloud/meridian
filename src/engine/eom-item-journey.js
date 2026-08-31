@@ -325,7 +325,20 @@ export function storeSwingLedger(rawItems = [], { period, asOf, floor = 25 } = {
 // units each is a real signal. `tight` = every contributing ingredient's implied count falls within
 // `tolerancePct` of the group's median — a loose spread (e.g. beef says 50, buns say 100) means the
 // recipe doesn't actually explain the shortage together, even though it corroborates on paper.
-export function reconstructMissingProducts(swingRows, rawItemInfoByWrin = {}, { tolerancePct = 0.35, minCorroborating = 2 } = {}) {
+// `salesByItem` (owner req, 2026-08-31, same-day follow-up): a live measurement against Pauls
+// Valley's real POS data confirmed on_pos alone isn't enough to judge a candidate's plausibility --
+// Triple Stack items there are genuinely on_pos:'Y' AND genuinely selling (a few a week, real
+// orders as recent as 2 days before this was checked), so they correctly surface as candidates. But
+// the owner's own read once shown the real numbers: a low-volume item implying a much larger
+// quantity than it has EVER actually sold is not a plausible explanation for a real shortage --
+// "more likely high volume items." So this doesn't gate on activity (on_pos already does that
+// correctly) -- it re-ranks: a candidate whose estimatedUnits vastly exceeds what the item has
+// actually sold recently drops below one a store's real sales volume can actually support, while
+// still showing (own report's original rule -- "show the candidates, let the reader judge fit,
+// don't hide the loose ones" -- extends the same way to volume). `salesByItem` is optional and
+// keyed by item_number -> total units sold in the lookback window; omitting it (existing callers,
+// existing tests) leaves ranking exactly as before.
+export function reconstructMissingProducts(swingRows, rawItemInfoByWrin = {}, { tolerancePct = 0.35, minCorroborating = 2, salesByItem = null, plausibilityMult = 3 } = {}) {
   const shortages = (swingRows || []).filter(r => r.dollars < 0 && r.unitVar != null && r.unitVar < 0);
   const candidates = {};
   for (const s of shortages) {
@@ -355,8 +368,18 @@ export function reconstructMissingProducts(swingRows, rawItemInfoByWrin = {}, { 
     const vals = contributors.map(x => x.impliedServings).sort((a, b) => a - b);
     const median = vals[Math.floor(vals.length / 2)];
     const spread = median > 0 ? (vals[vals.length - 1] - vals[0]) / median : Infinity;
-    out.push({ itemNumber: c.itemNumber, description: c.description, contributors, estimatedUnits: median, tight: spread <= tolerancePct, spread });
+    const recentSales = salesByItem ? (salesByItem[c.itemNumber] ?? null) : null;
+    // null = no sales data to judge by (don't penalize an unmeasured item); a real number below
+    // the implied quantity (times the generous multiplier) is a genuine implausibility flag.
+    const plausible = recentSales == null ? null : median <= recentSales * plausibilityMult;
+    out.push({ itemNumber: c.itemNumber, description: c.description, contributors, estimatedUnits: median, tight: spread <= tolerancePct, spread, recentSales, plausible });
   }
-  out.sort((a, b) => (Number(b.tight) - Number(a.tight)) || (b.contributors.length - a.contributors.length) || (b.estimatedUnits - a.estimatedUnits));
+  // Plausibility outranks tight/loose fit, not the other way around: "tight" only measures whether
+  // the contributing ingredients agree WITH EACH OTHER, not whether the store could plausibly have
+  // sold that many of the item — a perfectly tight ratio match on an item that's barely ever sold
+  // is a coincidence dressed up as a strong signal, exactly the Triple Stack case this was built
+  // for. A candidate known implausible (real sales data says so) sorts last regardless of fit.
+  out.sort((a, b) => (Number(b.plausible !== false) - Number(a.plausible !== false)) || (Number(b.tight) - Number(a.tight))
+    || ((b.recentSales ?? -1) - (a.recentSales ?? -1)) || (b.contributors.length - a.contributors.length) || (b.estimatedUnits - a.estimatedUnits));
   return out;
 }
