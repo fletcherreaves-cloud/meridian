@@ -158,7 +158,7 @@ export function storeVarianceProgressions(rawItems, { minAbs = 25, gapHours = 4,
       .map(h => ({ dt: String(h.dt).slice(0, 10), tm: h.tm || null, when: eventTs(h.dt, h.tm), onHand: h.qtyChange != null ? Number(h.qtyChange) : null }))
       .sort((a, b) => (a.when ?? 0) - (b.when ?? 0));
     const periodStart = opens[0] || null;
-    out.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls: it.cls, officialVar: official, priorVar, periodStart, recount, ...p });
+    out.push({ wrin: it.wrin, descr: it.descr || it.wrin, cls: it.cls, caseSz: it.caseSz, officialVar: official, priorVar, periodStart, recount, ...p });
   }
   out.sort((a, b) =>
     (b.flags.length - a.flags.length) ||

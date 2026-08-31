@@ -98,4 +98,14 @@ describe('itemVarianceProgression — session-aware', () => {
     expect(out[0].officialVar).toBe(-60);
     expect(out[0].priorVar).toBe(-200);           // |−60| < |−200| → improving vs last EOM
   });
+
+  // 2026-08-31 (owner req, "add variance quantity to Progression") — the Change Monitor's per-item
+  // event table (eom-dashboard.js's eventTable()) reads p.caseSz to case-format a count's unit
+  // variance for its new "Variance qty" column. storeVarianceProgressions() previously dropped
+  // it.caseSz on the floor when building each item's progression object `p`.
+  it("carries the raw item's caseSz through onto the progression object", () => {
+    const items = [{ wrin: '1', descr: 'BEEF', caseSz: 40, history: [cnt(-560, '8:00 AM', '2026-07-14')] }];
+    const out = storeVarianceProgressions(items, { statVar: { '1': -560 } });
+    expect(out[0].caseSz).toBe(40);
+  });
 });

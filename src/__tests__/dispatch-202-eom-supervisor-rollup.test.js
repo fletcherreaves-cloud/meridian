@@ -50,6 +50,7 @@ vi.mock('../lib/supabase.js', () => ({
   loadQsrWaste: async () => [],
   loadQsrTransfers: async () => [],
   loadQsrRawItemDetail: async () => [],
+  loadQsrRawItemInfo: async () => [],
   loadEomDiagConfig: async () => null,
   saveEomDiagConfig: async () => ({}),
   triggerSync: async () => ({ ok: true }),

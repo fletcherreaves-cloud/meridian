@@ -13,7 +13,7 @@ import { PanelChrome } from '../components/PanelChrome.js';
 import { LocationSelector, ActionMenus, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import {
   loadQsrOnHand, loadQsrFob, loadEomCountStatus, saveEomCountStatus, loadEomPeriods,
-  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail,
+  loadQsrVarianceStat, loadQsrVarianceHistory, loadQsrVarianceHistoryAll, loadQsrWaste, loadQsrTransfers, loadQsrRawItemDetail, loadQsrRawItemInfo,
   loadEomDiagConfig, saveEomDiagConfig, triggerSync,
   loadEomDigestConfig, saveEomDigestConfig,
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
@@ -41,7 +41,7 @@ import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
 import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-district-summary.js';
 import { mdToHtml } from '../utils/markdown.js';
-import { buildItemJourney, buildStoreJourneys, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
+import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMissingProducts, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
 import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
 import { dowOf } from '../utils/date.js';
@@ -61,6 +61,12 @@ import { EOMSupervisorPanel } from './eom-supervisor.js';
 import { EOMMissingItemsReportPanel } from './eom-missing-items-report.js';
 import { EOMTeamSnapshotPanel } from './eom-team-snapshot.js';
 import { EOMRecountImpactPanel } from './eom-recount-report.js';
+// Report 4 (owner request, 2026-08-31) — the month's count-swing ledger: every material
+// count-event correction across the whole period (not just the EOM close window), classified
+// locked (the item's last count, before the window — nothing left to recover) vs recovered (a
+// later count this period superseded it), with manager attribution and case-formatted quantities.
+// storeSwingLedger() (eom-item-journey.js) is a pure flatten of buildStoreJourneys() — no new pull.
+import { EOMSwingLedgerReportPanel } from './eom-swing-ledger-report.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -976,16 +982,27 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
   const eventTable = (p) => {
     const th = { textAlign: 'left', fontSize: '9px', textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text3)', fontWeight: 700, padding: '3px 8px', borderBottom: '1px solid var(--bdr2)' };
     const td = { padding: '3px 8px', fontSize: '11.5px', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
+    // Variance QUANTITY at a count (owner req, 2026-08-31) — same unitVar the $ column already
+    // derives from (unitVar × unit cost = dolVar), rendered as raw units + case-formatted (2
+    // decimals, matching the caseSz convention fixed elsewhere this session) so a manager knows
+    // WHAT to go recount, not just the dollar impact. p.caseSz threaded through from
+    // storeVarianceProgressions() (eom-count-sessions.js) — rawItems' own .caseSz, unchanged data.
+    const qtyCell = (unitVar) => {
+      if (unitVar == null || Math.abs(unitVar) < 0.5) return '—';
+      const cases = p.caseSz > 0 ? ` (${(Math.abs(unitVar) / p.caseSz).toFixed(2)} cs)` : '';
+      return `${unitVar < 0 ? '-' : '+'}${Math.round(Math.abs(unitVar)).toLocaleString()}${cases}`;
+    };
     const bodyRows = [];
     // Point-to-point anchor: the period's beginning inventory = the first POS Open reading (carried from
     // last EOM's ending count). Variance reconciles from HERE to the binding count.
     if (p.periodStart) {
       bodyRows.push(h('tr', { key: 'ps-h' },
-        h('td', { colSpan: 5, style: { padding: '6px 8px 2px', fontSize: '9.5px', fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Period start · beginning inventory (carried from last EOM)')));
+        h('td', { colSpan: 6, style: { padding: '6px 8px 2px', fontSize: '9.5px', fontWeight: 700, color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '.04em' } }, 'Period start · beginning inventory (carried from last EOM)')));
       bodyRows.push(h('tr', { key: 'ps' },
         h('td', { style: { ...td, color: 'var(--text3)' } }, `${p.periodStart.dt}${p.periodStart.tm ? ' ' + p.periodStart.tm : ''}`),
         h('td', { style: td }, 'POS Open'),
         h('td', { style: { ...td, fontWeight: 700, color: 'var(--text2)' } }, qty(p.periodStart.onHand)),
+        h('td', { style: { ...td, color: 'var(--text3)' } }, '—'),
         h('td', { style: { ...td, color: 'var(--text3)' } }, '—'),
         h('td', { style: { ...td, fontSize: '9px', fontWeight: 700, color: '#38bdf8' } }, 'BEGIN')));
     }
@@ -998,7 +1015,7 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
       // per-entry below) are recounts. Base day neutral; later days = progression (blue).
       const labelTxt = p.nSessions === 1 ? 'Count' : si === 0 ? 'Count' : `Count progression — ${s.date}`;
       bodyRows.push(h('tr', { key: `s${si}` },
-        h('td', { colSpan: 5, style: { padding: '6px 8px 2px', fontSize: '9.5px', fontWeight: 700, color: si === 0 ? 'var(--text3)' : '#38bdf8', textTransform: 'uppercase', letterSpacing: '.04em' } },
+        h('td', { colSpan: 6, style: { padding: '6px 8px 2px', fontSize: '9.5px', fontWeight: 700, color: si === 0 ? 'var(--text3)' : '#38bdf8', textTransform: 'uppercase', letterSpacing: '.04em' } },
           `${labelTxt}${s.nEntries > 1 ? ` · ${s.nEntries} area entries` : ''}`)));
       s.entries.forEach((e, ei) => {
         const binding = ei === s.entries.length - 1;
@@ -1010,14 +1027,17 @@ function VarianceProgressionView({ rows, progByLoc, nm, period }) {
           h('td', { style: { ...td, color: 'var(--text3)' } }, `${e.dt}${e.tm ? ' ' + e.tm : ''}`),
           h('td', { style: td }, e.manager || '—'),
           h('td', { style: { ...td, fontWeight: binding ? 800 : 500, color: binding ? 'var(--text)' : 'var(--text2)' } }, qty(e.onHand)),
+          h('td', { style: { ...td, color: dc } }, qtyCell(e.unitVar)),
           h('td', { style: { ...td, color: dc } }, Math.abs(e.dolVar) >= 1 ? `${e.dolVar < 0 ? '-' : '+'}$${Math.abs(Math.round(e.dolVar)).toLocaleString()}` : '—'),
           h('td', { style: { ...td, fontSize: '9px', fontWeight: 700, color: tagC } }, tag)));
       });
     });
-    return h('table', { style: { borderCollapse: 'collapse', width: '100%', maxWidth: '620px', marginTop: '6px' } },
+    return h('table', { style: { borderCollapse: 'collapse', width: '100%', maxWidth: '700px', marginTop: '6px' } },
       h('thead', null, h('tr', null,
         h('th', { style: th }, 'Date · Time'), h('th', { style: th }, 'Counter'),
-        h('th', { style: th }, 'On-hand entered'), h('th', { style: { ...th }, title: 'The item’s variance in dollars at that count (unit variance × unit cost). During an area-by-area walkthrough the intermediate rows show PARTIAL variance (an artifact until every area is counted); only the BINDING row is the real variance for that count.' }, 'Variance $ (at count)'), h('th', { style: th }, ''))),
+        h('th', { style: th }, 'On-hand entered'),
+        h('th', { style: th, title: 'Unit variance at that count, case-formatted when a case size is on file — what to go recount, not just the dollar impact.' }, 'Variance qty'),
+        h('th', { style: { ...th }, title: 'The item’s variance in dollars at that count (unit variance × unit cost). During an area-by-area walkthrough the intermediate rows show PARTIAL variance (an artifact until every area is counted); only the BINDING row is the real variance for that count.' }, 'Variance $ (at count)'), h('th', { style: th }, ''))),
       h('tbody', null, ...bodyRows));
   };
 
@@ -1238,7 +1258,7 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
                   h('td', { style: { padding: '2px 6px', color: 'var(--text2)' } }, p.period),
                   h('td', { style: { padding: '2px 6px', textAlign: 'right', fontWeight: 700, color: p.dol < -tolerance ? 'var(--crit)' : p.dol > tolerance ? '#fbbf24' : 'var(--text2)' } }, dolStr(p.dol)),
                   h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (p.qty || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })),
-                  caseSz > 0 ? h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (Math.abs(p.qty) / caseSz).toFixed(1)) : null);
+                  caseSz > 0 ? h('td', { style: { padding: '2px 6px', textAlign: 'right', color: 'var(--text3)' } }, (Math.abs(p.qty) / caseSz).toFixed(2)) : null);
               }))) : (wrin ? div({ style: { fontSize: '11px', color: 'var(--text3)' } }, 'No prior-period history for this item.') : null)),
         );
       })),
@@ -1274,7 +1294,7 @@ function ItemJourneyView({ journey: j }) {
       // Overall Y/N: every comparison we HAVE must tie. (If only one side is available, judge on it.)
       const checks = [dDiff != null ? dTies : null, qDiff != null ? qTies : null].filter(v => v != null);
       const allTie = checks.length > 0 && checks.every(Boolean);
-      const cs = (j.caseSz && Math.abs(ru || 0) >= j.caseSz) ? ` (≈ ${(ru / j.caseSz).toFixed(1)} cs)` : '';
+      const cs = (j.caseSz && Math.abs(ru || 0) >= j.caseSz) ? ` (≈ ${(ru / j.caseSz).toFixed(2)} cs)` : '';
       const lbl = (t) => span({ style: { fontSize: '9.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 700, marginRight: '3px' } }, t);
       return div({ style: { padding: '8px 12px', borderRadius: '8px', background: 'var(--surf3)', border: '1px solid var(--bdr)' } },
         div({ style: { display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' } },
@@ -1607,6 +1627,16 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [waste, setWaste] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [rawDetail, setRawDetail] = useState([]);
+  // qsr_raw_item_info (dispatch #184) — point-in-time recipe/BOM + case-size snapshot, no `period`
+  // column, so loaded once (not re-fetched on every period change like rawDetail above). Supplies
+  // caseSz (case_qty) for every case-formatted display in this file (ActionItemsProvenance history,
+  // Item Journey chip, Change Monitor's Variance qty column, the Count Swings report) — NONE of
+  // which qsr_raw_item_detail (rawDetail's own source) ever carried; every `.caseSz` reference
+  // against a rawByLoc item was reading `undefined` until this wiring (2026-08-31, found while
+  // adding the product-reconstruction feature, which needs this same table's menu_items/recipe
+  // data). Also supplies menuItems for reconstructMissingProducts().
+  const [rawInfo, setRawInfo] = useState([]);
+  useEffect(() => { loadQsrRawItemInfo({}).then(setRawInfo).catch(() => setRawInfo([])); }, []);
   const [diag, setDiag] = useState(null); // { name, result, report } for the diagnosis modal
   const [diagCopied, setDiagCopied] = useState(false);
   const [dispByWrin, setDispByWrin] = useState({}); // #38 verify-&-clear: wrin -> disposition
@@ -1844,19 +1874,34 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // diagnosis so the transfers check can flag a transfer with no counterparty side.
   const unmatchedXfer = useMemo(() => flagUnmatchedTransfers(transfers, [...new Set(transfers.map(t => t.loc))]), [transfers]);
   // Raw-item registers grouped by loc; reshape for the engine (counts = inventory events).
+  // qsr_raw_item_info grouped two ways: by loc (for the reconstruction feature's per-store recipe
+  // lookup) and, within each loc, by wrin (for the caseSz merge just below and for quick recipe
+  // lookup). Point-in-time data (no `period`), loaded once above.
+  const rawInfoByLoc = useMemo(() => {
+    const m = {};
+    for (const r of (rawInfo || [])) (m[String(r.loc)] || (m[String(r.loc)] = {}))[String(r.wrin)] = r;
+    return m;
+  }, [rawInfo]);
   const rawByLoc = useMemo(() => {
     const m = {};
     for (const r of (rawDetail || [])) {
       const counts = (r.history || []).filter(h => h.isCount);
+      // caseSz (2026-08-31 fix) — qsr_raw_item_detail (this row's own source) has no case-size
+      // column at all; every prior `.caseSz` reference against a rawByLoc item was silently reading
+      // undefined. The real value lives in qsr_raw_item_info's case_qty, a separate per-(loc,wrin)
+      // stream (rawInfoByLoc above) — merged in here so every existing case-formatted display
+      // (ActionItemsProvenance, Item Journey, Change Monitor, Count Swings) starts working, not
+      // just the new reconstruction feature that prompted finding this.
       // cls is carried through for display (e.g. the raw-item table's Class column) and for any
       // future per-class variance grouping. It's no longer load-bearing for weekly-cadence
       // detection — dispatch #97 moved that determination off this table (qsr_raw_item_detail,
       // dollar-filtered to top variance items) onto cycleCompliance()/qsr_onhand (cadenceFromOnHand,
       // above); rawByLoc's remaining job here is itemVarianceWindows' between-count drill-down.
-      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, cls: r.itemClass, history: r.history, counts, caseSz: r.caseSz, uom: r.uom });
+      const caseSz = rawInfoByLoc[String(r.loc)]?.[String(r.wrin)]?.caseQty ?? null;
+      (m[String(r.loc)] || (m[String(r.loc)] = [])).push({ wrin: r.wrin, descr: r.descr, cls: r.itemClass, history: r.history, counts, caseSz, uom: r.uom });
     }
     return m;
-  }, [rawDetail]);
+  }, [rawDetail, rawInfoByLoc]);
 
   // Count timing per store (#45) — when the EOM count began/ended + total duration, from the
   // raw-item count-event timestamps. Insightful for pace/coaching + spotting a padded-at-cutoff count.
@@ -2434,6 +2479,45 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     return out;
   }, [rows, rawByLoc, varByLoc, period]);
 
+  // Report 4 — month's count-swing ledger (owner req, 2026-08-31, verbatim: "take all the items
+  // that where lost during the month, which little hope of recovering by a recount at eom... I
+  // want to see the accumulative total of those and what they were and when it happened along
+  // with if a recount took place at the time or not and who the counting manager was"). Per scoped
+  // store, storeSwingLedger() flattens buildStoreJourneys()'s existing per-item counts[] into one
+  // row per material count-event across the WHOLE period (not just the close window) — no new
+  // engine, no new pull. Sort: class, then |$| descending within class, matching the recount-impact
+  // report's own convention above.
+  const swingLedgerRows = useMemo(() => {
+    const out = [];
+    const topSwingers = [];
+    const reconstructions = [];
+    let totalDollars = 0;
+    for (const r of rows) {
+      const items = pickByLoc(rawByLoc, r.loc) || [];
+      if (!items.length) continue;
+      const led = storeSwingLedger(items, { period, asOf: new Date() });
+      totalDollars += led.totalDollars;
+      for (const row of led.rows) {
+        out.push({ loc: r.loc, storeName: r.name, org: r.org, cls: normClass(row.cls), ...row });
+      }
+      for (const t of led.topSwingers) topSwingers.push({ loc: r.loc, storeName: r.name, ...t });
+      // Product reconstruction (owner req, 2026-08-31) — cross-reference this store's shortages
+      // against the SAME rawInfoByLoc recipe data caseSz now merges from, all-material-swings scope
+      // (owner-confirmed: not just locked). One store's ingredients can't reconstruct another
+      // store's burger, so this must run per-store, not on the pooled `out` list.
+      const info = rawInfoByLoc[r.loc];
+      if (info) {
+        const candidates = reconstructMissingProducts(led.rows, info);
+        if (candidates.length) reconstructions.push({ loc: r.loc, storeName: r.name, org: r.org, candidates });
+      }
+    }
+    out.sort((a, b) => (DIGEST_CLASS_ORDER.indexOf(a.cls) - DIGEST_CLASS_ORDER.indexOf(b.cls)) || (Math.abs(b.dollars || 0) - Math.abs(a.dollars || 0)));
+    // District-wide top swingers — re-ranked across every scoped store's own top-10 (each already
+    // sorted worst-net-first, matching buildStoreJourneys()'s own ordering).
+    topSwingers.sort((a, b) => Math.abs(b.netCountDollars || 0) - Math.abs(a.netCountDollars || 0));
+    return { rows: out, totalDollars, topSwingers: topSwingers.slice(0, 10), reconstructions };
+  }, [rows, rawByLoc, rawInfoByLoc, period]);
+
   // Cross-store recount consistency (2026-08-31, memory/scoping-sage-mcnuggets-learning-2026-08-31.md):
   // the SAME item recounted at multiple stores THIS scope/period, with some recounts helping and others
   // hurting -- the signature of a crew-technique/UOM gap at specific stores, not independent noise (real
@@ -2916,6 +3000,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // missing/uncounted-items report), 'snapshot' (simplified "send to teams" EOM Count snapshot),
   // 'recount' (recount-impact report). Same tab-button mechanism as every prior tab addition —
   // no new selector, no second tab strip.
+  // 'swing' (owner req, 2026-08-31) — the month's count-swing ledger, added after 'recount' as the
+  // 4th report tab, same mechanism.
   const TAB_TITLES = {
     scoreboard: 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared',
     eom: 'Count-completion tracking (meaningful in the last-3-day window)',
@@ -2925,10 +3011,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     missing: 'District-wide missing/uncounted items, sorted by location then class, with last-count date and a recommendation per row. Print-friendly.',
     snapshot: 'A plain, printable Store/State/Count%/FOB%/FOB$ snapshot to send to a team — no diagnosis/communication workflow columns.',
     recount: 'Which items were recounted in the EOM close window and whether the recount helped or hurt the final result — sorted by class.',
+    swing: 'Every material count-swing this period, locked (real loss, no recovery chance) vs recovered (washed out by a later count), with manager attribution and a coaching list of top items to recount at count time.',
   };
   const tabsSlot = div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
     [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle'], ['supervisor', 'Supervisor Rollup'],
-     ['missing', 'Missing Items'], ['snapshot', 'Team Snapshot'], ['recount', 'Recount Impact']].map(([k, label]) =>
+     ['missing', 'Missing Items'], ['snapshot', 'Team Snapshot'], ['recount', 'Recount Impact'], ['swing', 'Count Swings']].map(([k, label]) =>
       h('button', {
         key: k, onClick: () => setMode(k),
         title: TAB_TITLES[k],
@@ -3002,8 +3089,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     ? 'Team snapshot · Store / State / Count % / FOB % / FOB $ · read-only, print-friendly'
     : mode === 'recount'
     ? 'Recount-impact report · which items were recounted this close window and whether it helped or hurt · sorted by class'
+    : mode === 'swing'
+    ? 'Count-swing ledger · every material count swing this period, locked vs recovered, with manager attribution'
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
-    + ((mode === 'supervisor' || mode === 'missing' || mode === 'snapshot' || mode === 'recount') ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
+    + ((mode === 'supervisor' || mode === 'missing' || mode === 'snapshot' || mode === 'recount' || mode === 'swing') ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
 
   // Dispatch #202 originally hid PanelChrome's location/date/export/action bands entirely for
   // mode==='supervisor', since EOMSupervisorPanel brought its own internal month+year+groupType
@@ -3020,7 +3109,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // Dispatch #227 — the three new report tabs are the same shape as Supervisor Rollup: their own
   // self-contained Print button + print-CSS class hooks, not the 4-tab CSV/action bands. `printableMode`
   // gates the RoutePanelShell class hooks below for all four "own print button" tabs together.
-  const reportMode = mode === 'missing' || mode === 'snapshot' || mode === 'recount';
+  const reportMode = mode === 'missing' || mode === 'snapshot' || mode === 'recount' || mode === 'swing';
   const printableMode = supervisorMode || reportMode;
   // Print-CSS class hooks (see eom-supervisor.js's PRINT_STYLE comment) — only meaningful while
   // the active tab's own Print button can be clicked; harmless no-ops otherwise (they only take
@@ -3138,8 +3227,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
         : h(EOMRecountImpactPanel, { rows: recountImpactRows, crossStore: crossStoreConsistency, period, scopeLabel: scopeLabel() })
       : null,
+    mode === 'swing'
+      ? (loading || fobPending)
+        ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+        : h(EOMSwingLedgerReportPanel, { rows: swingLedgerRows.rows, totalDollars: swingLedgerRows.totalDollars, topSwingers: swingLedgerRows.topSwingers, reconstructions: swingLedgerRows.reconstructions, period, scopeLabel: scopeLabel() })
+      : null,
 
-    // mode==='compliance'/'supervisor'/the 3 report tabs short-circuit this entire EOM-completion/
+    // mode==='compliance'/'supervisor'/the 4 report tabs short-circuit this entire EOM-completion/
     // scoreboard chain — its content (loading/empty/table) is all about EOM+FOB data, not weekly
     // count compliance, district P&L variance, or the report tabs, and CountCycleSection/
     // EOMSupervisorPanel/the report panels above already handle their own loading/empty states.
