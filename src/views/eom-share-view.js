@@ -182,6 +182,6 @@ export function EomShareView({ token }) {
 
     div({ style: { marginTop: '26px', paddingTop: '14px', borderTop: '1px solid #262b36', fontSize: '11px', color: '#78839a' } },
       `View-only snapshot${exp ? ` · link expires ${exp.toLocaleDateString()}` : ''}. Questions? Reply to whoever sent you this.`),
-    h('style', null, `.md-rpt h1{font-size:17px;margin:0 0 10px}.md-rpt h2{font-size:14px;margin:16px 0 6px;color:#f5bc00}.md-rpt ul,.md-rpt ol{padding-left:20px;margin:6px 0}.md-rpt li{margin:3px 0}.md-rpt table{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0}.md-rpt th,.md-rpt td{border:1px solid #262b36;padding:4px 7px;text-align:left}.md-rpt strong{color:#fff}.md-rpt em{color:#aab3c5}`)
+    h('style', null, `.md-rpt h1{font-size:17px;margin:0 0 10px}.md-rpt h2{font-size:14px;margin:16px 0 6px;color:#f5bc00}.md-rpt ul,.md-rpt ol{padding-left:20px;margin:6px 0}.md-rpt li{margin:3px 0}.md-rpt table{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0;border:1px solid #333a48}.md-rpt th,.md-rpt td{border:1px solid #333a48;padding:4px 7px;text-align:left}.md-rpt th{background:#1d222b}.md-rpt hr{border:none;border-top:1px solid #333a48;margin:14px 0}.md-rpt strong{color:#fff}.md-rpt em{color:#aab3c5}`)
   );
 }

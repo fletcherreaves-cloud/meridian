@@ -3624,9 +3624,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         h('style', null, `.md-rpt{font-size:12.5px;line-height:1.5;color:var(--text);max-height:60vh;overflow:auto;background:var(--surf3);border:1px solid var(--bdr);border-radius:6px;padding:12px 14px}
           .md-rpt h1{font-size:15px;margin:2px 0 6px;color:var(--text)}
           .md-rpt h2{font-size:13px;margin:12px 0 4px;color:var(--text);border-bottom:1px solid var(--bdr);padding-bottom:3px}
-          .md-rpt table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:11.5px;border:1px solid var(--bdr)}
-          .md-rpt th{background:var(--surf2);text-align:left;padding:3px 7px;border:1px solid var(--bdr);color:var(--text2)}
-          .md-rpt td{padding:3px 7px;border:1px solid var(--bdr)}
+          .md-rpt table{border-collapse:collapse;width:100%;margin:4px 0 8px;font-size:11.5px;border:1px solid var(--bdr2)}
+          .md-rpt th{background:var(--surf2);text-align:left;padding:3px 7px;border:1px solid var(--bdr2);color:var(--text2)}
+          .md-rpt td{padding:3px 7px;border:1px solid var(--bdr2)}
           .md-rpt hr{border:none;border-top:1px solid var(--bdr);margin:14px 0}
           .md-rpt ul,.md-rpt ol{margin:3px 0;padding-left:18px}
           .md-rpt li{margin:2px 0}
