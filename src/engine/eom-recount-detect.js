@@ -37,6 +37,19 @@ const dayOf = d => {                     // normalize MM/DD/YYYY or ISO → YYYY
 };
 const isBackOffice = src => !!src && String(src).toLowerCase() !== 'mobileapp';
 
+// Combine a group of raw count entries (one walkthrough window, or one recount pass) into ONE binding:
+// $ and unit variance NET (sum) across every entry — each submission's `difference` is the impact of
+// THAT area's count, not the group's real ending variance — while on-hand/manager/timestamp come from
+// the group's LAST entry (on-hand is a running, replace-semantics total). A single-entry group nets to
+// itself, so this is a no-op wherever there's only ever one entry per window (the common case).
+function netBinding(rawEntries) {
+  const last = rawEntries[rawEntries.length - 1];
+  const dolVar = rawEntries.reduce((s, e) => s + e.dolVar, 0);
+  const unitVals = rawEntries.map(e => e.unitVar).filter(v => v != null);
+  const unitVar = unitVals.length ? unitVals.reduce((s, v) => s + v, 0) : null;
+  return { ...last, dolVar, unitVar, nEntries: rawEntries.length };
+}
+
 // Store-level count windows per day, from ALL items' inventory events. A window = a run of count
 // activity; a gap > gapMin minutes between consecutive events starts a NEW window (a recount pass).
 export function storeDayWindows(rawItems, { gapMin = 90 } = {}) {
@@ -107,19 +120,40 @@ export function itemRecounts(itemHistory, storeWindows = {}, { officialVar = nul
     const isEom = day === lastDay;
 
     // Original count = the item's entries in its FIRST window via the mobile walkthrough. A back-office
-    // (non-MobileApp) entry is never "original" — it's a correction. Last original entry binds the day.
+    // (non-MobileApp) entry is never "original" — it's a correction.
     const original = entries.filter(e => e.win === firstWin && !isBackOffice(e.countSource));
-    const originalBinding = original.length ? original[original.length - 1] : entries[0];
+    const originalRaw = original.length ? original : [entries[0]];
+    // 2026-08-31 fix: NET dolVar/unitVar across every entry of the original walkthrough group, not just
+    // the raw final entry. An item counted area-by-area submits several events in one window, each the
+    // $ IMPACT of that one submission (not the session's real ending variance) -- a -$1,941 then +$1,988
+    // pair nets to ~+$47, not a -$1,988 swing (owner-reported live example: McNuggets #32525, 2026-08-29,
+    // 08:39/09:01, same window). on-hand/manager/timestamp still come from the group's LAST entry
+    // (on-hand is a running, replace-semantics total, and the final entry is genuinely when the
+    // walkthrough finished) -- only the $ and unit variance combine the whole group. Matches
+    // eom-count-sessions.js's own netDolVar model (the reference implementation).
+    const originalBinding = netBinding(originalRaw);
+    const originalSet = new Set(originalRaw);
 
     // A recount = a back-office correction (any gap), OR a genuine re-verify: a later-window entry that
     // lands ≥ RECOUNT_MIN_GAP after the count it follows. The gap guard stops a slow area-by-area
     // walkthrough (areas hours apart, straddling the store's window boundary) from reading as a recount.
     const recountEntries = entries.filter(e => {
-      if (e === originalBinding || original.includes(e)) return isBackOffice(e.countSource) && e !== originalBinding;
+      if (originalSet.has(e)) return false;
       if (isBackOffice(e.countSource)) return true;
       if (e.win <= firstWin) return false;
       return e.when != null && originalBinding.when != null && (e.when - originalBinding.when) >= RECOUNT_MIN_GAP_MS;
     });
+    // Same netting, one level up: a later recount PASS can itself be counted area-by-area (multiple
+    // entries in the same later window), which is the identical bug if left un-netted. Consecutive
+    // MobileApp entries sharing one window group into ONE recount record; a back-office entry always
+    // stays its own record (each is a distinct, deliberate correction, never an area split).
+    const recountGroups = [];
+    for (const e of recountEntries) {
+      const back = isBackOffice(e.countSource);
+      const g = recountGroups[recountGroups.length - 1];
+      if (g && !back && !g.back && g.win === e.win) g.entries.push(e);
+      else recountGroups.push({ win: e.win, back, entries: [e] });
+    }
 
     // Grade against the AUTHORITATIVE period variance (spec, owner-approved): only the ending on-hand
     // differs between two counts, and variance is linear in ending inventory, so var_at(onHand) =
@@ -128,8 +162,9 @@ export function itemRecounts(itemHistory, storeWindows = {}, { officialVar = nul
     const anchored = isEom && officialVar != null && cost != null && binding.onHand != null;
     const varAt = oh => officialVar + (oh - binding.onHand) * cost;
     let prev = originalBinding;
-    const recounts = recountEntries.map(e => {
-      const back = isBackOffice(e.countSource);
+    const recounts = recountGroups.map(g => {
+      const e = netBinding(g.entries);
+      const back = g.back;
       let direction, deltaDollars, basis;
       if (anchored && e.onHand != null && prev.onHand != null) {
         const vPrev = varAt(prev.onHand), vCur = varAt(e.onHand);

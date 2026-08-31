@@ -110,6 +110,23 @@ describe('ledgerBaselineDiff', () => {
     expect(item0.recounts[1].unitVar).toBe(0);     // the second recount's own qty
   });
 
+  it('McNuggets #32525 real numbers: two area entries in one session NET, not just the raw last entry (2026-08-31 fix)', () => {
+    // Session count area-by-area: 08:39:45 (-$1,941.05) then 09:01:20 (+$1,988.18), 21min apart, same
+    // day — a normal two-area build-up. baseVar/curVar must read the net (~+$47), not the raw final
+    // entry's own -$1,988.18 (which read as a real -$1,988 swing before this fix — the owner-reported
+    // live example).
+    const rawItems = [item('00407-958', [
+      cnt('2026-08-29', '08:39:45', -1941.05, { variance: -21088 }),
+      cnt('2026-08-29', '09:01:20', 1988.18, { variance: 21600 }),
+    ])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-08-29' });
+    expect(d.items[0].baseVar).toBeCloseTo(47.13, 2);
+    expect(d.items[0].curVar).toBeCloseTo(47.13, 2);
+    expect(d.items[0].baseQtyVar).toBe(512);
+    expect(d.items[0].recounted).toBe(false);   // one session day, not a cross-day recount
+    expect(d.items[0].verdict).toBe('flat');
+  });
+
   it('ranks the biggest movers first', () => {
     const rawItems = [
       item('small', [cnt('2026-07-30', '10:00', -100), cnt('2026-08-01', '09:00', -160)]),   // +60
