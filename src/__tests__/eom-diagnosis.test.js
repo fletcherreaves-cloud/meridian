@@ -635,3 +635,68 @@ describe('editable-flow config (checksConfig / applyChecksConfig)', () => {
     expect(res.findings.some(f => f.checkId === 'variance-50')).toBe(false);
   });
 });
+
+// 2026-08-31 (owner req, verbatim): "let's give a roll up for all soft drinks on yields. It could
+// answer indirectly a situation like where durant shows it is missing 11 cases. The reality is
+// they are probably legitimately missing some, but not all due to something else being over, like
+// Bulk Coke in their case... add a rule to check for it to not have it flagged as a massive
+// opportunity... separately note the combined variance of all the soft drinks and convert it to
+// cases." Real Durant #5985 August 2026 numbers (qsr_variance_stat, service-role query): COKE/BULK
+// +$569.68 (caseSz 75), DR PEPPER/BIB -$363.46/variance -56.09 (caseSz 5 → ~-11.22 cs, almost
+// exactly the owner's "11 cases" example), POWERADE -$220.76, COKE/DIET/BIB -$190.06, MM OJ100
+// -$108.44, DR PEPPER/DIET -$90.44, FANTA ORANGE/BIB -$76.40.
+describe('soft-drink / fountain yield rollup', () => {
+  const durantVariance = [
+    { wrin: 'a', descr: '100% PURE BEEF', dolDiff: -300, cls: 'Food', variance: -20, rawWaste: 5, compWaste: 3 },
+    { wrin: '00019-008', descr: 'COKE/BULK', dolDiff: 569.68, cls: 'Food', variance: 70.77, rawWaste: 0, compWaste: 0 },
+    { wrin: '00486-002', descr: 'DR PEPPER /BIB', dolDiff: -363.46, cls: 'Food', variance: -56.09, rawWaste: 0, compWaste: 0 },
+    { wrin: '07533-009', descr: 'POWERADE/MNTN BLAST/5.0 BIB', dolDiff: -220.76, cls: 'Food', variance: -25.22, rawWaste: 0, compWaste: 0 },
+    { wrin: '00042-002', descr: 'COKE/DIET/BIB', dolDiff: -190.06, cls: 'Food', variance: -23.46, rawWaste: 0, compWaste: 0 },
+    { wrin: '01945-023', descr: 'MM OJ100 (5+1)1.25GA(4.73L)FXP', dolDiff: -108.44, cls: 'Food', variance: -2.17, rawWaste: 0, compWaste: 0 },
+    { wrin: '05776-003', descr: 'DR PEPPER/DIET/5.0 BIB', dolDiff: -90.44, cls: 'Food', variance: -14.92, rawWaste: 0, compWaste: 0 },
+    { wrin: '00021-086', descr: 'FANTA ORANGE/BIB', dolDiff: -76.40, cls: 'Food', variance: -8.91, rawWaste: 0, compWaste: 0 },
+  ];
+  const caseSzByWrin = {
+    '00019-008': 75, '00486-002': 5, '07533-009': 5, '00042-002': 5, '01945-023': 2, '05776-003': 5, '00021-086': 5,
+  };
+  const buildReport = () => {
+    const res = runDiagnosis({ store: '0005985', storeName: 'Durant', period: '2026-08', data: { variance: durantVariance } });
+    return formatDiagnosisReport(res, { caseSzByWrin });
+  };
+
+  it('surfaces the rollup section with the group net and per-item cases', () => {
+    const full = buildReport();
+    expect(full).toMatch(/Soft-drink \/ fountain yield rollup/);
+    // Net across all 7 fountain items: 569.68 -363.46 -220.76 -190.06 -108.44 -90.44 -76.40 = -479.88
+    expect(full).toMatch(/-\$480/); // money() rounds to whole dollars
+    expect(full).toMatch(/DR PEPPER \/BIB/);
+    expect(full).toMatch(/-11\.22/); // owner's own "11 cases" example, to 2 decimals
+    expect(full).toMatch(/\+0\.94/); // COKE/BULK: 70.77 / 75
+  });
+
+  it('never picks a fountain item for the single "Investigate X" headline — a real Food item takes it instead', () => {
+    const full = buildReport();
+    // BEEF (-$300) is smaller than DR PEPPER/BIB (-$363) but must still be the headline, since
+    // fountain items are excluded from that slot regardless of their own $ size.
+    expect(full).toMatch(/\*\*Investigate 100% PURE BEEF\*\*/);
+    expect(full).not.toMatch(/\*\*Investigate DR PEPPER/);
+  });
+
+  it('reframes a fountain item\'s action text toward BIB connections, not "recount"', () => {
+    const full = buildReport();
+    expect(full).toMatch(/check BIB connections \/ syrup ratios across the soft-drink group/);
+    expect(full).toMatch(/not a standalone loss/);
+  });
+
+  it('with only 1 fountain item, no rollup and no group reframe (need 2+ to call it a pattern)', () => {
+    const res = runDiagnosis({ store: 's', period: '2026-08', data: { variance: [
+      { wrin: 'a', descr: '100% PURE BEEF', dolDiff: -300, cls: 'Food', variance: -20 },
+      { wrin: 'b', descr: 'COKE/BULK', dolDiff: -569.68, cls: 'Food', variance: -70.77 },
+    ] } });
+    const full = formatDiagnosisReport(res, { caseSzByWrin: { b: 75 } });
+    expect(full).not.toMatch(/Soft-drink \/ fountain yield rollup/);
+    // A single fountain item alone can still be the topFC headline — the exclusion is about the
+    // GROUP-context reframe, not "fountain items are never actionable."
+    expect(full).toMatch(/\*\*Investigate COKE\/BULK\*\*/);
+  });
+});

@@ -834,6 +834,18 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   }
   const V = [..._vByWrin.values()].filter(v => Math.abs(v.dolDiff || 0) >= threshold)
     .sort((a, b) => Math.abs(b.dolDiff || 0) - Math.abs(a.dolDiff || 0));
+  // Soft-drink / fountain group (owner req, 2026-08-31, verbatim): "give a roll up for all soft
+  // drinks on yields... where durant shows it is missing 11 cases... they are probably legitimately
+  // missing some, but not all, due to something else being over, like Bulk Coke in their case...
+  // add a rule to check for it to not have it flagged as a massive opportunity." A single BIB/
+  // fountain item's shortage is often a cross-fill artifact (wrong line hooked up, a substitution
+  // during a stockout) offset by another fountain item running over -- Durant's own real August
+  // numbers: DR PEPPER/BIB reads -$363 (~-11.2 cs) alone, while COKE/BULK reads +$570 the same
+  // period. Reuses FOUNTAIN_BEV_RE (already the self-serve-tower exemption's own definition, line
+  // ~883 below) rather than a second "what counts as fountain" regex.
+  const isFountain = v => FOUNTAIN_BEV_RE.test((v && v.descr) || '');
+  const fountainAll = V.filter(isFountain);
+  const fountainNet = fountainAll.reduce((s, v) => s + (v.dolDiff || 0), 0);
   const findings = result.findings || [];
   // Per-WRIN cause overlays from the findings.
   const yieldByWrin = {}, recountByWrin = {}, mgrByWrin = {};
@@ -850,6 +862,12 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const dir = v => (v.dolDiff < 0 ? 'SHORT' : 'OVER');
   const causeTags = v => {
     const t = [];
+    // Fountain/BIB reframe (owner req, 2026-08-31) — takes priority over the generic causes below:
+    // a single soft-drink item's own $/cases number isn't the honest read when other items in the
+    // same group are absorbing the swing. Always shown for a fountain item with 2+ group peers,
+    // regardless of whether the group happens to net small this period — the reader should see the
+    // group context either way, not have it silently hidden.
+    if (isFountain(v) && fountainAll.length >= 2) t.push(`part of this store's ${fountainAll.length}-item soft-drink group (net ${money(fountainNet)} — see rollup below), likely a BIB cross-fill, not a standalone loss`);
     if (yieldByWrin[v.wrin]) t.push('yield setting likely off');
     // Waste-logging is a Food/Condiment concern only — never on Paper/Non-Product (owner).
     if (/^(food|condiment)$/.test(normClass(v && v.cls)) && v.dolDiff < 0 && (Number(v.rawWaste) || 0) + (Number(v.compWaste) || 0) < 0.01) t.push('zero waste logged — verify');
@@ -894,8 +912,13 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   };
   // Recount qty expressed in full cases — "look for ~3 cases" beats "≈2,091 units" (owner req).
   const casesOf = v => { const cs = Number(caseSzByWrin[String(v.wrin)]); return (cs > 0 && v.variance) ? Number(v.variance) / cs : null; };
-  const casesNote = v => { const c = casesOf(v); return c != null && Math.abs(c) >= 0.1 ? ` · ~${c > 0 ? '+' : ''}${c.toFixed(1)} cs` : ''; };
+  const casesNote = v => { const c = casesOf(v); return c != null && Math.abs(c) >= 0.1 ? ` · ~${c > 0 ? '+' : ''}${c.toFixed(2)} cs` : ''; };
+  // Fountain items get their own action (owner req, 2026-08-31) ahead of the generic branches:
+  // "recount + verify counts" doesn't fit a BIB/fountain shortage the way it fits a food item —
+  // syrup yield issues are a connections/ratio check, not a recoverable count. over-portioned still
+  // wins when it applies (a more specific, still-actionable finding for the same item).
   const actionFor = v => overPortioned(v) ? `over-portioning — audit the station recipe/portion (running ${(yieldPct(v) * 100).toFixed(2)}% of standard yield)`
+    : isFountain(v) ? `check BIB connections / syrup ratios across the soft-drink group${fountainAll.length >= 2 ? ' (see rollup)' : ''} — not a recoverable recount`
     : yieldByWrin[v.wrin] ? 'check yield setting, then recount'
     : noWaste(v) ? 'verify waste logging, then recount'
     : (recountByWrin[v.wrin] || '').startsWith('recount may') ? 'recount now — still recoverable'
@@ -958,7 +981,19 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const sv = sumVR(staleFC);
     doNow.push({ score: 3e5 + sv, group: true, text: `**Verify & clear the ${staleFC.length} obsolete/inactive Food/Condiment item${staleFC.length === 1 ? '' : 's'}** (${money(sv)} on hand) — count if usable, waste to zero if it won't be used before expiration; don't let it ride into next month's opening.` });
   }
-  const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
+  // A fountain/BIB item with a real GROUP behind it (2+ soft-drink items this period) never takes
+  // the single spotlighted "Investigate X" headline slot (owner req, 2026-08-31: "add a rule to
+  // check for it to not have it flagged as a massive opportunity") — a real non-fountain issue gets
+  // the spotlight instead when one exists. The SAME exclusion is repeated at the Top-5 fill loop
+  // below, so a fountain-group item never lands in either "chase this" list — it's still fully
+  // visible via the rollup section and the Reference detail table, just not presented as one of the
+  // handful of things a manager is told to go fix (an earlier draft of this comment said the Top-5
+  // fill was the exception; measured wrong while writing this file's own test against the store's
+  // real August data — with 7 fountain items and only 1 real Food item, an unfiltered Top-5 fill
+  // still put 4 fountain items in the numbered list, which reads exactly like "massive opportunity"
+  // regardless of the reframed action text). A LONE fountain item (no group to net against) has no
+  // such context to hide behind, so it's still eligible for both lists like any other item.
+  const topFC = V.filter(v => !(recountByWrin[v.wrin] || '').startsWith('early') && isFC(v) && !(isFountain(v) && fountainAll.length >= 2)).find(v => !(recountByWrin[v.wrin] || '').startsWith('recount may') && !overPortioned(v));
   if (topFC) doNow.push({ score: 2e5 + Math.abs(topFC.dolDiff), wrin: topFC.wrin, text: `**Investigate ${topFC.descr || topFC.wrin}** (${money(topFC.dolDiff)}, ${dir(topFC)}${casesNote(topFC)}) — ${causeTags(topFC)[0] || 'recount + verify waste logging'}.` });
 
   // ── FINISH TODAY'S COUNT (owner req 2026-07-30) — time-aware by class. Food, Condiment AND Paper
@@ -1012,7 +1047,7 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // opportunities; if the store genuinely can't produce five, that's a WIN — celebrate it (owner).
   if (doNow.length < 5) {
     const used = new Set(doNow.map(d => d.wrin).filter(Boolean));
-    for (const v of V.filter(v => isFC(v) && !(recountByWrin[v.wrin] || '').startsWith('early') && !used.has(v.wrin)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff))) {
+    for (const v of V.filter(v => isFC(v) && !(recountByWrin[v.wrin] || '').startsWith('early') && !used.has(v.wrin) && !(isFountain(v) && fountainAll.length >= 2)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff))) {
       if (doNow.length >= 5) break;
       used.add(v.wrin);
       doNow.push({ score: 1e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Investigate ${v.descr || v.wrin}** (${money(v.dolDiff)}, ${dir(v)}${casesNote(v)}) — ${causeTags(v)[0] || 'recount + verify waste logging'}.` });
@@ -1263,6 +1298,25 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       exemptBev.slice(0, 12).forEach(v => { const std = (Number(v.yieldLo) + Number(v.yieldHi)) / 2; L.push(`- ${v.descr || v.wrin} — yield ${Number(v.yield).toFixed(2)} vs std ${std.toFixed(2)} (${(yieldPct(v) * 100).toFixed(2)}% of std) — expected`); });
       L.push('');
     }
+  }
+
+  // ── Soft-drink / fountain yield rollup (owner req, 2026-08-31, verbatim): "give a roll up for
+  // all soft drinks on yields... where durant shows it is missing 11 cases... they are probably
+  // legitimately missing some, but not all, due to something else being over, like Bulk Coke in
+  // their case... convert it to cases and a store can look at it from that standpoint." Shown for
+  // EVERY store with 2+ material soft-drink items this period, not just self-serve towers (owner:
+  // "for all locations, but especially those with self serve towers") — the self-serve exemption
+  // block above is a DIFFERENT, narrower check (yield-band only); this is the group-net view.
+  if (fountainAll.length >= 2) {
+    L.push(`## 🥤 Soft-drink / fountain yield rollup`, '');
+    L.push(`_A single BIB/fountain item running short is often a cross-fill artifact (a line hooked to the wrong syrup, a substitution during a stockout) offset by another item running over in the same group — net the WHOLE group before treating one item's own case count as a real physical loss.${selfServeTower ? ' This store also has a self-serve tower, so some structural shortfall is expected on top of that.' : ''}_`, '');
+    L.push(`**Net across ${fountainAll.length} soft-drink items this period: ${money(fountainNet)}**`, '');
+    L.push('| Item | $ | Cases |', '|---|---:|---:|');
+    fountainAll.forEach(v => {
+      const c = casesOf(v);
+      L.push(`| ${v.descr || v.wrin} | ${money(v.dolDiff)} | ${c != null ? `${c > 0 ? '+' : ''}${c.toFixed(2)}` : '—'} |`);
+    });
+    L.push('', '_Cases are per-item, not summed — a case of Bulk Coke syrup and a case of BIB concentrate aren\'t the same physical quantity, so read each item\'s own case count against the net $ above, not against each other._', '');
   }
 
   // ── Count integrity — WHY items read "uncounted" (Notes: Durant #5985) ──

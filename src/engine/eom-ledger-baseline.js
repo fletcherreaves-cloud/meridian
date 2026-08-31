@@ -184,12 +184,23 @@ export function ledgerScopeDiff(rawByLoc = {}, perLoc = {}, { floor = LEDGER_MAT
 // the SAME baseVar/curVar/dMag/verdict fields ledgerBaselineDiff() already computes — this only adds
 // a sentence, never a second grading of helped/hurt. `baseVar<0` = a SHORT/undercount at the session
 // count (eom-diagnosis.js's own `dolDiff<0 → SHORT` convention); `baseVar>=0` = an OVER/overcount.
+// 2026-08-31 (owner): "we may need to be more descriptive to make sure someone reading this fully
+// understands what is happening as a result of the recount" — the original one-clause "corrected a
+// $X overcount" read as unambiguously good, but a correction runs in TWO different directions
+// depending on which way the original count was wrong, and only one of those directions actually
+// lowers this item's food cost for the period; the other lowers the *variance dollar shown here*
+// while RAISING food cost, because fixing an overcount means the recount found LESS product
+// actually on hand than the first count claimed (ending inventory drops → computed usage/cost
+// rises). Spelling out which one happened, in the same sentence, is what stops that from reading
+// as a contradiction later in the FOB view.
 export function recountVerdictText(item) {
   const dollars = Math.round(Math.abs((item && item.dMag) || 0)).toLocaleString();
   const baseShort = ((item && item.baseVar) || 0) < 0;
   switch (item && item.verdict) {
-    case 'helping': return `Helped: corrected a $${dollars} ${baseShort ? 'undercount' : 'overcount'}.`;
-    case 'hurting': return `Hurt: recount moved this further from expected usage (variance grew $${dollars}).`;
+    case 'helping': return baseShort
+      ? `Helped: corrected a $${dollars} undercount — the recount found MORE product on hand than the first count showed, which LOWERS this item's food cost for the period.`
+      : `Helped: corrected a $${dollars} overcount — the recount found LESS product on hand than the first count showed, which RAISES this item's food cost for the period.`;
+    case 'hurting': return `Hurt: the second count moved this further from expected usage (variance grew $${dollars}) — likely a mis-count or a new loss between counts, worth a follow-up recount.`;
     case 'flat': return `No material change (~$${dollars}, within the $${LEDGER_MATERIAL_FLOOR} materiality floor).`;
     default: return 'Recount data incomplete for this item.';
   }

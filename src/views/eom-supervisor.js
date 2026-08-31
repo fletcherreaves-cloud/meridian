@@ -659,6 +659,32 @@ export const PRINT_STYLE = `
      remain, and NO absolute positioning (so multi-page paginates in every browser).
      Scoped to body.eom-printing (set by the Print button, cleared on afterprint) so no other screen breaks. */
   body.eom-printing { background: #fff !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* 2026-08-31 fix (real bug, reproduced in an actual Chromium print-media render, not just read):
+     forcing body's OWN background/color above does nothing for the report's actual content --
+     every cell in these reports sets its color via color:var(--text) / var(--text2) / var(--text3)
+     (theme-driven), and on a dark-mode session (the persisted default for Fletcher and every other
+     long-standing user, CLAUDE.md's own UI-conventions note) those tokens resolve to LIGHT colors
+     meant for a dark surface. Print never repaints the surface dark, so every cell rendered near-
+     white text on the forced-white page -- invisible, not just low-contrast, which is what actually
+     produced the "print still does not work" blank page (confirmed: computed color was
+     rgb(255,255,255) on white, verified in a real browser under emulateMedia('print'); a check that
+     only reads display:none/dimensions -- as this file's own earlier .mf-main-content print fix
+     was verified -- would have passed here too and missed it, per the "would this still pass if
+     reverted" rule: only an actual rendered-color check catches THIS failure mode.) --bdr/--bdr2
+     (borders) and --surf2/--surf3 (row/section backgrounds) have the same problem. Redefining the
+     tokens on body.eom-printing cascades to every descendant that reads them via var(...), without
+     touching the app's live theme (nothing here is unscoped by body.eom-printing). Also overrides
+     the legacy, unconditional th{background:#1a2332;color:#fff} rule further down this file (the
+     old Projections-PDF print stylesheet, written before any of these EOM reports existed) so
+     report headers match the rest of the printout instead of being the one surviving dark cell on
+     an otherwise white page -- body.eom-printing th is more specific than the bare th it competes
+     with, so it wins the !important tie. */
+  body.eom-printing { --text: #111 !important; --text2: #333 !important; --text3: #666 !important;
+    --bdr: #ccc !important; --bdr2: #999 !important;
+    --surf: #fff !important; --surf2: #f7f7f7 !important; --surf3: #f0f0f0 !important;
+    --crit: #b91c1c !important; }
+  body.eom-printing th, body.eom-printing td { background: #fff !important; color: #111 !important; }
+  body.eom-printing thead th { background: #f0f0f0 !important; color: #333 !important; }
   /* 2026-08-31 fix: EOMDashboardPanel (and every other routePanel) renders inside App.js's
      '.mf-main-content' scroll wrapper, NOT as a direct child of .mf-app-root — that wrapper is
      itself a direct child with no exempting class, so the rule below used to hide IT, which blanked
