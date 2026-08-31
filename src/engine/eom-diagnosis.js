@@ -36,6 +36,17 @@ const _mny = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleSt
 // Fountain / self-serve beverage items — at self-serve-tower stores their yield runs structurally
 // low (free refills we can't meter), so it must NOT read as a loss or over-portioning there.
 const FOUNTAIN_BEV_RE = /\b(COKE|SPRITE|FANTA|HI ?C|DR ?PEPPER|MINUTE MAID|MM |LEMONADE|ICED TEA|TEA\/|FRUIT PUNCH|REFRESHER|BIB|LAVABURST|POWERADE|BARQ|SWEET TEA)\b/i;
+// Soft-drink / fountain YIELD ROLLUP group (owner req, 2026-08-31, narrowed same day): "it should
+// only be coke, dr pepper, powerade, diet coke, sprite, hi c orange, diet dr pepper, and fanta
+// orange." Deliberately narrower than FOUNTAIN_BEV_RE above (which stays as-is for the self-serve-
+// tower over-portioning exemption, a different, pre-existing check) — that broader match pulls in
+// MM OJ (a juice, not a fountain pour), lemonade, iced tea, a bare "BIB" catch-all, etc., which the
+// owner does NOT want netted into this rollup. "coke"/"dr pepper" alone (no DIET qualifier) already
+// matches both the regular AND diet SKUs since "COKE"/"DR PEPPER" is a substring of "COKE/DIET/BIB"
+// /"DR PEPPER/DIET/5.0 BIB" too — diet coke/diet dr pepper are listed anyway for clarity, not
+// because they need separate matching. "fanta orange"/"hi c orange" are scoped to that flavor only
+// (a hypothetical Fanta Strawberry or plain Hi-C would NOT match) per the owner's own item list.
+const FOUNTAIN_ROLLUP_RE = /\b(COKE|DR ?PEPPER|POWERADE|SPRITE|HI ?C ORANGE|FANTA ORANGE)\b/i;
 
 // Default FOB-component targets are supplied by the caller (monthly_targets); this
 // is only a floor so the check runs before targets are wired.
@@ -841,9 +852,10 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // fountain item's shortage is often a cross-fill artifact (wrong line hooked up, a substitution
   // during a stockout) offset by another fountain item running over -- Durant's own real August
   // numbers: DR PEPPER/BIB reads -$363 (~-11.2 cs) alone, while COKE/BULK reads +$570 the same
-  // period. Reuses FOUNTAIN_BEV_RE (already the self-serve-tower exemption's own definition, line
-  // ~883 below) rather than a second "what counts as fountain" regex.
-  const isFountain = v => FOUNTAIN_BEV_RE.test((v && v.descr) || '');
+  // period. Uses FOUNTAIN_ROLLUP_RE (owner-narrowed same day to an explicit 8-item list -- see its
+  // own comment) -- deliberately NOT the broader FOUNTAIN_BEV_RE the self-serve-tower exemption
+  // below still uses; that check has its own, wider scope and the owner did not ask to change it.
+  const isFountain = v => FOUNTAIN_ROLLUP_RE.test((v && v.descr) || '');
   const fountainAll = V.filter(isFountain);
   const fountainNet = fountainAll.reduce((s, v) => s + (v.dolDiff || 0), 0);
   const findings = result.findings || [];
@@ -972,7 +984,14 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     const ev = sumVR(earlyFC);
     doNow.push({ score: 95e4 + ev, group: true, text: `**Recount the ${earlyFC.length} Food/Condiment item${earlyFC.length === 1 ? '' : 's'} counted EARLY** (${money(ev)} on hand) — counted before the final window, so QSRSoft is carrying a stale value into the close. Get a current EOM count for the profit-driver classes: ${earlyFC.slice(0, 3).map(u => `${u.descr || u.wrin} (last ${u.lastCounted || '?'})`).join(', ')}.` });
   }
-  V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may')).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
+  // 2026-08-31 fix: this is a THIRD source feeding doNow (topFC and the Top-5 fill loop below are
+  // the other two), scored ABOVE both of them (5e5, vs 2e5/1e5) since a "recount may still help"
+  // item is the most actionable class there is — so it was reaching "Do these now" (and the Store
+  // Message abbreviated recap, which renders the same doNow array) as a plain "Recount DR PEPPER
+  // /BIB" line completely unfiltered by the fountain-group exclusion added elsewhere in this file,
+  // the exact "massive opportunity" framing the owner's rollup rule exists to prevent. Same
+  // fountain-group gate as topFC/the Top-5 fill: a lone fountain item (no group) is still eligible.
+  V.filter(v => isFC(v) && (recountByWrin[v.wrin] || '').startsWith('recount may') && !(isFountain(v) && fountainAll.length >= 2)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
     .forEach(v => doNow.push({ score: 5e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Recount ${v.descr || v.wrin}** (${money(v.dolDiff)}${casesNote(v)}) — the count looks off and it's still recoverable this cycle.` }));
   V.filter(v => overPortioned(v) && isFC(v)).sort((a, b) => Math.abs(b.dolDiff) - Math.abs(a.dolDiff)).slice(0, 2)
     .forEach(v => doNow.push({ score: 4e5 + Math.abs(v.dolDiff), wrin: v.wrin, text: `**Fix portioning on ${v.descr || v.wrin}** — running ${(yieldPct(v) * 100).toFixed(2)}% of standard yield; audit the station's recipe/portion now.` }));
@@ -1308,15 +1327,27 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // "for all locations, but especially those with self serve towers") — the self-serve exemption
   // block above is a DIFFERENT, narrower check (yield-band only); this is the group-net view.
   if (fountainAll.length >= 2) {
+    // Gallons column (owner req, 2026-08-31): every item in this narrower rollup group (coke, dr
+    // pepper, powerade, sprite, hi-c orange, fanta orange, and their diet variants) is syrup/
+    // concentrate counted in "each" = 1 gallon at the raw-item level — confirmed by the owner
+    // against Bulk Coke's own case size ("coke (bulk) case is 75 gallons"), which matches
+    // v.variance/caseSzByWrin exactly for that item (70.77 gal / 75 gal-per-case = 0.94 cases).
+    // So v.variance IS the gallon figure directly, no separate conversion — and unlike cases (a
+    // case of Bulk Coke syrup and a case of BIB concentrate are physically different container
+    // sizes, so those can't be added together), gallons are one real physical unit shared by every
+    // row here and CAN be summed into a genuine total.
+    const gal = v => Number(v.variance) || 0;
+    const totalGal = fountainAll.reduce((s, v) => s + gal(v), 0);
     L.push(`## 🥤 Soft-drink / fountain yield rollup`, '');
     L.push(`_A single BIB/fountain item running short is often a cross-fill artifact (a line hooked to the wrong syrup, a substitution during a stockout) offset by another item running over in the same group — net the WHOLE group before treating one item's own case count as a real physical loss.${selfServeTower ? ' This store also has a self-serve tower, so some structural shortfall is expected on top of that.' : ''}_`, '');
     L.push(`**Net across ${fountainAll.length} soft-drink items this period: ${money(fountainNet)}**`, '');
-    L.push('| Item | $ | Cases |', '|---|---:|---:|');
+    L.push('| Item | $ | Gallons | Cases |', '|---|---:|---:|---:|');
     fountainAll.forEach(v => {
-      const c = casesOf(v);
-      L.push(`| ${v.descr || v.wrin} | ${money(v.dolDiff)} | ${c != null ? `${c > 0 ? '+' : ''}${c.toFixed(2)}` : '—'} |`);
+      const g = gal(v), c = casesOf(v);
+      L.push(`| ${v.descr || v.wrin} | ${money(v.dolDiff)} | ${g > 0 ? '+' : ''}${g.toFixed(2)} | ${c != null ? `${c > 0 ? '+' : ''}${c.toFixed(2)}` : '—'} |`);
     });
-    L.push('', '_Cases are per-item, not summed — a case of Bulk Coke syrup and a case of BIB concentrate aren\'t the same physical quantity, so read each item\'s own case count against the net $ above, not against each other._', '');
+    L.push(`| **Total** | **${money(fountainNet)}** | **${totalGal > 0 ? '+' : ''}${totalGal.toFixed(2)}** |  |`);
+    L.push('', '_Gallons are a real shared unit across this whole group and sum to a genuine total above. Cases do NOT — a case of Bulk Coke syrup and a case of BIB concentrate are different container sizes, so read each item\'s own case count against the net $/gallons above, not against each other._', '');
   }
 
   // ── Count integrity — WHY items read "uncounted" (Notes: Durant #5985) ──

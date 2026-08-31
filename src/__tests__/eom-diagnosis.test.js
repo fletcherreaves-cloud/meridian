@@ -664,14 +664,22 @@ describe('soft-drink / fountain yield rollup', () => {
     return formatDiagnosisReport(res, { caseSzByWrin });
   };
 
-  it('surfaces the rollup section with the group net and per-item cases', () => {
+  it('surfaces the rollup section with the group net, gallons, and per-item cases', () => {
     const full = buildReport();
     expect(full).toMatch(/Soft-drink \/ fountain yield rollup/);
-    // Net across all 7 fountain items: 569.68 -363.46 -220.76 -190.06 -108.44 -90.44 -76.40 = -479.88
-    expect(full).toMatch(/-\$480/); // money() rounds to whole dollars
+    // Net across the 6 items on the owner's narrowed list (MM OJ100 is NOT one of them — see the
+    // dedicated exclusion test below): 569.68 -363.46 -220.76 -190.06 -90.44 -76.40 = -371.44
+    expect(full).toMatch(/-\$371/); // money() rounds to whole dollars
+    expect(full).toMatch(/6 soft-drink items/);
     expect(full).toMatch(/DR PEPPER \/BIB/);
     expect(full).toMatch(/-11\.22/); // owner's own "11 cases" example, to 2 decimals
-    expect(full).toMatch(/\+0\.94/); // COKE/BULK: 70.77 / 75
+    expect(full).toMatch(/\+0\.94/); // COKE/BULK cases: 70.77 / 75
+    // Gallons column (owner req, 2026-08-31) — v.variance IS the gallon figure directly for these
+    // items (confirmed against the owner's own "coke (bulk) case is 75 gallons"), and unlike cases
+    // it sums to a real total across the whole group: 70.77-56.09-25.22-23.46-14.92-8.91 = -57.83.
+    expect(full).toMatch(/\+70\.77/); // COKE/BULK gallons
+    expect(full).toMatch(/-56\.09/); // DR PEPPER/BIB gallons
+    expect(full).toMatch(/\*\*Total\*\* \| \*\*-\$371\*\* \| \*\*-57\.83\*\*/);
   });
 
   it('never picks a fountain item for the single "Investigate X" headline — a real Food item takes it instead', () => {
@@ -688,6 +696,25 @@ describe('soft-drink / fountain yield rollup', () => {
     expect(full).toMatch(/not a standalone loss/);
   });
 
+  it('excludes MM OJ100 (a juice, not on the owner\'s named list) from the rollup group', () => {
+    // Owner, 2026-08-31, narrowing the group same day it shipped: "it should only be coke, dr
+    // pepper, powerade, diet coke, sprite, hi c orange, diet dr pepper, and fanta orange." MM OJ100
+    // matched the OLD, broader fountain-check regex (still used elsewhere, e.g. the self-serve-
+    // tower over-portioning exemption) but must NOT be netted into or excluded-from-headline-duty
+    // by THIS rollup.
+    const full = buildReport();
+    expect(full).toMatch(/MM OJ100/); // still shown in Reference/systemic-pattern sections
+    // Isolate just the rollup table's own text (between its header and the next "## " heading) —
+    // matching MM OJ100 anywhere in the FULL report would also hit its legitimate Reference-table
+    // row, which is not what this test is checking.
+    const rollupSection = full.split('## 🥤 Soft-drink / fountain yield rollup')[1].split(/\n## /)[0];
+    expect(rollupSection).not.toMatch(/MM OJ100/);
+    // MM OJ100 (-$108) is the largest of the remaining un-grouped Food/Condiment items after BEEF
+    // takes the headline, so it should still be independently actionable (Top-5 fill), just not
+    // grouped with the fountain rollup.
+    expect(full).toMatch(/\*\*Investigate MM OJ100/);
+  });
+
   it('with only 1 fountain item, no rollup and no group reframe (need 2+ to call it a pattern)', () => {
     const res = runDiagnosis({ store: 's', period: '2026-08', data: { variance: [
       { wrin: 'a', descr: '100% PURE BEEF', dolDiff: -300, cls: 'Food', variance: -20 },
@@ -698,5 +725,34 @@ describe('soft-drink / fountain yield rollup', () => {
     // A single fountain item alone can still be the topFC headline — the exclusion is about the
     // GROUP-context reframe, not "fountain items are never actionable."
     expect(full).toMatch(/\*\*Investigate COKE\/BULK\*\*/);
+  });
+
+  // 2026-08-31 — a THIRD, separate doNow source (the "recount may still help" push, scored ABOVE
+  // both topFC and the Top-5 fill) was missed in the first pass: it fed the "Do these now" list
+  // (and the Store Message abbreviated recap, which renders the same doNow array) with a plain
+  // "Recount DR PEPPER /BIB" line, completely unfiltered by the fountain-group exclusion — exactly
+  // reproduced from a live Durant Store Message screenshot the owner reported ("durant still shows
+  // the same for dr pepper"). Hand-builds `findings` directly (bypassing the raw-items-timing check
+  // engine's own count-history requirements) to isolate this one path.
+  it('excludes a fountain-group item from the "recount may still help" doNow push too, not just topFC/Top-5', () => {
+    const res = {
+      store: '0005985', storeName: 'Durant', period: '2026-08',
+      variance: durantVariance,
+      findings: [
+        { checkId: 'raw-items-timing', data: { wrin: '00486-002', late: true } }, // DR PEPPER /BIB
+      ],
+    };
+    const full = formatDiagnosisReport(res, { caseSzByWrin });
+    expect(full).not.toMatch(/\*\*Recount DR PEPPER/);
+    // A non-fountain item on the same "recount may help" path is untouched.
+    const res2 = {
+      store: '0005985', storeName: 'Durant', period: '2026-08',
+      variance: durantVariance,
+      findings: [
+        { checkId: 'raw-items-timing', data: { wrin: 'a', late: true } }, // 100% PURE BEEF
+      ],
+    };
+    const full2 = formatDiagnosisReport(res2, { caseSzByWrin });
+    expect(full2).toMatch(/\*\*Recount 100% PURE BEEF\*\*/);
   });
 });
