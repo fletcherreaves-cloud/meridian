@@ -35,7 +35,7 @@ function buildFromLive(resp) {
     waste: live.waste || [], transfers: live.transfers || [], rawItems: live.rawItems || [],
     targets, exception: live.exception || null,
   });
-  return { recapMd: built.recapMd, fullMd: built.fullMd, fob: components || null, syncedAsOf: resp.syncedAsOf || null };
+  return { recapMd: built.recapMd, fullMd: built.fullMd, fob: components || null, syncedAsOf: resp.syncedAsOf || null, monthlyOverride: resp.monthlyOverride || null };
 }
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -53,10 +53,14 @@ const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%';
 // second copy of that formula. `loc` looks up DEFAULT_TARGETS; a store with no seeded target just
 // shows the percent/dollar with no target line, same graceful-degradation the dashboard's own
 // FobStrip already follows for a component with no target set.
-function FobStripLite({ fob, loc }) {
+function FobStripLite({ fob, loc, monthlyOverride }) {
   const f = fob || {};
   if (f.fob == null && f.fobPct == null) return null;
-  const targets = DEFAULT_TARGETS[unpad(loc)] || DEFAULT_TARGETS[String(loc)] || {};
+  // monthlyOverride comes from the eom-share edge function's fetchMonthlyTargetOverride() (this
+  // month's actual monthly_targets row, service-role-read since this is a public no-login page) --
+  // spread on TOP of DEFAULT_TARGETS, which is only a hardcoded constants.js seed that never
+  // reflects a fresh workbook upload. See index.ts's own comment for the full 2026-08-30 finding.
+  const targets = { ...(DEFAULT_TARGETS[unpad(loc)] || DEFAULT_TARGETS[String(loc)] || {}), ...(monthlyOverride || {}) };
   const fobTgt = targets.tFOBTarget != null ? Number(targets.tFOBTarget) : null;
   const deltas = fobComponentDeltas(f, targets); // [] when f.sales is falsy
   const byKey = {}; for (const d of deltas) byKey[d.key] = d;
@@ -141,6 +145,7 @@ export function EomShareView({ token }) {
   const src = live || data;
   const activeMd = full ? (src.fullMd || src.recapMd) : (src.recapMd || src.fullMd);
   const stripFob = (live && live.fob) || data.fob;
+  const monthlyOverride = (live && live.monthlyOverride) || data.monthlyOverride || null;
   const exp = data.expiresAt ? new Date(data.expiresAt) : null;
   const acked = !!data.acknowledgedAt;
   const syncedAsOf = live && live.syncedAsOf ? live.syncedAsOf : null;
@@ -151,7 +156,7 @@ export function EomShareView({ token }) {
       span({ style: { fontSize: '11px', color: '#78839a' } }, 'EOM report · view-only')),
     div({ style: { fontWeight: 700, fontSize: '20px', margin: '4px 0 14px' } }, `${data.storeName || ''} · ${data.title || `EOM FOB ${data.period}`}`),
 
-    h(FobStripLite, { fob: stripFob, loc: data.loc }),
+    h(FobStripLite, { fob: stripFob, loc: data.loc, monthlyOverride }),
 
     // Live-refresh bar: re-pull the freshest synced data (after the store corrects counts) + timestamp.
     div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' } },

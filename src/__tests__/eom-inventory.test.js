@@ -161,6 +161,30 @@ describe('diagnoseIncompleteCount', () => {
     expect(wrins).toContain('real-1');
     expect(wrins).toContain('real-2');
   });
+  it('reclassifies a QSRSoft-deactivated item (active:false) to stale even with a nonzero residual and an in-period count date (2026-08-30 generalized fix)', () => {
+    // Ada-Country Club, loc 6972, real 2026-08 data: two items marked active:false by QSRSoft
+    // still carry a nonzero residual (so the zero-substance filter above doesn't catch them) and
+    // were last counted THIS period before the final window -- so the date-only logic classified
+    // them 'early' and the diagnosis report gave them the aggressive "recount now, real gap"
+    // treatment meant for genuinely active items. active===false must win regardless of value or
+    // count date, routing to the SAME "verify & clear" bucket a stale item gets.
+    const rows = [
+      { wrin: '00050-002', cls: 'Condiment', descr: 'LEMONS (Obsolete 4 days left', onHandAmt: 11.07, totalUnits: 10, lastCounted: d(2026, 7, 6), active: false },
+      { wrin: '03663-024', cls: 'Condiment', descr: 'Big Mac Sauce Cup', onHandAmt: -1.47, totalUnits: -10.4, lastCounted: d(2026, 7, 13), active: false },
+      // Control: a genuinely active item counted early with real value stays 'early' — this fix
+      // must not blunt the real early-count warning for items that actually need it.
+      { wrin: '00076-126', cls: 'Food', descr: 'Fried Apple Pie', onHandAmt: 30.58, totalUnits: 111, lastCounted: d(2026, 7, 13), active: true },
+      // Control: active===null (pre-migration / unknown) must NOT be treated as inactive.
+      { wrin: '19809-002', cls: 'Food', descr: 'Blue Raspberry Syrup', onHandAmt: 7.56, totalUnits: 1, lastCounted: d(2026, 7, 6), active: null },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(byWrin['00050-002'].state).toBe('stale');
+    expect(byWrin['03663-024'].state).toBe('stale');
+    expect(byWrin['03663-024'].valueAtRisk).toBeCloseTo(1.47, 2); // abs() of the negative on-hand
+    expect(byWrin['00076-126'].state).toBe('early'); // active item — real gap, unaffected
+    expect(byWrin['19809-002'].state).toBe('early'); // active:null — not treated as inactive
+  });
   it('keeps zero-substance STALE items — the Obsolete/Discontinued/Inactive "verify & clear" bucket needs them', () => {
     const rows = [
       // Last counted in a PRIOR period, now zeroed out → 'stale'. Must stay so the store can

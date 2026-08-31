@@ -292,10 +292,14 @@ function isProgressSnapshotHour() {
   return h >= PROGRESS_SNAPSHOT_HOUR && h < PROGRESS_SNAPSHOT_HOUR + PROGRESS_SNAPSHOT_WINDOW;
 }
 // Intraday count-window pulls are restricted to Central business hours (Notes 35): managers
-// count during the day, so hourly pulls overnight are wasted egress + noise. 8am–6pm CT,
+// count during the day, so hourly pulls overnight are wasted egress + noise. 8am–10pm CT,
 // DST-safe via America/Chicago. A manual/on-demand run (FORCE=1) overrides this anytime.
+// End extended 6pm->10pm (owner, 2026-08-30): closing-shift counts (esp. Non-Product on the
+// last day) commonly land after 6pm, and the cron already fires every 30 min around the
+// clock (qsrsoft-onhand-pull.yml) -- this gate was the only thing turning those runs into
+// no-ops, so widening it costs nothing extra in cron entries or workflow changes.
 const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
-const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
+const CT_END = Number(process.env.ONHAND_CT_END ?? 22);
 // Should this invocation do a pull at all, and in which mode?
 // Cadence (dispatch #210): the workflow's own cron now fires every 30 min during the
 // count window (see qsrsoft-onhand-pull.yml) — this gate is still the sole authority on
@@ -303,7 +307,7 @@ const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
 // carries none of the window logic itself.
 function runMode() {
   if (FORCE) return 'forced';
-  if (inCountWindow()) return inCtBusinessHours(new Date(), CT_START, CT_END) ? 'count-window' : null; // every 30 min, last 3 days, 8a–6p CT only
+  if (inCountWindow()) return inCtBusinessHours(new Date(), CT_START, CT_END) ? 'count-window' : null; // every 30 min, last 3 days, 8a–10p CT only
   if (isProgressSnapshotHour()) return 'progress'; // one daily snapshot, year-round
   return null;                                   // skip
 }

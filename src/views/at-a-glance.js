@@ -1461,7 +1461,14 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       // Sales-weighted targets across the scope (owner: pass targets to the AAG tile like the
       // diagnosis strip). Σ(target × store sales) / Σsales, per component.
       const _curS=scope(fobPeriods.cur,allLocs);
-      const wTgt=(tk)=>{let n=0,d=0;for(const r of _curS){const t=DEFAULT_TARGETS[String(parseInt(r.loc,10))]?.[tk];const s=r.prodSalesAmt||0;if(t!=null&&s){n+=t*s;d+=s;}}return d?n/d:null;};
+      // 2026-08-31 fix -- DEFAULT_TARGETS alone is a hardcoded constants.js seed that never
+      // reflects a fresh Monthly Targets upload; layer this period's monthly_targets override
+      // on top, same ds.allMonthlyTargets source eom-supervisor.js's computeStoreEOM() already
+      // reads (App.js:1523 loads it once for the whole app). Keyed by fobPeriods.curYM (the
+      // period THIS tile is actually showing), not any other period.
+      const _ymM=/^(\d{4})-0?(\d{1,2})$/.exec(fobPeriods.curYM||'');
+      const _mtBucket=_ymM?ds?.allMonthlyTargets?.[`${_ymM[1]}-${+_ymM[2]}`]:null;
+      const wTgt=(tk)=>{let n=0,d=0;for(const r of _curS){const loc=String(parseInt(r.loc,10));const t=(_mtBucket?.[loc]?.[tk]!=null?_mtBucket[loc][tk]:DEFAULT_TARGETS[loc]?.[tk]);const s=r.prodSalesAmt||0;if(t!=null&&s){n+=t*s;d+=s;}}return d?n/d:null;};
       const tgts={fobPct:wTgt('tFOBTarget'),unexplained:wTgt('tUnex'),compWaste:wTgt('tCompWaste'),rawWaste:wTgt('tRawWaste'),condiment:wTgt('tCondiment'),empMeal:wTgt('tEmpFood'),statVar:wTgt('tStatLoss'),baseFoodPct:wTgt('tFOBBase'),pLFoodPct:wTgt('tFOBTotal')};
       return {
         tgts,
@@ -1511,7 +1518,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
       okStatVar:wScope(okLocs,'statVar'),flStatVar:wScope(flLocs,'statVar'),
       okDiscCoupon:wScope(okLocs,'discCoupon'),flDiscCoupon:wScope(flLocs,'discCoupon'),
     };
-  }),[fobPeriods,fobRecent,allLocs,okLocs,flLocs]);
+  }),[fobPeriods,fobRecent,allLocs,okLocs,flLocs,ds]);
 
   // ── Intelligence Summary (Morning Brief) ─────────────────────────
   const intelSec=React.useMemo(()=>_mark('compute:intelSec',()=>{

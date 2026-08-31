@@ -35,7 +35,7 @@
 //   QSRSOFT_DEBUG=1
 //
 // Cadence (dispatch #210): once daily year-round (~10:00-12:00 UTC slot), accelerated to
-// hourly during the EOM count window (last 3 days of month, 8am-6pm CT) — the SAME gate
+// hourly during the EOM count window (last 3 days of month, 8am-10pm CT) — the SAME gate
 // qsrsoft-onhand-pull.mjs uses, reused from scripts/lib/count-window.mjs. See runMode().
 //
 // Token refresh: v3.myqsrsoft.com → Inventory → Variance Stat → DevTools → Network →
@@ -60,13 +60,16 @@ const FORCE       = process.env.VARIANCE_FORCE === '1';
 
 // ── Cadence gate (dispatch #210) ───────────────────────────────────────────────
 // Daily year-round PLUS hourly during the EOM count window (last 3 days of month,
-// 8am-6pm CT) — the exact same window/business-hours gate qsrsoft-onhand-pull.mjs uses,
+// 8am-10pm CT) — the exact same window/business-hours gate qsrsoft-onhand-pull.mjs uses,
 // reused (not reimplemented) from scripts/lib/count-window.mjs. The workflow's cron
 // fires hourly year-round now (qsrsoft-variance-pull.yml); this gate is the sole
 // authority on whether a landed run actually does work outside the count window, so the
-// rest-of-month cadence stays once-daily.
+// rest-of-month cadence stays once-daily. End extended 6pm->10pm alongside
+// qsrsoft-onhand-pull.mjs's identical change (owner, 2026-08-30) — same env var
+// (ONHAND_CT_END), same rationale: closing-shift counts land after 6pm and the cron
+// already fires that late, this gate was just discarding the run.
 const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
-const CT_END = Number(process.env.ONHAND_CT_END ?? 18);
+const CT_END = Number(process.env.ONHAND_CT_END ?? 22);
 // Outside the count window, only fire in a WINDOW around the original once-daily slot
 // (10:30 UTC), not an exact-minute match — GitHub's scheduled runs are sparse and
 // delayed (see qsrsoft-onhand-pull.mjs's own PROGRESS_SNAPSHOT_WINDOW precedent), so an
@@ -82,7 +85,7 @@ function isDailySlot(now = new Date()) {
 // Should this invocation do a pull at all, and in which mode?
 function runMode(now = new Date()) {
   if (FORCE) return 'forced';
-  if (inCountWindow(now)) return inCtBusinessHours(now, CT_START, CT_END) ? 'count-window' : null; // hourly, last 3 days, 8a–6p CT only
+  if (inCountWindow(now)) return inCtBusinessHours(now, CT_START, CT_END) ? 'count-window' : null; // hourly, last 3 days, 8a–10p CT only
   return isDailySlot(now) ? 'daily' : null; // once daily the rest of the month
 }
 

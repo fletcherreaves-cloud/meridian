@@ -46,7 +46,7 @@ const COMPS = [
 // FobStripLite's own single-store math via fobComponentDeltas()). Multiple stores → dollar-weighted
 // aggregate ($ summed across scope, % = the sum, never a mean of per-store %ages) with no target
 // line (a single target has no meaning once stores/targets are blended).
-function FobChipsRollup({ rows }) {
+function FobChipsRollup({ rows, period, monthlyOverrideFor }) {
   const box = { padding: '5px 10px', background: 'var(--surf3)', border: '1px solid var(--bdr2)', borderRadius: '7px', display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '90px' };
   const lab = { fontSize: '8.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap' };
   const big = (c) => ({ fontSize: '13px', fontWeight: 700, color: c || 'var(--text)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' });
@@ -58,7 +58,10 @@ function FobChipsRollup({ rows }) {
   if (withFob.length === 1) {
     const r = withFob[0];
     const f = r.components;
-    const targets = DEFAULT_TARGETS[unpad(r.loc)] || {};
+    // 2026-08-31 fix -- layer this period's monthly_targets override on top of the hardcoded
+    // DEFAULT_TARGETS seed (same pattern as eom-dashboard.js's FobStrip / eom-share-view.js's
+    // FobStripLite -- see either's comment for the full 2026-08-30 finding).
+    const targets = { ...(DEFAULT_TARGETS[unpad(r.loc)] || {}), ...((monthlyOverrideFor && monthlyOverrideFor(r.loc, period)) || {}) };
     const fobTgt = targets.tFOBTarget != null ? Number(targets.tFOBTarget) : null;
     const deltas = fobComponentDeltas(f, targets);
     const byKey = {}; for (const d of deltas) byKey[d.key] = d;
@@ -93,7 +96,7 @@ function FobChipsRollup({ rows }) {
     div({ style: { ...box, minWidth: '70px' } }, span({ style: lab }, 'Stores'), span({ style: big() }, String(withFob.length))));
 }
 
-export function EOMTeamSnapshotPanel({ rows, period, scopeLabel }) {
+export function EOMTeamSnapshotPanel({ rows, period, scopeLabel, monthlyOverrideFor }) {
   useEffect(() => { ensureEomPrintStyleInjected(); }, []);
   const [forPrint, setForPrint] = useState(false);
   useEffect(() => {
@@ -130,7 +133,7 @@ export function EOMTeamSnapshotPanel({ rows, period, scopeLabel }) {
         div({ style: { fontSize: '15px', fontWeight: 800, color: '#111' } }, `EOM Team Snapshot — ${scopeLabel || 'all stores'}`),
         div({ style: { fontSize: '11px', color: '#555' } }, `${period} · ${list.length} store${list.length === 1 ? '' : 's'}`)),
 
-      h(FobChipsRollup, { rows: list }),
+      h(FobChipsRollup, { rows: list, period, monthlyOverrideFor }),
 
       list.length === 0
         ? div({ style: { color: 'var(--text3)', fontSize: '13px', padding: '20px 4px' } }, 'No stores in the current scope.')
