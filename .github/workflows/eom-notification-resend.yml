@@ -1,0 +1,71 @@
+name: EOM Notification Resend (per-store, on-demand)
+
+# Dispatch #228 — "regenerate with fresh data and resend" for the per-store EOM count-completion
+# notification (scripts/eom-notification-resend.mjs). Distinct from EOM Digest Send
+# (eom-digest-send.yml), which resends the roll-up digest, not this per-store fire-once
+# notification. Fired ONLY by the EOM Dashboard's "🔄 Resend" button (eom-dashboard.js) via
+# trigger-dar-sync's `resend_notify` workflow entry — there is no scheduled trigger here, this
+# regenerates ONE store's notification on demand from whatever qsr_onhand currently holds (kept
+# fresh by the separate scheduled On-Hand pull, qsrsoft-onhand-pull.yml).
+#
+# NOT added to sync-failure-watch.yml's watch list (judgment call, per the dispatch's own
+# checklist item): that watcher exists for SCHEDULED workflows that can fail silently with nobody
+# looking (src/__tests__/sync-failure-watch.test.js only requires cron-triggered workflows to be
+# watched). This workflow has no `schedule:` trigger at all — it only ever runs from a live,
+# logged-in click in the EOM Dashboard, where triggerSync()'s own return value already surfaces a
+# failure inline in the modal (see eom-dashboard.js's resendMsg state) — the human who fired it is
+# already watching for the result in the moment, unlike an unattended cron run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      loc:
+        description: 'Store loc (NSN, padded or unpadded) to resend the count-completion notification for — required'
+        required: true
+        default: ''
+      period:
+        description: 'Override period (YYYY-MM, default: current month)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+# Queue, don't cancel — matches eom-digest-send.yml's own reasoning: a cancelled mid-send run
+# could plausibly send a partial notification (insert committed, one of three channels sent) and
+# never finish; a single-store run is fast enough that queuing behind a concurrent one is harmless.
+concurrency:
+  group: eom-notification-resend-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  resend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resend count-completion notification
+        run: node scripts/eom-notification-resend.mjs
+        env:
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
+          VITE_VAPID_PUBLIC_KEY:     ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY:         ${{ secrets.VAPID_PRIVATE_KEY }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_LOC:                ${{ github.event.inputs.loc }}
+          RESEND_PERIOD:             ${{ github.event.inputs.period || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug  || '0' }}

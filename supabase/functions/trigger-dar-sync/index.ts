@@ -35,6 +35,13 @@ const WORKFLOWS: Record<string, { file: string; inputs: Record<string, string>; 
   // the onhand/variance entries' own force:'1' pattern above. Inputs must stay in sync with
   // .github/workflows/eom-digest-send.yml's own `workflow_dispatch.inputs` block.
   digest: { file: 'eom-digest-send.yml', label: 'EOM Digest Report', inputs: { level: '', force: '1', period: '', date: '', debug: '0' } },
+  // dispatch #228 — on-demand "regenerate with fresh data and resend" for the per-store EOM
+  // count-completion notification (email/SMS/push, dispatch #209/#211/#216) — distinct from the
+  // `digest` entry above, which resends the roll-up digest, not the per-store fire-once
+  // notification. Called by the EOM Dashboard's per-store "Store message" modal's "🔄 Resend"
+  // button (eom-dashboard.js). Inputs must stay in sync with
+  // .github/workflows/eom-notification-resend.yml's own `workflow_dispatch.inputs` block.
+  resend_notify: { file: 'eom-notification-resend.yml', label: 'Resend Count Notification', inputs: { loc: '', period: '', debug: '0' } },
 };
 
 const CORS = {

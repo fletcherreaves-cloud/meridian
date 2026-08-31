@@ -1,32 +1,49 @@
 // @ts-nocheck
 export default {version:'5.280', date:'2026-08-31', changes:[
-  'EOM Share view -- the live-refresh caveat text ("re-syncs from QSRSoft every ~30 min...") still ' +
-  'said "8a-6p CT" after v5.278 extended the actual pull window to 8a-10p CT -- this string was ' +
-  'never tied to the real CT_END constant, just informational copy that got missed. Fixed here, ' +
-  'plus two more stale references found in the same sweep: eom-dashboard.js\'s manual "Pull fresh ' +
-  'On-Hand" button tooltip and a nearby code comment. Changelog entries themselves (4.598/5.100/' +
-  '5.250/5.269/5.278) are historical record and intentionally left as-is -- only live copy/comments ' +
-  'were swept.',
-  'EOM Inventory -- QSRSoft\'s `active` boolean on on-hand rows disagrees with its own item-name ' +
-  'text (measured live at two stores: Durant\'s Big Mac Sauce Cup showed active:null and its ' +
-  'Caesar Sauce Pouch showed active:true, despite both names literally saying "(Deactivated)"), so ' +
-  'the v5.276 active===false fix still let already-recounted items resurface as urgent. Added a ' +
-  'descr-text detector (isDeactivatedByDescr) that reclassifies on the item\'s own "(Deactivated)"/' +
-  '"(Obsolete)" text when the boolean disagrees -- deliberately excludes an "(Obsolete N days ' +
-  'left" countdown, which measured active:true in most live samples and is still a normal current ' +
-  'count, not a deactivation.',
-  'EOM Diagnosis -- "Repeated static waste value" was displaying the flagged amount through ' +
-  'whole-dollar rounding, so a genuinely repeated $0.05-$0.49 figure (a real, common amount -- one ' +
-  'fry portion) read as the nonsensical "flagged $0 waste." Now shows cents precision, matching ' +
-  'the exact figure the check actually grouped on.',
-  'EOM Diagnosis -- grouped findings (recount-swing rollups, the generic multi-item rollup) were ' +
-  'joined with " · " onto one run-on line; with this repo\'s normal per-item clause length that ' +
-  'reads as an unreadable wall of text ("Second-Look Signals"). Switched to one item per line.',
-  'EOM Dashboard -- printing the Missing Items / Team Snapshot / Recount Impact tabs (and, by the ' +
-  'same mechanism, Supervisor Rollup) produced a BLANK page. Root cause: every routePanel renders ' +
-  'inside App.js\'s "Main content" scroll wrapper, not as a direct child of .mf-app-root -- but ' +
-  'PRINT_STYLE\'s hide-everything-else rule only ever inspected .mf-app-root\'s DIRECT children, so ' +
-  'it hid that unmarked wrapper itself, which blanked the print modal nested inside it regardless ' +
-  'of the modal\'s own class. Gave the wrapper a stable class (.mf-main-content) and repeated the ' +
-  'same hide-rule one level down, exempting it at the outer level.'
+  'Dispatch #228 -- on-demand "regenerate with fresh data and resend" for the per-store EOM ' +
+  'count-completion notification (email/SMS/push), owner-requested with a screenshot of a real ' +
+  'Ardmore count-complete email. Distinct from the EOM Digest, which already had its own ' +
+  'on-demand resend -- this is the OTHER email, the fire-once per-store alert ' +
+  '(scripts/qsrsoft-onhand-pull.mjs\'s notifyRow()/buildNotificationRow() path), which had no ' +
+  'on-demand trigger at all.' +
+  '\n\n' +
+  'New script `scripts/eom-notification-resend.mjs`: loads a store\'s CURRENT qsr_onhand rows ' +
+  '(same table/mapping as eom-digest-send.mjs\'s own loadOnHandByLoc(), scoped to one loc), re-runs ' +
+  'the real computeCountProgress()/detectCountNotifications()/diagnoseIncompleteCount() pipeline, ' +
+  'and calls the real notifyRow() -- every piece reused verbatim from qsrsoft-onhand-pull.mjs, ' +
+  'nothing reimplemented. Design choice (spelled out in the dispatch, decided here): a manual ' +
+  'resend widens trigger_kind to a new \'manual_resend\' kind and widens triggerClasses to ALL ' +
+  'four classes (not just whichever one most recently completed), so uncounted_items/kb_links/ ' +
+  'fob_tool_links show a full current-state snapshot -- "regenerate" means the whole current ' +
+  'picture, not a replay of the original narrow trigger. Logs to the same eom_count_notifications ' +
+  'history table (trigger_kind distinguishes a manual resend from an automatic fire).' +
+  '\n\n' +
+  'triggerLabel() (scripts/lib/resend-notify.mjs) gets a small special case for \'manual_resend\' ' +
+  '-> "Current Status" -- the generic split-on-underscore rendering would otherwise show the raw ' +
+  'words "manual + resend" in the live subject/body/push-title templates.' +
+  '\n\n' +
+  'New GitHub Actions workflow `eom-notification-resend.yml` (workflow_dispatch only, modeled on ' +
+  'eom-digest-send.yml\'s own dispatch block) + a matching `resend_notify` entry in ' +
+  '`trigger-dar-sync`\'s WORKFLOWS allowlist, following the existing `digest` entry\'s pattern. Not ' +
+  'added to sync-failure-watch.yml -- it has no scheduled trigger (fires only from a live, ' +
+  'logged-in click whose result the human is already watching in the modal), so it is out of ' +
+  'scope for that watcher\'s cron-triggered-workflow contract (verified: ' +
+  'src/__tests__/sync-failure-watch.test.js only requires cron-triggered workflows to be watched).' +
+  '\n\n' +
+  'New "🔄 Resend" button in the EOM Dashboard\'s per-store "✉️ Draft" / Store message modal ' +
+  '(src/views/eom-dashboard.js), wired to triggerSync(\'resend_notify\', { loc, period }) -- the ' +
+  'same call shape as the existing "📧 Generate Report" -> Send button\'s ' +
+  'triggerSync(\'digest\', { level }).' +
+  '\n\n' +
+  'Tests: buildResendRow() exercised against synthetic on-hand fixtures (correct class_statuses/ ' +
+  'uncounted_items/trigger_kind/fob_snapshot for known inputs, including the "nothing currently ' +
+  'complete -> null" case); notifyRow() called with a buildResendRow()-produced row through the ' +
+  'real send functions (network boundary mocked, matching this repo\'s existing dispatch #211 ' +
+  'test pattern); a render test mounts the real EOMDashboardPanel, clicks the real "✉️ Draft" -> ' +
+  '"🔄 Resend" chain, and asserts the real triggerSync() call args, busy state, and success/error ' +
+  'message rendering. A live send cannot be verified in this sandbox (no RESEND_API_KEY) -- same ' +
+  'documented limitation as scripts/test-eom-notification-send.mjs\'s own header.' +
+  '\n\n' +
+  'Gzip eager payload: 527.63 KB (baseline v5.279: 527.31 KB, budget 850 KB) -- the new button ' +
+  'lives in the already-lazy EOM Dashboard chunk, the new script is server-side only.'
 ]};

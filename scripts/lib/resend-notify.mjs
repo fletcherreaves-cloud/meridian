@@ -129,7 +129,15 @@ ${fobToolLinksHtml(row.fob_tool_links)}`;
 }
 
 // 'food_condiment' -> 'Food + Condiment', 'paper' -> 'Paper'
+// dispatch #228 — 'manual_resend' (scripts/eom-notification-resend.mjs's trigger_kind, tagging a
+// manual "regenerate and resend" apart from an automated fire) is a special case, not a class
+// name: the generic split-on-'_'-and-map-through-CLASS_LABELS below would render it as the raw
+// words "manual + resend" (CLASS_LABELS has no entry for either), which is legible but reads as
+// noise in the subject/body/push-title templates that all splice this straight in (e.g.
+// "${trig} count complete"). Handled as its own literal case rather than adding fake 'manual'/
+// 'resend' CLASS_LABELS entries, which would misleadingly suggest those are real inventory classes.
 export function triggerLabel(triggerKind) {
+  if (triggerKind === 'manual_resend') return 'Current Status';
   return String(triggerKind || '')
     .split('+').flatMap(k => k.split('_'))
     .map(k => CLASS_LABELS[k] || k)

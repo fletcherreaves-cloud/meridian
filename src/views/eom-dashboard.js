@@ -1725,6 +1725,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     finally { setPulling(''); }
   }, []);
 
+  // dispatch #228 — "🔄 Resend" in the per-store Store message modal: regenerates the
+  // count-completion notification (email/SMS/push) from CURRENT qsr_onhand/qsr_fob data and
+  // resends it, distinct from the "✉️ Draft"/"Copy message" flow above (a manually-drafted
+  // follow-up nudge) and from sendDigest above (the roll-up digest, a different email entirely).
+  // `resendingLoc` tracks which store's resend is in flight so only that store's button shows
+  // the busy state if somehow more than one modal path could trigger this.
+  const [resendingLoc, setResendingLoc] = useState('');
+  const [resendMsg, setResendMsg] = useState(null);
+  const doResendNotify = useCallback(async (loc) => {
+    setResendingLoc(loc); setResendMsg(null);
+    try {
+      const r = await triggerSync('resend_notify', { loc, period });
+      if (r && r.error) setResendMsg({ ok: false, text: `✗ ${r.error}` });
+      else setResendMsg({ ok: true, text: '✓ Resend started — regenerating from current data and resending (email/SMS/push), ~1–2 min. Nothing sends if no class currently reads complete for this store/period.' });
+    } catch (e) { setResendMsg({ ok: false, text: `✗ ${e.message || 'failed'}` }); }
+    finally { setResendingLoc(''); }
+  }, [period]);
+
   // dispatch #215 Task 4 — "📧 Generate Report" (view + send are two SEPARATE actions, per the
   // panel's own owner-stated requirement). Digest state declared here; digestStoreRows/digest
   // memos below (after fobReport/patchOfLoc exist).
@@ -2580,6 +2598,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
   const openDraft = useCallback((loc, name, components) => {
     setCopied(false); setDraftFull(false); setDraftText(false);
+    setResendMsg(null); // dispatch #228 — never carry a prior store's resend result into a new modal
     setDraft(computeDraft(loc, name, components));
   }, [computeDraft]);
 
@@ -3554,8 +3573,19 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
             onClick: () => { updateStatus(draft.loc, { commsStatus: 'sent', commsSentAt: new Date().toISOString() }); setDraft(null); },
             style: { background: 'none', color: '#4ade80', border: '1px solid #4ade80', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: 'pointer', fontSize: '13px' },
           }, 'Mark as sent'),
+          // dispatch #228 — regenerates the AUTOMATED count-completion notification (email/SMS/
+          // push, dispatch #209/#211/#216) from CURRENT qsr_onhand/qsr_fob data and resends it.
+          // Separate from Copy message/Mark as sent above, which manage this MANUALLY-drafted
+          // follow-up nudge, not the automated notification.
+          h('button', {
+            onClick: () => doResendNotify(draft.loc),
+            disabled: resendingLoc === draft.loc,
+            title: 'Regenerate the count-completion notification (email/SMS/push) from current data and resend it — not a copy of the original notification',
+            style: { background: 'none', color: '#38bdf8', border: '1px solid #38bdf8', borderRadius: '6px', padding: '8px 14px', fontWeight: 600, cursor: resendingLoc === draft.loc ? 'wait' : 'pointer', fontSize: '13px', opacity: resendingLoc === draft.loc ? 0.65 : 1 },
+          }, resendingLoc === draft.loc ? '🔄 Resending…' : '🔄 Resend'),
           !draft.hasGaps && draft.hasPlan && span({ style: { fontSize: '12px', color: '#38bdf8' } }, 'No count gaps — this is the food-cost action plan.'),
-          !draft.hasGaps && !draft.hasPlan && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.'))),
+          !draft.hasGaps && !draft.hasPlan && span({ style: { fontSize: '12px', color: '#4ade80' } }, 'No gaps — count looks complete.'),
+          resendMsg && span({ style: { fontSize: '12px', color: resendMsg.ok ? '#4ade80' : 'var(--crit)' } }, resendMsg.text))),
 
     // diagnosis modal — the detailed report + action items (owner downloads/attaches to email)
     diag && h(ModalShell, {
