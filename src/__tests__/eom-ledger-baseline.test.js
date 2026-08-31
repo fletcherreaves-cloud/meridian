@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff, recountVerdictText, formatRecountReport } from '../engine/eom-ledger-baseline.js';
+import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff, recountVerdictText, formatRecountReport, crossStoreRecountConsistency, crossStoreConsistencyText } from '../engine/eom-ledger-baseline.js';
 
 const item = (wrin, hist) => ({ wrin, descr: wrin, cls: 'food', history: hist });
 const cnt = (dt, tm, dolVar, { variance = null } = {}) => ({ isCount: true, source: 'inventory', dt, tm, difference: dolVar, variance });
@@ -254,5 +254,84 @@ describe('formatRecountReport', () => {
   it('returns an empty string for a missing/malformed diff rather than throwing', () => {
     expect(formatRecountReport(null)).toBe('');
     expect(formatRecountReport({})).toBe('');
+  });
+});
+
+// 2026-08-31 -- generalizes the McNuggets finding (memory/scoping-sage-mcnuggets-learning-2026-08-31.md):
+// the SAME item recounted at multiple stores in one period, with SOME recounts helping and OTHERS
+// hurting, is the signature of a crew-technique/UOM gap at specific stores, not independent noise.
+describe('crossStoreRecountConsistency', () => {
+  const row = (loc, storeName, verdict, dMag, extra = {}) =>
+    ({ wrin: 'X', descr: 'Widget', cls: 'food', loc, storeName, verdict, dMag, baseVar: 0, curVar: dMag, ...extra });
+
+  it('flags a WRIN recounted at 2+ stores with BOTH a material help and a material hurt', () => {
+    const rows = [
+      row('a', 'Store A', 'hurting', -300),
+      row('b', 'Store B', 'helping', 200),
+    ];
+    const out = crossStoreRecountConsistency(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0].wrin).toBe('X');
+    expect(out[0].nStores).toBe(2);
+    expect(out[0].nHelped).toBe(1);
+    expect(out[0].nHurt).toBe(1);
+    expect(out[0].helpedDol).toBe(200);
+    expect(out[0].hurtDol).toBe(300);
+    expect(out[0].netDol).toBe(-100);
+    expect(out[0].stores.map(s => s.loc)).toEqual(['a', 'b']);   // worst (largest |dMag|) first
+  });
+
+  it('does NOT flag when every recount at every store agrees in direction', () => {
+    const rows = [row('a', 'Store A', 'hurting', -300), row('b', 'Store B', 'hurting', -150)];
+    expect(crossStoreRecountConsistency(rows)).toHaveLength(0);
+  });
+
+  it('does NOT flag a single store, even a big swing (needs multiple stores to be "cross-store")', () => {
+    const rows = [row('a', 'Store A', 'hurting', -300), row('a', 'Store A', 'helping', 250)];
+    expect(crossStoreRecountConsistency(rows, { minStores: 2 })).toHaveLength(0);
+  });
+
+  it('respects the materiality floor -- a sub-floor move on either side does not count', () => {
+    const rows = [row('a', 'Store A', 'hurting', -300), row('b', 'Store B', 'helping', 10)];   // $10 < $25 floor
+    expect(crossStoreRecountConsistency(rows)).toHaveLength(0);
+  });
+
+  it('ranks multiple flagged WRINs by total $ impact, biggest first', () => {
+    const rows = [
+      row('a', 'Store A', 'hurting', -50, { wrin: 'small' }), row('b', 'Store B', 'helping', 40, { wrin: 'small' }),
+      row('a', 'Store A', 'hurting', -800, { wrin: 'big' }), row('b', 'Store B', 'helping', 700, { wrin: 'big' }),
+    ];
+    const out = crossStoreRecountConsistency(rows);
+    expect(out.map(o => o.wrin)).toEqual(['big', 'small']);
+  });
+
+  it('real McNuggets numbers (owner-confirmed live, memory/scoping-sage-mcnuggets-learning-2026-08-31.md): 4 hurt, 2 help', () => {
+    const rows = [
+      row('6838', 'Defuniak Springs', 'hurting', -776.63, { wrin: '00407-958', descr: 'Chicken McNuggets' }),
+      row('10034', 'Bonifay', 'hurting', -555.70, { wrin: '00407-958', descr: 'Chicken McNuggets' }),
+      row('33704', 'Tecumseh', 'hurting', -258.32, { wrin: '00407-958', descr: 'Chicken McNuggets' }),
+      row('10422', 'Atoka-Mississippi', 'hurting', -57.91, { wrin: '00407-958', descr: 'Chicken McNuggets' }),
+      row('3708', 'Ardmore-Broadway', 'helping', 39, { wrin: '00407-958', descr: 'Chicken McNuggets' }),
+      row('24471', 'Ardmore-Cooper/12th', 'helping', 39, { wrin: '00407-958', descr: 'Chicken McNuggets' }),
+    ];
+    const out = crossStoreRecountConsistency(rows);
+    expect(out).toHaveLength(1);
+    expect(out[0].nStores).toBe(6);
+    expect(out[0].nHurt).toBe(4);
+    expect(out[0].nHelped).toBe(2);
+    expect(Math.round(out[0].hurtDol)).toBe(1649);
+    expect(out[0].stores[0].loc).toBe('6838');   // Defuniak, the worst offender, sorts first
+
+    const text = crossStoreConsistencyText(out[0]);
+    expect(text).toMatch(/6 stores/);
+    expect(text).toMatch(/2 helped/);
+    expect(text).toMatch(/4 hurt/);
+    expect(text).not.toMatch(/accus/i);        // non-accusatory tone, matches recountVerdictText's house style
+  });
+
+  it('never throws on empty/missing input', () => {
+    expect(crossStoreRecountConsistency(null)).toEqual([]);
+    expect(crossStoreRecountConsistency([])).toEqual([]);
+    expect(crossStoreConsistencyText(null)).toBe('');
   });
 });

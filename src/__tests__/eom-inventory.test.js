@@ -218,6 +218,42 @@ describe('diagnoseIncompleteCount', () => {
     expect(byWrin['lid-1'].state).toBe('early');
     expect(byWrin['scooby-1'].state).toBe('stale');
   });
+  it('reclassifies an item that dropped out of the store\'s CURRENT on-hand pull, even with no deactivation text at all (2026-08-31 fix #2, Durant #5985 real data)', () => {
+    // qsr_onhand is upsert-only -- when QSRSoft stops returning a WRIN, its row just stops getting
+    // refreshed while the rest of the store keeps updating. Real Durant numbers: the store's freshest
+    // pull today, these two items last refreshed 15.7 days earlier, NEITHER carries "(Deactivated)"/
+    // "(Obsolete)" text or active:false -- isDeactivatedByDescr() alone would miss both.
+    const freshAt = '2026-08-31T14:37:00.731Z';
+    const staleAt = '2026-08-15T20:52:59.504Z';   // ~15.7 days behind
+    const rows = [
+      { wrin: '00076-126', cls: 'Food', descr: 'Fried Apple Pie', onHandAmt: 12.67, totalUnits: 46, lastCounted: d(2026, 7, 7), active: null, updatedAt: staleAt },
+      { wrin: '20351-000', cls: 'Food', descr: 'Honey Brown Butter Sce Nat Flv', onHandAmt: 8.92, totalUnits: 1.87, lastCounted: d(2026, 7, 7), active: null, updatedAt: staleAt },
+      // Control: a normal item refreshed in THIS SAME pull (0 gap) must stay 'early', not 'stale'.
+      { wrin: 'active-1', cls: 'Food', descr: 'Sesame Seed Bun', onHandAmt: 40, totalUnits: 80, lastCounted: d(2026, 7, 7), active: null, updatedAt: freshAt },
+      // Control: no updatedAt at all (pre-migration row) must never trigger this signal -- backward
+      // compatible with every row shape that predates this fix.
+      { wrin: 'no-updated-at', cls: 'Food', descr: 'Old Row', onHandAmt: 10, totalUnits: 5, lastCounted: d(2026, 7, 7), active: null },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(byWrin['00076-126'].state).toBe('stale');
+    expect(byWrin['20351-000'].state).toBe('stale');
+    expect(byWrin['active-1'].state).toBe('early');
+    expect(byWrin['no-updated-at'].state).toBe('early');
+  });
+  it('does NOT flag a store-wide pull outage — the signal is RELATIVE to the store\'s own freshest pull, not absolute', () => {
+    // Every item in this store refreshed at the SAME time (the pull ran but the store just hasn't
+    // had a MORE RECENT one) -- gap is 0 for everyone, nothing should read as "dropped".
+    const sameAt = '2026-08-20T10:00:00.000Z';
+    const rows = [
+      { wrin: 'a', cls: 'Food', descr: 'Item A', onHandAmt: 10, totalUnits: 5, lastCounted: d(2026, 7, 7), active: null, updatedAt: sameAt },
+      { wrin: 'b', cls: 'Food', descr: 'Item B', onHandAmt: 10, totalUnits: 5, lastCounted: d(2026, 7, 7), active: null, updatedAt: sameAt },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period, asOf: d(2026, 7, 30) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(byWrin['a'].state).toBe('early');
+    expect(byWrin['b'].state).toBe('early');
+  });
   it('keeps zero-substance STALE items — the Obsolete/Discontinued/Inactive "verify & clear" bucket needs them', () => {
     const rows = [
       // Last counted in a PRIOR period, now zeroed out → 'stale'. Must stay so the store can

@@ -288,3 +288,61 @@ export function formatRecountReport(diff, { period = '' } = {}) {
   }
   return lines.join('\n');
 }
+
+// ── Cross-store recount consistency (2026-08-31, memory/scoping-sage-mcnuggets-learning) ──────────
+// The SAME item, recounted at multiple stores in the SAME period, with SOME recounts moving it toward
+// zero and OTHERS moving it away -- not a coincidence of independent store-level counting error, but
+// the signature of a genuine crew-technique or unit-of-measure ambiguity on that specific item (real
+// example: Chicken McNuggets #00407-958, July close window -- Defuniak/Bonifay/Tecumseh/Atoka all
+// recounted it and it got WORSE, Ardmore-Broadway/Ardmore-Cooper recounted the identical item and it
+// HELPED -- the item is countable correctly, so the gap is technique at specific stores, not the item
+// itself). Owner-confirmed this is a real, worth-generalizing pattern (not the session-netting bug
+// that originally distorted it -- see the scoping doc's own before/after re-measurement).
+//
+// Deliberately takes a FLAT list of recounted items, not a ledgerScopeDiff()/diff.stores[] tree -- so
+// both consumers (eom-dashboard.js's recountImpactRows, already flat; SAGE's sage-chat/index.ts,
+// which already flattens diff.stores[].items for its own report) can call this without reshaping
+// their existing data, and it stays trivially testable against plain fixtures.
+//   recountedItems -- [{ wrin, descr, cls, loc, storeName, baseVar, curVar, dMag, verdict }], one row
+//                     per (store, item) that WAS recounted this period -- same shape
+//                     eom-dashboard.js's recountImpactRows / formatRecountReport's `movers` already
+//                     build.
+export function crossStoreRecountConsistency(recountedItems, { floor = LEDGER_MATERIAL_FLOOR, minStores = 2 } = {}) {
+  const byWrin = {};
+  for (const it of (recountedItems || [])) {
+    if (!it || !it.wrin || !it.loc) continue;
+    (byWrin[String(it.wrin)] || (byWrin[String(it.wrin)] = [])).push(it);
+  }
+  const out = [];
+  for (const [wrin, items] of Object.entries(byWrin)) {
+    // One store may appear more than once (rare, but not this function's job to dedupe an upstream
+    // shape issue) -- what matters is how many DISTINCT stores recounted this item.
+    const nStores = new Set(items.map(i => i.loc)).size;
+    if (nStores < minStores) continue;
+    const helped = items.filter(i => i.verdict === 'helping' && abs(i.dMag) >= floor);
+    const hurt = items.filter(i => i.verdict === 'hurting' && abs(i.dMag) >= floor);
+    if (!helped.length || !hurt.length) continue;   // both directions must be present AND material
+    const helpedDol = helped.reduce((s, i) => s + abs(i.dMag), 0);
+    const hurtDol = hurt.reduce((s, i) => s + abs(i.dMag), 0);
+    out.push({
+      wrin, descr: items[0].descr || wrin, cls: items[0].cls || null,
+      nStores, nHelped: helped.length, nHurt: hurt.length,
+      helpedDol, hurtDol, netDol: helpedDol - hurtDol,
+      stores: items.slice().sort((a, b) => abs(b.dMag) - abs(a.dMag))
+        .map(i => ({ loc: i.loc, storeName: i.storeName, verdict: i.verdict, baseVar: i.baseVar, curVar: i.curVar, dMag: i.dMag })),
+    });
+  }
+  out.sort((a, b) => (b.helpedDol + b.hurtDol) - (a.helpedDol + a.hurtDol));
+  return out;
+}
+
+// Plain-language text for one crossStoreRecountConsistency() entry -- non-accusatory, "verify don't
+// accuse" tone matching recountVerdictText()/eom-diagnosis.js's own house style.
+export function crossStoreConsistencyText(item) {
+  if (!item) return '';
+  const money = v => `$${Math.round(Math.abs(v || 0)).toLocaleString()}`;
+  return `Recounted at ${item.nStores} stores this period with inconsistent results -- ${item.nHelped} `
+    + `helped (${money(item.helpedDol)} toward zero), ${item.nHurt} hurt (${money(item.hurtDol)} away). `
+    + `Since some stores counted this correctly, this points to a count-technique or unit-of-measure gap `
+    + `at the others, not a bad item -- worth checking how the specific stores below are counting it.`;
+}

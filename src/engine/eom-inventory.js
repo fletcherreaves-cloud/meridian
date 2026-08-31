@@ -292,6 +292,28 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
   //             inflate value-at-risk without being real to-count work — the Durant #5985 case.
   const periodStart = /^\d{4}-\d{2}$/.test(period || '') ? new Date(period + '-01T00:00:00') : null;
 
+  // 2026-08-31 fix #2 (owner-reported live, Durant #5985's Fried Apple Pie / Honey Brown Butter Sce
+  // Nat Flv): qsr_onhand is upsert-only (onConflict loc,period,wrin, never deleted) -- when QSRSoft
+  // stops returning a WRIN in the On-Hand Report response (deactivated / dropped from the store's
+  // roster), its row simply stops getting refreshed while every OTHER item in the SAME store's SAME
+  // pull keeps updating. `onHandRows` is always already one-store-scoped (every caller passes a
+  // per-loc slice), so the store's own freshest pull is the max `updatedAt` across these rows.
+  // Live-measured (3 stores, 2026-08-31): 90-96% of a store's items refresh within 1 day of each
+  // other; the tail that falls 3+ days behind the store's own freshest pull is overwhelmingly
+  // already-deactivated items (the 3-7 day band at Ada was 6/7 "(Deactivated)"-tagged). This is an
+  // EARLIER signal than isDeactivatedByDescr() below, which needs the row to have ALREADY been
+  // refreshed with updated deactivated text -- Durant's two items sat 15+ days stale with NO
+  // deactivation text at all, because they'd simply stopped appearing in Durant's on-hand response;
+  // isDeactivatedByDescr() can never catch that, because the text it needs was never delivered to us.
+  const STALE_PULL_GAP_MS = 3 * 24 * 3600 * 1000;
+  const updatedTimes = rows.map(r => r.updatedAt ? new Date(r.updatedAt).getTime() : NaN).filter(Number.isFinite);
+  const storeFreshAt = updatedTimes.length ? Math.max(...updatedTimes) : null;
+  function droppedFromCurrentPull(r) {
+    if (storeFreshAt == null || !r.updatedAt) return false;
+    const t = new Date(r.updatedAt).getTime();
+    return Number.isFinite(t) && (storeFreshAt - t) >= STALE_PULL_GAP_MS;
+  }
+
   let uncounted = rows
     .filter(r => !isCounted(r, windowStart))
     .map(r => {
@@ -312,7 +334,7 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
       // literally saying "(Deactivated)") both slipped through and re-surfaced the exact same
       // false-urgency bug the active-flag fix was meant to close. isDeactivatedByDescr() (above)
       // is the more complete signal -- see its own comment for the live measurement.
-      const state = (r.active === false || isDeactivatedByDescr(r.descr || r.desc))
+      const state = (r.active === false || isDeactivatedByDescr(r.descr || r.desc) || droppedFromCurrentPull(r))
         ? 'stale' : (!d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early'));
       return {
         wrin: r.wrin,

@@ -22,7 +22,7 @@ import {
   createEomShareLink, supabase,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
-import { ledgerScopeDiff, ledgerBaselineDiff, closeWindowStartFor, itemCloseWindowRecount, recountVerdictText, formatRecountReport } from '../engine/eom-ledger-baseline.js';
+import { ledgerScopeDiff, ledgerBaselineDiff, closeWindowStartFor, itemCloseWindowRecount, recountVerdictText, formatRecountReport, crossStoreRecountConsistency } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
@@ -2434,6 +2434,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     return out;
   }, [rows, rawByLoc, varByLoc, period]);
 
+  // Cross-store recount consistency (2026-08-31, memory/scoping-sage-mcnuggets-learning-2026-08-31.md):
+  // the SAME item recounted at multiple stores THIS scope/period, with some recounts helping and others
+  // hurting -- the signature of a crew-technique/UOM gap at specific stores, not independent noise (real
+  // example: Chicken McNuggets, July -- Defuniak/Bonifay/Tecumseh/Atoka all recounted it and it got
+  // worse, Ardmore-Broadway/Ardmore-Cooper recounted the identical item and it helped). A pure re-group
+  // of recountImpactRows already computed above -- no second data pull, can't drift from the flat table.
+  const crossStoreConsistency = useMemo(() => crossStoreRecountConsistency(recountImpactRows), [recountImpactRows]);
+
   // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
   // Merged per-store targets (DEFAULT_TARGETS < this period's monthly_targets override, 2026-08-31
   // fix) built ONCE for the whole store universe and passed to buildDistrictSummary() in place of
@@ -3104,7 +3112,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     mode === 'recount'
       ? (loading || fobPending)
         ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
-        : h(EOMRecountImpactPanel, { rows: recountImpactRows, period, scopeLabel: scopeLabel() })
+        : h(EOMRecountImpactPanel, { rows: recountImpactRows, crossStore: crossStoreConsistency, period, scopeLabel: scopeLabel() })
       : null,
 
     // mode==='compliance'/'supervisor'/the 3 report tabs short-circuit this entire EOM-completion/

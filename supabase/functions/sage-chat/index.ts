@@ -18,7 +18,7 @@ import { EOM_RECOUNT_NOTE } from './eom-recount-note.js';
 // every other cross-boundary case (promo-roi, forms, etc.) was hand-ported instead because that
 // was assumed impossible, never actually tested. Reused verbatim here for zero drift between what
 // the in-app EOM Dashboard's Change Monitor shows and what SAGE reports on the same data.
-import { closeWindowStartFor, ledgerScopeDiff } from '../../../src/engine/eom-ledger-baseline.js';
+import { closeWindowStartFor, ledgerScopeDiff, crossStoreRecountConsistency, crossStoreConsistencyText } from '../../../src/engine/eom-ledger-baseline.js';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -716,6 +716,25 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
     const mixed = diff.stores.filter(s => s.engagement.verdict === 'mixed').length;
 
     const sc = applyScope(storesOut, allowed);
+
+    // Cross-store recount consistency (2026-08-31, memory/scoping-sage-mcnuggets-learning-2026-08-31.md)
+    // -- the SAME item recounted at multiple SCOPED stores this period, with some recounts helping and
+    // others hurting: the signature of a crew-technique/UOM gap at specific stores, not independent
+    // noise (real example: Chicken McNuggets, July -- 4 stores recounted it and it got worse, 2 stores
+    // recounted the identical item and it helped). Computed ONLY over sc.stores (post-scope) and from
+    // the FULL per-store recounted-item list (not the top_recounted_items truncation above), so a
+    // restricted caller never sees another store's figures leak through this field -- for a single-
+    // store caller (minStores=2 can never be met by one store) this always returns empty, which is the
+    // correct, non-leaking behavior.
+    const scopedLocs = new Set(sc.stores.map(s => s.loc));
+    const recountedFlat = diff.stores
+      .filter(s => scopedLocs.has(s.loc))
+      .flatMap(s => s.items.filter(i => i.recounted).map(i => ({
+        wrin: i.wrin, descr: i.descr, cls: null, loc: s.loc, storeName: s.name || STORE_NAMES[s.loc] || `Store ${s.loc}`,
+        baseVar: i.baseVar, curVar: i.curVar, dMag: i.dMag, verdict: i.verdict,
+      })));
+    const crossStore = crossStoreRecountConsistency(recountedFlat);
+
     return JSON.stringify({
       period, close_window_start: closeStart,
       district: {
@@ -724,6 +743,12 @@ async function runTool(name: string, input: Record<string, unknown>, allowed: Se
         net_dollars: Math.round(diff.totalHelped - diff.totalHurt), active_stores: diff.active,
       },
       stores: sc.stores,
+      cross_store_inconsistencies: crossStore.map(x => ({
+        wrin: x.wrin, descr: x.descr, n_stores: x.nStores, n_helped: x.nHelped, n_hurt: x.nHurt,
+        helped_dollars: Math.round(x.helpedDol), hurt_dollars: Math.round(x.hurtDol), net_dollars: Math.round(x.netDol),
+        note: crossStoreConsistencyText(x),
+        stores: x.stores.map(s => ({ loc: s.loc, name: s.storeName, verdict: s.verdict, base_variance: Math.round(s.baseVar), final_variance: Math.round(s.curVar) })),
+      })),
       ...(sc.restricted ? { access: 'restricted', hidden_stores: sc.hidden, scope_note: SCOPE_NOTE } : {}),
       note: EOM_RECOUNT_NOTE,
     });
