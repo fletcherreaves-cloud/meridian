@@ -81,6 +81,10 @@ vi.mock('../lib/supabase.js', () => ({
   loadQsrTransfers: async () => [],
   loadQsrRawItemDetail: async () => RAW_ITEM_DETAIL,
   loadQsrRawItemInfo: async () => RAW_ITEM_INFO,
+  // Real POS sales for item 7 (Cheeseburger) — plenty sold, so the reconstruction candidate this
+  // fixture already produces (2026-08-31 follow-up: plausibility re-ranking) comes back plausible,
+  // proving the loader → engine → render wiring end to end, not just the engine unit tests.
+  loadPmixSalesByItems: async () => ({ '3708:7': 500 }),
   loadEomDiagConfig: async () => null,
   saveEomDiagConfig: async () => ({}),
   triggerSync: async () => ({ ok: true }),
@@ -157,11 +161,20 @@ describe('Count-Swing Ledger report tab — real EOMDashboardPanel render', () =
   it('surfaces the product-reconstruction section — beef+bun+cheese shortages imply Cheeseburgers', async () => {
     await renderPanel(root);
     await clickTab(container, 'Count Swings');
+    // Extra flush for the plausibility-re-ranking effect (2026-08-31 follow-up): it fires only
+    // AFTER the first-pass candidate list exists (itself downstream of rawDetail/rawInfo loading),
+    // so its own loadPmixSalesByItems round-trip is a third async hop beyond what renderPanel's
+    // own tick count was tuned for.
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
     const text = container.textContent;
 
     expect(text).toMatch(/Possible product reconstruction/);
     expect(text).toMatch(/Cheeseburger/);
     expect(text).toMatch(/tight fit/i);
     expect(text).toMatch(/3 ingredients agree/);
+    // Real-sales plausibility badge (2026-08-31 follow-up) — the mock's 500 real sales for item 7
+    // makes this candidate plausible, proving loadPmixSalesByItems is actually wired through, not
+    // just present in the engine's own unit tests.
+    expect(text).toMatch(/500 sold recently/);
   });
 });

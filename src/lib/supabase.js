@@ -4757,6 +4757,31 @@ export async function loadGmIdentityRevealEnabled() {
 // ProductMixPanel's own 90D/180D/All range options) go through the separate WIDE
 // lazy-fill tier (`ensureLazyFillWide('pmixRows')` in metric-source.js), which calls
 // this SAME function with an explicit wider `daysBack` — see App.js's `configureLazyFill`.
+// Targeted product-mix sales lookup for a small, specific set of (loc, item_number) pairs — e.g.
+// Count Swings' product-reconstruction candidates (dispatch, 2026-08-31). Deliberately NOT a
+// wrapper around loadPmixRows(): that loader pulls EVERY store's full item roster for the window
+// (~436K rows / ~24s at its own default 40 days), which would turn a fast panel load into a slow
+// one for a feature that only needs a handful of items at a handful of stores. Returns
+// { 'loc:item': totalSoldQty } summed client-side over the window (PostgREST has no server-side
+// GROUP BY here) — the raw row count for a few items at a few stores over 90 days is small.
+export async function loadPmixSalesByItems(pairs, { daysBack = 90 } = {}) {
+  if (!supabase || !pairs?.length) return {};
+  const locs = [...new Set(pairs.map(p => String(p.loc)))];
+  const items = [...new Set(pairs.map(p => Number(p.item)))];
+  const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
+  const _cutStr = _cut.toISOString().slice(0, 10);
+  const data = await fetchAll((from, to) =>
+    supabase.from('qsr_product_mix').select('loc,item,sold_qty')
+      .in('loc', locs).in('item', items).gte('date', _cutStr).range(from, to),
+  1000, 'qsr_product_mix (targeted)');
+  const out = {};
+  for (const r of (data || [])) {
+    const key = `${r.loc}:${r.item}`;
+    out[key] = (out[key] || 0) + (Number(r.sold_qty) || 0);
+  }
+  return out;
+}
+
 export async function loadPmixRows(daysBack = 40) {
   if (!supabase) return [];
   const _cut = new Date(); _cut.setDate(_cut.getDate() - daysBack);
