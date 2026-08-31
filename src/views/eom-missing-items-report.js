@@ -17,9 +17,17 @@
 // Print mechanism reused verbatim from eom-supervisor.js (dispatch #202's PRINT_STYLE, exported
 // dispatch #227): same class hooks (.eom-block/.eom-no-print/.eom-print-area/.eom-print-title),
 // same body.eom-printing scoping, same doPrint()/afterprint pattern — no second print mechanism.
+//
+// 2026-08-31 (owner request) — location scope is already provided by the shared EOMDashboardPanel
+// chrome (LocationSelector, all → state → patch → store), confirmed still doing its job; this
+// added a "📋 Copy" button and grouped items by RECOMMENDATION within each location (was a flat
+// table repeating the same recommendation text once per row — noisy once a store has several items
+// with the identical action). groupRowsByLocationThenKey() is shared with eom-recount-report.js so
+// the two reports can't grow two different groupings of the same idea.
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
 import { ensureEomPrintStyleInjected } from './eom-supervisor.js';
+import { groupRowsByLocationThenKey } from './eom-report-grouping.js';
 
 const { useEffect, useState, useCallback } = React;
 const h = React.createElement;
@@ -34,6 +42,30 @@ const fmtDate = d => {
 const STATE_BADGE = { never: '#fb923c', early: '#f5bc00', stale: '#78839a' };
 const STATE_LABEL = { never: 'Never counted', early: 'Early count', stale: 'Stale (prior period)' };
 
+// Plain-text export (the "📋 Copy" button) — a pure function of the SAME grouped structure the
+// screen renders, so copied text can't disagree with what's on screen. One recommendation stated
+// once per group, not once per item.
+export function formatMissingItemsText(rows, { period, scopeLabel, reportAsOf } = {}) {
+  const list = rows || [];
+  const totalValue = list.reduce((s, r) => s + (r.valueAtRisk || 0), 0);
+  const lines = [];
+  lines.push(`Missing / Uncounted Items — ${scopeLabel || 'all stores'} — ${period}`);
+  lines.push(`${list.length} item${list.length === 1 ? '' : 's'} · ${money(totalValue)} at risk · as of ${fmtDate(reportAsOf)}`);
+  if (!list.length) { lines.push('', 'No uncounted items in the current scope.'); return lines.join('\n'); }
+  const byLoc = groupRowsByLocationThenKey(list, { key: 'recommendation' });
+  for (const loc of byLoc) {
+    lines.push('', `${loc.storeName} (${loc.org === 'emerald' ? 'FL' : 'OK'})`);
+    for (const g of loc.groups) {
+      lines.push(`  ${g.label}`);
+      for (const it of g.items) {
+        const last = it.lastCounted ? fmtDate(it.lastCounted) : 'never counted';
+        lines.push(`    - ${it.descr || it.wrin} (${DIGEST_CLASS_LABELS[it.cls] || it.cls}, ${money(it.onHandAmt)}, last ${last})`);
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
 export function EOMMissingItemsReportPanel({ rows, period, reportAsOf, scopeLabel }) {
   useEffect(() => { ensureEomPrintStyleInjected(); }, []);
   const [forPrint, setForPrint] = useState(false);
@@ -47,9 +79,17 @@ export function EOMMissingItemsReportPanel({ rows, period, reportAsOf, scopeLabe
     document.body.classList.add('eom-printing');
     setTimeout(() => window.print(), 60);
   }, []);
+  const [copied, setCopied] = useState(false);
+  const doCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(formatMissingItemsText(rows, { period, scopeLabel, reportAsOf }));
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard permission denied — silently a no-op, matches other panels' best-effort copy */ }
+  }, [rows, period, scopeLabel, reportAsOf]);
 
   const list = rows || [];
   const totalValue = list.reduce((s, r) => s + (r.valueAtRisk || 0), 0);
+  const grouped = React.useMemo(() => groupRowsByLocationThenKey(list, { key: 'recommendation' }), [list]);
 
   const th = (t) => h('th', { key: t, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid var(--bdr2)', fontSize: '10.5px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t);
   const td = (content, extra) => h('td', { style: { padding: '5px 8px', verticalAlign: 'top', ...(extra || {}) } }, content);
@@ -62,7 +102,12 @@ export function EOMMissingItemsReportPanel({ rows, period, reportAsOf, scopeLabe
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),
         div({ style: { fontSize: '11px', color: 'var(--text3)', marginTop: '3px' } },
           `${list.length} item${list.length === 1 ? '' : 's'} · ${money(totalValue)} at risk · as of ${fmtDate(reportAsOf)}`)),
-      div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' } },
+      div({ style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '10px' } },
+        h('button', {
+          onClick: doCopy,
+          title: 'Copy this report as text — grouped by location, then by recommendation.',
+          style: { background: 'var(--surf3)', border: '1px solid var(--bdr2)', color: 'var(--text2)', borderRadius: '7px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 },
+        }, copied ? '✓ Copied' : '📋 Copy'),
         h('button', {
           onClick: doPrint,
           title: 'Print this report — every scoped store\'s uncounted items, sorted by location then class.',
@@ -77,24 +122,26 @@ export function EOMMissingItemsReportPanel({ rows, period, reportAsOf, scopeLabe
 
       list.length === 0
         ? div({ style: { color: 'var(--text3)', fontSize: '13px', padding: '20px 4px' } }, 'No uncounted items in the current scope — every item on record has a count inside its window. ✓')
-        : div({ className: 'eom-block', style: { overflowX: 'auto' } },
-            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } }, [
-              h('thead', { key: 'h' }, h('tr', null, [th('Location'), th('Class'), th('Item'), th('Last Counted'), th('$ On Hand'), th('Recommendation')])),
-              h('tbody', { key: 'b' }, list.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
-                td(div(null,
-                  span({ style: { fontWeight: 600, color: 'var(--text)' } }, r.storeName),
-                  span({ style: { fontSize: '10px', color: 'var(--text3)', marginLeft: '5px' } }, r.org === 'emerald' ? 'FL' : 'OK'))),
-                td(DIGEST_CLASS_LABELS[r.cls] || r.cls),
-                td(div(null,
-                  div({ style: { color: 'var(--text)' } }, r.descr || r.wrin || '—'),
-                  r.wrin ? span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, r.wrin) : null)),
-                td(div(null,
-                  span(null, r.lastCounted ? fmtDate(r.lastCounted) : 'Never'),
-                  span({ style: { display: 'block', fontSize: '9.5px', fontWeight: 700, color: STATE_BADGE[r.state] || 'var(--text3)' } }, STATE_LABEL[r.state] || r.state || ''))),
-                td(money(r.onHandAmt), { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }),
-                td(div({ style: { maxWidth: '360px', color: 'var(--text2)' } }, r.recommendation)),
-              ]))),
-            ])),
+        : div(null, ...grouped.map(loc => div({ key: loc.loc, className: 'eom-block', style: { marginBottom: '16px', overflowX: 'auto' } },
+            div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '6px' } },
+              span({ style: { fontWeight: 700, color: 'var(--text)', fontSize: '13px' } }, loc.storeName),
+              span({ style: { fontSize: '10px', color: loc.org === 'emerald' ? '#38bdf8' : '#f5bc00' } }, loc.org === 'emerald' ? 'FL' : 'OK')),
+            ...loc.groups.map((g, gi) => div({ key: gi, style: { marginBottom: '8px' } },
+              div({ style: { fontSize: '11.5px', fontWeight: 600, color: 'var(--text2)', marginBottom: '3px' } }, g.label),
+              h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12.5px' } }, [
+                h('thead', { key: 'h' }, h('tr', null, [th('Class'), th('Item'), th('Last Counted'), th('$ On Hand')])),
+                h('tbody', { key: 'b' }, g.items.map((r, i) => h('tr', { key: i, style: { borderBottom: '1px solid var(--bdr)' } }, [
+                  td(DIGEST_CLASS_LABELS[r.cls] || r.cls),
+                  td(div(null,
+                    div({ style: { color: 'var(--text)' } }, r.descr || r.wrin || '—'),
+                    r.wrin ? span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, r.wrin) : null)),
+                  td(div(null,
+                    span(null, r.lastCounted ? fmtDate(r.lastCounted) : 'Never'),
+                    span({ style: { display: 'block', fontSize: '9.5px', fontWeight: 700, color: STATE_BADGE[r.state] || 'var(--text3)' } }, STATE_LABEL[r.state] || r.state || ''))),
+                  td(money(r.onHandAmt), { textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }),
+                ]))),
+              ])))),
+          )),
     ),
   );
 }

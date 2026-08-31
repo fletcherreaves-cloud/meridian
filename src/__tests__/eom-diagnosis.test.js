@@ -98,6 +98,13 @@ describe('runDiagnosis — editable check registry', () => {
     expect(rpt).toMatch(/awaiting data/i);
   });
 
+  it('the Decision Guide 2x2 is bracketed by horizontal dividers (2026-08-31, owner: focus attention on it and the section after)', () => {
+    const res = runDiagnosis({ store: 's', period: '2026-07', data: { variance: [{ wrin: 'a', descr: 'Beef', dolDiff: -500, cls: 'Food' }] } });
+    const rpt = formatDiagnosisReport(res);
+    expect(rpt).toMatch(/---\n\n## 🧭 Decision guide/);
+    expect(rpt).toMatch(/still-fixable count \(recount\)\._\n\n---/);
+  });
+
   it('elevates a Food/Condiment item counted EARLY to a top priority (Holdenville case)', () => {
     const incomplete = { uncountedCount: 1, byState: { early: { n: 1, value: 259 } }, uncounted: [
       { wrin: '20206-000', descr: 'McCrispy Chicken Strips', cls: 'food', state: 'early', valueAtRisk: 259, onHandAmt: 259, totalUnits: 12, lastCounted: '2026-07-22' } ] };
@@ -183,6 +190,13 @@ describe('runDiagnosis — editable check registry', () => {
     // fail if reverted to items.join(' · ') on one L.push() call.
     expect(full).toMatch(/- Bacon \(\$600 swing ↔\)\n\s*- Beef/);
     expect(full).not.toMatch(/swing ↔\) · /);
+    // 2026-08-31 owner copy edit -- the "verify, don't accuse" framing is gone from both the
+    // section header and its intro caption (going out to GMs/Supervisors; the owner asked for it
+    // trimmed). Reworded caption keeps the substance, drops the explicit "not an accusation" line.
+    expect(full).toMatch(/## 🔍 Second-Look Signals\n/);
+    expect(full).not.toMatch(/Second-Look Signals — verify, don't accuse/);
+    expect(full).not.toMatch(/Nothing here is an accusation/);
+    expect(full).toMatch(/A clean recount \/ verify makes these numbers airtight\. and are worth a second look\./);
   });
 
   it('surfaces a granted count-date exception (banner + off-process note on the all-counted line)', () => {

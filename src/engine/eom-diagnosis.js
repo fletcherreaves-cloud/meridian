@@ -1116,8 +1116,8 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   {
     const intgFull = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
     if (intgFull.length) {
-      L.push(`## 🔍 ${INTEGRITY_LABEL} — verify, don't accuse`, '');
-      L.push('_A clean recount / verify makes these numbers airtight. Nothing here is an accusation — just entries worth a second look together._', '');
+      L.push(`## 🔍 ${INTEGRITY_LABEL}`, '');
+      L.push('_A clean recount / verify makes these numbers airtight. and are worth a second look._', '');
       // Roll up items that share the SAME diagnosis into ONE coaching block + a compact item list,
       // instead of repeating an identical paragraph N times (owner 2026-07-31). Recount-swings group by
       // counter×day (they carry timing + consequence); every other repeated check rolls up generically
@@ -1210,12 +1210,14 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // (self-corrects); only a REAL physical loss and NOT-yet-counted items remain. The 2×2 keeps a
   // manager from chasing a locked, verified one-off — while still chasing the CAUSE of a recurring
   // loss (it can't be recovered this period, but it recurs next). See memory/project-eom-uncounted.
+  L.push('---', '');
   L.push('## 🧭 Decision guide — act on it, or let it go?', '');
   L.push('_Verified: a mid-month **count error** washes out of the monthly number (QSRSoft anchors period-to-period, so intermediate counts cancel). Only a **real physical loss** and **not-yet-counted** items still move the figure — so the only question that matters is which of those a variance is._', '');
   L.push('| Once the EOM count is verified | One-off | Recurring (see pattern chips) |', '|---|---|---|');
   L.push('| **Real loss** | Locked — note it, move on. No EOM recovery. | Locked this period, but **chase the cause** (portion/yield/theft/process) — it comes back next month. |');
   L.push('| **Count artifact** | Noise — it self-corrected; coach count discipline. | Early count not re-counted at EOM → **fixable**: get a real count now (protects next month\'s opening). |');
   L.push('_"Don\'t chase rabbits at EOM" applies to just one cell — a **one-off real loss** (top-left: already locked, nothing to recover). The other three all deserve action. The value is separating that locked one-off (drop it) from a recurring loss (fix the cause) and from a still-fixable count (recount)._', '');
+  L.push('---', '');
 
   // ── EARLIER-COUNT CONTEXT — reframed as an ACCURACY/PERFORMANCE signal, not a $ recovery (owner
   // 2026-07-30, grounded in the telescoping math). Mid-cycle counts wash out of the final EOM number
