@@ -456,9 +456,14 @@ export const DEFAULT_CHECKS = [
         .sort((a, b) => amtDays[b].size - amtDays[a].size);
       for (const a of staticHits) {
         const n = amtDays[a].size;
+        // Cents precision here, NOT _mny()'s whole-dollar rounding (2026-08-31 fix): the whole point
+        // of this check is the exact repeated figure -- a genuinely repeated $0.05 (real, common: a
+        // single fry portion) rounds to "$0" under _mny() and reads as a nonsensical "flagged $0
+        // waste" finding. amtDays is already keyed by toFixed(2), so `a` IS the precise amount.
+        const amtStr = `$${a}`;
         out.push(mkFinding('waste-inflation', SEVERITY.medium,
-          `Repeated static waste value: ${_mny(Number(a))}`,
-          `The exact same ${_mny(Number(a))} waste amount was logged on ${n} separate days — looks like a guessed/copy-paste value to clear the closing prompt, not a real toss. Coach: log what was actually thrown or leave it blank ("zero is better than fake") — for ice cream mix or fries, a quick weigh gets it exact.`,
+          `Repeated static waste value: ${amtStr}`,
+          `The exact same ${amtStr} waste amount was logged on ${n} separate days — looks like a guessed/copy-paste value to clear the closing prompt, not a real toss. Coach: log what was actually thrown or leave it blank ("zero is better than fake") — for ice cream mix or fries, a quick weigh gets it exact.`,
           Number(a) * n, { amount: Number(a), nDays: n }));
       }
       return out;
@@ -1144,8 +1149,13 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
           try { const dTs = day ? eventTs(day, null) : null; const ws = result.period ? countWindowStart(result.period).getTime() : null; if (dTs != null && ws != null && dTs < ws) midCycle = true; } catch { /* keep false */ }
           const consequence = midCycle ? ' _Mid-cycle — this washes out of THIS EOM number (opening + final count drive the P&L); a weekly-count + process-coaching signal, not a period-binding loss._' : '';
           L.push(`- **Recount swings — ${g.length} items${mgr ? `, single counter (${mgr})` : ''}${day ? `, ${day}` : ''}.** A recount swing this large between counting sessions — with no delivery in between — is where a **3rd count by a different manager** should be required before saving. Verify which count was right so the on-hand is clean.${nCross ? ` ${nCross} crossed zero (offsetting).` : ''}${timing ? ' ' + recountTimingSentence(timing) : ''}${consequence}`);
+          // One item per line (2026-08-31 fix), not join(' · ') on a single run-on line -- with
+          // long per-item clauses (this repo's norm), a dot-joined paragraph reads as an
+          // unreadable wall of text. mdToHtml() trims each line before matching, so a `- ` prefix
+          // still registers as its own list item regardless of indentation.
           const items = g.slice().sort((a, b) => (b.dollars || 0) - (a.dollars || 0)).map(f => `${(f.title || '').replace(/^Recount swing:\s*/, '')} (${money(f.dollars)} swing${f.data?.crossZero ? ' ↔' : ''})`);
-          L.push(`  ${items.slice(0, 12).join(' · ')}${items.length > 12 ? ` _+${items.length - 12} more_` : ''}`);
+          items.slice(0, 12).forEach(it => L.push(`  - ${it}`));
+          if (items.length > 12) L.push(`  - _+${items.length - 12} more_`);
           blocks++;
         } else if (g.length >= 2) {
           const tail = commonTail(g.map(f => f.detail || ''));
@@ -1162,7 +1172,9 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
               const spec = head ? lead.split(/\s+/).slice(hk).join(' ') : lead;
               return `${(f.title || '').replace(/^[^:]+:\s*/, '')}${spec ? ` ${spec}` : ''}`;
             });
-            L.push(`  ${items.slice(0, 12).join(' · ')}${items.length > 12 ? ` _+${items.length - 12} more_` : ''}`);
+            // One item per line (2026-08-31 fix) -- see the recount-swing block above for why.
+            items.slice(0, 12).forEach(it => L.push(`  - ${it}`));
+            if (items.length > 12) L.push(`  - _+${items.length - 12} more_`);
           } else {
             g.forEach(f => L.push(`- **${f.title}** — ${f.detail}`));
           }

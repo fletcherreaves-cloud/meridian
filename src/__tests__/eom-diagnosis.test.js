@@ -179,6 +179,10 @@ describe('runDiagnosis — editable check registry', () => {
     expect(full).toMatch(/Recount swings — 4 items, single counter \(Marlena F\)/);
     expect((full.match(/A recount swing this large/g) || []).length).toBe(1); // coaching appears once
     expect(full).toMatch(/McNuggets \(\$600 swing ↔\)/);                            // compact item list (600 = 300→-300 delta)
+    // 2026-08-31 fix: one item per line, not a single run-on "A · B · C · D" paragraph -- would
+    // fail if reverted to items.join(' · ') on one L.push() call.
+    expect(full).toMatch(/- Bacon \(\$600 swing ↔\)\n\s*- Beef/);
+    expect(full).not.toMatch(/swing ↔\) · /);
   });
 
   it('surfaces a granted count-date exception (banner + off-process note on the all-counted line)', () => {
@@ -478,6 +482,19 @@ describe('newly-lit checks consume mapped eBOS data', () => {
     expect(f).toBeTruthy();
     expect(f.data.nDays).toBe(6);
     expect(f.detail).toMatch(/static|copy-paste|guessed/i);
+  });
+
+  it('waste-inflation shows cents precision for a sub-dollar repeated value, not "$0" (2026-08-31 fix)', () => {
+    // A real, common case: $0.05 waste logged repeatedly. _mny()'s whole-dollar rounding would
+    // print this finding's own title/detail as "Repeated static waste value: $0" -- confusing and
+    // reads as nonsensical (why would $0 waste ever be suspicious?). The amount itself (a
+    // guessed/copy-paste placeholder) is what matters here, so it must show as "$0.05".
+    const waste = ['10', '11', '12', '13'].map(d => ({ dt: `2026-07-${d}`, amount: 0.05 }));
+    const f = runDiagnosis({ store: 's', period: '2026-07', data: { waste } }).findings.find(x => x.checkId === 'waste-inflation' && x.data.amount === 0.05);
+    expect(f).toBeTruthy();
+    expect(f.title).toBe('Repeated static waste value: $0.05');
+    expect(f.detail).toMatch(/\$0\.05/);
+    expect(f.title).not.toMatch(/\$0(?!\.)/); // never the bare, rounded-to-zero "$0"
   });
 
   it('waste-inflation stays silent on a normal, varied waste log', () => {
