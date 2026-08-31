@@ -21,6 +21,15 @@ const toDate = v => {
 };
 
 // Shape on-hand rows (snake or camel) into the runDiagnosis / count shape.
+// active + updatedAt (2026-08-31, dispatch: Ada's Fried Apple Pie [00076-126] reconciliation) --
+// this was dropping both fields, the SAME bug v5.283 fixed in qsrsoft-onhand-pull.mjs's
+// toEngineRows() for the emailed-digest/notification-resend paths. This function is the single
+// shared builder the Share view calls (eom-share-view.js) -- without these two fields,
+// diagnoseIncompleteCount()'s droppedFromCurrentPull() signal can never fire here even after
+// the edge function (supabase/functions/eom-share/index.ts) forwards them, because this is the
+// last stop before diagnoseIncompleteCount() runs. The in-app EOM Dashboard doesn't go through
+// this function (it calls diagnoseIncompleteCount() directly on the browser loader's rows, which
+// already carry both fields) -- that's why the bug only showed up in the share-link report.
 function shapeOnHand(rows) {
   return (rows || []).map(r => ({
     wrin: r.wrin, cls: r.cls, descr: r.descr,
@@ -28,6 +37,8 @@ function shapeOnHand(rows) {
     totalUnits: r.total_units ?? r.totalUnits ?? null,
     lastCounted: toDate(r.last_counted ?? r.lastCounted),
     lastSubmitted: toDate(r.last_submitted ?? r.lastSubmitted),
+    active: r.active ?? null,
+    updatedAt: r.updated_at ?? r.updatedAt ?? null,
   }));
 }
 

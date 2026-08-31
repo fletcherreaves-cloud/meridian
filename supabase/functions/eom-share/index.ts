@@ -102,7 +102,16 @@ Deno.serve(async (req) => {
       const R = (x: { data: unknown[] | null }) => (x?.data || []) as Record<string, unknown>[];
       // Map to the SAME shapes the client loaders produce so the shared builder reads them identically.
       const fob = R(fobR).map(r => ({ loc: r.loc, date: r.date, prodSalesAmt: r.prod_sales_amt, compWasteAmt: r.comp_waste_amt, rawWasteAmt: r.raw_waste_amt, condimentsAmt: r.condiments_amt, empMgrMealsAmt: r.emp_mgr_meals_amt, statVarianceAmt: r.stat_variance_amt, unexplainedAmt: r.unexplained_amt }));
-      const onHand = R(ohR).map(r => ({ wrin: r.wrin, descr: r.descr, cls: r.cls, totalUnits: r.total_units, unitPrice: r.unit_price, onHandAmt: r.on_hand_amt, lastCounted: r.last_counted, lastSubmitted: r.last_submitted }));
+      // active + updatedAt (2026-08-31, dispatch: Ada's Fried Apple Pie [00076-126] reconciliation) --
+      // this mapper was dropping both fields, the SAME bug v5.283 fixed in
+      // scripts/qsrsoft-onhand-pull.mjs's toEngineRows() for the emailed-digest/notification-resend
+      // paths. Without them, diagnoseIncompleteCount()'s droppedFromCurrentPull() signal (qsr_onhand
+      // is upsert-only; a WRIN that stops appearing in the store's On-Hand Report response just stops
+      // refreshing while its siblings keep updating) can never fire for THIS share-link report --
+      // live-measured: Ada/00076-126's own row hasn't been touched since 2026-08-20T13:40Z while the
+      // store's freshest on-hand row is 2026-08-31T14:37Z, an 11-day gap, yet the live report still
+      // showed it "counted early (last 2026-08-13)" instead of routing to verify-&-clear.
+      const onHand = R(ohR).map(r => ({ wrin: r.wrin, descr: r.descr, cls: r.cls, totalUnits: r.total_units, unitPrice: r.unit_price, onHandAmt: r.on_hand_amt, lastCounted: r.last_counted, lastSubmitted: r.last_submitted, active: r.active, updatedAt: r.updated_at }));
       const variance = R(varR).map(r => ({ loc: r.loc, period: r.period, wrin: r.wrin, cls: r.cls, descr: r.descr, rawWaste: r.raw_waste, compWaste: r.comp_waste, expUsage: r.exp_usage, actUsage: r.act_usage, variance: r.variance, dolDiff: r.dol_diff, yield: r.yield_val, yieldLo: r.yield_lo, yieldHi: r.yield_hi, pctOfSales: r.pct_sales, rawItemId: r.raw_item_id }));
       const rawItems = R(rawR).map(r => ({ wrin: r.wrin, descr: r.descr, cls: r.item_class, history: Array.isArray(r.history) ? r.history : [] }));
       const waste = R(wasteR).map(r => ({ loc: r.loc, period: r.period, eventId: r.event_id, dt: r.busn_dt, tm: r.busn_tm, type: r.wtype, amount: r.amount, manager: r.manager, source: r.wsource, edited: r.edited, reason: r.reason }));

@@ -53,4 +53,35 @@ describe('buildEomReport (shared dashboard + share-link builder)', () => {
     // Narrative FOB line still reads the same as before this fix (regression guard).
     expect(r.recapMd).toMatch(/FOB 3\.90%/);
   });
+
+  // 2026-08-31 — Ada-Country Club (loc 6972) Fried Apple Pie [00076-126] reconciliation. Owner
+  // reported the Share-view/MBI report still shows "counted early (last 2026-08-13)" for an item
+  // QSRSoft's own UI now tags "(Deactivated)". Live service-role query confirmed our own qsr_onhand
+  // row for this WRIN/period hasn't been touched since 2026-08-20T13:40:26Z (active still true in
+  // OUR copy) while the store's freshest on-hand row is 2026-08-31T14:37:07Z -- an 11-day gap, the
+  // exact droppedFromCurrentPull() shape v5.283 fixed for Durant. Root cause here: shapeOnHand()
+  // (this file) was dropping `active`/`updatedAt` before calling diagnoseIncompleteCount(), so the
+  // signal could never fire for the Share view even after v5.283's edge-function-side fix. The
+  // in-app EOM Dashboard doesn't go through shapeOnHand() (it calls diagnoseIncompleteCount()
+  // directly on the browser loader's rows), which is why this only showed up in the shared report.
+  it('2026-08-31: shapeOnHand() carries active/updatedAt so droppedFromCurrentPull() fires for the Share view (real Ada numbers)', () => {
+    const r = buildEomReport({
+      loc: '6972', name: 'Ada-Country Club', period: '2026-08', asOf: new Date('2026-08-31T18:00:00Z'),
+      onHand: [
+        { wrin: '00076-126', cls: 'Food', descr: 'Fried Apple Pie', on_hand_amt: 30.58, last_counted: '2026-08-13', last_submitted: '2026-08-13', active: true, updated_at: '2026-08-20T13:40:26.723Z' },
+        // Sibling item that kept refreshing today — sets the store's own freshest-pull anchor.
+        { wrin: '99999-999', cls: 'Food', descr: 'Something Else', on_hand_amt: 10, last_counted: '2026-08-30', last_submitted: '2026-08-30', active: true, updated_at: '2026-08-31T14:37:07.117Z' },
+      ],
+    });
+    const item = r.incomplete.uncounted.find(u => u.wrin === '00076-126');
+    // Without the fix (shapeOnHand dropping active/updatedAt), this same input classifies 'early'
+    // instead — verified directly against diagnoseIncompleteCount() with the pre-fix row shape.
+    expect(item.state).toBe('stale');
+    // Routed to the "verify & clear" framing, not "recount now" — the doNow action text is the
+    // one place this reaches the rendered report at this fixture's size (the itemized
+    // Obsolete/Discontinued table only renders once findings are non-trivial; state is the
+    // ground truth diagnoseIncompleteCount() and every consumer — dashboard, digest, SAGE — reads).
+    expect(r.fullMd).toMatch(/Verify & clear the 1 obsolete\/inactive Food\/Condiment item/);
+    expect(r.fullMd).not.toMatch(/counted early|counted EARLY/i);
+  });
 });
