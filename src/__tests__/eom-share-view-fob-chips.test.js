@@ -91,4 +91,37 @@ describe('EomShareView FOB chip strip — percent primary, dollar secondary, vs-
     expect(text).not.toMatch(/tgt \d/);
     act(() => { root.unmount(); });
   });
+
+  // 2026-08-30 finding: DEFAULT_TARGETS (constants.js) is a hardcoded build-time snapshot that
+  // never reflects a fresh monthly_targets workbook upload -- confirmed live for Tishomingo
+  // (real August FOB target 3.95%, DEFAULT_TARGETS still seeded at 4.00%). The edge function's
+  // fetchMonthlyTargetOverride() resolves the real current-month value; this proves the client
+  // actually uses it (would fail if reverted to reading DEFAULT_TARGETS[loc] alone).
+  it('a monthlyOverride from the edge function wins over the hardcoded DEFAULT_TARGETS seed', async () => {
+    vi.resetModules();
+    vi.doMock('../lib/supabase.js', () => ({
+      fetchSharedEom: async () => ({
+        loc: LOC, storeName: 'Ardmore-Broadway', title: 'EOM FOB 2026-08', period: '2026-08',
+        fob: SNAPSHOT_FOB, recapMd: '# Recap', fullMd: '# Full',
+        expiresAt: null, createdAt: '2026-08-29T00:00:00Z', acknowledgedAt: null,
+        monthlyOverride: { tFOBTarget: 0.0395, tCondiment: 0.019 }, // real override, differs from DEFAULT_TARGETS[LOC]
+      }),
+      refreshSharedEom: async () => ({ error: 'offline' }),
+      acknowledgeSharedEom: async () => ({}),
+    }));
+    const { EomShareView: OverrideView } = await import('../views/eom-share-view.js');
+    const { container, root } = mountRoot();
+    await act(async () => {
+      root.render(React.createElement(OverrideView, { token: '33333333-3333-3333-3333-333333333333' }));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+    const text = container.textContent;
+    expect(TGT?.tFOBTarget).not.toBe(0.0395); // sanity: the seed really differs from the override
+    expect(TGT?.tCondiment).not.toBe(0.019);
+    expect(text).toMatch(/tgt 3\.95%/);   // FOB chip uses the override, not DEFAULT_TARGETS' seed
+    expect(text).toMatch(/tgt 1\.90%/);   // Condiments chip uses the override too
+    expect(text).not.toMatch(new RegExp(`tgt ${(TGT.tFOBTarget * 100).toFixed(2)}%`)); // stale FOB seed must NOT show
+    expect(text).not.toMatch(new RegExp(`tgt ${(TGT.tCondiment * 100).toFixed(2)}%`)); // stale condiment seed must NOT show
+    act(() => { root.unmount(); });
+  });
 });

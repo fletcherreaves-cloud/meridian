@@ -281,7 +281,18 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
     .filter(r => !isCounted(r, windowStart))
     .map(r => {
       const d = countedDate(r);
-      const state = !d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early');
+      // QSRSoft's own `active` flag overrides the date-based state entirely (2026-08-30 fix,
+      // generalizing the Tishomingo/#43380 finding): a deactivated item (active===false, NOT
+      // null/undefined -- null means "unknown, pre-migration row", never treat that as inactive)
+      // is Obsolete/Discontinued/Inactive territory regardless of when it was last counted or
+      // whether it carries a nonzero residual. Previously only a HARD $0-AND-0-units item got
+      // caught (the zero-substance filter below), which missed a deactivated item with a small
+      // real residual (Ada-Country Club, 2026-08-30: LEMONS $11.07 and Big Mac Sauce Cup -$1.47,
+      // both active:false, both still landing in the 'early' bucket and getting the aggressive
+      // "recount now, real gap" framing meant for genuinely active items). Forcing 'stale' routes
+      // it to the SAME "verify & clear" bucket real obsolete items already get -- consistent
+      // everywhere this function's output is consumed (digest, dashboard, diagnosis report).
+      const state = r.active === false ? 'stale' : (!d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early'));
       return {
         wrin: r.wrin,
         descr: r.descr || r.desc,

@@ -118,9 +118,6 @@ tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-mono
 
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
-// Per-store FOB target (Food-Over-Base % of product sales) — over target = worse food cost =
-// prioritize the diagnosis (owner req 2026-07-30). tFOBTarget is a fraction (e.g. 0.0385 = 3.85%).
-const fobTgtOf = loc => { const t = DEFAULT_TARGETS[unpad(loc)]; return t && t.tFOBTarget != null ? Number(t.tFOBTarget) : null; };
 const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%';
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%'; // FOB % — 2 decimals
 
@@ -564,10 +561,18 @@ function ClassChips({ byClass, uncounted, npDueToday }) {
 
 // FOB component strip (owner req) — FOB %/$ + each component's $, % of sales, and ± vs its own
 // target. Shared by the diagnosis panel AND the store-message draft so they read identically.
-function FobStrip({ fob, loc }) {
+// `monthlyOverride` -- this month's uploaded monthly_targets row for `loc` (already tXxx-shaped
+// by loadMonthlyTargets(), spread on TOP of DEFAULT_TARGETS below) so a mid-month target upload
+// (Monthly Targets workbook) actually changes what this chip shows. Previously read
+// DEFAULT_TARGETS[loc] alone -- the hardcoded constants.js snapshot never updates after a fresh
+// monthly upload, so this silently showed a stale target for any store/field the owner had since
+// overridden (found 2026-08-30: Tishomingo's real August FOB target is 3.95%, this was showing
+// the stale 4.00% seed -- confirmed live against monthly_targets, not assumed). Never override
+// with a present-but-null field -- loadMonthlyTargets() already strips those via _stripNullTargets.
+function FobStrip({ fob, loc, monthlyOverride }) {
   const f = fob || {};
   if (f.fob == null && f.fobPct == null) return null;
-  const tg = DEFAULT_TARGETS[unpad(loc)] || {};
+  const tg = { ...(DEFAULT_TARGETS[unpad(loc)] || {}), ...(monthlyOverride || {}) };
   const fobTgt = tg.tFOBTarget;
   const $ = v => `$${Math.round(v || 0).toLocaleString()}`;
   const box = { padding: '3px 9px', background: 'var(--surf3)', border: '1px solid var(--bdr)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '1px' };
@@ -1349,18 +1354,25 @@ const FOB_COMP_TGT = { comp: 'tCompWaste', raw: 'tRawWaste', cond: 'tCondiment',
 // District comparison is dollar-weighted (Σ$ ÷ Σsales — never average averages).
 // Outlier = a store's component runs >1.5× the district rate (and is material);
 // each store's single biggest component is flagged ▸ as its primary driver.
-function FobVarianceMatrix({ rows, showDollars, sortKey, onSort }) {
+// `monthlyOverrideFor(loc, period)` -- passed down from EOMDashboardPanel's own monthly_targets
+// state (2026-08-31 fix), spread over DEFAULT_TARGETS below so this matrix stops showing the
+// hardcoded constants.js seed once the owner has uploaded a fresher monthly target. `period`
+// is this matrix's OWN period (the caller's `rows` are already period-scoped) -- never re-derive
+// which month from `rows` itself.
+function FobVarianceMatrix({ rows, showDollars, sortKey, onSort, period, monthlyOverrideFor }) {
   const withFob = rows.filter(r => r.components && r.components.sales > 0);
   const tot = { sales: 0, fob: 0 }; FOB_COMPONENTS.forEach(([k]) => tot[k] = 0);
   withFob.forEach(r => { const c = r.components; tot.sales += c.sales; tot.fob += c.fob || 0; FOB_COMPONENTS.forEach(([k]) => tot[k] += c[k] || 0); });
   const distPct = k => tot.sales ? tot[k] / tot.sales : 0;
   const ratePct = (c, k) => (c[k] || 0) / (c.sales || 1);
+  const tgOf = loc => ({ ...(DEFAULT_TARGETS[unpad(loc)] || {}), ...((monthlyOverrideFor && monthlyOverrideFor(loc, period)) || {}) });
   // Per-component target + over/under (pp) vs a store's OWN target — over target = worse food cost
   // (owner Notes 38: measure vs target, not raw rate/$). District target = sales-weighted.
-  const tgtOf = (loc, k) => { const t = (DEFAULT_TARGETS[unpad(loc)] || {})[FOB_COMP_TGT[k]]; return t != null ? Number(t) : null; };
+  const tgtOf = (loc, k) => { const t = tgOf(loc)[FOB_COMP_TGT[k]]; return t != null ? Number(t) : null; };
   const overTgt = (loc, k, c) => { const t = tgtOf(loc, k); return t == null ? null : (ratePct(c, k) - t) * 100; };
   const distTgt = k => { let n = 0, d = 0; for (const r of withFob) { const t = tgtOf(r.loc, k); if (t != null) { n += t * r.components.sales; d += r.components.sales; } } return d ? n / d : null; };
-  const distFobTgt = (() => { let n = 0, d = 0; for (const r of withFob) { const t = fobTgtOf(r.loc); if (t != null) { n += t * r.components.sales; d += r.components.sales; } } return d ? n / d : null; })();
+  const fobTgtOfM = loc => { const t = tgOf(loc).tFOBTarget; return t != null ? Number(t) : null; };
+  const distFobTgt = (() => { let n = 0, d = 0; for (const r of withFob) { const t = fobTgtOfM(r.loc); if (t != null) { n += t * r.components.sales; d += r.components.sales; } } return d ? n / d : null; })();
   const driverOf = c => FOB_COMPONENTS.map(([k]) => [k, ratePct(c, k)]).sort((a, b) => b[1] - a[1])[0][0];
   const cell = (c, k) => showDollars ? money(c[k] || 0) : pct2(ratePct(c, k));
 
@@ -1497,6 +1509,22 @@ export function SummaryTiles({ mode, summary, cycleSummary, classSummary, inWind
 // one-shot-prop pattern as PerformanceReviewsPanel's initialTab/initialCustomizeSection.
 export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, initialStore }) {
   const [period, setPeriod] = useState(defaultPeriod());   // early-month → prior month's EOM (still closing)
+  // ALL monthly_targets overrides, every period -- `ds.allMonthlyTargets` is already loaded ONCE
+  // at the App.js level (App.js:1523) and passed to every panel via `ds`, same source
+  // eom-supervisor.js's own computeStoreEOM() already reads (its `mt` lookup) -- no separate
+  // fetch needed here (2026-08-31 fix, simplified from an earlier redundant loadAllMonthlyTargets()
+  // call in this panel). NOT keyed to the panel's own selected `period`, because at least one
+  // consumer (fobReport below) computes its own `reportPeriod` that can differ from `period`
+  // (falls back to the last period with real FOB data when the current month's MTD is still all
+  // zero) -- a period-keyed lookup would silently mismatch that report's actual displayed month.
+  // Keys by 'YEAR-MONTH' with a NON-padded month (e.g. "2026-9"), matching review-engine.js's
+  // mergedTargetsForLocMonth's own key convention exactly.
+  const monthlyOverrideFor = useCallback((loc, periodStr) => {
+    const m = /^(\d{4})-0?(\d{1,2})$/.exec(periodStr || '');
+    if (!m) return null;
+    const bucket = ds?.allMonthlyTargets?.[`${m[1]}-${+m[2]}`];
+    return (bucket && (bucket[unpad(loc)] || bucket[String(loc)])) || null;
+  }, [ds]);
   // dispatch #225 Task 4 — real month picker: every period that actually has qsr_onhand/
   // eom_count_status data, no arbitrary cap (replaces the old hardcoded "last 4 months"
   // recentPeriods(4), which is kept below only as the graceful loading-state placeholder before
@@ -1990,7 +2018,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     const get = (s) => {
       const loc = String(s.loc), u = unpad(loc);
       const fob = cur[loc] || cur[u] || null;
-      const tg = DEFAULT_TARGETS[u] || {};
+      // Targets for the period actually being SHOWN (reportPeriod, which can differ from the
+      // panel's selected `period` -- see reportPeriod's own comment above), never the wrong month.
+      const tg = { ...(DEFAULT_TARGETS[u] || {}), ...(monthlyOverrideFor(u, reportPeriod) || {}) };
       const compActual = (fob && fob.sales) ? {
         statv: fob.statv / fob.sales, comp: fob.comp / fob.sales, raw: fob.raw / fob.sales,
         cond: fob.cond / fob.sales, emp: fob.emp / fob.sales, unex: fob.unex / fob.sales,
@@ -1998,13 +2028,13 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const compTarget = { statv: tg.tStatLoss, comp: tg.tCompWaste, raw: tg.tRawWaste, cond: tg.tCondiment, emp: tg.tEmpFood, unex: tg.tUnex };
       return {
         name: s.name, org: s.org === 'emerald' ? 'FL' : 'OK', patch: patchOfLoc(u),
-        fob, target: fobTgtOf(loc), monthly: monthlyByLoc[loc] || monthlyByLoc[u] || {},
+        fob, target: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, monthly: monthlyByLoc[loc] || monthlyByLoc[u] || {},
         varRows: (varSource[loc] || varSource[u] || []).filter(v => v.hasDollars).map(v => ({ descr: v.descr, wrin: v.wrin, dolDiff: v.dolDiff })),
         compActual, compTarget,
       };
     };
     return { ...buildFobReport({ stores: rows, get }), reportPeriod };
-  }, [rows, fobRows, varByLoc, prevVarByLoc, period, patchOfLoc]);
+  }, [rows, fobRows, varByLoc, prevVarByLoc, period, patchOfLoc, monthlyOverrideFor]);
 
   // dispatch #215 Task 2/4 — client-side roll-up digest input, built from data ALREADY loaded in
   // this panel (rows/fobReport) — no new fetch. classStatusesFromProgress() (src/engine/
@@ -2314,14 +2344,24 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   }, [period, byLoc]);
 
   // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
-  const districtSummary = useMemo(() => buildDistrictSummary(rows, DEFAULT_TARGETS), [rows]);
+  // Merged per-store targets (DEFAULT_TARGETS < this period's monthly_targets override, 2026-08-31
+  // fix) built ONCE for the whole store universe and passed to buildDistrictSummary() in place of
+  // raw DEFAULT_TARGETS -- it indexes targetsByLoc[loc] internally already, so no other change is
+  // needed there. sumCsv's own dOf() below reuses the SAME map for its per-component deltas
+  // instead of a second raw DEFAULT_TARGETS lookup, so the CSV export can't drift from this panel.
+  const mergedTgts = useMemo(() => {
+    const out = {};
+    for (const loc in DEFAULT_TARGETS) out[loc] = { ...DEFAULT_TARGETS[loc], ...(monthlyOverrideFor(loc, period) || {}) };
+    return out;
+  }, [monthlyOverrideFor, period]);
+  const districtSummary = useMemo(() => buildDistrictSummary(rows, mergedTgts), [rows, mergedTgts]);
   const sumCsv = () => {
     const H = ['Store', 'Prod Sales', 'FOB $', 'FOB %', 'FOB target %', 'FOB ± pp',
       ...COMP_META.map(m => `${m.label} $`), ...COMP_META.map(m => `${m.label} %`), ...COMP_META.map(m => `${m.label} ±pp`),
       'Count %', ...CLASS_META.map(m => `${m.label} %`), 'Ready', 'Uncounted F/C', '$ over target'];
     const rows2 = districtSummary.stores.map(s => {
       const pctOf = k => s.sales ? (s.comps[k] / s.sales * 100) : null;
-      const dOf = m => { const p = pctOf(m.k); const t = DEFAULT_TARGETS[unpad(s.loc)]?.[m.tgt]; return (p != null && t != null) ? (p - t * 100) : null; };
+      const dOf = m => { const p = pctOf(m.k); const t = mergedTgts[unpad(s.loc)]?.[m.tgt]; return (p != null && t != null) ? (p - t * 100) : null; };
       return [nm(s.loc), Math.round(s.sales), Math.round(s.fobD), s.fobPct != null ? (s.fobPct * 100).toFixed(2) : '', s.fobTgt != null ? (s.fobTgt * 100).toFixed(2) : '', s.deltaPp != null ? s.deltaPp.toFixed(2) : '',
         ...COMP_META.map(m => Math.round(s.comps[m.k])), ...COMP_META.map(m => { const p = pctOf(m.k); return p != null ? p.toFixed(2) : ''; }), ...COMP_META.map(m => { const d = dOf(m); return d != null ? d.toFixed(2) : ''; }),
         s.countPct != null ? (s.countPct * 100).toFixed(2) : '', ...CLASS_META.map(m => { const p = s.classPct[m.k]; return p != null ? (p * 100).toFixed(2) : ''; }), s.believesDone ? 'yes' : 'no', s.uncountedFC, s.over$ != null ? Math.round(s.over$) : ''];
@@ -2418,11 +2458,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     const caseSzByWrin = {};
     for (const it of (rawByLoc[loc] || [])) { if (it.caseSz > 0) caseSzByWrin[String(it.wrin)] = it.caseSz; }
     const c = components || {};
-    const tg = DEFAULT_TARGETS[unpad(loc)] || {};
+    // 2026-08-31 fix -- this `tg` feeds the RECAP/FULL REPORT TEXT itself (the "vs 4.00% target"
+    // line, and formatDiagnosisReport()'s driver-analysis that names which component is driving
+    // an overage), not just a UI chip -- so a stale DEFAULT_TARGETS-only value here was wrong in
+    // the actual message body sent to stores, not just on-screen.
+    const tg = { ...(DEFAULT_TARGETS[unpad(loc)] || {}), ...(monthlyOverrideFor(loc, period) || {}) };
     const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
     const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null, components: fobComponentDeltas(c, tg) } : null;
     return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null };
-  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions]);
+  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions, monthlyOverrideFor]);
 
   // Pure — returns the draft object with BOTH the abbreviated recap (default message, Notes 37 C1)
   // and the full report one click away. Reused by openDraft AND the bulk "Message all" generator.
@@ -3010,7 +3054,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                 return a == null ? null : span({ style: { fontSize: '10px', color: a > 40 ? 'var(--crit)' : 'var(--text3)', marginLeft: '5px' } }, a === 0 ? 'today' : `${a}d ago`);
               })()),
             (() => {
-              const tgt = fobTgtOf(r.loc);
+              // 2026-08-31 fix -- mergedTgts (DEFAULT_TARGETS < this period's monthly_targets
+              // override) instead of the raw fobTgtOf(), so the main Scoreboard/EOM Count FOB
+              // column stops showing a stale target after a fresh monthly upload.
+              const tgtRow = mergedTgts[unpad(r.loc)];
+              const tgt = tgtRow && tgtRow.tFOBTarget != null ? Number(tgtRow.tFOBTarget) : null;
               const d = (r.fobPct != null && tgt != null) ? r.fobPct - tgt : null;
               const over = d != null && d > 0.0005, under = d != null && d < -0.0005;
               const c = over ? 'var(--crit)' : under ? '#4ade80' : 'var(--text)';
@@ -3361,7 +3409,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         div({ style: { fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' } }, 'Subject'),
         div({ style: { fontSize: '13px', color: 'var(--text)', fontWeight: 600, marginBottom: '12px', padding: '8px 10px', background: 'var(--surf3)', borderRadius: '6px', border: '1px solid var(--bdr)' } }, draft.subject),
         // FOB component strip verbatim (owner Notes 38) — same tiles the diagnose panel shows on top.
-        h(FobStrip, { fob: draft.fob, loc: draft.loc }),
+        h(FobStrip, { fob: draft.fob, loc: draft.loc, monthlyOverride: monthlyOverrideFor(draft.loc, period) }),
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },
           span({ style: { fontSize: '12px', color: 'var(--text3)' } }, draftFull ? 'Full report' : 'Abbreviated recap'),
           div({ style: { display: 'flex', gap: '12px' } },
@@ -3413,7 +3461,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
         // FOB snapshot strip (owner req) — current period FOB $/% + all 6 components, low-profile,
         // right where the diagnosis works. FOB% vs the store's target: red = over (worse food cost).
-        h(FobStrip, { fob: diag.fob, loc: diag.loc }),
+        h(FobStrip, { fob: diag.fob, loc: diag.loc, monthlyOverride: monthlyOverrideFor(diag.loc, period) }),
 
         // FOB ANALYSIS report FIRST (owner reversed the order — this is where they work from).
         // Rendered markdown (tables, tiers, chips). Copy/Print use the raw text.
@@ -3978,7 +4026,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                 key: String(v), onClick: () => setFobDollars(v),
                 style: { background: fobDollars === v ? '#f5bc00' : 'var(--surf3)', color: fobDollars === v ? '#0f1117' : 'var(--text2)', border: 'none', padding: '5px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' },
               }, label)))),
-        h(FobVarianceMatrix, { rows, showDollars: fobDollars, sortKey: fobSort, onSort: setFobSort })),
+        h(FobVarianceMatrix, { rows, showDollars: fobDollars, sortKey: fobSort, onSort: setFobSort, period, monthlyOverrideFor })),
 
     // flow-editor modal — reorder/toggle checks + tune thresholds (persists to cloud)
     flowOpen && h(ModalShell, {

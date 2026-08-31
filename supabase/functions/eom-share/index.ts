@@ -24,6 +24,34 @@ const json = (body: unknown, status = 200) =>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// This month's monthly_targets override for one store's FOB components (2026-08-30 fix). The
+// client's DEFAULT_TARGETS (src/constants.js) is a hardcoded snapshot baked into the JS bundle --
+// it never reflects a fresh monthly workbook upload, so a share-link viewer was seeing a stale
+// target whenever the owner had since overridden it (found live: Tishomingo's real August FOB
+// target is 3.95%, this was showing a stale 4.00% seed). `monthly_targets.loc` is stored UNPADDED
+// (measured 2026-08-30 -- unlike qsr_fob/qsr_onhand/etc, which are zero-padded), so `link.loc`
+// needs no padding here, unlike the `refresh` action's other 7 table queries above. Mirrors the
+// exact field list scripts/qsrsoft-onhand-pull.mjs's resolveFobTargets() already uses for the
+// EOM Digest email pipeline -- monthly_targets only (not the full 4-tier company/state/patch/store
+// cascade review-engine.js's mergedTargetsForLocMonth resolves; that tier isn't editable mid-month
+// the way monthly_targets is, and pulling review-engine.js's heavier transitive graph into this
+// function for it was already judged out of scope once before, dispatch #213/v5.255).
+async function fetchMonthlyTargetOverride(sb: ReturnType<typeof createClient>, loc: string, period: string) {
+  const [year, month] = period.split('-').map(Number);
+  if (!year || !month) return null;
+  const { data } = await sb.from('monthly_targets').select('*').eq('loc', loc).eq('year', year).eq('month', month).maybeSingle();
+  if (!data) return null;
+  const t: Record<string, number> = {};
+  if (data.comp_waste_pct != null) t.tCompWaste = data.comp_waste_pct;
+  if (data.raw_waste_pct  != null) t.tRawWaste  = data.raw_waste_pct;
+  if (data.condiment_pct  != null) t.tCondiment = data.condiment_pct;
+  if (data.emp_food_pct   != null) t.tEmpFood   = data.emp_food_pct;
+  if (data.stat_loss_pct  != null) t.tStatLoss  = data.stat_loss_pct;
+  if (data.unex_diff_pct  != null) t.tUnex      = data.unex_diff_pct;
+  if (data.fob_target_pct != null) t.tFOBTarget = data.fob_target_pct;
+  return Object.keys(t).length ? t : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   try {
@@ -52,15 +80,24 @@ Deno.serve(async (req) => {
     // Strictly scoped to link.loc + link.period — no other store's data is ever queried or returned.
     if (action === 'refresh') {
       const loc = String(link.loc), period = String(link.period);
+      // These 7 tables all store `loc` zero-padded to the 7-char QSRSoft NSN convention (measured
+      // 2026-08-30: qsr_fob/qsr_onhand/qsr_variance_stat/qsr_raw_item_detail/qsr_waste/
+      // qsr_transfers/eom_count_exceptions all sample as e.g. "0043380") while `eom_share_links.loc`
+      // is stored unpadded ("43380"). Querying with the unpadded value silently matched ZERO rows
+      // on every one of these tables for every share link — the live-refresh banner never flipped
+      // to "Live" for anyone, always silently falling back to the frozen snapshot. Pad before
+      // querying, matching the same `String(loc).padStart(7,'0')` convention already used in
+      // src/lib/supabase.js (e.g. loadEomIntegrityFlags, loadOpsRows).
+      const padLoc = String(loc).padStart(7, '0');
       const mStart = `${period}-01`, mEnd = `${period}-31`;
       const [fobR, ohR, varR, rawR, wasteR, xferR, excR] = await Promise.all([
-        sb.from('qsr_fob').select('*').eq('loc', loc).gte('date', mStart).lte('date', mEnd),
-        sb.from('qsr_onhand').select('*').eq('loc', loc).eq('period', period),
-        sb.from('qsr_variance_stat').select('*').eq('loc', loc).eq('period', period),
-        sb.from('qsr_raw_item_detail').select('*').eq('loc', loc).eq('period', period),
-        sb.from('qsr_waste').select('*').eq('loc', loc).eq('period', period),
-        sb.from('qsr_transfers').select('*').eq('loc', loc).eq('period', period),
-        sb.from('eom_count_exceptions').select('*').eq('loc', loc).eq('period', period).maybeSingle(),
+        sb.from('qsr_fob').select('*').eq('loc', padLoc).gte('date', mStart).lte('date', mEnd),
+        sb.from('qsr_onhand').select('*').eq('loc', padLoc).eq('period', period),
+        sb.from('qsr_variance_stat').select('*').eq('loc', padLoc).eq('period', period),
+        sb.from('qsr_raw_item_detail').select('*').eq('loc', padLoc).eq('period', period),
+        sb.from('qsr_waste').select('*').eq('loc', padLoc).eq('period', period),
+        sb.from('qsr_transfers').select('*').eq('loc', padLoc).eq('period', period),
+        sb.from('eom_count_exceptions').select('*').eq('loc', padLoc).eq('period', period).maybeSingle(),
       ]);
       const R = (x: { data: unknown[] | null }) => (x?.data || []) as Record<string, unknown>[];
       // Map to the SAME shapes the client loaders produce so the shared builder reads them identically.
@@ -73,18 +110,22 @@ Deno.serve(async (req) => {
       const ex = excR?.data as Record<string, unknown> | null;
       const exception = ex ? { acceptedDate: ex.accepted_date, approvedBy: ex.approved_by, note: ex.note, kind: ex.kind } : null;
       const dates = [...fob.map(r => r.date), ...onHand.map(r => r.lastCounted)].filter(Boolean).map(String).map(s => s.slice(0, 10)).sort();
+      const monthlyOverride = await fetchMonthlyTargetOverride(sb, loc, period);
       return json({
         loc, period, storeName: link.store_name,
         live: { fob, onHand, variance, rawItems, waste, transfers, exception },
         syncedAsOf: dates.length ? dates[dates.length - 1] : null,
+        monthlyOverride,
       });
     }
 
     // Default: return the snapshot + bump view telemetry (best-effort).
     sb.from('eom_share_links').update({ view_count: (link.view_count || 0) + 1, last_viewed_at: new Date().toISOString() }).eq('token', token).then(() => {});
+    const monthlyOverride = await fetchMonthlyTargetOverride(sb, String(link.loc), String(link.period));
     return json({
       loc: link.loc, storeName: link.store_name, title: link.title, period: link.period,
       fob: link.fob, recapMd: link.recap_md, fullMd: link.full_md,
+      monthlyOverride,
       expiresAt: link.expires_at, createdAt: link.created_at,
       acknowledgedAt: link.acknowledged_at,
     });

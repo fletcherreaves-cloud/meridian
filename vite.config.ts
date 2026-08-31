@@ -28,5 +28,20 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    // .claude/worktrees/** holds per-agent git worktrees (each a full checkout, left in place
+    // after the agent finishes so its branch stays inspectable) -- vitest's default exclude list
+    // doesn't know about them, so every `npx vitest run` in the main checkout was ALSO discovering
+    // and re-running every test file inside every leftover worktree, several dozen full copies of
+    // the suite stacked on top of the real one (found 2026-08-31 diagnosing why a routine full-
+    // suite run was taking 10x longer than expected and surfacing "ratchet" failures that turned
+    // out to be stale worktree snapshots, not the current tree). Vitest's `exclude` OVERRIDES its
+    // own defaults rather than extending them, so this list carries vitest's real defaults
+    // (https://vitest.dev/config/#exclude) plus the one addition.
+    exclude: [
+      '**/node_modules/**', '**/dist/**', '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build}.config.*',
+      '**/.claude/worktrees/**',
+    ],
   },
 })
