@@ -501,6 +501,19 @@ Recount, resubmit, and reply when done. Thank you!`;
   };
 }
 
+// ── Uncounted-item recommendation text (dispatch #227, District Missing-Items report) ─────────────
+// Maps diagnoseIncompleteCount()'s never/early/stale `state` to the exact phrasing already proven
+// in buildIncompleteCountMessage()'s body above — not new copy — so a printed all-store report reads
+// consistently with the per-store recount nudge the owner already sends.
+export const STATE_RECOMMENDATION = {
+  never: 'Physically count and submit — no count on record this period.',
+  early: 'Recount before close — last count predates the final count window; a cascade error earlier in the count can still be corrected here.',
+  stale: 'Verify and deactivate in QSRSoft if no longer sold, or count if still active — no count since a prior period.',
+};
+export function recommendationForState(state) {
+  return STATE_RECOMMENDATION[state] || 'Review this item\'s count status.';
+}
+
 function _titleClass(k) {
   return { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product', other: 'Other' }[k] || k;
 }
@@ -604,6 +617,25 @@ export function detectCountNotifications(prevStatus, newProgress, { staleHours =
     triggerKinds: firing.map(f => f.kind),
     reasons: firing.map(f => f.reason),
     classStatuses,
+  };
+}
+
+// ── Scoreboard row fields (dispatch #227) ───────────────────────────────────────
+// The exact Store/State/Count%/FOB%/FOB$ fields eom-dashboard.js's own Scoreboard-tab CSV export
+// (`exportCSV`) reads off a `rows` entry — factored out here (an engine file both eom-dashboard.js
+// and the new "send to teams" snapshot report, eom-team-snapshot.js, can import without one view
+// file importing the other) so the two reports can never drift on these 5 numbers (the "two panels
+// disagree on one number" trap CLAUDE.md's Dev Rules calls out). `r` is one entry from
+// EOMDashboardPanel's `rows`/`allRows` array (buildStoreStatus-shaped, with `.org`/`.prog`/
+// `.fobPct`/`.fob$`/`.name`). Returns raw values (fractions for the two percents), not
+// pre-formatted strings — each caller keeps its own display formatting (CSV vs. a printed table).
+export function scoreboardRowFields(r) {
+  return {
+    store: r.name,
+    state: r.org === 'emerald' ? 'FL' : 'OK',
+    countPct: r.prog.earlyPctCounted ?? r.prog.pctCounted,
+    fobPct: r.fobPct,
+    fobDollar: r.fob$,
   };
 }
 

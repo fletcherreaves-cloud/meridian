@@ -163,6 +163,24 @@ export function ledgerScopeDiff(rawByLoc = {}, perLoc = {}, { floor = LEDGER_MAT
   };
 }
 
+// ── Plain-language item verdict text (dispatch #227, Recount-Impact report) ───────────────────────
+// The owner asked specifically "whether they improved or hurt final result" — a statement about
+// food-cost ACCURACY (did the recount move the item's variance toward its expected/baseline usage
+// pattern), not raw dollar direction (CLAUDE.md's "say the number AND the decision" rule). Reuses
+// the SAME baseVar/curVar/dMag/verdict fields ledgerBaselineDiff() already computes — this only adds
+// a sentence, never a second grading of helped/hurt. `baseVar<0` = a SHORT/undercount at the session
+// count (eom-diagnosis.js's own `dolDiff<0 → SHORT` convention); `baseVar>=0` = an OVER/overcount.
+export function recountVerdictText(item) {
+  const dollars = Math.round(Math.abs((item && item.dMag) || 0)).toLocaleString();
+  const baseShort = ((item && item.baseVar) || 0) < 0;
+  switch (item && item.verdict) {
+    case 'helping': return `Helped: corrected a $${dollars} ${baseShort ? 'undercount' : 'overcount'}.`;
+    case 'hurting': return `Hurt: recount moved this further from expected usage (variance grew $${dollars}).`;
+    case 'flat': return `No material change (~$${dollars}, within the $${LEDGER_MATERIAL_FLOOR} materiality floor).`;
+    default: return 'Recount data incomplete for this item.';
+  }
+}
+
 // ── Store-engagement verdict (the north-star payoff, memory/project-count-cycle-vision.md) ──────────
 // Roll a store's ledger diff + FOB direction into ONE read: did the store actively try to diagnose and
 // improve FOB after we flagged its recount-worthy items — and if it failed, is it SKILL (needs training)

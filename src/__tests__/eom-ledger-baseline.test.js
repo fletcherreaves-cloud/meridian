@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff, formatRecountReport } from '../engine/eom-ledger-baseline.js';
+import { ledgerBaselineDiff, storeEngagement, ledgerScopeDiff, recountVerdictText, formatRecountReport } from '../engine/eom-ledger-baseline.js';
 
 const item = (wrin, hist) => ({ wrin, descr: wrin, cls: 'food', history: hist });
 const cnt = (dt, tm, dolVar, { variance = null } = {}) => ({ isCount: true, source: 'inventory', dt, tm, difference: dolVar, variance });
@@ -118,6 +118,37 @@ describe('ledgerBaselineDiff', () => {
     const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
     expect(d.items[0].wrin).toBe('big');
     expect(d.items[1].wrin).toBe('small');
+  });
+});
+
+describe('recountVerdictText (dispatch #227 — Recount-Impact report)', () => {
+  it('helping + undercount at session (baseVar<0) → "corrected a $X undercount"', () => {
+    const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -80)])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
+    expect(recountVerdictText(d.items[0])).toBe('Helped: corrected a $220 undercount.');
+  });
+
+  it('helping + overcount at session (baseVar>=0) → "corrected a $X overcount"', () => {
+    const rawItems = [item('a', [cnt('2026-07-30', '10:00', 300), cnt('2026-08-01', '09:00', 80)])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
+    expect(recountVerdictText(d.items[0])).toBe('Helped: corrected a $220 overcount.');
+  });
+
+  it('hurting → plain "moved further from expected usage" wording, not just a raw dollar direction', () => {
+    const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -360)])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
+    expect(recountVerdictText(d.items[0])).toBe('Hurt: recount moved this further from expected usage (variance grew $60).');
+  });
+
+  it('flat → material-change-free wording (within the $25 floor)', () => {
+    const rawItems = [item('a', [cnt('2026-07-30', '10:00', -300), cnt('2026-08-01', '09:00', -312)])];
+    const d = ledgerBaselineDiff(rawItems, { closeWindowStart: '2026-07-30' });
+    expect(recountVerdictText(d.items[0])).toMatch(/No material change/);
+  });
+
+  it('unknown/missing item → safe fallback, never throws', () => {
+    expect(recountVerdictText(null)).toBe('Recount data incomplete for this item.');
+    expect(recountVerdictText({})).toBe('Recount data incomplete for this item.');
   });
 });
 

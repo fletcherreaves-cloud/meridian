@@ -22,7 +22,7 @@ import {
   createEomShareLink, supabase,
 } from '../lib/supabase.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
-import { ledgerScopeDiff, closeWindowStartFor, itemCloseWindowRecount, formatRecountReport } from '../engine/eom-ledger-baseline.js';
+import { ledgerScopeDiff, ledgerBaselineDiff, closeWindowStartFor, itemCloseWindowRecount, recountVerdictText, formatRecountReport } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
 import { recountImpactByStore, fobConsistencyByStore } from '../engine/fob-recount-analysis.js';
 import { buildFobReport } from '../engine/fob-report.js';
@@ -31,8 +31,9 @@ import { latestVarianceByWrin } from '../engine/eom-variance-raw.js';
 import { scanWaste } from '../engine/eom-waste-scan.js';
 import { classifyItemPattern, buildItemSeries, scanChronicOffenders, scanCountReliability, scanRubberBand, PATTERN_META } from '../engine/eom-item-pattern.js';
 import {
-  computeCountProgress, periodKey, daysInPeriod, countWindowStart, BELIEVES_DONE_PCT, CLASS_DONE_PCT,
-  buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore,
+  computeCountProgress, periodKey, daysInPeriod, countWindowStart, lastDayOfPeriod, BELIEVES_DONE_PCT, CLASS_DONE_PCT,
+  buildIncompleteCountMessage, diagnoseIncompleteCount, fobSnapshotByStore, normClass, recommendationForState,
+  scoreboardRowFields,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
@@ -52,6 +53,14 @@ import { CountCycleSection } from './count-cycle-panel.js';
 // the retired standalone eom-summary route/panel; see eom-supervisor.js's own header for the
 // full story, including the print-CSS class-hook and permission-scoping notes).
 import { EOMSupervisorPanel } from './eom-supervisor.js';
+// Dispatch #227 — three new read-facing report tabs (owner requests, 2026-08-30): a district-wide
+// missing/uncounted-items report, a simplified "send to teams" EOM Count snapshot, and a
+// recount-impact report. Same "harvest into a sibling file, render as a tab" shape as
+// EOMSupervisorPanel/CountCycleSection above — no new engine math, these only present data this
+// hub already computes (see each file's own header for exactly which fields it reuses).
+import { EOMMissingItemsReportPanel } from './eom-missing-items-report.js';
+import { EOMTeamSnapshotPanel } from './eom-team-snapshot.js';
+import { EOMRecountImpactPanel } from './eom-recount-report.js';
 
 const { useState, useEffect, useMemo, useCallback } = React;
 const h = React.createElement;
@@ -118,6 +127,13 @@ tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-mono
 
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
+// Look a loc up in a {loc→...} map tolerant of the unpadded/padded-NSN ambiguity between qsr_*
+// tables (openMonitor's own local `pick` before dispatch #227 hoisted it here; Report 3's
+// recount-impact rollup needs the identical lookup against the same rawByLoc/varByLoc maps).
+const pickByLoc = (map, loc) => map[unpad(loc)] ?? map[String(loc)] ?? map[String(loc).padStart(7, '0')] ?? null;
+// fobTgtOf() (the old raw DEFAULT_TARGETS[loc].tFOBTarget helper) was deleted 2026-08-31 -- it
+// went dead once its last call site was moved onto the monthly_targets-aware `mergedTgts` map
+// (see the "2026-08-31 fix" comments on the Scoreboard FOB column below). Do not re-add it.
 const pct = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%';
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%'; // FOB % — 2 decimals
 
@@ -2277,7 +2293,6 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         loadEomSecondaryReview({ period }),
       ]);
       setSecReview(sr || {});
-      const pick = (map, loc) => map[unpad(loc)] ?? map[String(loc)] ?? map[String(loc).padStart(7, '0')] ?? null;
       // Close window = the last few days of the period (the EOM count + any recounts). An item's FIRST count
       // in the window is its session count; later-day counts are recounts. Same start for every store.
       const closeStart = closeWindowStartFor(period, 3);
@@ -2287,9 +2302,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const rawScoped = {}, perLoc = {};
       for (const r of rows) {
         const k = unpad(r.loc);
-        const items = pick(rawByLoc, r.loc) || [];
+        const items = pickByLoc(rawByLoc, r.loc) || [];
         rawScoped[k] = items;
-        const statVar = {}; for (const v of (pick(varByLoc, r.loc) || [])) if (v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
+        const statVar = {}; for (const v of (pickByLoc(varByLoc, r.loc) || [])) if (v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
         perLoc[k] = {
           name: r.name || nm(r.loc), closeWindowStart: closeStart, statVar,
           baseFobPct: ccFob[k]?.baseFobPct ?? null, curFobPct: r.fobPct ?? null,
@@ -2342,6 +2357,64 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     setExceptions(m => ({ ...m, [key]: rec }));
     try { await saveEomCountException({ loc, period, approvedBy: rec.approvedBy, note, acceptedDate }); } catch {}
   }, [period, byLoc]);
+
+  // ── Dispatch #227 report data (all three are pure presentation over data this hub already
+  // computes — no new engine calls beyond what `rows`/`rawByLoc`/`varByLoc` already feed the
+  // existing tabs) ──────────────────────────────────────────────────────────────────────────────
+
+  // Report-self-dating stamp (Report 1's "Date" control): today for the open/current period, else
+  // the period's own last calendar day for a closed period being reviewed after the fact — never
+  // "today" printed on a report about a month that's already over.
+  const reportAsOf = useMemo(() => (period && period < periodKey(new Date()) ? lastDayOfPeriod(period) : new Date()), [period]);
+
+  // Report 1 — district-wide missing/uncounted-items report. Reuses `rows[].uncountedByClass`
+  // verbatim (built above from the SAME diagnoseIncompleteCount() call the Scoreboard/EOM Count
+  // tabs already make per store) — no second diagnosis run. Sort: location (name), then class
+  // (DIGEST_CLASS_ORDER — Food→Condiment→Paper→Non-Product, the same order constant classSummary
+  // below uses), then valueAtRisk descending WITHIN a class — the last part is free: each class's
+  // item array already arrives pre-sorted that way out of diagnoseIncompleteCount().
+  const missingItemsRows = useMemo(() => {
+    const out = [];
+    const sortedRows = [...rows].sort((a, b) => a.name.localeCompare(b.name));
+    for (const r of sortedRows) {
+      for (const cls of DIGEST_CLASS_ORDER) {
+        for (const it of (r.uncountedByClass[cls] || [])) {
+          out.push({ loc: r.loc, storeName: r.name, org: r.org, cls, ...it, recommendation: recommendationForState(it.state) });
+        }
+      }
+    }
+    return out;
+  }, [rows]);
+
+  // Report 3 — recount-impact. Per scoped store, ledgerBaselineDiff() (the SAME function dispatch
+  // #226's SAGE tool, `query_eom_recount_impact`, reuses for the identical question) grades each
+  // item's close-window session→final move; this flattens every item that was actually RECOUNTED
+  // (owner: "which products were recounted") across every store in scope into one sortable list.
+  // Sort: class (DIGEST_CLASS_ORDER), then |Δ (dMag — the variance-magnitude move that determines
+  // helped/hurt)| descending within class.
+  const recountImpactRows = useMemo(() => {
+    const closeStart = closeWindowStartFor(period, 3);
+    const out = [];
+    for (const r of rows) {
+      const items = pickByLoc(rawByLoc, r.loc) || [];
+      if (!items.length) continue;
+      const statVar = {};
+      for (const v of (pickByLoc(varByLoc, r.loc) || [])) if (v.dolDiff != null) statVar[String(v.wrin)] = v.dolDiff;
+      let diff;
+      try { diff = ledgerBaselineDiff(items, { closeWindowStart: closeStart, officialVarByWrin: statVar }); } catch { continue; }
+      for (const it of diff.items) {
+        if (!it.recounted) continue;
+        out.push({
+          loc: r.loc, storeName: r.name, org: r.org, cls: normClass(it.cls),
+          wrin: it.wrin, descr: it.descr, nRecounts: it.nRecounts,
+          baseVar: it.baseVar, curVar: it.curVar, dMag: it.dMag, verdict: it.verdict,
+          verdictText: recountVerdictText(it),
+        });
+      }
+    }
+    out.sort((a, b) => (DIGEST_CLASS_ORDER.indexOf(a.cls) - DIGEST_CLASS_ORDER.indexOf(b.cls)) || (Math.abs(b.dMag || 0) - Math.abs(a.dMag || 0)));
+    return out;
+  }, [rows, rawByLoc, varByLoc, period]);
 
   // District EOM Summary over the CURRENT scope (rows are already filtered by state/patch/store).
   // Merged per-store targets (DEFAULT_TARGETS < this period's monthly_targets override, 2026-08-31
@@ -2674,13 +2747,15 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     try { await navigator.clipboard.writeText(formatRecountReport(mon.diff, { period })); setMonCopied(true); setTimeout(() => setMonCopied(false), 1800); } catch { setMonCopied(false); }
   }, [mon, period]);
 
-  // District CSV export of the (filtered) all-stores table.
+  // District CSV export of the (filtered) all-stores table. Store/State/Count%/FOB%/FOB$ columns
+  // read scoreboardRowFields(r) (dispatch #227) — the same helper eom-team-snapshot.js's "send to
+  // teams" report reuses, so the two views can never drift on these 5 numbers.
   const exportCSV = useCallback(() => {
     const cols = [
-      ['Store', r => r.name], ['State', r => (r.org === 'emerald' ? 'FL' : 'OK')],
-      ['Count %', r => { const v = r.prog.earlyPctCounted ?? r.prog.pctCounted; return v != null ? (v * 100).toFixed(2) : ''; }],
-      ['FOB %', r => r.fobPct != null ? (r.fobPct * 100).toFixed(2) : ''],
-      ['FOB $', r => r.fob$ != null ? Math.round(r.fob$) : ''],
+      ['Store', r => scoreboardRowFields(r).store], ['State', r => scoreboardRowFields(r).state],
+      ['Count %', r => { const v = scoreboardRowFields(r).countPct; return v != null ? (v * 100).toFixed(2) : ''; }],
+      ['FOB %', r => { const v = scoreboardRowFields(r).fobPct; return v != null ? (v * 100).toFixed(2) : ''; }],
+      ['FOB $', r => { const v = scoreboardRowFields(r).fobDollar; return v != null ? Math.round(v) : ''; }],
       ['Diagnosis', r => DIAG_LABEL[r.diagnosis] || r.diagnosis],
       ['Communication', r => COMMS_LABEL[r.comms] || r.comms],
     ];
@@ -2810,15 +2885,26 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // its own period/group controls (see the mode==='supervisor' branch below, which hides
   // PanelChrome's location/date/export/actions bands rather than showing two unrelated pickers
   // side by side).
+  // Dispatch #227 — three new report tabs appended after Supervisor Rollup: 'missing' (district
+  // missing/uncounted-items report), 'snapshot' (simplified "send to teams" EOM Count snapshot),
+  // 'recount' (recount-impact report). Same tab-button mechanism as every prior tab addition —
+  // no new selector, no second tab strip.
+  const TAB_TITLES = {
+    scoreboard: 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared',
+    eom: 'Count-completion tracking (meaningful in the last-3-day window)',
+    progress: 'Year-round: last-count freshness + FOB/diagnosis results',
+    compliance: 'Weekly compliance — every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first',
+    supervisor: 'Monthly P&L variance by store — filter by supervisor, operator, or all',
+    missing: 'District-wide missing/uncounted items, sorted by location then class, with last-count date and a recommendation per row. Print-friendly.',
+    snapshot: 'A plain, printable Store/State/Count%/FOB%/FOB$ snapshot to send to a team — no diagnosis/communication workflow columns.',
+    recount: 'Which items were recounted in the EOM close window and whether the recount helped or hurt the final result — sorted by class.',
+  };
   const tabsSlot = div({ style: { display: 'flex', border: '1px solid var(--bdr2)', borderRadius: '6px', overflow: 'hidden', flexShrink: 0 } },
-    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle'], ['supervisor', 'Supervisor Rollup']].map(([k, label]) =>
+    [['scoreboard', 'Scoreboard'], ['eom', 'EOM Count'], ['progress', 'Cadence'], ['compliance', 'Count Cycle'], ['supervisor', 'Supervisor Rollup'],
+     ['missing', 'Missing Items'], ['snapshot', 'Team Snapshot'], ['recount', 'Recount Impact']].map(([k, label]) =>
       h('button', {
         key: k, onClick: () => setMode(k),
-        title: k === 'scoreboard' ? 'Completion checklist — who is ready for your review, who is still counting, what you\'ve cleared'
-          : k === 'eom' ? 'Count-completion tracking (meaningful in the last-3-day window)'
-          : k === 'progress' ? 'Year-round: last-count freshness + FOB/diagnosis results'
-          : k === 'compliance' ? 'Weekly compliance — every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first'
-          : 'Monthly P&L variance by store — filter by supervisor, operator, or all',
+        title: TAB_TITLES[k],
         style: {
           background: mode === k ? '#f5bc00' : 'var(--surf3)', color: mode === k ? '#0f1117' : 'var(--text2)',
           border: 'none', padding: '6px 11px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
@@ -2883,8 +2969,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     ? 'Weekly Count Cycle · every store\'s Food+Condiment weekly count and mid-month Paper count, exceptions first'
     : mode === 'supervisor'
     ? 'Monthly P&L variance by store — filter by supervisor, operator, or all'
+    : mode === 'missing'
+    ? 'District-wide missing/uncounted items · sorted by location, then class · print-friendly'
+    : mode === 'snapshot'
+    ? 'Team snapshot · Store / State / Count % / FOB % / FOB $ · read-only, print-friendly'
+    : mode === 'recount'
+    ? 'Recount-impact report · which items were recounted this close window and whether it helped or hurt · sorted by class'
     : 'Year-round progress mode · last-count freshness + FOB / diagnosis results (count % fills in during the last 3 days)')
-    + (mode === 'supervisor' ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
+    + ((mode === 'supervisor' || mode === 'missing' || mode === 'snapshot' || mode === 'recount') ? '' : (dataAsOf ? ` · data as of ${dataAsOf.toLocaleDateString()}` : ''));
 
   // Dispatch #202 originally hid PanelChrome's location/date/export/action bands entirely for
   // mode==='supervisor', since EOMSupervisorPanel brought its own internal month+year+groupType
@@ -2898,22 +2990,27 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   // shaped `rows`/`allRows` data (CSV export, Reports/Scans/Monitor/Pulls), not Supervisor
   // Rollup's own P&L variance rows — those two bands stay hidden for this mode.
   const supervisorMode = mode === 'supervisor';
+  // Dispatch #227 — the three new report tabs are the same shape as Supervisor Rollup: their own
+  // self-contained Print button + print-CSS class hooks, not the 4-tab CSV/action bands. `printableMode`
+  // gates the RoutePanelShell class hooks below for all four "own print button" tabs together.
+  const reportMode = mode === 'missing' || mode === 'snapshot' || mode === 'recount';
+  const printableMode = supervisorMode || reportMode;
   // Print-CSS class hooks (see eom-supervisor.js's PRINT_STYLE comment) — only meaningful while
-  // supervisor mode's own Print button can be clicked; harmless no-ops otherwise (they only take
+  // the active tab's own Print button can be clicked; harmless no-ops otherwise (they only take
   // effect under body.eom-printing, which nothing else in this panel ever sets).
   return h(RoutePanelShell, {
     title: '📦 Inventory Control', subtitle: subtitleText, onBack: onClose,
     bodyStyle: { padding: '20px' },
-    className: supervisorMode ? 'mf-eom-print-modal mf-eom-print-card' : undefined,
-    headerClassName: supervisorMode ? 'mf-eom-modal-chrome' : undefined,
+    className: printableMode ? 'mf-eom-print-modal mf-eom-print-card' : undefined,
+    headerClassName: printableMode ? 'mf-eom-modal-chrome' : undefined,
   },
 
     div({ className: 'eom-no-print' },
       h(PanelChrome, {
         location: locationSlot,
         dateControl: dateControlSlot,
-        exportSlot: supervisorMode ? undefined : exportSlotContent,
-        actions: supervisorMode ? undefined : actionsSlot,
+        exportSlot: printableMode ? undefined : exportSlotContent,
+        actions: printableMode ? undefined : actionsSlot,
         tabs: tabsSlot,
       })),
 
@@ -2921,9 +3018,9 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // (CountCycleSection) instead of these tiles — SummaryTiles only knows the EOM/Cadence
     // shapes (dispatch #98 fixed exactly this "wrong tiles for the mode" bug for Cadence;
     // giving Count Cycle a third undefined branch here would reintroduce it, not extend it).
-    // Supervisor Rollup (dispatch #202) is excluded the same way — its P&L variance data has no
-    // relationship to SummaryTiles' EOM/Cadence shapes either.
-    mode !== 'compliance' && !supervisorMode && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
+    // Supervisor Rollup (dispatch #202) and the 3 dispatch #227 report tabs are excluded the same
+    // way — none of their data has any relationship to SummaryTiles' EOM/Cadence shapes.
+    mode !== 'compliance' && !printableMode && h(SummaryTiles, { mode, summary, cycleSummary, classSummary, inWindow, hasRows: rows.length > 0 }),
 
     // "ready for review" notification banner — unconditional on mode (matches the existing
     // scoreboard/eom/progress/compliance precedent, no new per-mode judgment introduced here).
@@ -2971,11 +3068,31 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     // period/group filters + loading/empty states rather than this panel's `rows`/`loading`.
     supervisorMode ? h(EOMSupervisorPanel, { ds, settings, supabase, period, scopedLocs }) : null,
 
-    // mode==='compliance'/'supervisor' short-circuit this entire EOM-completion/scoreboard
-    // chain — its content (loading/empty/table) is all about EOM+FOB data, not weekly count
-    // compliance or district P&L variance, and CountCycleSection/EOMSupervisorPanel above
-    // already handle their own loading/empty states.
-    mode === 'compliance' || supervisorMode ? null
+    // Dispatch #227 — the three new report tabs, same "own loading/empty state, own Print button"
+    // shape as Count Cycle/Supervisor Rollup above. Each is presentation-only over data this hub
+    // already computed above (missingItemsRows/rows/recountImpactRows) — see each file's own
+    // header comment for exactly which upstream fields it reads.
+    mode === 'missing'
+      ? (loading || fobPending)
+        ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+        : h(EOMMissingItemsReportPanel, { rows: missingItemsRows, period, reportAsOf, scopeLabel: scopeLabel() })
+      : null,
+    mode === 'snapshot'
+      ? (loading || fobPending)
+        ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+        : h(EOMTeamSnapshotPanel, { rows, period, scopeLabel: scopeLabel(), monthlyOverrideFor })
+      : null,
+    mode === 'recount'
+      ? (loading || fobPending)
+        ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
+        : h(EOMRecountImpactPanel, { rows: recountImpactRows, period, scopeLabel: scopeLabel() })
+      : null,
+
+    // mode==='compliance'/'supervisor'/the 3 report tabs short-circuit this entire EOM-completion/
+    // scoreboard chain — its content (loading/empty/table) is all about EOM+FOB data, not weekly
+    // count compliance, district P&L variance, or the report tabs, and CountCycleSection/
+    // EOMSupervisorPanel/the report panels above already handle their own loading/empty states.
+    mode === 'compliance' || printableMode ? null
     : (loading || fobPending) ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } }, 'Loading…')
       : rows.length === 0 ? div({ style: { padding: '40px', textAlign: 'center', color: 'var(--text3)' } },
           allRows.length === 0
