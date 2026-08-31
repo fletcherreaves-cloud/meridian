@@ -27,7 +27,7 @@ import * as React from 'react';
 import { DEFAULT_TARGETS } from '../constants.js';
 import { fobComponentDeltas } from '../engine/eom-diagnosis.js';
 import { scoreboardRowFields } from '../engine/eom-inventory.js';
-import { ensureEomPrintStyleInjected } from './eom-supervisor.js';
+import { ensureEomPrintStyleInjected, PrintGeneratingBanner } from './eom-supervisor.js';
 
 const { useEffect, useState, useCallback } = React;
 const h = React.createElement;
@@ -116,6 +116,7 @@ export function EOMTeamSnapshotPanel({ rows, period, scopeLabel, monthlyOverride
   return div({ style: { padding: '16px', maxWidth: '900px', margin: '0 auto' } },
 
     div({ className: 'eom-no-print' },
+      h(PrintGeneratingBanner, { forPrint }),
       div({ style: { marginBottom: '14px' } },
         div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '4px' } }, 'EOM Team Snapshot'),
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),

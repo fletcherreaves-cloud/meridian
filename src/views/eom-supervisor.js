@@ -722,6 +722,27 @@ export function ensureEomPrintStyleInjected() {
   document.head.appendChild(s);
 }
 
+// 2026-08-31 (owner-reported, real): window.print() is a SYNCHRONOUS browser call that freezes the
+// tab while it lays out the full printable DOM -- measured live on a real "all stores" report,
+// this took ~12 SECONDS (Chrome's own "[Violation] 'setTimeout' handler took 11941ms" + a
+// "[click-trace] ... blocked ... button Print" attributing it to doPrint's setTimeout). Owner
+// confirmed: waiting it out DOES eventually produce a real, correct printout on every one of these
+// reports -- it isn't broken, it's just silent, and a frozen tab with a blank print preview reads
+// exactly like a failure. The fix isn't shrinking the report (owner wants the whole thing); it's
+// telling the user to wait BEFORE the freeze starts. `forPrint` was already being set true right
+// before doPrint's setTimeout/window.print() call in every one of these report panels -- it just
+// had nothing rendering off of it. Given the class 'eom-no-print' hitting `display:none` only
+// inside PRINT_STYLE's `@media print` block (not on the live screen, even after body.eom-printing
+// is added), this banner stays visible on screen through the whole freeze and disappears from the
+// actual printed/PDF output.
+export function PrintGeneratingBanner({ forPrint }) {
+  if (!forPrint) return null;
+  return h('div', { className: 'eom-no-print', style: {
+    background: 'rgba(245,188,0,.12)', border: '1px solid rgba(245,188,0,.35)', color: '#a67c00',
+    borderRadius: '7px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', fontWeight: 600,
+  } }, '⏳ Generating the print preview — larger reports can take several seconds and the browser tab will look frozen. Please wait for the print dialog rather than reloading.');
+}
+
 // ── Main Panel ────────────────────────────────────────────────────────────────
 // dispatch #225 Task 3/4 — `period` ('YYYY-MM', the SAME shared period every other Inventory
 // Control tab now reads — src/views/eom-dashboard.js) and `scopedLocs` (the resolved loc list
@@ -915,6 +936,8 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
             : h('span', { style: { color: muted } }, '○ No eBOS data for period'),
         )
       ),
+
+      h(PrintGeneratingBanner, { forPrint }),
 
       // Controls row
       h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px' } },
