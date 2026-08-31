@@ -23,6 +23,7 @@
 // Print mechanism reused verbatim from eom-supervisor.js (PRINT_STYLE, exported dispatch #227).
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
+import { crossStoreConsistencyText } from '../engine/eom-ledger-baseline.js';
 import { ensureEomPrintStyleInjected } from './eom-supervisor.js';
 
 const { useEffect, useState, useCallback } = React;
@@ -33,7 +34,7 @@ const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleStr
 
 const VERDICT_COLOR = { helping: '#4ade80', hurting: 'var(--crit)', flat: 'var(--text3)', unknown: 'var(--text3)' };
 
-export function EOMRecountImpactPanel({ rows, period, scopeLabel }) {
+export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) {
   useEffect(() => { ensureEomPrintStyleInjected(); }, []);
   const [forPrint, setForPrint] = useState(false);
   useEffect(() => {
@@ -77,6 +78,27 @@ export function EOMRecountImpactPanel({ rows, period, scopeLabel }) {
       div({ className: 'eom-print-title', style: { marginBottom: '10px' } },
         div({ style: { fontSize: '15px', fontWeight: 800, color: '#111' } }, `Recount-Impact Report — ${scopeLabel || 'all stores'}`),
         div({ style: { fontSize: '11px', color: '#555' } }, `${period} · ${list.length} recounted item${list.length === 1 ? '' : 's'} · ${nHelped} helped · ${nHurt} hurt`)),
+
+      // Cross-store consistency (2026-08-31) — the SAME item recounted at multiple stores this period
+      // with SOME recounts helping and OTHERS hurting: a crew-technique/UOM gap at specific stores, not
+      // independent noise. See crossStoreRecountConsistency()'s own header comment for the real example
+      // (Chicken McNuggets, July) that motivated this. Quiet when nothing qualifies — most periods won't.
+      (crossStore && crossStore.length > 0)
+        ? div({ className: 'eom-block', style: { marginBottom: '16px' } },
+            div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '8px' } },
+              `⚠ Cross-Store Inconsistency — ${crossStore.length} item${crossStore.length === 1 ? '' : 's'}`),
+            ...crossStore.map(x => div({ key: x.wrin, style: { border: '1px solid var(--bdr)', borderLeft: '3px solid #f5bc00', borderRadius: '7px', padding: '10px 12px', marginBottom: '8px', background: 'var(--surf2)' } },
+              div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' } },
+                span({ style: { fontWeight: 700, color: 'var(--text)' } }, x.descr || x.wrin),
+                span({ style: { fontSize: '10px', color: 'var(--text3)', fontFamily: 'ui-monospace,Menlo,monospace' } }, x.wrin),
+                span({ style: { fontSize: '11px', color: 'var(--text3)' } }, `${x.nStores} stores`),
+                span({ style: { fontSize: '11px', color: '#4ade80', fontWeight: 600 } }, `${x.nHelped} helped (${money(x.helpedDol)})`),
+                span({ style: { fontSize: '11px', color: 'var(--crit)', fontWeight: 600 } }, `${x.nHurt} hurt (${money(x.hurtDol)})`)),
+              div({ style: { fontSize: '11.5px', color: 'var(--text2)', marginBottom: '6px' } }, crossStoreConsistencyText(x)),
+              div({ style: { display: 'flex', flexWrap: 'wrap', gap: '6px' } },
+                ...x.stores.map((s, i) => span({ key: i, style: { fontSize: '11px', padding: '3px 8px', borderRadius: '5px', background: 'var(--surf3)', color: VERDICT_COLOR[s.verdict] || 'var(--text2)', fontWeight: 600 } },
+                  `${s.storeName}: ${money(s.baseVar)} → ${money(s.curVar)}`))))))
+        : null,
 
       list.length === 0
         ? div({ style: { color: 'var(--text3)', fontSize: '13px', padding: '20px 4px' } }, 'No recounted items in this close window for the current scope — either nothing was recounted, or the raw item-detail pull has not landed for these stores/period yet.')

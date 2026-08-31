@@ -197,6 +197,32 @@ describe('dispatch #219 Task 1 — a real item descr flows end to end, DB row sh
   });
 });
 
+describe('2026-08-31 fix — toEngineRows() carries active/updatedAt through, so server-side stale-item detection is not silently inert', () => {
+  it('an item that dropped out of the store\'s current on-hand pull reaches diagnoseIncompleteCount() as state:stale via the REAL toEngineRows() mapping', () => {
+    // DB-shaped rows exactly like mapOnHandRow()'s upsert payload (qsr_onhand row) -- before this
+    // fix, toEngineRows() silently dropped `active`/`updated_at`, so eom-digest-send.mjs and
+    // eom-notification-resend.mjs (both of which build their onHand rows through this exact
+    // function) never saw either deactivation signal, even though the browser-side loader
+    // (src/lib/supabase.js's loadQsrOnHand()) already carried both through.
+    const deduped = [
+      { wrin: 'F1', descr: 'Fried Apple Pie', cls: 'Food', on_hand_amt: 12.67, unit_price: 0.28,
+        total_units: 46, cases: 0, packs: 0, loose: 46, last_counted: '2026-08-07', last_submitted: '2026-08-07',
+        active: null, updated_at: '2026-08-15T20:52:59.504Z' },   // dropped from the roster 16 days ago
+      { wrin: 'F2', descr: 'Sesame Seed Bun', cls: 'Food', on_hand_amt: 40, unit_price: 0.1,
+        total_units: 80, cases: 0, packs: 0, loose: 80, last_counted: '2026-08-07', last_submitted: '2026-08-07',
+        active: null, updated_at: '2026-08-31T14:37:00.731Z' },   // still in today's pull
+    ];
+    const ohForEngine = toEngineRows(deduped);
+    expect(ohForEngine.find(r => r.wrin === 'F1').active).toBe(null);
+    expect(ohForEngine.find(r => r.wrin === 'F1').updatedAt).toBe('2026-08-15T20:52:59.504Z');
+
+    const diag = diagnoseIncompleteCount(ohForEngine, { period: PERIOD, minValue: 0 });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+    expect(byWrin['F1'].state).toBe('stale');    // dropped from the current pull -> verify & clear
+    expect(byWrin['F2'].state).toBe('early');    // still current -> a real, actionable gap
+  });
+});
+
 describe('dispatch #219 Task 3 — onHandLink() title carries the class letter', () => {
   it('every class gets a title that includes its own resolved class letter', () => {
     const expectByClass = { food: '(F)', condiment: '(C)', paper: '(P)', nonproduct: '(N)' };

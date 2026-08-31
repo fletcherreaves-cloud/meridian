@@ -5,8 +5,49 @@
 data analysis. Deferred from earlier in this session pending scope; owner confirmed "yes, let's
 scope the SAGE learning."
 
-**Status: scoping + a direct measurement. No code changed by this document (the underlying bug it
-measures was already fixed and merged in PR #987 / v5.282, separately from this doc).**
+**Status: scoping + a direct measurement, UPDATED after the redeploy (below). No code changed by
+this document (the underlying bug it measures was already fixed and merged in PR #987 / v5.282,
+separately from this doc).**
+
+---
+
+## ⚠️ UPDATE 2026-08-31, post-redeploy — the pattern is REAL, not bug noise. Recommendation reversed.
+
+`sage-chat` was redeployed (confirmed live: `supabase functions list` showed v26, updated
+2026-08-31 14:36:09 UTC, after the fix merged). The owner re-ran the July recount-impact query
+against the fixed engine. **Independently cross-checked its numbers against this doc's own
+pre-computed "NEW" (post-fix) column, without re-querying Supabase — they match exactly:**
+
+| Store | SAGE's report | This doc's NEW column | Match |
+|---|---|---|---|
+| Defuniak (6838) | −$15 → −$792, damage −$777 | −$15.18 → −$791.81, damage $776.63 | ✅ |
+| Bonifay (10034) | +$109 → −$664, damage −$556 | $108.78 → −$664.48, damage $555.70 | ✅ |
+| Tecumseh (33704) | +$13 → −$271, damage −$258 | $13.10 → −$271.42, damage $258.32 | ✅ |
+| Atoka (10422) | −$370 → +$428, damage −$58 | −$369.83 → $427.74, damage $57.91 (unchanged old vs new) | ✅ |
+| **Total** | **$1,649** | **$1,648.56** | ✅ |
+
+This is two independent confirmations the redeploy is live and correct (the deployment timestamp,
+and now SAGE's own arithmetic matching a number computed here before SAGE ever ran).
+
+**The headline finding above — "the pattern was substantially the bug" — was WRONG, or at least
+incomplete, and this correction supersedes it.** The original section below measured that the raw
+July numbers were badly distorted by the netting bug (true, and the fix was still correct and
+necessary). But it did NOT follow that the *pattern itself* was fake. With the corrected numbers,
+SAGE still finds a real, smaller, more precise version of the same shape: **the same WRIN
+(McNuggets, 00407-958), a sign-flip-plus-magnitude-explosion recount, at four specific stores
+(Defuniak, Bonifay, Tecumseh, Atoka) — while two other stores (Ardmore-Broadway, Ardmore-Cooper)
+recounted the identical item correctly and helped.** That contrast — same item, same period, some
+stores clean, some stores broken — is exactly the shape of a real crew-technique/UOM gap, not
+noise. It just needed the bug out of the way to see clearly (the bug's distortion was large enough
+to swamp the real signal underneath it — Duncan/#29760's raw entry alone swung $3,228, an order of
+magnitude past the real story).
+
+**Revised recommendation: this now IS worth generalizing.** See "design sketch" below — a
+cross-store diagnosis finding (same WRIN, inconsistent recount direction across stores in one
+period) is the natural next step, not a maybe. Scoped further, not built, pending the owner's call
+on priority — the original section's design sketch stands as the starting point.
+
+---
 
 ## The headline finding: the pattern was substantially the bug, not a real signal
 

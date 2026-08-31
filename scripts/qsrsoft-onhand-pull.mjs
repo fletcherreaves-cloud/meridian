@@ -522,6 +522,15 @@ export function toEngineRows(deduped) {
     cases: r.cases, packs: r.packs, loose: r.loose, descr: r.descr,
     lastCounted: r.last_counted ? new Date(r.last_counted + 'T00:00:00') : null,
     lastSubmitted: r.last_submitted ? new Date(r.last_submitted + 'T00:00:00') : null,
+    // 2026-08-31 fix -- these two were silently dropped here, which made diagnoseIncompleteCount()'s
+    // active===false / droppedFromCurrentPull() deactivation signals inert for every server-side
+    // caller of toEngineRows() (eom-digest-send.mjs, eom-notification-resend.mjs): both signals
+    // read r.active / r.updatedAt directly, and a missing field silently reads as "no signal" rather
+    // than throwing, so this went unnoticed until traced. src/lib/supabase.js's loadQsrOnHand()
+    // (the browser-side loader) already carried both through; this brings the server-side mapping
+    // in line with it so the emailed digest/notifications see the same deactivation state the
+    // in-app dashboard does.
+    active: r.active, updatedAt: r.updated_at,
   }));
 }
 
