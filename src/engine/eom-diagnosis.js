@@ -821,7 +821,7 @@ export function fobComponentDeltas(components, targets) {
 // integrity note → punchy close + optional link), scaled hard — the day-of nudge to a GM. It reuses
 // the SAME computed doNow/net/shorts/overs as the full report, so the two can never drift.
 // `fob` = { pct, tgt, dollars, components? } for the FOB one-liner; `link` = optional "more detail" URL.
-export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date(), exception = null } = {}) {
+export function formatDiagnosisReport(result, { threshold = 50, incomplete = null, caseSzByWrin = {}, selfServeTower = false, mode = 'full', fob = null, link = '', asOf = new Date(), exception = null, controls = null } = {}) {
   // FOB-over-target driver analysis: which components exceed their own target (biggest gap first). Used
   // to explain an overage that item-level variance doesn't capture (raw waste, stat variance, condiments).
   const fobOver = !!(fob && fob.pct != null && fob.tgt != null && (fob.pct - fob.tgt) > 5e-5);
@@ -952,6 +952,36 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     L.push(`> ⚠️ **Count-date exception granted** — this store's EOM count was accepted from an **early count**${d ? ` (dated ${d})` : ''}${by ? `, approved by ${by}` : ''}, off the standard final-window process. Numbers below reflect that accepted count.`, '');
   }
 
+  // ── CASH CONTROLS — food-cost/FOB linkage (2026-08-31, owner req, verbatim): "at some point we
+  // have to link cash controls to food cost and report that as well." Discount % is the direct
+  // FOB-math link: FOB% = food$ ÷ sales$, so heavy discounting shrinks the denominator and can
+  // inflate FOB% without food cost itself actually rising. Cash O/S, POS overrides, refunds, and
+  // T-Reds are a broader store-health signal reported alongside FOB, not literal FOB inputs.
+  // Store-level ONLY -- never a register number or an employee name (owner, verbatim, reviewing a
+  // competitor sample that named specific cashiers by drawer: "generalize it and point managers
+  // to research further to identify the person responsible by using the register audit report").
+  // register-audit.js's own "Register Audit" report already does per-employee attribution BY
+  // DESIGN (dispatch #200 removed its redaction gate on purpose) -- this section stays generalized
+  // and points there instead of duplicating or re-deriving that breakdown.
+  if (controls) {
+    const rows = [];
+    if (controls.discPct != null) rows.push(`Discount **${(controls.discPct * 100).toFixed(2)}%** of net sales`);
+    if (Math.abs(controls.cashOSAmt) >= 1) rows.push(`Cash Over/Short **${money(controls.cashOSAmt)}**`);
+    if (controls.posOverAmt >= 1) rows.push(`POS Overrides **${money(controls.posOverAmt)}**`);
+    if (controls.refundAmt >= 1) rows.push(`Refunds **${money(controls.refundAmt)}**`);
+    if (controls.tRedACnt >= 1 || controls.tRedBCnt >= 1) {
+      const pctStr = p => p != null ? `${(p * 100).toFixed(2)}%` : '—';
+      rows.push(`T-Reds **${controls.tRedACnt} before** (${pctStr(controls.tRedAPct)}) → **${controls.tRedBCnt} after** (${pctStr(controls.tRedBPct)})`);
+    }
+    if (rows.length) {
+      L.push('## 💵 Cash Controls this period', '');
+      rows.forEach(r => L.push(`- ${r}`));
+      L.push('', '_Store-level totals only — not attributed to a specific register or employee. If any of ' +
+        'these look elevated, use the **Register Audit** report and floor-level cash-control management to ' +
+        'identify who\'s responsible._', '');
+    }
+  }
+
   // ── TOP 5 — DO NOW (owner req #46, focused to FOOD + CONDIMENT only per owner — the profit-driver
   // classes worth a manager's here-and-now energy). Cut-and-dry, ranked by best chance to improve
   // THIS cycle. Reuses the count-integrity buckets, recount-worthiness, and the portioning fingerprint.
@@ -962,6 +992,12 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   const sumVR = arr => arr.reduce((s, u) => s + (u.valueAtRisk || 0), 0);
   const _byVR = (a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0);
   const _unc = (incomplete && incomplete.uncounted) || [];
+  // Obsolete/Discontinued/Inactive — hoisted here (was computed inline, later, only for mode==='full')
+  // so BOTH mode==='full' (Count integrity section) and mode==='followup' (Housekeeping, 2026-08-31,
+  // see below) read the SAME computed list — one source, can't drift between the two views.
+  const bs = (incomplete && incomplete.byState) || {};
+  const staleCountMsg = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
+  const staleItems = _unc.filter(u => u.state === 'stale').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
   // Never-counted split by class + COUNT-TIMING rule (owner 2026-07-30): Food, Condiment AND Paper
   // are due to 100% by EOD (today); Non-Product is NOT counted until tomorrow. So Non-Product
   // uncounted today is EXPECTED, not a gap — flag it separately, never as a "still needs counting"
@@ -1166,6 +1202,43 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
     return R.join('\n');
   }
 
+  // ── HOUSEKEEPING MODE (2026-08-31, owner req) — routine maintenance, split out of the Full report.
+  // Owner's own framing: "for me personally... everything included is perfect", but a less
+  // technical manager can find the same report overwhelming, and the fix isn't trimming what's
+  // food-cost-actionable (fountain rollup / decision guide / earlier-count context / systemic
+  // patterns all stay in Full — every one of them ties back to THIS or NEXT cycle's FOB number).
+  // The ONE section that never moves this month's number even in principle is Obsolete/
+  // Discontinued/Inactive verify-and-clear — zeroing a deactivated item's residual doesn't change
+  // FOB, it just keeps the number from riding dirty into next month's opening. That's the owner's
+  // own example of "routine maintenance," so it's the only thing that moves here. Everything else
+  // debated (the today-due to-count list, the portioning/yield watch) stays in Full: to-count is
+  // time-boxed to TODAY (a follow-up report by definition isn't read until later, so anything due
+  // today has to stay primary or it risks not getting done), and yield/portioning is the direct
+  // root-cause lever for ONGOING food cost even though it can't be fixed retroactively for this
+  // count — moving it would bury the one section that explains WHY a store's FOB is running high.
+  if (mode === 'followup') {
+    const F = [`**${result.storeName || result.store} — EOM Housekeeping ${result.period}**`, '',
+      '_Routine maintenance — none of this changes this month\'s FOB number. Handle when convenient._', ''];
+    if (bs.stale && bs.stale.n) {
+      F.push(`## Obsolete / Discontinued / Inactive — verify & clear · ${staleCountMsg(bs.stale)}`, '');
+      F.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening._', '');
+      if (staleItems.length) {
+        F.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Last counted |', '|---|---|---|---:|---:|---|');
+        staleItems.forEach(u => {
+          const qty = Number(u.totalUnits);
+          const qtyStr = Number.isFinite(qty) && qty !== 0 ? qty.toLocaleString() : '—';
+          F.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qtyStr} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} |`);
+        });
+        const moreS = (bs.stale?.n || 0) - staleItems.length;
+        if (moreS > 0) F.push('', `_+${moreS} more item(s)._`);
+      }
+      F.push('', '_Rule: **Food / Condiment** → verify with a physical count, then waste to zero if it won\'t be used before expiration and deactivate at a verified zero. **Paper / Non-Product** (promo, Happy Meal items, paper) → keep if usable; deactivate only once used up — no count/waste verification needed. Never discard usable product._');
+    } else {
+      F.push('_Nothing to clear — no obsolete/discontinued/inactive items with an on-hand residual this period._');
+    }
+    return F.join('\n');
+  }
+
   // ── SECOND-LOOK SIGNALS — the integrity/pattern family, grouped + framed verify-not-accuse ──
   {
     const intgFull = (result.findings || []).filter(f => INTEGRITY_CHECK_IDS.has(f.checkId));
@@ -1354,8 +1427,6 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
   // Critical framing so nobody (or SAGE) treats early/stale items as "free money — just count
   // it." "Uncounted" here = not counted in the final window, NOT "never counted."
   if (incomplete && incomplete.uncountedCount > 0) {
-    const bs = incomplete.byState || {};
-    const m = (o) => `${(o && o.n) || 0} item${((o && o.n) || 0) === 1 ? '' : 's'} (${money((o && o.value) || 0)})`;
     L.push('## 🧮 Count integrity — the "uncounted" list, explained', '');
     L.push('_"Uncounted" = not counted in the FINAL window. **Due by EOD: Food, Condiment, Paper. Non-Product is not counted until tomorrow** — so Non-Product here is expected, not a gap. Only Food/Condiment is food-cost-consequential._', '');
 
@@ -1392,26 +1463,13 @@ export function formatDiagnosisReport(result, { threshold = 50, incomplete = nul
       if (moreE > 0) L.push('', `_+${moreE} more Food/Condiment counted-early item(s)._`);
     }
 
-    // OBSOLETE / DISCONTINUED / INACTIVE — table with the class-aware action (owner req 2026-07-30).
-    const staleItems = _unc.filter(u => u.state === 'stale').sort((a, b) => (b.valueAtRisk || 0) - (a.valueAtRisk || 0)).slice(0, 25);
+    // Obsolete/Discontinued/Inactive verify-and-clear moved OUT of Full (2026-08-31, owner req) —
+    // it's routine maintenance that never changes this month's FOB number, so it's now its own
+    // mode==='followup' (Housekeeping) report (see that branch, above) instead of cluttering the
+    // report a store manager reads for THIS cycle's action items. bs.stale/staleItems (still
+    // computed once, near _unc above) feed that branch; nothing here duplicates them.
     if (bs.stale && bs.stale.n) {
-      L.push('', `### Obsolete / Discontinued / Inactive — verify & clear · ${m(bs.stale)}`, '');
-      L.push('_Last counted a PRIOR period; a residual on-hand is riding into next month\'s opening._', '');
-      if (staleItems.length) {
-        // Per-row Action column removed (owner feedback 2026-08-30) -- it repeated one of only
-        // two possible strings, identical within a class, for every row; the single Rule line
-        // below the table already states both class-based actions once. Redundant, not lost --
-        // isFCcls() below still exists for the same class split elsewhere in this file.
-        L.push('| Item | WRIN | Class | On-hand qty | On-hand $ | Last counted |', '|---|---|---|---:|---:|---|');
-        staleItems.forEach(u => {
-          const qty = Number(u.totalUnits);
-          const qtyStr = Number.isFinite(qty) && qty !== 0 ? qty.toLocaleString() : '—';
-          L.push(`| ${u.descr || u.wrin} | ${u.wrin || '—'} | ${clsLabel(u.cls)} | ${qtyStr} | ${money(u.onHandAmt)} | ${u.lastCounted || '—'} |`);
-        });
-        const moreS = (bs.stale?.n || 0) - staleItems.length;
-        if (moreS > 0) L.push('', `_+${moreS} more item(s)._`);
-      }
-      L.push('', '_Rule: **Food / Condiment** → verify with a physical count, then waste to zero if it won\'t be used before expiration and deactivate at a verified zero. **Paper / Non-Product** (promo, Happy Meal items, paper) → keep if usable; deactivate only once used up — no count/waste verification needed. Never discard usable product._');
+      L.push('', `_${staleCountMsg(bs.stale)} obsolete/discontinued/inactive item${bs.stale.n === 1 ? '' : 's'} also need verify-and-clear — see the separate Housekeeping report, not urgent for this close._`);
     }
     L.push('');
   }

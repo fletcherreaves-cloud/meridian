@@ -36,6 +36,7 @@ import {
   scoreboardRowFields,
 } from '../engine/eom-inventory.js';
 import { runDiagnosis, formatDiagnosisReport, applyChecksConfig, checksConfig, fobComponentDeltas } from '../engine/eom-diagnosis.js';
+import { metricSeries, metricSumRatio } from '../engine/metric-source.js';
 import { buildEomDigest, classStatusesFromProgress, DIGEST_CLASS_ORDER, DIGEST_CLASS_LABELS, UNASSIGNED_KEY } from '../engine/eom-digest.js';
 import { flagUnmatchedTransfers } from '../engine/eom-parsers.js';
 import { parseExternalFob, reconcileFob } from '../engine/fob-crosscheck.js';
@@ -1138,6 +1139,15 @@ function PatternChip({ chip, title }) {
   }, chip.label);
 }
 function dolStr(v) { const s = v < 0 ? '-' : ''; return `${s}$${Math.abs(Math.round(v || 0)).toLocaleString()}`; }
+// Store-message draft body for the active view (2026-08-31) -- one place mapping 'recap'/'full'/
+// 'followup' to the right computeDraft() field, so the modal's toggle label, the rendered body,
+// and copyDraft() can't drift onto three different fallbacks for the same view.
+function bodyForDraftView(draft, view) {
+  if (!draft) return '';
+  if (view === 'followup') return draft.followupBody || '';
+  if (view === 'full') return draft.fullBody || draft.body;
+  return draft.recapBody || draft.body;
+}
 
 function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance = 50 }) {
   const [lookback, setLookback] = useState(6);
@@ -1599,7 +1609,8 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
   const [draft, setDraft] = useState(null); // { loc, name, subject, body, rows, uncounted } for the comms modal
   const [copied, setCopied] = useState(false);
   const [draftText, setDraftText] = useState(false); // false = table view, true = raw text view
-  const [draftFull, setDraftFull] = useState(false); // false = abbreviated recap, true = full report (text view)
+  // 'recap' (default) | 'full' | 'followup' (2026-08-31 -- routine maintenance, split out of Full).
+  const [draftView, setDraftView] = useState('recap');
   const [shareMsg, setShareMsg] = useState('');      // transient result of "Share link" (URL copied / error)
   const [wasteOpen, setWasteOpen] = useState(false); // Waste-analysis scan modal (Notes 40 #2)
   const [wasteScan, setWasteScan] = useState(null);
@@ -2655,6 +2666,31 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     });
   }, [byLoc, varByLoc, wasteByLoc, xferByLoc, rawByLoc, unmatchedXfer, selfServeTowers, activeChecks, period, fountainBaselineByLoc]);
 
+  // Cash Controls — EOM/FOB linkage (2026-08-31, owner req): "at some point we have to link cash
+  // controls to food cost and report that as well." Generalized at the STORE level, never a
+  // register number or an employee name -- register-audit.js's own Register Audit report already
+  // does per-employee attribution BY DESIGN (dispatch #200 removed its redaction gate on purpose),
+  // so this section stays store-level and points there for the person-level dig-in instead of
+  // duplicating it. Sourced via metric-source.js's auto-first per-day helpers (CLAUDE.md's data-
+  // sourcing standard) -- never by filtering ctrlRows/cashRows/glimpseRows directly. discPct/
+  // tRedAPct/tRedBPct use metricSumRatio (true Sum-num/Sum-den) rather than metricAvg's mean-of-
+  // daily, since an in-progress "today" would otherwise distort a still-open EOM period the same
+  // way #153 found for OEPE/TPPH (CLAUDE.md's own "watch for incomplete DAR days" note). $/count
+  // metrics are plain period sums. manualRefAmt deliberately excluded -- its own METRIC_SOURCES
+  // chain can fall back to auditRows (the per-EMPLOYEE table), and this section must never
+  // silently pull an employee-attributed number into a store-level line.
+  const controlsRange = useMemo(() => ({ s: `${period}-01`, e: isoDay(reportAsOf) }), [period, reportAsOf]);
+  const controlsSummaryFor = useCallback((loc) => {
+    const sum = (key) => Object.values(metricSeries(ds, loc, controlsRange, key)).reduce((s, v) => s + (v || 0), 0);
+    const ratio = (key) => { const r = metricSumRatio(ds, loc, controlsRange, key); return r ? r.value : null; };
+    const cashOSAmt = sum('cashOSAmt'), posOverAmt = sum('posOverAmt');
+    const refundAmt = sum('cashRefAmt') + sum('cashlessRefAmt');
+    const tRedACnt = sum('tRedACnt'), tRedBCnt = sum('tRedBCnt');
+    const discPct = ratio('discPct'), tRedAPct = ratio('tRedAPct'), tRedBPct = ratio('tRedBPct');
+    const hasAny = Math.abs(cashOSAmt) >= 1 || posOverAmt >= 1 || refundAmt >= 1 || tRedACnt >= 1 || tRedBCnt >= 1 || discPct != null;
+    return hasAny ? { cashOSAmt, posOverAmt, refundAmt, tRedACnt, tRedBCnt, discPct, tRedAPct, tRedBPct } : null;
+  }, [ds, controlsRange]);
+
   const diagOptsFor = useCallback((loc, components) => {
     const incomplete = diagnoseIncompleteCount(byLoc[loc] || [], { period, asOf: new Date(), acceptEarly: !!exceptions[loc] });
     const caseSzByWrin = {};
@@ -2667,19 +2703,23 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     const tg = { ...(DEFAULT_TARGETS[unpad(loc)] || {}), ...(monthlyOverrideFor(loc, period) || {}) };
     const pct = c.fobPct != null ? c.fobPct : (c.sales ? (c.fob / c.sales) : null);
     const fob = pct != null ? { pct, tgt: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, dollars: c.fob ?? null, components: fobComponentDeltas(c, tg) } : null;
-    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null };
-  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions, monthlyOverrideFor]);
+    return { incomplete, caseSzByWrin, selfServeTower: selfServeTowers.has(unpad(loc)), fob, exception: exceptions[loc] || null, controls: controlsSummaryFor(loc) };
+  }, [byLoc, rawByLoc, period, selfServeTowers, exceptions, monthlyOverrideFor, controlsSummaryFor]);
 
   // Pure — returns the draft object with BOTH the abbreviated recap (default message, Notes 37 C1)
   // and the full report one click away. Reused by openDraft AND the bulk "Message all" generator.
   const computeDraft = useCallback((loc, name, components) => {
-    let recapBody = '', fullBody = '', diagRows = [], actionItems = [];
+    let recapBody = '', fullBody = '', followupBody = '', diagRows = [], actionItems = [];
     const opts = diagOptsFor(loc, components);
     if (hasDiagData.has(loc) || (components && components.sales)) {
       try {
         const result = buildDiagResult(loc, name, components);
         recapBody = formatDiagnosisReport(result, { ...opts, mode: 'recap' });
         fullBody = formatDiagnosisReport(result, { ...opts, mode: 'full' });
+        // Housekeeping (2026-08-31, owner req) — obsolete/discontinued/inactive verify-and-clear,
+        // split out of Full so a less-technical store manager isn't handed routine maintenance
+        // alongside this cycle's actual food-cost action items. One click away, not gone.
+        followupBody = formatDiagnosisReport(result, { ...opts, mode: 'followup' });
         actionItems = result.actionItems || [];
         diagRows = (result.findings || []).filter(f => (f.severity ?? 0) >= 1).map(f => ({
           sev: f.severity ?? 0, sevWord: String(f.severityWord || '').toUpperCase(),
@@ -2704,11 +2744,11 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       fobTail = ` · FOB ${(fp.pct * 100).toFixed(2)}%${dpp != null ? (dpp > 0.0001 ? ` (+${(dpp * 100).toFixed(2)}pp — opportunity)` : ' (at/under target ✓)') : ''}`;
     }
     const subject = `EOM FOB — ${name}${fobTail}`;
-    return { loc, name, subject, body: recapBody, recapBody, fullBody, hasGaps, hasPlan: actionItems.length > 0, rows: diagRows, uncounted, fob: components || {} };
+    return { loc, name, subject, body: recapBody, recapBody, fullBody, followupBody, hasGaps, hasPlan: actionItems.length > 0, rows: diagRows, uncounted, fob: components || {} };
   }, [buildDiagResult, diagOptsFor, hasDiagData, byLoc, period]);
 
   const openDraft = useCallback((loc, name, components) => {
-    setCopied(false); setDraftFull(false); setDraftText(false);
+    setCopied(false); setDraftView('recap'); setDraftText(false);
     setResendMsg(null); // dispatch #228 — never carry a prior store's resend result into a new modal
     setDraft(computeDraft(loc, name, components));
   }, [computeDraft]);
@@ -2777,10 +2817,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
   const copyDraft = useCallback(async () => {
     if (!draft) return;
-    const activeBody = draftFull ? (draft.fullBody || draft.body) : (draft.recapBody || draft.body);
+    const activeBody = bodyForDraftView(draft, draftView);
     const text = `${draft.subject}\n\n${activeBody}`;
     try { await navigator.clipboard.writeText(text); setCopied(true); } catch { setCopied(false); }
-  }, [draft, draftFull]);
+  }, [draft, draftView]);
 
   // Run the full diagnosis engine for one store from the cloud streams.
   const openDiag = useCallback((loc, name, components) => {
@@ -3692,22 +3732,39 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         // FOB component strip verbatim (owner Notes 38) — same tiles the diagnose panel shows on top.
         h(FobStrip, { fob: draft.fob, loc: draft.loc, monthlyOverride: monthlyOverrideFor(draft.loc, period) }),
         div({ style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' } },
-          span({ style: { fontSize: '12px', color: 'var(--text3)' } }, draftFull ? 'Full report' : 'Abbreviated recap'),
-          div({ style: { display: 'flex', gap: '12px' } },
+          span({ style: { fontSize: '12px', color: 'var(--text3)' } },
+            draftView === 'full' ? 'Full report' : draftView === 'followup' ? 'Housekeeping — routine maintenance' : 'Abbreviated recap'),
+          div({ style: { display: 'flex', gap: '12px', alignItems: 'center' } },
+            // 2026-08-31 (owner req) -- Housekeeping is a THIRD view, not a second click on Full: the
+            // obsolete/discontinued/inactive verify-and-clear list used to live inside Full report,
+            // but it never changes this month's FOB number, so it's split out here (own comment on
+            // formatDiagnosisReport's mode==='followup' branch) so a less-technical store manager
+            // isn't handed routine maintenance mixed in with this cycle's actual action items. Named
+            // "Housekeeping" (not "Follow-Up") to avoid colliding with the existing "📣 EOM Follow-up"
+            // bulk-messaging modal elsewhere in this same panel -- different feature, same word. Only
+            // shown once a real diagnosis ran (same gate the old Full toggle used).
             (draft.fullBody && draft.fullBody !== draft.recapBody)
-              ? h('button', { onClick: () => setDraftFull(f => !f), style: { background: 'none', border: 'none', color: draftFull ? 'var(--gold)' : 'var(--text3)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' } }, draftFull ? '↩ Recap' : 'Full report →') : null,
+              ? div({ style: { display: 'flex', gap: '10px' } },
+                  ['recap', 'full', 'followup'].map(v => h('button', {
+                    key: v,
+                    onClick: () => setDraftView(v),
+                    style: { background: 'none', border: 'none', color: draftView === v ? 'var(--gold)' : 'var(--text3)', fontSize: '11px', cursor: 'pointer', fontWeight: draftView === v ? 700 : 400, textDecoration: draftView === v ? 'none' : 'underline' },
+                  }, v === 'recap' ? '↩ Recap' : v === 'full' ? 'Full report' : '🧹 Housekeeping')))
+              : null,
             h('button', { onClick: () => setDraftText(t => !t), style: { background: 'none', border: 'none', color: 'var(--text3)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' } }, draftText ? 'Formatted' : 'Plain text'))),
-        // Message body — the approved abbreviated recap by default (Full report a click away).
-        // Formatted (mdToHtml) reads like the report + copies with styling; Plain text = raw for SMS/Slack.
+        // Message body — the approved abbreviated recap by default (Full report / Housekeeping a
+        // click away). Formatted (mdToHtml) reads like the report + copies with styling; Plain text = raw
+        // for SMS/Slack. bodyForDraftView() is the ONE place mapping view -> field (module-level,
+        // above), so this and copyDraft() can't fall back differently for the same view.
         draftText
           ? h('textarea', {
-              readOnly: true, value: (draftFull ? (draft.fullBody || draft.body) : (draft.recapBody || draft.body)),
+              readOnly: true, value: bodyForDraftView(draft, draftView),
               style: { width: '100%', minHeight: '240px', background: 'var(--surf3)', color: 'var(--text)', border: '1px solid var(--bdr)', borderRadius: '6px', padding: '10px', fontSize: '12.5px', fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' },
             })
           : h('div', {
               className: 'md-rpt',
               style: { maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--bdr)', borderRadius: '6px', background: 'var(--surf3)', padding: '12px', fontSize: '13px', lineHeight: 1.55 },
-              dangerouslySetInnerHTML: { __html: mdToHtml(draftFull ? (draft.fullBody || draft.body) : (draft.recapBody || draft.body)) },
+              dangerouslySetInnerHTML: { __html: mdToHtml(bodyForDraftView(draft, draftView)) },
             }),
         div({ style: { display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' } },
           h('button', {

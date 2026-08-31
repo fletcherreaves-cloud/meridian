@@ -218,3 +218,33 @@ alongside today's print/CSV/copy/email paths, not instead of them — a `RoutePa
 the UI without breaking desktop admins. Good candidate to scope as its own dispatch once the
 current EOM-reports batch (#227) and the recount-impact SAGE tool (#226) land — not scoped or
 built yet, logged here so it isn't lost.
+
+## Idea logged for later (2026-08-31, owner) — link cash controls to food cost / FOB reporting
+
+Owner, verbatim, mid-conversation: *"which reminds me, at some point we have to link cash controls
+to food cost and report that as well."* Not scoped, not designed — flagging so it isn't lost.
+
+Context it came up in: reviewing a CoachQ (a competing/adjacent tool) sample report for store
+35064, which included a "Controls Data" section — combined emp/mgr meal discounts vs. a target
+(1.88% of sales vs. ~0.96% target, ~$1,800 over), overring/refund counts, no-sale drawer-open
+counts, and a register-level cash-variance table naming specific managers/cashiers tied to
+Register 13's recurring variances.
+
+Two different ideas are bundled in that one CoachQ section, worth separating when this gets
+scoped:
+1. **Meal-discount % as a FOB/controls crossover metric** — this genuinely touches food cost (comp
+   meals are a real $ leaving the food-cost bucket) and could reasonably live in the EOM/FOB report
+   family. Meridian's `signal-registry.js` already tracks Controls loss-prevention metrics
+   (T-Reds, cash/cashless refunds, promo, disc, POS-over $) as `(Cloud)` metric groups for
+   Signals/Scanner — the atoms likely already exist; this would be surfacing a subset of them
+   inside the EOM/FOB context specifically, not a new data pull.
+2. **Register/cashier-level variance naming** (the "Register 13 — Seth F, Bobbi J" table) is a
+   DIFFERENT kind of thing — HR/loss-prevention attribution, not food cost. Deliberately NOT
+   recommended for the EOM/FOB report family: this codebase's own standing convention for
+   integrity findings is "verify, don't accuse" (see `eom-diagnosis.js`'s `INTEGRITY_LABEL`
+   section and `dispatch-swing-ledger-report.test.js`'s framing) — naming specific employees by
+   name in an automated report that a manager forwards around cuts against that. If this gets
+   built, it belongs with (or stays in) the Controls/Signals panel, not the food-cost report.
+
+Not scoped or built yet — needs the owner to say which metrics, which report(s), and whether (2)
+is wanted at all before any implementation starts.
