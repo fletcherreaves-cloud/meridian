@@ -490,7 +490,7 @@ Today: ${today}
 
 LIVE DATABASE TOOLS — Use these for any question involving current or recent performance:
 ─────────────────────────────────────────────────────────────────────────────────────────
-You have six tools — five query live Supabase data (updated daily via automation), one searches the QSRSoft vendor docs:
+You have seven tools — six query live Supabase data (updated daily via automation), one searches the QSRSoft vendor docs:
 
 1. query_daily_activity(start_date, end_date?, locs?)
    Returns: product_sales, scheduled projection (proj_sales_dollars), DT speed (dt_untilserve/dt_trans_cnt in µs → divide by trans count and 1,000,000 for seconds), for each store by day.
@@ -519,14 +519,21 @@ You have six tools — five query live Supabase data (updated daily via automati
    USE FOR: "are our promos paying off?", "is [store]'s discounting worth it?", "which stores give away margin without a sales lift?", "promo/discount ROI", "should we cut any promotions?"
    CAVEAT: directional screen (association with controls), NOT a randomized experiment — always say so. Defaults to ~90 days if no dates given (needs a multi-week window).
 
-6. search_qsr_kb(query, limit?)
+6. query_eom_recount_impact(period, locs?)
+   Returns: for one EOM month, district totals (stores improving/worsened/mixed/no-action, $ moved toward zero, $ moved away from zero) and per-store engagement verdict + top recounted items — read from the actual raw count ledger (qsr_raw_item_detail), the SAME data the in-app EOM Dashboard's Change Monitor uses.
+   USE FOR: "how did stores that recounted their EOM items impact FOB", which stores recounted vs did nothing, which items drove a store's recount, whether a store's recounts helped or hurt its variance.
+   Method: same-store, same-item, session-count vs final-count within the EOM close window (the last 3 calendar days of the month) — NOT a between-store comparison (stores recount BECAUSE they saw a bad number, so that comparison would be confounded by self-selection).
+   CAVEAT: this measures FOB (inventory variance) impact ONLY. Total food cost % / "Base Food %" is NOT in Meridian's data model anywhere — if asked about food cost broadly, answer the FOB slice and say plainly that total food cost % can't currently be measured, don't imply this tool covers it. period is required, "YYYY-MM" (e.g. "2026-07"), not a date range.
+
+7. search_qsr_kb(query, limit?)
    Returns: the most relevant QSRSoft Help Center articles (title, section, body excerpt, url) — the vendor's own documentation.
    USE FOR: how QSRSoft works / what a QSRSoft metric, report, or field MEANS / how to do something in QSRSoft — e.g. "how does QSRSoft calculate stat variance?", "what is OEPE / R2P / KVS?", "how do I run the raw item report?", "what does a red model mean?", "how does eBOS handle transfers?"
-   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–5 for those).
+   RULE: when a question hinges on QSRSoft terminology or methodology, search the KB rather than guessing — then cite the article title. This is vendor docs, NOT the owner's live store numbers (use tools 1–6 for those).
 
 TOOL USAGE RULES:
 - ALWAYS call query_daily_activity when asked about recent sales, pacing, DT speed, or vs-projection for any date
 - ALWAYS call query_labor_summary for any OT-dollar or over/under-staffed question about the current/recent period — see tool 3's caveat on why NOT to answer these from the static 60-day summary or from query_lifelenz_labor
+- ALWAYS call query_eom_recount_impact for any question about EOM recounts, item variance, or how recounting affected FOB/food cost for a given month — this is a monthly-close question the static summaries below cannot answer at all. Still name the FOB-vs-total-food-cost caveat from tool 6 whenever "food cost" is asked about broadly.
 - For "today" use ${today}; for "yesterday" use the previous calendar day
 - You can call multiple tools simultaneously if a question spans domains
 - The static OPERATIONAL DATA below is auto-first sourced (cloud/emailed streams preferred, manual upload as last-resort fill only — see DATA COVERAGE below for what actually resolved). For live/current questions, tool data is more authoritative than the static summaries.
@@ -796,6 +803,7 @@ const DATA_SOURCES = [
   { kw: /\b(labor|vlh|schedul|hours|tpph|tpmh|crew|fixed labor|floor)\b/i, tool: 'query_lifelenz_labor', table: 'lifelenz_schedule', label: 'LifeLenz labor / scheduling' },
   { kw: /\b(forecast|mape|projection accuracy|snapshot|model accuracy)\b/i, tool: 'query_forecast_snapshots', table: 'forecast_snapshots', label: 'Forecast snapshots' },
   { kw: /\b(promo|promotion|discount|coupon|give.?away|roi|paying off|margin.*(spend|give))\b/i, tool: 'query_promo_roi', table: 'daily_glimpse_daily / ctrl_rows', label: 'Promo / Discount ROI' },
+  { kw: /\b(recount|re-count|eom close|end.?of.?month (invent|count)|item variance|count ledger)\b/i, tool: 'query_eom_recount_impact', table: 'qsr_raw_item_detail', label: 'EOM recount / FOB impact' },
 ];
 const detectSource = text => DATA_SOURCES.find(s => s.kw.test(text || '')) || null;
 // Language that suggests SAGE couldn't get the data (→ a troubleshooting Task).
