@@ -31,7 +31,7 @@
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
 import { crossStoreConsistencyText } from '../engine/eom-ledger-baseline.js';
-import { ensureEomPrintStyleInjected } from './eom-supervisor.js';
+import { ensureEomPrintStyleInjected, PrintGeneratingBanner } from './eom-supervisor.js';
 import { groupRowsByLocationThenKey } from './eom-report-grouping.js';
 
 const { useEffect, useState, useCallback } = React;
@@ -121,6 +121,7 @@ export function EOMRecountImpactPanel({ rows, crossStore, period, scopeLabel }) 
   return div({ style: { padding: '16px', maxWidth: '1100px', margin: '0 auto' } },
 
     div({ className: 'eom-no-print' },
+      h(PrintGeneratingBanner, { forPrint }),
       div({ style: { marginBottom: '14px' } },
         div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '4px' } }, 'Recount-Impact Report'),
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),

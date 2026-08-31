@@ -276,4 +276,35 @@ describe('dispatch #227 — Recount Impact report', () => {
     const rows = [...container.querySelectorAll('tbody tr')];
     expect(rows.length).toBe(1);
   });
+
+  // 2026-08-31 (owner-reported, real): window.print() froze the tab for ~12s on a real "all
+  // stores" report (Chrome's own "[Violation] 'setTimeout' handler took 11941ms", attributed by a
+  // "[click-trace] ... blocked ... button Print" entry to doPrint's setTimeout). Owner confirmed
+  // waiting it out DOES eventually produce a real printout -- the report was never actually
+  // broken, just silent during a freeze that reads exactly like a failure. `forPrint` was already
+  // being set true right before every one of these reports' doPrint() setTimeout/window.print()
+  // call; it just had nothing rendering off of it. This proves the banner text this fix adds
+  // actually reaches the screen the moment Print is clicked -- BEFORE window.print()'s freeze --
+  // not just that the underlying PrintGeneratingBanner component renders in isolation.
+  it('shows a "generating" banner the instant Print is clicked, before window.print() itself is even called', async () => {
+    await renderPanel(root);
+    await selectPeriod(container);
+    await clickTab(container, 'Recount Impact');
+    expect(container.textContent).not.toMatch(/Generating the print preview/);
+
+    const originalPrint = window.print;
+    let printCalled = false;
+    window.print = () => { printCalled = true; };
+    try {
+      const printBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Print'));
+      expect(printBtn, 'Print button not found').toBeTruthy();
+      await act(async () => { printBtn.click(); });
+      // The banner must appear on THIS tick, before the doPrint()'s own setTimeout(window.print, 60)
+      // has fired -- proving it warns the user before the freeze, not after.
+      expect(printCalled).toBe(false);
+      expect(container.textContent).toMatch(/Generating the print preview — larger reports can take several seconds/);
+    } finally {
+      window.print = originalPrint;
+    }
+  });
 });
