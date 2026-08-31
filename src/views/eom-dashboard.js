@@ -52,7 +52,7 @@ import { CountCycleSection } from './count-cycle-panel.js';
 // Dispatch #202 — EOM Supervisor Summary folded in as a "Supervisor Rollup" tab (harvested from
 // the retired standalone eom-summary route/panel; see eom-supervisor.js's own header for the
 // full story, including the print-CSS class-hook and permission-scoping notes).
-import { EOMSupervisorPanel } from './eom-supervisor.js';
+import { EOMSupervisorPanel, openPrintWindow } from './eom-supervisor.js';
 // Dispatch #227 — three new read-facing report tabs (owner requests, 2026-08-30): a district-wide
 // missing/uncounted-items report, a simplified "send to teams" EOM Count snapshot, and a
 // recount-impact report. Same "harvest into a sibling file, render as a tab" shape as
@@ -113,24 +113,6 @@ function downloadText(filename, text, mime = 'text/csv;charset=utf-8') {
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   } catch (e) { console.warn('[eom] download failed', e); }
 }
-function openPrintWindow(title, bodyHtml) {
-  try {
-    // NB: do NOT pass 'noopener' — with it window.open() returns null, so nothing gets written and the
-    // new tab stays blank white (owner Notes 38: "Print for summary report ... blank white page").
-    const w = window.open('', '_blank', 'width=900,height=1100');
-    if (!w) { console.warn('[eom] print window blocked'); return; }
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;color:#111;margin:26px;font-size:12px;line-height:1.45}
-h1{font-size:17px;margin:0 0 3px}.sub{color:#666;font-size:11px;margin:0 0 16px}
-table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #cbcbcb;padding:5px 8px;text-align:left;vertical-align:top}
-th{background:#f1f1f1;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
-tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-monospace,Menlo,monospace}
-@media print{.noprint{display:none}}</style></head><body>${bodyHtml}
-<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200)}<\/script></body></html>`);
-    w.document.close();
-  } catch (e) { console.warn('[eom] print failed', e); }
-}
-
 const unpad = loc => String(loc || '').replace(/^0+/, '') || String(loc || '');
 const nm = loc => STORE_NAMES[unpad(loc)] || unpad(loc);
 // Look a loc up in a {loc→...} map tolerant of the unpadded/padded-NSN ambiguity between qsr_*

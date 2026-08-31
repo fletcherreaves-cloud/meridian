@@ -26,10 +26,10 @@
 // the two reports can't grow two different groupings of the same idea.
 import * as React from 'react';
 import { DIGEST_CLASS_LABELS } from '../engine/eom-digest.js';
-import { ensureEomPrintStyleInjected, PrintGeneratingBanner } from './eom-supervisor.js';
+import { openPrintWindow } from './eom-supervisor.js';
 import { groupRowsByLocationThenKey } from './eom-report-grouping.js';
 
-const { useEffect, useState, useCallback } = React;
+const { useState, useCallback } = React;
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
@@ -66,19 +66,41 @@ export function formatMissingItemsText(rows, { period, scopeLabel, reportAsOf } 
   return lines.join('\n');
 }
 
+// HTML export for the "🖨 Print" button (2026-08-31, real bug fix — see openPrintWindow's own
+// comment in eom-supervisor.js for the full story: toggling body.eom-printing + window.print()
+// against the live app DOM reproducibly came back blank for the owner, so these reports print an
+// isolated window instead).
+export function formatMissingItemsHtml(rows, { period, scopeLabel, reportAsOf } = {}) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const list = rows || [];
+  const totalValue = list.reduce((s, r) => s + (r.valueAtRisk || 0), 0);
+  let html = `<h1>Missing / Uncounted Items — ${esc(scopeLabel || 'all stores')}</h1>`;
+  html += `<div class="sub">${esc(period)} · ${list.length} item${list.length === 1 ? '' : 's'} · ${esc(money(totalValue))} at risk · as of ${esc(fmtDate(reportAsOf))}</div>`;
+  if (!list.length) return html + '<p>No uncounted items in the current scope.</p>';
+  const byLoc = groupRowsByLocationThenKey(list, { key: 'recommendation' });
+  for (const loc of byLoc) {
+    html += `<div class="block"><div class="loc-hdr">${esc(loc.storeName)} (${loc.org === 'emerald' ? 'FL' : 'OK'})</div>`;
+    for (const g of loc.groups) {
+      html += `<div class="grp">${esc(g.label)}</div><table><thead><tr><th>Class</th><th>Item</th><th>Last Counted</th><th>$ On Hand</th></tr></thead><tbody>`;
+      for (const r of g.items) {
+        const last = r.lastCounted ? fmtDate(r.lastCounted) : 'Never';
+        const stateLabel = STATE_LABEL[r.state] || r.state || '';
+        html += `<tr><td>${esc(DIGEST_CLASS_LABELS[r.cls] || r.cls || '—')}</td>`
+          + `<td>${esc(r.descr || r.wrin || '—')}${r.wrin ? ` <span class="mono" style="color:#999">(${esc(r.wrin)})</span>` : ''}</td>`
+          + `<td>${esc(last)}${stateLabel ? `<br><span style="font-size:9.5px;font-weight:700;color:#666">${esc(stateLabel)}</span>` : ''}</td>`
+          + `<td>${esc(money(r.onHandAmt))}</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+  }
+  return html;
+}
+
 export function EOMMissingItemsReportPanel({ rows, period, reportAsOf, scopeLabel }) {
-  useEffect(() => { ensureEomPrintStyleInjected(); }, []);
-  const [forPrint, setForPrint] = useState(false);
-  useEffect(() => {
-    const after = () => { setForPrint(false); document.body.classList.remove('eom-printing'); };
-    window.addEventListener('afterprint', after);
-    return () => window.removeEventListener('afterprint', after);
-  }, []);
   const doPrint = useCallback(() => {
-    setForPrint(true);
-    document.body.classList.add('eom-printing');
-    setTimeout(() => window.print(), 60);
-  }, []);
+    openPrintWindow(`Missing / Uncounted Items — ${scopeLabel || 'all stores'}`, formatMissingItemsHtml(rows, { period, scopeLabel, reportAsOf }));
+  }, [rows, period, scopeLabel, reportAsOf]);
   const [copied, setCopied] = useState(false);
   const doCopy = useCallback(async () => {
     try {
@@ -97,7 +119,6 @@ export function EOMMissingItemsReportPanel({ rows, period, reportAsOf, scopeLabe
   return div({ style: { padding: '16px', maxWidth: '1100px', margin: '0 auto' } },
 
     div({ className: 'eom-no-print' },
-      h(PrintGeneratingBanner, { forPrint }),
       div({ style: { marginBottom: '14px' } },
         div({ style: { fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: '#f5bc00', marginBottom: '4px' } }, 'Missing / Uncounted Items'),
         div({ style: { fontSize: '20px', fontWeight: 800, color: 'var(--text)' } }, `${scopeLabel || 'all stores'} — ${period}`),

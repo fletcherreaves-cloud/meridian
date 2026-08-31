@@ -12,14 +12,30 @@
 // display:none on that ancestor blanks the print modal nested inside it too, regardless of the
 // modal's own class. That's a BLANK page, not a truncated one, matching the report exactly.
 //
-// Fix: App.js's wrapper now carries `className:'mf-main-content'`, and PRINT_STYLE exempts it at
-// the .mf-app-root level and repeats the same "hide every other direct child" rule one level down
-// (see eom-supervisor.js's PRINT_STYLE comment). happy-dom does not evaluate `@media print` rules
-// (there is no print-media emulation to toggle), so this test can't assert on computed `display`
-// under body.eom-printing — instead it asserts the STRUCTURAL invariant PRINT_STYLE's two-level
-// rule actually depends on (the print modal sits exactly two direct-child hops below
-// `.mf-app-root`, via `.mf-main-content`) and pins the exact selector text so either half of the
-// fix silently regressing gets caught.
+// Fix (first pass): App.js's wrapper now carries `className:'mf-main-content'`, and PRINT_STYLE
+// exempts it at the .mf-app-root level and repeats the same "hide every other direct child" rule
+// one level down (see eom-supervisor.js's PRINT_STYLE comment).
+//
+// 2026-08-31, same day — the owner kept seeing the SAME blank-print result on Missing Items /
+// Recount Impact / Team Snapshot / Count Swings even after the above landed, on both single-store
+// and all-locations scopes, with the actual freeze duration varying wildly run to run. Three
+// further real-measurement investigations (a Chromium reproduction of App.js's exact DOM/CSS
+// shape at realistic scale, a CSS-custom-property-cascade benchmark, console-timing attribution)
+// never found a reproducible defect in the two-level PRINT_STYLE rule this test guards — so, per
+// the owner's explicit go-ahead, those four reports were migrated OFF the in-place
+// `body.eom-printing` + `window.print()` mechanism entirely, onto `openPrintWindow()`'s isolated
+// `window.open()` + static-HTML mechanism (see eom-supervisor.js's `openPrintWindow` comment for
+// the full history; dispatch-227-eom-reports.test.js covers that new mechanism for Recount
+// Impact). **Supervisor Rollup is the only tab left on the mechanism this file exercises** — its
+// own `forPrint` does more than gate the banner (it expands every row, swaps editable cells for
+// plain text) and was never confirmed broken, so it was deliberately left alone. This test is
+// rescoped to Supervisor Rollup accordingly; the structural invariant it asserts (print modal
+// sits exactly two direct-child hops below `.mf-app-root`, via `.mf-main-content`) still applies
+// to it via the same RoutePanelShell/`printableMode` wiring. happy-dom does not evaluate `@media
+// print` rules (there is no print-media emulation to toggle), so this test can't assert on
+// computed `display` under body.eom-printing — instead it asserts that structural invariant and
+// pins the exact PRINT_STYLE selector text so either half of the fix silently regressing gets
+// caught.
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -61,6 +77,7 @@ vi.mock('../lib/supabase.js', () => ({
   deleteEomCountException: async () => ({}),
   loadEomCountExceptions: async () => [],
   createEomShareLink: async () => ({}),
+  loadEbosMonthlyByStore: async () => ({}),
 }));
 
 const { EOMDashboardPanel } = await import('../views/eom-dashboard.js');
@@ -98,17 +115,19 @@ describe('dispatch #227 print bug repro + fix (App.js real .mf-app-root > .mf-ma
         React.createElement(EOMDashboardPanel, { stores: STORES, ds: {}, settings: {}, onClose: () => {} })));
       await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     });
-    await clickTab(appRoot, 'Missing Items');
+    // Supervisor Rollup — the one tab still on this mechanism (see file header). The other four
+    // dispatch #227 report tabs migrated to openPrintWindow() and no longer inject PRINT_STYLE.
+    await clickTab(appRoot, 'Supervisor Rollup');
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(document.getElementById('eom-print-style'), 'PRINT_STYLE was not injected for the Missing Items tab').toBeTruthy();
+    expect(document.getElementById('eom-print-style'), 'PRINT_STYLE was not injected for the Supervisor Rollup tab').toBeTruthy();
 
     const printModalEl = appRoot.querySelector('.mf-eom-print-modal');
-    expect(printModalEl, 'no element carries .mf-eom-print-modal for the Missing Items tab').toBeTruthy();
+    expect(printModalEl, 'no element carries .mf-eom-print-modal for the Supervisor Rollup tab').toBeTruthy();
 
     const printArea = printModalEl.querySelector('.eom-print-area');
     expect(printArea, '.eom-print-area not found inside the print modal').toBeTruthy();
-    expect(printArea.textContent).toMatch(/Diced Onions|MISSING|UNCOUNTED/i);
+    expect(printArea.textContent).toMatch(/EOM Supervisor Summary/i);
 
     // The invariant PRINT_STYLE's fix depends on: exactly two direct-child hops to .mf-app-root.
     const mainContentEl = printModalEl.parentElement;
