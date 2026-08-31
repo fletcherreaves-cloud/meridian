@@ -308,6 +308,40 @@ describe('diagnoseIncompleteCount', () => {
     // ...but its full item object is still in `items` for anything that lists them all.
     expect(foodClass.items.map(u => u.wrin)).toContain('dead-1');
   });
+  // 2026-08-31 fix, same day as the previous test: `deactivated` alone (which includes
+  // droppedFromCurrentPull() firing in ISOLATION) isn't confident enough to assert "Deactivated in
+  // QSRSoft" as settled fact -- live data caught it wrong. Real Ada-Country Club measurement:
+  // Fried Apple Pie's OWN QSRSoft active flag reads TRUE right now (still on sale, still being
+  // counted as recently as Aug 13), but its on-hand row hadn't refreshed in 11+ days, so only the
+  // WEAK signal fires. The message must not claim deactivation it can't back up.
+  it('never asserts "Deactivated in QSRSoft" from droppedFromCurrentPull() alone — only a confirmed signal (active:false or descr text) earns that wording', () => {
+    const freshAt = '2026-08-31T14:37:00.000Z';
+    const staleAt = '2026-08-20T13:40:26.000Z'; // 11+ days behind the store's freshest pull
+    const rows = [
+      // Real gap: active TRUE, no descr signal, but stopped refreshing — the exact live Fried
+      // Apple Pie case. Only droppedFromCurrentPull() fires.
+      { wrin: '00076-126', cls: 'Food', descr: 'Fried Apple Pie', onHandAmt: 30.58, totalUnits: 111, lastCounted: d(2026, 8, 13), active: true, updatedAt: staleAt },
+      // Control: the store's OWN freshest pull, so nothing here is "dropped".
+      { wrin: 'fresh-1', cls: 'Food', descr: 'Sesame Seed Bun', onHandAmt: 40, totalUnits: 80, lastCounted: d(2026, 8, 30), active: true, updatedAt: freshAt },
+    ];
+    const diag = diagnoseIncompleteCount(rows, { period: '2026-08', asOf: d(2026, 8, 31) });
+    const byWrin = Object.fromEntries(diag.uncounted.map(u => [u.wrin, u]));
+
+    expect(byWrin['00076-126'].state).toBe('stale');
+    expect(byWrin['00076-126'].deactivated).toBe(true);         // still routes to the calm bucket
+    expect(byWrin['00076-126'].confirmedDeactivated).toBe(false); // but NOT a confirmed fact
+    const rec = recommendationForItem(byWrin['00076-126']);
+    expect(rec).not.toMatch(/Deactivated in QSRSoft/);
+    expect(rec).toMatch(/Hasn't refreshed from QSRSoft in over a week/);
+    expect(rec).toMatch(/\$31 on hand as of 2026-08-13/);
+    expect(rec).toMatch(/may still be active and just need a fresh count/);
+
+    // Unlike a confirmed-deactivated $0 item, a weak-signal item is NOT excluded from the
+    // actionable byState tally — we're not confident enough to say it needs no action, so it
+    // should keep counting toward "N items need attention".
+    expect(byWrin['00076-126'].noActionNeeded).toBe(false);
+    expect(diag.byState.stale.n).toBe(1);
+  });
   it('a non-fountain-related recommendationForItem() call for never/early states falls through to recommendationForState unchanged', () => {
     const rows = [
       { wrin: 'a', cls: 'Food', descr: 'Beef', onHandAmt: 500, totalUnits: 10, lastCounted: null }, // never

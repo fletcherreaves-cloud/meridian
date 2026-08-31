@@ -334,7 +334,19 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
       // literally saying "(Deactivated)") both slipped through and re-surfaced the exact same
       // false-urgency bug the active-flag fix was meant to close. isDeactivatedByDescr() (above)
       // is the more complete signal -- see its own comment for the live measurement.
-      const deactivated = r.active === false || isDeactivatedByDescr(r.descr || r.desc) || droppedFromCurrentPull(r);
+      // `confirmedDeactivated` = QSRSoft ITSELF told us (its own active flag, or its own descr
+      // text) -- a fact, not an inference. `droppedFromCurrentPull()` is a WEAKER, inferred signal
+      // (this row simply stopped refreshing while the rest of the store kept going) -- its own
+      // measurement comment above says it, in isolation, is only ~85% right (6/7 in the original
+      // sample), and 2026-08-31 live data confirms the miss is real: Ada's own Fried Apple Pie
+      // carries `active: true` in QSRSoft right now (still genuinely on sale, still being counted
+      // as recently as Aug 13) -- only droppedFromCurrentPull fires for it, because nobody has
+      // recounted it in 11+ days, NOT because QSRSoft deactivated it. `deactivated` (used for
+      // `state` routing) keeps ALL three signals -- an item that stopped refreshing still belongs
+      // in the calm "verify & clear" bucket either way -- but the DISPLAY TEXT (recommendationForItem
+      // below) must not claim "deactivated" as settled fact on the weak signal alone.
+      const confirmedDeactivated = r.active === false || isDeactivatedByDescr(r.descr || r.desc);
+      const deactivated = confirmedDeactivated || droppedFromCurrentPull(r);
       const state = deactivated
         ? 'stale' : (!d ? 'never' : (periodStart && d < periodStart ? 'stale' : 'early'));
       const totalUnits = Number(r.totalUnits) || 0;
@@ -358,9 +370,15 @@ export function diagnoseIncompleteCount(onHandRows, { period, asOf, minValue = 0
         // owner's own correction: "we need to verify the on-hand is zero" first, because a
         // deactivated item STILL carrying a real residual (LEMONS $11.07, Big Mac Sauce Cup -$1.47
         // — the exact live Ada-Country Club cases the comment above already cites) is not done at
-        // all; it still needs the residual zeroed out before close.
+        // all; it still needs the residual zeroed out before close. `confirmedDeactivated` feeds
+        // recommendationForItem's wording confidence, per the comment above.
         deactivated,
-        noActionNeeded: deactivated && valueAtRisk === 0 && totalUnits === 0,
+        confirmedDeactivated,
+        // Requires confirmedDeactivated, not just deactivated: excluding an item from the
+        // actionable byState/byClass counts is a claim that nothing is needed, and a weak,
+        // droppedFromCurrentPull()-only signal doesn't earn that claim even at $0 on hand — it
+        // might just be an active item nobody's recounted recently, which still deserves a look.
+        noActionNeeded: confirmedDeactivated && valueAtRisk === 0 && totalUnits === 0,
       };
     })
     .filter(r => r.valueAtRisk >= minValue)
@@ -595,8 +613,18 @@ export function recommendationForState(state) {
 //     all; the real remaining action is clearing that residual, not re-verifying deactivation.
 export function recommendationForItem(u) {
   if (!u || u.state !== 'stale' || !u.deactivated) return recommendationForState(u && u.state);
-  if (u.noActionNeeded) return 'Already deactivated in QSRSoft, $0 on hand — no action needed.';
   const amt = Math.round(Math.abs(u.onHandAmt ?? u.valueAtRisk ?? 0));
+  // 2026-08-31 fix, same day as the first pass: `deactivated` alone isn't confident enough to
+  // assert "Deactivated in QSRSoft" as fact -- it also fires on droppedFromCurrentPull() ALONE
+  // (this row just stopped refreshing), which live data showed can be wrong (Ada's own Fried Apple
+  // Pie: QSRSoft's own active flag says TRUE, yet it hadn't refreshed in 11+ days and only the
+  // weak signal fired). Only `confirmedDeactivated` (QSRSoft's own active flag or its own descr
+  // text) earns the confident wording; the weak-signal-only case gets an honest, hedged one that
+  // doesn't claim a fact we don't actually have.
+  if (!u.confirmedDeactivated) {
+    return `Hasn't refreshed from QSRSoft in over a week (last known $${amt.toLocaleString()} on hand as of ${u.lastCounted || 'an earlier count'}) — may already be deactivated with a stale balance, or may still be active and just need a fresh count. Verify in QSRSoft.`;
+  }
+  if (u.noActionNeeded) return 'Already deactivated in QSRSoft, $0 on hand — no action needed.';
   return `Deactivated in QSRSoft but still carrying $${amt.toLocaleString()} on hand — zero it out (waste/write-off) before close so it doesn't ride into next period.`;
 }
 
