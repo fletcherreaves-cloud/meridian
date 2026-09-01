@@ -1031,7 +1031,7 @@ async function main() {
 // scripts/qsrsoft-register-audit-pull.mjs uses. Exported for both dispatch #209's and #210's
 // own test suites, which import this module directly for its pure/network-mockable functions
 // without also firing off a live run.
-export { runMode, triggerFobPullIfPossible, recentPeriodKeys };
+export { runMode, triggerFobPullIfPossible, recentPeriodKeys, storesCountingToday };
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
 }
