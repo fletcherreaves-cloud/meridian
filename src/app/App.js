@@ -290,7 +290,7 @@ const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').t
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
 import { computeAllCustomSignals } from '../engine/signal-registry.js';
-import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure } from '../lib/supabase.js';
+import { supabase, loadMonthlyTargets, loadAllMonthlyTargets, loadAllYearlyTargets, saveSmgFullscale, loadSmgFullscale, saveVoicePerf, loadVoicePerf, saveLifeLenzSchedule, loadLifeLenzSchedule, loadLifeLenzJobHours, saveLaborRows, loadLaborRows, saveFobRows, loadFobRows, loadQsrFob, saveOpsRows, loadOpsRows, saveCtrlRows, loadCtrlRows, saveDarRows, loadDarRows, savePeaksRows, loadPeaksRows, saveAuditRows, loadAuditRows, loadQsrWaste, loadPmixRows, uploadReportFile, loadCustomSignals, appendCustomSignalHistory, loadQsrFieldDefs, saveUserSetting, loadUserSetting, loadQsrActSummary, loadForecastWeekCache, loadNewsMentions, loadEbosDaily, loadRosterStatistics, loadRosterRoleCounts, loadTurnoverMonthly, loadDigitalAppMonthly, loadMcdeliveryMonthly, loadShiftManagerMonthly, loadGlimpse, loadCash, loadSalesLedger, loadOpsCashSheet, loadOpsLaborSummary, loadOpsServiceStats, loadOpsSalesMix, saveStoreLaborConfig, loadStoreLaborConfig, saveLifeLenzLaborWeek, loadLifeLenzLaborWeek, saveEmployeeSkills, loadEmployeeSkills, loadGradedVisits, saveSmgComments, loadSmgComments, saveVoiceDaypart, loadVoiceDaypart, loadOrgEvents, saveOrgEvents, deleteOrgEventsByLocDate, loadOrgSchoolConfig, loadEventImpact, loadCoachingCycles, loadOrgEventExceptions, loadTargetOverrides, loadRetentionMarks, saveRetentionMark, loadStaffAssignments, loadEmployeeTenure, saveWeeklyCountDayOverrides } from '../lib/supabase.js';
 import { indexTargetOverrides } from '../engine/target-overrides.js';
 import { orgEventsToDayMap, diffUserEventsForCloudSync, collapseScopedEvents } from '../engine/events-import.js';
 import { setSupabaseClient, syncReviewsFromSupabase, syncConfigFromSupabase, pushConfigToSupabase, syncTemplatesFromSupabase } from '../engine/review-engine.js';
@@ -326,7 +326,7 @@ import { loadRecurringRules, saveRecurringRules, expandRecurringRule, getRecurri
 import { ErrorBoundary, mfExportSession, mfRestoreSession, mfIDBLoad, mfIDBSave, mfIDBClear, _mfOpenDB, _mfSerDS, _mfDeserDS, _mfSessionMeta, SessionBanner } from '../features/session.js';
 import { buildDS, mergeDS, buildStore, buildBrief, normalizeScores } from '../engine/pipeline.js';
 import { supplementLaborWithSched } from '../engine/labor-supplement.js';
-import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, parseOrgStructure, classifyOrgStructureImport, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
+import { detectType, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, parseLifeLenzLabor, parseMbiLaborAnalysisWb, parsePeopleSkillsWb, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays, opsReportIsDaily, ensureParsersXLSXReady } from '../parsers/index.js';
 import { ensureInventoryXLSXReady } from '../parsers/inventory-parse.js';
 import { TutorialOverlay, shouldShowTutorial, resetTutorial } from '../views/tutorial.js';
 // #232 Finding 3: store-dash.js (145 KB raw, plus the chart.js/auto runtime it imports at module
@@ -2625,8 +2625,25 @@ function App() {
               }catch(e){ saveErrors++; console.warn('[org-structure] saveRetentionMark threw for',loc,e); }
             }
             console.log(`[Meridian] Organization Structure: ${marked} marked, ${skippedFuture} skipped (future), ${skippedExisting} skipped (already marked), ${noDate} no date — from ${file.name}`);
-            _retentionImport={marked,skippedFuture,skippedExisting,noDate,saveErrors,markedStores,total:orgRows.length};
-            loaded.push({name:file.name,type:{...type,label:`Organization Structure — ${marked} marked, ${skippedFuture} skipped (future), ${skippedExisting} already marked`}});
+            // Owner-directed 2026-09-01: "utilize both" -- also capture the Locations sheet's
+            // real, owner-entered "Weekly Inventory Count Day" per store, as the fallback layer
+            // for the qsr_onhand-derived weekly-count-day automation (mergeWeeklyCountDay(),
+            // src/engine/count-cycle.js). Whole-map upsert (not per-loc), same as
+            // saveEomDigestConfig — this is a small, single-row config blob, not per-store rows
+            // needing individual save-error tracking like the retention marks above.
+            let countDaysSaved=0;
+            const countDayRows=parseOrgStructureCountDays(wb);
+            if(countDayRows.length){
+              const overrides={}; for(const r of countDayRows) overrides[r.loc]=r.weekdayName;
+              try{
+                const res=await saveWeeklyCountDayOverrides(overrides);
+                if(res&&res.saved) countDaysSaved=countDayRows.length;
+                else console.warn('[org-structure] saveWeeklyCountDayOverrides failed:',res&&res.error);
+              }catch(e){ console.warn('[org-structure] saveWeeklyCountDayOverrides threw:',e); }
+            }
+            console.log(`[Meridian] Organization Structure: ${countDaysSaved} weekly count-day overrides saved — from ${file.name}`);
+            _retentionImport={marked,skippedFuture,skippedExisting,noDate,saveErrors,markedStores,total:orgRows.length,countDaysSaved};
+            loaded.push({name:file.name,type:{...type,label:`Organization Structure — ${marked} marked, ${skippedFuture} skipped (future), ${skippedExisting} already marked, ${countDaysSaved} count-day overrides saved`}});
           } else {
             // Guard: refuse a period-summary Operations Report (no per-day date
             // column). Daily rows are the source of truth — a period total

@@ -3185,6 +3185,31 @@ export async function saveEomDigestConfig({ levels, sendHourUtc } = {}) {
   return { saved: true };
 }
 
+// ── Weekly Inventory Count Day fallback (owner-directed, 2026-09-01) ─────────────────────────
+// Real, owner-entered per-store weekly count day, imported from Organization_Structure.xlsx's
+// Locations sheet (parseOrgStructureCountDays(), src/parsers/index.js) on every org-structure
+// upload (App.js). Same org_config pattern as eom_digest_config above -- no new migration, same
+// RLS. Consumed as the FALLBACK layer by src/engine/count-cycle.js's mergeWeeklyCountDay(), which
+// prefers the qsr_onhand-derived detectWeeklyCountDay() when it's confident and falls back to
+// this file-sourced map otherwise (see that function's own doc comment). Stored as `{ [loc]:
+// weekdayName }` -- plain day names, not numbers, so the raw org_config row stays human-readable
+// if anyone inspects it directly in the Supabase UI.
+export async function loadWeeklyCountDayOverrides() {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('org_config')
+    .select('data').eq('key', 'weekly_count_day_overrides').maybeSingle();
+  if (error) { console.warn('[supabase] loadWeeklyCountDayOverrides:', error.message); return {}; }
+  return (data?.data && typeof data.data === 'object') ? data.data : {};
+}
+
+export async function saveWeeklyCountDayOverrides(overridesByLoc = {}) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const { error } = await supabase.from('org_config')
+    .upsert({ key: 'weekly_count_day_overrides', data: overridesByLoc, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) { console.warn('[supabase] saveWeeklyCountDayOverrides:', error.message); return { saved: false, error: error.message }; }
+  return { saved: true };
+}
+
 // ── Web Push subscriptions (dispatch #216) ────────────────────────────────────
 // One row per device/browser (src/app/shell.js's NotificationBell "🔔 Enable device alerts"
 // toggle calls these). Requires supabase/schema-push-subscriptions.sql — RLS is scoped to

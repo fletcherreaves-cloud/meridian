@@ -25,7 +25,8 @@
 
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { postResend, EMAIL_TO } from './lib/resend-notify.mjs';
-import { detectWeeklyCountDay, cycleCompliance, formatWeeklyComplianceReport } from '../src/engine/count-cycle.js';
+import { detectWeeklyCountDay, mergeWeeklyCountDay, cycleCompliance, formatWeeklyComplianceReport } from '../src/engine/count-cycle.js';
+import { loadWeeklyCountDayFallback } from './lib/weekly-count-day.mjs';
 import { centralWeekday } from './lib/count-window.mjs';
 import { STORE_NAMES, unpadLoc } from '../src/constants.js';
 import { STORE_NSNS, recentPeriodKeys } from './qsrsoft-onhand-pull.mjs';
@@ -110,10 +111,17 @@ async function main() {
 
   const rowsByPeriod = await loadOnHandHistoryByPeriod(recentPeriodKeys(period, 6));
   const detected = detectWeeklyCountDay(rowsByPeriod);
+  // "Utilize both" (owner-directed, 2026-09-01) -- same derived+Organization-Structure-fallback
+  // merge as qsrsoft-onhand-pull.mjs's storesCountingToday(), reused via mergeWeeklyCountDay()
+  // (src/engine/count-cycle.js) rather than a second copy of the precedence logic.
+  const fallback = await loadWeeklyCountDayFallback(supabase);
+  const merged = mergeWeeklyCountDay(detected, fallback);
   const todayWd = centralWeekday(now);
   const todayNsns = STORE_NSNS.filter(nsn => {
-    const loc = String(nsn).padStart(7, '0');
-    const d = detected[loc];
+    // Keyed by UNPADDED loc -- see qsrsoft-onhand-pull.mjs's storesCountingToday() for why a
+    // padded lookup here previously matched nothing.
+    const loc = String(nsn);
+    const d = merged[loc];
     return d && d.weekday === todayWd;
   });
   console.log(`[weekly-cycle-digest-send] date ${dateStr} · ${todayNsns.length}/${STORE_NSNS.length} stores expected to count today`);

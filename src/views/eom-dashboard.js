@@ -44,7 +44,8 @@ import { buildDistrictSummary, COMP_META, CLASS_META } from '../engine/eom-distr
 import { mdToHtml } from '../utils/markdown.js';
 import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMissingProducts, computeCountTiming, fmtDurationHMS, LANE_META } from '../engine/eom-item-journey.js';
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
-import { detectSessions, cycleCompliance, isActive as isActiveOnHand, detectWeeklyCountDay } from '../engine/count-cycle.js';
+import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
+import { dowOf } from '../utils/date.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 // Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
 // count-cycle.js route/panel; see count-cycle-panel.js's own header for the full story).
@@ -289,13 +290,6 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
   const rows = onHandRows || [];
   let sessionsByLoc = {}, classTotalsByLoc = {};
   try { ({ sessions: sessionsByLoc, classTotals: classTotalsByLoc } = detectSessions(rows)); } catch { /* leave empty */ }
-  // 2026-09-01 — day-of-week detection now delegates to count-cycle.js's detectWeeklyCountDay(),
-  // the shared/proven touchedWeeklyClasses-basis implementation (same algorithm this function
-  // originated, dispatch #112, 27/27 live population) — a single-period call here (`[rows]`)
-  // reproduces this function's own prior inline dayFreq computation exactly, without a second
-  // copy of the tally logic living in two files.
-  let weekdayByLoc = {};
-  try { weekdayByLoc = detectWeeklyCountDay([rows]); } catch { /* leave empty */ }
   const asOfStr = asOf instanceof Date ? asOf.toISOString().slice(0, 10) : String(asOf).slice(0, 10);
   const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
   const curPeriod = periodKey(asOf);
@@ -349,14 +343,36 @@ export function cadenceFromOnHand(onHandRows, { asOf = new Date() } = {}) {
     // day-detection broadening below.
     const weeklyDays = graded.filter(s => s.weeklyDone);
     // Dispatch #112 item 1 — day-of-week detection uses ANY real Food/Condiment attempt
-    // (touchedWeekly), not only fully-weeklyDone sessions (measured live 2026-08-25: the OLD
-    // weeklyDone-only basis populated detectedWeekdayName for 2/27 stores; the touchedWeekly
-    // basis populates 27/27). 2026-09-01: that tally now lives once, shared, in count-cycle.js's
-    // detectWeeklyCountDay() (see the `weekdayByLoc` call above) — read here instead of
-    // recomputed inline, so the automation this same dispatch added (weekly-count-day pull mode,
-    // the digest email) can never disagree with what this panel shows for the same store. Status
-    // grading below (weeklyDone/lastWeekly/Overdue) is completely UNTOUCHED — dispatch #97's bar.
-    const detectedWeekday = weekdayByLoc[loc] ? weekdayByLoc[loc].weekday : null;
+    // (touchedWeekly), not only fully-weeklyDone sessions. Measured live 2026-08-25 against real
+    // qsr_onhand (period 2026-08, single-period-scoped, service-role read — 27 stores): the OLD
+    // weeklyDone-only basis populated detectedWeekdayName for 2/27 stores (7.4%); this broadened
+    // touchedWeekly basis populates 27/27 (100%), and every newly-populated store's touched dates
+    // hand-checked to an obviously real, mostly single-dominant-weekday pattern (e.g. store 6972:
+    // Thu 07/30, 08/06, 08/13, 08/20 — a clean weekly Thursday cadence the old basis never saw
+    // because no single session there ever reached the 98% Food+Condiment bar). Status grading
+    // below (weeklyDone/lastWeekly/Overdue) is completely UNTOUCHED — dispatch #97's deliberate bar.
+    //
+    // 2026-09-01 — deliberately NOT shared with count-cycle.js's own detectWeeklyCountDay()
+    // anymore (a same-day v5.302 change had unified them, then was reverted): that function was
+    // made STRICT (satisfiesWeekly-basis, "the same way we do for eom") on owner instruction,
+    // specifically because the automation it gates (the weekly-count-day pull window, the digest
+    // email) needs precision over population — cross-checked against the real ground truth
+    // (Organization Structure's "Weekly Inventory Count Day"), the strict basis is right far more
+    // often than this broad one. THIS panel's job is different: showing *some* signal for every
+    // store beats a blank "Counts on" column, so it keeps its own dense, always-populated basis.
+    // Two intentionally different precision/recall tradeoffs for two different jobs, not a stray
+    // duplicate — see detectWeeklyCountDay()'s own doc comment for the full history.
+    const dayDetectionSessions = graded.filter(s => s.touchedWeekly);
+    const dayFreq = {};
+    for (const s of dayDetectionSessions) {
+      // R3 (ratchet-week-day-arithmetic.test.js) — via the shared dowOf helper (src/utils/date.js),
+      // not a bare getDay call; this is DOW-bucketing an already-resolved count date, not week-
+      // start/business-day boundary math, same category the ratchet's own dispatch #68 note allows.
+      const wd = dowOf(s.date + 'T00:00:00');
+      dayFreq[wd] = (dayFreq[wd] || 0) + 1;
+    }
+    const detectedWeekday = Object.keys(dayFreq).length
+      ? Number(Object.keys(dayFreq).sort((a, b) => dayFreq[b] - dayFreq[a])[0]) : null;
 
     // Scope addition — the still-uncounted list, so a below-threshold store can be told EXACTLY
     // what's left, not just a percentage. Reuses EOM's own diagnoseIncompleteCount()

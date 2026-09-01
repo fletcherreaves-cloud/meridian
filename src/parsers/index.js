@@ -1803,6 +1803,46 @@ function parseOrgStructure(wb) {
   return out;
 }
 
+// ── Organization Structure — "Weekly Inventory Count Day" import (owner-directed, 2026-09-01) ──
+// Real, owner-entered ground truth for each store's weekly Food+Condiment count day -- NOT
+// derived. Owner: "we have the days of week that each store counts... it originates from the
+// org[anization] structure file." Lives on the `Locations` sheet (same workbook, different sheet
+// than parseOrgStructure() above), column "Weekly Inventory Count Day" -- confirmed live
+// 2026-09-01 against data/org-structure/Organization_Structure.xlsx: real values ("Tuesday",
+// "Thursday", ...) for all 20 OK stores, blank for all 7 FL stores (never populated there -- a
+// genuine data gap, not a parsing bug). Header row is row 2 (index 1), Location Name is col 0,
+// same conventions as parseOrgStructure(). Feeds `mergeWeeklyCountDay()` (src/engine/
+// count-cycle.js) as the FALLBACK layer for the qsr_onhand-derived detectWeeklyCountDay() --
+// see that function's own doc comment for why a static, manually-maintained file is a fallback
+// and not the primary source (it can't reflect a store's day drifting since the file's last
+// update, and doesn't cover FL at all). A blank cell or an unrecognized day string is skipped
+// entirely, not returned as a null/placeholder row -- an ABSENT fallback entry is what tells
+// mergeWeeklyCountDay() there is nothing here to fall back to for that store.
+function parseOrgStructureCountDays(wb) {
+  const ws = wb.Sheets['Locations'];
+  if (!ws) { console.warn('[parseOrgStructureCountDays] No "Locations" sheet found. SheetNames:', wb.SheetNames); return []; }
+  const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  const h = raw[1] || [];
+  const dayCol = fc(h, 'Weekly Inventory Count Day');
+  if (dayCol < 0) { console.warn('[parseOrgStructureCountDays] "Weekly Inventory Count Day" column not found on Locations.'); return []; }
+  const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const out = [];
+  for (let i = 2; i < raw.length; i++) {
+    const row = raw[i];
+    if (!row) continue;
+    const locRaw = row[0];
+    if (locRaw == null || locRaw === '') continue;
+    const loc = String(parseInt(locRaw, 10) || '');
+    if (!loc || !STORE_NAMES[loc]) continue; // skip "Above Store"/legend rows
+    const dayName = row[dayCol];
+    if (dayName == null || dayName === '') continue; // no fallback signal for this store
+    const weekday = WD.indexOf(String(dayName).trim());
+    if (weekday < 0) { console.warn('[parseOrgStructureCountDays] unrecognized day value for', loc, ':', dayName); continue; }
+    out.push({ loc, weekday, weekdayName: WD[weekday] });
+  }
+  return out;
+}
+
 // ── classifyOrgStructureImport — pure, testable classification for the Retention Rollup
 // pre-populate import (dispatch #146). Kept separate from the actual Supabase writes (App.js's
 // handleFiles) so the date gate and the skip-if-already-marked default can be unit-tested
@@ -2371,4 +2411,4 @@ function parsePeopleSkillsWb(wb){
   return parsePeopleSkills(parseRaw(wb, wb.SheetNames[0]));
 }
 
-export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport };
+export { parseXLDate, findCol, fc, fcx, autoHdrRow, parseRaw, parsePct, parseProjectionsFile, applyProjectionsToTargets, sniffSheetType, detectType, parseLaborData, parseOpsData, parseCtrlData, parseWeatherData, parseTargets, parseMonthlyTargets, parseYearlyTargets, parse3PeaksService, parse3PeaksSales, parseFOBData, parseRegisterAudit, parseShiftMgr, parseTrends, parseRecords, parseDARData, parsePMixData, validateTrend, autoDetectSheets, parseSalesLedger, parseDailyGlimpse, parseCashSheet, parseLaborExceptions, parseLifeLenzLabor, parseSMGVoicePDF, parseVoiceDaypartPDF, parseSMGFullScale, opsReportIsDaily, parseMbiLaborAnalysis, parseMbiLaborAnalysisWb, parsePeopleSkills, parsePeopleSkillsWb, parseSkillJobs, parseOrgStructure, classifyOrgStructureImport, parseOrgStructureCountDays };
