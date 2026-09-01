@@ -1,0 +1,128 @@
+{
+  "formId": "b57be0f9-8df2-4467-aa78-48067f30f1a8",
+  "title": "2026 Behind the Counter",
+  "description": "2026 Behind the Counter",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-02T20:54:36.189Z",
+  "itemCount": 14,
+  "sections": [
+    {
+      "title": "Customer First Visit 2026",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Short Answer",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "2026 Behind the Counter",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Manager In Charge of the Shift",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Behind the Counter Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter Operations",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "BC 1 -Tempering & Prep: Were product levels sufficient per posted product level charts/eProduction monitor for the volume of business, and were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 1 - Tempering & Prep: Were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 2 - MFY: Were UHC product holding times and holding levels being adhered to?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 3 -Fries/hash browns:  Were french fries/hash browns available to meet demand, following cooking and holding procedures and french fries station set up/maintained correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 4 -Beverages and Desserts: Were drinks placed on appropriate cart/table identified? Were drinks placed separately, grouped by order and served correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 5 - Order Assembly: Were orders assembled correctly, once all items were available, and checked \nfor accuracy? Were Stations/Landing Tables utilized appropriately?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 6 - General Cleanliness Production and Service Areas: Did restaurant display general cleanliness in employee areas, without a negative impact on operations and safety?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 7 - People Positioning: Area employees positioned and adjustments made, as conditions dictate, throughout the shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 9 - Leading Operations: Shift and Area Leaders conduct travel paths, identify danger zones and  take appropriate actions to prioritize & reduce operational barriers to deliver Gold Standard  products and a great customer experienceWellness: Was cashless and Contactless payment available in the Drive-Thru? Did employees wash hands properly when required?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 10 - Operational Focus: Was the Shift Leader aware of the restaurant's priorities, goals and actions,  and progress?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Managers' signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

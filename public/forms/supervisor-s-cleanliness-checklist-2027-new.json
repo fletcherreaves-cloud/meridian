@@ -1,0 +1,658 @@
+{
+  "formId": "9881ed36-8a0d-48ac-80c8-86e0333e26b5",
+  "title": "Supervisor's Cleanliness Checklist 2027 new",
+  "description": "Supervisor's Cleanliness Checklist MCDOK",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-08-08T18:03:16.375Z",
+  "itemCount": 69,
+  "sections": [
+    {
+      "title": "Cleanliness Checklist",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Store Name:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Overall Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Supervisor Name:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Reviewed with",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date of the visit",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "General Manager Section",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Outside",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Exterior Building / trash / lot",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Side walks",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Lane",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Menu Boards / speaker area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "all Windows & Sills",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Lobby",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Beverage Bar Area/ ice chutes",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Lights any part of lobby or clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "lobby area walls/floors/vents/baseboards/ chairs / trash cans",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Music Playing",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Vestibule areas",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Kiosks",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Women's Restroom",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "lights /ceiling /vents/floors/ baseboards/sinks /mirrors/hand dryers/toilets / toliet paper dispensers/ trash cans",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Men's Restroom",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "lights/ceiling/vents/floors/sink/mirror/hand dryers/ toilets/ all dispensers/trash cans",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Office",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Organized desk tops / cabinets / floors/ computer / walls / lights",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CO2 Detector/fire extinguishers/ 1st aid kit / all clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tec Cart",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "PM Calendar Current/ pryometer kit good",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Service Area",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Front Service Area",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "all area front counter / Registers / Printers/ cambros/ monitors/bumpbars/ floors/ walls/basboards",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCB Machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bulk Sugar Dispenser/ creamer machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Employee Appearance",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Crew Room",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Ceiling / Lights/ mirror/ clock/chairs/walls/ floors/ basboards /proper signs posted (People visit)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "dish rack for  Smallwares / clean dishes",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Drive Thru Area",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "present area Ceiling / Lights/ floors/ walls / stock shelves/ New beverage area clean/ windows / registers / bump bars",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "OJ Machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "all DT Cooler/ ice bins",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bulk Creamer Machine /sweetener machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ABS (S)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ABS Ice Machine (S)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coffee Makers",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "French Fry Area",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Top of Station / lights / mirror / cabinet/ trays/ side glass",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Vats",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry Hopper / Freezer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "McCafe / CBB / BDAP",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Blended Ice Machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McCafe Machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Under / Behind Units",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CBB Monitor/ bump bars",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Shake  / ice cream machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Production Area",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Production / Kitchen",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Lights/ floors / ceiling/ vents/ walls/ basboards /  all stainless",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Protein Fryer / Vats",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grills",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grill Hood",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fresh Beef Cooler",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Reg Meat Freezer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "UHCs",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Prep Table / Area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Under All Equipment/ wheels and legs /",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Prep Coolers",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Monitors / Bump Bars",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Toasters/ steamer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Oven / Combi's",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q-ing Ovens",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "all Condensers",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Power Cords & Water Line/ bun rack",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Stock Room",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Lights/ walls / ceiling/ vents/ stockrooms shelves/ under shelves",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Muiiplex",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Maintenance Closet / back door clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Dish Room Area",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "back sink area Lights/ under sink/ pipes/walls/ floors/ vents/ floor sink / dish washer area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Washer (Towels)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "big Ice Machine",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tea Brewer/ tea shelve area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Walk-In Cooler",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "lights /Door/ fan covers/ condenser / floor / baseboards/ shelves / thermometer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "stickers on clean dishes / no jewelry / secondary shelf lives good",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Walk-In Freezer",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Door/ lights / floor clean/ boxes sealed / thermometer/ condenser /shelves / walls",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    }
+  ]
+}

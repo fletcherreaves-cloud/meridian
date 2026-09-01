@@ -1,0 +1,294 @@
+{
+  "formId": "11129fb6-2964-49c7-9658-a2fd49e7a123",
+  "title": "General Manager Weekly Scorecard",
+  "description": "General Manager Weekly Scorecard",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:28:41.254Z",
+  "itemCount": 42,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Sales +/- vs The BU",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Meet the Crew Labor % Target",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Overall Voice Score at 80% or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "General Manager Weekly Scorecard",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "DM 1-on-1 Meetings Complete",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Food Safety 60 Day Average 95% or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Weekly Cleanliness Score 90% or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Month",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Delivery +/- (G/R/D)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Meet the TPPH Target or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Printed Reports Ready for RDM Board",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2 Crew Trainer 1-on-1 Meetings Completed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "# of Weekly Voice Comments 1 & 2 is (0)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "PM Tasks Have Been Completed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "General Manager Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Basic Information",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Week Number",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Complaint Quintile Meet Target",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Cleanliness & Maintenance",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Pre Shift Checklist Completed Daily",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "# of Shift Managers Meet Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Digital App +/- (G/R/D)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Does Shift Manager Count Meet Target?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Complaints Follow Up/Closed Within 96 Hours",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Staff Management",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "# of Crew Trainers Meet Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Sales Performance",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Customer Satisfaction",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Does Crew Trainer Count Meet Target?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Labor & Operations",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Review Management Development Folders",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Food Safety & Compliance",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "The Store Has 2 Assigned and Qualified DM",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Weekly Score Summary",
+      "color": "cyan-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Total Goals Achieved",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Weekly Notes",
+      "color": "grey-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Note #1",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #2",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #3",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #4",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #5",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "General Manager Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

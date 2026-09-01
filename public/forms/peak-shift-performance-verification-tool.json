@@ -1,0 +1,847 @@
+{
+  "formId": "25113a52-36eb-4f4c-82c0-d659dfb03867",
+  "title": "Peak Shift Performance Verification Tool",
+  "description": "Performance Verification",
+  "category": "People Development",
+  "lastEditedAt": "2025-10-08T14:46:52.542Z",
+  "itemCount": 116,
+  "sections": [
+    {
+      "title": "Peak Shift Performance Verification Tool",
+      "color": "grey-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Shift Manager Name:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Completed by\n:",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Today's Date:",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Time Observed:",
+          "field": "time"
+        }
+      ]
+    },
+    {
+      "title": "Used for Verification of SIO Principles. Passing Score is 80% in all areas",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "General SIO",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Service",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Quality",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Cleanliness",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Overall Score",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "General SIO",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Pre-shift checklist complete",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Staffing levels appropriate for volume",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dynamic Shift Positioning Guide (DSPG) complete",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Second side open (when needed)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Proactively manages danger zones",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Stocking 24/2 (SIP)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Manager sets targets, everyone knows targets",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Targets and results are tracked",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Manager managing from the Observation Zone",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cash and Order Taker functions split and Cars are pulled forward if the order is not ready",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Hand washing is taking place",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Food Safety Daily Checklist Complete5",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Shift Manager Food Safety Certified",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "General SIO Total",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Comments:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Drive Thru Car Count",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Front Counter GC",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Sandwich Count",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Target",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Actual",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Service",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Results vs. target - Front Counter GCs +/-",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Results vs. target - Drive-Thru  Car Count +/-",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Results vs. target - Sandwich Count  +/-",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT – Did the order taker repeat the order (Ask); Did the cashier repeat one item (Ask); Did the presenter repeat one item (Tell)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FC – Were you asked if you were dining in; did the order taker repeat the order (Ask); Did the presenter repeat one item (Tell)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Order accurately filled; condiments, napkins receipt, etc.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Be Nice Hospitality- smiles, courteous, helpful, friendly, eye contact",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Management Appearance- proper uniform, complete with name tag, clean/well groomed",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Crew Appearance- proper uniform, complete with name tag, clean/well groomed",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT & Counter Equipment- operating and positioned properly, enough headsets, printers",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Travel paths completed",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Service Total",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Comments:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Quality",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Product tested - Hot and fresh",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Product tested - Neat appearance",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Product tested - Good taste, properly prepared",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fries/Hash brown- Hot, fresh, good flavor, salted 5 properly, & golden color",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Beverages- Properly filled, proper temperature, good flavor, properly made",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Desserts- Properly prepared, good flavor and texture, holding time expectable",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Buns/Muffins/Bagels – toasted properly",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Production Manager - with 11 or more crew, a dedicated production manager in place to help expedite production and service With fewer than 11 crew, designated person assigned production responsibilities",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cabinet Charts- in place, up to date, and followed Holding times adhered to",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Raw product/buns - Within code dates",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Raw product/buns - Secondary shelf lives marked",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Raw Raw product/buns - Prep table times marked/monitoredproduct/buns - Secondary shelf lives marked",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Raw product/buns - Tempered product properly marked",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Quality Total",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Comments:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Cleanliness",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Guest Conveniences- self serve area -clean, and supplies stocked, high chairs clean, music on",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Lobby/Dining Room-floors, chairs, tables, lobby trays properly cleaned",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restrooms- Clean, odor free, supplies available, hand dryer working",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Windows/Doors- all windows/mullions clean (including DT windows)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Outside Lighting - all bulbs working, clean & in good repair",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Playplace/ Patio- seating, trashcans, floor, play unit, clean & well maintained",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Trash Cans/Sidewalks- clean and in good repair Emptied as needed",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Signage/Flags- in good repair, clean and properly displayed, DT menu board and speaker/COD clean and in good condition",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Landscape/Parking Lot- parking lot free of litter, landscaping well maintained",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Kitchen- floors, walls, stainless, equipment clean, not cluttered and in good repair",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Front Counter/DT- floors, walls, stainless equipment clean, not cluttered and in good repair",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "New Spacer",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Cleanliness Total",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Comments:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Overall Score",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Overall Comments",
+          "lines": 3
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,355 @@
+{
+  "formId": "63254f6b-0875-48c6-9d44-4f4bf66a946a",
+  "title": "RGRV Health & Safety 2026",
+  "description": "RGRV Health & Safety 2026",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-04T15:47:03.750Z",
+  "itemCount": 37,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Restaurant Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Health & Safety Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "See the 2025 Operations PACE Health & Safety Guide for assessment criteria and guidance.",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "Critical Health & Safety",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS1-US Emergency Exits/Fire Extinguishers: Emergency exits and fire extinguishing equipment is visible, accessible,  operational and in good condition.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS2-US Personal Protective Equipment (PPE): Personal protective equipment (e.g., face shield, filtering apron, gloves,  oven mitts, ANSI 2 Safety Vest) is accessible, in good condition, and being used correctly.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS4-US Cooking Equipment Fire Suppression System: The restaurant has an automatic, fixed fire suppression  system(s) installed over the fryers and grills. The system is in good condition and inspected and serviced by a  qualified service company at least every six months.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS6-US Carbon Dioxide Tanks: CO2 (Carbon Dioxide) tank, beverage and cylinder systems are secured and in good  condition.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS7  US  CO2 Alarm System: CO2 detectors, alarms, warnings and equipment are installed correctly and operational (A Carbon Monoxide - or CO detector is not acceptable).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS8-US PlayPlace Equipment: The restaurant is free of obsolete/unapproved equipment (Big Mac Climber, outdoor  metal slides, electric rides, bounce and bend, riders with spring base, swings, etc.).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Occupational Safety",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS3 -US Safety Standards and Regulatory Compliance: Managers and crew are trained on and can explain the  restaurant’s Emergency Action Plan (EAP) safety standards and procedures.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Restaurant Fire Prevention and Protection",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS5-US The ventilation hoods, ducts, and fans over fryers and grills are inspected by a qualified service company every  three months and cleaned at a minimum of every six months or sooner based on inspection results. (For  locations with Cascade Plus filters and Automist system: inspect quarterly and clean per inspection results).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS5-US Grill and fryer filters, blank off plates, and grease collection cups are cleaned regularly, installed correctly, and In  good repair. The exhaust fan is operational while cooking equipment is turned on",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS5-US The grill and fryers are free of excessive food debris and grease underneath the equipment",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS5-US Electrical outlets, connectors, and cords are in good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS5-US All managers know the location and operation of the main controls for shutting off electricity, natural/LP gas, and  water leading into the building.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS5-US The inside of the restaurant is free of gasoline or other flammable liquids, unless properly stored in an approved  fire cabinet.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS5 US Restaurant Fire Prevention Preventative Maintenance: Mark \"Yes\" if questions HS5-US-01  through HS5-US-06 meet standards.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "PlayPlace Safety",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS 9-US Operational Procedures: Operational and inspection procedures are established, communicated, and  implemented to promote the safety of PlayPlaces.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Chemical Safety",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS10-US The Hazcom app is available and readily accessible for all approved chemical products that are  being used in the restaurant and employees have been trained on how to access and understand  Safety Data Sheets (SDS).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS10 -US Only approved cleaning products/chemicals are being used (from an approved supplier), are properly stored, and  are in their original container/packaging or an appropriately labeled secondary container.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS10 US Chemical Procedures: Mark \"Yes\" if questions HS10-US-01 and HS10-US-02 meet standards",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Slip and Fall Prevention",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS11-US Mopping/slip and fall prevention tools are in good condition, operational procedures are being correctly followed,  and floors are clean and slip-resistant when walked on.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS11-US Exterior walkways, patios, parking lots, curbs, ramps, and driveways are In good repair, and free of obstacles and  conditions in which a person could slip on or trip over",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS11 -  US Floor and Walkway Maintenance: Mark \"Yes\" if questions HS11-US-01 and HS11-US-02 meet  standards",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Building Safety HS19-US Self",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS12-US Self-serve ice machine storage bin lids (overhead style) are correctly in place and not at risk of falling.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS12-US Flag poles, lot light poles, and sign poles, including their base plates and anchor bolts are in good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS12-US  Kitchen equipment and interior and exterior chairs and tables are stable and free of conditions that could  cause injury (e.g., sharp edges, loose/missing hardware, cracks, corrosion, etc.).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS12-US The interior and exterior ladders are safe, in good repair and enable safe transfer and access to and from  the roof’s surface, including a railing or other handhold extending above the roof line..",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS12- US Infrastructure, Furniture, Equipment: Mark \"Yes\" if questions HS12-US-01 through HS12-US-04  meet standards.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Security",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "HS13-US All outside delivery freezer door unit locking mechanisms are locked and in good operating condition.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS13US Drive-thru windows have locks that are in good operating condition and are secured when unattended",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS13-US The back door is equipped with an unobstructed and working external view device, i.e., peephole, flap, window,  video monitor, etc., is locked (except during deliveries and emptying trash), and is alarmed when not in use.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS13-US There is a safe, locked and functioning at all times, located in the manager’s office or other secure location",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS13-US There is a designated room/area to enable safe cash handling and housing of IT equipment.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS13 US Security Equipment: Mark \"Yes\" if questions HS13-US-01 through HS13-US-05 meet standards.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS14-US Security Training: Restaurant management and crew have received security training.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HS15-US Security Procedures: Restaurant management can describe the proper security procedures to be followed.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Health & Safety Score",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

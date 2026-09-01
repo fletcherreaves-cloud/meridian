@@ -1,0 +1,347 @@
+{
+  "formId": "6fcde883-ad87-4201-96c5-8025ab30401b",
+  "title": "Production Area Leader Verification Form",
+  "description": "Production Area Leader Verification Form",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-27T16:21:46.185Z",
+  "itemCount": 41,
+  "sections": [
+    {
+      "title": "Production Area Leader Verification Form",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Image Display",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "General Information",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Coach",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Time",
+          "field": "time"
+        }
+      ]
+    },
+    {
+      "title": "Targets Determine 2-3 targets to measure, and set the goals for the shift:",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Targets",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Plan for the Shift",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "1. Food Safety is completed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2. Communicates with the Shift Leader regarding People/Product/Equipment",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "3. Completes a travel path and Pre-shift checklist",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "4. Sets and communicates targets and expectations: KVS, sandwich counts, sales, and guest counts",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "5. Positions accordingly (DSPT recommended) second side opened as appropriate",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "6. Communicates secondary duties and promotional information",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "7. eProduction and grill monitor set up, in use",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "8. Product stocked for 24/2, Frozen/Refrigerated/Dry",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "9. Prep complete, product tempered",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Leading the Area",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "10. Communication ongoing with Shift Leader",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "11. Observes and coaches to correct procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "12. Identifies, prioritizes, and solves problems effectively",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "13. Maintains proper positioning (recommended DSPT) and repositions to meet demand. For restaurants with simplified breakfast, repositions grill person appropriately for the conditions.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "14. Maintains shift cleanliness/sanitation",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "15. Reacts to danger zones/flexes crew in and out, and makes appropriate increases/decreases to the eProduction monitors using the bump bar",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "16. Manages cabinet levels/cabinet timers",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "17. Monitors Food Safety: Handwashing every hour, proper glove procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "18. Monitors Food Safety: Maintains product quality, temps and visual cues",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "19. Works from most flexible position to view the entire production area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "20. Follows safety and security procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "21. Demonstrates basic people skills/Please and thank you",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "22. Monitors and communicates progress toward targets throughout shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "23. Consistently coaches their team and provides appropriate feedback (appreciative and constructive) as needed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "24. Monitors finished product for Gold Standard Quality",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Post shift Analysis",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "25. Communicates with shift leader and seeks feedback",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "26. Compares results to targets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "27. Communicates with incoming Production Leader",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "28. Resolves or communicates issues before leaving shift: People/Product/Equipment",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "29. Gives appreciative feedback and recognition to Production team where targets were met",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Verification Results",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Critical Points",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Points",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Verification Status",
+          "options": [
+            "Passed (23+ points AND 100% critical behaviors)",
+            "Schedule Another Verification"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Feedback",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Coach Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Learner Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,243 @@
+{
+  "formId": "bc9fd66b-0834-43e8-9fa3-dff0a01a0ec3",
+  "title": "2026 Curbside & Behind the Counter",
+  "description": "2026 Curbside & Behind the Counter",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-14T22:39:52.500Z",
+  "itemCount": 28,
+  "sections": [
+    {
+      "title": "Customer First Visit 2026",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "2026 Curbside & Behind the Counter",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Curbside",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Behind the Counter Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Curbside",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "CU1 - Cleanliness: Is the exterior of restaurant clean and free of litter?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU2 - Cleanliness: Were crew wearing uniforms that were clean and in good condition?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU3 -Messaging: Were Curbside spaces clearly signposted, easily identifiable and positioned  near restaurant entrance doors and a minimum of two Curbside spaces available??",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU4 - Present : Was Presenter friendly and did they greet you by name  Was presenter wearing a high visibility safety \nvest per safety requirements??",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU 4 - Present : Did Presenter have condiments readily available (in apron, cart, tray, caddy, etc.), and asked if you have everything you need?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Service Time R2P",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "CU 5 - Speed: Was service time (R2P + Fulfillment) 135 seconds or less? Time starts once the bay number is entered and the button \"Done\" is clicked, stops when the last item is presented",
+          "options": [
+            "135\" or less - 8 pts",
+            "136”-162” - 7 pts",
+            "163”-188” - 5 pts",
+            "189”-214” - 3 pts",
+            "215”-240” - 1 pts",
+            "241” or greater - 0 pts"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU 6 -  Accuracy:  Did you receive all the food and drink items as ordered, and were they properly prepared?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU7 - Did you receive all the condiments (if required or requested), along with utensils, napkins, and straws?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU8 - Quality: Was your sandwich/entrée served neat, at proper temperature, fresh, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU9 - Quality: Were the french fries hot, salted, and crisp -OR- hash browns hot and crisp and did they taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU10 - Quality: Was your drink served neat, at the proper temperature and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "CU11 - Quality: Was your dessert/McCafé Bakery served neat, at the proper temperature, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter Operations",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "BC1 - Tempering & Prep: Were product levels sufficient per posted product level charts/eProduction monitor for the volume of business, and were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC1 - Tempering & Prep: Were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC2 - MFY: Were UHC product holding times and holding levels being adhered to?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC3 - Fries/hash browns:  Were french fries/hash browns available to meet demand, following cooking and holding procedures and french fries station set up/maintained correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC4 - Beverages and Desserts: Were drinks placed on appropriate cart/table identified? Were drinks placed separately, grouped by order and served correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC5 - Order Assembly: Were orders assembled correctly, once all items were available, and checked for accuracy? Were Stations/Landing Tables utilized appropriately?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC6 - General Cleanliness Production and Service Areas: Did restaurant display general cleanliness in employee areas, without a negative impact on operations and safety?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC7 - People Positioning: Area employees positioned and adjustments made, as conditions dictate, throughout the shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC9 - Leading Operations: Shift and Area Leaders conduct travel paths, identify danger zones and  take appropriate actions to prioritize & reduce operational barriers to deliver Gold Standard  products and a great customer experience",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC10 - Operational Focus: Was the Shift Leader aware of the restaurant's priorities, goals and progress?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Manager's name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Managers' signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

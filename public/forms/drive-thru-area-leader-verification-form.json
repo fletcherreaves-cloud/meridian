@@ -1,0 +1,324 @@
+{
+  "formId": "51b60c01-e041-4caa-b4a5-ec8eda261051",
+  "title": "Drive Thru Area Leader Verification Form",
+  "description": "Drive Thru Area Leader Verification Form",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-27T16:43:06.985Z",
+  "itemCount": 37,
+  "sections": [
+    {
+      "title": "Drive Thru Area Leader Verification Form",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Image Display",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Team Member Information",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Coach",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Time",
+          "field": "time"
+        }
+      ]
+    },
+    {
+      "title": "Targets: Determine 2-3 targets to measure, and set the goals for the shift:",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Targets",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Plan for the shift",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "1. Communicates with the Shift Leader regarding People/Product/Equipment",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2. Completes Drive Thru travel path and DT Pre-Shift Checklist",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "3. Sets and communicates targets and expectations",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "4. Positions accordingly (DSPT recommended) and Pull Forward Runner identified (should not be a member of the DT team)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "5. Communicates secondary duties and promotional information to crew on shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "6. Ensures equipment is functioning properly and being used",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Equipment Checklist",
+          "options": [
+            "Headset batteries charged",
+            "Coin changer",
+            "Scanner & printer, PED paddle"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Leading the Area",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "7. Positioned to focus attention on entire Drive Thru area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "8. Observes and provides feedback to ensure correct procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Procedures Checklist",
+          "options": [
+            "Pull forward/Roll forward (Why/Wait/Where)",
+            "Back to Basics Order Taking",
+            "Split functions",
+            "Digital executed as designed asking guests if they are using the app and using the guest's name"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "9. Identifies, prioritizes, and solves problems/blockages effectively (uses DT timer where applicable)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "10. Maintains proper positioning, repositions to meet customer demands",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "11. Maintains shift cleanliness/sanitation inside and outside",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "12. Role model and coach the team to deliver on the hospitality Make it Promise throughout the shift. Provides feedback as needed.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "13. Demonstrates basic people skills-please and thank you",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "14. Follows customer recovery process when necessary",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "15. Monitors and communicates progress toward targets throughout shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "16. Consistently coaches their team and provides appropriate feedback (appreciative and constructive) as needed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "17. Prioritizes to eliminate any potential risk to customer or crew safety",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "18. Follows security and food safety procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Post shift Analysis",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "19. Compares results to targets and identifies strengths and opportunities",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "20. Determines plan to address opportunities and blockages",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "21. Discusses successes and opportunities with Shift Leader and seeks feedback. Finds solutions for opportunities and DT blockages (referenced in DT section of PQRG)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "22. Provides feedback to the Drive Thru Team and seeks feedback on what went well/could be even better on the next shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "23. Resolves or communicates outstanding issues before leaving shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Point Totals",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Critical Points",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Points",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Verification Result",
+          "options": [
+            "Passed - Area Leader scored 18 or more AND 100% of critical behaviors",
+            "Failed - Area Leader scored 17 points or below OR missed 1 or more critical behaviors"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Feedback",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Signatures",
+      "color": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Coach Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Learner Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

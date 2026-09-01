@@ -1,0 +1,275 @@
+{
+  "formId": "60ed276a-830c-475f-a1ad-7e60f8879fca",
+  "title": "Guest Service Department Weekly Scorecard",
+  "description": "Guest Service Department Weekly Scorecard",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:29:31.357Z",
+  "itemCount": 38,
+  "sections": [
+    {
+      "title": "Guest Service Department Weekly Scorecard",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Yellow Vests/Cond Trays Being Used",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Month",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "OEPE W/O Park Below 120 Seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RDM Boards Updated 100% by Thursday",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Voice Accuracy at or Above 88%",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Weekly Cleanliness Score 90% or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Basic Information",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "PM Tasks Have Been Completed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "POP Accurate to Match the McSource",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Doing Table Service During Lunch",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Voice Overall at 80% or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "R2P Time Below 70 Seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Guest Service Manager Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Cleanliness & Staff Management",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Cash Sheets Are Neat and Complete",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT EPB2B at 9 or Less",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Week Number",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "# of Rude Complaints - Target is 0",
+          "options": [
+            "Yes - 0 Complaints",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2 Crew 1-on-1 Completed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Health Check Done Monthly",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Voice & Accuracy Metrics",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Inside Voice Overall at 80% or Higher",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Speed of Service",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Inside EPB2B at 9 or Less",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cash Short Below the Target (0.05%)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Service Standards",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Weekly Refunds Meet Target (10 / 3 WM)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Administrative & Compliance",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Weekly Score Summary",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Overall # of Goals Achieved",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Weekly Notes",
+      "color": "grey-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Note #1",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #2",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #3",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #4",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Note #5",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Guest Service Manager Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

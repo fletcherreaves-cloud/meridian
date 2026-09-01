@@ -1,0 +1,449 @@
+{
+  "formId": "2aa37e31-3e66-42bf-9a08-d20bb2bd01df",
+  "title": "Guest Service Department Cleanliness Checklist",
+  "description": "Guest Service Department Cleanliness Checklist",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:29:19.513Z",
+  "itemCount": 56,
+  "sections": [
+    {
+      "title": "Guest Service Department Cleanliness Checklist",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Complete set of brushes available for shake machine",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Month",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Under counter trash can clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Instructions",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Week Number",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Shake/Sundae machines are clean & sanitized correctly",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tea dispensers clean/sanitized correctly, NEW liners daily",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McFlurry mix dispensers are clean sanitized daily",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pie merchandiser clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complete this checklist weekly. Each task is worth 1 point. Total possible score is 45 points per week. Target is 90% or higher (41+ points).",
+      "color": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Exterior is clean and stainless shines",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Orange juice dispensers clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Basic Information",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Filters are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drink tower/ABS nozzles are clean and sanitized daily",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Mix reservoirs are clean and sanitary",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coffee machines are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Service Area",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Shake/Sundae Machine and McCafe Cell",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Cream dispensers/sugar disp clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drip pans are clean/good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Center island is clean and organized",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Syrup lines are clean and sanitary",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "POS registers, KVS, printers, bump bars, monitors clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Topping pumps are clean, working with water to heat",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Weekly Score Summary",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "All window decals/POP are current straight/good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cone holder is clean and working",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Total Points Achieved (Out of 45)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Holding times marked on cones, toppings, syrups",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Stock areas neat and organized",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "McCafe, flurry spoons clean, used properly",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Front counter walls and floors are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Additional Notes",
+          "lines": 3
+        },
+        {
+          "kind": "check",
+          "title": "McCafe machine cleaned properly",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Guest Service Manager Signature",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Front counter ceiling & lighting are clean/good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McCafe syrups, bean hopper labeled with holding times",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Under 3 toys, Braille/picture menu's, nutrition info avail",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BIM cleaned weekly, good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Condiment bins are clean, labeled",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Under counter shelves/runner station clean & organized",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BIM and topping area clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McCafe cell floors, baseboards, walls clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All refrigerators clean, gaskets in good condition",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT clearance sign positioned correctly",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drive thru menu board clean, good condition",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Yellow vests avail for all parked/curbside orders",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Proper number of headsets available/working",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT monitors, bump bars clean/good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT booths are clean, organized",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT windows are clean, clutter free",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT cart is clean, organized",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT walls, ceilings, vent clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All stainless is clean, shined",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All ice bins, scoops, transfer buckets clean, stored properly",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "formId": "92df2087-cf2f-431c-922f-395323d4e513",
+  "title": "RGRV Shift Mgt. 2026",
+  "description": "RGRV Shift Mgt. 2026",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-04T15:20:27.478Z",
+  "itemCount": 14,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Restaurant Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Leading Shift",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "SL1 US  Leading Operations Pre-Shift:  Utilizes data and insights to plan and lead effective shifts; set priorities and follow up on items needing action.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL1-US-1 Leading Operations During Shift (Travel Paths): Shift Leader conducts  travel paths, sets priorities, and takes appropriate action throughout the  shift.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL1-US-2 Leading Operations During Shift (Danger Zones): Shift Leader observes  and proactively identifies potential danger zones and takes effective action.  Observe throughout the shift.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL2-US Leading Operations During Shift (Production): Shift Leader works with Area Leaders to \ncoach employees to ensure quality, achieve targets, identify danger zones, prioritize & \nreduce operational barriers to deliver Gold Standard products, and support a great \ncustomer experience",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL3- US  Leading Operations During Shift (Service): Shift Leader works with Area Leaders to coach employees to ensure quality, achieve targets, identify danger zones, and prioritize & reduce operational barriers to deliver great customer service across all service channels.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL4 - US  Leading Operations Post Shift: Shift Leader reflects on how well the  restaurant delivered on the shift management results and recognizes and  rewards employees for meeting shift targets and performance excellence.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL5 - US  Customer Experience: All managers role model hospitality and look for ways to enhance the customer experience.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "GENERAL",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "SL8- US  Customer Feedback: Restaurant has a CSAT/recovery system utilizing  customer feedback to develop a restaurant action plan to address  customer service.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL7-US  Resources: Shift Leader accesses and analyzes relevant data, makes  effective decisions, and utilizes resources to ensure operational excellence  on the shift.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL9- US  Internal Operations Communication: Are channels for communicating  operations-related information established, used, and employees aware of  and actively supporting the restaurant operations priorities?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SL11- US  People Positioning: Are employees positioned and adjustments made, as  conditions dictate, throughout the shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Shift Management Score",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

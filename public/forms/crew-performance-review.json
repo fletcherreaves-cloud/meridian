@@ -1,0 +1,285 @@
+{
+  "formId": "e871889c-6cef-41e0-9826-fe80a76ce8f8",
+  "title": "Crew Performance Review",
+  "description": "Crew Performance Review SimpleThink",
+  "category": "People Development",
+  "lastEditedAt": "2026-09-01T21:25:23.553Z",
+  "itemCount": 34,
+  "sections": [
+    {
+      "title": "Crew Performance Review",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Date of the Review",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Employee Name",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Type of Review",
+          "options": [
+            "30 Day Review",
+            "Wage Review",
+            "Other"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Customer Satisfaction",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Delivers Hot Fresh Food",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Handles complaints quickly and effectively",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Achieves 100% accuracy in customer orders",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Personal interaction - treats each customer like a valued guest",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Delivers quick service",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Delivers impressive service",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Comments",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Work Standards",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Follow all restaurant procedures carefully and correctly",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Strives for continuous improvement on every station worked",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Consistently shows up on time",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Comments",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Teamwork",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Makes contribuitions and participates as a member of the team",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Help other team members with tasks as needed",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Supports co-workers in responding to and meeting customer needs",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Comments",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Job Fit",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Works well in a fast-paced environment",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Takes pride in acomplishing tasks under time pressure",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Willing to offer assistance to customers without being asked",
+          "options": [
+            "Exceeds Standard",
+            "Meets Standard",
+            "Below Standards"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Comments",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Overall Performance",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Points achieved",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "PERFORMANCE RATINGS  / TOTAL POSSIBLE POINTS 30 / 100%",
+          "options": [
+            "OUTSTANDING  21-30 POINTS / 70% - 100%",
+            "EXCELLENT 18-21 POINTS / 60% - 70%",
+            "GOOD 15-18  POINTS / 50%-60%",
+            "NEEDS IMPROVEMENT  BELOW 15 POINTS / 49%"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Overall Performance  Rating",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Merit Increase",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Wage",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Developmental needs",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Progress since last review",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Employee feedback",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Notes to supervisor for approval",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Employee Signature",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        }
+      ]
+    }
+  ]
+}

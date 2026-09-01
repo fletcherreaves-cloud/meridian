@@ -1,0 +1,464 @@
+{
+  "formId": "0d94e01c-2faa-4e17-88ff-9568b957c133",
+  "title": "GM Department Cleanliness Checklist",
+  "description": "GM Department Cleanliness Checklist",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:28:54.673Z",
+  "itemCount": 58,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Parking stalls & drive thru pad are clean and free of oil",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drink tower nozzles are clean and sanitized daily",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "At least 5 wet floor signs are available and clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "GM Department Cleanliness Checklist",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Restroom floors and fixtures are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Month",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Week Number",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Instructions",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Beverage/condiment bar is clean, drain cleaned",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Roof clean, maintained and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Mop sink, buckets are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Walls are clean and have a shine",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Complete this checklist weekly. Each task is worth 1 point. Total possible score is 45 points per week. Target is 90% or higher (41+ points).",
+      "color": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Bulk coke tanks are sanitized, clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All HVAC exhaust fans filters and condenser coils clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Floors and baseboards are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Ceiling, lighting, vents are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All signage, flags & exterior lights are clean/good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Background music/TV is working and at correct volume",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Washer is clean, working and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Toilets/urinals are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Dining room floors, walls, pictures are clean, maintained",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Basic Information",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Sinks are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "The directional signage is clean and well maintained",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Inside trash receptacles and housings are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Mirrors are clean, good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Exterior of building is clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Dining Area",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Tables and chairs are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Ceiling, lights and vents are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Restroom Area",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "All windows and frames are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Highchairs are detail cleaned and no broken parts",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Landscaping is well maintained and free of litter",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Outside Area",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Soap and toilet dispensers are full, clean and polished",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Parking lot, D/T lane and landscaping are free of litter",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Doors and thresholds are clean, corners too",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Miscellaneous",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Baby changing station clean/good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Walks, patios, exterior seating, ashtrays are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Hand dryers work and are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Kiosks clean, good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Weekly Score Summary",
+      "color": "cyan-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Corral area is clean & gates closed. Sheds organized!",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Trash containers are clean and any stainless is polished",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Inside windows and frames are clean",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Vestibules (walls, baseboards, floors, ceiling, windows)",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Stall doors/dividers are clean, locks work",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Total Points Achieved (Out of 45)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Dumpsters/compactors in corral are clean and covered",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Entrance doors clean and kick plate polished",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Emergency lighting and exit signs are clean and working",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Outside trash receptacles are clean and emptied",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Additional Notes",
+          "lines": 3
+        },
+        {
+          "kind": "check",
+          "title": "Soffit lights are clean and are all working properly",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "GM Signature",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Menu board and COD are clean and in good repair",
+          "options": [
+            "Pass",
+            "Fail"
+          ]
+        }
+      ]
+    }
+  ]
+}

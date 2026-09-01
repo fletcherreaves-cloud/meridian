@@ -1,0 +1,2385 @@
+{
+  "formId": "2f6a0746-3e27-4ff5-82a6-0b96ab2e8fa0",
+  "title": "2026 U.S.NRBES",
+  "description": "U.S. National Restaurant 2026 Building and Equipment Standards",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-02-05T14:49:44.272Z",
+  "itemCount": 236,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "U.S. National Restaurant Building and Equipment Standards  For Traditional Restaurants  Effective January 1, 2026 Unless Otherwise Noted",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Restaurant Information",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Field Office:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant Number / State / Site:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "NSN#",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant Address:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "City/State",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "State / Site:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Traditional, Walmart or SPOD:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Visit Type: Routine/Follow-Up",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Date of Prior NRBES:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Operator Name:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Organization Name:",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "National Restaurant Building and Equipment Standards",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "National Restaurant Building and Equipment Standards",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "OWNER OPERATOR ACKNOWLEDGMENTS / REGULATORY REQUIREMENTS",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "GOVERNMENT & MUNICIPAL CODES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Federal, State, County, Municipal Zoning, Building, Health, OSHA.  Note:  Project Manager should inform of any special requirements.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "AMERICANS WITH DISABILITIES ACT (ADA) COMPLIANCE",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Constructed and Operational in 1992 or later. Restaurant must be in total compliance with ADA guidelines including all remodels done during this timeframe.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Constructed and Operational prior to 1992. \nRestaurant must meet “Readily Achievable” ADA standards by making those alterations that are not “too difficult and not too expensive” to accomplish.\nRestaurants built prior to 1992 may be subject to different governmental standards of ADA compliance depending on the condition of the site, available resources, and any remodeling or alterations.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Parking stalls designed to meet local code and optimize lot capacity.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Adequate number of plumbing fixtures as required by local code.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RECOMMENDATION:  It is recommended that a qualified technician inspect HVAC, \nrefrigeration equipment, roof and irrigation system. It is also recommended that a Power \nAudit using CPP documentation, be complete to ensure that the restaurant meets \nMcDonald's Power Quality Guidelines.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Adherance to US Technology Standards\nThe US Technology Standards are foundational requirements, principals and best \npractices that keep our systems running efficiently, safely and securely.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Question",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "EXTERIOR RESTAURANT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "BUILDING / FACILITIES",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "EBF1 Entrance/Exit directional signage (replace any missing previously installed signs)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 2 Lighting around rear door properly lit and illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 3 Lighting around trash corral properly lit and illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 4 Lighting around outdoor digital menu board(s) properly lit and illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 5 Lighting around drive-thru windows properly lit and illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 6 Soffit lighting and roof beams",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF7 Parking lot lighting (including poles and bases)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 8 Road sign/reader board (including poles and bases)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 9 Building signage",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 10 Parking lot properly graded, surfaced and sealed. Free of obstacles and conditions that could cause a slip or trip",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 11 Parking spaces designed for disabled customers driving a vehicle",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 12 Clearly marked parking stalls with appropriate striping",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 13 Curbs",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 14 Walkways",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 15 Landscaping",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 16 Restaurant has modernized exterior (Arcade Building, Core ’16, Ribbon + Blade or \nBB20 exterior design)\n*Walmart locations - Restaurant has modernized exterior (current bulkhead design \nwith a minimum of one (1) lit arch sign)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 17  A minimum of two outside trash receptacles available for restaurants with drive-thru",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 18  Clear directional flow and lane identification",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 19   Drive-thru clearance sign if building has an overhang and/or order points with canopies",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 20  A gateway sign or branded canopy",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 21 Directional Signage",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 22  Two to Three window signs",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 23 Curbside signage for Digital Ordering (Delivery, Curbside, MOP, Drive-thru):  - minimum of two Curbside stalls at ingress with approved lot stripe and signage- minimum of two designated drive-thru parking stalls on drive-thru side of building- minimum of one designated stall for Delivery Courier parking required for restaurants \nplaced at courier entrance",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 24 Pull Forward signage (minimum of two are required)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 25  Diversion (Handrail) at building exit adjacent to the drive-thru lane",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 26 Drive-thru Branding should be current US Standard (White decal on charcoal canopy) or Legacy standard (Vertical blade sign)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 27 Trash corral (i.e., gate, walls, plumbing, electrical, pad, and apron)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 28  Dumpsters have lids that fully close",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 29  Building exterior structure elements, including storage facilities, are well-maintained and in good condition and repair",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 30 Perimeter doors and walk-up windows equipped with functioning locking devices\n*Walmart locations - Security gate in good condition, if existing",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 31 Panic egress hardware installed on all back of house egress doors and any latching \ndoors in the lobby area (thumb lock or keylock cylinder are not considered latching \ndevices), and all egress doors are fully operational",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EBF 32 Electrical power system (e.g., outlets, plugs, cords, etc.) is free from damage and \npotential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Exterior Equipment",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "EE1  Signage provided at speaker order point instructing customers with speech or hearing \ndifficulties to pull to the next open window",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "EE 2 Signage present at one of the drive-thru windows indicating assistance available at this window for hearing/ speech impaired custome",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Exterior Technology",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "ET1  Outdoor Digital Menu Boards (ODMB) and Digital Pre-Browse boards are approved \nand located appropriately- Coates ODMB enclosure / pre-sell effective 01/01/27- Minimum of two ODMB screens per order point- Up to one Pre-Browse screen per lane",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ET 2 Two-booth speaker with an effective and clear communication system: stand-alone \nspeakerpost, canopy integrated speaker or ODMB integrated speaker. \nApproved Speakerpost or Canopy includes:- Standalone Speakerposts that do not have integrated COD (Customer Order Display)- Springboard Canopy with or without integrated COD- Arcade Canopy with or without Integrated COD- ODMB Integrated Speakerpost",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "INTERIOR RESTAURANT",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "RESTROOMS FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "RRF 1 Plumbing fixtures with either automatic or wing faucets, pipes are covered if exposed",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 2 Exhaust fan operating and capable of removing odors",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 3 Floors (tile, grout, base tile)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 4 Walls",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 5 Ceiling (painted drywall – no lay-in ceilings)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 6 Adequate lighting",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 7 Doors and stall partitions",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 8 Hand sinks in the restrooms have warm water (will achieve 100°F) and touchless hand soap dispensers. Hot air hand dryers or hands-free towel dispensers present",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RRF 9  Emergency and lighting system present and tested (via pushbutton) to verify proper \noperation",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DINING ROOM FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "DRF 1 Lighting properly illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRF 2 Lay-in acoustical ceiling and grid or “exposed” ceiling system",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRF 3 Floor tile and base, grout and tile: No quarry, Mardi Gras or Strata tile in Dining Room. All 10-Year Dining Room Remodels will require tile replacement, regardless of existing tile",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRF 4 All restaurants must have a then-approved Global Portfolio design décor package, \nincluding dining room, front counter and restroom areas that are less than 10 years old",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRF 5  Emergency and exit lighting system present and tested (via pushbutton) to verify \nproper operation",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRF 6  Electrical power system (e.g., outlets, plugs, cords, etc.) is free from damage and \npotential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DINING ROOM EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "DRE 1  PlayPlace elements are maintained in good repair",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRE 2 Indoor/outdoor PlayPlace door(s)/gate(s) have functioning egress alarm installed",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRE 3 Approved Mobile Order & Pay (MOP) Table Markers",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRE 4 Adequate seating designated for disabled customers with the international symbol or accessibility",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRE 5 Self-serve beverage area or crew-poured soft drinks behind the counter.\nNote that effective 01/01/33, the following is required for all restaurants:- the self-serve beverage bar removed - crew-poured soft drinks behind the Front Counter- Beverage Landing Zone (BLZ)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRE 6 Customer conveniences (high chairs, napkin/straw dispensers, condiments, etc.) \nattractive",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRE 7  ABC-class hand-held fire extinguishers (red) are properly installed and meet regulatory requirements",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "DINING ROOM TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "DRT 1  WIFI, a TV and/or music (ADA requirements call for closed captioning to be enabled if TV sound is turned on)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX4"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRT 2 Storm Track Pad for Audio Navigation - minimum 25% of Kiosk faces",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX4"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRT 3 Each Kiosk face has a:\n- Cashless Payment Entry Device (PED) that is PCI4 compliant (effective 01/01/27 must be PC15 compliant)\nMobile Offer Scanner \nReceipt Printer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX4"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DRT 4 Table Service Table Locator Tents:- \nRestaurants with more than 150 seats and/or seating across more than one floor level \nrequire a Bluetooth Table Service locator system with technology-enabled Table \nService Tents \nAll other restaurants require non-technology enabled Table Service Tents",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX4"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FRONT COUNTER FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FCF 1 Continuous or split front counter, either Service Pod or Modular Front Counter",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCF 2 Electrical power system (e.g., outlets, plugs, cords, etc.) is free from damage and \npotential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCF 3  Tile walls",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCF 4 Unglazed, abrasive quarry tile floor or treated non-slip surface",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCF 5 Lighting properly illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCF 6 Vinyl covered board lay-in ceiling and grid – or existing ceiling – Unpainted",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FRONT COUNTER EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FCE 1 McDelivery/Digital: Dedicated Digital Assembly Cart (DAC) is required for all restaurants.Equipment aligned with Be Well Served layout includes:- \nDAC with refrigeration (1 cart needs to have refrigeration) \n3rd Party Delivery Tablets \nMonitor, printer and bump bar \nDelivery bags, napkins, straw holder, marker storage, sticker rolls, condiment bins",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FCE 2  ABC-class hand-held fire extinguishers (red) are properly installed and meet regulatory requirements",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "FRONT COUNTER TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FTC 1  Front Counter POS Registers:- Non-Elevated Self-Ordering Experience (ESE) Restaurants: minimum two POS registers at Front Counter- ESE Restaurants: One visible POS Register at Front Counter (register #2) and one backup register (register #1) located on Digital Assembly Cart (DAC)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FTC 2  Each front counter register accepting payment has a:  \nReceipt Printer- \nCashless Payment Entry Device (PED)  that is PCI4 compliant (effective 01/01/27 \nmust be PC15 compliant)- \nMobile Offer Scanner- \nCash Drawer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FTC 3 Front Counter Expo Monitor - minimum one",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FTC 4 Each Front Counter Expo Monitor has one Picklist Receipt Printe",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FTC 5 Approved Indoor Digital Menu Boards (IDMB):- Non-ESE Restaurants minimum three IDMBs (two menu + one merchandiser) behind FC Order Point- ESE Restaurants - two IDMBs standard (zero menu + two merchandisers)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FTC 6 Non-ESE Restaurants\nEquipment that supports Dual Point 2.0 Service System, including Order Ready Board \n(ORB), mini-ORB, and Bar Code Scanner,  either operational or decommissioned, \neffective 01/01/26",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "BEVERAGE / DESSERT EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "BDE 1 Automated Beverage System (ABS)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 2 A minimum of two coffee brewers are required in support of front counter and drive\nthru.\n*Walmart locations - A minimum of one coffee brewer is required in support of front \ncounter and drive-thru.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 3 Curtis thermal pots are the only pots approved for serving and holding regular and \ndecaf coffee from a Bunn Axiom or Curtis Alpha coffee brewer. Three Curtis thermal \ncoffee pots are required for each Axiom or Alpha coffee brewer.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 4 A minimum of one automated cream dispenser and one automated sweetener \ndispenser are required at each coffee brewing station located in drive-thru and front \ncounter. (i.e. BDAP cell has only one coffee brewing station for the restaurant)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 5 Specialty  McCafé Coffee Machine",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 6 Blended Ice Machine (BIM) or Blend In Cup (BIC)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 7 Juice Dispenser\n* Walmart locations bottled orange juice, Juice Dispenser",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 8 Shake and Sundae equipment.\nFor restaurants with Beverage and Dessert as Production (BDAP) cell, a two-tier BLZ \ncart by Shake and Sundae machine is required.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 9 Annual Shake/Sundae Machine certifications and PM verification required",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 10  McFlurry spindle and two candy holding containers",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 11 Frozen Carbonated Beverage Machine",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 12 Pie merchandiser",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 13  MIS – tea brewer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 14  For traditional DT restaurants - a minimum of two iced coffee urns, three sweet tea \nurns, and three iced tea urns.                                                               \n *For Non-DT restaurants & Walmart locations - A minimum of two iced coffee urns, \ntwo sweet tea urns, and two iced tea urns (including lids, and lid locks in self serve \nareas)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 15 Reach-in cooler",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDE 16 NSF-approved commercial Ice bin(s) with a lid installed or available to protect ice from potential contamination effective, 01/01/27",
+          "options": [
+            "Yes / Acknowledge",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "BEVERAGE / DESSERT TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "BDT 1 McCafé beverage monitor- \nNon-BDAP restaurants - minimum one- \nBDAP restaurants - minimum two",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDT 2 McCafé Beverage 40mm Sticky Receipt Printer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BDT 3 Restaurants with Front Counter crew poured soft drinks (self-serve beverage bar has \nbeen removed):- Front Counter Beverage Monitor with bump bar",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "INT. DRIVE-THRU FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "IDTF 1  Drive-thru windows functioning properly, including ability to lock, automatically close, and not be continuously held open",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTF 2 Electrical power system (e.g., outlets, plugs, cords, OEPs, etc.) is free from damage \nand potential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTF 3  Tile walls",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTF 4  Unglazed, abrasive quarry tile floor or treated non-slip surface",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTF 5  TilLighting properly illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTF 6  Vinyl covered board lay-in ceiling and grid – or existing ceiling – Unpainted",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "INT. DRIVE-THRU EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "IDTE 1 Refrigeration in the DT area for bottled drinks, milk jugs, and juice boxes",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "INT. DRIVE-THRU TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "IDTT 1 Drive-thru POS Registers - minimum quantity based on configuration-One Order Point (Two Booth Single COD or Single Booth Single COD) - three-Two Order Points (Side-by-Side or Tandem) - four",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 2 Each Register accepting payment has a:- Cash Drawer- Verifone P400 Cashless Payment Entry Device (PED) that is PCI4 compliant (effective \n01/01/27 must be PC15 compliant)- Mobile Offer Scanner",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 3 Drive-thru Receipt Printer located in Cashier Booth or Present Booth",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 4 For Side-by-Side drive-thru:- POS Video Sequencing Cameras- Merge Point Monitor(s) required wherever orders are taken",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 5 Drive-thru Expo Monitor",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 6 Drive-thru Present Monitor",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 7 Danger Zone Monitor",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 8 Drive-thru runner and presenter bump bars",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IDTT 9 Digital drive-thru headsets: \n - Single Order Point minimum of five headsets\n - Tandem or Side-by-Side minimum of seven headsets",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "KITCHEN FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "KF 1  Tile/FRP walls",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KF 2  Unglazed, abrasive quarry tile floor or treated non-slip surface",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KF 3  Lighting properly illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KF 4 Vinyl covered board lay-in ceiling and grid – or existing ceiling – Unpainted",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KF 5 Supply diffusers positioned over aisles, not over food prep equipment",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KF 6 All back-of-house handwash sinks must have automated/sensor or foot/knee-operated faucets and achieve a minimum temperature of 100°F. Other requirements include:- Handwash timing system- Hands-free paper towel dispenser - Touchless hand soap dispenser",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KF 7  Electrical power system (e.g., outlets, plugs, cords, OEPs, etc.) is free from damage \nand  potential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "KITCHEN EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "KE 1 OPL/COPL Order Assembly Table (OAT), MFY OAT or HLS for MFY (two HLZs with \nOrder Assembly Stand not approved effective 01/01/27).  \n*Walmart requires one HLZ or one Heated Landing Surface (HLS) with Order \nAssembly Table (OAT) or Assembly Topper.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 2  Euro Fry Station",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 3 Fryers functioning and have enough fry vats to meet McDonald’s QSC standards, \nsupport the menu and grow the business",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 4  Automated Frozen Fry Dispensers",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 5 Thaw rack(s) for frozen buns - sufficient amount to accommodate proper thawing",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 6 Bun Rack",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 7 Two Qing Ovens.  One standard Qing Oven and one On Cue, or two standard Qing \novens (restaurants with only On Cue are unable to follow approved operational \nprocedures).  \n*Walmart locations require one Qing Oven.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 8 Muffin/bagel toaster (Q-ing oven) stand",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 9 Universal Toaster and one HEMT Muffin Toaster or one Regular menu and one \nBreakfast Horizontal Toaster (ability to toast two-sided Big Mac club)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE  10 Toaster table",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 11 Filet Steamer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 12 Convection oven or Combi Oven (Combi Oven requires a ventless/vented hood)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 13 A minimum of one multi-product fryer front is required when only two vats are available for white meat production",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 14 Two Clamshell grills (Use grill capacity tool to determine actual need beyond four \nplatens)\n* Walmart locations - one Clamshell grill (Use grill capacity tool to determine actual \nneed beyond two platens)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 15 Annual Grill certifications and PM verification required",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 16 Grill-side meat freezer(s) with minimum capacity to hold two cases 10:1 and a two \ndrawer grill-side meat cooler that supports 4:1 fresh beef.  \n*Walmart requires grill-side meat freezer(s) with minimum capacity to hold one case of \n10:1 and a grill-side cooler that supports 4:1 fresh beef.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 17 High Capacity Prep table (prep line is the same height as HLZ/HLS for operational \nefficiency)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 18 UHC heated table dual-sided",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 19 UHCs - (capacity to support two trays for each item held, with the exception of \nCanadian bacon (one tray). Minimum 36 slots. Use UHC capacity tool to determine \nactual need beyond 36 slots)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 20 Simplified Breakfast Holding Cabinet",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 21  Refrigerated storage sufficient to hold prep ingredients within 10 feet in the primary \ninitiator position",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE 22 Frozen storage sufficient to hold frozen products in the kitchen area",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE  23 Frozen storage sufficient to hold frozen products in the kitchen area",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE  24  Ansul Automatic UL-300 R-102 Wet Chemical System and K-class hand-held fire \nextinguishers (silver) are properly installed and inspected to meet regulatory \nrequirements",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE  25 Cooking equipment fire suppression pull stations clearly and permanently labeled",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KE  26  ABC-class hand-held fire extinguishers (red) are properly installed and meet regulatory \nrequirements",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "KITCHEN TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "KT 1  Prep Line KVS Monitors\nFor Traditional MFY, Optimized Prep Line (OPL) or Compact Optimized Prep Line \n(COPL) prep lines:- For each side of the prep line, one Breakfast Monitor and one Lunch Monitor (i.e., two per side)\nFor Hub & Spoke prep lines:- Minimum of two Initiation Points, each with one Breakfast Monitor and one Lunch \nMonitor (i.e., four monitors total)- Additional Initiation Points, each with a minimum of one Lunch Monitor (i.e., one per Initiation Point)\nEach Prep Line KVS Monitor has:\n - Bump Bar\n - Dedicated Grill Slip Printer (AKA Side Specific Grill Printer)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KT 2 Grill Monitor with two Bump Bars & Speaker",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KT 3 Electronic food freshness labeling system for raw and finished product hold times",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KT 4 Production System, including-  \nUHC Monitor with bump bar- \nFry Monitor- \nBake Monitor with bump bar and receipt printer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KT 5 Approved Digital Food Safety program with a functioning pyrometer & backup \npyrometer with batteries, and includes the following attachments:- \nFood and beverage probe- \nGrill surface probe- \nShortening probe- \nUHC probe- \nOven prob",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "STORAGE FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "SF 1 All back of house egress doors have proper panic egress hardware installed",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 2 Rear and side delivery operable door alarm - Alarm Lock - PG21MSS",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 3 All back of house doors in good condition, with unobstructed and working external view device (i.e., peephole, flap window, video monitor, etc.) on all restricted access doors, \nincluding rear & side entrance doors",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 4 Water, Gas, Electrical main cutoffs labeled and tool for turning off gas is readily \naccessible (if required)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 5  Emergency and exit lighting system present and tested (via pushbutton) to verify \nproper operation",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 6  Interior and exterior roof ladder(s), ladder access, roof access, and pathways are safe",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 7  Roof surface without clutter",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 8  Exhaust fans, belts, and motors operating",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 9 MAC unit operating",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 10 Commercial Water Heater, effective 01/01/27",
+          "options": [
+            "Yes / Acknowledge",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 11  Electrical power system (e.g., outlets, plugs, cords, etc.) is free from damage and \npotential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 12 CO2 detectors, horn/strobe units, and central unit are properly installed per McDonald's standards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 13 Tile/FRP walls",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 14 Unglazed, abrasive quarry tile floor or treated non-slip surface",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 15 Lighting properly illuminated",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SF 16 Vinyl covered board lay-in ceiling and grid – or existing ceiling – Unpainted",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "STORAGE EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "SE 1 Stand-alone ice machine",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE 2  Washing machine required; clothes dryer - if required by local code",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE 3 Minimum of a 3-compartment sink; proper equipment and supplies for proper cleaning and sanitizing",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE 4 Approved warewasher, effective 01/01/27",
+          "options": [
+            "Yes / Acknowledge",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  5  Minimum of two Bulk Coke tanks required for restaurants utilizing bulk Coke",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE 6 Portable cylinder(s), Bulk CO2, and Bulk Coke tanks properly installed with no storage \nin front of the bulk CO2 tank",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  7 All water systems must meet the minimum equipment requirements referenced in the \nGlobal Water Quality Manual, including but not limited to: filtration systems, reverse \nosmosis systems, manifolds, panels and line sizes. \n*Walmart requires all water systems must have approved water filtration equipment \neffective 01/01/26",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  8 Shortening filtration disposal equipment, shortening disposal cart",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  9  ABC-class hand-held fire extinguishers (red) are properly installed and meet regulatory requirements",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  10 Walk-in cooler",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  11 Walk-in Freezer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "SE  12 Approved commercial shelving in dry storage, effective 01/01/28",
+          "options": [
+            "Yes / Acknowledge",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "STORAGE TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "ST 1  Minimum of 11 Remote Temperature Sensors which includes one in the walk-in \nfreezer and all refrigerator/coolers which hold food.  \n*Walmart locations - Adequate number of Remote Temperature Sensors which \nincludes one in the walk-in freezer and all refrigerator/coolers which hold food",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "REST AREA / OFFICE FACILITIES",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "RAOF 1  Walls, ceiling, floors, and lighting in crew area in good repair",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOF 2 Walls, ceiling, floors, and lighting in office in good repair",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOF 3 HVAC units functioning.  System capable of maintaining 68°F in winter, 78°F in \nsummer",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOF 4 Electrical power system (e.g., outlets, plugs, cords, etc.) is free from damage and \npotential electrical shock/fire hazards",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "REST AREA / OFFICE EQUIPMENT",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "RAOE 1  Rest area dedicated to crew – comfortable, and with seating, clock, and mirrior",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOE 2  Plaque or poster identifying name of franchisee organization employing workers at that restaurant",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOE 3 Office equipment and furniture in good repair",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOE  4 Carbon Dioxide (CO2) alarm system",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOE 5 First Aid Kit meets O&T requirements",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOE 6  Office Safe",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "REST AREA / OFFICE TECHNOLOGY",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "RAOT 1 Current OS (Operating System) Windows 10 LTSB\nEffective 10/1/25 Windows 10 LTSC or higher",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT 2 Current Server Operating System - Windows Server 2016 or higher\nEffective 01/01/27 Windows Server 2022 or higher",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT 3 Current POS (Sesame) Software Version - 12.0 or higher",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT  4  Minimum of one Tablet or computer dedicated to training, which includes training that enables digital employee engagement tools (HU Online and CAMPUS)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT 5 Approved Technology Rack, in Manager's Office or Technology Closet:\nStationary Rack- 82\" Stationary Rack (aka Cooper B-Line)- Eaton 45U SR4POST\nor 14\" (8U) Wall Mounted Network Rack & Rolling Rack- 77\" Rolling Rack (aka Paragon Rolling Rack)- Hammond C2 Series C2F196323- Middle Atlantic ERK-4020LRD",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT  6 Video Security Camera System (migration from Analog-CCTV to IP-CCTV required by 01/01/27), At least 90 days of storage of the office camera and 60 days of storage for \nthe remainder of the restaurant cameras with camera views of the parking lot, pull \nforward, curbside, vehicle license plate, lobby, lobby entrance, PlayPlace, front counter, \ncash booth, presenter's booth, office, back door, side door, trash corral, crew room, \nand freezer.",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT  7 Approved Restaurant Network\n2026 - RNT (AT&T / Aruba) or GRNT (Accenture / Juniper)\nEffective 07/01/27 - GRNT (Accenture / Juniper)",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT  8  Approved DMB Content Management System (CMS)\n2026 - Stratacache or Coates\nEffective 01/01/27 - Coates",
+          "options": [
+            "Yes",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "RAOT  9  Edge (Google Cloud Edge) Server Platform effective 01/01/28",
+          "options": [
+            "Yes / Acknowledge",
+            "No",
+            "N/A",
+            "EX"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "V. SIGNATURES",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Completed By: Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Print Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Title",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date Completed",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Completed By: Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Print Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Title",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date Completed",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Completed By: Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Print Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Title",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date Completed",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Completed By: Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Print Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Title",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date Completed",
+          "field": "date"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,727 @@
+{
+  "formId": "cae9970e-c127-4e79-a339-3e0d7484fa03",
+  "title": "Shift Leader Performance Verification Tool",
+  "description": "Shift Leader Performance Verification Tool",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-27T16:21:59.176Z",
+  "itemCount": 89,
+  "sections": [
+    {
+      "title": "Shift Leader Performance Verification Tool",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Restaurant Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant #",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Image Display",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant Information",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Targets",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Time/Daypart",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Shift Leader Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "DT & Dine in Results",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Completed by",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Operations Critical Behaviors",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "Pre-Shift",
+      "color": "blue-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Food Safety daily checklist complete",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Communicates with previous Shift Leader",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pre-shift checklist complete, actions prioritized, and tasks delegated appropriately",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Items from the pre-shift checklist that could not be fixed during the shift are communicated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restaurant is stocked for 24/2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Crew positioned (DSPT recommended) per conditions ensuring second side open when appropriate, splitting functions, pull forward runner, delivery/curbside assigned etc.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Secondary responsibilities assigned and communicated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Production Leader in place and effective communication between the production leader and shift leader",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Targets set and communicated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Conducts Shift Huddle with the team",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "During Shift",
+      "color": "purple-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Maintains Food Safety procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Ensures the adherence of all safety and security procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Role modeling and maintaining a safe and respectful workplace",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Leads from the observation zone (not in position)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Hand washing is taking place a minimum every hour",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coaches crew using positive and developmental feedback",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Travel paths completed every 15/30 mins and are effective",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Targets are updated and communicated throughout the shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Appropriately reacts to and removes danger zones - works through area leaders",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Management and Crew Appearance – proper uniforms, name tags, clean/well groomed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Post Shift",
+      "color": "deep-orange-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Communicates results to the team",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Communicates with the incoming manager - sets them up for success",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Reviews schedule for the next shift and completes positioning (recommended tool is DSPT)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Reflects on what went well and what can be improved",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Operations Total (19 out of 24 to pass)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Service Standards",
+      "color": "pink-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Results vs. targets: In Store GCs +/-",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Results vs. targets: Drive Thru Car Count +/-",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT service times - Restaurant targets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "In Store Service times - Restaurant targets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Employees interact with customers in a polite, friendly and effective manner. Crew look for opportunities to create feel good moments",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Ensures GEL is in place, engaging with guests",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Orders accurately and properly assembled including condiments, napkins, straws etc.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McDelivery orders are properly assembled & packaged, double checked for accuracy, and presented properly",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Curbside orders are properly assembled and delivered to the guest in a timely manner",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Proper procedures for Digital Orders are followed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Guest Recovery Process in place, understood and followed using LAST.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Answer guest at DT speaker within 10 seconds with a digital greeting, use back to basics order taking, and proper pull forward procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Crew are attentive to the guest: table touch backs, assisting guests, greetings and farewells",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cars - pull forward happening– and proper procedures used",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Service Total (11 out of 14 to pass)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Quality",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Results vs targets: KVS targets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Sandwich/Entrée – Hot, fresh, neat appearance, good taste, properly prepared",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fries/Hash brown - Hot, fresh, good flavor, salted properly, & golden color – oil meets standards",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Beverages - Properly filled, proper temperature, good flavor, properly made. Bev. stickers used",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Desserts - Properly prepared, good flavor and texture, holding time acceptable",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grill slips are positioned correctly for accuracy",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "eProuction set up and used effectively changing volume when appropriate, holding times adhered to",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "All products within primary shelf life",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Secondary shelf lives marked / monitored",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Prep table times marked / monitored",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tempered product properly marked / monitored",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Waste cans in place and counted",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Procedures observed and coached in the production area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Quality Total (10 out of 13 to pass)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Cleanliness Standards",
+      "color": "warning-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Guest Conveniences - high chairs clean and sanitized, hand sanitizer dispensers in place and stocked, music on",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dining Room - floors, chairs, tables clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Kiosks and table locators clean and sanitized",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Playplace / Patio-seating – trashcans, floor, play unit, clean & well maintained, etc.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restrooms – Clean and sanitized, odor free, supplies stocked, hand dryer working",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Windows/Doors - All windows/mullions clean, entrance doors and DT windows",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Outside Trash Cans/Sidewalks – Clean, trash cans not full",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Menu Board, Pre-sell Board and DT lane clean - Promotions properly displayed, and DT window areas clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Landscape/Parking Lot - Parking lot free of litter, landscaping well maintained",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Kitchen - floors, walls, stainless, and equipment clean, not cluttered",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Front Counter/DT - floors, walls, stainless, and equipment clean, not cluttered",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry station and shake machine area cleaned",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Office / Crew Room/Stock Room neat, clean and organized",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Cleanliness Total (10 out of 13 to pass)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Verification Result",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Verification Status",
+          "options": [
+            "Passed",
+            "Not Passed"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Return Date (if not passed)",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Very Good Understanding",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "List strengths (1)",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "List strengths (2)",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "List strengths (3)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "More Practice",
+      "color": "warning-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "List improvement areas (1)",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "List improvement areas (2)",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "List improvement areas (3)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Signatures",
+      "color": "grey-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Shift Leader Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant Leader Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Coach Signature",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        }
+      ]
+    }
+  ]
+}

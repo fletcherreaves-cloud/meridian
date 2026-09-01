@@ -186,6 +186,11 @@ export const PANELS = [
   { id:'forms-completion', label:'Form Completions', icon:'✅', perm:'analytics.store', kind:'test-kitchen', section:'forms', tkOrder:9 },
   { id:'forms-library', label:'Forms Library', icon:'🗂', perm:null, kind:'nav', section:'forms' },
   { id:'forms-print', label:'Printable Forms', icon:'🖨', perm:null, kind:'nav', section:'forms' },
+  // Owner request 2026-09-01: fillable, cloud-saved version of every published form pulled by
+  // scripts/qsrsoft-forms-pull.mjs (not just the blank/print-only forms-print above) -- saved to
+  // Supabase per store/day. New panel, built route:true from day one (RoutePanelShell already
+  // lives inside ChecklistFillPanel), same treatment dispatch #123 gave 'crew-schedule'.
+  { id:'checklist-fill', label:'Digital Checklists', icon:'📝', perm:null, kind:'nav', section:'forms', route:true },
   { id:'gm-brief', label:'GM Letters', icon:'👨‍💼', perm:'analytics.store', kind:'optional', section:'reports' },
   // Owner-answered 2026-08-21 (dispatch #54 Job B): "They would be more Operations" -- moved out
   // of People alongside visit-readiness below.

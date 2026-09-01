@@ -1,0 +1,273 @@
+{
+  "formId": "cad58ed6-0201-46c4-b9f7-883e956f9907",
+  "title": "2026 In Restaurant & Behind the Counter",
+  "description": "2026 In Restaurant  & Behind the Counter / Tasks",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-03T23:10:10.249Z",
+  "itemCount": 33,
+  "sections": [
+    {
+      "title": "Customer First Visit 2026",
+      "color": "success-high",
+      "items": []
+    },
+    {
+      "title": "2026 In Restaurant & Behind the Counter",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "In Restaurant",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Behind the Counter Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Where was order presented?",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Where was order taken?",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "In Restaurant",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "IR 1 -Cleanliness:  Was interior of the restaurant clean?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR  2 - Cleanliness: Was restroom clean, stocked and in working order?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 3 -Cleanliness: Were employees wearing uniforms that were clean and in good condition?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 4 - Front Counter: Did order taker provide a digital prompt, was the order taking process  effective, was Order Taker friendly, use your name, and provided clear instructions?  Kiosk: Was the Kiosk in full working order, including table tents, and the product outage  managed correctly?  Mobile Order & Pay (MOP) Table Service: Was the MOP table marker in place and in good  condition and the product outage managed correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 5 - Present: Was Presenter friendly and effective? Table Service orders: Did Presenter have condiments readily available (in apron, cart, tray,  caddy, etc.) and ask if you have everything you need?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 6- Dining Area: Did you observe genuine hospitality in the dining area?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "In Store Wait  & RTP Time",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "IR 7 -Speed: Was your 'Wait Time' 90 seconds or less? wait time begins when joining line and ends on arrival at order point.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 8 -Speed (Non Table Service orders): Was your Receipt to Present (R2P) 90 seconds or less?  R2P time begins when receipt/change is received and ends when the entire order is  presented . OR IR8b Speed (Table Service): Was the combined R2P and Fulfillment Time 135 seconds or less?  Time begins when receipt/change is received and ends when the entire order is presented  (including condiments).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 9 -  Accuracy:  Did you receive all the food and drink items as ordered, and were they properly prepared?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "!R 9 Accuracy (Table Service): did you receive a filled drink?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 10 - Accuracy: Did you receive all the condiments (if required or requested), along with utensils, napkins, and straws?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 11-Quality: Was your sandwich/entrée served neat, at proper temperature, fresh, and did it  taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 12 - Quality: Were the french fries hot, salted, and crisp -OR-  hash browns hot and crisp and did they taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 13 - Quality: Was your drink served neat, at the proper temperature and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "IR 14 - Quality: Was your dessert served neat, at the proper temperature, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter Operations",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "BC1  - Tempering & Prep: Were product levels sufficient per posted product level charts/eProduction monitor for the volume of business, and were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC1 - Tempering & Prep: Were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC2- MFY: Were UHC product holding times and holding levels being adhered to?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC3 - Fries/hash browns:  Were french fries/hash browns available to meet demand, following cooking and holding procedures and french fries station set up/maintained correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC4 - Beverages and Desserts: Were drinks placed on appropriate cart/table identified? Were drinks placed separately, grouped by order and served correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC5 -Order Assembly: Were orders assembled correctly, once all items were available, and checked for accuracy? Were Stations/Landing Tables utilized appropriately?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC6 - \nGeneral Cleanliness Production and Service Areas: Did restaurant display general cleanliness in employee areas, without a negative impact on operations and safety?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC7 - People Positioning: Area employees positioned and adjustments made, as conditions dictate, throughout the shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC9 - Leading Operations: Shift and Area Leaders conduct travel paths, identify danger zones and  take appropriate actions to prioritize & reduce operational barriers to deliver Gold Standard  products and a great customer experience",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC10 - Operational Focus: Was the Shift Leader aware of the restaurant's priorities, goals and actions,  and progress?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Managers Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Managers' signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

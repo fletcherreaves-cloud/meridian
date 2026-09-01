@@ -1,0 +1,387 @@
+{
+  "formId": "ec00f3ec-d8ab-4963-8e54-7ca4e004a8d2",
+  "title": "Chicken Health Check",
+  "description": "Chicken Health Check",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-22T13:16:40.266Z",
+  "itemCount": 47,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Are Gold Standard prep ingredients on table in correct pans?\n•Shredded Lettuce (30 min target turnover)\n•Crinkle Cut Pickles\n•Roma Tomatoes\n•Shredded Cheese",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is daily filtering process completed?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is there an eProduction SME in place?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are the training materials available and station guides posted for relevant chicken products?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are wall/walk in freezer gaskets and air curtain clean and in good condition? Is the temperature 0°F or less?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "CHICKEN Health Check",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Is the butter in the bottle warmer? Is the consistency creamy with visible small lumps?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Inspection Information",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "LOV fryers: Has the Oil Filter pad been replaced?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Does the eProduction SME, Production Manager/Grill Leader, and team react and adjust cooking levels as eProduction levels change to manage quality?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are Crew following max run size and basket procedures correctly?\n•McCrispy Strips – Max run 6\n•McCrispy Filet – Max run 4\n•McChicken Patty – Max run 6\n•Chicken McNuggets – Max run 1 Bag",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are the fryers, toasters, and UHCs clean and in good repair?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are fryer cook times and UHCs programmed correctly?\n•McCrispy Strips – Cook Time: LOV 6 min – Standard 6min 15sec UHC Max Hold: 45min/185°F\n•McCrispy Filet – Cook Time: 6min 55sec UHC Max Hold: 60min/185°F\n•McChicken Patty – Cook Time: 3min 30sec UHC Max Hold: 30min/185° or 200°F\n•Chicken McNuggets – Cook Time: 3min 30sec UHC Max Hold: 20min/200°F\n     ALL CHICKEN ITEMS MUCT COOK AT 360°F",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are there asterisks next to the chicken product boxes on the UHC monitor? More slots needed.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are crew skimming the vats every 30 mins or as needed?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Have managers and Production Leaders been trained on correct chicken Food Safety execution?\n•McCrispy Strips – Probe thickest part, temp 4 Strips\n•McCrispy Filet – Probe thickest part, temp 4 Filets\n•McChicken Patty – Probe center, temp 4 Patties\n•Chicken McNuggets – Probe center, temp 4 randomly selected nuggets\n     ALL MUST MEET 165°F",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are bacon procedures followed by Crew?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Completed on",
+          "field": "date"
+        },
+        {
+          "kind": "check",
+          "title": "Is the Color Tube Guide available and utilized (after daily filtering process)?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are buns Gold Standard/acceptable on the target toast guide?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are specific fryer baskets available and in good repair?\n•McCrispy Strips – Orange handled half baskets\n•McCrispy Filet – 2 segment slotted baskets\n•McChicken Patty – 2 segment slotted baskets\n•Chicken McNuggets – 4 segment slotted baskets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Completed by",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Is the Bag Color Guide posted?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the maintenance person using Oil Tracking Forms?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is a blue .5oz Portion Pal Insert/Ring in place on all Portion Pals used for chicken menu items?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are Ranch (orange) and Spicy (red) silicone bands in use?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Instructions",
+      "color": "warning-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Are Ranch, Spicy and LTO Sauces listed on the Tempering screen and properly tempered (4 hours) if needed?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is KAY QSR Fryer Cleanser available and utilized while filtering?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "If applicable: Is the blue LTO silicone band in use?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "STEP 1: Complete the Chicken Health Check (Supervisor, GM, and/or Kitchen Manager)",
+      "color": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Is proper PPE available to protect Crew? (Face shield and heat-resistant apron and gloves)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are Crew waiting 30 seconds between dropping baskets in the same vat?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "STEP 2: Answer each question either Yes or No based on what you see and observe in the restaurant.",
+      "color": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Do managers and Crew know the 6 enemies of oil? (Salt, Water, Air, Soap, Carbon, Heat)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "STEP 3: Any items marked \"No\"? For those that can be fixed now, do so. For the rest, choose 1-2 items and make an improvement plan using the Action Planning at the end of this form.",
+      "color": "danger-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "People",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "eProduction",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Equipment & Smallwares",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Oil Management",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Action Planning",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "Action 1",
+      "color": "warning-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Who will write?",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Who will own?",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Who will follow up?",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "When?",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Follow-up results on Action Plan",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Action 2",
+      "color": "warning-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Who will write?",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Who will own?",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Who will follow up?",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "When?",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Follow-up results on Action Plan",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Form Completion",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

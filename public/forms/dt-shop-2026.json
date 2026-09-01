@@ -1,0 +1,129 @@
+{
+  "formId": "f37c6515-6f29-41d5-8887-3376dbf69271",
+  "title": "DT Shop 2026",
+  "description": "2026 DT Visit",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-03T21:31:54.404Z",
+  "itemCount": 16,
+  "sections": [
+    {
+      "title": "DT Shop",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Time You got in line",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Number of cars behind the COD",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Stopwatch / TET",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Is the DT Menuboard Clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was your ordertaker friendly",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was your ordertaker accurate",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the DT cash window clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the Present  window clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was your order correct",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the Food Hot and fresh",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was your service fast",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the Lot and Landscaping clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was your service friendly",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the DT Lane Clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Take a Picture of the D-T Lane",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "DT Visit Score",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

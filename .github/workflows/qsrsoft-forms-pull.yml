@@ -1,15 +1,23 @@
 name: QSRSoft Forms Pull (printable templates)
 
-# On-demand capture of the Shift-Management form templates (Pre-Shift Checklists +
-# Travel Paths) → public/forms/*.json, committed back to the branch you run it from.
-# No schedule — these are blank templates that rarely change. Run it whenever a form
-# is edited in QSRSoft. Populates the in-app "Printable Forms" panel.
+# On-demand capture of QSRSoft form templates → public/forms/*.json, committed
+# back to the branch you run it from. No schedule — these are blank templates
+# that rarely change. Run it whenever a form is edited (or added) in QSRSoft.
+# Populates the in-app "Printable Forms" + "Digital Checklists" panels.
+#
+# Default (2026-09-01, owner-requested): every published, non-deleted form in
+# the library — not just Pre-Shift/Travel Path. Narrow a run with forms_ids or
+# forms_match, e.g. after editing just one form.
 
 on:
   workflow_dispatch:
     inputs:
       forms_ids:
-        description: 'Comma-separated formIds to pull (blank = the 8 default Pre-Shift + Travel Path forms)'
+        description: 'Comma-separated formIds to pull (blank = every published form)'
+        required: false
+        default: ''
+      forms_match:
+        description: 'Title regex to narrow the pull (blank = every published form; ignored if forms_ids is set)'
         required: false
         default: ''
       debug:
@@ -46,6 +54,7 @@ jobs:
           QSRSOFT_USERNAME:    ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:    ${{ secrets.QSRSOFT_PASSWORD }}
           FORMS_IDS:           ${{ github.event.inputs.forms_ids || '' }}
+          FORMS_MATCH:         ${{ github.event.inputs.forms_match || '' }}
           QSRSOFT_DEBUG:       ${{ github.event.inputs.debug || '0' }}
 
       - name: Commit updated templates

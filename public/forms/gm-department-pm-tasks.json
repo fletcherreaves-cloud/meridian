@@ -1,0 +1,197 @@
+{
+  "formId": "f9a04fa1-ca0c-4994-b34a-d19c94f31ce5",
+  "title": "GM Department PM Tasks",
+  "description": "GM Department PM Tasks",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:29:04.349Z",
+  "itemCount": 31,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Month",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "GM Department PM Tasks",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Verify Steamers Proper Operation (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Inspect Walk-In's for Proper Operation (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Check Beverage System Filters for Cleanliness (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Clean and Sanitize Ice Storage Bins (20 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Verify Drive Thru COD's Working Properly (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Verify Filters Cleaned by 5th of the Month (30 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Inspect Back Door Detex for Proper Operation - Test System (10 min)",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Instructions",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Delime Filet Bun Steamers (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Week Number",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Clean and Sanitize ABS Ice Bin and Ice Chute (20 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Clean Condensate Drain Lines (20 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Check Ice Water Bath and Clean Air Filters (5 min)",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Fill in blank items with the date as PM tasks are completed. At the end of each week the department manager will sign that all items are complete. Shaded areas do not need to be done.",
+      "color": "",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Empty Grill/Fryer Grease Catch Pans or Buckets (20 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Verify Security System Recording/Cameras Work Properly (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Clean Fans and Check Gasket and Cooling Hose (40 min)",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Sanitize All Empty Bulk Coke Tanks (20 min)",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Clean Toaster Intake Fan (10 min)",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Basic Information",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Beverage Equipment",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Ice Equipment",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "HVAC Systems",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Kitchen Equipment",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Refrigeration & Safety Systems",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Drive Thru Equipment",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Weekly Completion",
+      "color": "cyan-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "All PM Tasks Completed This Week?",
+          "options": [
+            "Yes - All Tasks Complete",
+            "No - Tasks Incomplete"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Additional Notes",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "GM Weekly Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

@@ -125,6 +125,7 @@ const _AtAGlanceInner = React.lazy(() => _ataglance().then(m => ({ default: m.At
 const AtAGlance = (props) => React.createElement(React.Suspense, { fallback: null }, React.createElement(_AtAGlanceInner, props));
 
 const _laborTools = () => import('../views/labor-tools.js');
+const ChecklistFillPanel  = lazyPanel(() => import('../views/checklist-fill.js').then(m => ({ default: m.ChecklistFillPanel })));
 const DARDaypartPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.DARDaypartPanel })));
 const ProductMixPanel     = lazyPanel(() => _laborTools().then(m => ({ default: m.ProductMixPanel })));
 const LaborAnalyticsPanel = lazyPanel(() => _laborTools().then(m => ({ default: m.LaborAnalyticsPanel })));
@@ -3200,6 +3201,7 @@ function App() {
         if(modal==='task-queue')        {setTqInitialType(null);goRoute('task-queue');}
         if(modal==='attention')      goRoute('attention');
         if(modal==='forms-print')    setShowFormsPrint(true);
+        if(modal==='checklist-fill') goRoute('checklist-fill');
         // 'leader-one-pager' is no longer a registry id (dispatch #190 folded it into
         // 'above-store') and never reaches onOpenModal any more — no nav pill references it, and
         // an `onOpenModal handler registered' with no matching PANEL_BY_ID entry fails
@@ -3342,6 +3344,9 @@ function App() {
         subtitle:'Compares all metrics for any date range across selected locations.',
         onBack:()=>goRoute(null),
       }, h(DateRangeReport,{stores,ds,settings,userEvents,onClose:()=>goRoute(null)})),
+      // checklist-fill — RoutePanelShell lives inside ChecklistFillPanel itself (same
+      // "shell inside the component" pattern as sched-hub/perf-reviews/planning above).
+      routePanel==='checklist-fill'&&h(ChecklistFillPanel,{stores,onClose:()=>goRoute(null)}),
       // Dispatch #55 Part B (Job C Batch 1) — six overlay-to-page conversions. sched-hub,
       // perf-reviews and eom-dashboard carry RoutePanelShell inside their own component (they
       // already rendered their own header chrome). fob-analysis ORIGINALLY had no internal

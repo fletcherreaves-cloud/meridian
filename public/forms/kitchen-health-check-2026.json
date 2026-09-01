@@ -1,0 +1,299 @@
+{
+  "formId": "fb001ba7-6a61-449e-b4ac-e88798cfed25",
+  "title": "Kitchen Health Check 2026",
+  "description": "Kitchen Health Check 2026",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-04-01T16:49:51.574Z",
+  "itemCount": 36,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Image Display",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "FOOD SAFETY",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Was Food Safety completed correctly today? Check 60 days.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "During your observation was food safety always handled properly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "PEOPLE",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "A system in place to have a Production Leader when 2 or more are in the kitchen?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Did the Production leader do a Pre-Shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the grill staffed effectively for all dayparts? If not, what daypart and plan?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Right # of Staff & People positioned appropriate for sandwich ranges?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Did crew follow procedures correctly?  *Note training needs separately",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EQUIPMENT",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Ask 3 grill members is equipment working? Note the Names in Comment Box",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Grill Certification #1  Date",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Copy of Grill Certification #2  Date",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Copy of Copy of Grill Certification #3  Date",
+          "field": "date"
+        },
+        {
+          "kind": "check",
+          "title": "Equipment in the right place? (BWS) (coolers / freezers have thermometers)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Small Equipment Minimums? Franke, H&K",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fryer Recovery - Routine in Place - Boil Out & Filtered Daily",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grill recovery Routine in Place. No Carbon Build up - remove one Teflon - quality of Teflon's and platen",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Grill Recovery Routine in Place (date of last recovery)",
+          "field": "date"
+        },
+        {
+          "kind": "check",
+          "title": "Blade Changing Routine in Place - i.e., every Thursday",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "KVS Monitors (Beep) & Bump Bars working and in proper place? (BWS)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grill Printers in right place and working? (BWS)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Label Maker used correctly & current version? NABIT Site",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "PRODUCTS",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Taste a couple of products - are they gold standard?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bake / Prep chart used correctly - no products made during the Peak?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Prep person(s) - correctly used and trained?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Prep Charts in place - new 1/2 hour charts? UHC set-up for success",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HOTG dialed in for Quality?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Comments",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Prescriptions to your Success - Choose 1 or 2 on above outcomes",
+      "color": "success-high",
+      "items": []
+    },
+    {
+      "title": "ACTION Plan 1",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Start Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Action Plan",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Who will own & write a plan",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Follow up of Previous Health Check Action",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "ACTION Plan 2",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Start Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Action Plan",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Who will own & write a plan",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Follow up of Previous Health Check Action",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

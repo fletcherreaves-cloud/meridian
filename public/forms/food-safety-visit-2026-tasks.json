@@ -1,0 +1,440 @@
+{
+  "formId": "aab68cfc-1384-46b5-bcd4-1625903d491f",
+  "title": "Food Safety Visit 2026 Tasks",
+  "description": "Food Safety Visit 2026",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-07-09T16:09:25.934Z",
+  "itemCount": 46,
+  "sections": [
+    {
+      "title": "Customer First Visit  Food Safety 2026",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "2026 FOOD SAFETY",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Serve safe food and beverages to our customers in every restaurant, every day",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Manager In Charge",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Today's Date:",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "TOTAL FOOD SAFETY POINTS ACHIEVED:",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "See the 2026 Operations PACE Food Safety Guide for assessment criteria and guidance.",
+      "color": "",
+      "items": []
+    },
+    {
+      "title": "CRITICAL FOOD SAFETY",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "For Critical Food Safety Questions - If not compliant, these questions result in visit automatically not meeting standards and must be corrected immediately.",
+      "color": "",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS-A-US Immediate access to the area located behind the counter was granted to the assessor.",
+          "options": [
+            "Yes",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS-B-US Restaurant is operating in a manner that does not pose any imminent health hazards to our guests and/or employees.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS1-US Is the restaurant free of a pest infestation and/or signs of an active pest infestation in the restaurant building, adjoining corral, shed,  and any area within 10 feet of the building?  Select all that apply:",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS2-US Are the internal temperatures of beef patties after cooking at or above 155°F?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS3- US Are the internal temperatures of plant based & chicken products after cooking at or above 165°F?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS4 - US Are the internal temperatures of Filet-O-Fish portions after cooking are at or above 155°F?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS5- US Are the internal temperatures of breakfast steak and breakfast sausage after cooking at or above 155°F?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS6 - US  The internal temperature of cooked McMuffin raw round eggs are at or above 155°F (69°C)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS7 - US The on-duty manager (or staff assigned to complete the checklist) can demonstrate they have been trained on properly completing the Food Safety Daily Checklist including the ability to take corrective action.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TCS for Refrigerated Products",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS8 - US Are all Time-Temperature Control for Safety (TCS) refrigerated products in code (within primary shelf life)? If no, mark what product is not in code:",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Hygiene & Sanitation",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS9 - US Handwashing sinks: Is there warm running water and required supplies at all handwashing sinks? Are hand washing sinks easily accessed by employees and only used for hand washing, not preparing food or storing equipment?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS10-US Handwashing procedure: Are hands properly washed at the required times following hand washing procedures? Is there a system in place to ensure hourly hand washing by all employees?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS11 - US Sanitized towel/cloth buckets: Do sanitized towel buckets contain towels and chlorine sanitizer solution at the correct concentration checked with a chlorine test strip?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS 12 - US Sanitizer-soaked towels/cloths: Are sanitizer-soaked towels and grill cloths used at food, beverage preparation, and service areas placed into the soiled towel bucket after using and not left sitting out on surfaces?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS13 - US Utensils sanitizing: Are all in-use UHC trays, grill utensils, prep table utensils, and utensil holders clean (no build up), washed, and sanitized at least every 4 hours as per approved procedure? Do the back sink and soap/sanitizer dispensers or dishwashers function (hot water 110 ̊F or higher in the wash bin/sink) with all required supplies? Does the sanitizer solution have the right concentration when checked with an appropriate test strip?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Contamination Prevention",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS14 - US State of cleanliness: Is the restaurant (all areas) in a good state of cleanliness. In all areas, the floors/walls/ceiling and equipment do not have excessive soil, grease or food debris build up? Are the floors free of standing or puddling water?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS15 - US State of repair: The building and equipment is functioning properly and in a good state of repair (not cracked or damaged). The freezers should not have an excess build-up of ice that would prohibit the unit to function properly.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS16 - US Water and ice: Are appropriate measures taken to protect water and ice from foreign material, chemicals, and/or bacterial contamination? Are water filters in date and ice machines free from mold or build up?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS 17 - USFood product opened: Opened packages of food in storage, (including dry storage, refrigerators and freezers) covered/ wrapped, labeled, off the floor and away from walls. Product stored according to proper procedures.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS18 - US Raw food product handling: Are blue disposable glove procedures or dedicated tongs used to prevent cross-contamination when handling all raw meat or poultry products (including shell eggs) at the grill station and fryer station? Are dedicated utensils used for raw products (e.g. the yellow yolk breaking tool is only used to break egg yolks)?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS19 - US Good Hygiene Practices: Disposable gloves and other personal hygiene procedures followed.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS20 - US Chemical management: All chemicals are clearly labeled and stored away from food and packaging.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS21 - US Pest management: Is a pest management program and pest prevention steps and behaviors in place and being managed effectively? Is the restaurant properly pest proofed to prevent entry of pests (e.g. gaps under doors are sealed)?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS22 - US Are non-food spill clean-up procedures in place?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Storage",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS23 - US Frozen products: Walk-in freezers and any other primary storage freezers keeping  products at 0°F (-18° C) or below. Secondary storage freezers keeping products solidly",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS24 - US Refrigerated products: Are refrigerated products inside all refrigerated units at or below 40°F (including shake/sundae reservoir)? If no, note which units do not meet the temperature standard:",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS25 - US All in-use refrigerated products held in refrigerators or at room temperature marked and being used within their secondary shelf lives.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS26 - US Leftover heated foods: All leftover heated foods are discarded (including expired food in the UHC and any shake/sundae mix removed from heat treatment shake/sundae machines). Heated food products (proteins) are not held below 140 °F (60 °C) or beyond their defined time.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Cooking",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS27 - US Pyrometer: The pyrometer and accessories (e.g., probes) are clean, calibrated, working correctly, and used correctly",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "General",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "FS28 - US Sourcing: Are all food, food packaging, equipment (including utensils), and cleaning chemicals from approved sources?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS29 - US Employee health: Do managers understand employee illness symptoms and reportable illness causes for when an employee cannot be working? Do managers also understand when an employee can return to work after illness?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS30 - US Staff training: Are all managers (including shift managers) trained and currently certified in food safety per local requirements or McDonald's minimum requirements in absence of local regulations (Apply the standar that is more stringent) the Staff is trained on food safety per global requirements and market expectations before commencing work",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS31 - US  Food Safety Checklists: Are at least the last 60 days of correctly completed Food Safety Daily Checklists available? Are the last two correctly completed Monthly Food Safety Procedure Verifications available? (For Digital Food Safety please reference the Food Safety Guide)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS32 - US Health Department Inspections: Review the most recent health department inspection and food safety audit reports. All food safety violations noted by the health department have been corrected or have a plan in place to correct issues.",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS33 - US Allergen management: Market specific allergen management program in place.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TOTAL FOOD SAFETY POINTS ACHIEVED:",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "FS34 - HST 1 Are hands-free water taps (faucets) installed for kitchen handwashing units?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS35 - HST 2 \nAre hands-free paper towel dispensers installed in place of hands air-dryers?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "FS36 - HST 3  Are hand sanitizers or handwashing station available close to kitchen entry?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "1) Unacceptable Audit - Critical Question Missed: Critical Food Safety questions are FS1-FS7. If not compliant, these questions result in the evaluation not  meeting standards.   a) Non-compliant criteria must be corrected immediately by restaurant team to remove the risk before evaluator leaves the premises.   b) Follow-up full unannounced visit, by a McDonald's operations professional is required within 14 days.   c) Restaurant team to address all non-compliant criteria. \n2) Unacceptable Audit – Score below 80%: Non-critical questions are FS8-FS33. If score is below 80% the visit results in not meeting standards.  a) A follow-up full unannounced visit, by McDonald’s operations professional is required within 30-90 days.  b) Restaurant team to address all non-compliant criteria. \n3) Acceptable Audit – Score 80-99%: Non-critical findings resulting with overall score of > 80%.  Restaurant team to address all non-compliant criteria. \n4) Acceptable Audit – Score 100%: No further action necessary",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Person Completing Verification Signature:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Reviewed With Signature:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Print Name of Person Completing Verification",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Print Name of Person Reviewed With",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

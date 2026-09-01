@@ -1,0 +1,250 @@
+{
+  "formId": "4e8101f2-1e34-447f-841d-f947d6cbc8ad",
+  "title": "2026 Delivery & Behind the Counter",
+  "description": "2026 Delivery & Behind the Counter",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-03T20:36:01.024Z",
+  "itemCount": 29,
+  "sections": [
+    {
+      "title": "Customer First Visit 2026",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "2026 Delivery & Behind the Counter",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Delivery",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Behind the Counter Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Delivery",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "D1 - For security reasons, was courier and vehicle correct per by 3PO app?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D2 - Was courier polite, did they confirm their name and yours?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D3 - Was courier neatly presented and adhered to appropriate hygiene standards?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D5 -Was 'End to End' time from payment to courier present under 30 minutes?  Time begins on  payment and ends when order is presented",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D6 - Was there a timing deviation between predicted app arrival time and actual arrival time?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D7 - Accuracy: Was order in correct packaging?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D8 -  Accuracy: Was pick ticket visible and order numbers written on every bag?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D9 - Accuracy:  Did you receive all the food and drink items as ordered, and were they properly \nprepared?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D10 -  Did you receive all the condiments (whether required or requested), along with utensils, napkins, and straws?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D 10 - Accuracy: Was ketchup included with your french fry order?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D11 - Quality: Was your sandwich/entrée served neat, at proper temperature, fresh, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D12 - Quality: Were french fries at proper temperature and salted  -OR- hash browns at proper temperature and did they taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D13 - Quality: Was your drink served neat, at the proper temperature and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "D14 - Quality: Was your dessert/McCafé Bakery served neat, at the proper temperature, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter Operations",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Tempering & Prep: Were product levels sufficient per posted product level charts/eProduction  monitor for the volume of business?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Tempering & Prep:  Were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "MFY: Were UHC product holding times and holding levels being adhered to?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fries/hash browns:  Were french fries/hash browns available to meet demand, following cooking and holding procedures and french fries station set up/maintained correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Beverages and Desserts: Were drinks placed on appropriate cart/table identified? Were drinks placed separately, grouped by order and served correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Order Assembly: Were orders assembled correctly, once all items were available, and checked \nfor accuracy? Were Stations/Landing Tables utilized appropriately?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "General Cleanliness Production and Service Areas: Did restaurant display general cleanliness in employee areas, without a negative impact on operations and safety?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "People Positioning: Area employees positioned and adjustments made, as conditions dictate, throughout the shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Leading Operations: Shift and Area Leaders conduct travel paths, identify danger zones and  take appropriate actions to prioritize & reduce operational barriers to deliver Gold Standard  products and a great customer experience.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Operational Focus: Was the manager waware of the  restaurant's priorities, goals, and progress?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Managers Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Managers' signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

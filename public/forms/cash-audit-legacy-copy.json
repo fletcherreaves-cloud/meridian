@@ -1,0 +1,172 @@
+{
+  "formId": "311931c4-32e8-48e5-8232-0fe9def9563a",
+  "title": "Cash Audit (legacy) (Copy)",
+  "description": "Cash Audit MCDOK",
+  "category": "Legacy",
+  "lastEditedAt": "2026-01-12T12:47:17.706Z",
+  "itemCount": 24,
+  "sections": [
+    {
+      "title": "Cash Audit Summary",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Supervisor:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Manager:",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Today's Date:",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Audit Start Date:",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Audit End Date:",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Current Score/Grade:",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Tally",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "TOTAL POINTS: 90 – 100 = Excellent, 75-85 = Acceptable, <75 =  Unacceptable",
+      "color": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "All deposits credited to account by the next business day and ISP totals match",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "“0” Manual Refunds (Check Window Person Summary report for review period)",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Employee Over Guidelines:",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Cash",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "T Red's",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Refunds",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Safe Confirmation:",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Number of drawers",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Amount in each",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Coin changers",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Safe Count:",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "$1",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "$5",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "$10",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "$20",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "$50/100",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total safe count (back up) = $",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "GM signature:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Supervisor signature:",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

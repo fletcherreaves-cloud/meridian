@@ -1,0 +1,1050 @@
+{
+  "formId": "79718e75-7ae3-46ee-99ce-75a830330831",
+  "title": "RGRV QSC Visit 2026",
+  "description": "RGRV QSC Visit 2026",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-05T13:51:14.078Z",
+  "itemCount": 119,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Restaurant",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Quality Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Service Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Cleanliness Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "RGRV  QSC 2026",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "Quality",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "Tempering & Prep",
+      "color": "blue-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Q1 Storage: Products are within primary code date and damage-free, rotated in freezers, refrigerators, and in  dry storage.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q2  Tempering / Thawing: Tempering and thawing is within standard and product  levels sufficient per posted product level charts for the volume of business.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q3   Prepare: Products are prepared and stored within standard",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q4  Replenish: Product levels are sufficient for the volume of business; products are  labeled and within secondary shelf lives.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Made For You",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Q5a US  Prepare: Grill Batch Cooker follows correct procedures, monitors levels, and places Gold Standard grilled/baked products in UHC. Fresh beef prepared according to procedure and is Gold Standard.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q5b US   Prepare: Fried Products Batch Cooker follows correct procedures, monitors levels, and places Gold Standard fried/baked products in UHC.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q6  Initiate: Initiator in position, responding promptly to orders on KVS, and initiating  products correctly.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q7  Assemble: Assembler pulls box/wrap from the initiator and follows correct  assembly procedures.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q8  Finish: Items are correctly finished and checked for quality before placing in the  Order Assembly Table (OAT) or Heated Landing Zone (HLZ).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q9  Finished product quality check - Regular menu Beef / Breakfast Item 1:  Sandwich meets McDonald's \nstandards for appearance, taste, texture and temperature.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q10  Finished product quality check - Regular menu Chicken or Fish / Breakfast Item 2: \nSandwich/McNuggets meet McDonald's standards for appearance, taste, texture, and temperature.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fries / Hash Browns",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Q12   Prepare: Employees follow fry monitor, load baskets correctly and produce gold standard fries/hash browns.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q13  Cooking: Employees follow proper cooking procedures and use chart/monitor to  keep up with demand to produce gold standard fries/hash browns",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q14  Bagging: Employees follow proper bagging procedures to ensure all fries/hash  browns served meet gold standard.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q15 Finished product quality check - Fries / Hash Browns:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Beverages and Desserts",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Q16  Initiate: Employees respond promptly to orders on KVS and start producing  drinks/desserts.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q17 Prepare: Employees produce gold standard drinks and desserts.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q18   Place:  Indicator buttons/printed beverage stickers are used and finished products are correctly placed on the beverage order assembly table or Drive Thru landing table.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q19 Finished product quality check - Soft Drink/Shake/Blended Ice/Frozen Beverage  Product:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q20 Finished product quality check - Dessert Product:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Q21  Finished product quality check - Hot Coffee / Espresso Product:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "General",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Q22  Calibration: Cooking times and set point temperatures are correct and equipment  is calibrated.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Quality Total",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Service",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "DT",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "S1 Order:  Employees interact with guests in a prompt, friendly, and effective manner, asking if the guest is using their McDonald's Mobile App, providing clear instructions and asking clarifying questions where needed. Order is displayed clearly on the COD / Digital Menu Board.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S2  Pay: Employees interact with guests in a prompt, friendly, and effective manner, and  provide clear instructions.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S3  Assemble: Orders assembled correctly, once items are ready, and complete order is checked for accuracy.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S4   Present: Orders are presented correctly, employees are friendly and attentive, and provide clear instructions, with cars pulled forward as appropriate, explaining the 3 W's (why/wait/where).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S5 Farewell: Guests are politely thanked and provided a genuine/personalized farewell.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S6 Speed of service - Order End to Present End (OEPE): ≤120 seconds for the hours  matching the evaluation.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S7  TRENDED Speed of service - OEPE:  Improving and/or meeting McDonald's Standard of 120 seconds.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "In Restaurant",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "S8  Order & Pay: Employees interact in a friendly and effective manner at each order point, asking if the guest is using their McDonald's Mobile App, and clear instructions are given.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S9  Kiosk:  All kiosks are in full working order and product outage managed correctly.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S10 Assemble: Orders assembled correctly, once all items are ready, and complete order is checked for accuracy.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S11  Present: Orders are presented correctly, presenter friendly, with condiments readily available (in apron, cart, tray, caddy, etc.), and asking guests if they have everything they need.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S11 US 01 Messaging: Order Pick Up area is clearly signposted and easily identifiable.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S12  Farwell: Guests are politely thanked and provided a genuine/personalized farewell",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S13  Speed of service - Receipt to Present (R2P): ≤90 seconds for the hours matching the  evaluation.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S14 US 01  TRENDED Speed of service - R2P:  Improving and/or meeting McDonald's Standard of 90 Seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Delivery",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "S16   Assemble: Pick ticket/delivery monitor is used to assemble the order, check the order  contents, and coordinate where multiple bags are required.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S17  Assemble: Fresh french fries are used and placed in the bag when the rest of the food  is ready",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S18  Assemble: Orders are assembled effectively using correct packaging items and correct  sealing procedures followed for food and beverages, considering order size and use of  multiple bags.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S19 Present: Delivery orders are checked for accuracy including condiments, sauces, utensils, napkins and straws; bags are sealed before order is presented to the courier; all items are within bags.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S20  Present: Employees are friendly and attentive to the couriers. When presenting orders, delivery bags include a pick ticket;  and for orders with multiple bags, numbers written on every bag (i.e., 1 of 2, 2 of 2). Employees are following the proper handoff procedures withcourier and verifying couriers are confirming pick-up on their mobile device.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S21-US-01  TRENDED Speed of service - Restaurant Time:  Improving and/or at or below 5 minutes.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Curbside",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "S21- US -02  Messaging: Curbside spaces are clearly signposted, easily identifiable, and positioned near restaurant entrance doors, with a minimum of two Curbside spaces available.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S21- US -03 Assemble: Orders are assembled correctly, once items are ready, and complete order is checked for accuracy.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S21- US -06 Present: Orders are presented correctly, presenter friendly, with condiments readily available (in apron, cart, tray, caddy, etc.), and asking guests if they have everything they need. Was presenter wearing a high visibility safety vest per safety requirements.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S21 - US -07   Farewell:  Guests are politely thanked and provided a genuine/personalized farewell.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Hospitality",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "S24  Connect: Employees are actively supporting the customer journey and interacting with  guests in a polite and friendly manner (eye contact, friendly tone, polite, attentive, and  sincere).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S25  Environment: The overall environment of the restaurant makes for a comfortable and welcoming experience with family amenities.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "General Service",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "S26    Menu Items: (Product Available) All current menu items, including Under 3 toys, are available for purchase. Managers can demonstrate product outage procedure.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "S27  McDonald's Global Mobile App (GMA): Employees can explain how to download and navigate the McDonald's Global Mobile App (GMA), and how loyalty program works. Employees can articulate the customer benefits of Mobile Order & Pay and using the loyalty \nprogram, including how customers can earn and burn reward points or redeem deals. Employees are skilled in redeeming deals or rewards and refund procedures if necessary",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Service Total",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Cleanliness",
+      "color": "blue-high",
+      "items": []
+    },
+    {
+      "title": "Equipment Maintenance: Ongoing care and maintenance of equipment improving quality, service,  and cleanliness, minimizes downtime, reduces operating costs, ensures food/employee safety, and  extends equipment life.",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "C1  Resources: Current Planned Maintenance (PM) reference materials and cleaning chemicals are available. Cleaning tools are available and in good condition.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C2 Knowledge: Employees are fully trained to perform Planned Maintenance  (PM) tasks and/or required qualified technicians scheduled to complete  tasks.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C3 Cleaning and Sanitation: The 4-step cleaning process is performed  correctly and the back sink and soap/sanitizer dispensers or dishwashers if  used, are functioning correctly",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C4 Planned Maintenance Calendar: Tasks are scheduled and signed off as per  PM Calendar or another tracking system (Weekly, Bi-weekly, Monthly,  Quarterly, Semi-Annual, Annual).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C5 Grills: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C5 Grills: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C6 Fryers: Clean. .",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C6 Fryers: In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C6 Fry Station: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C6 Fry Station: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C7 Hot Food Holding Equipment: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C7Hot Food Holding Equipment: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C8 Hot Food Equipment: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C8 Hot Food Equipment: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C9 Hot Beverage Equipment: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C9 Hot Beverage Equipment: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C10 Cold Beverage Equipment: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C10 Cold Beverage Equipment: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C10 --US-02 Certifications: Shake/sundae machine certification completed within the last 12 \nmonths.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C11 Refrigeration (Walk-in, Kitchen and Front Counter): Clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C11 Refrigeration (Walk-in, Kitchen and Front Counter): In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C11 Freezers (Kitchen and Walk-in): Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C11Freezers (Kitchen and Walk-in): In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C12  Adequate small equipment/utensils/parts: Clean and available.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C12 Small equipment/utensils/parts: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C12 Point of Sale (POS) Equipment: Clean.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C12 Point of Sale (POS) Equipment: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C13 Certifications: Grill certification is completed within the last 12 months.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C13 All pieces of equipment are unimpacted by supply chain issues. If no, select what items were impacted:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "General Cleanliness (Internal)",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "C14 Front Counter,  Area: Clean and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C14 Front Counter, Front Counter Area: In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C14  Front Counter Area: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C14 Drive Thru and Beverages and Dessert Production (BDAP): Clean and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C15 Production Areas: Clean and maintained throughout the  visit",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C15 Production Areas: In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C15 Rest and Office Area: Clean and maintained throughout the visit",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C16 Storage and Cleaning Areas: Clean and maintained throughout the visit",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C16 Storage and Cleaning Areas: In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C17 Dining Area: Clean and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C17 Dining Area: In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C18 Restrooms: Clean, stocked, and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C18 Restrooms: In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C19 Play Place: Clean and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C19 Play Place: In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C19 a US  Manager's Office and Crew Facilities: Clean and maintained throughout the visit",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C19 a US 01  Manager's Office and Crew Facilities:  In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C20  Front of House Waste Management: Waste receptacles (bins) available to customers for the disposal of food, food packaging, cups, etc. Select all waste disposal options that are available to customers:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C20 Back of House Recycling: Restaurant recycles back of house items. Select  all recycling options that apply",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C20 US 02  Waste Service Back of House Recycling: Restaurant participates in the Food Donation Program.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C20 a  Back of House Waste Management:  Waste disposal practices are applied to waste behind the counter. Select all options that are available:",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C20 a   Waste Service: Restaurant has hauler that picks up: (select all waste services provided to the restaurant in the last month)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "General Cleanliness (External)",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "C21 Exterior Areas (Building): Clean",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C21 Exterior Areas (Building): In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C22 Exterior Areas (Patio/Seating): Clean and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C22 Exterior Areas (Patio/Seating): In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C23 Exterior Areas (Parking Lot and Landscaping): Clean and maintained",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C23 Exterior Areas (Parking Lot and Landscaping): In good repair",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C23  Exterior Areas (Corral): Clean and maintained throughout the visit.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C23 Exterior Areas (Corral): In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C24 Exterior Areas (Drive-thru): Clean and maintained throughout the visit",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "C24 Exterior Areas (Drive-thru): In good repair.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Cleanliness Total",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

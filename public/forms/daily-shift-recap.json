@@ -1,0 +1,116 @@
+{
+  "formId": "dee945a7-9498-4a4a-aba2-7ae054a82793",
+  "title": "Daily Shift Recap",
+  "description": "Daily Shift Recaps",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:28:32.268Z",
+  "itemCount": 14,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Manager",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Daily Shift Recaps",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Shift Information",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Store Focus",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Shift Time",
+          "options": [
+            "Op-11",
+            "11-2",
+            "2-5",
+            "5-8",
+            "8-CL",
+            "Other"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Shift Results",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "What did you do on your shift to help achieve the store focus?",
+      "color": "deep-orange-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Focus #1",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Focus #2",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "People List call outs, number of crew, mix of crew, positioning, incentives/prizes given, Document call outs with CAF",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Training List new hire training, training needs for existing crew, procedures corrected",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Equipment List broken or missing equipment, add broken equipment to store's equipment channel",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Product List waste $, borrowed or transferred product, truck deliveries",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Future Actions",
+      "color": "cyan-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "What did I do differently from my last shift that helped my shift run better?",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Based on today's shift, what can I do differently next time to run a better shift?",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Manager Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}
