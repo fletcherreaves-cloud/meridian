@@ -337,9 +337,10 @@ actual code — this note nearly caused a duplicate reimplementation.
   tables scrolling horizontally on mobile (`overflowX:'auto'`, not left `hidden`), and whether the
   panel is a natural fit for `route:true` (`panel-registry.js`) — bring whichever of these the
   panel is missing into line **as long as it doesn't meaningfully widen that dispatch's blast
-  radius**. Opportunistic, not a mandate to sweep all 94 panels (33 are `route:true` as of
-  2026-09-01 — the new Digital Checklists panel was built `route:true` from day one, same
-  treatment #123's `crew-schedule` got — that ratio is expected
+  radius**. Opportunistic, not a mandate to sweep all 94 panels (34 are `route:true` as of
+  2026-09-01 — the new Digital Checklists panel was built `route:true` from day one (same
+  treatment #123's `crew-schedule` got), and Pricing Engine was promoted out of Test Kitchen
+  the same day — that ratio is expected
   to stay low for a long time, not a gap to close in one pass). See that file for current adoption
   numbers and the live ratchets that guard the close-button and mobile-scroll conventions.
 - **An agent session's environment is fixed at container start (measured 2026-08-24).** A variable

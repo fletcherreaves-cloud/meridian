@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, clampToLastClosedDay } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -8,6 +8,32 @@ function row(over) {
   return { loc: '1001', date: '2026-08-15', item: 1, price: 2.99, desc_: 'Item', sold_qty: 10,
     unit_food_cost: 0.5, unit_paper_cost: 0.05, ...over };
 }
+
+describe('clampToLastClosedDay — trap 5: an in-progress day silently understates "current" price', () => {
+  it('clamps a data max that reaches into an in-progress day back to the last closed day', () => {
+    const closed = new Date('2026-08-30T00:00:00');
+    const dataMax = new Date('2026-08-31T00:00:00'); // still filling in
+    expect(clampToLastClosedDay(dataMax, closed)).toBe(closed);
+  });
+
+  it('keeps the real (older) data max when the pull is lagging behind the closed cutoff', () => {
+    const closed = new Date('2026-08-31T00:00:00');
+    const dataMax = new Date('2026-08-28T00:00:00'); // pull hasn\'t caught up yet
+    expect(clampToLastClosedDay(dataMax, closed)).toBe(dataMax);
+  });
+
+  it('passes through a data max that exactly equals the closed cutoff', () => {
+    const closed = new Date('2026-08-30T00:00:00');
+    const dataMax = new Date('2026-08-30T00:00:00');
+    expect(clampToLastClosedDay(dataMax, closed)).toBe(dataMax);
+  });
+
+  it('returns null/undefined as-is when there is no data at all', () => {
+    const closed = new Date('2026-08-30T00:00:00');
+    expect(clampToLastClosedDay(null, closed)).toBeNull();
+    expect(clampToLastClosedDay(undefined, closed)).toBeUndefined();
+  });
+});
 
 describe('computeItemMargins — trap 1: promo contamination (MAX, never AVG)', () => {
   it('resolves real menu price as MAX(price) same-day, not AVG', () => {

@@ -109,16 +109,18 @@ rule):**
   2026-08-19 — one fewer hand-rolled backdrop exists now than when this file was first written;
   the ratchet is doing its job). Not re-measured on 2026-09-01 — only the route:true figure below
   was re-checked this pass.
-- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **33 of 94** registered panels in
-  `panel-registry.js` (was 32 of 93 earlier the same day — the new Digital Checklists panel
-  landed built `route:true` from day one, same treatment #123's `crew-schedule` got, not a
-  re-measurement correction). ⚠️ The prior "13 of 101" figure was measured via `grep -c "route:\s*true"`
+- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **34 of 94** registered panels in
+  `panel-registry.js` (was 32 of 93, then 33 of 94, earlier the same day — the new Digital
+  Checklists panel landed built `route:true` from day one, same treatment #123's
+  `crew-schedule` got; Pricing Engine was then promoted out of Test Kitchen the same day too,
+  owner: "make it a URL page for starters" — neither is a re-measurement correction). ⚠️ The
+  prior "13 of 101" figure was measured via `grep -c "route:\s*true"`
   against the whole file — this OVERCOUNTS (the registry's own header/inline comments discuss
   `route:true` in prose, e.g. "Removing route:true here would silently break that link") and
   underrepresents true adoption growth since. Re-measured 2026-09-01 by actually importing and
   parsing the live `PANELS` export (`panels.filter(p => p.route === true).length` vs.
   `panels.length`), not grepping — confirmed independently twice (once by a research agent, once
-  directly). The other 61 are still modal-only (`ModalShell`) — this is a large, multi-year-scale
+  directly). The other 60 are still modal-only (`ModalShell`) — this is a large, multi-year-scale
   migration by design, not a gap to close in any single dispatch. Convert a panel to `route:true`
   opportunistically per the rule above; don't treat the ratio itself as something to fix directly.
 - A parallel finding, same day: `promo-roi.js`'s results table had a mobile-scroll bug of the

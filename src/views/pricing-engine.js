@@ -20,11 +20,12 @@
 // idle/loading/loaded/error convention src/views/security-panel.js already uses for a
 // panel-local (non-ds) Supabase read.
 import * as React from 'react';
-import { ModalShell } from '../components/ModalShell.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
-import { computeItemMargins, enrichItemMargins } from '../engine/pricing-engine.js';
+import { lastClosedBusinessDay } from '../utils/date.js';
+import { computeItemMargins, enrichItemMargins, clampToLastClosedDay } from '../engine/pricing-engine.js';
 import { loadQsrMenuItemActivity } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
@@ -132,9 +133,12 @@ function ItemRow({ row, wide, expanded, onToggle }) {
       key: row.itemNumber, onClick: wide ? onToggle : undefined,
       style: { borderBottom: '.5px solid var(--bdr)', cursor: wide ? 'pointer' : 'default' },
     },
-      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 600 } },
-        (wide ? (expanded ? '▾ ' : '▸ ') : '') + (row.descr || ('#' + row.itemNumber))),
-      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } }, '#' + row.itemNumber),
+      // MI# leads (owner-stated 2026-09-01: "list it first" -- multiple Menu Item #s can
+      // exist for what looks like the same product, e.g. promo-pricing variants, so the
+      // number is the real identifying key, not the description).
+      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--gold)' } },
+        (wide ? (expanded ? '▾ ' : '▸ ') : '') + '#' + row.itemNumber),
+      td({ style: { padding: '6px 10px', fontSize: 11, color: 'var(--text2)' } }, row.descr || '—'),
       td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } },
         wide ? 'All stores' : sNameC(row.loc) || row.loc),
       td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)' } }, f$2(row.menuPrice)),
@@ -164,7 +168,7 @@ function ItemRow({ row, wide, expanded, onToggle }) {
   ];
 }
 
-const HEAD_COLS = ['Item', '#', 'Store', 'Price', 'Food+Paper', 'Margin $', 'Margin %', 'Volume', '$ Contrib'];
+const HEAD_COLS = ['MI #', 'Item', 'Store', 'Price', 'Food+Paper', 'Margin $', 'Margin %', 'Volume', '$ Contrib'];
 
 function RankedTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
   return div(null,
@@ -195,7 +199,7 @@ function RankedTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
 // Activity) don't overlap with the margin tables' Price/Food+Paper/Margin columns, and
 // bolting an optional column set onto ItemRow would make both harder to read. Same
 // wide/expand-to-per-store-rows interaction as ItemRow, though, for a consistent feel.
-const DRAIN_HEAD_COLS = ['Item', '#', 'Store', 'Waste $', 'Waste %', 'Comp $', 'Promo $ (cost basis)', 'Activity'];
+const DRAIN_HEAD_COLS = ['MI #', 'Item', 'Store', 'Waste $', 'Waste %', 'Comp $', 'Promo $ (cost basis)', 'Activity'];
 
 function DrainRow({ row, wide, expanded, onToggle }) {
   return [
@@ -203,9 +207,10 @@ function DrainRow({ row, wide, expanded, onToggle }) {
       key: row.itemNumber, onClick: wide ? onToggle : undefined,
       style: { borderBottom: '.5px solid var(--bdr)', cursor: wide ? 'pointer' : 'default' },
     },
-      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 600 } },
-        (wide ? (expanded ? '▾ ' : '▸ ') : '') + (row.descr || ('#' + row.itemNumber))),
-      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } }, '#' + row.itemNumber),
+      // MI# leads -- see the identical comment on ItemRow above.
+      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--gold)' } },
+        (wide ? (expanded ? '▾ ' : '▸ ') : '') + '#' + row.itemNumber),
+      td({ style: { padding: '6px 10px', fontSize: 11, color: 'var(--text2)' } }, row.descr || '—'),
       td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } },
         wide ? 'All stores' : sNameC(row.loc) || row.loc),
       td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--crit)' } }, f$0(row.wasteDollars)),
@@ -295,10 +300,15 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
   const wide = scopedLocs.length !== 1;
   const locFilterKey = scopedLocs.join(',');
 
+  // Owner-reported 2026-09-01: "I am not sure the Price you are populating is the correct
+  // price on a lot of items, making the margins seem way off." See clampToLastClosedDay()'s
+  // own header (src/engine/pricing-engine.js) for the live-measured root cause and evidence
+  // -- this clamps the raw data max to the last CLOSED business day, so an in-progress day
+  // never silently understates a "current" menu price.
   const maxDate = uM(() => {
     let max = null;
     (ds.pmixRows || []).forEach(r => { const d = pmixDate(r); if (!isNaN(d) && (!max || d > max)) max = d; });
-    return max;
+    return clampToLastClosedDay(max, lastClosedBusinessDay());
   }, [ds.pmixRows]);
 
   const dateRange = uM(() => {
@@ -445,9 +455,10 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
         }),
       );
 
-  return h(ModalShell, {
-    title: '💲 Pricing Engine', onClose, maxWidth: 900,
+  return h(RoutePanelShell, {
+    title: '💲 Pricing Engine', onBack: onClose,
     subtitle: 'Per-item margin (menu price vs. food + paper cost) — qsr_product_mix, auto-pulled',
+    bodyStyle: { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   },
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },
       span({ style: { fontSize: 8, color: 'var(--text3)', marginRight: 2 } }, 'Range:'),
