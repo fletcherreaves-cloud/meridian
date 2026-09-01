@@ -648,12 +648,46 @@ describe('detectWeeklyCountDay', () => {
     expect(out['T4'].agreeCount).toBe(2);
   });
 
-  it('a store with only partial/spot sessions (never a complete weekly count) returns null, not a guess', () => {
+  // 2026-09-01 CORRECTED — the first version of this test asserted null for a partial/spot
+  // session (well under COVER_FRAC). That was testing the function's since-corrected first
+  // implementation (satisfiesWeekly-basis) rather than the proven touchedWeeklyClasses basis it
+  // now shares with eom-dashboard.js's cadenceFromOnHand() (dispatch #112, 27/27 live
+  // population): a PARTIAL Food touch still counts toward day detection, on purpose -- day-of-
+  // week PATTERN and weekly-completion STATUS are different questions. A 30-of-118 partial Food
+  // count is exactly the kind of real signal (a store consistently attempting its count on one
+  // day even when it rarely finishes) this basis is meant to surface.
+  it('a partial/spot session (well under COVER_FRAC) still counts toward day detection -- the touchedWeeklyClasses basis, not the compliance bar', () => {
     const rowsByPeriod = [
-      period('T5', '2026-08-06', { Food: 30 }), // well under COVER_FRAC of a 118-item universe -- spot/partial
+      period('T5', '2026-08-06', { Food: 30 }),   // Thu -- partial, never clears COVER_FRAC
+      period('T5', '2026-08-13', { Food: 22 }),   // Thu -- also partial
     ];
     const out = detectWeeklyCountDay(rowsByPeriod);
-    expect(out['T5']).toBeNull();
+    expect(out['T5']).toMatchObject({ weekday: 4, weekdayName: 'Thu', sampleSize: 2, agreeCount: 2, confidence: 1 });
+  });
+
+  // The genuine null case: a store that has never touched Food OR Condiment at all -- only
+  // Paper, which floats mid-month and carries no weekly day-of-week signal of its own.
+  it('a store that has only ever touched Paper (never Food or Condiment) returns null, not a guess', () => {
+    const rowsByPeriod = [period('T5b', '2026-08-14', { Paper: 40 })];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T5b']).toBeNull();
+  });
+
+  // The real-world quirk this basis relies on (see this function's own doc comment and
+  // count-cycle.js's file-header "KNOWN LIMITATION"): qsr_onhand upserts on (loc, period, wrin),
+  // so a SINGLE period's snapshot can carry more than one distinct session date, because not
+  // every item gets re-touched every week. Two genuinely different weekday attempts inside ONE
+  // period must both be tallied, not just the most recent.
+  it('a single period can carry more than one qualifying session date, and both are tallied', () => {
+    const onePeriod = store('T5c', [
+      { date: '2026-08-06', counts: { Food: 118, Condiment: 36 } },  // Thu -- full weekly count
+      { date: '2026-08-11', counts: { Food: 20 } },                  // Tue -- partial re-touch of a subset
+    ]);
+    const out = detectWeeklyCountDay([onePeriod]);
+    expect(out['T5c'].sampleSize).toBe(2);
+    // Tied 1-1 (Thu vs Tue) -- recency tiebreak picks the more recent date, 08-11 (Tue).
+    expect(out['T5c'].weekday).toBe(2);
+    expect(out['T5c'].lastSeenDate).toBe('2026-08-11');
   });
 
   it('sampleWindow caps how far back it looks -- an old, now-stale weekday drops out of the tally', () => {

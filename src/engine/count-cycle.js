@@ -190,29 +190,39 @@ export function detectSessions(rows = []) {
 const weekdayOf = (dateStr) => { const t = new Date(dateStr + 'T00:00:00'); return Number.isNaN(t.getTime()) ? null : t.getDay(); };
 
 /**
- * Detect each store's TYPICAL weekly-count day of week from historical qsr_onhand session data
- * (2026-09-01, owner req: "we have the days of week that each store counts" -- measured false as
- * a stored setting; weekly-cadence.js's own `expectedWeekdayByLoc` param is declared but never
- * populated by any real caller, and this file's own engine has no fixed per-store schedule either
- * — see the file header's "WHY THIS READS qsr_onhand" section). This derives it instead of
- * blocking on a new manual setting.
+ * Detect each store's TYPICAL weekly-count day of week from historical qsr_onhand session data.
+ *
+ * ⚠️ CORRECTED 2026-09-01, same day as the first version — that version used `satisfiesWeekly ||
+ * isEom` (the 75%-coverage compliance bar) as its qualifying condition, on the premise that no
+ * per-store weekly-count-day signal existed anywhere in the codebase yet. That premise was wrong:
+ * the owner pointed at the live "🗓 Weekly Count Cadence" panel (`CadenceMonitor`,
+ * `src/views/eom-dashboard.js`), whose `cadenceFromOnHand()` already computes this — and had
+ * already been live-measured (dispatch #112, 2026-08-25) against a coverage-threshold basis just
+ * like this function's first version: **2/27 stores populated (7.4%)**, because two different
+ * dates clearing a 75-98% coverage bar of the SAME class universe within one period is close to a
+ * mathematical contradiction. Broadening to `touchedWeeklyClasses` (any real Food or Condiment
+ * attempt, no coverage floor — a field `detectSessions()` already attaches to every session)
+ * fixed it to **27/27 (100%)**, each hand-checked against real session dates for an obvious
+ * weekday pattern. This function now uses that same, proven basis — it is the SHARED
+ * implementation `cadenceFromOnHand()` calls, not a second copy of it; day-of-week PATTERN
+ * detection and weekly-completion STATUS grading (`satisfiesWeekly`, unchanged everywhere else in
+ * this file) are different questions, exactly as dispatch #112 established.
  *
  * `rowsByPeriod` is an ARRAY OF ROW-ARRAYS, one per period/month (e.g. one `loadQsrOnHand({period})`
  * result per trailing month) — deliberately NOT one flat concatenated array. qsr_onhand upserts on
  * (loc, period, wrin) — see this file's "KNOWN LIMITATION" header comment — so the SAME wrin is a
  * genuinely separate row per period, each carrying its own `last_counted`. Concatenating several
  * periods' rows into one array before calling detectSessions() would inflate `totals[loc][cls]`
- * (the coverage denominator) by however many periods are included, since every one of those rows
- * still counts toward the class universe — silently making COVER_FRAC impossible to clear and every
- * store read as never-counted. It also mathematically CANNOT reveal more than one qualifying
- * `satisfiesWeekly` date within a single period's snapshot in the first place: two different dates
- * both clearing 75% coverage of the SAME class universe is a contradiction (75%+75% > 100%), so a
- * single-period call can surface at most one candidate date per store, ever. detectSessions() is
- * therefore run ONCE PER PERIOD here (correct, independent universe each time), and only that
- * period's single best qualifying session — `satisfiesWeekly || isEom`, the SAME "complete weekly
- * count" definition cycleCompliance()'s own `lastWeekly` already uses — feeds the tally. Across
- * `sampleWindow` trailing periods that yields up to one sample per month, which is what actually
- * exists to sample from.
+ * (the coverage denominator) by however many periods are included. detectSessions() is therefore
+ * run ONCE PER PERIOD here (correct, independent universe each time). Unlike the coverage-bar
+ * basis, `touchedWeeklyClasses` is NOT mutually exclusive across dates within one period — a
+ * store's rolling-latest-state item universe can and does carry several different qualifying
+ * dates from a single snapshot (that's exactly why the single-period `cadenceFromOnHand()` reaches
+ * 27/27 off one period alone) — so EVERY qualifying session from EVERY period is tallied, not just
+ * one per period. `sampleWindow` caps the tally to the most recent N qualifying sessions
+ * (recency-biased) rather than one per calendar month, matching the denser signal this basis
+ * produces. A single-period call (`rowsByPeriod = [onHandRows]`) reproduces `cadenceFromOnHand()`'s
+ * own detectedWeekday output exactly.
  *
  * Ties break toward the MOST RECENT occurrence, so a store that recently shifted its count day
  * reads as the NEW day, not a stale majority.
@@ -222,8 +232,8 @@ const weekdayOf = (dateStr) => { const t = new Date(dateStr + 'T00:00:00'); retu
  * history yet). `confidence` (agreeCount/sampleSize) is exposed so a caller can decide its own bar
  * for "trust this enough to act on" rather than this function silently picking one.
  */
-export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 10 } = {}) {
-  const perLoc = {};    // loc -> [{ date }, ...] -- at most one entry per period, oldest first
+export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 20 } = {}) {
+  const perLoc = {};    // loc -> [session, ...] -- every touchedWeeklyClasses session, any period
   const seenLocs = new Set(); // every loc detectSessions saw in ANY period, qualifying or not --
   // so a store with real data but no qualifying session yet still reads as an explicit `null`
   // (a known store, no signal), never silently dropped from the output like one never seen at all.
@@ -231,8 +241,8 @@ export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 10 } = 
     const { sessions } = detectSessions(periodRows);
     for (const loc of Object.keys(sessions)) {
       seenLocs.add(loc);
-      const best = [...sessions[loc]].reverse().find(s => s.satisfiesWeekly || s.isEom);
-      if (best) (perLoc[loc] || (perLoc[loc] = [])).push(best);
+      const touched = sessions[loc].filter(s => s.touchedWeeklyClasses);
+      if (touched.length) (perLoc[loc] || (perLoc[loc] = [])).push(...touched);
     }
   }
   const out = {};
