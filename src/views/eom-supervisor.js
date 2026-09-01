@@ -260,19 +260,26 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
   // Reference sales (actual if available, else projected)
   const refSales = actSales || projSales || 0;
 
-  // $ variance rows — (actual% − proj%) × actual sales (pure rate impact)
-  const fcVar$    = actFCPct    != null && projFCPct    != null && refSales
-                    ? (norm(actFCPct) - norm(projFCPct)) * refSales : null;
-  const fobVar$   = actFOBPct   != null && projFOBPct   != null && refSales
-                    ? (norm(actFOBPct) - norm(projFOBPct)) * refSales : null;
-  const laborVar$ = actLaborPct != null && projLaborPct != null && refSales
-                    ? (norm(actLaborPct) - norm(projLaborPct)) * refSales : null;
+  // % variance rows — rounded to the SAME 0.01-percentage-point precision the +/- row displays
+  // (owner-flagged 2026-09-01: the $ Amount row used to multiply refSales by the FULL-PRECISION
+  // float diff — e.g. an underlying ~0.0219% that the +/- row rounds to "+0.02%" for display — so
+  // a user hand-checking "0.02% × actual sales" got $123.37 while the panel showed $135.02, a
+  // ~$12 gap nobody could reproduce from the numbers actually on screen. Rounding HERE, once, and
+  // reusing this same rounded value for both the +/- % cell and the $ Amount multiply below,
+  // guarantees the two always tie out exactly — round2pp(0.0219%)=0.02%, ×$616,861.43=$123.37.
+  const round2pp  = (v) => v == null ? null : Math.round(v * 10000) / 10000; // nearest 0.01 percentage point
+  const fcVarPct  = actFCPct    != null && projFCPct    != null ? round2pp(norm(actFCPct)    - norm(projFCPct))    : null;
+  const fobVarPct = actFOBPct   != null && projFOBPct   != null ? round2pp(norm(actFOBPct)   - norm(projFOBPct))   : null;
+  const laborVarPct = actLaborPct != null && projLaborPct != null ? round2pp(norm(actLaborPct) - norm(projLaborPct)) : null;
+
+  // $ variance rows — rounded % (above) × actual sales (pure rate impact), so each $ Amount cell
+  // reconciles exactly with the displayed +/- % in the same column.
+  const fcVar$    = fcVarPct    != null && refSales ? fcVarPct    * refSales : null;
+  const fobVar$   = fobVarPct   != null && refSales ? fobVarPct   * refSales : null;
+  const laborVar$ = laborVarPct != null && refSales ? laborVarPct * refSales : null;
   const opSup$    = actOpSup != null && (projOpSupMan || 0) > 0
                     ? actOpSup - projOpSupMan : null;
   const salesVar  = actSales != null && projSales != null ? actSales - projSales : null;
-  const fcVarPct  = actFCPct    != null && projFCPct    != null ? norm(actFCPct)    - norm(projFCPct)    : null;
-  const fobVarPct = actFOBPct   != null && projFOBPct   != null ? norm(actFOBPct)   - norm(projFOBPct)   : null;
-  const laborVarPct = actLaborPct != null && projLaborPct != null ? norm(actLaborPct) - norm(projLaborPct) : null;
 
   // Crew Labor Adjustment section
   const laborAdjAmt  = laborVar$;
@@ -342,10 +349,15 @@ function computeRollup(stores) {
   const otHours      = anyF('otHours')      ? sumF('otHours')            : null;
   const actCash      = anyF('actCash')      ? (S.every(s=>s.actCash!=null) ? sumF('actCash') : null) : null;
 
+  // Rounded to the same 0.01-percentage-point precision as the per-store +/- row (see
+  // computeStoreEOM's round2pp comment) — display-consistency only; this rollup's own $ Amount
+  // figures below are sums of each store's ALREADY-rounded fcVar$/fobVar$/laborVar$, not
+  // recomputed from these rollup-level %s, so no double-rounding of the dollar totals occurs.
+  const round2pp     = (v) => v == null ? null : Math.round(v * 10000) / 10000;
   const salesVar     = actSales && projSales ? actSales - projSales : null;
-  const fcVarPct     = actFCPct  != null && projFCPct  != null ? actFCPct  - projFCPct  : null;
-  const fobVarPct    = actFOBPct != null && projFOBPct != null ? actFOBPct - projFOBPct : null;
-  const laborVarPct  = actLaborPct != null && projLaborPct != null ? actLaborPct - projLaborPct : null;
+  const fcVarPct     = actFCPct  != null && projFCPct  != null ? round2pp(actFCPct  - projFCPct)  : null;
+  const fobVarPct    = actFOBPct != null && projFOBPct != null ? round2pp(actFOBPct - projFOBPct) : null;
+  const laborVarPct  = actLaborPct != null && projLaborPct != null ? round2pp(actLaborPct - projLaborPct) : null;
 
   const fcVar$       = sumF('fcVar$');
   const fobVar$      = sumF('fobVar$');
@@ -408,6 +420,23 @@ function EditCell({ value, onChange, prefix = '', placeholder = '—', style = {
   });
 }
 
+// ── Row-value formatters (shared by the live EOMBlock render AND formatSupervisorHtml's static
+// print export below — one set of formatting rules, so the two can never disagree on what a
+// number should read as). ──────────────────────────────────────────────────────────────────────
+const varPctStr = (v) => {
+  if (v == null) return '—';
+  const p = (v * 100).toFixed(2);
+  return (v > 0 ? '+' : '') + p + '%';
+};
+const varMoneyStr = (v) => {
+  if (v == null) return '—';
+  if (v < 0) return `(${fmtMoney(v, false).replace('-', '')})`;
+  return `$${fmtD(v)}`;
+};
+const salesStr = (v) => v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+const pctStr   = (v) => v != null ? (v * 100).toFixed(2) + '%' : '—';
+const hrStr    = (v) => v != null ? v.toFixed(2) : '—';
+
 // ── EOM block (store or rollup) ───────────────────────────────────────────────
 function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, setExpanded, forPrint }) {
   const id    = data.locStr || 'rollup';
@@ -432,21 +461,6 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
     fcVar$, fobVar$, laborAdjAmt, laborNewTotal, otDollar: _otD, opSup$,
     totalShaded, pctImpact,
   } = data;
-
-  // pct variance display (basis points label)
-  const varPctStr = (v) => {
-    if (v == null) return '—';
-    const p = (v * 100).toFixed(2);
-    return (v > 0 ? '+' : '') + p + '%';
-  };
-  const varMoneyStr = (v) => {
-    if (v == null) return '—';
-    if (v < 0) return `(${fmtMoney(v, false).replace('-', '')})`;
-    return `$${fmtD(v)}`;
-  };
-  const salesStr = (v) => v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
-  const pctStr   = (v) => v != null ? (v * 100).toFixed(2) + '%' : '—';
-  const hrStr    = (v) => v != null ? v.toFixed(2) : '—';
 
   const rowBg = (i) => i % 2 === 0 ? 'rgba(255,255,255,.025)' : 'transparent';
   const bdr   = isRollup ? '2px solid rgba(245,158,11,.35)' : '1px solid var(--bdr)';
@@ -532,7 +546,13 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           h('td', { style: C.td }, '—'),
           h('td', { style: { ...C.td, color: colShaded(fcVar$), fontWeight: 700 } }, fcVar$ != null ? varMoneyStr(fcVar$) : '—'),
           h('td', { style: { ...C.td, color: colShaded(fobVar$), fontWeight: 700 } }, fobVar$ != null ? varMoneyStr(fobVar$) : '—'),
-          h('td', { style: { ...C.td, color: colShaded(data.laborVar$), fontWeight: 700 } }, data.laborVar$ != null ? varMoneyStr(data.laborVar$) : '—'),
+          // Reads laborAdjAmt (destructured above), NOT data.laborVar$ — computeRollup() never sets
+          // laborVar$ on the rollup object (only laborAdjAmt, which holds the identical value at the
+          // per-store level: `const laborAdjAmt = laborVar$;` in computeStoreEOM). Reading data.laborVar$
+          // directly here always rendered "—" for the ROLLUP card specifically (owner-flagged
+          // 2026-09-01, alongside the $ Amount rounding fix, "need to fix ... rollups as well") — the
+          // per-store cards happened to work because laborVar$ IS present on computeStoreEOM's return.
+          h('td', { style: { ...C.td, color: colShaded(laborAdjAmt), fontWeight: 700 } }, laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—'),
           h('td', { style: { ...C.td, color: colShaded(otDollar), fontWeight: 700 } },
             forPrint
               ? (otDollar != null ? varMoneyStr(otDollar) : '—')
@@ -651,111 +671,21 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
   );
 }
 
-// ── Print styles ──────────────────────────────────────────────────────────────
-// Exported (dispatch #227) so the three new EOM report tabs (eom-missing-items-report.js /
-// eom-team-snapshot.js / eom-recount-report.js) reuse this EXACT print mechanism — same class
-// hooks (.eom-block/.eom-no-print/.eom-print-area/.eom-print-title), same body.eom-printing
-// scoping — instead of inventing a second one (the "don't build a second table renderer" rule).
-export const PRINT_STYLE = `
-@media print {
-  /* Print ONLY the EOM summary as a clean full-page report. Dispatch #202: this panel is now a tab
-     inside the Inventory Control hub (RoutePanelShell, not its own ModalShell) — the class hooks
-     below (.mf-eom-print-modal/.mf-eom-print-card/.mf-eom-modal-chrome) are supplied by
-     EOMDashboardPanel via RoutePanelShell's className/headerClassName props (ModalShell.js), same
-     names, same shapes, just a different owner. We hide every other child of the app root and strip
-     the hub's own chrome — using display:none (NOT visibility) so no blank space or phantom pages
-     remain, and NO absolute positioning (so multi-page paginates in every browser).
-     Scoped to body.eom-printing (set by the Print button, cleared on afterprint) so no other screen breaks. */
-  body.eom-printing { background: #fff !important; color: #111 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  /* 2026-08-31 fix (real bug, reproduced in an actual Chromium print-media render, not just read):
-     forcing body's OWN background/color above does nothing for the report's actual content --
-     every cell in these reports sets its color via color:var(--text) / var(--text2) / var(--text3)
-     (theme-driven), and on a dark-mode session (the persisted default for Fletcher and every other
-     long-standing user, CLAUDE.md's own UI-conventions note) those tokens resolve to LIGHT colors
-     meant for a dark surface. Print never repaints the surface dark, so every cell rendered near-
-     white text on the forced-white page -- invisible, not just low-contrast, which is what actually
-     produced the "print still does not work" blank page (confirmed: computed color was
-     rgb(255,255,255) on white, verified in a real browser under emulateMedia('print'); a check that
-     only reads display:none/dimensions -- as this file's own earlier .mf-main-content print fix
-     was verified -- would have passed here too and missed it, per the "would this still pass if
-     reverted" rule: only an actual rendered-color check catches THIS failure mode.) --bdr/--bdr2
-     (borders) and --surf2/--surf3 (row/section backgrounds) have the same problem. Redefining the
-     tokens on body.eom-printing cascades to every descendant that reads them via var(...), without
-     touching the app's live theme (nothing here is unscoped by body.eom-printing). Also overrides
-     the legacy, unconditional th{background:#1a2332;color:#fff} rule further down this file (the
-     old Projections-PDF print stylesheet, written before any of these EOM reports existed) so
-     report headers match the rest of the printout instead of being the one surviving dark cell on
-     an otherwise white page -- body.eom-printing th is more specific than the bare th it competes
-     with, so it wins the !important tie. */
-  body.eom-printing { --text: #111 !important; --text2: #333 !important; --text3: #666 !important;
-    --bdr: #ccc !important; --bdr2: #999 !important;
-    --surf: #fff !important; --surf2: #f7f7f7 !important; --surf3: #f0f0f0 !important;
-    --crit: #b91c1c !important; }
-  body.eom-printing th, body.eom-printing td { background: #fff !important; color: #111 !important; }
-  body.eom-printing thead th { background: #f0f0f0 !important; color: #333 !important; }
-  /* 2026-08-31 fix: EOMDashboardPanel (and every other routePanel) renders inside App.js's
-     '.mf-main-content' scroll wrapper, NOT as a direct child of .mf-app-root — that wrapper is
-     itself a direct child with no exempting class, so the rule below used to hide IT, which blanked
-     the print modal nested inside it regardless of the modal's own class (a BLANK printed page, not
-     a truncated one — display:none on an ancestor hides descendants unconditionally). Exempting
-     .mf-main-content here and repeating the same "hide every other direct child" rule one level
-     down keeps exactly the print modal (and nothing else) visible, same pattern as before. */
-  body.eom-printing .mf-app-root > *:not(.mf-eom-print-modal):not(.mf-main-content) { display: none !important; }
-  body.eom-printing .mf-main-content { overflow: visible !important; height: auto !important; padding: 0 !important; }
-  body.eom-printing .mf-main-content > *:not(.mf-eom-print-modal) { display: none !important; }
-  body.eom-printing .mf-eom-print-modal { position: static !important; inset: auto !important; background: #fff !important; padding: 0 !important; overflow: visible !important; display: block !important; z-index: auto !important; }
-  body.eom-printing .mf-eom-print-card { background: #fff !important; border: none !important; border-radius: 0 !important; max-width: none !important; box-shadow: none !important; }
-  body.eom-printing .mf-eom-print-card > div { overflow: visible !important; max-height: none !important; }
-  body.eom-printing .mf-eom-modal-chrome, body.eom-printing .eom-no-print { display: none !important; }
-  body.eom-printing table { font-size: 10px !important; }
-  body.eom-printing th, body.eom-printing td { padding: 3px 4px !important; }
-  /* Keep each rollup/location block whole — never split one across a page. Both properties for cross-browser. */
-  body.eom-printing .eom-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 12px !important; }
-  body.eom-printing .eom-print-title { display: block !important; }
-  @page { margin: 0.5in; size: landscape; }
-}
-.eom-print-title { display: none; }
-`;
-
-// 2026-08-31 (owner-reported, real): window.print() is a SYNCHRONOUS browser call that freezes the
-// tab while it lays out the full printable DOM -- measured live on a real "all stores" report,
-// this took ~12 SECONDS (Chrome's own "[Violation] 'setTimeout' handler took 11941ms" + a
-// "[click-trace] ... blocked ... button Print" attributing it to doPrint's setTimeout). Owner
-// confirmed: waiting it out DOES eventually produce a real, correct printout on every one of these
-// reports -- it isn't broken, it's just silent, and a frozen tab with a blank print preview reads
-// exactly like a failure. The fix isn't shrinking the report (owner wants the whole thing); it's
-// telling the user to wait BEFORE the freeze starts. `forPrint` was already being set true right
-// before doPrint's setTimeout/window.print() call in every one of these report panels -- it just
-// had nothing rendering off of it. Given the class 'eom-no-print' hitting `display:none` only
-// inside PRINT_STYLE's `@media print` block (not on the live screen, even after body.eom-printing
-// is added), this banner stays visible on screen through the whole freeze and disappears from the
-// actual printed/PDF output.
-export function PrintGeneratingBanner({ forPrint }) {
-  if (!forPrint) return null;
-  return h('div', { className: 'eom-no-print', style: {
-    background: 'rgba(245,188,0,.12)', border: '1px solid rgba(245,188,0,.35)', color: '#a67c00',
-    borderRadius: '7px', padding: '8px 14px', marginBottom: '10px', fontSize: '12px', fontWeight: 600,
-  } }, '⏳ Generating the print preview — larger reports can take several seconds and the browser tab will look frozen. Please wait for the print dialog rather than reloading.');
-}
-
-// 2026-08-31 (owner-reported, real, same day as PrintGeneratingBanner above): even with the
-// warning banner, the owner's real print attempts on Missing Items / Recount Impact / Team
-// Snapshot / Count Swings kept coming back BLANK -- reproducibly, on both "all locations" and a
-// SINGLE store (ruling out report size), with the actual block duration varying wildly run to run
-// (3.8s to 11.9s) and a real-Chromium reproduction of App.js's exact DOM/CSS shape at realistic
-// scale finding no structural bug and no measurable cost from the CSS-custom-property cascade
-// theory (benchmarked: 0.1ms at 60,000 extra DOM elements, body-scoped vs modal-scoped variable
-// overrides identical). Root cause not found after real measurement at every turn -- so per the
-// owner's own steer, these four reports stop trying to print the LIVE, interactive app DOM in
-// place (toggling body.eom-printing + window.print()) and switch to the SAME isolated-window
-// mechanism this file's OWN "FOB Report"/"Count Reliability"/etc. buttons already use successfully
-// (moved here, exported, from eom-dashboard.js -- was a local, unexported helper there). A fresh
-// window.open() with plain static HTML + hardcoded print-safe CSS has no live React tree, no CSS
-// custom properties, no shared DOM with the rest of the app to go wrong -- and the main app tab
-// never blocks, since window.print() now runs against a small, isolated document instead of the
-// whole live app. Supervisor Rollup is NOT migrated -- its own forPrint is load-bearing for more
-// than the banner (expands every row, swaps editable cells for plain text) and was never confirmed
-// broken by the owner's testing, so it keeps PrintGeneratingBanner + the original mechanism.
+// ── Print (isolated window) ─────────────────────────────────────────────────────
+// 2026-08-31/2026-09-01 history: this file used to also export PRINT_STYLE (an in-place
+// body.eom-printing + @media print mechanism) and PrintGeneratingBanner, reused verbatim by the
+// Missing Items / Recount Impact / Team Snapshot / Count Swings report tabs. That mechanism
+// reproducibly printed BLANK for the owner (dark-mode CSS-variable colors resolving to
+// near-white-on-white under print, plus a DOM-nesting scoping bug) even after two rounds of real
+// fixes, so those four reports were migrated onto the isolated-window mechanism below instead
+// (2026-08-31, dispatch #227). Supervisor Rollup (THIS panel) was deliberately left on the old
+// mechanism at the time, since its own `forPrint` flag did more than gate a banner — it also
+// expanded every row and swapped editable cells for plain text — and had never been confirmed
+// broken. It was, though (owner-flagged 2026-09-01, same failure mode as the other four): this
+// panel is now migrated too, via formatSupervisorHtml() below (a pure HTML-string export, same
+// shape as formatMissingItemsHtml/formatRecountImpactHtml), and PRINT_STYLE/PrintGeneratingBanner
+// were removed entirely — once this panel stopped using them, they had zero remaining callers
+// app-wide (mirrors 9ba5140's own removal of ensureEomPrintStyleInjected for the same reason).
 export function openPrintWindow(title, bodyHtml) {
   try {
     // NB: do NOT pass 'noopener' — with it window.open() returns null, so nothing gets written and
@@ -773,10 +703,132 @@ tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-mono
 .badge{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:6px;border:1px solid}
 .badge-warn{background:#fff7e6;border-color:#f0b400;color:#8a6400}
 .badge-bad{background:#fdecec;border-color:#e05555;color:#a12020}
+.s-block{margin-bottom:16px;break-inside:avoid;border:1px solid #ccc;border-radius:6px;padding:10px 12px}
+.s-hdr{font-size:13px;margin-bottom:6px}
+.s-badge{display:inline-block;font-size:10px;color:#666;background:#f0f0f0;border-radius:4px;padding:1px 6px;margin-left:6px}
+.s-fob-ok{font-size:10px;color:#0a0;font-weight:700;margin-left:6px}
+.s-fob-bad{font-size:10px;color:#b80;font-weight:700;margin-left:6px}
+.s-kpi{font-size:11px;color:#333;font-weight:700;margin-left:10px}
+.s-note{font-size:10px;color:#666;margin:4px 0}
+.s-note-warn{color:#8a6400;background:#fff7e6;border:1px solid #f0b400;border-radius:4px;padding:3px 8px}
+.s-table{table-layout:fixed}
+.s-table th{font-size:9px;text-align:right;white-space:nowrap}
+.s-table th:first-child{text-align:left;width:70px}
+.s-table td{font-family:ui-monospace,Menlo,monospace;font-size:11px;text-align:right;white-space:nowrap}
+.s-lbl{text-align:left!important;font-weight:700;color:#555;font-family:-apple-system,system-ui,sans-serif!important}
+.s-amt td{background:#fff8e6}
+.s-labor{margin-top:0;background:#fffaf0}
+.s-labor-lbl{font-weight:700;font-size:10px;color:#555;white-space:nowrap;text-align:left!important}
+.s-labor td{font-size:11px;padding:4px 8px;text-align:left}
+.s-total{font-size:11px;margin-top:6px}
 @media print{.noprint{display:none}}</style></head><body>${bodyHtml}
 <script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200)}<\/script></body></html>`);
     w.document.close();
   } catch (e) { console.warn('[eom] print failed', e); }
+}
+
+// Static HTML for one store or rollup block — mirrors EOMBlock's dataTable + laborAdj sections
+// exactly (same columns, same rows, same values), using the SAME row-value formatters
+// (varMoneyStr/varPctStr/salesStr/pctStr/hrStr, module-scope above) and the SAME color helpers
+// (colShaded/colPctVar/colCash/colSalesVar/colPctImpact, "── Color helpers" above) the live table
+// uses, so the print colors/values can't drift from what the screen shows. Always "forPrint"
+// semantics — every value plain text, since the isolated print window never mounts EOMBlock or
+// has any live React state to edit.
+function eomBlockHtml(data, { isRollup, label } = {}) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const {
+    projSales, projFCPct, projFOBPct, projLaborPct, projOpSup,
+    actSales, actFCPct, actFOBPct, actLaborPct, actOpSup, actCash,
+    otHours, otDollar, laborXfers, laborUnclk,
+    salesVar, fcVarPct, fobVarPct, laborVarPct,
+    fcVar$, fobVar$, laborAdjAmt, laborNewTotal, opSup$,
+    totalShaded, pctImpact, locStr, hasFOB, hasTargets, name,
+  } = data;
+  const colorAttr = (v, fn) => v == null ? '' : ` style="color:${fn(v)}"`;
+  const td = (content, colorStyle = '') => `<td${colorStyle}>${esc(content)}</td>`;
+
+  let html = `<div class="s-block">`;
+  html += `<div class="s-hdr"><b>${esc(label || name)}</b>`;
+  if (!isRollup) html += ` <span class="s-badge">Rest. #${esc(locStr)}</span>`;
+  if (hasFOB) html += ` <span class="s-fob-ok">✓ FOB</span>`;
+  else if (!isRollup) html += ` <span class="s-fob-bad">○ FOB missing</span>`;
+  const kpi = [];
+  if (actSales != null) kpi.push(`$${Math.round(actSales / 1000)}K actual`);
+  if (pctImpact != null) kpi.push(`${(pctImpact * 100).toFixed(2)}% P&L impact`);
+  if (kpi.length) html += ` <span class="s-kpi">${esc(kpi.join(' · '))}</span>`;
+  html += `</div>`;
+
+  if (!hasFOB && !isRollup) {
+    html += `<div class="s-note s-note-warn">⚠ No FOB report found for this period — actual food cost / labor data missing. Enter monthly target data manually or upload the FOB report.</div>`;
+  }
+  if (!hasTargets && !isRollup) {
+    html += `<div class="s-note">No monthly targets loaded for this store — upload QSRSoft Monthly Projections or enter projection values.</div>`;
+  }
+
+  html += `<table class="s-table"><thead><tr><th></th><th>Product Net Sales</th><th>Total Food Cost</th><th>Food Over Base</th><th>Crew Labor</th><th>OT Hours</th><th>Op Supplies</th><th>Cash +/&minus;</th></tr></thead><tbody>`;
+  html += `<tr><td class="s-lbl">Projection</td>${td(salesStr(projSales))}${td(pctStr(projFCPct))}${td(pctStr(projFOBPct))}${td(pctStr(projLaborPct))}${td('0')}${td(salesStr(projOpSup))}${td('—')}</tr>`;
+  html += `<tr><td class="s-lbl">Actual</td>`
+    + td(actSales != null ? salesStr(actSales) : '—', colorAttr(actSales && projSales ? actSales - projSales : null, colSalesVar))
+    + td(pctStr(actFCPct), actFCPct != null ? colorAttr(actFCPct - (projFCPct || 0), colPctVar) : '')
+    + td(pctStr(actFOBPct), actFOBPct != null ? colorAttr(actFOBPct - (projFOBPct || 0), colPctVar) : '')
+    + td(pctStr(actLaborPct), actLaborPct != null ? colorAttr(actLaborPct - (projLaborPct || 0), colPctVar) : '')
+    + td(hrStr(otHours))
+    + td(salesStr(actOpSup))
+    + td(actCash != null ? varMoneyStr(actCash) : '—', colorAttr(actCash, colCash))
+    + `</tr>`;
+  html += `<tr><td class="s-lbl">+/−</td>`
+    + td(salesVar != null ? varMoneyStr(salesVar) : '—', colorAttr(salesVar, colSalesVar))
+    + td(varPctStr(fcVarPct), colorAttr(fcVarPct, colPctVar))
+    + td(varPctStr(fobVarPct), colorAttr(fobVarPct, colPctVar))
+    + td(varPctStr(laborVarPct), colorAttr(laborVarPct, colPctVar))
+    + td('—')
+    + td(opSup$ != null ? varMoneyStr(opSup$) : '—', opSup$ != null ? colorAttr(opSup$, colPctVar) : '')
+    + td('—')
+    + `</tr>`;
+  html += `<tr class="s-amt"><td class="s-lbl">$ Amount</td>`
+    + td('—')
+    + td(fcVar$ != null ? varMoneyStr(fcVar$) : '—', colorAttr(fcVar$, colShaded))
+    + td(fobVar$ != null ? varMoneyStr(fobVar$) : '—', colorAttr(fobVar$, colShaded))
+    + td(laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—', colorAttr(laborAdjAmt, colShaded))
+    + td(otDollar != null ? varMoneyStr(otDollar) : '—', colorAttr(otDollar, colShaded))
+    + td(opSup$ != null ? varMoneyStr(opSup$) : '—', colorAttr(opSup$, colShaded))
+    + td('—')
+    + `</tr>`;
+  html += `</tbody></table>`;
+
+  // Crew Labor Adjustment mini-panel — same 4 fields as the live laborAdj sidebar.
+  html += `<table class="s-labor"><tbody><tr>`
+    + `<td class="s-labor-lbl">Crew Labor Adjustment</td>`
+    + `<td>$ Amount (Shaded): <b${colorAttr(laborAdjAmt, colShaded)}>${esc(laborAdjAmt != null ? varMoneyStr(laborAdjAmt) : '—')}</b></td>`
+    + `<td>Transfers: <b>${esc(laborXfers != null ? varMoneyStr(laborXfers) : '—')}</b></td>`
+    + `<td>Unclocked Labor: <b>${esc(laborUnclk != null ? varMoneyStr(laborUnclk) : '—')}</b></td>`
+    + `<td>New Total $: <b${colorAttr(laborNewTotal, colShaded)}>${esc(varMoneyStr(laborNewTotal))}</b></td>`
+    + `</tr></tbody></table>`;
+  html += `<div class="s-total">Total of Shaded Boxes: <b${colorAttr(totalShaded, colShaded)}>${esc(varMoneyStr(totalShaded))}</b>`
+    + ` &nbsp;÷ Prod. Net Sales = <b${colorAttr(pctImpact, colPctImpact)}>${esc(pctImpact != null ? (pctImpact * 100).toFixed(2) + '% impact to P&L' : '—')}</b></div>`;
+
+  html += `</div>`;
+  return html;
+}
+
+// HTML export for the "🖨 Print" button (2026-09-01 migration — see openPrintWindow's own comment
+// above for the full history). Pure function of the same rollup/storeData the live panel already
+// computed, so print can't disagree with what's on screen; the rollup block always renders (same
+// as the live "SUPERVISOR PATCH TOTAL" card), followed by one block per in-scope store.
+export function formatSupervisorHtml(rollup, storeData, { groupLabel, monthLabel } = {}) {
+  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const list = storeData || [];
+  let html = `<h1>EOM Supervisor Summary — ${esc(groupLabel || 'All Stores')}</h1>`;
+  html += `<div class="sub">${esc(monthLabel)} · ${list.length} location${list.length === 1 ? '' : 's'}</div>`;
+  if (rollup) {
+    html += eomBlockHtml(rollup, { isRollup: true, label: `SUPERVISOR PATCH TOTAL — ${groupLabel} — ${monthLabel}` });
+  }
+  if (!list.length) {
+    html += `<p>No store data found for the selected period and group. Upload FOB or Monthly Targets to populate.</p>`;
+  } else {
+    for (const sd of list) html += eomBlockHtml(sd, { isRollup: false, label: sd.name });
+  }
+  return html;
 }
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
@@ -795,27 +847,6 @@ function parsePeriod(period) {
   return { selYear: +m[1], selMonth: +m[2] };
 }
 export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs }) {
-  // Inject print styles once + reset the expand-all-for-print flag when the print dialog closes.
-  uE(() => {
-    const id = 'eom-print-style';
-    if (!document.getElementById(id)) {
-      const s = document.createElement('style');
-      s.id = id; s.textContent = PRINT_STYLE;
-      document.head.appendChild(s);
-    }
-    const after = () => { setForPrint(false); document.body.classList.remove('eom-printing'); };
-    window.addEventListener('afterprint', after);
-    return () => window.removeEventListener('afterprint', after);
-  }, []);
-
-  // Print the CURRENT grouping ONLY (not the app shell): flag the body so the print CSS hides everything but
-  // the .eom-print-area, expand every location, then open the dialog on the next paint. afterprint restores.
-  const doPrint = uCB(() => {
-    setForPrint(true);
-    document.body.classList.add('eom-printing');
-    setTimeout(() => window.print(), 60);
-  }, []);
-
   // dispatch #225 Task 4 — selYear/selMonth are now DERIVED from the shared `period` prop
   // (src/views/eom-dashboard.js's EOMDashboardPanel, one period picker for all 5 tabs), not
   // independent state. This drops the old "default to last completed month" initializer (Notes
@@ -828,7 +859,6 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
   const [selGroup, setSelGroup]   = uSt('all');
   const [expanded,   setExpanded]  = uSt(null);
   const [manual,     setManual]    = uSt(() => loadManual(selYear, selMonth));
-  const [forPrint,   setForPrint]  = uSt(false);
   const [ebosByLoc,  setEbosByLoc] = uSt({});
 
   // Reload manual data when month changes — local first, then merge remote
@@ -939,6 +969,16 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
   const monthLabel = `${MONTH_NAMES[selMonth - 1]} ${selYear}`;
   const groupLabel = selGroup === 'all' ? 'All Stores' : selGroup;
 
+  // Print the current grouping in an isolated window (2026-09-01 migration — see
+  // openPrintWindow's own comment for the full history). Pure function of the SAME rollup/
+  // storeData the live cards already show, so print can't disagree with the screen.
+  const doPrint = uCB(() => {
+    openPrintWindow(
+      `EOM Supervisor Summary — ${groupLabel} — ${monthLabel}`,
+      formatSupervisorHtml(rollup, storeData, { groupLabel, monthLabel })
+    );
+  }, [rollup, storeData, groupLabel, monthLabel]);
+
   const meta = ds.monthlyTargetsMeta;
   const mtLoaded = !!(meta?.year);
   // Same manual-only blind spot as hasFOB above (computeStoreEOM) — this header banner also
@@ -975,8 +1015,6 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
             : h('span', { style: { color: muted } }, '○ No eBOS data for period'),
         )
       ),
-
-      h(PrintGeneratingBanner, { forPrint }),
 
       // Controls row
       h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '16px' } },
@@ -1042,46 +1080,38 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
       ),
     ), // end eom-no-print
 
-    // ── Print area (always visible, but print-formatted) ─────────────────
-    h('div', { className: 'eom-print-area' },
+    // Rollup block at top — always rendered in forPrint style (fully expanded, plain values):
+    // its numbers are computed aggregates, never directly editable, regardless of print state.
+    rollup && h(EOMBlock, {
+      key: 'rollup',
+      data: rollup,
+      isRollup: true,
+      label: `SUPERVISOR PATCH TOTAL — ${groupLabel} — ${monthLabel}`,
+      manual: {},
+      onManualChange: () => {},
+      expanded: null,
+      setExpanded: () => {},
+      forPrint: true,
+    }),
 
-      // Print-only title (hidden on screen; shown at the top of the printout via .eom-print-title CSS)
-      h('div', { className: 'eom-print-title', style: { marginBottom: '10px' } },
-        h('div', { style: { fontSize: '15px', fontWeight: 800, color: '#111' } }, `EOM Supervisor Summary — ${groupLabel}`),
-        h('div', { style: { fontSize: '11px', color: '#555' } }, `${monthLabel} · ${storeData.length} location${storeData.length === 1 ? '' : 's'}`)),
-
-      // Rollup block at top
-      rollup && h(EOMBlock, {
-        key: 'rollup',
-        data: rollup,
-        isRollup: true,
-        label: `SUPERVISOR PATCH TOTAL — ${groupLabel} — ${monthLabel}`,
-        manual: {},
-        onManualChange: () => {},
-        expanded: null,
-        setExpanded: () => {},
-        forPrint: true,
-      }),
-
-      // Per-store blocks
-      storeData.map(sd =>
-        h(EOMBlock, {
-          key: sd.locStr,
-          data: sd,
-          isRollup: false,
-          label: sd.name,
-          manual: manual[sd.locStr] || {},
-          onManualChange: (field, val) => onManualChange(sd.locStr, field, val),
-          expanded,
-          setExpanded,
-          forPrint,
-        })
-      ),
-
-      storeData.length === 0 && h('div', {
-        style: { textAlign: 'center', padding: '48px', color: muted, fontSize: '14px' }
-      }, 'No store data found for the selected period and group. Upload FOB or Monthly Targets to populate.'),
+    // Per-store blocks — interactive on screen (click to expand, EditCell inputs); printing no
+    // longer toggles this DOM at all (see doPrint/openPrintWindow/formatSupervisorHtml above).
+    storeData.map(sd =>
+      h(EOMBlock, {
+        key: sd.locStr,
+        data: sd,
+        isRollup: false,
+        label: sd.name,
+        manual: manual[sd.locStr] || {},
+        onManualChange: (field, val) => onManualChange(sd.locStr, field, val),
+        expanded,
+        setExpanded,
+      })
     ),
+
+    storeData.length === 0 && h('div', {
+      style: { textAlign: 'center', padding: '48px', color: muted, fontSize: '14px' }
+    }, 'No store data found for the selected period and group. Upload FOB or Monthly Targets to populate.'),
 
     // Legend
     h('div', { className: 'eom-no-print', style: { marginTop: '16px', fontSize: '10px', color: muted, display: 'flex', gap: '16px', flexWrap: 'wrap' } },

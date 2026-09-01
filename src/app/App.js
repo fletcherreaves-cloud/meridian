@@ -3271,13 +3271,12 @@ function App() {
         }}),
 
           // Main content — fills right panel, scrollable
-      // 'mf-main-content' (2026-08-31 fix, dispatch #227 print bug): every routePanel — including
-      // EOMDashboardPanel, whose RoutePanelShell gets .mf-eom-print-modal for print — renders
-      // INSIDE this div, not as a direct child of .mf-app-root. PRINT_STYLE's original rule
-      // (`.mf-app-root > *:not(.mf-eom-print-modal)`) only ever inspected .mf-app-root's DIRECT
-      // children, so it hid this whole wrapper (a direct child with no exempting class) —
-      // display:none on this ancestor blanked the print modal nested inside it too, regardless
-      // of the modal's own class. See eom-supervisor.js's PRINT_STYLE comment for the matching fix.
+      // 'mf-main-content': every routePanel renders inside this div, not as a direct child of
+      // .mf-app-root. All EOM report printing (Supervisor Rollup, Missing Items, Recount Impact,
+      // Team Snapshot, Count Swings) now goes through eom-supervisor.js's openPrintWindow() —
+      // an isolated window.open() with its own static HTML/CSS, not this live DOM — so this
+      // className carries no print-scoping meaning anymore, only its layout role (flex:1,
+      // overflowY:'auto', padding) below.
       div({className:'mf-main-content',style:{flex:1,overflowY:'auto',padding:'0 16px 32px'}},
       // ── Session restore banner (shown on startup if IDB session found) ────
       sessionBanner&&h(SessionBanner,{
