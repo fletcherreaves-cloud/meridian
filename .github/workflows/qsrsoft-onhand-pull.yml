@@ -1,7 +1,7 @@
 name: QSRSoft On-Hand Pull (EOM count-progress)
 
 # Every 30 minutes (dispatch #210, tightened from hourly), but the script itself skips
-# unless we're in the last 3 days of the month AND it's 8am-6pm CT (GitHub cron can't
+# unless we're in the last 3 days of the month AND it's 8am-10pm CT (GitHub cron can't
 # express "every 30 min only within a hard date+hour gate" directly, so this uses two
 # top-of-hour/half-hour cron lines and leaves the actual gating to the script's own
 # inCountWindow()/inCtBusinessHours() — see scripts/lib/count-window.mjs). During the
@@ -10,6 +10,13 @@ name: QSRSoft On-Hand Pull (EOM count-progress)
 # silent-scheduled-run-drop behavior (see scheduled-pull-watchdog.yml, added the same
 # dispatch as a backstop for exactly that failure mode) for only marginal freshness gain.
 # Manual runs can force any time via the `force` input.
+#
+# 2026-09-01 — the SAME cron also carries a second, narrower purpose the rest of the year:
+# outside the EOM window, on any day 8am-5pm CT, the script's own runMode() now also checks
+# 'weekly-count-day' — pulling ONLY the handful of stores whose detected weekly count day
+# (detectWeeklyCountDay(), src/engine/count-cycle.js) is today, not all 27. No cron/schedule
+# change was needed for this — the workflow was already firing every 30 min year-round; the
+# script's own gate is what decides whether a landed run does anything.
 
 on:
   schedule:

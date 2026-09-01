@@ -36,3 +36,17 @@ export function inCtBusinessHours(now, start, end) {
   const h = centralHour(now);
   return h >= start && h < end;
 }
+
+// 2026-09-01 (weekly-count-day pull) — 0=Sun..6=Sat for `now`'s CALENDAR DATE in Central time.
+// Computes the CT calendar date FIRST (via Intl, DST-safe the same way centralHour is), then asks
+// what weekday that date is — never derives the weekday from a UTC-shifted instant, which would
+// read the wrong calendar day near midnight CT on either side of a DST boundary.
+export function centralWeekday(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const y = parts.find(p => p.type === 'year').value;
+  const m = parts.find(p => p.type === 'month').value;
+  const d = parts.find(p => p.type === 'day').value;
+  return new Date(`${y}-${m}-${d}T00:00:00`).getDay();
+}

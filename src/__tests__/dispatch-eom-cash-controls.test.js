@@ -143,6 +143,24 @@ async function renderPanel(root) {
   });
 }
 
+// The panel's own default period is NOT always the current calendar month --
+// defaultPeriod() (eom-dashboard.js) special-cases the first 6 days of a month to default to
+// the PRIOR month instead (the prior month's EOM is often still being finalized). Relying on
+// that default to line up with `PERIOD` broke this exact test the moment the suite ran on the
+// 1st of a month (measured live, 2026-09-01) -- the panel opened on '2026-08' while the DS
+// fixture was dated `${PERIOD}-01` = '2026-09-01', so nothing matched and the section never
+// rendered. Driving the picker to PERIOD explicitly (dispatch-227-eom-reports.test.js's own
+// established pattern) makes this correct regardless of which day-of-month the suite runs on.
+async function selectPeriod(container) {
+  const sel = container.querySelector('select');
+  expect(sel, 'period <select> not found').toBeTruthy();
+  await act(async () => {
+    sel.value = PERIOD;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
 describe('EOM Store message — Cash Controls (real ds.ctrlRows/opsCashRows wiring)', () => {
   let container, root;
   beforeEach(() => { ({ container, root } = mountRoot()); });
@@ -150,6 +168,7 @@ describe('EOM Store message — Cash Controls (real ds.ctrlRows/opsCashRows wiri
 
   it('Full report shows real Cash Controls numbers sourced from ds via controlsSummaryFor/diagOptsFor', async () => {
     await renderPanel(root);
+    await selectPeriod(container);
     const draftBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '✉️ Draft');
     expect(draftBtn, '✉️ Draft button not found').toBeTruthy();
     await act(async () => { draftBtn.click(); });
@@ -164,6 +183,7 @@ describe('EOM Store message — Cash Controls (real ds.ctrlRows/opsCashRows wiri
 
   it('Recap never shows Cash Controls, even though the same store has real controls data', async () => {
     await renderPanel(root);
+    await selectPeriod(container);
     const draftBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '✉️ Draft');
     await act(async () => { draftBtn.click(); });
     // Recap is the default view on open -- no need to click anything.

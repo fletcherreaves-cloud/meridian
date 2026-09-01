@@ -126,6 +126,24 @@ function clickTab(container, label) {
   return act(async () => { tab.click(); await Promise.resolve(); });
 }
 
+// The panel's own default period is NOT always the current calendar month --
+// defaultPeriod() (eom-dashboard.js) special-cases the first 6 days of a month to default to
+// the PRIOR month instead. This test's fixture dates are all `${PERIOD}-xx` (the CURRENT
+// month), so relying on the panel's default silently broke the moment the suite ran on the
+// 1st of a month (measured live, 2026-09-01): the panel opened on the prior month while every
+// fixture date pointed at the new one, so nothing matched. Driving the picker to PERIOD
+// explicitly (dispatch-227-eom-reports.test.js's own established pattern) makes this correct
+// regardless of which day-of-month the suite runs on.
+async function selectPeriod(container) {
+  const sel = container.querySelector('select');
+  expect(sel, 'period <select> not found').toBeTruthy();
+  await act(async () => {
+    sel.value = PERIOD;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await Promise.resolve();
+  });
+}
+
 describe('Count-Swing Ledger report tab — real EOMDashboardPanel render', () => {
   let container, root;
   beforeEach(() => { ({ container, root } = mountRoot()); });
@@ -133,6 +151,7 @@ describe('Count-Swing Ledger report tab — real EOMDashboardPanel render', () =
 
   it('surfaces both locked real-loss swings, manager attribution, and the net total', async () => {
     await renderPanel(root);
+    await selectPeriod(container);
     await clickTab(container, 'Count Swings');
     const text = container.textContent;
 
@@ -160,6 +179,7 @@ describe('Count-Swing Ledger report tab — real EOMDashboardPanel render', () =
   // eom-dashboard.js's rawInfoByLoc into the report, not just computed correctly in isolation.
   it('surfaces the product-reconstruction section — beef+bun+cheese shortages imply Cheeseburgers', async () => {
     await renderPanel(root);
+    await selectPeriod(container);
     await clickTab(container, 'Count Swings');
     // Extra flush for the plausibility-re-ranking effect (2026-08-31 follow-up): it fires only
     // AFTER the first-pass candidate list exists (itself downstream of rawDetail/rawInfo loading),

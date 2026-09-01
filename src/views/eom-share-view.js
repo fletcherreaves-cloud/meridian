@@ -41,6 +41,11 @@ const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 
+// A real EOM period is always 'YYYY-MM'; count-cycle-panel.js's createWeeklyShare() deliberately
+// uses `wk:YYYY-MM-DD` instead, which can never match this — the one thing that tells this page
+// apart from an EOM link, with no new column or edge-function change (see the useEffect below).
+const isMonthlyPeriod = (period) => /^\d{4}-\d{2}$/.test(String(period || ''));
+
 const $ = v => (v == null || isNaN(v)) ? '—' : '$' + Math.round(v).toLocaleString();
 const pct2 = v => (v == null || isNaN(v)) ? '—' : (v * 100).toFixed(2) + '%';
 
@@ -120,7 +125,14 @@ export function EomShareView({ token }) {
     fetchSharedEom(token).then(r => {
       if (!on) return;
       if (r?.error || (!r?.recapMd && !r?.fullMd)) setErr(r?.error || 'This report could not be loaded.');
-      else { setData(r); doRefresh(); }   // paint frozen instantly, then refresh to live
+      // 2026-09-01 (owner req: expand the share link to work with weekly counts) -- doRefresh()
+      // hits the edge function's 'refresh' action, which queries qsr_fob/qsr_onhand/etc by a
+      // MONTHLY `period` ('YYYY-MM' date-range math -- see index.ts's own `${period}-01`..
+      // `${period}-31`). A Count Cycle link's period is `wk:YYYY-MM-DD` (count-cycle-panel.js's
+      // createWeeklyShare), which would make that query meaningless -- so only call it when the
+      // period actually looks like a real EOM period. This is the ONE thing that distinguishes an
+      // EOM link from a Count Cycle link; no new column, no edge-function change, no redeploy.
+      else { setData(r); if (isMonthlyPeriod(r?.period)) doRefresh(); }   // paint frozen instantly, then refresh to live (EOM links only)
       setLoading(false);
     }).catch(e => { if (on) { setErr(String(e?.message || e)); setLoading(false); } });
     return () => { on = false; };
@@ -149,23 +161,29 @@ export function EomShareView({ token }) {
   const exp = data.expiresAt ? new Date(data.expiresAt) : null;
   const acked = !!data.acknowledgedAt;
   const syncedAsOf = live && live.syncedAsOf ? live.syncedAsOf : null;
+  const monthly = isMonthlyPeriod(data.period);
 
   return page(
     div({ style: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '2px' } },
       span({ style: { fontWeight: 800, fontSize: '18px', color: '#f5bc00' } }, 'Meridian'),
-      span({ style: { fontSize: '11px', color: '#78839a' } }, 'EOM report · view-only')),
+      span({ style: { fontSize: '11px', color: '#78839a' } }, monthly ? 'EOM report · view-only' : 'Count Cycle · view-only')),
     div({ style: { fontWeight: 700, fontSize: '20px', margin: '4px 0 14px' } }, `${data.storeName || ''} · ${data.title || `EOM FOB ${data.period}`}`),
 
     h(FobStripLite, { fob: stripFob, loc: data.loc, monthlyOverride }),
 
-    // Live-refresh bar: re-pull the freshest synced data (after the store corrects counts) + timestamp.
-    div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' } },
-      h('button', { onClick: doRefresh, disabled: refreshing, title: 'Re-pull the latest synced counts and rebuild this report', style: { background: '#171a21', border: '1px solid #333a48', color: refreshing ? '#78839a' : '#f5bc00', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: refreshing ? 'default' : 'pointer' } }, refreshing ? '↻ Refreshing…' : '🔄 Refresh'),
-      span({ style: { fontSize: '10.5px', color: '#78839a' } },
-        live
-          ? `Live${syncedAsOf ? ` · synced through ${syncedAsOf}` : ''}${refreshedAt ? ` · refreshed ${refreshedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`
-          : 'As-sent snapshot — tap Refresh for the latest'),
-      (live && (live.syncedAsOf || refreshedAt)) ? span({ style: { fontSize: '10px', color: '#78839a' } }, '· re-syncs from QSRSoft every ~30 min, 8a–10p CT during EOM close — a recount usually shows up within that window; tap Refresh to check') : null),
+    // Live-refresh bar (EOM links only — see the useEffect's own comment on why a Count Cycle
+    // link never calls doRefresh() at all): re-pull the freshest synced data (after the store
+    // corrects counts) + timestamp. A Count Cycle link shows a plain static-snapshot line
+    // instead, since there's nothing here for it to refresh against.
+    monthly
+      ? div({ style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' } },
+          h('button', { onClick: doRefresh, disabled: refreshing, title: 'Re-pull the latest synced counts and rebuild this report', style: { background: '#171a21', border: '1px solid #333a48', color: refreshing ? '#78839a' : '#f5bc00', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 700, cursor: refreshing ? 'default' : 'pointer' } }, refreshing ? '↻ Refreshing…' : '🔄 Refresh'),
+          span({ style: { fontSize: '10.5px', color: '#78839a' } },
+            live
+              ? `Live${syncedAsOf ? ` · synced through ${syncedAsOf}` : ''}${refreshedAt ? ` · refreshed ${refreshedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`
+              : 'As-sent snapshot — tap Refresh for the latest'),
+          (live && (live.syncedAsOf || refreshedAt)) ? span({ style: { fontSize: '10px', color: '#78839a' } }, '· re-syncs from QSRSoft every ~30 min, 8a–10p CT during EOM close — a recount usually shows up within that window; tap Refresh to check') : null)
+      : div({ style: { fontSize: '10.5px', color: '#78839a', marginBottom: '10px' } }, 'Static snapshot — as of when this link was created.'),
 
     ((src.fullMd && src.fullMd !== src.recapMd))
       ? div({ style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' } },

@@ -23,8 +23,9 @@
 // regardless of which EOM period is selected — this tab does the same, not a new tradeoff.
 
 import * as React from 'react';
-import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES } from '../engine/count-cycle.js';
+import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES, formatWeeklyComplianceReport } from '../engine/count-cycle.js';
 import { sName } from '../constants.js';
+import { createEomShareLink } from '../lib/supabase.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -62,7 +63,7 @@ function SessionRow({ s }) {
       }, `${c.slice(0, 4)} ${s.counts[c]}${s.covered.includes(c) ? '✓' : ''}`))));
 }
 
-function StoreCard({ c, expanded, onToggle }) {
+function StoreCard({ c, expanded, onToggle, onShare, shareBusyLoc }) {
   const meta = SEV[c.status] || SEV.ok;
   return div({ style: {
     border: '.5px solid var(--bdr,#2a2f3a)', borderLeft: `3px solid ${meta.col}`,
@@ -107,7 +108,17 @@ function StoreCard({ c, expanded, onToggle }) {
         })) : null,
       div({ style: { fontSize: 9.5, color: 'var(--text3,#6b7280)', marginTop: 8, fontStyle: 'italic', lineHeight: 1.5 } },
         `Active item universe — ${Object.entries(c.classTotals).map(([k, v]) => `${k} ${v}`).join(' · ')}. `,
-        'A class counts as fully counted at 75% coverage or above.')) : null);
+        'A class counts as fully counted at 75% coverage or above.'),
+      onShare ? h('button', {
+        onClick: (e) => { e.stopPropagation(); onShare(c); },
+        disabled: shareBusyLoc === c.loc,
+        title: 'Create a read-only, no-login link to this store\'s Count Cycle status — paste it anywhere',
+        style: {
+          marginTop: 8, background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 6,
+          color: shareBusyLoc === c.loc ? 'var(--text3,#6b7280)' : 'var(--text2,#9aa4b2)',
+          padding: '5px 10px', fontSize: 11, cursor: shareBusyLoc === c.loc ? 'default' : 'pointer',
+        },
+      }, shareBusyLoc === c.loc ? '…' : '🔗 Share') : null) : null);
 }
 
 /**
@@ -120,16 +131,46 @@ function StoreCard({ c, expanded, onToggle }) {
 export function CountCycleSection({ rows, period }) {
   const [open, setOpen] = React.useState({});
   const [showClean, setShowClean] = React.useState(false);
+  const [shareBusyLoc, setShareBusyLoc] = React.useState(null);
+  const [shareMsg, setShareMsg] = React.useState('');
 
   const comp = React.useMemo(() => (rows ? cycleCompliance(rows) : []), [rows]);
   const sum = React.useMemo(() => cycleSummary(comp), [comp]);
   const flagged = comp.filter(c => c.exceptions.length);
   const clean = comp.filter(c => !c.exceptions.length);
 
+  // Share link (2026-09-01, owner req: expand the share link to work with weekly counts).
+  // Reuses the SAME eom_share_links table + eom-share edge function the EOM report's own
+  // "🔗 Share" button uses (src/views/eom-dashboard.js's createShare) -- no schema change, no
+  // edge-function redeploy. The `period` value is what tells the viewer (eom-share-view.js)
+  // this is a Count Cycle link, not an EOM one: a `wk:YYYY-MM-DD` string can never match the
+  // `/^\d{4}-\d{2}$/` shape a real EOM period always has, so the viewer can safely skip the
+  // EOM-only "refresh" action (which queries qsr_fob/qsr_onhand by monthly period -- meaningless,
+  // and untested against a non-monthly string) purely from the period's own shape, no new column.
+  const createWeeklyShare = React.useCallback(async (c) => {
+    const name = sName(c.loc) || c.loc;
+    setShareBusyLoc(c.loc);
+    setShareMsg(`Creating link for ${name}…`);
+    try {
+      const md = formatWeeklyComplianceReport(c, { storeName: name });
+      const weeklyPeriod = `wk:${new Date().toISOString().slice(0, 10)}`;
+      const { token, error } = await createEomShareLink({
+        loc: c.loc, period: weeklyPeriod, storeName: name, title: `Count Cycle — ${name}`,
+        fob: null, recapMd: md, fullMd: md,
+      });
+      if (error || !token) { setShareMsg(`Share failed: ${error || 'no token'}`); return; }
+      const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
+      try { await navigator.clipboard.writeText(url); setShareMsg(`✓ Read-only link copied — ${name}`); }
+      catch { setShareMsg(`✓ Link (copy it): ${url}`); }
+    } catch (e) { setShareMsg(`Share failed: ${e?.message || e}`); }
+    finally { setShareBusyLoc(null); }
+  }, []);
+
   return div(null,
     div({ style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 } },
       div({ style: { fontSize: 11, color: 'var(--text3,#6b7280)' } },
         comp.length ? `${sum.stores} stores · ${sum.crit} critical · ${sum.warn} watch · ${sum.ok} on cycle` : ''),
+      shareMsg ? span({ style: { fontSize: 11, color: 'var(--text2,#9aa4b2)' } }, shareMsg) : null,
     ),
     !comp.length
       ? div({ style: { padding: 30, textAlign: 'center', color: 'var(--text3,#6b7280)', fontSize: 12 } },
@@ -137,7 +178,7 @@ export function CountCycleSection({ rows, period }) {
       : div(null,
           // Exceptions first — a screen that opens on green rows buries the ones to chase.
           flagged.length
-            ? flagged.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))
+            ? flagged.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })), onShare: createWeeklyShare, shareBusyLoc }))
             : div({ style: { padding: '20px 12px', textAlign: 'center', color: '#10b981', fontSize: 12 } },
                 '✅ Every store is on cycle.'),
           clean.length ? div(null,
@@ -146,7 +187,7 @@ export function CountCycleSection({ rows, period }) {
               style: { width: '100%', marginTop: 10, background: 'none', border: '.5px solid var(--bdr,#2a2f3a)', borderRadius: 7, color: 'var(--text3,#6b7280)', padding: '7px', cursor: 'pointer', fontSize: 11 },
             }, showClean ? `▾ Hide ${clean.length} stores on cycle` : `▸ Show ${clean.length} stores on cycle`),
             showClean ? div({ style: { marginTop: 6 } },
-              clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })) }))) : null) : null),
+              clean.map(c => h(StoreCard, { key: c.loc, c, expanded: !!open[c.loc], onToggle: () => setOpen(o => ({ ...o, [c.loc]: !o[c.loc] })), onShare: createWeeklyShare, shareBusyLoc }))) : null) : null),
 
     div({ style: { padding: '9px 2px 0', fontSize: 9.5, color: 'var(--text3,#6b7280)', fontStyle: 'italic', lineHeight: 1.5 } },
       `Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day.`));

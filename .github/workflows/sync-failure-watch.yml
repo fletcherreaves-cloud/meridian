@@ -75,6 +75,7 @@ on:
       - SAGE Scheduled Prompts
       - Scheduled-Run Reliability Watchdog
       - Security Rules Run
+      - Weekly Cycle Digest Send (roll-up email)
       - YouTube Mentions Pull
     types: [completed]
 

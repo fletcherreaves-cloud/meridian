@@ -1,0 +1,65 @@
+name: Weekly Cycle Digest Send (roll-up email)
+
+# 2026-09-01, owner req, verbatim: "I would also like to see the automatic emails work with
+# weekly counts." Companion to qsrsoft-onhand-pull.yml's new 'weekly-count-day' pull mode
+# (same dispatch): that pull runs hourly 8am-5pm CT on each store's detected count day; this
+# emails ONE digest listing every store expected to count TODAY plus its real Count Cycle
+# compliance status, via scripts/weekly-cycle-digest-send.mjs.
+#
+# CADENCE — mirrors eom-digest-send.yml's own pattern exactly: this workflow runs HOURLY, and
+# the script itself self-gates on whether the CURRENT UTC hour matches the configured
+# `sendHourUtc` (org_config key 'weekly_digest_config', separate from EOM's own
+# 'eom_digest_config' — default 23 UTC = ~6pm CDT / 5pm CST, right after the pull window's 5pm
+# CT close). 23 of 24 hourly runs simply no-op via that hour gate.
+on:
+  schedule:
+    - cron: '0 * * * *'   # hourly — the script's own hour-gate (org_config 'weekly_digest_config'.sendHourUtc) decides which run actually sends
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Send even outside the configured send hour (1 = on)'
+        required: false
+        default: '1'
+      date:
+        description: 'Override the business date queried (YYYY-MM-DD, default: today UTC)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+# Queue, don't cancel — a cancelled mid-send run could plausibly send a partial digest and never
+# retry; queuing avoids that. Matches eom-digest-send.yml's own reasoning for the same choice.
+concurrency:
+  group: weekly-cycle-digest-send-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Send Weekly Cycle roll-up digest
+        run: node scripts/weekly-cycle-digest-send.mjs
+        env:
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WKDIGEST_FORCE:            ${{ github.event.inputs.force || '0' }}
+          WKDIGEST_DATE:             ${{ github.event.inputs.date  || '' }}
+          WKDIGEST_DEBUG:            ${{ github.event.inputs.debug || '0' }}

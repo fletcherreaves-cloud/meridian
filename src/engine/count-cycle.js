@@ -33,6 +33,12 @@
 // dates (eom_count_progress_log has the right shape but currently measures percentages
 // against an EOM-only window, so a mid-month count reads 0%).
 
+// WEEKDAY_NAMES reused from weekly-cadence.js (the older, now-superseded cadence engine — see
+// this file's own header comment for why it was replaced) rather than a second copy of the same
+// ['Sun'..'Sat'] array. Nothing else is imported from that file — its detection logic is what got
+// superseded, not this one constant.
+import { WEEKDAY_NAMES } from './weekly-cadence.js';
+
 export const CLASSES = ['Food', 'Condiment', 'Paper', 'Non-Product'];
 export const WEEKLY_CLASSES = ['Food', 'Condiment'];
 
@@ -179,6 +185,94 @@ export function detectSessions(rows = []) {
   return { sessions: out, classTotals: totals };
 }
 
+/** date ('YYYY-MM-DD') -> 0=Sun..6=Sat, or null for an unparseable string. Same 'Txx:00:00'
+ *  local-time anchoring weekly-cadence.js's own (unexported) weekdayOf uses. */
+const weekdayOf = (dateStr) => { const t = new Date(dateStr + 'T00:00:00'); return Number.isNaN(t.getTime()) ? null : t.getDay(); };
+
+/**
+ * Detect each store's TYPICAL weekly-count day of week from historical qsr_onhand session data.
+ *
+ * ⚠️ CORRECTED 2026-09-01, same day as the first version — that version used `satisfiesWeekly ||
+ * isEom` (the 75%-coverage compliance bar) as its qualifying condition, on the premise that no
+ * per-store weekly-count-day signal existed anywhere in the codebase yet. That premise was wrong:
+ * the owner pointed at the live "🗓 Weekly Count Cadence" panel (`CadenceMonitor`,
+ * `src/views/eom-dashboard.js`), whose `cadenceFromOnHand()` already computes this — and had
+ * already been live-measured (dispatch #112, 2026-08-25) against a coverage-threshold basis just
+ * like this function's first version: **2/27 stores populated (7.4%)**, because two different
+ * dates clearing a 75-98% coverage bar of the SAME class universe within one period is close to a
+ * mathematical contradiction. Broadening to `touchedWeeklyClasses` (any real Food or Condiment
+ * attempt, no coverage floor — a field `detectSessions()` already attaches to every session)
+ * fixed it to **27/27 (100%)**, each hand-checked against real session dates for an obvious
+ * weekday pattern. This function now uses that same, proven basis — it is the SHARED
+ * implementation `cadenceFromOnHand()` calls, not a second copy of it; day-of-week PATTERN
+ * detection and weekly-completion STATUS grading (`satisfiesWeekly`, unchanged everywhere else in
+ * this file) are different questions, exactly as dispatch #112 established.
+ *
+ * `rowsByPeriod` is an ARRAY OF ROW-ARRAYS, one per period/month (e.g. one `loadQsrOnHand({period})`
+ * result per trailing month) — deliberately NOT one flat concatenated array. qsr_onhand upserts on
+ * (loc, period, wrin) — see this file's "KNOWN LIMITATION" header comment — so the SAME wrin is a
+ * genuinely separate row per period, each carrying its own `last_counted`. Concatenating several
+ * periods' rows into one array before calling detectSessions() would inflate `totals[loc][cls]`
+ * (the coverage denominator) by however many periods are included. detectSessions() is therefore
+ * run ONCE PER PERIOD here (correct, independent universe each time). Unlike the coverage-bar
+ * basis, `touchedWeeklyClasses` is NOT mutually exclusive across dates within one period — a
+ * store's rolling-latest-state item universe can and does carry several different qualifying
+ * dates from a single snapshot (that's exactly why the single-period `cadenceFromOnHand()` reaches
+ * 27/27 off one period alone) — so EVERY qualifying session from EVERY period is tallied, not just
+ * one per period. `sampleWindow` caps the tally to the most recent N qualifying sessions
+ * (recency-biased) rather than one per calendar month, matching the denser signal this basis
+ * produces. A single-period call (`rowsByPeriod = [onHandRows]`) reproduces `cadenceFromOnHand()`'s
+ * own detectedWeekday output exactly.
+ *
+ * Ties break toward the MOST RECENT occurrence, so a store that recently shifted its count day
+ * reads as the NEW day, not a stale majority.
+ *
+ * Returns `{ [loc]: { weekday, weekdayName, sampleSize, agreeCount, confidence, lastSeenDate } |
+ * null }` — null when a store has no qualifying session at all (never counted, or too new to have
+ * history yet). `confidence` (agreeCount/sampleSize) is exposed so a caller can decide its own bar
+ * for "trust this enough to act on" rather than this function silently picking one.
+ */
+export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 20 } = {}) {
+  const perLoc = {};    // loc -> [session, ...] -- every touchedWeeklyClasses session, any period
+  const seenLocs = new Set(); // every loc detectSessions saw in ANY period, qualifying or not --
+  // so a store with real data but no qualifying session yet still reads as an explicit `null`
+  // (a known store, no signal), never silently dropped from the output like one never seen at all.
+  for (const periodRows of rowsByPeriod) {
+    const { sessions } = detectSessions(periodRows);
+    for (const loc of Object.keys(sessions)) {
+      seenLocs.add(loc);
+      const touched = sessions[loc].filter(s => s.touchedWeeklyClasses);
+      if (touched.length) (perLoc[loc] || (perLoc[loc] = [])).push(...touched);
+    }
+  }
+  const out = {};
+  for (const loc of seenLocs) if (!perLoc[loc]) out[loc] = null;
+  for (const loc of Object.keys(perLoc)) {
+    const qualifying = perLoc[loc].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-sampleWindow);
+    if (!qualifying.length) { out[loc] = null; continue; }
+    const tally = new Map(); // weekday -> { count, lastDate }
+    for (const s of qualifying) {
+      const wd = weekdayOf(s.date);
+      if (wd == null) continue;
+      const t = tally.get(wd) || { count: 0, lastDate: null };
+      t.count++;
+      if (!t.lastDate || s.date > t.lastDate) t.lastDate = s.date;
+      tally.set(wd, t);
+    }
+    if (!tally.size) { out[loc] = null; continue; }
+    let best = null;
+    for (const [wd, t] of tally) {
+      if (!best || t.count > best.t.count || (t.count === best.t.count && t.lastDate > best.t.lastDate)) best = { wd, t };
+    }
+    out[loc] = {
+      weekday: best.wd, weekdayName: WEEKDAY_NAMES[best.wd],
+      sampleSize: qualifying.length, agreeCount: best.t.count,
+      confidence: best.t.count / qualifying.length, lastSeenDate: best.t.lastDate,
+    };
+  }
+  return out;
+}
+
 /**
  * #357-A — a session has INDEPENDENT qualities, not one mutually-exclusive `kind`. The
  * original if/else chain returned on the first match, so a session that satisfied BOTH
@@ -318,4 +412,58 @@ export function cycleSummary(compliance = []) {
     if (c.overdue) s.overdue++;
   }
   return s;
+}
+
+// Same wording StoreCard (count-cycle-panel.js) already renders on screen — a shared source so
+// the share-link markdown below can never disagree with what the in-app card says.
+const WEEKLY_SEV_WORD = { crit: 'Critical', warn: 'Watch', ok: 'On cycle' };
+
+/**
+ * Markdown report for one store's Count Cycle compliance row (2026-09-01, owner req: expand the
+ * share link to work with weekly counts) — a pure function of one `cycleCompliance()` row, so the
+ * shared link can never drift from what the in-app Count Cycle card (count-cycle-panel.js's
+ * StoreCard) shows for the same store. No FOB/food-cost angle here (that's the EOM report's own
+ * formatDiagnosisReport(), a separate concern) — this is purely "did they complete the required
+ * counts, and what's the evidence."
+ */
+export function formatWeeklyComplianceReport(c, { storeName = '' } = {}) {
+  const L = [];
+  const title = storeName || c.loc;
+  L.push(`# Count Cycle — ${title}`, '');
+  L.push(`**Status: ${WEEKLY_SEV_WORD[c.status] || c.status}**${c.lastWeekly ? ` · last full count ${c.lastWeekly.date} (${c.daysSinceWeekly} day${c.daysSinceWeekly === 1 ? '' : 's'} ago)` : ' · no complete weekly count on record'}`, '');
+
+  if (c.exceptions.length) {
+    L.push('## Exceptions', '');
+    for (const e of c.exceptions) L.push(`- **${e.severity === 'crit' ? 'Critical' : 'Watch'}:** ${e.detail}`);
+    L.push('');
+  } else {
+    L.push('_No open exceptions — this store is on cycle._', '');
+  }
+
+  L.push('## Count sessions on record', '');
+  if (c.sessions.length) {
+    L.push('| Date | Result | Classes touched |', '|---|---|---|');
+    for (const s of [...c.sessions].reverse()) {
+      const classes = Object.keys(s.counts).sort()
+        .map(cls => `${cls} ${s.counts[cls]}${s.covered.includes(cls) ? '✓' : ''}`).join(', ');
+      L.push(`| ${s.date} | ${s.kind} | ${classes} |`);
+    }
+    L.push('');
+  } else {
+    L.push('_None on record._', '');
+  }
+
+  const perClassRows = c.perClass ? CLASSES.filter(cls => c.perClass[cls] && c.perClass[cls].active > 0) : [];
+  if (perClassRows.length) {
+    L.push('## Active item universe — counted vs. active', '');
+    L.push('| Class | Counted / Active | Last touched |', '|---|---|---|');
+    for (const cls of perClassRows) {
+      const pc = c.perClass[cls];
+      L.push(`| ${cls} | ${pc.counted}/${pc.active} | ${pc.date || '—'} |`);
+    }
+    L.push('', '_A class counts as fully counted at 75% coverage or above._', '');
+  }
+
+  L.push(`_Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day._`);
+  return L.join('\n');
 }
