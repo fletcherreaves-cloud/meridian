@@ -3188,26 +3188,48 @@ export async function saveEomDigestConfig({ levels, sendHourUtc } = {}) {
 // ── Weekly Inventory Count Day fallback (owner-directed, 2026-09-01) ─────────────────────────
 // Real, owner-entered per-store weekly count day, imported from Organization_Structure.xlsx's
 // Locations sheet (parseOrgStructureCountDays(), src/parsers/index.js) on every org-structure
-// upload (App.js). Same org_config pattern as eom_digest_config above -- no new migration, same
-// RLS. Consumed as the FALLBACK layer by src/engine/count-cycle.js's mergeWeeklyCountDay(), which
-// prefers the qsr_onhand-derived detectWeeklyCountDay() when it's confident and falls back to
-// this file-sourced map otherwise (see that function's own doc comment). Stored as `{ [loc]:
-// weekdayName }` -- plain day names, not numbers, so the raw org_config row stays human-readable
-// if anyone inspects it directly in the Supabase UI.
+// upload (App.js). Consumed as the FALLBACK layer by src/engine/count-cycle.js's
+// mergeWeeklyCountDay(), which prefers the qsr_onhand-derived detectWeeklyCountDay() when it's
+// confident and falls back to this file-sourced map otherwise (see that function's own doc
+// comment).
+//
+// A REAL TABLE (`weekly_count_day_overrides`, schema-weekly-count-day.sql), one row per store --
+// owner-requested (2026-09-01: "Should probably add it to a table so it is persisted") in place
+// of this feature's first-shipped draft, which packed the whole per-store map into a single
+// org_config JSON blob. Per-store data belongs in per-store rows -- queryable/joinable like any
+// other override table (target_overrides is the closest existing analog), not buried inside one
+// config row. Needs schema-weekly-count-day.sql run once in the Supabase SQL editor (this session
+// has no DDL execution path, same situation every other schema-*.sql file here is already in);
+// until then loadWeeklyCountDayOverrides() degrades to {} like every other guarded read in this
+// file, so a pending migration is a missing fallback, not a crash.
 export async function loadWeeklyCountDayOverrides() {
   if (!supabase) return {};
-  const { data, error } = await supabase.from('org_config')
-    .select('data').eq('key', 'weekly_count_day_overrides').maybeSingle();
+  const { data, error } = await supabase.from('weekly_count_day_overrides').select('loc,weekday_name');
   if (error) { console.warn('[supabase] loadWeeklyCountDayOverrides:', error.message); return {}; }
-  return (data?.data && typeof data.data === 'object') ? data.data : {};
+  const out = {};
+  for (const r of (data || [])) out[r.loc] = r.weekday_name;
+  return out;
 }
 
+// `overridesByLoc`: `{ [loc]: weekdayName }` (parseOrgStructureCountDays()'s own output shape,
+// mapped to weekdayName by the caller) -- converted to weekday NUMBERS here since the table
+// stores both (weekday for fast/typed comparison, weekday_name for a human-readable row). A
+// per-loc upsert (not a delete-then-insert) so a store dropped from a later upload (never
+// expected in practice -- the file only ever gains rows) keeps its last-known value rather than
+// losing it to a partial/failed re-import.
+const WD_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export async function saveWeeklyCountDayOverrides(overridesByLoc = {}) {
   if (!supabase) return { saved: false, error: 'Supabase not configured' };
-  const { error } = await supabase.from('org_config')
-    .upsert({ key: 'weekly_count_day_overrides', data: overridesByLoc, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  const rows = [];
+  for (const [loc, weekdayName] of Object.entries(overridesByLoc)) {
+    const weekday = WD_FULL.indexOf(String(weekdayName || '').trim());
+    if (weekday < 0) continue;
+    rows.push({ loc, weekday, weekday_name: WD_FULL[weekday], updated_at: new Date().toISOString() });
+  }
+  if (!rows.length) return { saved: true, count: 0 };
+  const { error } = await supabase.from('weekly_count_day_overrides').upsert(rows, { onConflict: 'tenant_id,loc' });
   if (error) { console.warn('[supabase] saveWeeklyCountDayOverrides:', error.message); return { saved: false, error: error.message }; }
-  return { saved: true };
+  return { saved: true, count: rows.length };
 }
 
 // ── Web Push subscriptions (dispatch #216) ────────────────────────────────────

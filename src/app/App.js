@@ -2628,16 +2628,18 @@ function App() {
             // Owner-directed 2026-09-01: "utilize both" -- also capture the Locations sheet's
             // real, owner-entered "Weekly Inventory Count Day" per store, as the fallback layer
             // for the qsr_onhand-derived weekly-count-day automation (mergeWeeklyCountDay(),
-            // src/engine/count-cycle.js). Whole-map upsert (not per-loc), same as
-            // saveEomDigestConfig — this is a small, single-row config blob, not per-store rows
-            // needing individual save-error tracking like the retention marks above.
+            // src/engine/count-cycle.js). Persisted to a real table (weekly_count_day_overrides,
+            // schema-weekly-count-day.sql, owner-requested 2026-09-01: "add it to a table so it
+            // is persisted") -- one upsert call covers all rows, still no per-loc error tracking
+            // needed since it's one INSERT statement, not the retention marks' one-write-per-loc
+            // loop above.
             let countDaysSaved=0;
             const countDayRows=parseOrgStructureCountDays(wb);
             if(countDayRows.length){
               const overrides={}; for(const r of countDayRows) overrides[r.loc]=r.weekdayName;
               try{
                 const res=await saveWeeklyCountDayOverrides(overrides);
-                if(res&&res.saved) countDaysSaved=countDayRows.length;
+                if(res&&res.saved) countDaysSaved=res.count??0;
                 else console.warn('[org-structure] saveWeeklyCountDayOverrides failed:',res&&res.error);
               }catch(e){ console.warn('[org-structure] saveWeeklyCountDayOverrides threw:',e); }
             }
