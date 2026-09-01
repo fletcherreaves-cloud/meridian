@@ -33,6 +33,12 @@
 // dates (eom_count_progress_log has the right shape but currently measures percentages
 // against an EOM-only window, so a mid-month count reads 0%).
 
+// WEEKDAY_NAMES reused from weekly-cadence.js (the older, now-superseded cadence engine — see
+// this file's own header comment for why it was replaced) rather than a second copy of the same
+// ['Sun'..'Sat'] array. Nothing else is imported from that file — its detection logic is what got
+// superseded, not this one constant.
+import { WEEKDAY_NAMES } from './weekly-cadence.js';
+
 export const CLASSES = ['Food', 'Condiment', 'Paper', 'Non-Product'];
 export const WEEKLY_CLASSES = ['Food', 'Condiment'];
 
@@ -177,6 +183,84 @@ export function detectSessions(rows = []) {
     });
   }
   return { sessions: out, classTotals: totals };
+}
+
+/** date ('YYYY-MM-DD') -> 0=Sun..6=Sat, or null for an unparseable string. Same 'Txx:00:00'
+ *  local-time anchoring weekly-cadence.js's own (unexported) weekdayOf uses. */
+const weekdayOf = (dateStr) => { const t = new Date(dateStr + 'T00:00:00'); return Number.isNaN(t.getTime()) ? null : t.getDay(); };
+
+/**
+ * Detect each store's TYPICAL weekly-count day of week from historical qsr_onhand session data
+ * (2026-09-01, owner req: "we have the days of week that each store counts" -- measured false as
+ * a stored setting; weekly-cadence.js's own `expectedWeekdayByLoc` param is declared but never
+ * populated by any real caller, and this file's own engine has no fixed per-store schedule either
+ * — see the file header's "WHY THIS READS qsr_onhand" section). This derives it instead of
+ * blocking on a new manual setting.
+ *
+ * `rowsByPeriod` is an ARRAY OF ROW-ARRAYS, one per period/month (e.g. one `loadQsrOnHand({period})`
+ * result per trailing month) — deliberately NOT one flat concatenated array. qsr_onhand upserts on
+ * (loc, period, wrin) — see this file's "KNOWN LIMITATION" header comment — so the SAME wrin is a
+ * genuinely separate row per period, each carrying its own `last_counted`. Concatenating several
+ * periods' rows into one array before calling detectSessions() would inflate `totals[loc][cls]`
+ * (the coverage denominator) by however many periods are included, since every one of those rows
+ * still counts toward the class universe — silently making COVER_FRAC impossible to clear and every
+ * store read as never-counted. It also mathematically CANNOT reveal more than one qualifying
+ * `satisfiesWeekly` date within a single period's snapshot in the first place: two different dates
+ * both clearing 75% coverage of the SAME class universe is a contradiction (75%+75% > 100%), so a
+ * single-period call can surface at most one candidate date per store, ever. detectSessions() is
+ * therefore run ONCE PER PERIOD here (correct, independent universe each time), and only that
+ * period's single best qualifying session — `satisfiesWeekly || isEom`, the SAME "complete weekly
+ * count" definition cycleCompliance()'s own `lastWeekly` already uses — feeds the tally. Across
+ * `sampleWindow` trailing periods that yields up to one sample per month, which is what actually
+ * exists to sample from.
+ *
+ * Ties break toward the MOST RECENT occurrence, so a store that recently shifted its count day
+ * reads as the NEW day, not a stale majority.
+ *
+ * Returns `{ [loc]: { weekday, weekdayName, sampleSize, agreeCount, confidence, lastSeenDate } |
+ * null }` — null when a store has no qualifying session at all (never counted, or too new to have
+ * history yet). `confidence` (agreeCount/sampleSize) is exposed so a caller can decide its own bar
+ * for "trust this enough to act on" rather than this function silently picking one.
+ */
+export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 10 } = {}) {
+  const perLoc = {};    // loc -> [{ date }, ...] -- at most one entry per period, oldest first
+  const seenLocs = new Set(); // every loc detectSessions saw in ANY period, qualifying or not --
+  // so a store with real data but no qualifying session yet still reads as an explicit `null`
+  // (a known store, no signal), never silently dropped from the output like one never seen at all.
+  for (const periodRows of rowsByPeriod) {
+    const { sessions } = detectSessions(periodRows);
+    for (const loc of Object.keys(sessions)) {
+      seenLocs.add(loc);
+      const best = [...sessions[loc]].reverse().find(s => s.satisfiesWeekly || s.isEom);
+      if (best) (perLoc[loc] || (perLoc[loc] = [])).push(best);
+    }
+  }
+  const out = {};
+  for (const loc of seenLocs) if (!perLoc[loc]) out[loc] = null;
+  for (const loc of Object.keys(perLoc)) {
+    const qualifying = perLoc[loc].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)).slice(-sampleWindow);
+    if (!qualifying.length) { out[loc] = null; continue; }
+    const tally = new Map(); // weekday -> { count, lastDate }
+    for (const s of qualifying) {
+      const wd = weekdayOf(s.date);
+      if (wd == null) continue;
+      const t = tally.get(wd) || { count: 0, lastDate: null };
+      t.count++;
+      if (!t.lastDate || s.date > t.lastDate) t.lastDate = s.date;
+      tally.set(wd, t);
+    }
+    if (!tally.size) { out[loc] = null; continue; }
+    let best = null;
+    for (const [wd, t] of tally) {
+      if (!best || t.count > best.t.count || (t.count === best.t.count && t.lastDate > best.t.lastDate)) best = { wd, t };
+    }
+    out[loc] = {
+      weekday: best.wd, weekdayName: WEEKDAY_NAMES[best.wd],
+      sampleSize: qualifying.length, agreeCount: best.t.count,
+      confidence: best.t.count / qualifying.length, lastSeenDate: best.t.lastDate,
+    };
+  }
+  return out;
 }
 
 /**

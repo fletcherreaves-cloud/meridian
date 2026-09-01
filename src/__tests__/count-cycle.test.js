@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
-         inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS } from '../engine/count-cycle.js';
+         inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay } from '../engine/count-cycle.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
 // live on 2026-08-07: a store carries roughly Food 115-120, Condiment 34-38, Paper 84-98.
@@ -581,5 +581,107 @@ describe('dispatch #96 — Condiment bypasses active/recipe_item entirely (struc
     const { classTotals } = detectSessions(rows);
     expect(classTotals['Z'].Food).toBe(100); // the 5 inactive Food items are NOT rescued
     expect(classTotals['Z'].Paper).toBeUndefined(); // Paper still hits the zero-universe path, unrelated to this fix
+  });
+});
+
+// 2026-09-01 (owner req) -- "we have the days of week that each store counts" measured false as
+// a stored setting; this derives it from history instead. Weekday-labeled real dates (computed,
+// not guessed): 2026-08-06/13/20/27 and 2026-07-30 are Thursdays; 2026-08-04/11/18/25 are
+// Tuesdays; 2026-08-08/15/22/29 are Saturdays.
+//
+// One period = one `store(loc, [oneSession])` call, kept as a SEPARATE rows-array and passed as
+// its own element of `rowsByPeriod` -- never multiple full-coverage sessions folded into a single
+// `store()` call. store()'s helper mutates ONE shared rows array in place per session, so a
+// second full-coverage session there overwrites the first session's dates entirely (confirmed by
+// running it: sampleSize came back 1, not N, the first time this was written) -- it correctly
+// models "the rolling-latest-state view of a SINGLE qsr_onhand snapshot," which is exactly why
+// detectWeeklyCountDay's own doc comment requires one independent rows-array per period instead.
+describe('detectWeeklyCountDay', () => {
+  const period = (loc, date, counts) => store(loc, [{ date, counts }]);
+
+  it('a store with every weekly session on the same weekday reads full confidence', () => {
+    const rowsByPeriod = [
+      period('T1', '2026-08-06', { Food: 118, Condiment: 36 }),
+      period('T1', '2026-08-13', { Food: 118, Condiment: 36 }),
+      period('T1', '2026-08-20', { Food: 118, Condiment: 36 }),
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T1']).toMatchObject({ weekday: 4, weekdayName: 'Thu', sampleSize: 3, agreeCount: 3, confidence: 1 });
+  });
+
+  it('the majority weekday wins over a single outlier session', () => {
+    const rowsByPeriod = [
+      period('T2', '2026-08-06', { Food: 118, Condiment: 36 }),  // Thu
+      period('T2', '2026-08-11', { Food: 118, Condiment: 36 }),  // Tue -- outlier
+      period('T2', '2026-08-13', { Food: 118, Condiment: 36 }),  // Thu
+      period('T2', '2026-08-20', { Food: 118, Condiment: 36 }),  // Thu
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T2'].weekday).toBe(4); // Thu
+    expect(out['T2'].agreeCount).toBe(3);
+    expect(out['T2'].sampleSize).toBe(4);
+    expect(out['T2'].confidence).toBeCloseTo(0.75);
+  });
+
+  it('an exact tie breaks toward the MOST RECENT weekday, not the first seen', () => {
+    const rowsByPeriod = [
+      period('T3', '2026-08-06', { Food: 118, Condiment: 36 }),  // Thu
+      period('T3', '2026-08-11', { Food: 118, Condiment: 36 }),  // Tue
+      period('T3', '2026-08-13', { Food: 118, Condiment: 36 }),  // Thu
+      period('T3', '2026-08-18', { Food: 118, Condiment: 36 }),  // Tue -- most recent overall
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T3'].weekday).toBe(2); // Tue, not Thu -- recency tiebreak, both tied at 2
+    expect(out['T3'].agreeCount).toBe(2);
+    expect(out['T3'].lastSeenDate).toBe('2026-08-18');
+  });
+
+  it('an EOM session (Food+Condiment+Paper, close window, large count) counts toward the same ' +
+     'tally as a plain weekly session -- one "complete weekly count" definition, not two', () => {
+    const rowsByPeriod = [
+      period('T4', '2026-07-30', { Food: 118, Condiment: 36, Paper: 92 }),  // Thu, EOM
+      period('T4', '2026-08-06', { Food: 118, Condiment: 36 }),             // Thu, plain weekly
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T4'].weekday).toBe(4);
+    expect(out['T4'].agreeCount).toBe(2);
+  });
+
+  it('a store with only partial/spot sessions (never a complete weekly count) returns null, not a guess', () => {
+    const rowsByPeriod = [
+      period('T5', '2026-08-06', { Food: 30 }), // well under COVER_FRAC of a 118-item universe -- spot/partial
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T5']).toBeNull();
+  });
+
+  it('sampleWindow caps how far back it looks -- an old, now-stale weekday drops out of the tally', () => {
+    const rowsByPeriod = [
+      period('T6', '2026-08-04', { Food: 118, Condiment: 36 }),  // Tue -- older, will be trimmed
+      period('T6', '2026-08-06', { Food: 118, Condiment: 36 }),  // Thu
+      period('T6', '2026-08-13', { Food: 118, Condiment: 36 }),  // Thu
+      period('T6', '2026-08-20', { Food: 118, Condiment: 36 }),  // Thu
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod, { sampleWindow: 3 });
+    expect(out['T6'].sampleSize).toBe(3);
+    expect(out['T6'].weekday).toBe(4); // Thu, unanimous once the Tue session is windowed out
+    expect(out['T6'].confidence).toBe(1);
+  });
+
+  it('a store present in some periods but not others still aggregates correctly across the ones it appears in', () => {
+    const rowsByPeriod = [
+      period('T7', '2026-08-06', { Food: 118, Condiment: 36 }),   // Thu
+      store('OTHER', [{ date: '2026-08-11', counts: { Food: 118, Condiment: 36 } }]), // a different store, same period slot
+      period('T7', '2026-08-20', { Food: 118, Condiment: 36 }),   // Thu
+    ];
+    const out = detectWeeklyCountDay(rowsByPeriod);
+    expect(out['T7'].sampleSize).toBe(2);
+    expect(out['T7'].weekday).toBe(4);
+    expect(out['OTHER'].sampleSize).toBe(1);
+  });
+
+  it('a loc with zero sessions of any kind never appears in the output map', () => {
+    const out = detectWeeklyCountDay([]);
+    expect(Object.keys(out)).toHaveLength(0);
   });
 });
