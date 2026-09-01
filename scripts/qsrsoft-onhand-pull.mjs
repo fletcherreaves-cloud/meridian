@@ -42,7 +42,10 @@ import {
 // (never a third hand-rolled version of it) for the notification's target-vs-actual section.
 import { buildStoreFobReport } from '../src/engine/fob-report.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
-import { inCountWindow, inCtBusinessHours } from './lib/count-window.mjs';
+import { inCountWindow, inCtBusinessHours, centralWeekday } from './lib/count-window.mjs';
+// 2026-09-01 (owner req) — weekly-count-day pull. Reuses the SAME "complete weekly count"
+// detection the in-app Count Cycle panel already grades stores against (never a second copy).
+import { detectWeeklyCountDay } from '../src/engine/count-cycle.js';
 import { sendEmailNotification, sendSmsViaCarrierGateway, triggerLabel } from './lib/resend-notify.mjs';
 // dispatch #216 — real OS-level device alerts, the third channel alongside email/SMS above.
 import { sendWebPush } from './lib/webpush-notify.mjs';
@@ -300,6 +303,13 @@ function isProgressSnapshotHour() {
 // no-ops, so widening it costs nothing extra in cron entries or workflow changes.
 const CT_START = Number(process.env.ONHAND_CT_START ?? 8);
 const CT_END = Number(process.env.ONHAND_CT_END ?? 22);
+// 2026-09-01 (owner req, verbatim): "we have the days of week that each store counts. Let's pull
+// data for those days between 8am and 5pm, hourly to start." Narrower than the EOM count-window's
+// 8a-10p (owner's own explicit hours here), and every-store-outside-the-EOM-window scoped down to
+// just the stores actually expected to be counting today — see the per-store filter in main().
+const WEEKLY_CT_START = Number(process.env.ONHAND_WEEKLY_CT_START ?? 8);
+const WEEKLY_CT_END = Number(process.env.ONHAND_WEEKLY_CT_END ?? 17);
+const WEEKLY_PULL_ENABLED = process.env.ONHAND_WEEKLY_PULL !== '0';
 // Should this invocation do a pull at all, and in which mode?
 // Cadence (dispatch #210): the workflow's own cron now fires every 30 min during the
 // count window (see qsrsoft-onhand-pull.yml) — this gate is still the sole authority on
@@ -308,8 +318,57 @@ const CT_END = Number(process.env.ONHAND_CT_END ?? 22);
 function runMode() {
   if (FORCE) return 'forced';
   if (inCountWindow()) return inCtBusinessHours(new Date(), CT_START, CT_END) ? 'count-window' : null; // every 30 min, last 3 days, 8a–10p CT only
+  // Outside the EOM window (last 3 days), every OTHER day the workflow's own hourly cron lands on
+  // still fires this check — 'weekly-count-day' below then narrows it to just today's stores, so
+  // this doesn't pull all 27 stores every hour, only whichever few are expected to count today.
+  if (WEEKLY_PULL_ENABLED && inCtBusinessHours(new Date(), WEEKLY_CT_START, WEEKLY_CT_END)) return 'weekly-count-day';
   if (isProgressSnapshotHour()) return 'progress'; // one daily snapshot, year-round
   return null;                                   // skip
+}
+
+// ── Weekly-count-day store filter ──────────────────────────────────────────────
+// detectWeeklyCountDay() (src/engine/count-cycle.js) needs one qsr_onhand row-array PER PERIOD
+// (see its own doc comment for why a flat multi-period blob would silently break the coverage
+// math) — this loads the last WEEKLY_HISTORY_PERIODS months, one query per period, mapping
+// `recipe_item` -> `recipeItem` (the one field toEngineRows() below doesn't carry, since that
+// mapper is built for a single already-known store, not a cross-store/cross-period detector).
+const WEEKLY_HISTORY_PERIODS = Number(process.env.ONHAND_WEEKLY_HISTORY_PERIODS ?? 6);
+function recentPeriodKeys(period, n) {
+  const [y, m] = period.split('-').map(Number);
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    out.push(`${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}`);
+  }
+  return out;
+}
+async function loadOnHandHistoryByPeriod(periods) {
+  const rowsByPeriod = [];
+  for (const p of periods) {
+    const { data, error } = await supabase.from('qsr_onhand').select('loc,cls,wrin,last_counted,active,recipe_item').eq('period', p);
+    if (error) { console.warn(`[weekly-count-day] qsr_onhand load error for ${p}:`, error.message); continue; }
+    rowsByPeriod.push((data || []).map(r => ({ ...r, recipeItem: r.recipe_item })));
+  }
+  return rowsByPeriod;
+}
+// Which NSNs are expected to count TODAY (Central calendar date), per detectWeeklyCountDay()'s
+// own confidence — CONFIDENCE_FLOOR (majority agreement, not just "saw it once") avoids pulling a
+// store all week off one historical outlier. Deliberately does NOT fall back to the full store
+// list when nothing matches (e.g. a data gap, or every store's detected day is some other day) --
+// the owner's own framing was "let's pull data for those days... hourly TO START", a narrow,
+// deliberately-scoped-down pull; silently widening to all 27 stores on a detection gap would be
+// the opposite of that, and 'count-window'/'progress' mode already cover every store on their own
+// (more thorough) schedules regardless of what this returns.
+const WEEKLY_CONFIDENCE_FLOOR = Number(process.env.ONHAND_WEEKLY_CONFIDENCE_FLOOR ?? 0.5);
+async function storesCountingToday(period) {
+  const rowsByPeriod = await loadOnHandHistoryByPeriod(recentPeriodKeys(period, WEEKLY_HISTORY_PERIODS));
+  const detected = detectWeeklyCountDay(rowsByPeriod);
+  const todayWd = centralWeekday();
+  return STORE_NSNS.filter(nsn => {
+    const loc = String(nsn).padStart(7, '0');
+    const d = detected[loc];
+    return d && d.confidence >= WEEKLY_CONFIDENCE_FLOOR && d.weekday === todayWd;
+  });
 }
 
 // ── eBOS auth: SSO token exchange (mirrors qsrsoft-ebos-pull.mjs) ──────────────
@@ -805,9 +864,17 @@ async function main() {
   }
   const dateStr = businessDate();
   const period  = periodFor(dateStr);
+  // weekly-count-day mode narrows the store list to just today's expected counters BEFORE
+  // touching auth/API at all — an empty match means nothing to do this run, not a fallback to
+  // everyone (see storesCountingToday()'s own comment).
+  const targetNsns = mode === 'weekly-count-day' ? await storesCountingToday(period) : STORE_NSNS;
+  if (!targetNsns.length) {
+    console.log('[onhand-pull] weekly-count-day: no store expected to count today — skipping this run');
+    return;
+  }
   let token = await resolveEbosToken();
   const prevStatus = await loadExistingStatus(period);
-  console.log(`[onhand-pull] mode=${mode} · date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${STORE_NSNS.length} stores`);
+  console.log(`[onhand-pull] mode=${mode} · date ${dateStr} · period ${period} · types [${TYPES.join(',')}] × ${targetNsns.length} stores`);
 
   let totalSaved = 0, storesWithData = 0, authFailed = false;
   let anyBelievesDoneFired = false; // #210 Task 4 — nudge the FOB pull if any store crosses this run
@@ -821,7 +888,7 @@ async function main() {
   // silently produced nothing. Only the second case is a failed unit -- track a
   // store as failed ONLY if at least one of its type requests actually threw.
   const tracker = makeOutcomeTracker('onhand-pull');
-  for (const nsn of STORE_NSNS) {
+  for (const nsn of targetNsns) {
     if (authFailed) break;
     const rows = [];
     const storeErrors = [];
@@ -949,11 +1016,13 @@ async function main() {
   }
   if (authFailed) process.exit(1);
 
-  // No store-subset override exists for this script today (unlike ROSTER_STORES on the
-  // people-report pulls) -- a re-run reruns every store for the same date until one is added.
+  // requestedUnits is the list THIS RUN actually attempted -- targetNsns, not the full district
+  // roster -- so weekly-count-day mode's deliberately-narrowed store list doesn't read as 20+
+  // "missing" stores to the outcome tracker. No manual store-subset override exists for this
+  // script otherwise (unlike ROSTER_STORES on the people-report pulls).
   const code = tracker.finalize({
-    requestedUnits: STORE_NSNS, totalSaved,
-    formatRerun: () => `ONHAND_DATE=${dateStr} node scripts/qsrsoft-onhand-pull.mjs (no store-subset flag exists yet — reruns all stores)`,
+    requestedUnits: targetNsns, totalSaved,
+    formatRerun: () => `ONHAND_DATE=${dateStr} node scripts/qsrsoft-onhand-pull.mjs (no store-subset flag exists yet — reruns all stores in the resolved mode)`,
   });
   if (code) process.exit(code);
 }
@@ -962,7 +1031,7 @@ async function main() {
 // scripts/qsrsoft-register-audit-pull.mjs uses. Exported for both dispatch #209's and #210's
 // own test suites, which import this module directly for its pure/network-mockable functions
 // without also firing off a live run.
-export { runMode, triggerFobPullIfPossible };
+export { runMode, triggerFobPullIfPossible, recentPeriodKeys };
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(err => { console.error('[onhand-pull] fatal:', err); process.exit(1); });
 }
