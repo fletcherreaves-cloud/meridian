@@ -100,19 +100,25 @@ that panel's close button, date picker, and location selector into line with thi
 convert it to a `route:true` entry in `panel-registry.js` if that's a natural fit, **as long as
 doing so doesn't meaningfully widen that dispatch's blast radius**. This is the same "fix it
 opportunistically when you're already there" model CLAUDE.md already uses for stale line-number
-citations — not a mandate to go sweep all 101 panels in one pass.
+citations — not a mandate to go sweep all 93 panels in one pass.
 
-**Numbers, re-measured 2026-08-25 (do not copy stale figures forward — re-measure at the source
+**Numbers, re-measured 2026-09-01 (do not copy stale figures forward — re-measure at the source
 each time, per this file's own "never copy a number from a dispatch/plan doc into a CEILING"
 rule):**
 - Hand-rolled-backdrop ratchet (`ratchet-modal-backdrop-bypass.test.js`) `CEILING = 77` (was 78 on
   2026-08-19 — one fewer hand-rolled backdrop exists now than when this file was first written;
-  the ratchet is doing its job).
-- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **13 of 101** registered panels in
-  `panel-registry.js` (`grep -c "route:\s*true"` vs. total `id:` entries). The other 88 are still
-  modal-only (`ModalShell`) — this is a large, multi-year-scale migration by design, not a gap to
-  close in any single dispatch. Convert a panel to `route:true` opportunistically per the rule
-  above; don't treat the low ratio itself as something to fix directly.
+  the ratchet is doing its job). Not re-measured on 2026-09-01 — only the route:true figure below
+  was re-checked this pass.
+- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **32 of 93** registered panels in
+  `panel-registry.js`. ⚠️ The prior "13 of 101" figure was measured via `grep -c "route:\s*true"`
+  against the whole file — this OVERCOUNTS (the registry's own header/inline comments discuss
+  `route:true` in prose, e.g. "Removing route:true here would silently break that link") and
+  underrepresents true adoption growth since. Re-measured 2026-09-01 by actually importing and
+  parsing the live `PANELS` export (`panels.filter(p => p.route === true).length` vs.
+  `panels.length`), not grepping — confirmed independently twice (once by a research agent, once
+  directly). The other 61 are still modal-only (`ModalShell`) — this is a large, multi-year-scale
+  migration by design, not a gap to close in any single dispatch. Convert a panel to `route:true`
+  opportunistically per the rule above; don't treat the ratio itself as something to fix directly.
 - A parallel finding, same day: `promo-roi.js`'s results table had a mobile-scroll bug of the
   same "hand-rolled instead of the shared pattern" shape (a scroll container with the horizontal
   axis left effectively `hidden`, clipping wide tables on mobile with no way to reach the rest of
