@@ -192,37 +192,48 @@ const weekdayOf = (dateStr) => { const t = new Date(dateStr + 'T00:00:00'); retu
 /**
  * Detect each store's TYPICAL weekly-count day of week from historical qsr_onhand session data.
  *
- * ⚠️ CORRECTED 2026-09-01, same day as the first version — that version used `satisfiesWeekly ||
- * isEom` (the 75%-coverage compliance bar) as its qualifying condition, on the premise that no
- * per-store weekly-count-day signal existed anywhere in the codebase yet. That premise was wrong:
- * the owner pointed at the live "🗓 Weekly Count Cadence" panel (`CadenceMonitor`,
- * `src/views/eom-dashboard.js`), whose `cadenceFromOnHand()` already computes this — and had
- * already been live-measured (dispatch #112, 2026-08-25) against a coverage-threshold basis just
- * like this function's first version: **2/27 stores populated (7.4%)**, because two different
- * dates clearing a 75-98% coverage bar of the SAME class universe within one period is close to a
- * mathematical contradiction. Broadening to `touchedWeeklyClasses` (any real Food or Condiment
- * attempt, no coverage floor — a field `detectSessions()` already attaches to every session)
- * fixed it to **27/27 (100%)**, each hand-checked against real session dates for an obvious
- * weekday pattern. This function now uses that same, proven basis — it is the SHARED
- * implementation `cadenceFromOnHand()` calls, not a second copy of it; day-of-week PATTERN
- * detection and weekly-completion STATUS grading (`satisfiesWeekly`, unchanged everywhere else in
- * this file) are different questions, exactly as dispatch #112 established.
+ * ⚠️ HISTORY, so a future reader doesn't re-derive either wrong turn:
+ *   v1 (2026-09-01 morning) used `satisfiesWeekly || isEom` (this SAME basis) but on the false
+ *   premise that no other per-store count-day signal existed anywhere.
+ *   v2 (2026-09-01, same day) broadened to `touchedWeeklyClasses` (any real Food/Condiment
+ *   attempt, no coverage floor) after the owner pointed at the live "🗓 Weekly Count Cadence"
+ *   panel (`cadenceFromOnHand()`, `src/views/eom-dashboard.js`), whose OWN touchedWeeklyClasses
+ *   basis was live-measured (dispatch #112, 2026-08-25) at 27/27 population vs. 2/27 for a
+ *   coverage-threshold basis — and made this function share that implementation.
+ *   v3 (this version, owner-directed same day) reverts to the STRICT completion basis on
+ *   explicit instruction: "sense all food and condiment complete (per the same way we do for
+ *   eom) and then mid month, include paper" — i.e. reuse `cycleCompliance()`'s own definition of
+ *   a genuinely COMPLETE count (`satisfiesWeekly || isEom` — Food+Condiment fully covered, or the
+ *   close-window count that also covers Paper), not "touched." Cross-checked against the real
+ *   ground truth (`data/org-structure/Organization_Structure.xlsx`'s "Weekly Inventory Count Day"
+ *   column, live 2026-09-01): the v2 broad basis agreed with the file on only 6/20 OK stores
+ *   (30%) — barely better than chance, because "touched" also fires on unrelated daily spot
+ *   checks. Precision, not population, is what this function's actual consumers (the pull-window
+ *   gate and the digest send) need — a wrong day means pulling or emailing on the wrong day, not
+ *   just a blank cell on a dashboard. So the owner's answer is "utilize both": THIS function
+ *   stays precise and accepts being sparse; `mergeWeeklyCountDay()` below is the fallback layer
+ *   that fills the gaps from the file's ground truth. `cadenceFromOnHand()`'s own
+ *   touchedWeeklyClasses tally is INTENTIONALLY UNCHANGED and no longer calls this function — it
+ *   still needs the dense, always-populated basis for the panel's own display purpose (showing
+ *   *some* signal for every store beats showing none), a different job with a different
+ *   precision/recall tradeoff than gating an automated pull or email.
  *
  * `rowsByPeriod` is an ARRAY OF ROW-ARRAYS, one per period/month (e.g. one `loadQsrOnHand({period})`
  * result per trailing month) — deliberately NOT one flat concatenated array. qsr_onhand upserts on
  * (loc, period, wrin) — see this file's "KNOWN LIMITATION" header comment — so the SAME wrin is a
  * genuinely separate row per period, each carrying its own `last_counted`. Concatenating several
  * periods' rows into one array before calling detectSessions() would inflate `totals[loc][cls]`
- * (the coverage denominator) by however many periods are included. detectSessions() is therefore
- * run ONCE PER PERIOD here (correct, independent universe each time). Unlike the coverage-bar
- * basis, `touchedWeeklyClasses` is NOT mutually exclusive across dates within one period — a
- * store's rolling-latest-state item universe can and does carry several different qualifying
- * dates from a single snapshot (that's exactly why the single-period `cadenceFromOnHand()` reaches
- * 27/27 off one period alone) — so EVERY qualifying session from EVERY period is tallied, not just
- * one per period. `sampleWindow` caps the tally to the most recent N qualifying sessions
- * (recency-biased) rather than one per calendar month, matching the denser signal this basis
- * produces. A single-period call (`rowsByPeriod = [onHandRows]`) reproduces `cadenceFromOnHand()`'s
- * own detectedWeekday output exactly.
+ * (the coverage denominator) by however many periods are included, since every one of those rows
+ * still counts toward the class universe — silently making COVER_FRAC impossible to clear and every
+ * store read as never-counted. It also mathematically CANNOT reveal more than one qualifying
+ * `satisfiesWeekly` date within a single period's snapshot in the first place: two different dates
+ * both clearing 75% coverage of the SAME class universe is a contradiction (75%+75% > 100%), so a
+ * single-period call can surface at most one candidate date per store, ever. detectSessions() is
+ * therefore run ONCE PER PERIOD here (correct, independent universe each time), and only that
+ * period's single best qualifying session — `satisfiesWeekly || isEom`, the SAME "complete weekly
+ * count" definition cycleCompliance()'s own `lastWeekly` already uses — feeds the tally. Across
+ * `sampleWindow` trailing periods that yields up to one sample per month, which is what actually
+ * exists to sample from.
  *
  * Ties break toward the MOST RECENT occurrence, so a store that recently shifted its count day
  * reads as the NEW day, not a stale majority.
@@ -232,8 +243,8 @@ const weekdayOf = (dateStr) => { const t = new Date(dateStr + 'T00:00:00'); retu
  * history yet). `confidence` (agreeCount/sampleSize) is exposed so a caller can decide its own bar
  * for "trust this enough to act on" rather than this function silently picking one.
  */
-export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 20 } = {}) {
-  const perLoc = {};    // loc -> [session, ...] -- every touchedWeeklyClasses session, any period
+export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 10 } = {}) {
+  const perLoc = {};    // loc -> [{ date }, ...] -- at most one entry per period, oldest first
   const seenLocs = new Set(); // every loc detectSessions saw in ANY period, qualifying or not --
   // so a store with real data but no qualifying session yet still reads as an explicit `null`
   // (a known store, no signal), never silently dropped from the output like one never seen at all.
@@ -241,8 +252,8 @@ export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 20 } = 
     const { sessions } = detectSessions(periodRows);
     for (const loc of Object.keys(sessions)) {
       seenLocs.add(loc);
-      const touched = sessions[loc].filter(s => s.touchedWeeklyClasses);
-      if (touched.length) (perLoc[loc] || (perLoc[loc] = [])).push(...touched);
+      const best = [...sessions[loc]].reverse().find(s => s.satisfiesWeekly || s.isEom);
+      if (best) (perLoc[loc] || (perLoc[loc] = [])).push(best);
     }
   }
   const out = {};
@@ -269,6 +280,48 @@ export function detectWeeklyCountDay(rowsByPeriod = [], { sampleWindow = 20 } = 
       sampleSize: qualifying.length, agreeCount: best.t.count,
       confidence: best.t.count / qualifying.length, lastSeenDate: best.t.lastDate,
     };
+  }
+  return out;
+}
+
+/**
+ * "Utilize both" (owner-directed, 2026-09-01): combine `detectWeeklyCountDay()`'s derived signal
+ * with the real, owner-entered ground truth from `data/org-structure/Organization_Structure.xlsx`
+ * (Locations sheet, "Weekly Inventory Count Day" — imported by `parseOrgStructureCountDays()`,
+ * `src/parsers/index.js`, and persisted via `saveWeeklyCountDayOverrides()` to Supabase
+ * `org_config` key `'weekly_count_day_overrides'`). The derived signal is precise but sparse (see
+ * `detectWeeklyCountDay()`'s own doc comment); the file is dense for the 20 OK stores it covers
+ * but is a static, manually-maintained snapshot with no signal at all for the 7 FL stores. Neither
+ * one alone is enough, so this picks per store, in order:
+ *   1. DERIVED, if it exists and clears `confidenceFloor` — real, recent qsr_onhand behavior wins
+ *      whenever it's trustworthy, since a store's actual pattern can drift from what's on file.
+ *   2. FALLBACK (the file), if the derived signal is missing or below the confidence floor.
+ *   3. DERIVED anyway, even below the floor, if there's no fallback for that store either (a low-
+ *      confidence guess beats no signal at all when it's the only thing available — e.g. every FL
+ *      store, which the file has never covered).
+ *   4. null, if neither source says anything for that store.
+ *
+ * `derivedByLoc`/`fallbackByLoc` are keyed the same way (unpadded loc string). `fallbackByLoc`
+ * values are the simpler `{ weekday, weekdayName }` shape (no confidence — a manually-maintained
+ * setting doesn't have one); this function normalizes both into one `{ weekday, weekdayName,
+ * source: 'derived'|'fallback', confidence? }` result per loc so a caller never has to branch on
+ * which source won.
+ */
+export function mergeWeeklyCountDay(derivedByLoc = {}, fallbackByLoc = {}, { confidenceFloor = 0.5 } = {}) {
+  const out = {};
+  const locs = new Set([...Object.keys(derivedByLoc), ...Object.keys(fallbackByLoc)]);
+  for (const loc of locs) {
+    const d = derivedByLoc[loc] || null;
+    const f = fallbackByLoc[loc] || null;
+    if (d && d.confidence >= confidenceFloor) {
+      out[loc] = { weekday: d.weekday, weekdayName: d.weekdayName, confidence: d.confidence, source: 'derived' };
+    } else if (f) {
+      out[loc] = { weekday: f.weekday, weekdayName: f.weekdayName, source: 'fallback' };
+    } else if (d) {
+      out[loc] = { weekday: d.weekday, weekdayName: d.weekdayName, confidence: d.confidence, source: 'derived' };
+    } else {
+      out[loc] = null;
+    }
   }
   return out;
 }

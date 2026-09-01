@@ -44,8 +44,10 @@ import { buildStoreFobReport } from '../src/engine/fob-report.js';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { inCountWindow, inCtBusinessHours, centralWeekday } from './lib/count-window.mjs';
 // 2026-09-01 (owner req) — weekly-count-day pull. Reuses the SAME "complete weekly count"
-// detection the in-app Count Cycle panel already grades stores against (never a second copy).
-import { detectWeeklyCountDay } from '../src/engine/count-cycle.js';
+// detection cycleCompliance() already grades stores against, plus the Organization Structure
+// fallback ("utilize both" -- owner-directed) for stores the derived signal can't yet call.
+import { detectWeeklyCountDay, mergeWeeklyCountDay } from '../src/engine/count-cycle.js';
+import { loadWeeklyCountDayFallback } from './lib/weekly-count-day.mjs';
 import { sendEmailNotification, sendSmsViaCarrierGateway, triggerLabel } from './lib/resend-notify.mjs';
 // dispatch #216 — real OS-level device alerts, the third channel alongside email/SMS above.
 import { sendWebPush } from './lib/webpush-notify.mjs';
@@ -363,11 +365,23 @@ const WEEKLY_CONFIDENCE_FLOOR = Number(process.env.ONHAND_WEEKLY_CONFIDENCE_FLOO
 async function storesCountingToday(period) {
   const rowsByPeriod = await loadOnHandHistoryByPeriod(recentPeriodKeys(period, WEEKLY_HISTORY_PERIODS));
   const detected = detectWeeklyCountDay(rowsByPeriod);
+  // "Utilize both" (owner-directed, 2026-09-01): the derived signal alone, gated on
+  // WEEKLY_CONFIDENCE_FLOOR; below that (or absent), fall back to the real, owner-entered
+  // Organization Structure weekly count day (org_config 'weekly_count_day_overrides') --
+  // mergeWeeklyCountDay() (src/engine/count-cycle.js) does the actual precedence, reused as-is.
+  const fallback = await loadWeeklyCountDayFallback(supabase);
+  const merged = mergeWeeklyCountDay(detected, fallback, { confidenceFloor: WEEKLY_CONFIDENCE_FLOOR });
   const todayWd = centralWeekday();
   return STORE_NSNS.filter(nsn => {
-    const loc = String(nsn).padStart(7, '0');
-    const d = detected[loc];
-    return d && d.confidence >= WEEKLY_CONFIDENCE_FLOOR && d.weekday === todayWd;
+    // detectWeeklyCountDay()/mergeWeeklyCountDay() key their output by UNPADDED loc (detectSessions'
+    // own `unpad(r.loc)`, count-cycle.js) even though qsr_onhand itself stores `loc` zero-padded to
+    // 7 chars (this file's own upsert, `loc: String(nsn).padStart(7,'0')`) -- a padded lookup key
+    // here silently matched nothing, so this filter always returned an empty array. Fixed alongside
+    // the fallback merge above since both land in the same review; verified live against real
+    // qsr_onhand session data during this same investigation.
+    const loc = String(nsn);
+    const d = merged[loc];
+    return d && d.weekday === todayWd;
   });
 }
 
