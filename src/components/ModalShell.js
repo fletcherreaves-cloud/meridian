@@ -3,11 +3,14 @@
 // Canonical "Group A" style: centered surface, plain '✕' btn-sm close, design tokens.
 // Measured from src/views/*.js: backdrop rgba(0,0,0,.82) is the most common value app-wide (39 sites).
 import React from 'react';
+import { capturePanelScreenshot } from '../utils/panel-screenshot.js';
+import { shareFileOrSave } from '../utils/share.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
 const span = (p, ...c) => h('span', p, ...c);
 const btn = (p, ...c) => h('button', p, ...c);
+const { useRef: uR, useState: uSt } = React;
 
 // Shared z-index tiers so stacked modals (e.g. a confirm dialog over a panel) layer predictably.
 export const Z = { modal: 300, nested: 400, alert: 500, toast: 600 };
@@ -22,6 +25,49 @@ const CLOSE_STYLE = {
   alignItems: 'center',
   justifyContent: 'center',
 };
+
+// App-wide screenshot Share button (owner request 2026-09-01) — lives INSIDE RoutePanelShell so
+// every route:true panel gets it for free, zero per-panel wiring, same reasoning that put the
+// close/back button here instead of per-panel. Deliberately NOT named/iconed "🔗 Share" — that
+// label is already taken by the per-row report-LINK share buttons (count-cycle-panel.js,
+// eom-dashboard.js's createShare), a different affordance (shares a URL, not an image); reusing
+// the label here would read as the same feature and confuse which one a user is tapping.
+// Captures `bodyRef.current`'s full content (see capturePanelScreenshot — includes anything
+// scrolled out of view, not just the visible slice) and hands it to shareFileOrSave, which tries
+// the native OS share sheet first, then copy-image-to-clipboard, then a plain PNG download —
+// same three-tier fallback shape as shareOrCopy() (src/utils/share.js) uses for links.
+function slugify(s) {
+  return String(s || 'panel').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'panel';
+}
+function ScreenshotShareButton({ bodyRef, title }) {
+  const [status, setStatus] = uSt(null); // null | 'busy' | 'share' | 'clipboard' | 'download' | 'error'
+  const onClick = async () => {
+    if (status === 'busy') return;
+    setStatus('busy');
+    try {
+      const blob = await capturePanelScreenshot(bodyRef.current);
+      if (!blob) { setStatus('error'); setTimeout(() => setStatus(null), 2500); return; }
+      const filename = `meridian-${slugify(title)}-${new Date().toISOString().slice(0, 10)}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+      const result = await shareFileOrSave({ file, title: title || 'Meridian', filename });
+      setStatus(result.cancelled ? null : (result.ok ? result.method : 'error'));
+    } catch {
+      setStatus('error');
+    }
+    setTimeout(() => setStatus(null), 2500);
+  };
+  const label = status === 'busy' ? '⏳'
+    : status === 'share' ? '✓ Shared'
+    : status === 'clipboard' ? '✓ Copied image'
+    : status === 'download' ? '✓ Saved PNG'
+    : status === 'error' ? '✗ Share failed'
+    : '📸 Share';
+  return btn({
+    className: 'btn btn-sm', onClick, disabled: status === 'busy',
+    title: 'Share a screenshot of this panel (including anything scrolled out of view) via your device’s share sheet, or copy/save it',
+    style: { color: 'var(--text3)', fontSize: '12px', whiteSpace: 'nowrap', minHeight: 44, padding: '0 10px' },
+  }, label);
+}
 
 export function ModalShell({
   title,
@@ -110,6 +156,7 @@ export function ModalShell({
 // key off RoutePanelShell instead, once EOM Supervisor folds into the Inventory Control hub as a
 // tab. Both default to undefined so every existing RoutePanelShell caller is unaffected.
 export function RoutePanelShell({ title, subtitle, icon, onBack, headerExtra, bodyStyle, className, headerClassName, children }) {
+  const bodyRef = uR(null);
   return div(
     { className, style: { display: 'flex', flexDirection: 'column', minHeight: '60vh' } },
     div(
@@ -128,8 +175,9 @@ export function RoutePanelShell({ title, subtitle, icon, onBack, headerExtra, bo
         subtitle != null ? div({ style: { fontSize: '10px', color: 'var(--text3)' } }, subtitle) : null,
       ),
       headerExtra || null,
+      h(ScreenshotShareButton, { bodyRef, title }),
     ),
-    div({ style: { flex: 1, ...bodyStyle } }, children),
+    div({ ref: bodyRef, style: { flex: 1, ...bodyStyle } }, children),
   );
 }
 

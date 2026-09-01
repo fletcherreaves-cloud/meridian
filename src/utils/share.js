@@ -52,3 +52,70 @@ export async function shareOrCopy({ url, title, text } = {}) {
 
   return { method: 'none', ok: false, cancelled: false };
 }
+
+function downloadBlob(blob, filename) {
+  try {
+    const win = typeof window !== 'undefined' ? window : null;
+    const doc = typeof document !== 'undefined' ? document : null;
+    if (!win || !doc) return false;
+    const url = win.URL.createObjectURL(blob);
+    const a = doc.createElement('a');
+    a.href = url; a.download = filename;
+    doc.body.appendChild(a); a.click();
+    setTimeout(() => { doc.body.removeChild(a); win.URL.revokeObjectURL(url); }, 300);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// File-sharing counterpart to shareOrCopy() above, for the app-wide panel Screenshot Share
+// button (RoutePanelShell) -- a genuinely different fallback chain than the URL case (there is no
+// "copy the URL" equivalent for an image: the fallback is copying the IMAGE ITSELF to the
+// clipboard, then a plain file download), so it's its own function rather than an overload.
+//
+// navigator.share({files}) is Web Share API LEVEL 2 -- narrower support than the url/text form
+// above (solid on iOS Safari / Android Chrome, the devices GMs actually carry; desktop is uneven
+// and desktop Firefox has neither level at all). canShare({files}) is the correct capability gate
+// per the spec -- some browsers implement navigator.share for url/text but reject a files payload
+// synchronously, so checking canShare first (when present) avoids flashing an OS sheet that would
+// just fail. AbortError (user closed the sheet without picking a target) is a deliberate cancel,
+// exactly like shareOrCopy() -- not an error, and not a reason to fall back to clipboard/download.
+export async function shareFileOrSave({ file, title, text, filename } = {}) {
+  const nav = typeof navigator !== 'undefined' ? navigator : null;
+  const canUseShare = !!(nav && typeof nav.share === 'function' && file);
+
+  if (canUseShare) {
+    const payload = { files: [file] };
+    if (title) payload.title = title;
+    if (text) payload.text = text;
+    try {
+      if (typeof nav.canShare === 'function' && !nav.canShare(payload)) {
+        throw Object.assign(new Error('file payload not shareable'), { name: 'NotShareableError' });
+      }
+      await nav.share(payload);
+      return { method: 'share', ok: true, cancelled: false };
+    } catch (e) {
+      if (e && e.name === 'AbortError') return { method: 'share', ok: false, cancelled: true };
+      // Falls through to clipboard-image, then download, exactly like the NotShareableError /
+      // no-registered-handler cases above.
+    }
+  }
+
+  if (file && nav && nav.clipboard && typeof nav.clipboard.write === 'function' && typeof ClipboardItem !== 'undefined') {
+    try {
+      await nav.clipboard.write([new ClipboardItem({ [file.type]: file })]);
+      return { method: 'clipboard', ok: true, cancelled: false };
+    } catch {
+      // Falls through to download -- a clipboard-image write can fail on a permission prompt the
+      // user dismissed, or a MIME type the browser's clipboard implementation won't accept.
+    }
+  }
+
+  if (file) {
+    const ok = downloadBlob(file, filename || file.name || 'share.png');
+    return { method: 'download', ok, cancelled: false };
+  }
+
+  return { method: 'none', ok: false, cancelled: false };
+}

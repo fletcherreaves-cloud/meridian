@@ -21,6 +21,7 @@ export default defineConfig({
         // budget doesn't depend on Rollup's automatic grouping being lucky.
         manualChunks(id) {
           if (id.includes('node_modules/xlsx')) return 'xlsx';
+          if (id.includes('node_modules/html2canvas')) return 'html2canvas';
         },
       },
     },
