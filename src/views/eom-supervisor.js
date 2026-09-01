@@ -474,7 +474,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           h('td', { style: C.td }, pctStr(projFOBPct)),
           h('td', { style: C.td }, pctStr(projLaborPct)),
           h('td', { style: C.td }, '0'),
-          h('td', { style: C.td }, projOpSup != null ? '$' + Math.round(projOpSup).toLocaleString() : '—'),
+          h('td', { style: C.td }, salesStr(projOpSup)),
           h('td', { style: { ...C.td, borderRight: 'none' } }, '—'),
         ),
         // Actual row
@@ -495,7 +495,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           // Op Supplies — manual
           h('td', { style: C.td },
             forPrint
-              ? (actOpSup != null ? '$' + Math.round(actOpSup).toLocaleString() : '—')
+              ? salesStr(actOpSup)
               : h(EditCell, { value: actOpSup, placeholder: '$ actual', onChange: v => onManualChange('actOpSup', v) })
           ),
           // Cash — auto or manual
