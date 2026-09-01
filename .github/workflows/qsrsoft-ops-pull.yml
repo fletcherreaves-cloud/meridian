@@ -13,9 +13,9 @@ on:
         required: false
         default: '45'
       days_recent:
-        description: 'Rolling re-pull window in days (default: 4)'
+        description: 'Rolling re-pull window in days (default: 14, a full biweekly payroll period)'
         required: false
-        default: '4'
+        default: '14'
       start_date:
         description: 'Backfill start (YYYY-MM-DD). Set with end_date for an explicit window.'
         required: false
@@ -51,7 +51,7 @@ jobs:
           QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
           QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
           QSRSOFT_OPS_DAYS_BACK:     ${{ github.event.inputs.days_back   || '45' }}
-          QSRSOFT_OPS_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '4'  }}
+          QSRSOFT_OPS_DAYS_RECENT:   ${{ github.event.inputs.days_recent || '14' }}
           QSRSOFT_OPS_START_DATE:    ${{ github.event.inputs.start_date  || ''   }}
           QSRSOFT_OPS_END_DATE:      ${{ github.event.inputs.end_date    || ''   }}
           QSRSOFT_OPS_DEBUG:         ${{ github.event.inputs.debug       || '0'  }}

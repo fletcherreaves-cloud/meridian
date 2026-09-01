@@ -27,7 +27,13 @@
 // and runAll() forces one extra re-mint-and-retry on an AUTH_FAILED before giving up on a
 // request, in case a nominally-fresh token is rejected anyway (clock skew, early
 // revocation). Required: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
-// Optional: QSRSOFT_OPS_DAYS_BACK (first-run history, default 45), QSRSOFT_OPS_DAYS_RECENT (rolling, 4),
+// Optional: QSRSOFT_OPS_DAYS_BACK (first-run history, default 45), QSRSOFT_OPS_DAYS_RECENT
+//           (rolling, default 14 -- a full biweekly payroll period, widened from 4 on
+//           2026-09-01 after a live reconciliation found a single late QSRSoft-side punch
+//           correction on store 43380 fell outside the old 4-day window and was never
+//           re-pulled, understating that store's August Crew Labor % by 0.06pp until a
+//           manual backfill caught it -- see memory/finding-labor-pull-window-widened-
+//           2026-09-01.md),
 //           QSRSOFT_OPS_START_DATE/END_DATE (explicit backfill), QSRSOFT_OPS_DEBUG=1.
 
 import { createClient } from '@supabase/supabase-js';
@@ -42,7 +48,7 @@ const STORE_NSNS = [
   37566, 38609, 43380, 43701,
 ];
 const DAYS_BACK   = parseInt(process.env.QSRSOFT_OPS_DAYS_BACK   || '45', 10);
-const DAYS_RECENT = parseInt(process.env.QSRSOFT_OPS_DAYS_RECENT || '4',  10);
+const DAYS_RECENT = parseInt(process.env.QSRSOFT_OPS_DAYS_RECENT || '14', 10);
 const START_DATE  = (process.env.QSRSOFT_OPS_START_DATE || '').trim();
 const END_DATE    = (process.env.QSRSOFT_OPS_END_DATE   || '').trim();
 const DEBUG       = process.env.QSRSOFT_OPS_DEBUG === '1';
