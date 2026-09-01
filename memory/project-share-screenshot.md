@@ -14,9 +14,9 @@ control, no per-panel wiring.
 
 - **Lives in `RoutePanelShell`** (`src/components/ModalShell.js`), rendered unconditionally in the
   header, not the existing `headerExtra` slot (that's opt-in per panel, populated ad hoc by ~25
-  call sites — building there wouldn't be app-wide). Every `route:true` panel (32 today, not the
-  13 CLAUDE.md's UI Conventions section currently says — that count is stale, worth a doc fix)
-  gets the button automatically.
+  call sites — building there wouldn't be app-wide). Every `route:true` panel (32 today — CLAUDE.md
+  and `memory/panel-contract.md` both corrected in the same PR from a stale "13 of 101") gets the
+  button automatically.
 - **Phase 1 boundary, deliberate:** `route:true` panels only. Hub-tab content (Count Cycle, EOM
   reports, Labor Analytics, etc. — `kind:'hub-tab'`) never mounts `RoutePanelShell` at all, so it's
   out of scope here. A real follow-on if wanted, not a gap discovered after the fact.
@@ -82,6 +82,41 @@ server:
   case (its tokens are already light-on-white; the historically broken case was specifically dark
   mode's light-on-transparent tokens resolving to nothing). Worth a quick spot-check if this ever
   regresses, not required to ship.
+
+## Desktop platform behavior — measured, not assumed (2026-09-01, same-day follow-up)
+
+Owner asked to "check on the desktop app share behavior too" after using the feature live.
+**Owner-confirmed: works correctly on their own desktop** — the real native OS share sheet
+appeared, not a fallback. Cross-checked against a real measurement (not general web knowledge)
+before writing this down, per the "measure it" rule:
+
+- Ran the actual shipped `capturePanelScreenshot()` + `shareFileOrSave()` (imported live from the
+  dev server, same as the fidelity test above) in a real headless Chromium instance with a
+  spoofed **desktop Windows Chrome** user-agent, 1440×900 viewport, `clipboard-read`/
+  `clipboard-write` permissions granted.
+- Result: `typeof navigator.share === false` — **the API itself does not exist** in this
+  environment, not merely "file-sharing is unsupported." `navigator.canShare` is also absent.
+  `navigator.clipboard.write` and `ClipboardItem` ARE both present and functional.
+- `shareFileOrSave()` called end-to-end (the real button's call path, not an isolated unit test):
+  correctly skipped the (absent) share-sheet branch and fell through to clipboard-image, which
+  **succeeded** — `{method:'clipboard', ok:true, cancelled:false}`. So even on a platform with zero
+  Web Share API support, the button still does something useful; it never dead-ends.
+- Reconciling this against the owner's own working result: this measurement ran on a **headless
+  Linux** Chromium — and per MDN's own browser-compat-data tracker (github.com/mdn/
+  browser-compat-data#16823), `navigator.share` on desktop Chrome/Chromium is a **platform-gated**
+  feature — supported on Windows and ChromeOS, historically absent on Linux, regardless of a
+  spoofed user-agent (the UA string doesn't change what OS-level share integration the browser
+  binary was actually built with / can access). The owner's desktop is evidently Windows or macOS,
+  where the API is real. **So both results are correct simultaneously**, for different platforms:
+  Windows/macOS desktop Chrome → real native share sheet (owner's live result); Linux desktop
+  Chrome/Chromium → no `navigator.share` at all, clean clipboard-image fallback (this measurement).
+- Practical implication: a Meridian user on Linux desktop Chrome (or any browser without
+  `navigator.share` — older Chrome/Edge, Firefox entirely per that same MDN tracker, older Safari)
+  gets a "📸 Share" button that silently does clipboard-copy instead of opening a sheet — this is
+  already the intended, tested fallback behavior (see `share-file-util.test.js`'s
+  "falls back to clipboard.write" case), not a bug to fix. Nothing to change in the code; this
+  section exists so a future session doesn't re-diagnose "why didn't the share sheet open on
+  Linux" as a defect.
 
 ## Tests
 
