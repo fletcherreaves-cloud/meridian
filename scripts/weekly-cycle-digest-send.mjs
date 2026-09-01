@@ -15,9 +15,13 @@
 // 'weekly_digest_config', separate from EOM's own 'eom_digest_config'). Default 23:00 UTC
 // (~6pm CDT / 5pm CST) — right after the pull window's 5pm CT close.
 //
-// Recipient: EMAIL_TO (resend-notify.mjs) — the SAME "send to the owner for now" convention
-// eom-digest-notify.mjs's own recipientFor() already established (dispatch #215 Task 3: "we can
-// test through my email for now"), not a new decision made here.
+// Recipients: real per-user opt-in (owner req, 2026-09-01, verbatim: "allow anyone to sign up or
+// opt in to whichever reports they want emailed to them") — email_digest_subscriptions
+// (scripts/lib/email-digest-subscriptions.mjs), falling back to EMAIL_TO (resend-notify.mjs) only
+// when nobody has subscribed to 'weekly_cycle_digest' yet, so this never silently sends to zero
+// people mid-rollout. Replaces the earlier hardcoded-to-EMAIL_TO decision this comment used to
+// describe (dispatch #215 Task 3's "send to the owner for now" convention, which eom-digest-
+// notify.mjs's recipientsFor() went through the same replacement in the same pass).
 //
 // Required env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY
 // Optional: WKDIGEST_FORCE=1 (send regardless of the hour gate), WKDIGEST_DATE=YYYY-MM-DD
@@ -27,6 +31,7 @@ import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { postResend, EMAIL_TO } from './lib/resend-notify.mjs';
 import { detectWeeklyCountDay, mergeWeeklyCountDay, cycleCompliance, formatWeeklyComplianceReport } from '../src/engine/count-cycle.js';
 import { loadWeeklyCountDayFallback } from './lib/weekly-count-day.mjs';
+import { loadDigestSubscriberEmails } from './lib/email-digest-subscriptions.mjs';
 import { centralWeekday } from './lib/count-window.mjs';
 import { STORE_NAMES, unpadLoc } from '../src/constants.js';
 import { STORE_NSNS, recentPeriodKeys } from './qsrsoft-onhand-pull.mjs';
@@ -143,8 +148,11 @@ async function main() {
   if (!storesToday.length) { console.log('[weekly-cycle-digest-send] nothing to send — no store had gradable data'); return; }
 
   const { subject, html } = buildWeeklyDigestEmail(storesToday, dateStr);
-  const ok = await postResend({ to: EMAIL_TO, subject, html });
-  console.log(`[weekly-cycle-digest-send] ${ok ? '✓ sent' : '✗ FAILED'} — ${storesToday.length} stores`);
+  const subs = await loadDigestSubscriberEmails(supabase, 'weekly_cycle_digest');
+  const recipients = subs.length ? subs : [EMAIL_TO];
+  const results = await Promise.all(recipients.map(to => postResend({ to, subject, html })));
+  const ok = results.every(Boolean);
+  console.log(`[weekly-cycle-digest-send] ${ok ? '✓ sent' : '✗ FAILED'} — ${storesToday.length} stores, ${recipients.length} recipient${recipients.length === 1 ? '' : 's'}`);
   if (!ok) process.exitCode = 1;
 }
 

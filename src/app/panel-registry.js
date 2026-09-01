@@ -267,6 +267,12 @@ export const PANELS = [
   // panel-registry promotion rule -- flip kind: to ship it for real, nothing else.
   { id:'pricing-engine', label:'Pricing Engine', icon:'💲', perm:'analytics.store', kind:'test-kitchen', section:'inventory-food-cost', tkOrder:14 },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
+  // Owner req 2026-09-01, verbatim: "allow anyone to sign up or opt in to whichever reports they
+  // want emailed to them." perm:null -- deliberately open to any authenticated role, matching
+  // that framing (this only lets a user manage their OWN subscription rows; it grants no new data
+  // access). Distinct from 'my-reports' (saved, scope/period-configurable report LAUNCHES) -- see
+  // src/views/email-digest-subscriptions-panel.js's own header for the full distinction.
+  { id:'email-digests', label:'Email Digests', icon:'📧', perm:null, kind:'nav', section:'notifications' },
   // label/icon corrected 2026-08-21 (dispatch #54 Job A): was 'Proj Workflow'/lock, a stale
   // label from the PRUNED duplicate nav line in shell.js (the live line has said
   // 'Projections'/▦ since v4.517 -- the registry was built from the pruned line, not the live

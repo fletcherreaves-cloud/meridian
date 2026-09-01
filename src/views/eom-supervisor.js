@@ -295,7 +295,15 @@ function computeStoreEOM(loc, ds, manual, selYear, selMonth, ebosByLoc) {
     salesVar, fcVarPct, fobVarPct, laborVarPct, opSup$,
     fcVar$, fobVar$, laborVar$, laborAdjAmt, laborNewTotal,
     totalShaded, pctImpact,
-    hasFOB:     !!fobRow,
+    // Dispatch (2026-09-01): hasFOB gates the "FOB missing" warning banner, the "✓ FOB"/"○ FOB
+    // missing" badge, AND the rollup's stores-to-include filter (S = ...hasFOB below) — all three
+    // were false-positiving "missing" for stores with real, current AUTO-pulled FOB (autoFob)
+    // whenever the manual monthly upload (fobRow) was absent, even though actSales/actFCPct/
+    // actFOBPct/actLaborPct above already fall back to autoFob correctly. Verified live
+    // (service-role Supabase read) against 3708/Ardmore-Broadway and 5183/Chickasha-So 4th:
+    // both have complete August 2026 qsr_fob rows (31/31 days) driving real displayed actuals,
+    // while this flag alone still called it "missing" for lack of a manual row.
+    hasFOB:     !!(fobRow || autoFob),
     hasTargets: !!(projSales || projLaborPct),
     hasMonthlyTargets: !!(mtOK && mt.tFOBTotal),
   };
@@ -474,7 +482,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           h('td', { style: C.td }, pctStr(projFOBPct)),
           h('td', { style: C.td }, pctStr(projLaborPct)),
           h('td', { style: C.td }, '0'),
-          h('td', { style: C.td }, projOpSup != null ? '$' + Math.round(projOpSup).toLocaleString() : '—'),
+          h('td', { style: C.td }, salesStr(projOpSup)),
           h('td', { style: { ...C.td, borderRight: 'none' } }, '—'),
         ),
         // Actual row
@@ -495,7 +503,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
           // Op Supplies — manual
           h('td', { style: C.td },
             forPrint
-              ? (actOpSup != null ? '$' + Math.round(actOpSup).toLocaleString() : '—')
+              ? salesStr(actOpSup)
               : h(EditCell, { value: actOpSup, placeholder: '$ actual', onChange: v => onManualChange('actOpSup', v) })
           ),
           // Cash — auto or manual
@@ -933,7 +941,10 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
 
   const meta = ds.monthlyTargetsMeta;
   const mtLoaded = !!(meta?.year);
-  const fobLoaded = !!(ds.fobRows?.length);
+  // Same manual-only blind spot as hasFOB above (computeStoreEOM) — this header banner also
+  // ignored the auto-pulled qsr_fob stream (ds.qsrFobRows), so it could read "No FOB data" while
+  // stores below it were showing real cloud-sourced actuals.
+  const fobLoaded = !!(ds.fobRows?.length || ds.qsrFobRows?.length);
 
   // Available groups for the current group type
   const availGroups = groupType === 'supervisor' ? supGroups : opGroups;
