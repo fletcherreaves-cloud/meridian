@@ -906,7 +906,13 @@ export function EOMSupervisorPanel({ ds, settings, supabase, period, scopedLocs 
       return g ? g.locs : allLocs;
     })();
     const scopedSet = new Set(allLocs);
-    return base.filter(l => scopedSet.has(String(l)));
+    // Sort by location number (owner-requested 2026-09-01) -- a named supervisor/operator
+    // group's `locs` array is stored in whatever order it was configured in (settings, not
+    // necessarily numeric), so store cards could render out of order (e.g. Mossy Head/37566
+    // before Bonifay/10034 within "Marys Patch"). The 'all' case already happened to look
+    // sorted (JS iterates integer-like object keys, i.e. STORE_NAMES's, in ascending numeric
+    // order per spec) -- sorting explicitly here makes every grouping consistent, not just 'all'.
+    return base.filter(l => scopedSet.has(String(l))).sort((a, b) => (+a || 0) - (+b || 0));
   }, [groupType, selGroup, supGroups, opGroups, allLocs]);
 
   // Compute per-store EOM data — targets resolved from ds.allMonthlyTargets by period
