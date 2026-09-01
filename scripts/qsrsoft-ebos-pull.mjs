@@ -542,6 +542,20 @@ async function runWithToken(token, startDate, endDate) {
       const rows  = aggregateByDate(items, nsn);
       totalLineItems += items.length;
       totalDayRows   += rows.length;
+      // Dispatch (2026-09-01, Mossy Head/37566 finding): a day that had purchase-record ops on an
+      // EARLIER pull but zero on THIS pull (QSRSoft reassigned the invoice's posted_date to another
+      // day, a normal correction on their end) never had its old row cleared -- upsert only touches
+      // dates present in the CURRENT batch, so the stale day-total lived on forever and the monthly
+      // rollup double-counted the reassigned invoice (proven live: Aug 11 + Aug 18 both stale-
+      // duplicated a day-total that had moved to Aug 12 / Aug 19 respectively). Clear the store's
+      // whole pulled window first, THEN insert the fresh set below -- only after a successful fetch
+      // for THIS store, so a per-store fetch failure never wipes that store's still-good prior data.
+      const loc = String(nsn).padStart(7, '0');
+      const { error: clearErr } = await withRetry(
+        () => supabase.from('qsr_ebos_daily').delete().eq('loc', loc).gte('date', startDate).lte('date', endDate),
+        { label: 'qsr_ebos_daily stale-day clear' },
+      );
+      if (clearErr) console.error(`[ebos] NSN ${nsn} stale-day clear error: ${clearErr.message}`);
       buffer.push(...rows);
       console.log(`[ebos] NSN ${nsn}: ${items.length} line items → ${rows.length} day-rows`);
       if (buffer.length >= 500) await flush();
@@ -600,15 +614,6 @@ async function main() {
   }
   const { rows, log: pwLog } = pwResult;
 
-  let totalSaved = 0;
-  for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500);
-    const { error } = await withRetry(() => supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' }), { label: 'qsr_ebos_daily upsert' });
-    if (error) console.error('[supabase] upsert error:', error.message);
-    else totalSaved += batch.length;
-  }
-  console.log(`[ebos-pull] done — ${rows.length} store-days aggregated, ${totalSaved} rows saved to qsr_ebos_daily`);
-
   // #263: pullViaPlaywright's per-store loop runs inside the browser (page.evaluate) and
   // can't reach this process's tracker directly -- it logs "NSN X error:"/"NSN X HTTP NNN"
   // into the `log` array instead (already printed above as "[ebos] ..."), which this
@@ -618,6 +623,28 @@ async function main() {
     const m = /^NSN (\d+) (?:error|HTTP)/.exec(msg);
     if (m) failedNsns.push(m[1]);
   }
+
+  // Same stale-day clear as runWithToken (see its own comment for the Mossy Head finding this
+  // fixes) -- scoped to stores that actually fetched successfully this run (excluding failedNsns),
+  // same safety rule: never clear a store's data on the strength of a fetch we know failed.
+  const clearedLocs = STORE_NSNS.filter(n => !failedNsns.includes(String(n))).map(n => String(n).padStart(7, '0'));
+  if (clearedLocs.length) {
+    const { error: clearErr } = await withRetry(
+      () => supabase.from('qsr_ebos_daily').delete().in('loc', clearedLocs).gte('date', startDate).lte('date', endDate),
+      { label: 'qsr_ebos_daily stale-day clear' },
+    );
+    if (clearErr) console.error(`[ebos] stale-day clear error: ${clearErr.message}`);
+  }
+
+  let totalSaved = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const batch = rows.slice(i, i + 500);
+    const { error } = await withRetry(() => supabase.from('qsr_ebos_daily').upsert(batch, { onConflict: 'loc,date' }), { label: 'qsr_ebos_daily upsert' });
+    if (error) console.error('[supabase] upsert error:', error.message);
+    else totalSaved += batch.length;
+  }
+  console.log(`[ebos-pull] done — ${rows.length} store-days aggregated, ${totalSaved} rows saved to qsr_ebos_daily`);
+
   const tracker = makeOutcomeTracker('ebos-pull');
   for (const nsn of failedNsns) tracker.fail(nsn, 'see [ebos] log above');
   const code = tracker.finalize({
