@@ -26,6 +26,7 @@ import * as React from 'react';
 import { cycleCompliance, cycleSummary, WEEKLY_CLASSES, CLASSES, formatWeeklyComplianceReport } from '../engine/count-cycle.js';
 import { sName } from '../constants.js';
 import { createEomShareLink } from '../lib/supabase.js';
+import { shareOrCopy } from '../utils/share.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -160,8 +161,10 @@ export function CountCycleSection({ rows, period }) {
       });
       if (error || !token) { setShareMsg(`Share failed: ${error || 'no token'}`); return; }
       const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
-      try { await navigator.clipboard.writeText(url); setShareMsg(`✓ Read-only link copied — ${name}`); }
-      catch { setShareMsg(`✓ Link (copy it): ${url}`); }
+      const result = await shareOrCopy({ url, title: `Count Cycle — ${name}`, text: `Count Cycle report for ${name}` });
+      if (result.cancelled) { setShareMsg(''); }
+      else if (result.ok) { setShareMsg(result.method === 'share' ? `✓ Shared — ${name}` : `✓ Read-only link copied — ${name}`); }
+      else { setShareMsg(`✓ Link (copy it): ${url}`); }
     } catch (e) { setShareMsg(`Share failed: ${e?.message || e}`); }
     finally { setShareBusyLoc(null); }
   }, []);
