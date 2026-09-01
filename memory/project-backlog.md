@@ -208,16 +208,31 @@ office program, etc. Is this a possibility in this environment?"*
 primitive.** It hands text, a URL, or actual files (PDF/CSV/image — construct real `File` objects)
 to the OS's native share sheet, which routes to whatever the user has registered (Messages, Mail,
 Notes, WhatsApp, AirDrop, a second app). Requires HTTPS (already true, Vercel) + a user gesture
-(a click handler — already true for every existing print/export button). **Not yet measured in
-this repo**, so re-check before scoping: browser support is real but uneven — strong on iOS
-Safari/Android Chrome (where most GMs likely open Meridian), partial on desktop Chrome/Edge
-(url+text yes, files OS-dependent), **absent on desktop Firefox**. So this is a progressive
-enhancement, not a replacement: feature-detect `navigator.share`/`navigator.canShare` and offer it
-alongside today's print/CSV/copy/email paths, not instead of them — a `RoutePanelShell`-level
-"Share" action that falls back to the existing per-panel affordance when unsupported would unify
-the UI without breaking desktop admins. Good candidate to scope as its own dispatch once the
-current EOM-reports batch (#227) and the recount-impact SAGE tool (#226) land — not scoped or
-built yet, logged here so it isn't lost.
+(a click handler — already true for every existing print/export button). Browser support is real
+but uneven — strong on iOS Safari/Android Chrome (where most GMs likely open Meridian), partial on
+desktop Chrome/Edge (url+text yes, files OS-dependent), **absent on desktop Firefox**. So this is a
+progressive enhancement, not a replacement: feature-detect `navigator.share`/`navigator.canShare`
+and offer it alongside today's print/CSV/copy/email paths, not instead of them.
+
+**⚠️ PARTIALLY shipped 2026-09-01 (v5.309) — do not read this as "done."** The primitive itself is
+now proven and live: `src/utils/share.js`'s `shareOrCopy({url,title,text})` tries
+`navigator.share()` first, treats a user-cancelled OS sheet (`AbortError`) as a normal cancel, and
+falls back to clipboard-copy exactly as before everywhere `navigator.share` is unavailable. But it
+is wired into exactly **two pre-existing, narrow "🔗 Share" LINK-copy buttons** — Count Cycle's
+weekly share link and EOM Scoreboard's share link — which already existed and already shared one
+thing (a URL). It does **not** touch anything else.
+**The actual ask this backlog entry describes — a single, panel-agnostic `RoutePanelShell`-level
+"Share" control that rolls up print/export/save/share for ANY panel app-wide, not just those two
+link buttons — is still NOT built.** Confirmed 2026-09-01: the owner asked "where do I find that
+[app-wide] share feature" after the narrow version shipped and it doesn't exist. Every other
+print/export/copy button across the app (Missing Items, Recount Impact, Supervisor Rollup, FOB
+Report, etc.) is untouched by this — still their own separate print/CSV/copy affordances, per
+`memory/panel-contract.md`'s close-button/date-picker/LocationSelector-style per-panel conventions,
+not a unified control. Scoping the real ask is still open work: what "current panel" means for a
+generic export (screenshot? the panel's own existing HTML/CSV export, handed to
+`navigator.share({files})` instead of a download?), which panels get it first, and whether it lives
+in `RoutePanelShell`'s chrome (available to all 13 `route:true` panels for free) or has to be
+added per-panel like print already is.
 
 ## Idea logged for later (2026-08-31, owner) — link cash controls to food cost / FOB reporting
 
