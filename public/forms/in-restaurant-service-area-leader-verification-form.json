@@ -1,0 +1,352 @@
+{
+  "formId": "7ba0b635-ede3-472b-a018-9ee15277acfe",
+  "title": "In-Restaurant Service Area Leader Verification Form",
+  "description": "In-Restaurant Service Area Leader Verification Form",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-27T16:21:28.204Z",
+  "itemCount": 42,
+  "sections": [
+    {
+      "title": "In-Restaurant Service Area Leader Verification Form",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Name",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Coach",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Image Display",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Basic Information",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Targets Determine 2-3 targets to measure, and set the goals for the shift:",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Time",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Targets",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Plan For The Shift",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "1. Communicates with the Shift Leader regarding people, equipment and products",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2. Completes travel path and Pre-Shift checklist",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "3. Sets and communicates targets and expectations",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "4. Positions accordingly (DSPT recommended) and McDelivery, curbside runner identified",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "5. Communicates secondary duties and promotional information to crew on shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "6. Ensures crew has the necessary supplies when delivering curbside or parked orders (safety vest, condiments, etc.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "7. Ensures Guest Experience Leader (GEL) is in position",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "8. Ability to demonstrate procedures for a product outage",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Leading the Area",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "9. Monitors and communicates progress toward targets throughout the shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "10. Observes and provides feedback to ensure correct procedures",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "11. Identifies, prioritizes, and solves problems effectively",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "12. Creates Feel Good Moments with guests and employees",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "13. Ensures the GEL is engaging with guests",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "14. Follows the customer recovery process when necessary",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "15. Table touch backs (after food has been delivered) are completed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "16. Maintains proper positioning including with digital and delivery, crew repositioned to meet customer demand",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "17. Prioritizes to eliminate any potential risk to customer or crew safety",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "18. Positioned to focus attention on entire service and dining area",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "19. Role model and coach the team to deliver on the hospitality Make it Promise throughout the shift. Provides feedback as needed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "20. Digital executed effectively",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "21. Maintains shift cleanliness/sanitation",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "22. Demonstrates basic people skills/please and thank you",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "23. Responds to danger zones accordingly to ensure a positive customer experience",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "24. Curbside executed according to standard",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "25. McDelivery executed according to standard including tablets on-line",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Post Shift Analysis",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "26. Communicates with Shift Leader and seeks feedback",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "27. Compares results to targets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "28. Resolves or communicates issues before leaving shift",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "29. Gives feedback and recognition to service and dining area teams",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Score Summary",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Total Critical Behaviors Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Points",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Schedule Another Verification",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Feedback",
+          "lines": 3
+        }
+      ]
+    },
+    {
+      "title": "Signatures",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Coach Signature",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Learner Signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

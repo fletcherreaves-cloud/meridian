@@ -1,0 +1,285 @@
+{
+  "formId": "9a23b939-1833-494c-83a6-423aacefebb2",
+  "title": "Daily General Manager Routine",
+  "description": "Daily General Manager Routine",
+  "category": "",
+  "lastEditedAt": "2026-04-02T15:28:22.295Z",
+  "itemCount": 43,
+  "sections": [
+    {
+      "title": "Daily General Manager Routine",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Tasks Checklist",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Conduct Food Safety/Ecosure Travel Path #1",
+          "options": [
+            "Completed"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Food Safety Path #1)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Food Safety Path #1)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Conduct Food Safety/Ecosure Travel Path #2",
+          "options": [
+            "Completed"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Food Safety Path #2)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Food Safety Path #2)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Review Previous Day Time Punches, address any Violations",
+          "options": [
+            "Completed No violations found",
+            "Violations found"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Identify Hours that were not scheduled/people that clocked in early and address with management team",
+          "options": [
+            "Completed No violation found",
+            "No violations found"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Identify Overtime opportunities and eliminate the overtime",
+          "options": [
+            "Completed No violation found",
+            "No violations found"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Time Punch Review)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Time Punch Review)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Look ahead at the next day Schedule Review DSPTs for next 24 hours",
+          "options": [
+            "Looked ahead at next day schedule",
+            "Reviewed DSPTs for next 24 hours"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed identify Overtime opportunities and eliminate the overtime",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials identify Overtime opportunities and eliminate the overtime",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Review Cash Opportunities from previous day and validate deposits",
+          "options": [
+            "Reviewed cash opportunities from previous day",
+            "Validated deposits"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Cash Management)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials Time Completed (Cash Management)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Observe and Coach on procedures during food safety  Food Safety Coaching",
+          "options": [
+            "Observed and coached on procedures during food safety"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Food Safety Coaching)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Food Safety Coaching)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Follow Up on Breakfast Peak Results and Coach Opportunities",
+          "options": [
+            "Followed up on breakfast peak results",
+            "Coached on opportunities identified"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Breakfast Peak Follow-Up)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Breakfast Peak Follow-Up)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Maintenance Calendar",
+          "options": [
+            "Followed up on planned maintenance calendar"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Maintenance Calendar)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Maintenance Calendar)",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Peak Performance Support",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Peak Support Activities",
+          "options": [
+            "Supported during peak period",
+            "Flexed in/out of position",
+            "Coached shift managers for performance"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Shift Manager Observed",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Strengths Observed",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "Opportunities Identified",
+          "lines": 3
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Peak Support)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Peak Support)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Banking Activities",
+          "options": [
+            "Took deposits to the bank",
+            "Obtained change",
+            "Reviewed coverage for next day"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Banking Activities)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Banking Activities)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Follow Up on Lunch Peak Results and Coach Opportunities",
+          "options": [
+            "Followed up on lunch peak results",
+            "Coached on opportunities identified"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Lunch Peak Follow-Up)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Lunch Peak Follow-Up)",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Review crew schedules /truck order/ inventory/ waste counts",
+          "options": [
+            "Reviewed crew schedules",
+            "Reviewed truck order",
+            "Reviewed inventory",
+            "Reviewed waste counts"
+          ]
+        },
+        {
+          "kind": "field",
+          "title": "Time Completed (Operations Review)",
+          "field": "time"
+        },
+        {
+          "kind": "text",
+          "title": "Initials (Operations Review)",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Additional Comments",
+          "lines": 3
+        }
+      ]
+    }
+  ]
+}

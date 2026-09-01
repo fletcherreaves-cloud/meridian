@@ -1,0 +1,323 @@
+{
+  "formId": "af2c43a5-2416-4f51-ba78-8377bea88745",
+  "title": "EA Breakfast PS",
+  "description": "Breakfast Pre-shift",
+  "category": "EA Forms",
+  "lastEditedAt": "2026-08-19T11:36:25.398Z",
+  "itemCount": 37,
+  "sections": [
+    {
+      "title": "",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Today's Date",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Time of Pre-shift",
+          "field": "time"
+        }
+      ]
+    },
+    {
+      "title": "Outside Area",
+      "color": "pink-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Parking lot, DT lane, landscaping, and flag clean and guest ready?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT menu board, COD, windows, and doors clean?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Rate the overall appearance of the outside of the restaurant from a customers perspective?",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Lobby and Restrooms",
+      "color": "blue-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Lobby, tables, chairs, and beverage station is clean and stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Restrooms clean, stocked, and guest ready?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Front Counter clean and stocked from guest perspective?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "POS, Kiosks, monitors, card readers, and receipt paper working?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Service Areas",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Rate Service Crew Personal Appearance",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Coffee, desserts, McCafe products, and syrups within hold times and stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Condiments, bags, cups, carriers, toys, and utensils stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Floors clean and refrigerators have thermometers?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Espresso station, beans, milk, syrups, whipped cream, and ice stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Smoothie/Frappe station clean and withing hold times?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Headsets charged and breakfast peak positions assigned?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "How many headsets and batteries are in use?",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "Presenter/Cashier/Order Takers are greeting guest by name/smile and embracing a friendly/hospitality environment?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT Windows, monitors, bump bars, and printers are clean, stocked, and working?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "HLZ, cups, lids, straws, napkins, condiments, and DT cart stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Park runner and curbside setup ready for peak?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Production Area",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Fry station clean with correct oil levels?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Fry products, bags, cartons, scoops, salt, and hopper stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "E-Production being followed?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Lunch prep completed, dated, and within code?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Food safety, sanitizer buckets, and handwashing supplies ready?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "UHC levels, timers, and cabinets clean and functioning?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Grills, utensils, teflons, butter sprayers, and tools in good condition?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Breakfast/Lunch tables stocked with proper dates and codes?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Production Area clean and ready for peak?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Back of House Area",
+      "color": "pink-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Three-compartment sink/warewasher set up correctly and hand sinks stocked?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Walk-in cooler, freezer, and dry storage clean with products in date?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coke, CO2, and beverage inventory ready for peak?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Shift Management Items",
+      "color": "grey-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "DSPG completed and all crew assigned to their spots?",
+          "options": [
+            "YES",
+            "NO"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Add DSPG here:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Shift Targets",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

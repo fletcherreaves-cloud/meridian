@@ -1,5 +1,285 @@
 [
   {
+    "slug": "2025-curbside-behind-the-counter",
+    "title": "2025 Curbside & Behind the Counter",
+    "formId": "7db78fc4-53ff-4b9d-af4f-ab9559be3031",
+    "category": "2025 Operations Forms",
+    "itemCount": 28,
+    "lastEditedAt": "2026-08-18T20:34:11.709Z"
+  },
+  {
+    "slug": "2026-behind-the-counter",
+    "title": "2026 Behind the Counter",
+    "formId": "b57be0f9-8df2-4467-aa78-48067f30f1a8",
+    "category": "2026 Operations Forms",
+    "itemCount": 14,
+    "lastEditedAt": "2025-12-02T20:54:36.189Z"
+  },
+  {
+    "slug": "2026-calibration-worksheet-for-gold-standard-quality-products",
+    "title": "2026 Calibration Worksheet for Gold Standard Quality Products",
+    "formId": "9d375034-74f4-405b-ac8a-c8b8f1415f29",
+    "category": "2026 Operations Forms",
+    "itemCount": 448,
+    "lastEditedAt": "2025-12-18T14:57:58.662Z"
+  },
+  {
+    "slug": "2026-curbside-behind-the-counter",
+    "title": "2026 Curbside & Behind the Counter",
+    "formId": "bc9fd66b-0834-43e8-9fa3-dff0a01a0ec3",
+    "category": "2026 Operations Forms",
+    "itemCount": 28,
+    "lastEditedAt": "2026-01-14T22:39:52.500Z"
+  },
+  {
+    "slug": "2026-delivery-behind-the-counter",
+    "title": "2026 Delivery & Behind the Counter",
+    "formId": "4e8101f2-1e34-447f-841d-f947d6cbc8ad",
+    "category": "2026 Operations Forms",
+    "itemCount": 29,
+    "lastEditedAt": "2025-12-03T20:36:01.024Z"
+  },
+  {
+    "slug": "2026-drive-thru-behind-the-counter-customer-first",
+    "title": "2026 Drive-Thru & Behind the Counter Customer First",
+    "formId": "36582d07-8264-4aae-b185-837801798e7d",
+    "category": "2026 Operations Forms",
+    "itemCount": 32,
+    "lastEditedAt": "2025-12-02T20:55:46.231Z"
+  },
+  {
+    "slug": "2026-in-restaurant-behind-the-counter",
+    "title": "2026 In Restaurant & Behind the Counter",
+    "formId": "cad58ed6-0201-46c4-b9f7-883e956f9907",
+    "category": "2026 Operations Forms",
+    "itemCount": 33,
+    "lastEditedAt": "2025-12-03T23:10:10.249Z"
+  },
+  {
+    "slug": "2026-u-s-nrbes",
+    "title": "2026 U.S.NRBES",
+    "formId": "2f6a0746-3e27-4ff5-82a6-0b96ab2e8fa0",
+    "category": "2026 Operations Forms",
+    "itemCount": 236,
+    "lastEditedAt": "2026-02-05T14:49:44.272Z"
+  },
+  {
+    "slug": "breakfast-pre-shift",
+    "title": "Breakfast Pre-Shift",
+    "formId": "03b62c8f-709c-4b11-ab90-5ffaa03fa989",
+    "category": "Shift Management Forms ",
+    "itemCount": 94,
+    "lastEditedAt": "2026-06-23T19:47:42.256Z"
+  },
+  {
+    "slug": "cash-audit",
+    "title": "Cash Audit",
+    "formId": "181ee7ac-88c4-49a0-bd82-0e0e6d9501ab",
+    "category": "Forms",
+    "itemCount": 26,
+    "lastEditedAt": "2026-02-24T19:36:22.932Z"
+  },
+  {
+    "slug": "cash-audit-legacy-copy",
+    "title": "Cash Audit (legacy) (Copy)",
+    "formId": "311931c4-32e8-48e5-8232-0fe9def9563a",
+    "category": "Legacy",
+    "itemCount": 24,
+    "lastEditedAt": "2026-01-12T12:47:17.706Z"
+  },
+  {
+    "slug": "chicken-health-check",
+    "title": "Chicken Health Check",
+    "formId": "ec00f3ec-d8ab-4963-8e54-7ca4e004a8d2",
+    "category": "2026 Operations Forms",
+    "itemCount": 47,
+    "lastEditedAt": "2026-01-22T13:16:40.266Z"
+  },
+  {
+    "slug": "chicken-hot-honey-coaching-visit",
+    "title": "Chicken Hot Honey Coaching Visit",
+    "formId": "fef0cffa-2260-419e-9be5-94d723130b3a",
+    "category": "2026 Operations Forms",
+    "itemCount": 29,
+    "lastEditedAt": "2026-01-22T13:19:16.831Z"
+  },
+  {
+    "slug": "coca-cola-temperature-check",
+    "title": "Coca-Cola Temperature Check",
+    "formId": "311d0ba0-3d77-4363-a2c4-16537a1bd30a",
+    "category": "2026 Operations Forms",
+    "itemCount": 4,
+    "lastEditedAt": "2025-12-03T23:03:45.793Z"
+  },
+  {
+    "slug": "crew-performance-review",
+    "title": "Crew Performance Review",
+    "formId": "e871889c-6cef-41e0-9826-fe80a76ce8f8",
+    "category": "People Development",
+    "itemCount": 34,
+    "lastEditedAt": "2026-09-01T21:25:23.553Z"
+  },
+  {
+    "slug": "daily-general-manager-routine",
+    "title": "Daily General Manager Routine",
+    "formId": "9a23b939-1833-494c-83a6-423aacefebb2",
+    "category": "Forms",
+    "itemCount": 43,
+    "lastEditedAt": "2026-04-02T15:28:22.295Z"
+  },
+  {
+    "slug": "daily-shift-recap",
+    "title": "Daily Shift Recap",
+    "formId": "dee945a7-9498-4a4a-aba2-7ae054a82793",
+    "category": "Forms",
+    "itemCount": 14,
+    "lastEditedAt": "2026-04-02T15:28:32.268Z"
+  },
+  {
+    "slug": "dinner-pre-shift",
+    "title": "Dinner Pre-Shift",
+    "formId": "53b82156-65f4-4004-9eab-c9c9a97cfd64",
+    "category": "Shift Management Forms ",
+    "itemCount": 94,
+    "lastEditedAt": "2026-06-23T19:47:03.535Z"
+  },
+  {
+    "slug": "drive-thru-area-leader-verification-form",
+    "title": "Drive Thru Area Leader Verification Form",
+    "formId": "51b60c01-e041-4caa-b4a5-ec8eda261051",
+    "category": "2026 Operations Forms",
+    "itemCount": 37,
+    "lastEditedAt": "2026-01-27T16:43:06.985Z"
+  },
+  {
+    "slug": "dt-shop-2026",
+    "title": "DT Shop 2026",
+    "formId": "f37c6515-6f29-41d5-8887-3376dbf69271",
+    "category": "2026 Operations Forms",
+    "itemCount": 16,
+    "lastEditedAt": "2025-12-03T21:31:54.404Z"
+  },
+  {
+    "slug": "ea-breakfast-ps",
+    "title": "EA Breakfast PS",
+    "formId": "af2c43a5-2416-4f51-ba78-8377bea88745",
+    "category": "EA Forms",
+    "itemCount": 37,
+    "lastEditedAt": "2026-08-19T11:36:25.398Z"
+  },
+  {
+    "slug": "ea-dinner-ps",
+    "title": "EA Dinner PS",
+    "formId": "55e8846f-bbcd-4129-a05a-85c964bec805",
+    "category": "EA Forms",
+    "itemCount": 36,
+    "lastEditedAt": "2026-08-19T11:36:36.159Z"
+  },
+  {
+    "slug": "ea-lunch-ps",
+    "title": "EA Lunch PS",
+    "formId": "9f09c80c-436f-4c26-93d6-85198bd1da0e",
+    "category": "EA Forms",
+    "itemCount": 36,
+    "lastEditedAt": "2026-08-19T11:36:48.395Z"
+  },
+  {
+    "slug": "food-safety-visit-2026-tasks",
+    "title": "Food Safety Visit 2026 Tasks",
+    "formId": "aab68cfc-1384-46b5-bcd4-1625903d491f",
+    "category": "2026 Operations Forms",
+    "itemCount": 46,
+    "lastEditedAt": "2026-07-09T16:09:25.934Z"
+  },
+  {
+    "slug": "food-safety-visit-2026tasks",
+    "title": "Food Safety Visit 2026Tasks",
+    "formId": "449fb837-e909-45ba-b725-abe6418aae4e",
+    "category": "2026 Operations Forms",
+    "itemCount": 45,
+    "lastEditedAt": "2025-12-04T14:54:49.773Z"
+  },
+  {
+    "slug": "general-manager-weekly-scorecard",
+    "title": "General Manager Weekly Scorecard",
+    "formId": "11129fb6-2964-49c7-9658-a2fd49e7a123",
+    "category": "Forms",
+    "itemCount": 42,
+    "lastEditedAt": "2026-04-02T15:28:41.254Z"
+  },
+  {
+    "slug": "gm-department-cleanliness-checklist",
+    "title": "GM Department Cleanliness Checklist",
+    "formId": "0d94e01c-2faa-4e17-88ff-9568b957c133",
+    "category": "Forms",
+    "itemCount": 58,
+    "lastEditedAt": "2026-04-02T15:28:54.673Z"
+  },
+  {
+    "slug": "gm-department-pm-tasks",
+    "title": "GM Department PM Tasks",
+    "formId": "f9a04fa1-ca0c-4994-b34a-d19c94f31ce5",
+    "category": "Forms",
+    "itemCount": 31,
+    "lastEditedAt": "2026-04-02T15:29:04.349Z"
+  },
+  {
+    "slug": "guest-service-department-cleanliness-checklist",
+    "title": "Guest Service Department Cleanliness Checklist",
+    "formId": "2aa37e31-3e66-42bf-9a08-d20bb2bd01df",
+    "category": "Forms",
+    "itemCount": 56,
+    "lastEditedAt": "2026-04-02T15:29:19.513Z"
+  },
+  {
+    "slug": "guest-service-department-weekly-scorecard",
+    "title": "Guest Service Department Weekly Scorecard",
+    "formId": "60ed276a-830c-475f-a1ad-7e60f8879fca",
+    "category": "Forms",
+    "itemCount": 38,
+    "lastEditedAt": "2026-04-02T15:29:31.357Z"
+  },
+  {
+    "slug": "in-restaurant-service-area-leader-verification-form",
+    "title": "In-Restaurant Service Area Leader Verification Form",
+    "formId": "7ba0b635-ede3-472b-a018-9ee15277acfe",
+    "category": "2026 Operations Forms",
+    "itemCount": 42,
+    "lastEditedAt": "2026-01-27T16:21:28.204Z"
+  },
+  {
+    "slug": "kitchen-health-check-2026",
+    "title": "Kitchen Health Check 2026",
+    "formId": "fb001ba7-6a61-449e-b4ac-e88798cfed25",
+    "category": "2026 Operations Forms",
+    "itemCount": 36,
+    "lastEditedAt": "2026-04-01T16:49:51.574Z"
+  },
+  {
+    "slug": "lunch-pre-shift",
+    "title": "Lunch Pre-Shift",
+    "formId": "c05039b1-3777-454e-95d8-7845a581750b",
+    "category": "Shift Management Forms ",
+    "itemCount": 94,
+    "lastEditedAt": "2026-06-23T19:47:59.361Z"
+  },
+  {
+    "slug": "maintenance-performance-review",
+    "title": "Maintenance Performance Review",
+    "formId": "f5db38ec-1293-43b1-9e3f-72da685a4acc",
+    "category": "People Development",
+    "itemCount": 34,
+    "lastEditedAt": "2026-02-04T17:04:57.237Z"
+  },
+  {
+    "slug": "peak-shift-performance-verification-tool",
+    "title": "Peak Shift Performance Verification Tool",
+    "formId": "25113a52-36eb-4f4c-82c0-d659dfb03867",
+    "category": "People Development",
+    "itemCount": 116,
+    "lastEditedAt": "2025-10-08T14:46:52.542Z"
+  },
+  {
     "slug": "pre-shift-checklist-breakfast",
     "title": "Pre-Shift Checklist Breakfast",
     "formId": "79d7dc35-eb18-4981-b2ff-632875fe0e0a",
@@ -46,6 +326,78 @@
     "category": "Shift Management Forms ",
     "itemCount": 176,
     "lastEditedAt": "2025-10-30T00:23:18.420Z"
+  },
+  {
+    "slug": "production-area-leader-verification-form",
+    "title": "Production Area Leader Verification Form",
+    "formId": "6fcde883-ad87-4201-96c5-8025ab30401b",
+    "category": "2026 Operations Forms",
+    "itemCount": 41,
+    "lastEditedAt": "2026-01-27T16:21:46.185Z"
+  },
+  {
+    "slug": "reb-bull-tracking-form",
+    "title": "Reb Bull Tracking Form",
+    "formId": "deb2c901-e51f-447f-af7c-a278f44fdb41",
+    "category": "Shift Management Forms ",
+    "itemCount": 9,
+    "lastEditedAt": "2026-08-07T20:25:54.338Z"
+  },
+  {
+    "slug": "rgrv-food-safety-visit-2026-tasks",
+    "title": "RGRV Food Safety Visit 2026 Tasks",
+    "formId": "b7cb5424-ad7a-4e84-b4fe-c7b6de0a1a48",
+    "category": "2026 Operations Forms",
+    "itemCount": 45,
+    "lastEditedAt": "2025-12-04T14:53:42.807Z"
+  },
+  {
+    "slug": "rgrv-health-safety-2026",
+    "title": "RGRV Health & Safety 2026",
+    "formId": "63254f6b-0875-48c6-9d44-4f4bf66a946a",
+    "category": "2026 Operations Forms",
+    "itemCount": 37,
+    "lastEditedAt": "2025-12-04T15:47:03.750Z"
+  },
+  {
+    "slug": "rgrv-qsc-visit-2026",
+    "title": "RGRV QSC Visit 2026",
+    "formId": "79718e75-7ae3-46ee-99ce-75a830330831",
+    "category": "2026 Operations Forms",
+    "itemCount": 119,
+    "lastEditedAt": "2025-12-05T13:51:14.078Z"
+  },
+  {
+    "slug": "rgrv-shift-mgt-2026",
+    "title": "RGRV Shift Mgt. 2026",
+    "formId": "92df2087-cf2f-431c-922f-395323d4e513",
+    "category": "2026 Operations Forms",
+    "itemCount": 14,
+    "lastEditedAt": "2025-12-04T15:20:27.478Z"
+  },
+  {
+    "slug": "shift-leader-performance-verification-tool",
+    "title": "Shift Leader Performance Verification Tool",
+    "formId": "cae9970e-c127-4e79-a339-3e0d7484fa03",
+    "category": "2026 Operations Forms",
+    "itemCount": 89,
+    "lastEditedAt": "2026-01-27T16:21:59.176Z"
+  },
+  {
+    "slug": "specialty-beverage-coaching-visit",
+    "title": "Specialty Beverage Coaching Visit",
+    "formId": "e56c70f4-57a5-4758-bab0-1ee4c73ad262",
+    "category": "2026 Operations Forms",
+    "itemCount": 25,
+    "lastEditedAt": "2026-05-06T17:34:25.841Z"
+  },
+  {
+    "slug": "supervisor-s-cleanliness-checklist-2027-new",
+    "title": "Supervisor's Cleanliness Checklist 2027 new",
+    "formId": "9881ed36-8a0d-48ac-80c8-86e0333e26b5",
+    "category": "2026 Operations Forms",
+    "itemCount": 69,
+    "lastEditedAt": "2026-08-08T18:03:16.375Z"
   },
   {
     "slug": "travel-path-no-play-place",

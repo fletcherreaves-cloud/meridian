@@ -1,0 +1,252 @@
+{
+  "formId": "e56c70f4-57a5-4758-bab0-1ee4c73ad262",
+  "title": "Specialty Beverage Coaching Visit",
+  "description": "Specialty Beverage Coaching Visit",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-05-06T17:34:25.841Z",
+  "itemCount": 25,
+  "sections": [
+    {
+      "title": "Specialty Beverage Coaching Visit",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "NSN",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Drive Thru & Mobile App",
+      "color": "blue-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "1. Drive Thru: Did the order taker (or auto greeter) ask if you're using the Mobile App today?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "2. Mobile App: Did the order taker use your name?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Customer Service & Knowledge",
+      "color": "teal-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "3. Drive Thru or Front Counter: Are the crew able to describe what comes in your selected beverage?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "4. Drive Thru or Front Counter: Are the crew able to answer that the Beverages can come in an EVM?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Curbside Service",
+      "color": "cyan-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "5. Curbside: Were crew using safety vest and apron/caddy for condiments?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "6. Curbside: Were you greeted by name and confirmed you had everything you needed?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Product Quality & Marketing",
+      "color": "purple-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "7. Was your Beverage Gold Standard? (Taste, Appearance, Beverage Sticker, Sip Lid)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "8. Are the Beverage promo materials displayed? (Digital Elements: Digital Pre-Browse, ODMB, IDMB, Self-Ordering Kiosk. Print Elements: Print In-Store Kiosk, Window Posters (2), Register Topper)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Station Setup & Organization",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "9. Is the service reminder posted by each POS and is the station guide posted in the beverage cell?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "10. Is the beverage cell set up to Be Well Served?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Temperature Control",
+      "color": "pink-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "11. Is the in-use Lemonade Refresher Base stored at <40 degrees?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "12. Is the ABS/Crew Pour dispensing CSD <40 degrees?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "13. Is the Fisher Water Valve dispensing water at <40 degrees?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Preparation Procedures",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "14. Are crew stirring refreshers and iced coffee 6 times after adding ice?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "15. Are Lemonade Refresher Base Cambros programmed on eProduction?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Ingredient Storage & Shelf Life",
+      "color": "warning-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "16. Are all new beverage ingredients stored within the correct primary shelf life?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "17. Are all in-use beverage ingredients labeled with the correct secondary shelf life?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Equipment & Staffing",
+      "color": "grey-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "18. Is the restaurant utilizing the new ice scoop for all beverages?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "19. Does the restaurant have a dedicated Beverage Specialist staffed and positioned?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Additional Comments",
+          "lines": 3
+        },
+        {
+          "kind": "text",
+          "title": "New Image Display",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

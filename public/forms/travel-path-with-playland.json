@@ -8,6 +8,7 @@
   "sections": [
     {
       "title": "Travel Path Checklist",
+      "color": "blue-low",
       "items": [
         {
           "kind": "text",
@@ -23,6 +24,7 @@
     },
     {
       "title": "Exterior Lot , Corral & DT",
+      "color": "pink-high",
       "items": [
         {
           "kind": "check",

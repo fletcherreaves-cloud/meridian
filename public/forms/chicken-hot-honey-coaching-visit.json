@@ -1,0 +1,270 @@
+{
+  "formId": "fef0cffa-2260-419e-9be5-94d723130b3a",
+  "title": "Chicken Hot Honey Coaching Visit",
+  "description": "Hot Honey Coaching Visit",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2026-01-22T13:19:16.831Z",
+  "itemCount": 29,
+  "sections": [
+    {
+      "title": "Hot Honey Coaching Visit",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "field",
+          "title": "Visit Date",
+          "field": "date"
+        },
+        {
+          "kind": "text",
+          "title": "Restaurant Location",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Across the Counter Questions",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Did you place your order using the Mobile App?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was the Hot Honey flavor available to choose from for all items in the portfolio?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Did you order the LTO Snack Wrap?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Drive Thru: Did the order taker (or auto greeter) ask if you're using the Mobile App today?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Mobile App: Did the order taker use your name?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Which Hot Honey items did you order?",
+          "options": [
+            "Sausage Egg Biscuit",
+            "Snack Wrap LTO",
+            "McCrispy with Bacon",
+            "McCrispy without Bacon",
+            "McCrispy Strips",
+            "McNuggets"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Sausage Egg Biscuit: Was your sandwich Gold Standard?",
+          "options": [
+            "Yes",
+            "No",
+            "Did not order this item"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Snack Wrap LTO: Was your Snack Wrap Gold Standard?",
+          "options": [
+            "Yes",
+            "No",
+            "Did not order this item"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McCrispy with or w/o Bacon: Was your sandwich Gold Standard?",
+          "options": [
+            "Yes",
+            "No",
+            "Did not order this item"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McCrispy Strips: Were your McCrispy Strips Gold Standard?",
+          "options": [
+            "Yes",
+            "No",
+            "Did not order this item"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McNuggets: Were your McNuggets Gold Standard?",
+          "options": [
+            "Yes",
+            "No",
+            "Did not order this item"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter - Breakfast",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Was the ¼ oz red portion ring and yellow silicone handle cover \"breakfast\" attached to the Portion Pal for the sauce?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the butter at a creamy state vs liquified?",
+          "options": [
+            "Yes - creamy state",
+            "No - liquified"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the butter labeled with a 4 hour hold time?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are the crew using one dip of butter to brush four biscuits?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are the folded eggs labeled for 24-hour thaw in the walk-in cooler?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Proper amount of clarified butter used to cooked folded eggs?​\nApply 2 sweeping​ sprays for 12 eggs.​ Apply 3 sweeping sprays​ for 18 eggs",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Check folded egg quality:​Light yellow egg color with an​ irregular surface that has a moist​ scrambled egg texture and mild​ egg flavor.​\nFolded egg should have very minimal ​browning",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Are Moffat cabinet and UHC holding times being adhered to?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter - Rest of Day",
+      "color": "deep-orange-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Is the oil within the Quality standards on the color tube guide?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is crew waiting 30 seconds between dropping two baskets of McCrispy Strips in the same vat?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was the Hot Honey sauce stored and held at ambient temperature?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "At the prep table, was the open package of tortillas partially closed when not in use? Were the tortillas properly thawed?",
+          "options": [
+            "Yes to both",
+            "Package closed but tortillas not properly thawed",
+            "Tortillas thawed but package not closed",
+            "No to both"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Was the ½ oz blue portion ring attached to the Portion Pal for the sauce and the proper colored silicone handle cover (ranch-orange, spicy-red, LTO-blue)?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the open bag of Jalapeno Crisps marked with a 3-day secondary shelf life and closed properly and is the FFLS programmed for the 12 hour hold time on the prep table?",
+          "options": [
+            "Yes to both",
+            "Marked but not properly closed",
+            "Properly closed but not marked",
+            "No to both"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Is the green ½ oz. Spoon used to apply the Crispy Jalapenos?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Additional Comments",
+          "lines": 3
+        }
+      ]
+    }
+  ]
+}

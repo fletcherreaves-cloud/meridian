@@ -8,6 +8,7 @@
   "sections": [
     {
       "title": "Breakfast Pre-Shift Checklist",
+      "color": "danger-high",
       "items": [
         {
           "kind": "field",
@@ -28,10 +29,12 @@
     },
     {
       "title": "Check each item in the areas listed below and make note of priorities in the section provided.",
+      "color": "blue-high",
       "items": []
     },
     {
       "title": "Outside Guest Area:",
+      "color": "success-high",
       "items": [
         {
           "kind": "check",
@@ -118,6 +121,7 @@
     },
     {
       "title": "Guest & Lobby Area",
+      "color": "danger-high",
       "items": [
         {
           "kind": "check",
@@ -258,6 +262,7 @@
     },
     {
       "title": "Front Counter Area",
+      "color": "success-high",
       "items": [
         {
           "kind": "check",
@@ -417,6 +422,7 @@
     },
     {
       "title": "Front Counter Stock",
+      "color": "blue-high",
       "items": [
         {
           "kind": "check",
@@ -602,6 +608,7 @@
     },
     {
       "title": "McCafe Area",
+      "color": "danger-high",
       "items": [
         {
           "kind": "check",
@@ -652,6 +659,7 @@
     },
     {
       "title": "McCafe Stock",
+      "color": "danger-high",
       "items": [
         {
           "kind": "check",
@@ -711,6 +719,7 @@
     },
     {
       "title": "Drive Thru Area",
+      "color": "blue-high",
       "items": [
         {
           "kind": "check",
@@ -824,6 +833,7 @@
     },
     {
       "title": "Drive Thru/ABS Stock",
+      "color": "success-high",
       "items": [
         {
           "kind": "check",
@@ -910,6 +920,7 @@
     },
     {
       "title": "FRY STATION",
+      "color": "blue-high",
       "items": [
         {
           "kind": "check",
@@ -996,6 +1007,7 @@
     },
     {
       "title": "Prep:",
+      "color": "purple-high",
       "items": [
         {
           "kind": "check",
@@ -1082,6 +1094,7 @@
     },
     {
       "title": "Production Area",
+      "color": "success-high",
       "items": [
         {
           "kind": "check",
@@ -1375,6 +1388,7 @@
     },
     {
       "title": "Back Sink, Hand Wash Sinks & Tea Brewing Area:",
+      "color": "danger-high",
       "items": [
         {
           "kind": "check",
@@ -1425,6 +1439,7 @@
     },
     {
       "title": "Walkin, Freezer & Dry Storage",
+      "color": "blue-high",
       "items": [
         {
           "kind": "check",
@@ -1493,6 +1508,7 @@
     },
     {
       "title": "Play Place Area:",
+      "color": "warning-high",
       "items": [
         {
           "kind": "check",
@@ -1543,6 +1559,7 @@
     },
     {
       "title": "Basic Shift Management",
+      "color": "danger-high",
       "items": [
         {
           "kind": "check",
@@ -1629,6 +1646,7 @@
     },
     {
       "title": "Priorities",
+      "color": "grey-low",
       "items": [
         {
           "kind": "text",

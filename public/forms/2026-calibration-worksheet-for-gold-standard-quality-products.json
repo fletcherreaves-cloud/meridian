@@ -1,0 +1,3408 @@
+{
+  "formId": "9d375034-74f4-405b-ac8a-c8b8f1415f29",
+  "title": "2026 Calibration Worksheet for Gold Standard Quality Products",
+  "description": "2026 Calibration Worksheet for Gold Standard Quality Products",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-18T14:57:58.662Z",
+  "itemCount": 448,
+  "sections": [
+    {
+      "title": "Calibration Worksheet for Gold Standard Quality Products",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "Fried Product fryers are calibrated Fried Product fryers meet recovery standards",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Filet-O-Fish ½ size filet basket",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting  3’40” or 220” sec",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 350°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "McChicken ½ size, slotted",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting  3’30” or 210” sec",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Nuggets 4 slotted segmented, 1 bag",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting  3’30” or 210” sec",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Crispy Chicken  ½ size, slotted",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting  6’55” or 415” sec",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "McCrispy Strips  ½ size, open basket",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting LOV:  6’00” or 360 sec. Non-LOV:  6’15’ or 375 sec.",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "French fryers are calibrated French fryers meet recovery standards",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Fryer #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’10”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 335°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryer #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’10”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 335°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryer #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’10”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 335°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryer #4",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’10”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 335°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryers used for Hash Browns calibrated properly",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Fryer #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’0”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryer #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’0”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryer #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’0”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Fryer #4",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Cook time setting 3’0”",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp 360°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Recovery Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Grills are calibrated",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Grill #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Front",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Middle",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rear",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Upper",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Grill #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Front",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Middle",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rear",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Upper",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Grill #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Front",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Middle",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rear",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Upper",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Grill #4",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Front",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Middle",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Grill #5",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Front",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Middle",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rear",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Upper",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Grill #6",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Front",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Middle",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Rear",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Upper",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "The Microwave (Q-ing) oven(s) is/are properly programmed and calibrated",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Oven #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Programmed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Calibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Programmed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Calibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Programmed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Calibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven #4",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Programed",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Calibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven(s) is/are calibrated properly and timers are correctly programmed for all oven products.",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Oven #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Pies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon (Combi Oven)  Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon Combi  Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi  Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Eggs Combi Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Pies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon (Combi Oven)  Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon Combi Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Egg Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Egg Combi  Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Pies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon (Combi Oven)  Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon Combi Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi  Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Eggs Combi Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Oven #4",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Pies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Pies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Biscuits Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "McGriddles Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Cookies Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon (Combi Oven)  Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Bacon (Combi Oven)  Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Round Eggs Combi Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Eggs Combi Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Folded Eggs Combi  Timer",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Are toasters setto the correcttoasttime and properly calibrated?",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Toaster #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "CorrectTime",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ProperlyCalibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Toaster #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "CorrectTime",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ProperlyCalibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Toaster #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "CorrectTime",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ProperlyCalibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Muffin/ Bagel Toaster",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "CorrectTime",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "ProperlyCalibrated",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Steamer(s) is/are calibrated properly including the steam cycle",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Steamer #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Steam Cycle Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Steamer #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Steam Cycle Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Steamer #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Steam Cycle Time",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "UHCs are calibrated and programmed correctly",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Breakfast Menu",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Simplified Breakfast Staging Cabinet settings are correct for holding times and temperature",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Holding Time 2 Hours",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temperature 160°F Air / 186°F Water",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Record the temperature of sausage  after one hour of placing it in cabinet  Is the temperature at or above 140° Y/N",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Juice dispenser(s) is/are properly calibrated and serving temperature is correct: 35°F to 45°F (2°C to 7°C)",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Dispenser in Drive-thru",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "5 parts water to 1 part concentrate",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Dispenser at Front Counter",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "5 parts water to 1 part concentrate",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Dispenser at Front Counter",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "5 parts water to 1 part concentrate",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Temp",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Brew/holding temperatures of coffee is correct. Water volume is properly calibrated",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Unit #1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Brew Temp 195°- 205°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Holding Temp 170°-180°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Decanter 60 fl. oz water",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Unit #2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Brew Temp 195°- 205°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Holding Temp 170°-180°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Decanter 60 fl. oz water",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Unit #3",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Brew Temp 195°- 205°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Holding Temp 170°-180°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Decanter 60 fl. oz water",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Unit #4",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Brew Temp 195°- 205°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Holding Temp 170°-180°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Decanter 60 fl. oz water",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Draw temperature on McCafé shakesis correct (22°F to 24°F)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Draw temperature on sundaesis correct (16°F to 18°F)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Softserve/sundae topping temperatures are correct (115°F to 125°F) or (46°C to 52°C) and volume (1 oz)",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Syrup ratio on shakes is correct ( 1 fluid ounce (+/-) 1/8 ounce in 7 seconds)",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Chocolate ____fl. oz in 7 seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Strawberry ____fl. oz in 7 seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Vanilla ____fl. oz in 7 seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Other ____fl. oz in 7 seconds",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "UHCs are calibrated and programmed correctly",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Regular  Menu",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Product",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temp",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Time",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Heated Landing Zone (HLZ) is calibrated to the correct temperature",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Unit #1 Side 1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Air 220°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Platen 160°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Unit #1Side 2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Air 220°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Platen 160°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Unit #2 Side 1",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Air 220°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Platen 160°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Unit #2 Side 2",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Air 220°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Platen 160°",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Dispenser/sauce guns are calibrated",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Ketchup 10:1 6 shots = 2 fl oz",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Dispenser 1",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 3",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 4",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Ketchup 4:1 6 shots = 3 fl oz",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Dispenser 1",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 3",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 4",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Mustard 45-50 shots = 1 fl  oz",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Dispenser 1",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 3",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 4",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Tartar Sauce 3 shots = 2 fl  oz",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Dispenser 1",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 3",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 4",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Big Mac  Sauce 6 shots = 2 fl  oz",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Dispenser 1",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 3",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 4",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Mayo 10 shots = 5  fl oz",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Dispenser 1",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 2",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 3",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Dispenser 4",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "McCafé Machine temperature and volume are calibrated properly",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Temp 165° - 175° - Temp Meets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Volume is correct as compared to PQRG – Volume Meets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Blended Ice Machine is calibrated properly",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Product & Ice calibration cylinders are available",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Volume is correct as compared to QRG – Ice Volume Meets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Product Volume Meets",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Drink tower(s)/ABS is/are properly calibrated for all beverages",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Tower/ABS in Drive-thru",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Completed by:",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date completed:",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Tower(s) at Front Counter",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Completed by:",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date completed:",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Tower(s) in lobby",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Completed by:",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date completed:",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Additional Tower(s)",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Completed by:",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date completed:",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "title": "Draw temperature for carbonated soft drinks is between 33°F to 36°F (1°C to 4°C)",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Tower/ABS in Drive-thru",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Coca-Cola Left",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coca-Cola Right",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Tower(s) at Front Counter",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Coca-Cola Left",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coca-Cola Right",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Tower(s) in lobby",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Coca-Cola Left",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coca-Cola Right",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Additional Tower(s)",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Coca-Cola Left",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Coca-Cola Right",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Draw temperature for non-carbonated soft drinks is between 33°F to 45°F (1°C to 7°C)",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Tower/ABS in Drive-thru",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Orange",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Tower(s) at Front Counter",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Orange",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Tower(s) in lobby",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Orange",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Additional Tower(s)",
+      "color": "teal-low",
+      "items": [
+        {
+          "kind": "check",
+          "title": "Orange",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Dairy mix in all shake and sundae machine reservoirs is between 34°F to 40°F (1°C to 4°C)",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Machine #1 Record temp in shake/sundae reservoir:",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Machine #2 Record temp in shake/sundae reservoir:",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

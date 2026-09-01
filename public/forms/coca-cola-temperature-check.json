@@ -1,0 +1,52 @@
+{
+  "formId": "311d0ba0-3d77-4363-a2c4-16537a1bd30a",
+  "title": "Coca-Cola Temperature Check",
+  "description": "Coca-Cola Temp Check 2026",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-03T23:03:45.793Z",
+  "itemCount": 4,
+  "sections": [
+    {
+      "title": "Gold Standard Coca-Cola Temperature Check",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Time: Morning.",
+      "color": "success-low",
+      "items": []
+    },
+    {
+      "title": "Drive Thru: -\t \n -\tPour 2 large Coca-Cola, with NO Ice, and discard.  \n -  Pour a 3rd large Coca- Cola with NO Ice  \n -   Place thermometer in the middle and slowly stir until the temperature reading is stable.    \n -\tStop stirring and record temperature.  \t\n    If 36 or less – Gold Standard.\n    If 37 degrees or higher. Please review best practices and notify the  manager to take corrective action.",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Temperature Probe",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Second Dispenser:\n -\tIf there is a second beverage dispenser, select type from ONE of the two temperature readings below (Self Serve or 2nd ABS)\n -\tPour 2 large Coca-Cola, with NO Ice, and discard. \n -  Pour a 3rd large Coca- Cola with NO Ice. \n-   Place thermometer in the middle and slowly stir until the temperature reading is stable.    \n-\tStop stirring and record temperature. \n\tIf 36 or less – Gold Standard.  \n    If 37 degrees or higher. Please review best practices and notify the  manager to take corrective action.",
+      "color": "danger-high",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Temperature Probe",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Temperature Probe",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Additional Comments",
+          "lines": 3
+        }
+      ]
+    }
+  ]
+}

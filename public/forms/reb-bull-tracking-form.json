@@ -1,0 +1,96 @@
+{
+  "formId": "deb2c901-e51f-447f-af7c-a278f44fdb41",
+  "title": "Reb Bull Tracking Form",
+  "description": "Reb Bull - Daily Count - Twice Per Day",
+  "category": "Shift Management Forms ",
+  "lastEditedAt": "2026-08-07T20:25:54.338Z",
+  "itemCount": 9,
+  "sections": [
+    {
+      "title": "Reb Bull Tracking Form",
+      "color": "",
+      "items": []
+    },
+    {
+      "title": "On-Hand and Units Sold",
+      "color": "",
+      "items": []
+    },
+    {
+      "title": "All Red Bull is to be counted and units sold tracked twice per day. Once on  Day Shift and Once on Night Shift.",
+      "color": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Name of person completing this form",
+          "lines": 1
+        },
+        {
+          "kind": "field",
+          "title": "Date",
+          "field": "date"
+        },
+        {
+          "kind": "field",
+          "title": "Time",
+          "field": "time"
+        },
+        {
+          "kind": "check",
+          "title": "Confirm the shift you are submitting a count for.",
+          "options": [
+            "Day Shift",
+            "Night Shift"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "On-Hand Inventory and Units Sold",
+      "color": "",
+      "items": []
+    },
+    {
+      "title": "Enter an accurate count for each storage location.",
+      "color": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "On-Hand Amounts > Red Bull and Red Bull Zero",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "New Divider",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Use Product Mix Report to record units sold for the following menu items.",
+      "color": "",
+      "items": []
+    },
+    {
+      "title": "Use Product Mix report from POS or go to Product Mix in C&I to get the results for today.",
+      "color": "",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Units Sold - Product Mix",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}

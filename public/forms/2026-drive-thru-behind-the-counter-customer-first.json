@@ -1,0 +1,278 @@
+{
+  "formId": "36582d07-8264-4aae-b185-837801798e7d",
+  "title": "2026 Drive-Thru & Behind the Counter Customer First",
+  "description": "2026 Drive-Thru & Behind the Counter",
+  "category": "2026 Operations Forms",
+  "lastEditedAt": "2025-12-02T20:55:46.231Z",
+  "itemCount": 32,
+  "sections": [
+    {
+      "title": "Customer First Visit 2026",
+      "color": "danger-high",
+      "items": []
+    },
+    {
+      "title": "2026 Drive-Thru & Behind the Counter",
+      "color": "success-low",
+      "items": [
+        {
+          "kind": "text",
+          "title": "Manager In Charge of the Shift",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Drive-Thru Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Behind the Counter Score",
+          "lines": 1
+        },
+        {
+          "kind": "text",
+          "title": "Total Score",
+          "lines": 1
+        }
+      ]
+    },
+    {
+      "title": "Drive-Thru",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "DT 1-Was the exterior of the Restaurant Clean  and free of litter?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 2- Cleanliness: Were crew and managers wearing uniforms that are clean and in good condition?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 3-  Order: Did Order Taker interact in a prompt, friendly and effective manner, providing clear instructions and asking clarifying questions where needed? Is order displayed clearly on the COD / Digital Menu Board?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 3 -  Order: Did Order Taker ask if you are using your McDonald's App and acknowledge you by name?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 4 - Pay: Did employee(s) promptly interact in a polite, friendly and effective manner,  including using your name to connect, and provide clear instructions?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 5- Present: Was Presenter friendly and effective and did they provide clear instructions? If pulled forward, were you provided with clear instructions and explanation?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "DT Speed OEPE",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "DT 6- Speed: Was “Line Time from the 3rd car behind the order point\" 70 seconds or less? (Line Time begins when your wheels stop as the 3rd car behind the order point, not including the car at the order point, and ends when you arrive at the order point. If the line is less than 3 cars behind the order point, begin timing when your wheels stop).",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 7- Speed: Was 'Order End Present End' time 120 seconds or below? (OEPE time begins when employee states \"Your total is...\" and ends when the last item is presented to you).",
+          "options": [
+            "120\" or less - 8 pts",
+            "121”-140” - 7 pts",
+            "141”-160” - 5 pts",
+            "161”-180” - 3 pts",
+            "181”-190” - 1 pts",
+            "191” or greater - 0 pts"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "Issues",
+          "options": [
+            "Order taker/cashier multitasking",
+            "Presenter multitasking",
+            "Cars not pulled forward",
+            "Waiting on food/beverage",
+            "Order not ready upon arrival at present booth",
+            "Large or complex orders",
+            "Extreme high arrival rates",
+            "Other"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "DT 8 - Speed: Record the Total Experience Time. Total Experience Time begins when your wheels fully  stop at the back of the line or at the COD, and ends when the order is presented - non scored",
+          "lines": 1
+        },
+        {
+          "kind": "check",
+          "title": "DT 9 -  Accuracy:  Did you receive all the food and drink items as ordered, and were they properly prepared?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 10 - Accuracy: Did you receive the condiments (if required or requested), along with a receipt,  utensils, napkins, and straws?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 11 _Quality: Was your sandwich/entrée served neat, at proper temperature, fresh, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT -12 -Quality: Were the french fries hot, salted, and crisp -OR-  hash browns hot and crisp and did they taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 13 - Quality: Was your drink served neat, at the proper temperature and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "DT 14 - Quality: Was your dessert/McCafé Bakery served neat, at the proper temperature, and did it taste good?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Behind the Counter Operations",
+      "color": "success-high",
+      "items": [
+        {
+          "kind": "check",
+          "title": "BC 1 -Tempering & Prep: Were product levels sufficient per posted product level charts/eProduction monitor for the volume of business, and were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 1 - Tempering & Prep: Were products correctly labeled and within secondary shelf lives?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 2 - MFY: Were UHC product holding times and holding levels being adhered to?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 3 -Fries/hash browns:  Were french fries/hash browns available to meet demand, following cooking and holding procedures and french fries station set up/maintained correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 4 -Beverages and Desserts: Were drinks placed on appropriate cart/table identified? Were drinks placed separately, grouped by order and served correctly?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 5 - Order Assembly: Were orders assembled correctly, once all items were available, and checked for accuracy? Were Stations/Landing Tables utilized appropriately?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 6 - General Cleanliness Production and Service Areas: Did restaurant display general cleanliness in employee areas, without a negative impact on operations and safety?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 7 - People Positioning: Area employees positioned and adjustments made, as conditions dictate, throughout the shift?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 9 - Leading Operations: Shift and Area Leaders conduct travel paths, identify danger zones and  take appropriate actions to prioritize & reduce operational barriers to deliver Gold Standard  products and a great customer experienceWellness: Was cashless and Contactless payment available in the Drive-Thru? Did employees wash hands properly when required?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "check",
+          "title": "BC 10 - Operational Focus: Was the Shift Leader aware of the restaurant's priorities, goals and actions,  and progress?",
+          "options": [
+            "Yes",
+            "No"
+          ]
+        },
+        {
+          "kind": "text",
+          "title": "Managers' signature",
+          "lines": 1
+        }
+      ]
+    }
+  ]
+}
