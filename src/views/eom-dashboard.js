@@ -21,6 +21,7 @@ import {
   saveEomCountException, deleteEomCountException, loadEomCountExceptions,
   createEomShareLink, supabase,
 } from '../lib/supabase.js';
+import { shareOrCopy } from '../utils/share.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
 import { ledgerScopeDiff, ledgerBaselineDiff, closeWindowStartFor, itemCloseWindowRecount, recountVerdictText, formatRecountReport, crossStoreRecountConsistency } from '../engine/eom-ledger-baseline.js';
 import { storeVarianceProgressions } from '../engine/eom-variance-progression.js';
@@ -2776,8 +2777,10 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       const { token, error } = await createEomShareLink({ loc, period, storeName: name, title: `EOM FOB ${period}`, fob: components || {}, recapMd, fullMd });
       if (error || !token) { setShareMsg(`Share failed: ${error || 'no token'}`); return; }
       const url = `${location.origin}${import.meta.env.BASE_URL || '/'}`.replace(/\/+$/, '/') + `?share=${token}`;
-      try { await navigator.clipboard.writeText(url); setShareMsg(`✓ Read-only link copied — ${name}`); }
-      catch { setShareMsg(`✓ Link (copy it): ${url}`); }
+      const shared = await shareOrCopy({ url, title: `EOM FOB ${period} — ${name}`, text: `EOM FOB report for ${name}, period ${period}` });
+      if (shared.cancelled) { setShareMsg(''); }
+      else if (shared.ok) { setShareMsg(shared.method === 'share' ? `✓ Shared — ${name}` : `✓ Read-only link copied — ${name}`); }
+      else { setShareMsg(`✓ Link (copy it): ${url}`); }
     } catch (e) { setShareMsg(`Share failed: ${e?.message || e}`); }
   }, [buildDiagResult, diagOptsFor, period]);
 
