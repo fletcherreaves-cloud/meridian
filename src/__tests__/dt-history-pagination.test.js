@@ -13,33 +13,47 @@
 // additive `extraFilter` param (the one filter _pagedParallel's existing gteCol/inCol shortcuts
 // didn't cover).
 //
-// This suite is the "before/after, not 'feels faster'" evidence the dispatch's verification bar
-// requires. This sandbox has no authenticated production Supabase session (qsr_daily_activity is
-// RLS-restricted -- confirmed live: the anon key sees 0 rows on it, unlike public-read tables),
-// so a true production wall-clock trace isn't obtainable here, mirroring #191's own qsr_fob
-// migration (which shipped the identical fetchAll -> _pagedParallel change with its wall-clock
-// improvement explicitly NOT verified live, for the same reason). What IS measured directly:
-// (1) the exact page/row counts loadDtHistory now issues, against a mock sized to match its real
-// shape (58 pages), (2) that dt_trans_cnt > 0 actually reaches every page query AND the fallback
-// path, not just the happy path, (3) that a failed page still surfaces _recordDataError (the
-// dispatch's explicit "confirm partial-failure handling still surfaces" ask), and (4) a
-// controlled-latency simulation isolating the SCHEDULING change (sequential-await vs
-// capped-concurrency fan-out) at the real 58-page/6-inflight shape -- not a prediction of real
-// production milliseconds, but a genuine, reproducible measurement of the scheduling difference
-// this fix makes, run against the same mock harness #343's own regression test uses.
+// ⚠️ 2026-09-01 correction -- the paragraph above (and the original version of this comment)
+// said no authenticated production Supabase session was reachable, so a live wall-clock trace
+// wasn't obtainable, mirroring #191's identical qsr_fob migration. A LATER session had
+// SUPABASE_SERVICE_ROLE_KEY available (per CLAUDE.md's own "an agent session's environment is
+// fixed at container start / re-measure per-session" rule) and reached qsr_daily_activity
+// directly. That measurement found _pagedParallel's own count:'exact' head query -- the piece
+// this fix's "happy path" depends on -- can itself hit a Postgres statement timeout on this
+// table (one observed live, cold-cache, ~8.1s server-side before falling back to the same
+// strictly-sequential fetchAll this fix exists to avoid). _pagedParallel was corrected to
+// count:'estimated' (immune to that timeout by construction) plus a safety-extension loop
+// guarding against the estimate's own undercount risk -- see _pagedParallel's own comment in
+// src/lib/supabase.js for the full live numbers. This file's tests below now cover both: the
+// scheduling-only mock measurement (kept, still a valid isolated claim) AND the new
+// estimated-count/safety-extension behavior.
+//
+// What IS measured directly in this suite: (1) the exact page/row counts loadDtHistory now
+// issues, against a mock sized to match its real shape (58 pages), (2) that dt_trans_cnt > 0
+// actually reaches every page query AND the fallback path, not just the happy path, (3) that a
+// failed page still surfaces _recordDataError (the dispatch's explicit "confirm partial-failure
+// handling still surfaces" ask), (4) a controlled-latency simulation isolating the SCHEDULING
+// change (sequential-await vs capped-concurrency fan-out) at the real 58-page/6-inflight shape,
+// and (5) that an undercounting count:'estimated' response still returns every row via the
+// safety-extension loop, matching the live-measured 42,105-estimated-vs-45,136-true gap.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const __fakeConfig = {};
 function mkBuilder(table) {
   const cfg = __fakeConfig[table] || { rows: [] };
-  const calls = cfg.calls || (cfg.calls = { gt: [], order: [] });
+  const calls = cfg.calls || (cfg.calls = { gt: [], order: [], countModes: [], ranges: [] });
   const builder = {
-    select(_cols, opts) { builder._headMode = !!(opts && opts.head); return builder; },
+    select(_cols, opts) {
+      builder._headMode = !!(opts && opts.head);
+      if (opts && opts.count) calls.countModes.push(opts.count);
+      return builder;
+    },
     gte() { return builder; },
     in() { return builder; },
     gt(col, val) { calls.gt.push([col, val]); return builder; },
     order(col) { calls.order.push(col); return builder; },
     range(from, to) {
+      calls.ranges.push([from, to]);
       const delay = cfg.delayMs || 0;
       const pageIdx = Math.floor(from / (cfg.pageSize || 1000));
       const failPages = cfg.failPageIndexes || [];
@@ -50,9 +64,15 @@ function mkBuilder(table) {
     },
     then(resolve, reject) {
       const delay = cfg.delayMs || 0;
+      // estimatedCount lets a test simulate count:'estimated' undercounting the true row total
+      // (measured live against production: 42,105 estimated vs 45,136 true rows on the same
+      // 90-day query — see _pagedParallel's own comment in src/lib/supabase.js). Defaults to
+      // the true row count, i.e. "the estimate happened to be exact," for every pre-existing
+      // test that doesn't care about the distinction.
+      const reportedCount = cfg.estimatedCount != null ? cfg.estimatedCount : cfg.rows.length;
       const run = () => cfg.countError
         ? { count: null, error: cfg.countError, data: null }
-        : { count: cfg.rows.length, error: null, data: null };
+        : { count: reportedCount, error: null, data: null };
       return (delay ? new Promise(r => setTimeout(() => r(run()), delay)) : Promise.resolve(run()))
         .then(resolve, reject);
     },
@@ -178,5 +198,88 @@ describe('loadDtHistory pagination (dispatch #88 item 2)', () => {
     // >4x reduction in ROUND-TRIP ROUNDS is the actual claim; wall-clock varies with test-runner
     // scheduling jitter, so assert the conservative, reproducible form of that claim.
     expect(parMs).toBeLessThan(seqMs / 2);
+  });
+
+  it('requests count:\'estimated\', not count:\'exact\', on the head-count query (2026-09-01 correction)', async () => {
+    // count:'exact' live-measured against production qsr_daily_activity to itself risk a
+    // Postgres statement timeout on this table (cold-cache, ~8.1s server-side) -- see
+    // _pagedParallel's own comment in src/lib/supabase.js. count:'estimated' answers from
+    // planner statistics instead of scanning the table and is immune to that timeout by
+    // construction; live-measured at a consistent 330-520ms on the identical query.
+    __fakeConfig.qsr_daily_activity = { rows: [activityRow(0)], pageSize: 1000 };
+    await loadDtHistory(90);
+    expect(__fakeConfig.qsr_daily_activity.calls.countModes).toEqual(['estimated']);
+  });
+
+  it('safety-extension: an UNDERCOUNTING estimated head-count still returns every row, not a silent truncation', async () => {
+    // Live-measured shape: count:'estimated' returned 42,105 against a true 45,136 rows on the
+    // same 90-day query (~7% low, stale ANALYZE stats). Reproduce the same shape at a testable
+    // size -- true rows = 4,500 (4.5 pages), estimated count reported as 3,600 (an ~20% low
+    // estimate rounds up to 4 initial pages). Silently trusting the estimate would truncate to
+    // 4,000 rows and, because loadDtHistory reads ascending:true, would drop the NEWEST rows --
+    // exactly what #343's "a fast, silently-truncated read is worse than a slow complete one"
+    // rule forbids.
+    const rows = Array.from({ length: 4500 }, (_, i) => activityRow(i));
+    __fakeConfig.qsr_daily_activity = { rows, pageSize: 1000, estimatedCount: 3600 };
+    const result = await loadDtHistory(90);
+    expect(result.length).toBe(4500);
+    // 4 initial pages (ceil(3600/1000)) + exactly 1 extension round (page 4 covers 4000-4499,
+    // 500 rows, short -- proving the true end, no further extension) -- not a re-fetch of
+    // already-covered offsets, and not an unbounded/duplicate probe.
+    expect(__fakeConfig.qsr_daily_activity.calls.ranges.length).toBe(5);
+    expect(__fakeConfig.qsr_daily_activity.calls.ranges).toEqual([
+      [0, 999], [1000, 1999], [2000, 2999], [3000, 3999], [4000, 4999],
+    ]);
+  });
+
+  it('safety-extension: an ACCURATE estimated head-count does not fire the extension loop (no wasted round-trip)', async () => {
+    // 2500 rows at pageSize 1000 -> 3 pages, last page holds 500 rows (short) -- never "full,"
+    // so the accurate-estimate case must take zero extension rounds. Verified by range() call
+    // count: exactly 3 page requests, no 4th probe.
+    const rows = Array.from({ length: 2500 }, (_, i) => activityRow(i));
+    __fakeConfig.qsr_daily_activity = { rows, pageSize: 1000 };
+    const result = await loadDtHistory(90);
+    expect(result.length).toBe(2500);
+    expect(__fakeConfig.qsr_daily_activity.calls.ranges.length).toBe(3);
+  });
+
+  it('safety-extension: an estimated count landing EXACTLY on a page boundary costs one harmless extra empty round, not duplicated or missing rows', async () => {
+    // Edge case: true rows = 3000 (an exact multiple of pageSize=1000) and the estimate happens
+    // to match exactly. The last of the 3 initial pages comes back completely full (1000 rows),
+    // which looks indistinguishable from "there might be more" -- the loop correctly can't tell
+    // this apart from an undercount without probing one page past the estimate, gets an empty
+    // page back, and stops. Confirms that harmless probe doesn't corrupt the result.
+    const rows = Array.from({ length: 3000 }, (_, i) => activityRow(i));
+    __fakeConfig.qsr_daily_activity = { rows, pageSize: 1000, estimatedCount: 3000 };
+    const result = await loadDtHistory(90);
+    expect(result.length).toBe(3000);
+    // 3 initial pages (all full) + exactly 1 harmless empty probe page (3000-3999, 0 rows) --
+    // not zero (the loop can't distinguish "exactly at the boundary" from "more data" without
+    // probing) and not more than one (the probe itself is short/empty, so it stops immediately).
+    expect(__fakeConfig.qsr_daily_activity.calls.ranges.length).toBe(4);
+    expect(__fakeConfig.qsr_daily_activity.calls.ranges).toEqual([
+      [0, 999], [1000, 1999], [2000, 2999], [3000, 3999],
+    ]);
+  });
+
+  it('safety-extension does not mask a genuine partial failure -- a page failure during extension still surfaces _recordDataError', async () => {
+    // True rows = 5000 (5 full pages), estimated count reported as 3000 (3 pages) so the
+    // extension loop must fire to reach the real end -- and the 4th page (the first extension
+    // page, index 3) is made to fail. The read should still come back partial (not throw) and
+    // still raise the DATA INCOMPLETE banner, matching the existing non-extension partial-
+    // failure test above.
+    const rows = Array.from({ length: 5000 }, (_, i) => activityRow(i));
+    __fakeConfig.qsr_daily_activity = { rows, pageSize: 1000, estimatedCount: 3000, failPageIndexes: [3] };
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await loadDtHistory(90);
+      // Pages 0-2 (the initial estimate-sized batch) succeed = 3000 rows; extension page 3
+      // fails and the loop stops there rather than guessing further.
+      expect(result.length).toBe(3000);
+      expect(errSpy).toHaveBeenCalled();
+      const call = errSpy.mock.calls.find(args => String(args[0]).includes('DATA INCOMPLETE'));
+      expect(call).toBeTruthy();
+      expect(call.join(' ')).toContain('dtHistory');
+    } finally { errSpy.mockRestore(); }
   });
 });

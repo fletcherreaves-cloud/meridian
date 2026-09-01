@@ -82,7 +82,30 @@ async function _limited(fn) {
 // pre-existing caller omits it and is unaffected (defaults to identity).
 async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, extraFilter = q => q, orderCol, ascending = false, extraOrder = [], pageSize = 1000, label = '' }) {
   if (!supabase) return [];
-  let head = supabase.from(table).select(orderCol || 'loc', { count: 'exact', head: true });
+  // count:'estimated', not 'exact' (correction to dispatch #88's PR #633 — this bottleneck
+  // outlived the fix it was meant to be). Live-measured against production qsr_daily_activity
+  // with SUPABASE_SERVICE_ROLE_KEY (2026-09-01, loadDtHistory's real 90-day/dt_trans_cnt>0
+  // shape — a session #633 explicitly could not reach): an exact COUNT(*) head query ran
+  // 600ms-3.8s once the relevant pages were cache-warm, but the FIRST cold-cache request in
+  // this session hit a full Postgres 57014 statement timeout at ~8.1s server-side
+  // (x-envoy-upstream-service-time header). Because a failed count already falls back to
+  // fetchAll below (#343 — deliberately, correctness over speed) — and fetchAll on this same
+  // query measured 9.6s live — one cold-cache count timeout costs ~8s wasted PLUS a ~9.6s
+  // sequential re-fetch: ~17.5s, reproducing the exact "15+ second" complaint #633 shipped to
+  // fix, just less often instead of never. count:'estimated' answers from planner statistics
+  // instead of scanning the table — measured live at a consistent 330-520ms on the identical
+  // query, immune to the same timeout by construction (no COUNT(*) execution). Trade-off:
+  // it can UNDERCOUNT (measured live: 42,105 estimated vs 45,136 true rows on the same 90-day
+  // window, ~7% low, stale ANALYZE stats) — silently truncating the newest rows on this file's
+  // one ascending:true caller (loadDtHistory) would violate #343's own "a fast,
+  // silently-truncated read is worse than a slow complete one" rule. So the safety-extension
+  // loop below (after the initial batch) keeps fetching one more page past the estimate
+  // whenever the last page fetched comes back completely full, until a short/empty page proves
+  // the true end — live-measured end to end: 3 extension rounds closed the 42,105-vs-45,136 gap
+  // and returned all 45,136 rows, ~2.7s total (vs 2.2s for the old count:'exact' happy path and
+  // 9.6s for sequential fetchAll) — a small, bounded, worst-case-eliminating cost, not a
+  // regression of the common case.
+  let head = supabase.from(table).select(orderCol || 'loc', { count: 'estimated', head: true });
   if (gteCol) head = head.gte(gteCol, gteVal);
   if (inCol) head = head.in(inCol, inVals);
   head = extraFilter(head);
@@ -115,22 +138,41 @@ async function _pagedParallel({ table, select, gteCol, gteVal, inCol, inVals, ex
       return q.range(from, to);
     }, pageSize, label || table);
   }
-  const pages = Math.max(1, Math.ceil((count || 0) / pageSize));
-  const reqs = [];
-  for (let p = 0; p < pages; p++) {
+  let pages = Math.max(1, Math.ceil((count || 0) / pageSize));
+  const buildPage = (p) => {
     let q = supabase.from(table).select(select);
     if (gteCol) q = q.gte(gteCol, gteVal);
     if (inCol) q = q.in(inCol, inVals);
     q = extraFilter(q);
     q = q.order(orderCol, { ascending });
     for (const oc of extraOrder) q = q.order(oc);
-    reqs.push(() => q.range(p * pageSize, p * pageSize + pageSize - 1));
-  }
+    return () => q.range(p * pageSize, p * pageSize + pageSize - 1);
+  };
+  const reqs = [];
+  for (let p = 0; p < pages; p++) reqs.push(buildPage(p));
   const settled = await Promise.allSettled(reqs.map(f => _limited(f)));
   const data = []; let failed = 0;
   for (const s of settled) {
     if (s.status === 'fulfilled' && s.value && !s.value.error && s.value.data) data.push(...s.value.data);
     else failed++;
+  }
+  // Safety-extension for the estimated count (see the count:'estimated' comment above). Only
+  // extends when the initial batch fully succeeded — a failed page already means a partial read,
+  // reported below exactly as before — and the LAST (highest-offset) page came back completely
+  // full; a short or empty last page proves the true end regardless of what the estimate said, so
+  // this never fires on an accurate-or-over estimate and costs nothing there.
+  let lastFull = !failed && settled.length > 0 && settled[settled.length - 1].status === 'fulfilled'
+    && settled[settled.length - 1].value?.data?.length === pageSize;
+  while (lastFull) {
+    const res = await _limited(buildPage(pages));
+    pages++;
+    if (res && !res.error && res.data) {
+      data.push(...res.data);
+      lastFull = res.data.length === pageSize;
+    } else {
+      failed++;
+      lastFull = false;
+    }
   }
   // The banner hint used to be hardcoded to "newest-first keeps the recent days" — true for
   // every pre-existing caller (all pass ascending:false) but backwards for loadDtHistory, the
@@ -2185,21 +2227,27 @@ export async function loadDtHistory(range = 90) {
   // (dt-speedofservice.js's hourData/daypartData both aggregate by hour_slot, so the daily
   // rollup view qsr_daily_activity_daily does NOT apply here — measured by reading what the
   // panel actually renders, not assumed). 90 days × 27 stores × 24 slots ≈ 58,320 candidate rows
-  // at pageSize 1000 = ~58 pages, and fetchAll's strictly-sequential one-page-then-wait loop
-  // meant ~58 serial round-trips before the panel could render — the owner-reported 15+ second
-  // load. _pagedParallel already exists (qsr_fob/labor_rows/peaks_rows/audit_rows/ops_rows/
-  // ctrl_rows/etc) and fans pages out under the shared _MAX_INFLIGHT=6 cap instead of awaiting
-  // each page serially; this was the one remaining qsr_daily_activity reader still on fetchAll.
-  // qsr_daily_activity is RLS-restricted (confirmed live: the anon key this sandbox can reach
-  // sees 0 rows on it, unlike public-read tables), so — same caveat #191's identical fetchAll ->
-  // _pagedParallel migration for loadQsrFob shipped with — a true production wall-clock trace
-  // isn't obtainable here. src/__tests__/dt-history-pagination.test.js measures the SCHEDULING
-  // change directly at the real ~58-page/6-inflight shape against a controlled-latency mock:
-  // 58 sequential rounds vs 11 (⌈58/6⌉+1 head-count) parallel rounds, ~5.3x fewer round-trip
-  // rounds at a fixed per-request latency — the reproducible claim; real production milliseconds
-  // will differ. Per the same test file, a failed page still surfaces _recordDataError under the
-  // 'dtHistory' label (dispatch's explicit partial-failure ask), and dt_trans_cnt > 0 reaches
-  // both the head-count query and the fetchAll fallback path via the new extraFilter param.
+  // (live-measured true count for a real 90-day window: 45,136 — dt_trans_cnt>0 excludes
+  // never-open slots) at pageSize 1000 = ~46-58 pages, and fetchAll's strictly-sequential
+  // one-page-then-wait loop meant ~46-58 serial round-trips before the panel could render — the
+  // owner-reported 15+ second load, live-measured at 9.6s for this exact query on 2026-09-01.
+  // _pagedParallel already exists (qsr_fob/labor_rows/peaks_rows/audit_rows/ops_rows/ctrl_rows/
+  // etc) and fans pages out under the shared _MAX_INFLIGHT=6 cap instead of awaiting each page
+  // serially; this was the one remaining qsr_daily_activity reader still on fetchAll.
+  // ⚠️ CORRECTED 2026-09-01 — this comment used to say a live production wall-clock trace wasn't
+  // obtainable (no reachable Supabase session at the time). It is now: SUPABASE_SERVICE_ROLE_KEY
+  // was available in a later session and reads this table directly, per CLAUDE.md's own
+  // "re-measure per-session" rule. That measurement found the shipped _pagedParallel fix's own
+  // count:'exact' head query could itself hit a Postgres statement timeout on this table
+  // (one observed live, cold-cache) and silently fall back to the same slow fetchAll path this
+  // fix exists to avoid — see _pagedParallel's own comment above the count:'estimated' line for
+  // the full live numbers and the safety-extension fix. src/__tests__/dt-history-pagination.test.js
+  // still also carries a controlled-latency mock measuring the SCHEDULING change in isolation
+  // (58 sequential rounds vs 11 parallel rounds, ~5.3x fewer round-trip rounds) — kept because it
+  // isolates the scheduling claim from live infra variance, not because live numbers are still
+  // unreachable. A failed page still surfaces _recordDataError under the 'dtHistory' label
+  // (dispatch's explicit partial-failure ask), and dt_trans_cnt > 0 reaches the head-count query
+  // and the fetchAll fallback path via the extraFilter param.
   return _pagedParallel({
     table: 'qsr_daily_activity',
     // dt_untilstore/dt_heldtime added (dispatch #128) — dt-speedofservice.js's DT number was
