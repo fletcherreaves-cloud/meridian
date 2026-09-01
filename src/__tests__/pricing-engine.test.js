@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins, clampToLastClosedDay } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -32,6 +32,53 @@ describe('clampToLastClosedDay — trap 5: an in-progress day silently understat
     const closed = new Date('2026-08-30T00:00:00');
     expect(clampToLastClosedDay(null, closed)).toBeNull();
     expect(clampToLastClosedDay(undefined, closed)).toBeUndefined();
+  });
+});
+
+describe('computeComboCost — custom item combination lookup', () => {
+  const itemRows = [
+    { itemNumber: 5, descr: 'Big Mac', menuPrice: 6.79, foodCost: 1.71, paperCost: 0.10 },
+    { itemNumber: 4, descr: 'Fries Large', menuPrice: 3.99, foodCost: 0.55, paperCost: 0.08 },
+    { itemNumber: 3, descr: 'Coke Large', menuPrice: 2.39, foodCost: 0.20, paperCost: 0.06 },
+  ];
+
+  it('sums food/paper cost and reference price across the picked items, qty 1 default', () => {
+    const out = computeComboCost(itemRows, [{ itemNumber: 5 }, { itemNumber: 4 }]);
+    expect(out.items).toHaveLength(2);
+    expect(out.sumFoodCost).toBeCloseTo(1.71 + 0.55, 5);
+    expect(out.sumPaperCost).toBeCloseTo(0.10 + 0.08, 5);
+    expect(out.sumPrice).toBeCloseTo(6.79 + 3.99, 5);
+    expect(out.count).toBe(2);
+  });
+
+  it('honors an explicit qty (e.g. "2 Big Macs")', () => {
+    const out = computeComboCost(itemRows, [{ itemNumber: 5, qty: 2 }]);
+    expect(out.items[0].qty).toBe(2);
+    expect(out.sumFoodCost).toBeCloseTo(1.71 * 2, 5);
+    expect(out.sumPrice).toBeCloseTo(6.79 * 2, 5);
+    expect(out.count).toBe(2);
+  });
+
+  it('skips a picked itemNumber with no matching row rather than silently zeroing it', () => {
+    const out = computeComboCost(itemRows, [{ itemNumber: 5 }, { itemNumber: 99999 }]);
+    expect(out.items).toHaveLength(1); // 99999 dropped, not a phantom zero-cost row
+    expect(out.count).toBe(1);
+  });
+
+  it('does not invent a suggested combo price — sumPrice is the sum of COMPONENT prices only', () => {
+    // A real value meal is priced BELOW the sum of its parts; the caller must enter the
+    // actual combo price separately. This function never blends the two.
+    const out = computeComboCost(itemRows, [{ itemNumber: 5 }, { itemNumber: 4 }, { itemNumber: 3 }]);
+    expect(out.sumPrice).toBeCloseTo(6.79 + 3.99 + 2.39, 5);
+  });
+
+  it('returns an all-zero, empty result for no picks', () => {
+    const out = computeComboCost(itemRows, []);
+    expect(out.items).toEqual([]);
+    expect(out.sumFoodCost).toBe(0);
+    expect(out.sumPaperCost).toBe(0);
+    expect(out.sumPrice).toBe(0);
+    expect(out.count).toBe(0);
   });
 });
 

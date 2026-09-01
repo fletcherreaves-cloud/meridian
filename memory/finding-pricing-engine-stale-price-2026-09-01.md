@@ -67,6 +67,37 @@ day as the window's most recent one.
 max back to the closed cutoff; keeps a real, older data max untouched when the pull is lagging;
 passes through when the two are equal; passes through `null`/`undefined` unchanged.
 
+## 4. Item / custom combination cost lookup (same day, follow-up)
+
+Owner: *"I would definitely like the ability to look up the food and paper cost on any item,
+value meal, or custom created combination of items."*
+
+Any single item or value meal already has its own row in `displayRows` (a combo SKU carries its
+own price/cost, per dispatch #212's trap 3 — a "Big Mac Meal" is not derived from "Big Mac" +
+fries + drink, it's its own item_number) — so a search box against the existing per-item data
+already serves "any item or value meal." The genuinely new piece is a CUSTOM combination with no
+item_number of its own (e.g. "what would 2 Big Macs + a large fry cost me").
+
+- New pure function `computeComboCost(itemRows, picks)` (`src/engine/pricing-engine.js`) — sums
+  each picked item's own unit food/paper cost × qty. Deliberately does NOT invent a suggested
+  combo price: a real value meal prices below the sum of its parts, so summing `menuPrice` into
+  a "combo price" would be actively misleading. Returns the component-price sum as a labeled
+  reference figure only (`Σ Component Price`); the operator enters the real combo/value-meal
+  price separately if there is one. 5 new unit tests.
+- New UI: `LookupTab` in `src/views/pricing-engine.js`, reached via a new "🔎 Item Lookup" /
+  "📊 Rankings" tab strip inside the Pricing Engine panel (the Rankings tab is the pre-existing
+  behavior, unchanged). Search by MI# or name → each result shows price/food+paper cost/margin %
+  with an "＋ Add" button; a "Custom Combination" tray at the bottom lists added items with a qty
+  stepper and remove button, running Food Cost / Paper Cost / Total Cost / Σ Component Price
+  totals, and an optional "actual combo price" input that computes real margin $ and % once
+  entered.
+- **Not interactively verified in a live browser** (per this repo's own "don't claim UI success
+  you haven't tested" rule) — this codebase has no component-rendering test harness (jsdom-less
+  Vitest, confirmed by every other panel test file in `src/__tests__`), so verification here is:
+  the pure `computeComboCost` logic is unit-tested (5 tests), the build compiles clean, and the
+  JSX was manually re-read end-to-end for reference errors — but nobody has clicked through it in
+  a real browser yet. Worth a real click-through before or shortly after merge.
+
 ## What this does NOT change
 
 - No change to the core `MAX(price)`-per-day rule itself — proven correct, not touched.

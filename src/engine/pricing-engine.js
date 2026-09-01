@@ -318,3 +318,54 @@ export function enrichItemMargins(marginRows, activityRows, { dateRange } = {}) 
     };
   });
 }
+
+// ── Item / combo cost lookup (owner request, 2026-09-01) ──────────────────────
+// "I would definitely like the ability to look up the food and paper cost on any item, value
+// meal, or custom created combination of items." A real McDonald's value meal already carries
+// its OWN item_number/price/cost row (dispatch #212's trap 3 -- e.g. item 8936 "Big Mac Meal"
+// is its own row, not derived from item 5 "Big Mac" + fries + drink), so "any item or value
+// meal" is already served by a plain lookup against computeItemMargins()'s own output -- no
+// new engine logic needed for that half. This function is the genuinely new half: a
+// CUSTOM combination the owner builds by hand (e.g. "what would 2 Big Macs + a large fry cost
+// me"), which has no existing item_number of its own.
+//
+// Pure: sums each selected item's OWN unit food/paper cost (and quantity-weighted volume/
+// count), independent of any one store's actual sales mix -- this is a "what would this
+// combination cost" calculator, not a sales-weighted analysis. Deliberately does NOT sum
+// `menuPrice` into a suggested combo price: a real combo is priced BELOW the sum of its
+// components (that's the point of a value meal), so inventing a "combo price" here would be
+// actively misleading -- the caller shows Σ(component prices) as a reference figure only and
+// lets the operator enter the combo's real menu price separately, if there is one.
+//
+// itemRows: computeItemMargins()/enrichItemMargins() output (or displayRows, the store-
+// aggregated shape PricingEnginePanel already builds) -- one row per item_number in scope.
+// picks: [{itemNumber, qty}] -- qty defaults to 1 if omitted. An itemNumber with no matching
+// row is skipped (not silently zeroed) so a caller can tell "not found" from "found but
+// zero-cost" by comparing picks.length to the returned items.length.
+//
+// Returns {items: [{itemNumber, descr, qty, unitPrice, unitFoodCost, unitPaperCost,
+// lineFoodCost, linePaperCost, linePrice}], sumFoodCost, sumPaperCost, sumPrice, count}.
+export function computeComboCost(itemRows, picks) {
+  const byItem = new Map();
+  for (const r of itemRows || []) {
+    if (r && r.itemNumber != null && !byItem.has(r.itemNumber)) byItem.set(r.itemNumber, r);
+  }
+  const items = [];
+  let sumFoodCost = 0, sumPaperCost = 0, sumPrice = 0, count = 0;
+  for (const p of picks || []) {
+    if (!p || p.itemNumber == null) continue;
+    const row = byItem.get(p.itemNumber);
+    if (!row) continue;
+    const qty = Number(p.qty) > 0 ? Number(p.qty) : 1;
+    const lineFoodCost = (row.foodCost || 0) * qty;
+    const linePaperCost = (row.paperCost || 0) * qty;
+    const linePrice = (row.menuPrice || 0) * qty;
+    items.push({
+      itemNumber: row.itemNumber, descr: row.descr, qty,
+      unitPrice: row.menuPrice || 0, unitFoodCost: row.foodCost || 0, unitPaperCost: row.paperCost || 0,
+      lineFoodCost, linePaperCost, linePrice,
+    });
+    sumFoodCost += lineFoodCost; sumPaperCost += linePaperCost; sumPrice += linePrice; count += qty;
+  }
+  return { items, sumFoodCost, sumPaperCost, sumPrice, count };
+}
