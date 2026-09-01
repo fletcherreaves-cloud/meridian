@@ -109,8 +109,10 @@ rule):**
   2026-08-19 — one fewer hand-rolled backdrop exists now than when this file was first written;
   the ratchet is doing its job). Not re-measured on 2026-09-01 — only the route:true figure below
   was re-checked this pass.
-- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **32 of 93** registered panels in
-  `panel-registry.js`. ⚠️ The prior "13 of 101" figure was measured via `grep -c "route:\s*true"`
+- `route:true` (URL-addressable / `RoutePanelShell`) adoption: **33 of 94** registered panels in
+  `panel-registry.js` (was 32 of 93 earlier the same day — the new Digital Checklists panel
+  landed built `route:true` from day one, same treatment #123's `crew-schedule` got, not a
+  re-measurement correction). ⚠️ The prior "13 of 101" figure was measured via `grep -c "route:\s*true"`
   against the whole file — this OVERCOUNTS (the registry's own header/inline comments discuss
   `route:true` in prose, e.g. "Removing route:true here would silently break that link") and
   underrepresents true adoption growth since. Re-measured 2026-09-01 by actually importing and

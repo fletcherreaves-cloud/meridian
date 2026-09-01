@@ -3879,6 +3879,47 @@ export async function loadQsrFormsCompletion({ start, end, locs } = {}) {
   }));
 }
 
+// ── Digital Checklists (qsr_checklist_submissions) ────────────────────────────
+// Fillable, cloud-saved submissions against the public/forms/*.json templates
+// (src/views/checklist-fill.js). One row per (loc, formId, businessDate) — see
+// supabase/schema-checklist-submissions.sql's header for the full design.
+export async function loadChecklistSubmission({ loc, formId, businessDate }) {
+  if (!supabase || !loc || !formId || !businessDate) return null;
+  const { data, error } = await supabase.from('qsr_checklist_submissions')
+    .select('*').eq('loc', String(loc).padStart(7, '0')).eq('form_id', formId)
+    .eq('business_date', businessDate).maybeSingle();
+  if (error) {
+    if (_isMissingTable(error)) console.error('[qsr_checklist_submissions] Table does not exist. Run supabase/schema-checklist-submissions.sql in your Supabase SQL editor.');
+    else console.warn('[qsr_checklist_submissions] load error:', error.message);
+    return null;
+  }
+  if (!data) return null;
+  return {
+    loc: String(parseInt(data.loc, 10)), formId: data.form_id, formSlug: data.form_slug,
+    formTitle: data.form_title, businessDate: data.business_date, responses: data.responses || {},
+    status: data.status, filledBy: data.filled_by, submittedAt: data.submitted_at, updatedAt: data.updated_at,
+  };
+}
+
+export async function saveChecklistSubmission({ loc, formId, formSlug, formTitle, businessDate, responses, status }) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const uid = (await supabase.auth.getUser())?.data?.user?.id || null;
+  const row = {
+    loc: String(loc).padStart(7, '0'), form_id: formId, form_slug: formSlug, form_title: formTitle,
+    business_date: businessDate, responses: responses || {}, status: status || 'in_progress',
+    filled_by: uid, submitted_at: status === 'submitted' ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('qsr_checklist_submissions')
+    .upsert(row, { onConflict: 'tenant_id,loc,form_id,business_date' });
+  if (error) {
+    if (_isMissingTable(error)) { console.error('[qsr_checklist_submissions] Table does not exist. Run supabase/schema-checklist-submissions.sql in your Supabase SQL editor.'); return { saved: false, error: 'Table not set up yet' }; }
+    console.warn('[qsr_checklist_submissions] save error:', error.message);
+    return { saved: false, error: error.message };
+  }
+  return { saved: true, error: null };
+}
+
 // DISTRICT-WIDE variance history across a set of periods — powers the Chronic Offenders scan
 // (which items are chronically High-Variance / Loss-Forming across ALL stores over a past window).
 // On-demand only (explicit "Run scan" button) — this reads many rows, so it must never auto-run.

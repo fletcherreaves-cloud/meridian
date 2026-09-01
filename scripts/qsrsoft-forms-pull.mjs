@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 // scripts/qsrsoft-forms-pull.mjs — capture QSRSoft Shift-Management form templates
 //
-// Pulls the BLANK structure of the Pre-Shift Checklists (per daypart) and Travel
-// Path forms from the QSRSoft Forms library, normalizes them, and writes them to
+// Pulls the BLANK structure of every published, non-deleted form in the QSRSoft
+// Forms library (the same "Printable Forms Library" the org's admin UI shows —
+// Shift Management Forms, EA Forms, 2026/2025 Operations Forms, People
+// Development, Legacy, etc.), normalizes them, and writes them to
 // public/forms/<slug>.json + public/forms/index.json. These are reusable, blank,
-// fill-by-hand templates (no live/store data) rendered by src/views/forms-print.js.
+// fill-by-hand templates (no live/store data) rendered by src/views/forms-print.js
+// and, for the digital-fill workflow, src/views/checklist-fill.js.
 //
 // This is an ON-DEMAND capture, not a daily sync — forms rarely change. Re-run it
-// when a form is edited in QSRSoft, then commit the updated public/forms/*.json.
+// when a form is edited (or added) in QSRSoft, then commit the updated
+// public/forms/*.json. Owner-requested 2026-09-01: widened from the original
+// 8-form Pre-Shift/Travel-Path-only default to the FULL published library — the
+// old DEFAULT_IDS/DEFAULT_MATCH narrowing is kept only as an explicit override
+// (FORMS_IDS/FORMS_MATCH), never the default anymore.
 //
 // Endpoints (host: forms.home.myqsrsoft.com, auth: Cognito ID token as x-auth-token):
 //   GET /api/forms?orgId=…&getLinkStatuses=true                → list of forms
@@ -19,7 +26,7 @@
 //   QSRSOFT_USERNAME + QSRSOFT_PASSWORD  (required — Playwright login)
 //   QSRSOFT_FORMS_TOKEN                  (optional — pre-captured x-auth-token, skips login)
 //   FORMS_IDS=id1,id2                    (optional — pull exactly these formIds)
-//   FORMS_MATCH=regex                    (optional — title filter; default Pre-Shift/Travel Path)
+//   FORMS_MATCH=regex                    (optional — title filter; overrides the all-published default)
 //   QSRSOFT_DEBUG=1
 //
 // Run locally (QSRSoft egress is open on your machine):
@@ -37,10 +44,9 @@ const ORG = 'a546d4ef-684a-4f25-8bc0-6580af068875';
 const FORMS_BASE = 'https://forms.home.myqsrsoft.com';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 const DEBUG = process.env.QSRSOFT_DEBUG === '1';
-// Default target set (owner-confirmed): the 6 daypart Pre-Shift Checklists (with +
-// without Playland) and the 2 Travel Path checklists — the current "/ Tasks"
-// versions in the Shift Management Forms category. Pinned by formId so a re-run can
-// never grab a draft/copy/legacy variant. Override with FORMS_IDS or FORMS_MATCH.
+// Explicit-override-only narrowing (FORMS_IDS / FORMS_MATCH) — the 8-form
+// Pre-Shift/Travel-Path pin this used to default to. Kept for a targeted re-pull
+// after editing just one form; no longer applied automatically (see header).
 const DEFAULT_IDS = [
   '79d7dc35-eb18-4981-b2ff-632875fe0e0a', // Pre-Shift Checklist Breakfast
   '90790546-1a22-42e8-8039-4fcd0b01ebcf', // Pre-Shift Checklist Breakfast With Playland
@@ -51,7 +57,6 @@ const DEFAULT_IDS = [
   '3ee1cc75-9f29-42d2-b49f-6ca3216addb4', // Travel Path No Play Place
   'fd2c551a-5859-449a-80c1-5bb980ce7704', // Travel Path With Playland
 ];
-const DEFAULT_MATCH = /pre-?shift checklist|travel path/i;
 
 const slugify = s => String(s || '')
   .replace(/\s*\/\s*tasks\s*$/i, '')          // drop trailing "/ Tasks"
@@ -165,13 +170,18 @@ async function main() {
     const all = Array.isArray(list) ? list : [];
     console.log(`[forms] library has ${all.length} forms`);
 
-    // Choose target forms: explicit IDs, else title match (published, not deleted).
+    // Choose target forms: explicit IDs, else explicit title match, else EVERY
+    // published/non-deleted form in the library (the default, owner-requested
+    // 2026-09-01 — see header). 'draft' is the only publishedStatus value seen
+    // that should be excluded; a form missing the field entirely is still a real
+    // published form (older entries predate the field), so only a literal
+    // 'draft' is filtered out, not "anything not === 'published'".
     const idFilter = (process.env.FORMS_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-    const match = process.env.FORMS_MATCH ? new RegExp(process.env.FORMS_MATCH, 'i') : DEFAULT_MATCH;
+    const matchEnv = (process.env.FORMS_MATCH || '').trim();
     let targets = all.filter(f => !f.isDeleted && f.publishedStatus !== 'draft');
-    targets = idFilter.length
-      ? targets.filter(f => idFilter.includes(f.formId))
-      : targets.filter(f => match.test(f.title || ''));
+    if (idFilter.length) targets = targets.filter(f => idFilter.includes(f.formId));
+    else if (matchEnv) { const match = new RegExp(matchEnv, 'i'); targets = targets.filter(f => match.test(f.title || '')); }
+    // else: keep every published/non-deleted form — the full-library default.
     console.log(`[forms] pulling ${targets.length} form(s): ${targets.map(f => f.title).join(' · ')}`);
     if (!targets.length) { console.error('[forms] no matching forms'); process.exit(1); }
 
