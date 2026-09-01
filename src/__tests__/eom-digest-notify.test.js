@@ -2,10 +2,21 @@
 // Dispatch #215 Task 3 — unit tests for scripts/lib/eom-digest-notify.mjs's roll-up digest email
 // content + send. Mocked global.fetch throughout, matching src/__tests__/resend-notify.test.js's
 // own pattern (#211) — zero real network calls; postResend() itself is already covered there, so
-// these tests focus on THIS file's own additions: recipientFor(), buildDigestEmailContent(), and
+// these tests focus on THIS file's own additions: recipientsFor(), buildDigestEmailContent(), and
 // sendDigestEmail()'s request shape.
+//
+// 2026-09-01 — eom-digest-notify.mjs now constructs its own module-scope `supabase` const (for
+// recipientsFor()'s subscriber lookup), same safeCreateClient(process.env...) pattern every other
+// pull/send script uses. This SANDBOX happens to carry real VITE_SUPABASE_URL/
+// SUPABASE_SERVICE_ROLE_KEY values, which would otherwise make that const a REAL client here (not
+// null) and send a real query alongside every mocked-fetch assertion below — the exact class of
+// leaked-env hazard safe-supabase-client.mjs's own header describes. Stubbed to definitely-empty
+// BEFORE the dynamic import below (module-scope code runs at import time), matching eom-digest-
+// config.test.js's own precedent for this.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { recipientFor, buildDigestEmailContent, sendDigestEmail } from '../../scripts/lib/eom-digest-notify.mjs';
+vi.stubEnv('VITE_SUPABASE_URL', '');
+vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
+const { recipientsFor, buildDigestEmailContent, sendDigestEmail } = await import('../../scripts/lib/eom-digest-notify.mjs');
 import { EMAIL_TO } from '../../scripts/lib/resend-notify.mjs';
 import { buildEomDigest } from '../engine/eom-digest.js';
 
@@ -29,12 +40,18 @@ const GROUP = {
   stores: [],
 };
 
-describe('recipientFor', () => {
-  it('resolves every (level, groupKey) to the owner\'s own email — dispatch #215 v1 scope', () => {
-    expect(recipientFor('district', 'district')).toBe(EMAIL_TO);
-    expect(recipientFor('patch', 'Mary Ratliff')).toBe(EMAIL_TO);
-    expect(recipientFor('org', 'emerald')).toBe(EMAIL_TO);
-    expect(recipientFor('patch', 'Brad Denley')).toBe(EMAIL_TO);
+// 2026-09-01 — recipientFor() (singular, always the owner's email) was replaced by recipientsFor()
+// (plural, real subscribers from email_digest_subscriptions, falling back to [EMAIL_TO] only when
+// nobody has subscribed). This session has no real Supabase configured (safeCreateClient degrades
+// to null), so loadDigestSubscriberEmails() always returns [] here — the fallback path is exactly
+// what these tests exercise; the real-subscribers path is exercised in
+// email-digest-subscriptions.test.js against a mocked client.
+describe('recipientsFor', () => {
+  it('falls back to [EMAIL_TO] for every (level, groupKey) when nobody has subscribed (no real Supabase configured here)', async () => {
+    expect(await recipientsFor('district', 'district')).toEqual([EMAIL_TO]);
+    expect(await recipientsFor('patch', 'Mary Ratliff')).toEqual([EMAIL_TO]);
+    expect(await recipientsFor('org', 'emerald')).toEqual([EMAIL_TO]);
+    expect(await recipientsFor('patch', 'Brad Denley')).toEqual([EMAIL_TO]);
   });
 });
 

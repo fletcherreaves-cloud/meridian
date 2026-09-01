@@ -234,6 +234,7 @@ import { AdminPanel } from '../views/admin.js';
 // #207: see the FormsLibraryPanel comment below — same fix, same reason. report-subscriptions.js
 // was the other static importer defeating a lazy import (above-store-onepager.js, 55KB).
 const ReportSubscriptions = lazyPanel(() => import('../views/report-subscriptions.js').then(m => ({ default: m.ReportSubscriptions })));
+const EmailDigestSubscriptionsPanel = lazyPanel(() => import('../views/email-digest-subscriptions-panel.js').then(m => ({ default: m.EmailDigestSubscriptionsPanel })));
 const SMGVoicePanel = lazyPanel(() => import('../views/smg-voice.js').then(m => ({ default: m.SMGVoicePanel })));
 // FOBEOMPanel — Dispatch #188: no longer its own top-level lazyPanel() entry. Merged into Food
 // Cost (FOBAnalysisPanel) as an "End of Month" mode; analytics.js now React.lazy()-loads
@@ -972,6 +973,7 @@ function App() {
   const [showMetricLineage, setShowMetricLineage] = useState(false);
   const [showFormsLibrary, setShowFormsLibrary] = useState(false);
   const [showKB, setShowKB] = useState(false);
+  const [showEmailDigests, setShowEmailDigests] = useState(false);
   const [showSmartTargets, setShowSmartTargets] = useState(false);
   // showLocIntel — dispatch #206: replaced by routePanel==='loc-intel' (see routePanel above).
   // showInventory — dispatch #206: replaced by routePanel==='inventory' (see routePanel above).
@@ -2954,7 +2956,7 @@ function App() {
     showStoreVlhConfig||showTutorial||
     showCompare||showDARDaypart||
     showDataManager||showDialedIn||showEvents||
-    showGMBrief||showWorkflow||showTroubleshoot||showKB||showLFZGap||showLaborAnalytics||
+    showGMBrief||showWorkflow||showTroubleshoot||showKB||showEmailDigests||showLFZGap||showLaborAnalytics||
     showModelAssign||
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
@@ -2984,7 +2986,7 @@ function App() {
       // there is no real showDev/showInsights state to close.
       setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
       setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
-      setShowKB(false);setShowLFZGap(false);
+      setShowKB(false);setShowEmailDigests(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);
       setShowModelAssign(false);
       setShowPMix(false);setShowPVSA(false);
@@ -3142,6 +3144,7 @@ function App() {
         if(modal==='workflow')       setShowWorkflow(true);
         if(modal==='troubleshoot')   setShowTroubleshoot(true);
         if(modal==='kb')             setShowKB(true);
+        if(modal==='email-digests')  setShowEmailDigests(true);
         if(modal==='smart-targets')  setShowSmartTargets(true);
         if(modal==='loc-intel')      perm('analytics.store')&&goRoute('loc-intel');
         if(modal==='inventory')      perm('analytics.store')&&goRoute('inventory');
@@ -3524,6 +3527,7 @@ function App() {
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
     showPricingEngine&&h(PricingEnginePanel,{stores,ds,onClose:()=>setShowPricingEngine(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
+    showEmailDigests&&h(EmailDigestSubscriptionsPanel,{onClose:()=>setShowEmailDigests(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),
     showSmartTargets&&h(SmartTargetPanel,{stores,ds,settings,onClose:()=>setShowSmartTargets(false)}),
     // showLocIntel — Dispatch #206: moved to the routePanel gate in the main content area

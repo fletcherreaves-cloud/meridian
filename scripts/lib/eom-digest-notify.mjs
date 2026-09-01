@@ -5,6 +5,10 @@
 // tests. Reuses postResend()/EMAIL_TO from resend-notify.mjs (dispatch #215 exported postResend
 // for exactly this reuse) rather than a second Resend POST implementation.
 import { postResend, EMAIL_TO, fobComponentsTableHtml } from './resend-notify.mjs';
+import { safeCreateClient } from './safe-supabase-client.mjs';
+import { loadDigestSubscriberEmails } from './email-digest-subscriptions.mjs';
+
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const CLASS_ORDER = ['food', 'condiment', 'paper', 'nonproduct'];
 const CLASS_LABELS = { food: 'Food', condiment: 'Condiment', paper: 'Paper', nonproduct: 'Non-Product' };
@@ -13,16 +17,20 @@ const LEVEL_LABELS = { district: 'District', org: 'Market', patch: 'Patch', oper
 
 const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString('en-US');
 
-// dispatch #215 Task 3 — for now EVERY (level, group) resolves to the owner's own email, matching
-// his own "we can test through my email for now" and Resend's existing sandbox-sender restriction
-// (deliver only to the account's own address until the domain is verified — no new blocker, #211
-// already lives with this same restriction). Kept as a function keyed by (level, groupKey) — not
-// a bare constant — so real per-role delivery later (a Supervisor's own digest reaching THEIR own
-// inbox) is a body swap here once Resend's domain is verified AND this app has a real per-user
-// contact registry (neither exists yet), not a rewrite of the send path. `groupKey` is unused
-// today but kept in the signature for that reason.
-export function recipientFor(level, groupKey) {
-  return EMAIL_TO;
+// dispatch #215 Task 3 (v1) had EVERY (level, group) resolve to the owner's own email — necessary
+// bootstrap given Resend's sandbox-sender restriction and no per-user contact registry existing
+// yet. 2026-09-01 (owner req, verbatim: "allow anyone to sign up or opt in to whichever reports
+// they want emailed to them") — that registry now exists (email_digest_subscriptions,
+// scripts/lib/email-digest-subscriptions.mjs) and this resolves to every real subscriber's email
+// for the 'eom_digest' digest, falling back to [EMAIL_TO] only when nobody has subscribed yet (so
+// this never silently sends to zero people mid-rollout, before anyone has opted in). Renamed from
+// recipientFor (singular) to recipientsFor: the return shape changed from one string to an array,
+// and a caller reading `const to = recipientFor(...)` would misread an array as one address.
+// `level`/`groupKey` stay unused — subscriptions aren't level-scoped in v1, every subscriber gets
+// every level's digest; narrowing that is a future refinement, not asked for here.
+export async function recipientsFor(level, groupKey) {
+  const subs = await loadDigestSubscriberEmails(supabase, 'eom_digest');
+  return subs.length ? subs : [EMAIL_TO];
 }
 
 // dispatch #224 Task 6 — one store's full FOB+components table + recount-opportunities list,
@@ -92,6 +100,7 @@ ${group.stores && group.stores.length ? `<h3 style="margin:20px 0 4px;border-top
 
 export async function sendDigestEmail(group, level) {
   const { subject, html } = buildDigestEmailContent(group, level);
-  const to = recipientFor(level, group.key);
-  return postResend({ to, subject, html });
+  const recipients = await recipientsFor(level, group.key);
+  const results = await Promise.all(recipients.map(to => postResend({ to, subject, html })));
+  return results.every(Boolean);
 }

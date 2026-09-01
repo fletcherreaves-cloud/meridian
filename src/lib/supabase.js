@@ -3232,6 +3232,41 @@ export async function saveWeeklyCountDayOverrides(overridesByLoc = {}) {
   return { saved: true, count: rows.length };
 }
 
+// ── Email digest subscriptions (owner req, 2026-09-01) ────────────────────────────────────────
+// Self-serve per-user opt-in to the scheduled digest emails the system already sends (EOM
+// Digest, Weekly Cycle Digest — see src/engine/email-digest-catalog.js's EMAIL_DIGEST_CATALOG).
+// public.email_digest_subscriptions (schema-email-digest-subscriptions.sql), one row per
+// (user_id, digest_key) — same RLS/ownership pattern as push_subscriptions (user_id = auth.uid()).
+//
+// ⚠️ NOT public.report_subscriptions ("My Reports" — a different, older feature: saved,
+// scope/period-configurable report LAUNCHES, not scheduled email opt-ins; see
+// src/views/report-subscriptions.js's own header). Read on the send side (service role, bypasses
+// RLS) by scripts/lib/email-digest-subscriptions.mjs's loadDigestSubscriberEmails().
+export async function loadMyEmailDigestSubscriptions() {
+  if (!supabase) return new Set();
+  const { data: { user } = {} } = await supabase.auth.getUser();
+  if (!user) return new Set();
+  const { data, error } = await supabase.from('email_digest_subscriptions').select('digest_key').eq('user_id', user.id);
+  if (error) { console.warn('[supabase] loadMyEmailDigestSubscriptions:', error.message); return new Set(); }
+  return new Set((data || []).map(r => r.digest_key));
+}
+
+export async function setEmailDigestSubscription(digestKey, subscribed) {
+  if (!supabase) return { saved: false, error: 'Supabase not configured' };
+  const { data: { user } = {} } = await supabase.auth.getUser();
+  if (!user) return { saved: false, error: 'Not signed in' };
+  if (subscribed) {
+    const { error } = await supabase.from('email_digest_subscriptions')
+      .upsert({ user_id: user.id, digest_key: digestKey }, { onConflict: 'user_id,digest_key' });
+    if (error) { console.warn('[supabase] setEmailDigestSubscription (subscribe):', error.message); return { saved: false, error: error.message }; }
+  } else {
+    const { error } = await supabase.from('email_digest_subscriptions')
+      .delete().eq('user_id', user.id).eq('digest_key', digestKey);
+    if (error) { console.warn('[supabase] setEmailDigestSubscription (unsubscribe):', error.message); return { saved: false, error: error.message }; }
+  }
+  return { saved: true };
+}
+
 // ── Web Push subscriptions (dispatch #216) ────────────────────────────────────
 // One row per device/browser (src/app/shell.js's NotificationBell "🔔 Enable device alerts"
 // toggle calls these). Requires supabase/schema-push-subscriptions.sql — RLS is scoped to
