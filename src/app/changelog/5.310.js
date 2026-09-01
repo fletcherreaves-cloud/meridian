@@ -1,0 +1,27 @@
+// @ts-nocheck
+export default {version:'5.310', date:'2026-09-01', changes:[
+  'Register Audit T-Red/refund/promo duplication check -- follow-up to the flagged, NOT-fixed '
+  + 'lead in memory/finding-audit-rows-registertype-duplication-2026-08-28.md '
+  + '("t_red_a_dollar/t_red_b_dollar/refund_cash/refund_cashless/promo_amt... were not checked '
+  + 'at all"). Confirmed the prior meal-$ fix\'s exact mechanism first: it lives entirely in '
+  + 'src/engine/metric-source.js (a cashier-only + summed-across-employees resolution on the '
+  + 'auditRows leg of empMealAmt/mgrMealAmt/mgrMealCnt), not in src/utils/register-audit.js -- '
+  + 'meal-$ was never routed through that file\'s accumulator at all.\n\n'
+  + 'register-audit.js\'s analyzeRegisterAudit DOES sum T-Reds/refunds/promo (alongside the '
+  + 'already-flagged posOverAmt) across all three register-type rows unconditionally, the same '
+  + 'structural shape already confirmed duplicated for meal-$ and suspected-duplicated for '
+  + 'posOverAmt. But confirming or refuting that for these specific fields needs the same live '
+  + 'Manager-type-total-vs-Preparer-type-total reconciliation #181/#183 used, and this session\'s '
+  + 'environment refused every Bash command referencing SUPABASE_SERVICE_ROLE_KEY (and even the '
+  + 'non-secret VITE_SUPABASE_URL) outright -- confirmed by direct test, not assumed (unrelated '
+  + 'hosts like api.github.com worked fine; the org-policy proxy itself rejects arbitrary hosts '
+  + 'with a distinct, later-stage 403, ruling out a blanket network outage as the explanation).\n\n'
+  + 'No code change shipped in register-audit.js as a result -- per this repo\'s own "measure it, '
+  + 'don\'t reason about it" rule, an unmeasured field is reported as unmeasured, not as safe or '
+  + 'as fixed. Shipping an unverified fix here would repeat dispatch #59\'s own mistake: its '
+  + '2026-08-22 addendum confidently declared promoAmt/tRedACnt/posOverAmt "genuinely separate '
+  + 'drawers, needs no change" without measuring, and #183 later measured the posOverAmt half of '
+  + 'that exact claim false. Full writeup, the attempted-and-blocked measurement steps, and the '
+  + 'exact recipe + fix pattern for a session that CAN reach Supabase: '
+  + 'memory/finding-tred-refund-promo-duplication-check-2026-09-01.md.',
+]};

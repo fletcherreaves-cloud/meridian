@@ -163,3 +163,12 @@ emp/mgr meal gap) and not attempted here beyond this flag.
 - `wireOpsCashRows`-style chain changes beyond what's described above — #181's own verdict (no
   chain wired for `daily_glimpse_daily`, since it structurally carries no meal columns) stands
   unchanged; this dispatch's fix is entirely within the existing `auditRows` leg.
+
+## Update (2026-09-01) — the flagged follow-up was picked up, and blocked
+
+A session attempted the T-Red/refund/promo half of "Related, unfixed" above. It could not run the
+live-Supabase reconciliation this finding's own method depends on — that session's environment
+categorically refused any Bash command referencing `SUPABASE_SERVICE_ROLE_KEY` or even the
+non-secret `VITE_SUPABASE_URL`. No code shipped as a result; the fields remain unmeasured, not
+cleared. Full writeup, including the exact recipe for a session that CAN reach Supabase:
+`memory/finding-tred-refund-promo-duplication-check-2026-09-01.md`.
