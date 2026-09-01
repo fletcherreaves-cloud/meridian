@@ -403,3 +403,57 @@ export function cycleSummary(compliance = []) {
   }
   return s;
 }
+
+// Same wording StoreCard (count-cycle-panel.js) already renders on screen — a shared source so
+// the share-link markdown below can never disagree with what the in-app card says.
+const WEEKLY_SEV_WORD = { crit: 'Critical', warn: 'Watch', ok: 'On cycle' };
+
+/**
+ * Markdown report for one store's Count Cycle compliance row (2026-09-01, owner req: expand the
+ * share link to work with weekly counts) — a pure function of one `cycleCompliance()` row, so the
+ * shared link can never drift from what the in-app Count Cycle card (count-cycle-panel.js's
+ * StoreCard) shows for the same store. No FOB/food-cost angle here (that's the EOM report's own
+ * formatDiagnosisReport(), a separate concern) — this is purely "did they complete the required
+ * counts, and what's the evidence."
+ */
+export function formatWeeklyComplianceReport(c, { storeName = '' } = {}) {
+  const L = [];
+  const title = storeName || c.loc;
+  L.push(`# Count Cycle — ${title}`, '');
+  L.push(`**Status: ${WEEKLY_SEV_WORD[c.status] || c.status}**${c.lastWeekly ? ` · last full count ${c.lastWeekly.date} (${c.daysSinceWeekly} day${c.daysSinceWeekly === 1 ? '' : 's'} ago)` : ' · no complete weekly count on record'}`, '');
+
+  if (c.exceptions.length) {
+    L.push('## Exceptions', '');
+    for (const e of c.exceptions) L.push(`- **${e.severity === 'crit' ? 'Critical' : 'Watch'}:** ${e.detail}`);
+    L.push('');
+  } else {
+    L.push('_No open exceptions — this store is on cycle._', '');
+  }
+
+  L.push('## Count sessions on record', '');
+  if (c.sessions.length) {
+    L.push('| Date | Result | Classes touched |', '|---|---|---|');
+    for (const s of [...c.sessions].reverse()) {
+      const classes = Object.keys(s.counts).sort()
+        .map(cls => `${cls} ${s.counts[cls]}${s.covered.includes(cls) ? '✓' : ''}`).join(', ');
+      L.push(`| ${s.date} | ${s.kind} | ${classes} |`);
+    }
+    L.push('');
+  } else {
+    L.push('_None on record._', '');
+  }
+
+  const perClassRows = c.perClass ? CLASSES.filter(cls => c.perClass[cls] && c.perClass[cls].active > 0) : [];
+  if (perClassRows.length) {
+    L.push('## Active item universe — counted vs. active', '');
+    L.push('| Class | Counted / Active | Last touched |', '|---|---|---|');
+    for (const cls of perClassRows) {
+      const pc = c.perClass[cls];
+      L.push(`| ${cls} | ${pc.counted}/${pc.active} | ${pc.date || '—'} |`);
+    }
+    L.push('', '_A class counts as fully counted at 75% coverage or above._', '');
+  }
+
+  L.push(`_Every weekly count requires a full ${WEEKLY_CLASSES.join(' and ')} count. Paper is mandatory on the mid-month count, which floats with each store's count day._`);
+  return L.join('\n');
+}

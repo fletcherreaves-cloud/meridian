@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { detectSessions, sessionQualities, sessionLabel, cycleCompliance, cycleSummary,
-         inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay } from '../engine/count-cycle.js';
+         inCloseWindow, lastDayOf, COVER_FRAC, WEEKLY_DUE_DAYS, detectWeeklyCountDay,
+         formatWeeklyComplianceReport } from '../engine/count-cycle.js';
 
 // Fixtures mirror the real shape of qsr_onhand rows and the real class universe measured
 // live on 2026-08-07: a store carries roughly Food 115-120, Condiment 34-38, Paper 84-98.
@@ -683,5 +684,47 @@ describe('detectWeeklyCountDay', () => {
   it('a loc with zero sessions of any kind never appears in the output map', () => {
     const out = detectWeeklyCountDay([]);
     expect(Object.keys(out)).toHaveLength(0);
+  });
+});
+
+// 2026-09-01 (owner req) -- expand the share link to work with weekly counts. This is a pure
+// function of ONE cycleCompliance() row, so a real fixture goes through the real engine first
+// (not a hand-built compliance object) -- proves the formatter agrees with what cycleCompliance()
+// actually computes, not just with a shape someone imagined it produces.
+describe('formatWeeklyComplianceReport', () => {
+  it('a clean store (on cycle, no exceptions) reports status + its session history', () => {
+    const rows = store('W1', [{ date: '2026-08-06', counts: { Food: 118, Condiment: 36 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' })[0];
+    const md = formatWeeklyComplianceReport(c, { storeName: 'Ardmore-Broadway' });
+
+    expect(md).toMatch(/# Count Cycle — Ardmore-Broadway/);
+    expect(md).toMatch(/\*\*Status: On cycle\*\*/);
+    expect(md).toMatch(/last full count 2026-08-06 \(1 day ago\)/);
+    expect(md).toMatch(/No open exceptions/);
+    expect(md).toMatch(/\| 2026-08-06 \| Weekly \|/);
+    expect(md).not.toMatch(/## Exceptions/); // no exceptions section header when there are none
+  });
+
+  it('a flagged store lists its exceptions with severity wording matching the in-app card', () => {
+    // Overdue: only a stale count on record, 12 days before asOf (> WEEKLY_DUE_DAYS).
+    const rows = store('W2', [{ date: '2026-07-26', counts: { Food: 118, Condiment: 36 } }]);
+    const c = cycleCompliance(rows, { asOf: '2026-08-07' })[0];
+    const md = formatWeeklyComplianceReport(c, { storeName: 'Tishomingo' });
+
+    expect(md).toMatch(/\*\*Status: Critical\*\*/);
+    expect(md).toMatch(/## Exceptions/);
+    expect(md).toMatch(/\*\*Critical:\*\* .*12 days since the last complete Food \+ Condiment count/);
+  });
+
+  it('a store with no complete count yet (only a low-coverage spot session) does not crash and says so plainly', () => {
+    // A store with genuinely ZERO rows never appears in cycleCompliance()'s output at all (it
+    // groups by loc from detectSessions(), which only registers a loc once it has a counted
+    // date) -- so this exercises the case a real caller would actually hand the formatter: a
+    // known store that has counted SOMETHING, just nothing that satisfies a real weekly count yet.
+    const spotRows = store('W3', [{ date: '2026-08-06', counts: { Food: 5 } }]);
+    const c = cycleCompliance(spotRows, { asOf: '2026-08-07' })[0];
+    const md = formatWeeklyComplianceReport(c, { storeName: 'New Store' });
+    expect(md).toMatch(/no complete weekly count on record/);
+    expect(md).not.toMatch(/undefined|NaN/);
   });
 });
