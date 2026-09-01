@@ -110,3 +110,25 @@ This is the real answer to "when did the schedule-workshop retention split actua
 each store" — a stronger signal than the `Locations` sheet's "Schedule Workshop" column (the
 training date), which this file previously documented as the retention-marks candidate. See
 `memory/dispatch-146.md` for how this feeds the Retention Rollup's `sched_retention_marks`.
+
+## 🆕 2026-09-01 update — Locations sheet substantially filled in; Weekly Inventory Count Day unchanged
+
+Owner uploaded a refreshed copy (`Organization_Structure_updated_20260825.xlsx`). Diffed
+cell-by-cell against the prior committed copy before replacing it (never trust a filename alone):
+**every difference is a previously-blank cell now filled in — zero existing values were changed or
+removed.** Newly populated: `Locations` sheet's Operator/Supervisor/GM email columns, MDP
+credentials, **FOB Risk Profile / FOB Driver / Controls Risk Profile / Controls Driver** (the risk
+classification columns this README's provenance caveat already warned are point-in-time, Feb-Mar
+2026 — now with real values to apply that caveat to), Primary Counting Manager, RGR dates, and the
+sheet's second summary table (Time Needed/Date Scheduled/RGR Date/Count Day/Validity/Status,
+`Locations` cols 52-64 — a separate, differently-ordered table on the same sheet, not row-aligned
+to the main per-store rows above it). The 20 per-store sheets and `FC-Inv Setup`/`Scheduling Setup`
+also gained new values, same pattern (fill-in only).
+
+**This session's own reason for caring about this file — the `Locations` sheet's "Weekly Inventory
+Count Day" column (col 19), the real per-store ground truth for the weekly-count automation's
+detected-count-day logic — is UNCHANGED**: identical values for all 20 OK stores, still blank for
+all 7 FL stores. Verified by direct extraction, not by the diff summary alone. So this update does
+not by itself resolve the still-open question of whether/how to wire that column into
+`detectWeeklyCountDay()`'s consumers (`scripts/qsrsoft-onhand-pull.mjs`,
+`scripts/weekly-cycle-digest-send.mjs`) — see the PM session's own findings for that.
