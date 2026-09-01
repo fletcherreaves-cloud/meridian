@@ -34,6 +34,10 @@ on:
         description: 'YYYY-MM month for the dump_fields diagnostic (default: 2026-07)'
         required: false
         default: '2026-07'
+      dump_dates:
+        description: 'Comma-separated YYYY-MM-DD dates for dump_store — prints individual purchase-record line items for each (default: none)'
+        required: false
+        default: ''
       probe_pending_invoices:
         description: 'Dispatch #177 one-off: probe GET /purchase?purchase_status=Pending for all stores (1 = on), read-only, no persistence'
         required: false
@@ -74,6 +78,7 @@ jobs:
           DUMP_EBOS_FIELDS:          ${{ github.event.inputs.dump_fields || '0' }}
           DUMP_EBOS_STORE:           ${{ github.event.inputs.dump_store || '5183' }}
           DUMP_EBOS_MONTH:           ${{ github.event.inputs.dump_month || '2026-07' }}
+          DUMP_EBOS_DATES:           ${{ github.event.inputs.dump_dates || '' }}
           PROBE_PENDING_INVOICES:    ${{ github.event.inputs.probe_pending_invoices || '0' }}
 
       - name: Upload debug screenshots

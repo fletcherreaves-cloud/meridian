@@ -166,6 +166,17 @@ function aggregateByDate(items, nsn) {
     console.log(`[EBOS-FIELDS] ${mon} Credit line items with ops spend (${credOps.length}): ${JSON.stringify(credOps.slice(0, 30))}`);
     console.log(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
   }
+  // Per-date raw line-item dump (DUMP_EBOS_DATES=YYYY-MM-DD,YYYY-MM-DD,...) — for comparing two
+  // dates whose day-bucket totals came out byte-identical (a real anomaly: independent purchase
+  // batches essentially never post the exact same total to the cent). Reveals whether it's the
+  // SAME invoice landing on two dates (a date-assignment bug) or two genuinely different invoices.
+  const dumpDates = String(nsn) === (process.env.DUMP_EBOS_STORE || '5183')
+    ? (process.env.DUMP_EBOS_DATES || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+  for (const d of dumpDates) {
+    const dayItems = items.filter(x => isPurchaseRecord(x.record_type) && String(x.posted_date || '') === d)
+      .map(x => ({ id: x.id, line_item_id: x.line_item_id, inv: x.invoice_identifier, wrin: x.wrin, desc: x.description, rt: x.record_type, ops: Math.round((x.ops_sub || 0) * 100) / 100, total: Math.round((x.total_amount || 0) * 100) / 100 }));
+    console.log(`[EBOS-DATE] NSN ${nsn} ${d}: ${dayItems.length} purchase-record item(s), ops_sub sum ${Math.round(dayItems.reduce((s, x) => s + x.ops, 0) * 100) / 100}: ${JSON.stringify(dayItems)}`);
+  }
   const byDate = {};
   for (const item of items) {
     if (!isPurchaseRecord(item.record_type)) continue;   // Purchase + Credit + Adjustment (ledger Total Purchases)
@@ -396,6 +407,18 @@ async function pullViaPlaywright(startDate, endDate) {
             log.push(`[EBOS-FIELDS] sample Purchase item: ${JSON.stringify(purch[0] || {})}`);
           }
 
+          // Per-date raw line-item dump (args.dumpDates) — see the Node-side aggregateByDate's
+          // matching block for what this answers. record_type check inlined (isPurchaseRecord
+          // is a Node module-scope const, not reachable inside this in-browser page.evaluate).
+          if (String(nsn) === (args.dumpStore || '5183') && args.dumpDates && args.dumpDates.length) {
+            const PT = { Purchase: 1, Credit: 1, Adjustment: 1 };
+            for (const d of args.dumpDates) {
+              const dayItems = items.filter(x => PT[x.record_type] && String(x.posted_date || '') === d)
+                .map(x => ({ id: x.id, line_item_id: x.line_item_id, inv: x.invoice_identifier, wrin: x.wrin, desc: x.description, rt: x.record_type, ops: Math.round((x.ops_sub || 0) * 100) / 100, total: Math.round((x.total_amount || 0) * 100) / 100 }));
+              log.push(`[EBOS-DATE] NSN ${nsn} ${d}: ${dayItems.length} purchase-record item(s), ops_sub sum ${Math.round(dayItems.reduce((s, x) => s + x.ops, 0) * 100) / 100}: ${JSON.stringify(dayItems)}`);
+            }
+          }
+
           // Aggregate: sum sub-categories by posted_date, Purchase records only
           const byDate = {};
           const PT = { Purchase: 1, Credit: 1, Adjustment: 1 };   // ledger "Total Purchases" = these (not Out/In transfers)
@@ -483,6 +506,7 @@ async function pullViaPlaywright(startDate, endDate) {
       return { rows, log };
     }, { token: ebosToken, nsns: STORE_NSNS, startDate, endDate, base: EBOS_BASE, debug: DEBUG,
          dumpFields: process.env.DUMP_EBOS_FIELDS === '1', dumpStore: process.env.DUMP_EBOS_STORE || '5183', dumpMonth: process.env.DUMP_EBOS_MONTH || '2026-07',
+         dumpDates: (process.env.DUMP_EBOS_DATES || '').split(',').map(s => s.trim()).filter(Boolean),
          probePending: process.env.PROBE_PENDING_INVOICES === '1' });
 
     for (const msg of log) console.log('[ebos]', msg);
