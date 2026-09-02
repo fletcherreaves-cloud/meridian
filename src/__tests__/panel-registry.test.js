@@ -200,7 +200,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the thirty-three panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus the new Digital Checklists panel)', () => {
+  it('is exactly the thirty-four panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists and Pricing Engine)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -288,10 +288,12 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // than the hub itself, a genuinely different shape (thirty-one -> thirty-two). 2026-09-01:
     // 'checklist-fill' (Digital Checklists) is a brand-new panel, not a conversion -- built
     // route:true from day one, same as #123's 'crew-schedule' above (thirty-two -> thirty-three).
+    // 'pricing-engine' promoted OUT of Test Kitchen the same day (owner: "make it a URL page
+    // for starters") -- kind:'test-kitchen' -> kind:'nav', route:true (thirty-three -> thirty-four).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'attention', 'brief', 'checklist-fill', 'crew-schedule', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
       'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
-      'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'planning', 'proj',
+      'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'planning', 'pricing-engine', 'proj',
       'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'task-queue',
       'visit-readiness',
     ]);

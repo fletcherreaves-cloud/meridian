@@ -20,11 +20,12 @@
 // idle/loading/loaded/error convention src/views/security-panel.js already uses for a
 // panel-local (non-ds) Supabase read.
 import * as React from 'react';
-import { ModalShell } from '../components/ModalShell.js';
+import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
-import { computeItemMargins, enrichItemMargins } from '../engine/pricing-engine.js';
+import { lastClosedBusinessDay } from '../utils/date.js';
+import { computeItemMargins, enrichItemMargins, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
 import { loadQsrMenuItemActivity } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
@@ -132,9 +133,12 @@ function ItemRow({ row, wide, expanded, onToggle }) {
       key: row.itemNumber, onClick: wide ? onToggle : undefined,
       style: { borderBottom: '.5px solid var(--bdr)', cursor: wide ? 'pointer' : 'default' },
     },
-      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 600 } },
-        (wide ? (expanded ? '▾ ' : '▸ ') : '') + (row.descr || ('#' + row.itemNumber))),
-      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } }, '#' + row.itemNumber),
+      // MI# leads (owner-stated 2026-09-01: "list it first" -- multiple Menu Item #s can
+      // exist for what looks like the same product, e.g. promo-pricing variants, so the
+      // number is the real identifying key, not the description).
+      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--gold)' } },
+        (wide ? (expanded ? '▾ ' : '▸ ') : '') + '#' + row.itemNumber),
+      td({ style: { padding: '6px 10px', fontSize: 11, color: 'var(--text2)' } }, row.descr || '—'),
       td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } },
         wide ? 'All stores' : sNameC(row.loc) || row.loc),
       td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)' } }, f$2(row.menuPrice)),
@@ -164,7 +168,7 @@ function ItemRow({ row, wide, expanded, onToggle }) {
   ];
 }
 
-const HEAD_COLS = ['Item', '#', 'Store', 'Price', 'Food+Paper', 'Margin $', 'Margin %', 'Volume', '$ Contrib'];
+const HEAD_COLS = ['MI #', 'Item', 'Store', 'Price', 'Food+Paper', 'Margin $', 'Margin %', 'Volume', '$ Contrib'];
 
 function RankedTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
   return div(null,
@@ -195,7 +199,7 @@ function RankedTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
 // Activity) don't overlap with the margin tables' Price/Food+Paper/Margin columns, and
 // bolting an optional column set onto ItemRow would make both harder to read. Same
 // wide/expand-to-per-store-rows interaction as ItemRow, though, for a consistent feel.
-const DRAIN_HEAD_COLS = ['Item', '#', 'Store', 'Waste $', 'Waste %', 'Comp $', 'Promo $ (cost basis)', 'Activity'];
+const DRAIN_HEAD_COLS = ['MI #', 'Item', 'Store', 'Waste $', 'Waste %', 'Comp $', 'Promo $ (cost basis)', 'Activity'];
 
 function DrainRow({ row, wide, expanded, onToggle }) {
   return [
@@ -203,9 +207,10 @@ function DrainRow({ row, wide, expanded, onToggle }) {
       key: row.itemNumber, onClick: wide ? onToggle : undefined,
       style: { borderBottom: '.5px solid var(--bdr)', cursor: wide ? 'pointer' : 'default' },
     },
-      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 600 } },
-        (wide ? (expanded ? '▾ ' : '▸ ') : '') + (row.descr || ('#' + row.itemNumber))),
-      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } }, '#' + row.itemNumber),
+      // MI# leads -- see the identical comment on ItemRow above.
+      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--gold)' } },
+        (wide ? (expanded ? '▾ ' : '▸ ') : '') + '#' + row.itemNumber),
+      td({ style: { padding: '6px 10px', fontSize: 11, color: 'var(--text2)' } }, row.descr || '—'),
       td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } },
         wide ? 'All stores' : sNameC(row.loc) || row.loc),
       td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--crit)' } }, f$0(row.wasteDollars)),
@@ -251,6 +256,113 @@ function DrainTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
   );
 }
 
+// ── Item / Combo Cost Lookup (owner request, 2026-09-01) ────────────────────────────
+// "I would definitely like the ability to look up the food and paper cost on any item, value
+// meal, or custom created combination of items." Any single item or value meal already has
+// its own row in `displayRows` (a combo SKU carries its own price/cost, per dispatch #212's
+// trap 3) -- search covers that half. The "custom combination" half is genuinely new:
+// computeComboCost() (src/engine/pricing-engine.js) sums arbitrary picked items' own cost;
+// this component is just the search box + picker + combo tray UI around it.
+function LookupTab({ displayRows, wide }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const [query, setQuery] = uSt('');
+  const [combo, setCombo] = uSt([]); // [{itemNumber, qty}]
+  const [comboPriceInput, setComboPriceInput] = uSt('');
+
+  const results = uM(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const matches = displayRows.filter(r =>
+      String(r.itemNumber).includes(q) || (r.descr || '').toLowerCase().includes(q));
+    return matches.slice().sort((a, b) => (a.descr || '').localeCompare(b.descr || '')).slice(0, 40);
+  }, [displayRows, query]);
+
+  const addToCombo = itemNumber => setCombo(prev => {
+    const i = prev.findIndex(p => p.itemNumber === itemNumber);
+    if (i === -1) return [...prev, { itemNumber, qty: 1 }];
+    return prev.map((p, idx) => idx === i ? { ...p, qty: p.qty + 1 } : p);
+  });
+  const setQty = (itemNumber, qty) => setCombo(prev =>
+    qty > 0 ? prev.map(p => p.itemNumber === itemNumber ? { ...p, qty } : p) : prev.filter(p => p.itemNumber !== itemNumber));
+  const removeFromCombo = itemNumber => setCombo(prev => prev.filter(p => p.itemNumber !== itemNumber));
+
+  const comboCost = uM(() => computeComboCost(displayRows, combo), [displayRows, combo]);
+  const enteredPrice = parseFloat(comboPriceInput);
+  const hasEnteredPrice = isFinite(enteredPrice) && enteredPrice > 0;
+  const comboTotalCost = comboCost.sumFoodCost + comboCost.sumPaperCost;
+  const comboMarginDollars = hasEnteredPrice ? enteredPrice - comboTotalCost : null;
+  const comboMarginPct = hasEnteredPrice && enteredPrice > 0 ? comboMarginDollars / enteredPrice : null;
+
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '.5px solid var(--bdr)', fontSize: 11 };
+  const chip = { padding: '3px 8px', borderRadius: 5, border: '1px solid var(--accent,#f5bc00)', background: 'var(--accent,#f5bc00)', color: '#111', cursor: 'pointer', fontSize: 10, fontWeight: 700, flex: 'none' };
+  const ghostBtn = { padding: '3px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', cursor: 'pointer', fontSize: 10, flex: 'none' };
+
+  return div({ style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' } },
+    div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      h('input', {
+        type: 'text', value: query, onChange: e => setQuery(e.target.value),
+        placeholder: 'Search by item name or MI# (e.g. "Big Mac" or "5")…',
+        style: { width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12 },
+      }),
+      wide && div({ style: { fontSize: 9, color: 'var(--text3)', marginTop: 5 } },
+        'District-wide scope — cost/price shown per item are volume-weighted means across the stores selected above.'),
+    ),
+    div({ style: { padding: '4px 14px', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', paddingTop: 10 } },
+      query ? `${results.length} match${results.length === 1 ? '' : 'es'}` : 'Type to search'),
+    div({ style: { overflowX: 'auto' } },
+      !query
+        ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'Search for any item or value meal to see its food + paper cost breakdown, or add several to build a custom combination below.')
+        : results.length === 0
+          ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'No items match that search in the current scope/range.')
+          : results.map(row => div({ key: row.itemNumber, style: rowStyle },
+              span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)', minWidth: 48 } }, '#' + row.itemNumber),
+              span({ style: { flex: 1, color: 'var(--text)' } }, row.descr || '—'),
+              span({ style: { fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right' } }, f$2(row.menuPrice)),
+              span({ style: { fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right', color: 'var(--text3)' }, title: 'Food + paper cost' }, f$2(row.foodCost + row.paperCost)),
+              span({ style: { fontFamily: 'var(--mono)', minWidth: 48, textAlign: 'right', color: row.marginPct != null && row.marginPct < MARGIN_CONCERN_PCT ? 'var(--crit)' : 'var(--text)' } }, fPc(row.marginPct)),
+              btn({ onClick: () => addToCombo(row.itemNumber), style: chip }, '＋ Add'),
+            )),
+    ),
+    div({ style: { marginTop: 'auto', borderTop: '1px solid var(--bdr2)', background: 'var(--surf2)', padding: '10px 14px' } },
+      div({ style: { fontSize: 10, fontWeight: 800, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } },
+        'Custom Combination' + (comboCost.count ? ` — ${comboCost.count} item${comboCost.count === 1 ? '' : 's'}` : '')),
+      comboCost.items.length === 0
+        ? div({ style: { fontSize: 11, color: 'var(--text3)' } }, 'Add items from the search results above to build a combination and see its combined cost.')
+        : div({},
+            comboCost.items.map(it => div({ key: it.itemNumber, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 11 } },
+              span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)', minWidth: 40 } }, '#' + it.itemNumber),
+              span({ style: { flex: 1, color: 'var(--text)' } }, it.descr || '—'),
+              h('input', {
+                type: 'number', min: 1, value: it.qty, style: { width: 44, fontSize: 10.5, padding: '2px 4px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+                onChange: e => setQty(it.itemNumber, parseInt(e.target.value, 10) || 0),
+              }),
+              span({ style: { fontFamily: 'var(--mono)', minWidth: 60, textAlign: 'right', color: 'var(--text3)' } }, f$2(it.lineFoodCost + it.linePaperCost)),
+              btn({ onClick: () => removeFromCombo(it.itemNumber), style: ghostBtn }, '✕'),
+            )),
+            div({ style: { display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: '.5px solid var(--bdr)', alignItems: 'center' } },
+              div({}, span({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Food Cost: '), span({ style: { fontFamily: 'var(--mono)', fontWeight: 700 } }, f$2(comboCost.sumFoodCost))),
+              div({}, span({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Paper Cost: '), span({ style: { fontFamily: 'var(--mono)', fontWeight: 700 } }, f$2(comboCost.sumPaperCost))),
+              div({}, span({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Total Cost: '), span({ style: { fontFamily: 'var(--mono)', fontWeight: 800, color: 'var(--gold)' } }, f$2(comboTotalCost))),
+              div({}, span({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Σ Component Price: '), span({ style: { fontFamily: 'var(--mono)' } }, f$2(comboCost.sumPrice))),
+            ),
+            div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' } },
+              span({ style: { fontSize: 9, color: 'var(--text3)' } }, 'Actual combo/value-meal price (optional — a real combo is priced below the component sum above):'),
+              h('input', {
+                type: 'number', step: '0.01', min: 0, value: comboPriceInput, placeholder: '$0.00',
+                onChange: e => setComboPriceInput(e.target.value),
+                style: { width: 80, fontSize: 11, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)' },
+              }),
+              hasEnteredPrice && span({ style: { fontSize: 11 } },
+                span({ style: { color: 'var(--text3)' } }, 'Margin: '),
+                span({ style: { fontFamily: 'var(--mono)', fontWeight: 800, color: comboMarginPct != null && comboMarginPct < MARGIN_CONCERN_PCT ? 'var(--crit)' : 'var(--text)' } },
+                  f$2(comboMarginDollars) + ' (' + fPc(comboMarginPct) + ')'),
+              ),
+            ),
+          ),
+    ),
+  );
+}
+
 export function PricingEnginePanel({ stores, ds, onClose }) {
   const { useState: uSt, useMemo: uM, useEffect: uE } = React;
 
@@ -284,6 +396,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
   const wideNeededAndNotReady = WIDE_RANGES.includes(range) && wideState !== 'loaded';
 
   const [scope, setScope] = uSt({ level: 'all', id: null });
+  const [tab, setTab] = uSt('rankings'); // 'rankings' | 'lookup'
   const [sortMode, setSortMode] = uSt('high'); // 'high' | 'low' -- $ Contrib table direction
   const [expandedSet, setExpandedSet] = uSt(() => new Set());
   const toggleExpand = itemNumber => setExpandedSet(s => {
@@ -295,10 +408,15 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
   const wide = scopedLocs.length !== 1;
   const locFilterKey = scopedLocs.join(',');
 
+  // Owner-reported 2026-09-01: "I am not sure the Price you are populating is the correct
+  // price on a lot of items, making the margins seem way off." See clampToLastClosedDay()'s
+  // own header (src/engine/pricing-engine.js) for the live-measured root cause and evidence
+  // -- this clamps the raw data max to the last CLOSED business day, so an in-progress day
+  // never silently understates a "current" menu price.
   const maxDate = uM(() => {
     let max = null;
     (ds.pmixRows || []).forEach(r => { const d = pmixDate(r); if (!isNaN(d) && (!max || d > max)) max = d; });
-    return max;
+    return clampToLastClosedDay(max, lastClosedBusinessDay());
   }, [ds.pmixRows]);
 
   const dateRange = uM(() => {
@@ -411,43 +529,46 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
           pending ? 'Pulling qsr_product_mix from Supabase (loaded on open, not at startup).'
             : wideState === 'error' ? 'Try a narrower range (7D/30D), or reopen this panel to retry.'
               : (range === 'all' ? 'All Time' : range + 'D') + ' pulls real historical breadth from Supabase — this can take longer than the default 30D view.'))
-      : div({ style: { flex: 1, overflowY: 'auto' } },
-        div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
-          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Blended margin, this scope/range'),
-          div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, heroLine || 'No margin data for this scope/range.'),
-        ),
-        h(RankedTable, {
-          title: 'Lowest Margin % — rate concern',
-          subtitle: 'Someone\'s pricing this wrong or costs moved. Not volume-weighted — a low-volume item can rank here.',
-          rows: byMarginPct, wide, expandedSet, onToggle: toggleExpand,
-        }),
-        div({ style: { padding: '14px 14px 4px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-          div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, '$ Contribution — volume-weighted P&L impact'),
-          span({ style: { fontSize: 8, color: 'var(--text3)' } }, 'Sort:'),
-          ...[{ id: 'high', label: 'Winners' }, { id: 'low', label: 'Losers' }].map(m => btn({
-            key: m.id, className: 'btn btn-sm',
-            style: { fontSize: 8.5, background: sortMode === m.id ? 'var(--adim)' : 'transparent', color: sortMode === m.id ? 'var(--amber)' : 'var(--text3)' },
-            onClick: () => setSortMode(m.id),
-          }, m.label)),
-        ),
-        h(RankedTable, {
-          title: '', subtitle: 'What actually moves the P&L — margin $ x volume. A thin-%-high-volume item can outrank a high-%-low-volume one here.',
-          rows: byContrib, wide, expandedSet, onToggle: toggleExpand,
-        }),
-        drainHeroLine && div({ style: { padding: '12px 14px', margin: '14px 14px 0', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
-          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Biggest waste/comp/promo drain, this scope/range'),
-          div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, drainHeroLine),
-        ),
-        h(DrainTable, {
-          title: 'Waste / Comp / Promo Dollar Drains',
-          subtitle: drainSubtitle,
-          rows: byDrain, wide, expandedSet, onToggle: toggleExpand,
-        }),
-      );
+      : (tab === 'lookup'
+        ? h(LookupTab, { displayRows, wide })
+        : div({ style: { flex: 1, overflowY: 'auto' } },
+          div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
+            div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Blended margin, this scope/range'),
+            div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, heroLine || 'No margin data for this scope/range.'),
+          ),
+          h(RankedTable, {
+            title: 'Lowest Margin % — rate concern',
+            subtitle: 'Someone\'s pricing this wrong or costs moved. Not volume-weighted — a low-volume item can rank here.',
+            rows: byMarginPct, wide, expandedSet, onToggle: toggleExpand,
+          }),
+          div({ style: { padding: '14px 14px 4px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+            div({ style: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, '$ Contribution — volume-weighted P&L impact'),
+            span({ style: { fontSize: 8, color: 'var(--text3)' } }, 'Sort:'),
+            ...[{ id: 'high', label: 'Winners' }, { id: 'low', label: 'Losers' }].map(m => btn({
+              key: m.id, className: 'btn btn-sm',
+              style: { fontSize: 8.5, background: sortMode === m.id ? 'var(--adim)' : 'transparent', color: sortMode === m.id ? 'var(--amber)' : 'var(--text3)' },
+              onClick: () => setSortMode(m.id),
+            }, m.label)),
+          ),
+          h(RankedTable, {
+            title: '', subtitle: 'What actually moves the P&L — margin $ x volume. A thin-%-high-volume item can outrank a high-%-low-volume one here.',
+            rows: byContrib, wide, expandedSet, onToggle: toggleExpand,
+          }),
+          drainHeroLine && div({ style: { padding: '12px 14px', margin: '14px 14px 0', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
+            div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Biggest waste/comp/promo drain, this scope/range'),
+            div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, drainHeroLine),
+          ),
+          h(DrainTable, {
+            title: 'Waste / Comp / Promo Dollar Drains',
+            subtitle: drainSubtitle,
+            rows: byDrain, wide, expandedSet, onToggle: toggleExpand,
+          }),
+        ));
 
-  return h(ModalShell, {
-    title: '💲 Pricing Engine', onClose, maxWidth: 900,
+  return h(RoutePanelShell, {
+    title: '💲 Pricing Engine', onBack: onClose,
     subtitle: 'Per-item margin (menu price vs. food + paper cost) — qsr_product_mix, auto-pulled',
+    bodyStyle: { padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   },
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' } },
       span({ style: { fontSize: 8, color: 'var(--text3)', marginRight: 2 } }, 'Range:'),
@@ -461,6 +582,18 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     ),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
       h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
+    div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 6 } },
+      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }].map(t => btn({
+        key: t.id, className: 'btn btn-sm',
+        style: {
+          fontSize: 10.5, fontWeight: 700, padding: '5px 12px', borderRadius: 6,
+          border: '1px solid ' + (tab === t.id ? 'var(--accent,#f5bc00)' : 'var(--bdr)'),
+          background: tab === t.id ? 'rgba(245,188,0,.12)' : 'transparent',
+          color: tab === t.id ? 'var(--amber)' : 'var(--text3)',
+        },
+        onClick: () => setTab(t.id),
+      }, t.label)),
+    ),
     body,
   );
 }

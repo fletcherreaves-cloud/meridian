@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -8,6 +8,79 @@ function row(over) {
   return { loc: '1001', date: '2026-08-15', item: 1, price: 2.99, desc_: 'Item', sold_qty: 10,
     unit_food_cost: 0.5, unit_paper_cost: 0.05, ...over };
 }
+
+describe('clampToLastClosedDay — trap 5: an in-progress day silently understates "current" price', () => {
+  it('clamps a data max that reaches into an in-progress day back to the last closed day', () => {
+    const closed = new Date('2026-08-30T00:00:00');
+    const dataMax = new Date('2026-08-31T00:00:00'); // still filling in
+    expect(clampToLastClosedDay(dataMax, closed)).toBe(closed);
+  });
+
+  it('keeps the real (older) data max when the pull is lagging behind the closed cutoff', () => {
+    const closed = new Date('2026-08-31T00:00:00');
+    const dataMax = new Date('2026-08-28T00:00:00'); // pull hasn\'t caught up yet
+    expect(clampToLastClosedDay(dataMax, closed)).toBe(dataMax);
+  });
+
+  it('passes through a data max that exactly equals the closed cutoff', () => {
+    const closed = new Date('2026-08-30T00:00:00');
+    const dataMax = new Date('2026-08-30T00:00:00');
+    expect(clampToLastClosedDay(dataMax, closed)).toBe(dataMax);
+  });
+
+  it('returns null/undefined as-is when there is no data at all', () => {
+    const closed = new Date('2026-08-30T00:00:00');
+    expect(clampToLastClosedDay(null, closed)).toBeNull();
+    expect(clampToLastClosedDay(undefined, closed)).toBeUndefined();
+  });
+});
+
+describe('computeComboCost — custom item combination lookup', () => {
+  const itemRows = [
+    { itemNumber: 5, descr: 'Big Mac', menuPrice: 6.79, foodCost: 1.71, paperCost: 0.10 },
+    { itemNumber: 4, descr: 'Fries Large', menuPrice: 3.99, foodCost: 0.55, paperCost: 0.08 },
+    { itemNumber: 3, descr: 'Coke Large', menuPrice: 2.39, foodCost: 0.20, paperCost: 0.06 },
+  ];
+
+  it('sums food/paper cost and reference price across the picked items, qty 1 default', () => {
+    const out = computeComboCost(itemRows, [{ itemNumber: 5 }, { itemNumber: 4 }]);
+    expect(out.items).toHaveLength(2);
+    expect(out.sumFoodCost).toBeCloseTo(1.71 + 0.55, 5);
+    expect(out.sumPaperCost).toBeCloseTo(0.10 + 0.08, 5);
+    expect(out.sumPrice).toBeCloseTo(6.79 + 3.99, 5);
+    expect(out.count).toBe(2);
+  });
+
+  it('honors an explicit qty (e.g. "2 Big Macs")', () => {
+    const out = computeComboCost(itemRows, [{ itemNumber: 5, qty: 2 }]);
+    expect(out.items[0].qty).toBe(2);
+    expect(out.sumFoodCost).toBeCloseTo(1.71 * 2, 5);
+    expect(out.sumPrice).toBeCloseTo(6.79 * 2, 5);
+    expect(out.count).toBe(2);
+  });
+
+  it('skips a picked itemNumber with no matching row rather than silently zeroing it', () => {
+    const out = computeComboCost(itemRows, [{ itemNumber: 5 }, { itemNumber: 99999 }]);
+    expect(out.items).toHaveLength(1); // 99999 dropped, not a phantom zero-cost row
+    expect(out.count).toBe(1);
+  });
+
+  it('does not invent a suggested combo price — sumPrice is the sum of COMPONENT prices only', () => {
+    // A real value meal is priced BELOW the sum of its parts; the caller must enter the
+    // actual combo price separately. This function never blends the two.
+    const out = computeComboCost(itemRows, [{ itemNumber: 5 }, { itemNumber: 4 }, { itemNumber: 3 }]);
+    expect(out.sumPrice).toBeCloseTo(6.79 + 3.99 + 2.39, 5);
+  });
+
+  it('returns an all-zero, empty result for no picks', () => {
+    const out = computeComboCost(itemRows, []);
+    expect(out.items).toEqual([]);
+    expect(out.sumFoodCost).toBe(0);
+    expect(out.sumPaperCost).toBe(0);
+    expect(out.sumPrice).toBe(0);
+    expect(out.count).toBe(0);
+  });
+});
 
 describe('computeItemMargins — trap 1: promo contamination (MAX, never AVG)', () => {
   it('resolves real menu price as MAX(price) same-day, not AVG', () => {

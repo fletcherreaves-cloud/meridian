@@ -35,6 +35,32 @@ import { normLoc } from './insights.js';
 // "Tue Aug 18 2026", not "2026-08-18", collapsing every row onto a nonsense key.
 const _dayKey = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
 
+// ── Trap 5: an in-progress day silently understates "current" price ───────────
+// Owner-reported 2026-09-01: "I am not sure the Price you are populating is the correct
+// price on a lot of items, making the margins seem way off." Live-measured cause: the
+// engine's menuPrice is MAX(price) on the single most recent day in the caller's window --
+// if that day is still IN PROGRESS (today, or a not-yet-fully-pulled prior day; the
+// qsr_product_mix pull runs twice daily, ~5am CDT "prior day fully closed" + ~2pm CDT
+// "current-day refresh"), only whatever price tiers have rung SO FAR that day are visible,
+// which understates the true day's price. Live sample (store 3708, 2026-08-31 vs the prior
+// two days): 34 of 359 items showed a LOWER MAX(price) on the latest date than on an earlier
+// date in the same window -- a real menu-wide price rollback across dozens of unrelated
+// items in one day is not plausible; an incomplete day's partial data is.
+//
+// Pure so it's unit-testable without a real Date/clock (the caller passes both dates in) --
+// the actual "what day is it" call belongs in the view (lastClosedBusinessDay(),
+// src/utils/date.js -- the same shared helper every other trailing-window computation in
+// this repo already uses for exactly this trap), not here.
+//
+// dataMaxDate: the real max date PRESENT in the caller's rows (can be null/undefined if no
+// rows). closedCutoff: the last CLOSED business day (a Date). Returns whichever is OLDER --
+// never invents data past what's actually pulled (a lagging pull keeps its own real, older
+// max), and never lets an in-progress day pass through as "current."
+export function clampToLastClosedDay(dataMaxDate, closedCutoff) {
+  if (!dataMaxDate) return dataMaxDate;
+  return dataMaxDate > closedCutoff ? closedCutoff : dataMaxDate;
+}
+
 // ── Trap 2: wrap-combo unit halving ────────────────────────────────────────────
 // supabase/schema-product-mix.sql's own documented gotcha (a dismissible vendor
 // banner, not discoverable from the data itself): "Wrap Combo Units Sold are based
@@ -291,4 +317,55 @@ export function enrichItemMargins(marginRows, activityRows, { dateRange } = {}) 
       activityUnits: a.activity,
     };
   });
+}
+
+// ── Item / combo cost lookup (owner request, 2026-09-01) ──────────────────────
+// "I would definitely like the ability to look up the food and paper cost on any item, value
+// meal, or custom created combination of items." A real McDonald's value meal already carries
+// its OWN item_number/price/cost row (dispatch #212's trap 3 -- e.g. item 8936 "Big Mac Meal"
+// is its own row, not derived from item 5 "Big Mac" + fries + drink), so "any item or value
+// meal" is already served by a plain lookup against computeItemMargins()'s own output -- no
+// new engine logic needed for that half. This function is the genuinely new half: a
+// CUSTOM combination the owner builds by hand (e.g. "what would 2 Big Macs + a large fry cost
+// me"), which has no existing item_number of its own.
+//
+// Pure: sums each selected item's OWN unit food/paper cost (and quantity-weighted volume/
+// count), independent of any one store's actual sales mix -- this is a "what would this
+// combination cost" calculator, not a sales-weighted analysis. Deliberately does NOT sum
+// `menuPrice` into a suggested combo price: a real combo is priced BELOW the sum of its
+// components (that's the point of a value meal), so inventing a "combo price" here would be
+// actively misleading -- the caller shows Σ(component prices) as a reference figure only and
+// lets the operator enter the combo's real menu price separately, if there is one.
+//
+// itemRows: computeItemMargins()/enrichItemMargins() output (or displayRows, the store-
+// aggregated shape PricingEnginePanel already builds) -- one row per item_number in scope.
+// picks: [{itemNumber, qty}] -- qty defaults to 1 if omitted. An itemNumber with no matching
+// row is skipped (not silently zeroed) so a caller can tell "not found" from "found but
+// zero-cost" by comparing picks.length to the returned items.length.
+//
+// Returns {items: [{itemNumber, descr, qty, unitPrice, unitFoodCost, unitPaperCost,
+// lineFoodCost, linePaperCost, linePrice}], sumFoodCost, sumPaperCost, sumPrice, count}.
+export function computeComboCost(itemRows, picks) {
+  const byItem = new Map();
+  for (const r of itemRows || []) {
+    if (r && r.itemNumber != null && !byItem.has(r.itemNumber)) byItem.set(r.itemNumber, r);
+  }
+  const items = [];
+  let sumFoodCost = 0, sumPaperCost = 0, sumPrice = 0, count = 0;
+  for (const p of picks || []) {
+    if (!p || p.itemNumber == null) continue;
+    const row = byItem.get(p.itemNumber);
+    if (!row) continue;
+    const qty = Number(p.qty) > 0 ? Number(p.qty) : 1;
+    const lineFoodCost = (row.foodCost || 0) * qty;
+    const linePaperCost = (row.paperCost || 0) * qty;
+    const linePrice = (row.menuPrice || 0) * qty;
+    items.push({
+      itemNumber: row.itemNumber, descr: row.descr, qty,
+      unitPrice: row.menuPrice || 0, unitFoodCost: row.foodCost || 0, unitPaperCost: row.paperCost || 0,
+      lineFoodCost, linePaperCost, linePrice,
+    });
+    sumFoodCost += lineFoodCost; sumPaperCost += linePaperCost; sumPrice += linePrice; count += qty;
+  }
+  return { items, sumFoodCost, sumPaperCost, sumPrice, count };
 }

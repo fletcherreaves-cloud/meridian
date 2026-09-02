@@ -927,7 +927,8 @@ function App() {
   // showTopBottom — RETIRED (dispatch #203, 2026-08-28): merged into LeaderboardPanel as a mode,
   // opened via routePanel==='ranking' + leaderboardMode==='top-bottom' instead.
   const [showOpportunity,setShowOpportunity] = useState(false); // Opportunity $ v1
-  const [showPricingEngine,setShowPricingEngine] = useState(false); // Pricing Engine (dispatch #212)
+  // showPricingEngine — RETIRED (2026-09-01, owner: "make it a URL page for starters"):
+  // replaced by routePanel==='pricing-engine' (see routePanel switch below).
   // showCountCycle — Dispatch #55 Part B: replaced by routePanel==='count-cycle', then dispatch
   // #189 folded that route into routePanel==='eom-dashboard' (see routePanel above) as
   // EOMDashboardPanel's Count Cycle tab (eomInitialMode==='compliance').
@@ -2961,7 +2962,7 @@ function App() {
     showModelAssign||
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
     showPriorityBrief||showProjBriefSA||
-    showRevIntel||showOpportunity||showPricingEngine||showSettings||showSmartTargets||showStoreKB||
+    showRevIntel||showOpportunity||showSettings||showSmartTargets||showStoreKB||
     showTargets||showUnifiedTargets||showWhyEngine||showAdminPanel||showScheduling||showMonthlyProj||showFormsCompletion||showSage||showSmartTargetsV2||showLaborAnalysis||showSkillsMatrix||showPanelManager;
 
   // ── Universal Escape hatch  (v4.215) ────────────────────────────────────
@@ -2992,7 +2993,10 @@ function App() {
       setShowModelAssign(false);
       setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
-      setShowRevIntel(false);setShowOpportunity(false);setShowPricingEngine(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
+      // setShowPricingEngine(false) — retired 2026-09-01 with the showPricingEngine state itself
+      // (see the comment at its old declaration site above); routePanel!==null already handles
+      // Escape for it, same pattern as setShowPlanningHub below.
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowScheduling(false);setShowMonthlyProj(false);setShowSage(false);setShowPanelManager(false);
       // setShowPlanningHub(false) — dispatch #207: replaced by routePanel==='planning' (see routePanel above); the routePanel!==null branch above already handles Escape for it.
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
@@ -3093,7 +3097,7 @@ function App() {
         // through ordinary navigation.
         if(modal==='top-bottom')     perm('analytics.district')&&(setLeaderboardMode('top-bottom'),goRoute('ranking'));
         if(modal==='opportunity-dollars') perm('analytics.district')&&setShowOpportunity(true);
-        if(modal==='pricing-engine') perm('analytics.store')&&setShowPricingEngine(true);
+        if(modal==='pricing-engine') perm('analytics.store')&&goRoute('pricing-engine');
         if(modal==='data-manager')   perm('data.upload')&&setShowDataManager(true);
         if(modal==='settings')       perm('settings.view')&&setShowSettings(true);
         if(modal==='panel-manager')  perm('settings.view')&&setShowPanelManager(true);
@@ -3347,6 +3351,9 @@ function App() {
       // checklist-fill — RoutePanelShell lives inside ChecklistFillPanel itself (same
       // "shell inside the component" pattern as sched-hub/perf-reviews/planning above).
       routePanel==='checklist-fill'&&h(ChecklistFillPanel,{stores,onClose:()=>goRoute(null)}),
+      // pricing-engine — promoted out of Test Kitchen 2026-09-01, same "shell inside the
+      // component" pattern (RoutePanelShell now lives inside PricingEnginePanel itself).
+      routePanel==='pricing-engine'&&h(PricingEnginePanel,{stores,ds,onClose:()=>goRoute(null)}),
       // Dispatch #55 Part B (Job C Batch 1) — six overlay-to-page conversions. sched-hub,
       // perf-reviews and eom-dashboard carry RoutePanelShell inside their own component (they
       // already rendered their own header chrome). fob-analysis ORIGINALLY had no internal
@@ -3529,7 +3536,6 @@ function App() {
     showCompare  &&h(MultiStoreComparison,{stores,ds,settings,onSelectStore:s=>{goStore(s);setShowCompare(false);},onClose:()=>setShowCompare(false)}),
     showRevIntel &&h(RevenueIntelligence,{stores,ds,settings,userEvents,onSelectStore:s=>{goStore(s);setShowRevIntel(false);},onClose:()=>setShowRevIntel(false)}),
     showOpportunity&&h(OpportunityDollars,{stores,ds,onSelectStore:s=>{goStore(s);setShowOpportunity(false);},onClose:()=>setShowOpportunity(false)}),
-    showPricingEngine&&h(PricingEnginePanel,{stores,ds,onClose:()=>setShowPricingEngine(false)}),
     showKB&&h(KnowledgeBasePanel,{onClose:()=>setShowKB(false)}),
     showEmailDigests&&h(EmailDigestSubscriptionsPanel,{onClose:()=>setShowEmailDigests(false)}),
     uploadReport&&h(UploadSummaryModal,{report:uploadReport,onClose:()=>setUploadReport(null)}),

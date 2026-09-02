@@ -270,7 +270,9 @@ export const PANELS = [
   // already lazy-fills. kind:'test-kitchen' for now; real eventual section given from day
   // one (matches ProductMixPanel's own section:'inventory-food-cost'), per CLAUDE.md's
   // panel-registry promotion rule -- flip kind: to ship it for real, nothing else.
-  { id:'pricing-engine', label:'Pricing Engine', icon:'💲', perm:'analytics.store', kind:'test-kitchen', section:'inventory-food-cost', tkOrder:14 },
+  // Promoted out of Test Kitchen 2026-09-01 (owner: "We should make it a URL page for
+  // starters") -- one-field flip per CLAUDE.md's promotion rule, section unchanged.
+  { id:'pricing-engine', label:'Pricing Engine', icon:'💲', perm:'analytics.store', kind:'nav', section:'inventory-food-cost', route:true },
   { id:'priority-brief', label:'Priority Actions', icon:'🎯', perm:'analytics.brief', kind:'optional', section:'notifications' },
   // Owner req 2026-09-01, verbatim: "allow anyone to sign up or opt in to whichever reports they
   // want emailed to them." perm:null -- deliberately open to any authenticated role, matching
