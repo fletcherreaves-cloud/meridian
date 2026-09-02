@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -363,5 +363,94 @@ describe('enrichItemMargins', () => {
     expect(out[0].activityUnits).toBe(50); // summed, matching the Pct denominators
     const unmatched = enrichItemMargins([marginRow], [activityRow({ item_number: 999 })]);
     expect(unmatched[0].activityUnits).toBeNull();
+  });
+});
+
+describe('enrichItemRecipe', () => {
+  // Raw qsr_menu_item_recipe-shaped fixture (snake_case DB COLUMNS -- but the `recipe`/
+  // `hist_recipe` jsonb columns themselves hold mapMenuItemRecipe()'s CAMELCASE per-ingredient
+  // output verbatim, since that's what scripts/qsrsoft-menu-item-recipe-pull.mjs actually
+  // writes -- enrichItemRecipe() below passes those arrays through unmodified, it does not
+  // re-map them). food_cost/paper_cost deliberately DIFFER from the margin row's own, so a test
+  // can prove those are kept as separate recipeFoodCost/recipePaperCost fields, never
+  // overwriting foodCost/paperCost.
+  function recipeRow(over) {
+    return {
+      loc: '1001', store_menuitem_id: 555, item_number: 5, description: 'Big Mac',
+      daypart_code: 'Regular', family_group: 'Regular Entree', combination_item: false, on_pos: true,
+      food_cost: 1.36, paper_cost: 0.0737, total_cost: 1.4337,
+      recipe: [
+        { fullWrin: '00005-086', longDesc: '100% PURE BEEF', startDate: '2026-05-13', servings: 2, cls: 'F', looseUnitCost: 0.4273, costPrice: 0.8545 },
+        { fullWrin: '00284-166', longDesc: 'WRAP/HAMBURGER', startDate: '2026-05-13', servings: 1, cls: 'P', looseUnitCost: 0.016, costPrice: 0.016 },
+      ],
+      hist_recipe: [],
+      updated_at: '2026-08-30T00:00:00Z',
+      ...over,
+    };
+  }
+  const marginRow = {
+    loc: '1001', itemNumber: 5, descr: 'Big Mac', menuPrice: 6.79,
+    foodCost: 1.3605, paperCost: 0.0737, marginDollars: 5.3558, marginPct: 0.789,
+    volume: 50, totalContrib: 267.79,
+  };
+
+  it('joins recipe/BOM fields onto the margin row without touching its own foodCost/paperCost', () => {
+    const out = enrichItemRecipe([marginRow], [recipeRow()]);
+    expect(out).toHaveLength(1);
+    expect(out[0].foodCost).toBe(1.3605);   // untouched -- the proven margin-basis cost
+    expect(out[0].paperCost).toBe(0.0737);  // untouched
+    expect(out[0].recipeFoodCost).toBe(1.36);   // the recipe endpoint's OWN cost, kept separate
+    expect(out[0].recipePaperCost).toBe(0.0737);
+    expect(out[0].recipe).toHaveLength(2);
+    expect(out[0].recipe[0].fullWrin).toBe('00005-086');
+    expect(out[0].familyGroup).toBe('Regular Entree');
+    expect(out[0].daypartCode).toBe('Regular');
+    expect(out[0].onPos).toBe(true);
+  });
+
+  it('an item present in margins but ABSENT from recipe rows gets recipe:null, not []', () => {
+    const out = enrichItemRecipe([marginRow], [recipeRow({ item_number: 999 })]); // different item
+    expect(out).toHaveLength(1);
+    expect(out[0].recipe).toBeNull();
+    expect(out[0].histRecipe).toBeNull();
+    expect(out[0].recipeFoodCost).toBeNull();
+    expect(out[0].familyGroup).toBeNull();
+  });
+
+  it('an item WITH a recipe row but a genuinely empty ingredient list gets recipe:[], distinguishable from null', () => {
+    const out = enrichItemRecipe([marginRow], [recipeRow({ recipe: [] })]);
+    expect(out[0].recipe).toEqual([]);
+    expect(out[0].recipe).not.toBeNull();
+  });
+
+  it('accepts a camelCase-mapped shape (itemNumber/foodCost/onPos), same dual-shape tolerance as the sibling enrich functions', () => {
+    const camel = {
+      loc: '0001001', storeMenuitemId: 555, itemNumber: 5, description: 'Big Mac',
+      familyGroup: 'Regular Entree', onPos: true, foodCost: 1.36, paperCost: 0.0737,
+      recipe: [{ fullWrin: 'X', longDesc: 'Y', servings: 1, cls: 'F', costPrice: 1 }],
+      histRecipe: [], updatedAt: '2026-08-30T00:00:00Z',
+    };
+    const out = enrichItemRecipe([marginRow], [camel]);
+    expect(out[0].recipeFoodCost).toBe(1.36);
+    expect(out[0].onPos).toBe(true);
+    expect(out[0].recipe).toHaveLength(1);
+  });
+
+  it('joins on normLoc()\'d loc regardless of raw padding differences', () => {
+    const out = enrichItemRecipe([{ ...marginRow, loc: '1001' }], [recipeRow({ loc: '0001001' })]);
+    expect(out[0].recipe).toHaveLength(2);
+  });
+
+  it('an empty recipeRows array yields null recipe fields for every margin row, not a throw', () => {
+    const out = enrichItemRecipe([marginRow], []);
+    expect(out[0].recipe).toBeNull();
+  });
+
+  it('two recipe rows resolving to the same (loc,item_number) keep the first, never silently merge two recipes', () => {
+    const out = enrichItemRecipe([marginRow], [
+      recipeRow({ store_menuitem_id: 555, food_cost: 1.36 }),
+      recipeRow({ store_menuitem_id: 999999, food_cost: 9.99 }), // a different store_menuitem_id, same item_number
+    ]);
+    expect(out[0].recipeFoodCost).toBe(1.36); // the first one, not summed/averaged with 9.99
   });
 });

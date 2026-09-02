@@ -319,6 +319,86 @@ export function enrichItemMargins(marginRows, activityRows, { dateRange } = {}) 
   });
 }
 
+// ── enrichItemRecipe — ingredient-level recipe/BOM (2026-09-02) ───────────────────────────────
+// Joins computeItemMargins()'s own output onto `qsr_menu_item_recipe` rows
+// (scripts/qsrsoft-menu-item-recipe-pull.mjs, schema-qsr-menu-item-recipe.sql) on the same
+// (loc, item_number) key enrichItemMargins() already uses. Owner: "I would definitely like the
+// ability to look up the food and paper cost on any item... I think we can eventually tie in
+// some other useful metrics from McDonald's RFM." This is the first slice of that: which raw
+// ingredients (WRIN), at what quantity and cost, make up an item's food/paper cost, plus a real
+// recipe-change history and POS/daypart/family-group metadata.
+//
+// ── Cost-basis rule (same discipline as enrichItemMargins) ────────────────────
+// qsr_menu_item_recipe carries its OWN food_cost/paper_cost/total_cost (cost_breakdown from the
+// recipe endpoint), independently computed by QSRSoft from a THIRD angle (per-ingredient
+// cost_price summed by class, not the qsr_product_mix-derived number computeItemMargins() uses).
+// Rather than silently overwrite the already-proven-correct margin-row cost with this one, this
+// function keeps the recipe endpoint's cost as separate `recipeFoodCost`/`recipePaperCost`/
+// `recipeTotalCost` fields — a live cross-check surface (do the two independently-computed
+// numbers agree?), not a second source pretending to be the first. The margin row's own
+// foodCost/paperCost (and everything derived from them — marginDollars, marginPct, the
+// enrichItemMargins waste/comp/promo dollars) is UNTOUCHED by this function.
+//
+// ── current-state, no window aggregation ───────────────────────────────────────
+// Unlike activityRows (a daily time series enrichItemMargins sums across the window),
+// qsr_menu_item_recipe is a current-state snapshot — one row per (loc, store_menuitem_id), no
+// date column. So this is a plain 1:1 join, no summing/latest-day logic needed.
+//
+// ── null vs. missing — same distinction enrichItemMargins already established ─
+// An item with no matching recipeRow (not yet pulled, or a store/item the recipe pull hasn't
+// reached) keeps `recipe: null` — never `[]`, which would misread as "pulled, has zero
+// ingredients" (a genuinely different, suspicious fact worth being able to tell apart).
+//
+// recipeRows: raw qsr_menu_item_recipe rows (loc, item_number, description, daypart_code,
+// family_group, combination_item, on_pos, food_cost, paper_cost, total_cost, recipe, hist_recipe,
+// updated_at) — the DB/REST shape; also accepts a camelCase-mapped shape for consistency with
+// this file's other enrich functions, though no loader maps one yet.
+//
+// Returns each margin row extended with recipeFoodCost/recipePaperCost/recipeTotalCost,
+// familyGroup, daypartCode, onPos, combinationItem, recipe (ingredient array or null),
+// histRecipe (array or null), recipeUpdatedAt. All null/false-default when unmatched.
+export function enrichItemRecipe(marginRows, recipeRows) {
+  const byItem = new Map(); // "loc|itemNumber" -> recipe row
+  for (const r of recipeRows || []) {
+    if (!r) continue;
+    const itemNumberRaw = r.itemNumber ?? r.item_number;
+    if (itemNumberRaw == null || r.loc == null) continue;
+    const itemNumber = Number(itemNumberRaw);
+    if (!isFinite(itemNumber)) continue;
+    const k = normLoc(r.loc) + '|' + itemNumber;
+    // A store can carry more than one store_menuitem_id resolving to the same item_number only
+    // in edge cases (a promo-pricing variant sharing the display number) — keep the first/most
+    // recently upserted row rather than silently summing two different recipes together.
+    if (!byItem.has(k)) byItem.set(k, r);
+  }
+
+  return (marginRows || []).map(m => {
+    const k = m.loc + '|' + Number(m.itemNumber);
+    const r = byItem.get(k);
+    if (!r) {
+      return {
+        ...m,
+        recipeFoodCost: null, recipePaperCost: null, recipeTotalCost: null,
+        familyGroup: null, daypartCode: null, onPos: null, combinationItem: null,
+        recipe: null, histRecipe: null, recipeUpdatedAt: null,
+      };
+    }
+    return {
+      ...m,
+      recipeFoodCost: r.foodCost ?? r.food_cost ?? null,
+      recipePaperCost: r.paperCost ?? r.paper_cost ?? null,
+      recipeTotalCost: r.totalCost ?? r.total_cost ?? null,
+      familyGroup: r.familyGroup ?? r.family_group ?? null,
+      daypartCode: r.daypartCode ?? r.daypart_code ?? null,
+      onPos: r.onPos ?? r.on_pos ?? null,
+      combinationItem: r.combinationItem ?? r.combination_item ?? null,
+      recipe: Array.isArray(r.recipe) ? r.recipe : [],
+      histRecipe: Array.isArray(r.histRecipe ?? r.hist_recipe) ? (r.histRecipe ?? r.hist_recipe) : [],
+      recipeUpdatedAt: r.updatedAt ?? r.updated_at ?? null,
+    };
+  });
+}
+
 // ── Item / combo cost lookup (owner request, 2026-09-01) ──────────────────────
 // "I would definitely like the ability to look up the food and paper cost on any item, value
 // meal, or custom created combination of items." A real McDonald's value meal already carries

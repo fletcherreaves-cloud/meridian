@@ -25,8 +25,8 @@ import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
-import { computeItemMargins, enrichItemMargins, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
-import { loadQsrMenuItemActivity } from '../lib/supabase.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
+import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
   ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded,
@@ -263,11 +263,65 @@ function DrainTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
 // trap 3) -- search covers that half. The "custom combination" half is genuinely new:
 // computeComboCost() (src/engine/pricing-engine.js) sums arbitrary picked items' own cost;
 // this component is just the search box + picker + combo tray UI around it.
+// ── Recipe/BOM ingredient table — one store's current recipe for one item ──────────────────────
+// row: a displayRows entry carrying recipe/histRecipe/familyGroup/daypartCode/onPos/recipeFoodCost/
+// recipePaperCost (enrichItemRecipe's output). `recipe: null` means the recipe pull hasn't reached
+// this (loc, item) yet — shown as an explicit empty state, never confused with "pulled, zero
+// ingredients" (recipe: []).
+function RecipeDetail({ row }) {
+  if (row.recipe == null) {
+    return div({ style: { padding: '8px 10px', fontSize: 10.5, color: 'var(--text3)', fontStyle: 'italic' } },
+      'No recipe data pulled yet for this item' + (row.loc ? ` at ${row.loc}` : '') + ' — the recipe/BOM pull covers items as they\'re sold, backfilling over its first several runs.');
+  }
+  const CLASS_LABEL = { F: 'Food', P: 'Paper' };
+  const basisFood = row.foodCost || 0, basisPaper = row.paperCost || 0;
+  const recipeFood = row.recipeFoodCost, recipePaper = row.recipePaperCost;
+  const crossCheckOff = recipeFood != null && recipePaper != null
+    && (Math.abs(recipeFood - basisFood) > 0.02 || Math.abs(recipePaper - basisPaper) > 0.02);
+  return div({ style: { padding: '8px 10px', background: 'var(--surf2)', borderRadius: 6, margin: '4px 0' } },
+    div({ style: { display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 9.5, color: 'var(--text3)', marginBottom: 6 } },
+      row.familyGroup && span({}, 'Family: ', span({ style: { color: 'var(--text2)' } }, row.familyGroup)),
+      row.daypartCode && span({}, 'Daypart: ', span({ style: { color: 'var(--text2)' } }, row.daypartCode)),
+      row.onPos != null && span({ style: { color: row.onPos ? 'var(--grn,#3ecf8e)' : 'var(--crit)' } }, row.onPos ? '● On POS' : '● Off POS'),
+      row.combinationItem && span({ style: { color: 'var(--text2)' } }, '◆ Combination item'),
+    ),
+    row.recipe.length === 0
+      ? div({ style: { fontSize: 10.5, color: 'var(--text3)' } }, 'Recipe pulled but lists no ingredients — unusual, worth a second look at the source item.')
+      : table({ style: { width: '100%', borderCollapse: 'collapse', fontSize: 10.5 } },
+          thead({}, tr({},
+            th({ style: { textAlign: 'left', padding: '2px 4px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'WRIN'),
+            th({ style: { textAlign: 'left', padding: '2px 4px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Ingredient'),
+            th({ style: { textAlign: 'left', padding: '2px 4px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Class'),
+            th({ style: { textAlign: 'right', padding: '2px 4px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Servings'),
+            th({ style: { textAlign: 'right', padding: '2px 4px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Unit Cost'),
+            th({ style: { textAlign: 'right', padding: '2px 4px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Cost'),
+          )),
+          tbody({}, row.recipe.map((ing, i) => tr({ key: ing.fullWrin || i, style: { borderTop: '.5px solid var(--bdr)' } },
+            td({ style: { padding: '3px 4px', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, ing.fullWrin || '—'),
+            td({ style: { padding: '3px 4px', color: 'var(--text)' } }, ing.longDesc || '—'),
+            td({ style: { padding: '3px 4px', color: 'var(--text3)' } }, CLASS_LABEL[ing.cls] || ing.cls || '—'),
+            td({ style: { padding: '3px 4px', textAlign: 'right', fontFamily: 'var(--mono)' } }, ing.servings ?? '—'),
+            td({ style: { padding: '3px 4px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, ing.looseUnitCost != null ? f$2(ing.looseUnitCost) : '—'),
+            td({ style: { padding: '3px 4px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, ing.costPrice != null ? f$2(ing.costPrice) : '—'),
+          ))),
+        ),
+    (recipeFood != null || recipePaper != null) && div({
+      style: { marginTop: 6, fontSize: 9.5, color: crossCheckOff ? 'var(--crit)' : 'var(--text3)' },
+      title: 'Independently computed from this item\'s current recipe — a cross-check against the margin-table cost above, not a replacement for it.',
+    },
+      `Recipe-basis cost: ${f$2(recipeFood || 0)} food + ${f$2(recipePaper || 0)} paper` +
+      (crossCheckOff ? ' — differs from the margin-table cost above by more than 2¢; recipe may have changed since the last margin-basis pull.' : ' (matches margin-table cost above).')),
+    row.histRecipe && row.histRecipe.length > 0 && div({ style: { marginTop: 6, fontSize: 9, color: 'var(--text3)' } },
+      `${row.histRecipe.length} prior recipe version${row.histRecipe.length === 1 ? '' : 's'} on file.`),
+  );
+}
+
 function LookupTab({ displayRows, wide }) {
   const { useState: uSt, useMemo: uM } = React;
   const [query, setQuery] = uSt('');
   const [combo, setCombo] = uSt([]); // [{itemNumber, qty}]
   const [comboPriceInput, setComboPriceInput] = uSt('');
+  const [expandedRecipe, setExpandedRecipe] = uSt(null); // itemNumber currently showing its recipe, or null
 
   const results = uM(() => {
     const q = query.trim().toLowerCase();
@@ -314,14 +368,28 @@ function LookupTab({ displayRows, wide }) {
         ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'Search for any item or value meal to see its food + paper cost breakdown, or add several to build a custom combination below.')
         : results.length === 0
           ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'No items match that search in the current scope/range.')
-          : results.map(row => div({ key: row.itemNumber, style: rowStyle },
-              span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)', minWidth: 48 } }, '#' + row.itemNumber),
-              span({ style: { flex: 1, color: 'var(--text)' } }, row.descr || '—'),
-              span({ style: { fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right' } }, f$2(row.menuPrice)),
-              span({ style: { fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right', color: 'var(--text3)' }, title: 'Food + paper cost' }, f$2(row.foodCost + row.paperCost)),
-              span({ style: { fontFamily: 'var(--mono)', minWidth: 48, textAlign: 'right', color: row.marginPct != null && row.marginPct < MARGIN_CONCERN_PCT ? 'var(--crit)' : 'var(--text)' } }, fPc(row.marginPct)),
-              btn({ onClick: () => addToCombo(row.itemNumber), style: chip }, '＋ Add'),
-            )),
+          : results.map(row => [
+              div({ key: row.itemNumber, style: rowStyle },
+                span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)', minWidth: 48 } }, '#' + row.itemNumber),
+                span({ style: { flex: 1, color: 'var(--text)' } }, row.descr || '—'),
+                span({ style: { fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right' } }, f$2(row.menuPrice)),
+                span({ style: { fontFamily: 'var(--mono)', minWidth: 56, textAlign: 'right', color: 'var(--text3)' }, title: 'Food + paper cost' }, f$2(row.foodCost + row.paperCost)),
+                span({ style: { fontFamily: 'var(--mono)', minWidth: 48, textAlign: 'right', color: row.marginPct != null && row.marginPct < MARGIN_CONCERN_PCT ? 'var(--crit)' : 'var(--text)' } }, fPc(row.marginPct)),
+                btn({
+                  onClick: () => setExpandedRecipe(prev => prev === row.itemNumber ? null : row.itemNumber),
+                  style: ghostBtn, title: 'Show ingredient-level recipe/BOM',
+                }, expandedRecipe === row.itemNumber ? '▾ Recipe' : '▸ Recipe'),
+                btn({ onClick: () => addToCombo(row.itemNumber), style: chip }, '＋ Add'),
+              ),
+              expandedRecipe === row.itemNumber && div({ key: row.itemNumber + '-recipe', style: { padding: '0 10px 6px' } },
+                wide && Array.isArray(row.storeRows)
+                  ? row.storeRows.map(sr => div({ key: sr.loc },
+                      div({ style: { fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', margin: '6px 0 2px' } }, sr.loc),
+                      h(RecipeDetail, { row: sr }),
+                    ))
+                  : h(RecipeDetail, { row }),
+              ),
+            ]),
     ),
     div({ style: { marginTop: 'auto', borderTop: '1px solid var(--bdr2)', background: 'var(--surf2)', padding: '10px 14px' } },
       div({ style: { fontSize: 10, fontWeight: 800, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } },
@@ -458,7 +526,35 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     [itemRows, activityRows, dateRange],
   );
 
-  const displayRows = uM(() => (wide ? aggregateAcrossStores(enrichedItemRows) : enrichedItemRows), [enrichedItemRows, wide]);
+  // ── Recipe/BOM load (2026-09-02) — keyed to locFilterKey, unlike activityRows above:
+  // qsr_menu_item_recipe is current-state (not a 1-2-day-deep stream) and each row carries a
+  // full ingredient array (+ history), so fetching the whole table on every render is a
+  // meaningfully larger payload than the activity table's "fetch everything, filter client-
+  // side" shape can absorb. Scoped by loc at the query instead, matching pmixRows' own
+  // lazy-fill discipline for a table this size.
+  const [recipeState, setRecipeState] = uSt('idle'); // idle | loading | loaded | error
+  const [recipeRows, setRecipeRows] = uSt([]);
+  uE(() => {
+    let cancelled = false;
+    setRecipeState('loading');
+    loadQsrMenuItemRecipe({ loc: scopedLocs }).then(rows => {
+      if (cancelled) return;
+      setRecipeRows(rows || []);
+      setRecipeState('loaded');
+    }).catch(() => {
+      if (cancelled) return;
+      setRecipeState('error');
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locFilterKey]);
+
+  const recipeEnrichedItemRows = uM(
+    () => enrichItemRecipe(enrichedItemRows, recipeRows),
+    [enrichedItemRows, recipeRows],
+  );
+
+  const displayRows = uM(() => (wide ? aggregateAcrossStores(recipeEnrichedItemRows) : recipeEnrichedItemRows), [recipeEnrichedItemRows, wide]);
 
   const scopeTotals = uM(() => {
     let contrib = 0, revenue = 0;

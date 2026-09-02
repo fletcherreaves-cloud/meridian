@@ -5,6 +5,7 @@ import {
   mapVarianceRows, mapYieldGroups, parseYieldRange, yieldBandFor, yieldStatus,
   mapWasteEvents, summarizeWasteByManager, mapTransferLines, summarizeTransfers, flagUnmatchedTransfers,
   mapRawItemHistory, mapRawItemInfo, mapMenuItems, mapMenuItemActivity, mapMenuItemActivityCost,
+  mapMenuItemRecipe,
 } from '../engine/eom-parsers.js';
 
 describe('mapVarianceRows', () => {
@@ -246,5 +247,77 @@ describe('mapMenuItemActivityCost', () => {
     expect(m.foodCost).toBeNull();
     expect(m.paperCost).toBeNull();
     expect(m.totalCost).toBeNull();
+  });
+});
+
+describe('mapMenuItemRecipe', () => {
+  // Real owner-captured response (2026-09-01, item 2 "Double Hamburger", store 3708) --
+  // memory/finding-ebos-menu-item-activity-cost-endpoint-2026-09-01.md.
+  const realCapture = {
+    item_number: 2, description: 'Double Hamburger', daypart_code: 'Regular',
+    family_group: 'Regular Entree', combination_item: 0, on_pos: 1,
+    recipe: [
+      { full_wrin: '00005-086', long_desc: '100% PURE BEEF', start_date: '2026-05-13', servings: 2, class: 'F', loose_unit_cost: 0.4272577785446025, cost_price: 0.854515557089205 },
+      { full_wrin: '00001-705', long_desc: 'BUN/REG BB 3.1', start_date: '2026-05-13', servings: 1, class: 'F', loose_unit_cost: 0.16088333333333335, cost_price: 0.16088333333333335 },
+      { full_wrin: '00284-166', long_desc: 'WRAP/HAMBURGER/SMPD3', start_date: '2026-05-13', servings: 1, class: 'P', loose_unit_cost: 0.015955, cost_price: 0.015955 },
+    ],
+    hist_recipe: [
+      { full_wrin: '00001-705', long_desc: 'BUN/REG BB 3.1', start_date: '2024-10-11', end_date: '2026-05-12', servings: 1, class: 'F', loose_unit_cost: 0.15, cost_price: 0.15 },
+    ],
+    cost_breakdown: { food: 1.0720873536517048, paper: 0.015955, total: 1.0880423536517048 },
+  };
+
+  it('maps the real captured response, including nested recipe/cost_breakdown fields', () => {
+    const m = mapMenuItemRecipe(realCapture);
+    expect(m.itemNumber).toBe(2);
+    expect(m.description).toBe('Double Hamburger');
+    expect(m.familyGroup).toBe('Regular Entree');
+    expect(m.daypartCode).toBe('Regular');
+    expect(m.foodCost).toBeCloseTo(1.0720873536517048);
+    expect(m.paperCost).toBeCloseTo(0.015955);
+    expect(m.totalCost).toBeCloseTo(1.0880423536517048);
+    expect(m.recipe).toHaveLength(3);
+    expect(m.recipe[0].fullWrin).toBe('00005-086');
+    expect(m.recipe[0].servings).toBe(2);
+    expect(m.recipe[0].cls).toBe('F');
+    expect(m.recipe[0].costPrice).toBeCloseTo(0.854515557089205);
+    expect(m.histRecipe).toHaveLength(1);
+    expect(m.histRecipe[0].endDate).toBe('2026-05-12');
+  });
+
+  it('cost_price cross-validates against loose_unit_cost x servings (the real capture\'s own arithmetic)', () => {
+    const m = mapMenuItemRecipe(realCapture);
+    const beef = m.recipe[0];
+    expect(beef.costPrice).toBeCloseTo(beef.looseUnitCost * beef.servings, 10);
+  });
+
+  it('normalizes on_pos/combination_item from QSRSoft\'s real 1/0 integer encoding to booleans', () => {
+    const m = mapMenuItemRecipe(realCapture); // on_pos:1, combination_item:0
+    expect(m.onPos).toBe(true);
+    expect(m.combinationItem).toBe(false);
+  });
+
+  it('also accepts true/"Y"/"1" for the flag fields, same permissive family as mapRawItemInfo.recipeItem', () => {
+    expect(mapMenuItemRecipe({ on_pos: true }).onPos).toBe(true);
+    expect(mapMenuItemRecipe({ on_pos: 'Y' }).onPos).toBe(true);
+    expect(mapMenuItemRecipe({ on_pos: '1' }).onPos).toBe(true);
+    expect(mapMenuItemRecipe({ on_pos: 0 }).onPos).toBe(false);
+    expect(mapMenuItemRecipe({ on_pos: 'N' }).onPos).toBe(false);
+  });
+
+  it('defaults recipe/histRecipe to [] (not undefined) and cost fields to null on a missing/malformed response', () => {
+    const m = mapMenuItemRecipe({});
+    expect(m.recipe).toEqual([]);
+    expect(m.histRecipe).toEqual([]);
+    expect(m.foodCost).toBeNull();
+    expect(m.paperCost).toBeNull();
+    expect(m.totalCost).toBeNull();
+    expect(m.itemNumber).toBeNull();
+  });
+
+  it('does not throw on a non-array recipe/hist_recipe field', () => {
+    const m = mapMenuItemRecipe({ recipe: 'not-an-array', hist_recipe: null });
+    expect(m.recipe).toEqual([]);
+    expect(m.histRecipe).toEqual([]);
   });
 });

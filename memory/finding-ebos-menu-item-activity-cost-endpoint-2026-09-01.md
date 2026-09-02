@@ -215,17 +215,32 @@ this bulk shape; it does **not** carry the recipe/cost/hist_recipe detail from t
 the earlier "same ID space" cross-check from a second angle: `data:4194824` here again matches
 "2 - Double Hamburger", the same item/ID pairing seen in the cost and activity2 captures.
 
-## Open, not yet done
+## ✅ Recipe/BOM endpoint built (2026-09-02) — do not re-scope from scratch
 
-- Not yet confirmed whether this is a per-item, per-DAY snapshot only (would need one call per
-  item per day — 5,466 items/store × 27 stores is not a cheap daily full-catalog pull) or
-  whether it can be queried for a range/whole catalog in fewer calls. A single-item capture like
-  this one doesn't answer that; needs its own recon before scoping a pull script around it.
-- Not yet cross-checked against `qsr_product_mix`'s existing `unit_food_cost`/`unit_paper_cost`
-  for the same (store, item, date) to see whether the two sources actually agree (dispatch #212
-  already did this cross-check between `qsr_product_mix` and `qsr_menu_item_activity`'s cost
-  columns and found them identical — this is a THIRD source, not yet compared to either).
-- Not yet wired into any pull script, table, or panel. This file exists purely so the capture
-  isn't lost (CLAUDE.md's own "commit every memory file" rule) — next step is source recon
-  (bulk-fetchability, cross-check against existing costs) before deciding whether to build
-  anything on it.
+The recipe/BOM endpoint (`GET /menuitems/{store_menuitem_id}`, capture 1 above) is now a real
+auto-pulled stream: `scripts/qsrsoft-menu-item-recipe-pull.mjs` → `qsr_menu_item_recipe`
+(`supabase/schema-qsr-menu-item-recipe.sql`), watched in `sync-failure-watch.yml`. Answers the
+open questions below as they stood:
+
+- **Per-item, per-DAY snapshot vs. bulk-fetchable**: not independently re-tested, but treated as
+  per-item (no bulk/range form assumed) — the pull scopes item selection the SAME way the sibling
+  `qsrsoft-menu-item-activity-pull.mjs` already does (trailing-90-day active item_numbers from
+  `qsr_product_mix` ∩ `qsr_menu_items` catalog, ~330-390/store, not the full ~5,466-item catalog),
+  and skips items whose stored row isn't stale yet (`RECIPE_REFRESH_DAYS`, default 21) — so the
+  ongoing per-run call volume is small even without a bulk endpoint.
+- **Cross-check against `qsr_product_mix`'s cost columns**: `enrichItemRecipe()`
+  (`src/engine/pricing-engine.js`) joins this endpoint's `cost_breakdown` onto the existing
+  margin row as SEPARATE `recipeFoodCost`/`recipePaperCost` fields — never overwriting the
+  proven-correct `qsr_product_mix`-derived cost — and the Item Lookup UI flags a >2¢ disagreement
+  between the two independently-computed numbers. Not yet aggregated into a district-wide
+  agreement-rate measurement; that's the natural next step once the backfill has run a few times.
+- **Wired into a panel**: Pricing Engine's Item Lookup tab — a "▸ Recipe" toggle per search
+  result shows the ingredient list (WRIN/description/class/servings/unit cost/cost contribution),
+  family group/daypart/POS metadata, and recipe-change history count. District-wide scope shows
+  a per-store breakdown (recipe cost can differ store to store), never a blended/averaged recipe.
+
+`qsr_raw_item_info` (dispatch #184) is a DIFFERENT, narrower thing — confirmed by reading its own
+pull script: scoped to only the top ~50 raw items BY VARIANCE $ per store per period (an EOM
+diagnostic subset, `qsrsoft-variance-pull.mjs`'s `actionable` slice), not a general ingredient
+catalog. It cannot answer "what's the recipe for this item" for most items, which is why this was
+built as a new stream rather than reusing that table.
