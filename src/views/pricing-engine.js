@@ -25,7 +25,7 @@ import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
-import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact } from '../engine/pricing-engine.js';
 import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
@@ -538,6 +538,110 @@ function CrossStoreTab({ itemRows, crossStore, wide }) {
   );
 }
 
+// ── PriceImpactTab — the legacy BRK/REG PRICING IMPACT sheet, rebuilt (2026-09-02) ──────────
+// Pick one item, enter a hypothetical price change, see the modeled profit impact at trailing
+// volume (see simulatePriceImpact()'s own header for the static-elasticity assumption this
+// makes explicit, and what it deliberately does NOT model — demand response or diversion).
+function PriceImpactTab({ itemRows, wide, rangeLabel }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const [query, setQuery] = uSt('');
+  const [selected, setSelected] = uSt(null); // itemNumber | null
+  const [deltaText, setDeltaText] = uSt('0.10');
+
+  const results = uM(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const seen = new Set();
+    const matches = [];
+    for (const r of itemRows || []) {
+      if (seen.has(r.itemNumber)) continue;
+      if (String(r.itemNumber).includes(q) || (r.descr || '').toLowerCase().includes(q)) {
+        seen.add(r.itemNumber);
+        matches.push(r);
+      }
+    }
+    return matches.sort((a, b) => (a.descr || '').localeCompare(b.descr || '')).slice(0, 40);
+  }, [itemRows, query]);
+
+  const priceDelta = uM(() => {
+    const n = parseFloat(deltaText);
+    return isFinite(n) ? n : 0;
+  }, [deltaText]);
+
+  const sim = uM(() => (selected == null ? null : simulatePriceImpact(itemRows, selected, priceDelta)), [itemRows, selected, priceDelta]);
+
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '.5px solid var(--bdr)', fontSize: 11 };
+  const chip = { padding: '3px 8px', borderRadius: 5, border: '1px solid var(--accent,#f5bc00)', background: 'var(--accent,#f5bc00)', color: '#111', cursor: 'pointer', fontSize: 10, fontWeight: 700, flex: 'none' };
+
+  return div({ style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' } },
+    div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      h('input', {
+        type: 'text', value: query, onChange: e => { setQuery(e.target.value); setSelected(null); },
+        placeholder: 'Search by item name or MI# to model a price change…',
+        style: { width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12 },
+      }),
+    ),
+    query && !selected && div({ style: { overflowX: 'auto' } },
+      results.length === 0
+        ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'No items match that search in the current scope/range.')
+        : results.map(row => div({ key: row.itemNumber, style: rowStyle },
+            span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)', minWidth: 48 } }, '#' + row.itemNumber),
+            span({ style: { flex: 1, color: 'var(--text)' } }, row.descr || '—'),
+            btn({ onClick: () => { setSelected(row.itemNumber); setQuery(row.descr || String(row.itemNumber)); }, style: chip }, '＋ Model'),
+          ))),
+    !selected && !query && div({ style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text3)', padding: 40 } },
+      div({ style: { fontSize: 36 } }, '💥'),
+      div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)' } }, 'Model a Price Change'),
+      div({ style: { fontSize: 10, textAlign: 'center', maxWidth: 420, lineHeight: 1.7 } },
+        'Search for an item, enter a price change, and see the modeled profit impact at this scope/range\'s trailing volume — the same calculation the owner\'s legacy pricing workbook used (BRK/REG PRICING IMPACT sheets), rebuilt on live qsr_product_mix cost/volume data.')),
+    sim && div({ style: { padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 14 } },
+      div({ style: { padding: '10px', background: 'var(--surf2)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+        span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)' } }, '#' + sim.itemNumber),
+        span({ style: { flex: 1, fontWeight: 700, color: 'var(--text)' } }, sim.descr || '—'),
+        span({ style: { fontSize: 10, color: 'var(--text3)' } }, 'Price change:'),
+        h('input', {
+          type: 'text', value: deltaText, onChange: e => setDeltaText(e.target.value),
+          style: { width: 80, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12, fontFamily: 'var(--mono)', textAlign: 'right' },
+        }),
+        btn({ onClick: () => { setSelected(null); setQuery(''); }, style: { padding: '3px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', cursor: 'pointer', fontSize: 10, flex: 'none' } }, '✕'),
+      ),
+      div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } },
+        `Modeled at ${rangeLabel} trailing volume — static-elasticity: assumes unit volume unchanged (does not model demand response or item-to-item diversion)`),
+      div({ style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 } },
+        div({ style: { padding: '12px', background: 'var(--surf2)', borderRadius: 8 } },
+          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Modeled Profit Impact'),
+          div({ style: { fontSize: 20, fontWeight: 800, color: sim.totalProfitImpact >= 0 ? '#4ade80' : 'var(--crit)' } },
+            (sim.totalProfitImpact >= 0 ? '+' : '') + f$0(sim.totalProfitImpact))),
+        div({ style: { padding: '12px', background: 'var(--surf2)', borderRadius: 8 } },
+          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Blended Margin %'),
+          div({ style: { fontSize: 16, fontWeight: 700, color: 'var(--text)' } }, fPc(sim.blendedMarginPctBefore) + ' → ' + fPc(sim.blendedMarginPctAfter))),
+        div({ style: { padding: '12px', background: 'var(--surf2)', borderRadius: 8 } },
+          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Trailing Units (basis)'),
+          div({ style: { fontSize: 16, fontWeight: 700, color: 'var(--text)' } }, fN0(sim.totalVolume))),
+      ),
+      wide && div({ style: { overflowX: 'auto', border: '1px solid var(--bdr)', borderRadius: 8 } },
+        table({ style: { width: '100%', borderCollapse: 'collapse', fontSize: 10.5 } },
+          thead({}, tr({},
+            th({ style: { textAlign: 'left', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Store'),
+            th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Price → New'),
+            th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Margin % → New'),
+            th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Trailing Units'),
+            th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Profit Impact'),
+          )),
+          tbody({}, sim.stores.map(sr => tr({ key: sr.loc, style: { borderTop: '.5px solid var(--bdr)' } },
+            td({ style: { padding: '4px 10px', color: 'var(--text)' } }, sNameC(sr.loc) || sr.loc),
+            td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)' } }, f$2(sr.menuPrice) + ' → ' + f$2(sr.newMenuPrice)),
+            td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)' } }, fPc(sr.marginPct) + ' → ' + fPc(sr.newMarginPct)),
+            td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, fN0(sr.volume)),
+            td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: sr.profitImpact >= 0 ? '#4ade80' : 'var(--crit)' } },
+              (sr.profitImpact >= 0 ? '+' : '') + f$0(sr.profitImpact)),
+          ))),
+        ),
+      ),
+    ),
+  );
+}
+
 export function PricingEnginePanel({ stores, ds, onClose }) {
   const { useState: uSt, useMemo: uM, useEffect: uE } = React;
 
@@ -741,7 +845,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
         ? h(LookupTab, { displayRows, wide })
         : tab === 'cross-store'
           ? h(CrossStoreTab, { itemRows: recipeEnrichedItemRows, crossStore, wide })
-          : div({ style: { flex: 1, overflowY: 'auto' } },
+          : tab === 'price-impact'
+            ? h(PriceImpactTab, { itemRows: recipeEnrichedItemRows, wide, rangeLabel: range === 'all' ? 'All Time' : range + 'D' })
+            : div({ style: { flex: 1, overflowY: 'auto' } },
           div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
             div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Blended margin, this scope/range'),
             div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, heroLine || 'No margin data for this scope/range.'),
@@ -793,7 +899,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
       h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 6 } },
-      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }].map(t => btn({
+      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }, { id: 'price-impact', label: '💥 Price Impact' }].map(t => btn({
         key: t.id, className: 'btn btn-sm',
         style: {
           fontSize: 10.5, fontWeight: 700, padding: '5px 12px', borderRadius: 6,

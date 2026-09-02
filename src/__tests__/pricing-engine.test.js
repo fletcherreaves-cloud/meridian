@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -549,5 +549,85 @@ describe('crossStoreCompare — self-relative margin gap (never a peer-price-dev
   it('an empty itemRows array yields empty output, not a throw', () => {
     expect(crossStoreCompare([])).toEqual({ byItem: [], storeMedians: {} });
     expect(crossStoreCompare(undefined)).toEqual({ byItem: [], storeMedians: {} });
+  });
+});
+
+// simulatePriceImpact -- the rebuilt legacy BRK/REG PRICING IMPACT sheet (static-elasticity:
+// trailing volume held constant, per its own header comment).
+describe('simulatePriceImpact — static-elasticity price/profit model (legacy workbook rebuild)', () => {
+  const singleStoreRow = { loc: '1001', itemNumber: 5, descr: 'Big Mac', menuPrice: 5.99, foodCost: 1.44, paperCost: 0.08, volume: 200 };
+
+  it('a $0.20 price increase raises profit by exactly priceDelta * volume (cost held constant)', () => {
+    const sim = simulatePriceImpact([singleStoreRow], 5, 0.20);
+    expect(sim.itemNumber).toBe(5);
+    expect(sim.descr).toBe('Big Mac');
+    expect(sim.totalVolume).toBe(200);
+    expect(sim.totalProfitImpact).toBeCloseTo(0.20 * 200, 6); // 40
+    const s = sim.stores[0];
+    expect(s.newMenuPrice).toBeCloseTo(6.19, 6);
+    expect(s.marginPct).toBeCloseTo((5.99 - 1.44 - 0.08) / 5.99, 6);
+    expect(s.newMarginPct).toBeCloseTo((6.19 - 1.44 - 0.08) / 6.19, 6);
+    expect(s.profitImpact).toBeCloseTo(40, 6);
+  });
+
+  it('a negative priceDelta (a price cut) produces a negative profit impact', () => {
+    const sim = simulatePriceImpact([singleStoreRow], 5, -0.30);
+    expect(sim.totalProfitImpact).toBeCloseTo(-0.30 * 200, 6); // -60
+    expect(sim.stores[0].newMenuPrice).toBeCloseTo(5.69, 6);
+  });
+
+  it('a zero priceDelta is a no-op: before/after margin and price are identical', () => {
+    const sim = simulatePriceImpact([singleStoreRow], 5, 0);
+    expect(sim.totalProfitImpact).toBe(0);
+    expect(sim.stores[0].newMenuPrice).toBeCloseTo(sim.stores[0].menuPrice, 6);
+    expect(sim.blendedMarginPctAfter).toBeCloseTo(sim.blendedMarginPctBefore, 6);
+  });
+
+  it('blends margin % dollar-weighted across stores, never a plain average of store percents', () => {
+    const rows = [
+      { loc: '1001', itemNumber: 5, descr: 'Big Mac', menuPrice: 5.99, foodCost: 1.44, paperCost: 0.08, volume: 900 }, // high volume
+      { loc: '1002', itemNumber: 5, descr: 'Big Mac', menuPrice: 6.99, foodCost: 1.44, paperCost: 0.08, volume: 100 }, // low volume, richer margin
+    ];
+    const sim = simulatePriceImpact(rows, 5, 0);
+    const naiveAvg = (rows[0].menuPrice - rows[0].foodCost - rows[0].paperCost) / rows[0].menuPrice
+      + (rows[1].menuPrice - rows[1].foodCost - rows[1].paperCost) / rows[1].menuPrice;
+    // the dollar-weighted blend must sit closer to the high-volume store's own margin % than
+    // a naive 50/50 average would
+    const naiveAvgPct = naiveAvg / 2;
+    const store1Pct = (rows[0].menuPrice - rows[0].foodCost - rows[0].paperCost) / rows[0].menuPrice;
+    expect(Math.abs(sim.blendedMarginPctBefore - store1Pct)).toBeLessThan(Math.abs(naiveAvgPct - store1Pct));
+  });
+
+  it('sums profitImpact across every store in scope for totalProfitImpact', () => {
+    const rows = [
+      { loc: '1001', itemNumber: 5, menuPrice: 5.99, foodCost: 1.44, paperCost: 0.08, volume: 200 },
+      { loc: '1002', itemNumber: 5, menuPrice: 6.49, foodCost: 1.45, paperCost: 0.08, volume: 150 },
+    ];
+    const sim = simulatePriceImpact(rows, 5, 0.25);
+    expect(sim.totalVolume).toBe(350);
+    expect(sim.totalProfitImpact).toBeCloseTo(0.25 * 200 + 0.25 * 150, 6);
+    expect(sim.stores).toHaveLength(2);
+  });
+
+  it('filters out rows for other item numbers rather than mixing them into the model', () => {
+    const sim = simulatePriceImpact([
+      singleStoreRow,
+      { loc: '1001', itemNumber: 8, descr: 'Double Quarter Cheese', menuPrice: 7.59, foodCost: 1.90, paperCost: 0.09, volume: 90 },
+    ], 5, 0.10);
+    expect(sim.stores).toHaveLength(1);
+    expect(sim.stores[0].loc).toBe('1001');
+  });
+
+  it('returns null for an item with no matching rows, not a throw', () => {
+    expect(simulatePriceImpact([singleStoreRow], 99999, 0.10)).toBeNull();
+    expect(simulatePriceImpact([], 5, 0.10)).toBeNull();
+    expect(simulatePriceImpact(undefined, 5, 0.10)).toBeNull();
+  });
+
+  it('a zero-volume store contributes zero profit impact without dividing by zero', () => {
+    const sim = simulatePriceImpact([{ loc: '1001', itemNumber: 5, menuPrice: 5.99, foodCost: 1.44, paperCost: 0.08, volume: 0 }], 5, 0.20);
+    expect(sim.totalVolume).toBe(0);
+    expect(sim.totalProfitImpact).toBe(0);
+    expect(sim.blendedMarginPctBefore).toBeNull(); // Σprice$=0 -- no basis to blend, not fabricated as 0%
   });
 });
