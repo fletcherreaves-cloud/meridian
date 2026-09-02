@@ -2993,7 +2993,10 @@ function App() {
       setShowModelAssign(false);
       setShowPMix(false);setShowPVSA(false);
       setShowPriorityBrief(false);setShowProjBriefSA(false);
-      setShowRevIntel(false);setShowOpportunity(false);setShowPricingEngine(false);setShowSettings(false);setShowSmartTargets(false);
+      setShowRevIntel(false);setShowOpportunity(false);setShowSettings(false);setShowSmartTargets(false);
+      // setShowPricingEngine(false) — retired 2026-09-01 with the showPricingEngine state itself
+      // (see the comment at its old declaration site above); routePanel!==null already handles
+      // Escape for it, same pattern as setShowPlanningHub below.
       setShowStoreKB(false);setShowTargets(false);setShowUnifiedTargets(false);setShowWhyEngine(false);setShowAdminPanel(false);setShowScheduling(false);setShowMonthlyProj(false);setShowSage(false);setShowPanelManager(false);
       // setShowPlanningHub(false) — dispatch #207: replaced by routePanel==='planning' (see routePanel above); the routePanel!==null branch above already handles Escape for it.
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
