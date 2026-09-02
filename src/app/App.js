@@ -1532,7 +1532,13 @@ function App() {
             return {
               ...prev,
               allMonthlyTargets: all,
-              monthlyTargets: { ...(all[latestKey]||{}), ...prev.monthlyTargets },
+              // #156 — cloud-first: this used to spread cloud FIRST then prev.monthlyTargets on
+              // top, so a stale device-local cache silently beat a corrected cloud value for any
+              // store present in both. Not deliberate (memory/project-scoring-revisit.md traced
+              // the write path -- saveMonthlyTargets/loadAllMonthlyTargets already round-trip
+              // correctly; this was only ever a precedence bug). Cloud now wins per store;
+              // prev.monthlyTargets only fills in a store the cloud fetch doesn't have (yet).
+              monthlyTargets: { ...prev.monthlyTargets, ...(all[latestKey]||{}) },
             };
           });
           console.log(`[Meridian] ✓ Loaded monthly targets for ${periods.join(', ')} (${Object.values(all[latestKey]||{}).length} stores/period)`);
