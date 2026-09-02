@@ -78,9 +78,12 @@ const addDay = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + 
 const isoDaysAgo = n => fmtDate(addDay(new Date(), -n));
 
 // ── Freshness lookup: this store's qsr_menu_item_recipe, store_menuitem_id -> updated_at ────────
+// PAGE=1000, matching scripts/lib/menu-item-selection.mjs's own fix — this project's PostgREST
+// caps every request at 1000 rows regardless of the requested range (live-measured 2026-09-02),
+// so a bigger PAGE constant silently truncates instead of erroring.
 async function freshnessLookup(loc) {
   const map = new Map();
-  const PAGE = 5000;
+  const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await withRetry(
       () => supabase.from('qsr_menu_item_recipe').select('store_menuitem_id,updated_at').eq('loc', loc).range(from, from + PAGE - 1),
