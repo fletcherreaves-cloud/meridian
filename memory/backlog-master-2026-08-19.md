@@ -670,20 +670,28 @@ first below.
   script all shipped); 5 concrete next steps remain instead: confirm the multi-store `loc` field,
   wire lazy-fill, add a GitHub Action + `sync-failure-watch.yml` entry, build the
   `productMixDiscount` pull, fix the manual-parser loc/date handling (`project-product-mix-291.md`).
-- [ ] 994 `labor_rows` (2.36%, all 27 stores, Jan-2025–Jul-2026) still carry a false
-  `labor_pct=0` stub; `scripts/cleanup-labor-pct-stub-zeros.mjs` is dry-run-verified but never
-  executed — needs owner go-ahead, then a re-measurement of #236/#237's noise numbers
-  (`project-labor-pct-tail-236.md`). Distinct from §3's generic `labor_rows` sweep item.
-- [ ] Owner needs to run `supabase/schema-qsr-rollup-scheduled-hours.sql` before the Planning/
-  Execution split (#210, v4.989) rollup-path UI shows anything but "—" in production; two deferred
-  follow-ups also unlisted: rate/hours/sales decomposition (needs `actual_punched_dollars`) and
-  generalizing Signals' `HourlyDetail` into a per-store hour×DOW gap grid
-  (`project-labor-gap-split-210.md`).
-- [ ] Owner needs to run `schema-hourly-projection-accuracy.sql` before any data accumulates for
-  the hourly-projection-accuracy feature; the 8-day afternoon sales-bias pattern that motivated it
-  (-8% to -12%, 3pm-8pm) is an unconfirmed lead needing weeks more data; `dt-speedofservice.js`'s
-  string-keyed `HOUR_LABELS` may silently fail to match integer `hour_slot` values, never checked
-  live (`project-hourly-projection-accuracy.md`).
+- [x] ✅ **DONE 2026-09-02, owner go-ahead given.** The 994-row count was as of 2026-08-19; a
+  dry-run just before executing found only **6** rows still matching the stub signature
+  (`labor_pct=0 AND sales>0`, all also `tpph=0 AND ot_hrs=0`, 5 stores, 2025-01-22..2026-01-25) —
+  the parser/save-path fix landed sometime in the interim and the rest had already been cleaned
+  up another way. Ran `scripts/cleanup-labor-pct-stub-zeros.mjs`: backed up all 6 rows' pre-write
+  state to `backups/labor-rows-cleanup-2026-09-02T17-51-33-198Z.json` (gitignored, local only),
+  nulled `labor_pct`/`tpph`/`ot_hrs`/`ot_dollar` on all 6, `sales` left untouched. Verified live
+  post-write: `labor_rows?labor_pct=eq.0&sales=gt.0` → `content-range: */0`, zero rows remain.
+  **Not yet done:** the re-measurement of #236/#237's noise numbers this was meant to unblock —
+  that's `scripts/measure-coaching-noise-threshold.mjs` /
+  `scripts/measure-district-relative-noise.mjs`, a separate follow-on, not run in this pass.
+- [x] ⚠️ **CORRECTED 2026-09-02 — both pending migrations are already run in production.**
+  Measured live via `SUPABASE_SERVICE_ROLE_KEY` (this session has read access, per dispatch
+  #133's finding): `qsr_daily_activity_rollup.total_scheduled_hours` exists and returns real
+  (non-error) rows — `supabase/schema-qsr-rollup-scheduled-hours.sql` has already been applied,
+  unblocking the Planning/Execution split (#210) rollup-path UI. `hourly_projection_accuracy`
+  also exists with real rows back to 2026-08-13 (`schema-hourly-projection-accuracy.sql` already
+  run), and its GitHub Action (`.github/workflows/hourly-projection-accuracy.yml`) is live. **Do
+  not re-ask the owner to run either SQL block.** The two named follow-ups (rate/hours/sales
+  decomposition needing `actual_punched_dollars`; generalizing Signals' `HourlyDetail` into a
+  per-store hour×DOW gap grid; the 8-day afternoon sales-bias lead; `HOUR_LABELS` string/integer
+  mismatch) were not re-verified in this pass and may still be open — re-check before acting.
 
 ### Correctness bugs (extends §4)
 
@@ -713,18 +721,21 @@ first below.
 - [ ] `LocationSelector`'s patch tier reads a static seed (`INV_ORG_COORDS[loc].sup`) while
   Inventory Control's own patch filter reads the live `_liveAssignments` override — unconfirmed
   whether the two stay in sync (`spine1-panel-controls-126.md`).
-- [ ] **New field note (owner, 2026-08-19, explicitly non-urgent, "easy win"):** add Operations
-  Manager (OM) and Director of Operations (DO) as org-structure tiers, under Patches/settings —
-  same area as `_liveAssignments`/`SUPERVISOR_PATCHES` above. Owner: *"I will need to add the
-  ability under patches or a new section for Operations Manager(s) (OM) and we should also
-  include Director of Operations (DO). If you like the abbreviations we can use AS for Area
-  Supervisors."* Adding 2 supervisors and a first Operations Manager; 2 people already function
-  in DO roles today without the tier existing. Owner is updating records "in the next month" —
-  not blocking, sequence whenever convenient. **Bonus context, not a requirement:** QSRSoft's own
-  SSO role model (captured live 2026-08-19, `memory/dispatch-34-phase0a-findings.md` Part 3)
-  already has first-class "Operations Manager" and "Director of Operations" permission groups —
-  external precedent for these exact tier names, though this item only needs Meridian-side
-  additions (RBAC role list / `profiles.role` / patch-assignment UI), not any QSRSoft integration.
+- [x] ✅ **DONE — already shipped by dispatch #166, re-measured 2026-09-02, do not
+  re-implement.** OM/DO org-structure tiers exist: `constants.js`'s `DEF_SETTINGS` carries
+  `doGroups` (seeded, e.g. `'Hugh Bonner'` → the MCDOK store list) and `omGroups` (`{}` scaffold,
+  intentionally empty — "no OM names seeded yet; populate via Settings when ready"). Management →
+  Settings has two dedicated `GroupsEditor` sections (`activeSection==='dos'`/`'oms'`,
+  `src/views/management.js`), the same add/edit/sync-from-defaults UI pattern as the existing
+  Operators/Supervisors sections. `one-pager.js` already reads both (`settings.doGroups`/
+  `settings.omGroups`) for DO/OM scope filtering. Covered by
+  `dispatch-166-management-do-om-sections.test.js` and `dispatch-166-onepager-do-scope.test.js`.
+  Persisted the same way every other Settings field is (round-trips through the normal
+  `settings`/`onUpdate` save path to Supabase) — no separate persistence work needed. **What is
+  NOT done, if picked up later:** `omGroups` has zero real OM names seeded (by design, per its
+  own comment) — the owner still needs to actually populate it via the Settings UI once ready;
+  and the "AS" (Area Supervisor) abbreviation/relabel was never requested as a separate action
+  item beyond the aside in the owner's original quote.
 - [ ] `pending_reports.org` column exists but is never written or filtered — a second org would
   see the first org's uploaded files; also a 30-day window means new users miss old uploads
   (`project-sync-rework.md`). More specific than §13's generic multi-tenant item.
