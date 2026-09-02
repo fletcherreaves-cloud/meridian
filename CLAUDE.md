@@ -318,8 +318,28 @@ read path; cloud wins when newer. Before assuming a "next up" item is undone, ve
 actual code — this note nearly caused a duplicate reimplementation.
 
 **Next candidate areas:**
-- FR: TPPH auto-target calc. "As of [date]" labels on tiles.
-- Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation (Notes 25 #1 / 28 #5).
+- ✅ **FR: TPPH auto-target calc — already shipped (dispatch #167, re-measured 2026-09-02, do
+  not re-implement).** `src/features/smart-targets.js` has a "Scheduled" TPPH figure (reuses
+  `schedule-summary.js`'s `rollup()`/`schedHrsOf`, additive alongside the existing trailing-
+  average target) and `src/features/projections.js`'s `ScheduledTPPHRow` wires the same figure
+  into the Projection Workspace. Covered by `src/__tests__/dispatch-167-tpph-scheduled-target.test.js`
+  (42 tests, passing).
+- ✅ **"As of [date]" labels on tiles — also already substantially shipped (v4.837, re-measured
+  2026-09-02).** `at-a-glance.js`'s `_spanTag()` renders each tile's own real data SPAN (not just
+  the newest date, and not the toolbar's selected period — each tile states its timeframe from
+  its own source rows) plus a visible fallback-period warning when a tile has silently fallen
+  back to the 30-day default window; wired into 8 tiles as of this measurement. Not audited
+  against every one of At-A-Glance's tiles — if a specific tile is missing it, that's a small
+  follow-on, not a from-scratch build.
+- ✅ **Product Mix pull → Pricing Engine + Filet-O-Fish-Fridays correlation — both already
+  shipped (re-measured 2026-09-02, do not re-implement).** Pricing Engine: Rankings, Item
+  Lookup, recipe/BOM, Cross-Store Compare (v5.319), Price Impact simulator (v5.320), all reusing
+  live `qsr_product_mix` cost/volume data. Filet-O-Fish-Fridays specifically (Notes 25 #1 / 28
+  #5, dispatch #169): `src/engine/signal-registry.js` has a Friday-anchor pricing metric group
+  (`allowZero:true` — "0 Filet-O-Fish sold on a [day]" is a real, measured signal, not treated as
+  missing data) plus a dynamic `pmixItem:<code>` per-item metric resolver (bounded top-150 by
+  volume, `PMIX_SCANNER_TOP_N`) so any product-mix item, Filet-O-Fish included, correlates
+  against every other metric group through Signals' Scanner — no FOF-specific hardcoding needed.
 - SAGE conversation persistence; multi-tenant deployment.
 
 ---
