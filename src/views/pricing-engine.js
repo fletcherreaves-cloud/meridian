@@ -26,7 +26,7 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
 import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact, estimateOutageLostSales } from '../engine/pricing-engine.js';
-import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe, loadQsrProductOutage } from '../lib/supabase.js';
+import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe, loadQsrProductOutage, loadQsrMenuPriceComparison } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
   ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded,
@@ -47,6 +47,7 @@ const f$2  = n => (n == null ? '—' : (n < 0 ? '-$' : '$') + Math.abs(n).toFixe
 const f$0  = n => (n == null ? '—' : '$' + Math.round(n).toLocaleString());
 const fPc  = n => (n == null ? '—' : (n * 100).toFixed(1) + '%');
 const fN0  = n => (n == null ? '—' : Math.round(n).toLocaleString());
+const TH_CELL = { textAlign: 'left', padding: '4px 8px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 };
 
 const RANGES = ['7', '30', '90', '180', 'all'];
 const WIDE_RANGES = ['90', '180', 'all'];
@@ -491,6 +492,123 @@ function LookupTab({ displayRows, wide }) {
   );
 }
 
+// ── Menu Price Comparison tab (2026-09-02) — first UI consumer of qsr_menu_price_comparison
+// (v5.324 shipped the pull only). Two questions this answers: (1) does this store's menu match
+// the district on price for the same item — a pricing-consistency check across all 27 stores;
+// (2) how much of a delivery premium is each store actually charging over its own in-store price.
+// price_eatin/price_takeout are currently identical to `price` everywhere pulled so far (per the
+// pull's own header) -- shown for completeness, not because they're known to diverge yet.
+function deliveryPremiumPct(row) {
+  if (row.priceDelivery == null || !row.price) return null;
+  return (row.priceDelivery - row.price) / row.price;
+}
+
+function MenuPricesTab({ rows, state, wide }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const [query, setQuery] = uSt('');
+
+  const results = uM(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const matched = rows.filter(r => String(r.item).includes(q) || (r.descr || '').toLowerCase().includes(q));
+    const byItem = new Map();
+    for (const r of matched) {
+      if (!byItem.has(r.item)) byItem.set(r.item, { item: r.item, descr: r.descr, familyGroup: r.familyGroup, stores: [] });
+      byItem.get(r.item).stores.push(r);
+    }
+    return [...byItem.values()].sort((a, b) => (a.descr || '').localeCompare(b.descr || '')).slice(0, 25);
+  }, [rows, query]);
+
+  // District-wide "which stores mark up delivery the most" — shown by default, before any
+  // search, since it's the one view that doesn't need a specific item picked to be useful.
+  const byStoreDeliveryPremium = uM(() => {
+    const byLoc = new Map();
+    for (const r of rows) {
+      const prem = deliveryPremiumPct(r);
+      if (prem == null) continue;
+      if (!byLoc.has(r.loc)) byLoc.set(r.loc, { loc: r.loc, sumPrem: 0, sumPrice: 0, sumDeliveryMinusPrice: 0, n: 0 });
+      const a = byLoc.get(r.loc);
+      a.sumDeliveryMinusPrice += (r.priceDelivery - r.price);
+      a.sumPrice += r.price;
+      a.n += 1;
+    }
+    return [...byLoc.values()]
+      .map(a => ({ loc: a.loc, n: a.n, avgPremiumPct: a.sumPrice > 0 ? a.sumDeliveryMinusPrice / a.sumPrice : null }))
+      .filter(a => a.avgPremiumPct != null)
+      .sort((a, b) => b.avgPremiumPct - a.avgPremiumPct);
+  }, [rows]);
+
+  if (state === 'loading') return div({ style: { padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } }, 'Loading menu price comparison…');
+  if (state === 'error') return div({ style: { padding: 24, textAlign: 'center', color: 'var(--crit)', fontSize: 12 } }, "Couldn't load menu price comparison.");
+  if (!rows.length) return div({ style: { padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 } },
+    div({ style: { fontSize: 24, marginBottom: 10 } }, '☁'),
+    div({ style: { fontWeight: 700, marginBottom: 6 } }, 'No cloud data yet'),
+    div({}, 'Run the QSRSoft Menu Price Comparison Pull workflow, or wait for its daily schedule.'));
+
+  return div({ style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' } },
+    div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      h('input', {
+        type: 'text', value: query, onChange: e => setQuery(e.target.value),
+        placeholder: 'Search by item name or MI# (e.g. "Big Mac" or "5")…',
+        style: { width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12 },
+      }),
+    ),
+
+    !query
+      ? div({ style: { padding: '4px 14px 14px' } },
+          div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', padding: '10px 0 6px' } }, 'Average delivery premium by store — highest first'),
+          div({ style: { fontSize: 10, color: 'var(--text3)', marginBottom: 8, lineHeight: 1.6 } }, 'Dollar-weighted across every item at that store with a distinct delivery price. Search an item above to see its per-store price detail.'),
+          div({ style: { overflowX: 'auto' } },
+            table({ style: { width: '100%', fontSize: 11, borderCollapse: 'collapse' } },
+              thead({}, tr({},
+                th({ style: TH_CELL }, 'Store'),
+                th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Items'),
+                th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Avg Delivery Premium'),
+              )),
+              tbody({}, byStoreDeliveryPremium.map(r => tr({ key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
+                td({ style: { padding: '5px 8px', fontWeight: 600 } }, STORE_NAMES?.[r.loc] || `Store ${r.loc}`),
+                td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, r.n),
+                td({ style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, fPc(r.avgPremiumPct)),
+              ))),
+            ),
+          ),
+        )
+      : div({},
+          div({ style: { padding: '4px 14px', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } },
+            `${results.length} item${results.length === 1 ? '' : 's'} matched`),
+          results.length === 0
+            ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'No items match that search.')
+            : results.map(group => div({ key: group.item, style: { padding: '10px 14px', borderBottom: '.5px solid var(--bdr)' } },
+                div({ style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
+                  span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)' } }, '#' + group.item),
+                  span({ style: { fontWeight: 600 } }, group.descr || '—'),
+                  span({ style: { fontSize: 9, color: 'var(--text3)' } }, group.familyGroup || ''),
+                ),
+                div({ style: { overflowX: 'auto' } },
+                  table({ style: { width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 560 } },
+                    thead({}, tr({},
+                      th({ style: TH_CELL }, 'Store'),
+                      th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Price'),
+                      th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Eat-In'),
+                      th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Takeout'),
+                      th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Delivery'),
+                      th({ style: { ...TH_CELL, textAlign: 'right' } }, 'Premium'),
+                    )),
+                    tbody({}, group.stores.slice().sort((a, b) => (b.price || 0) - (a.price || 0)).map(r => tr({ key: r.loc, style: { borderTop: '.5px solid var(--bdr)' } },
+                      td({ style: { padding: '4px 8px' } }, STORE_NAMES?.[r.loc] || `Store ${r.loc}`),
+                      td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, f$2(r.price)),
+                      td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$2(r.priceEatin)),
+                      td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$2(r.priceTakeout)),
+                      td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$2(r.priceDelivery)),
+                      td({ style: { padding: '4px 8px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 } }, fPc(deliveryPremiumPct(r))),
+                    ))),
+                  ),
+                ),
+              )),
+        ),
+  );
+}
+
 // ── Cross-Store Compare tab (owner request, 2026-09-02) ────────────────────────────────────────
 // "The ability to cross reference price points between selected groups of stores." Reuses
 // LookupTab's search-then-pin UX. crossStoreCompare()'s own header (src/engine/pricing-engine.js)
@@ -864,6 +982,45 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     [outageRows, recipeEnrichedItemRows, outageWindowDays, maxDate],
   );
 
+  // ── Menu Price Comparison load (2026-09-02) — qsr_menu_price_comparison is a CURRENT-STATE
+  // snapshot re-pulled daily, not a metric to trend over the panel's own Range picker (which the
+  // rest of this file uses for margin/waste history), so it deliberately does NOT read
+  // `dateRange`/`range` above -- always a rolling last-7-days window, independent of the panel's
+  // history range, matching the same "config, not a metric" treatment Storewide Controls got.
+  // 7 days (not "just today") covers a pull that's momentarily a day behind without ever reading
+  // the growing full history -- one full-catalog snapshot is ~18k rows across 27 stores, so this
+  // table grows unbounded day over day and must stay windowed.
+  const [priceCmpState, setPriceCmpState] = uSt('idle'); // idle | loading | loaded | error
+  const [priceCmpRows, setPriceCmpRows] = uSt([]);
+  uE(() => {
+    let cancelled = false;
+    setPriceCmpState('loading');
+    const end = new Date();
+    const start = new Date(end.getTime() - 7 * 86400000);
+    loadQsrMenuPriceComparison({ loc: scopedLocs, dateRange: { start, end } }).then(rows => {
+      if (cancelled) return;
+      setPriceCmpRows(rows || []);
+      setPriceCmpState('loaded');
+    }).catch(() => {
+      if (cancelled) return;
+      setPriceCmpState('error');
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locFilterKey]);
+
+  // Latest snapshot per store: different stores' pulls can land on slightly different days, so
+  // "latest" is taken per-loc (the most recent dt seen for THAT store), not one global max date --
+  // a store whose pull ran a day later than its peers shouldn't have its whole snapshot dropped.
+  const priceCmpLatest = uM(() => {
+    const maxDtByLoc = new Map();
+    for (const r of priceCmpRows) {
+      const cur = maxDtByLoc.get(r.loc);
+      if (!cur || r.dt > cur) maxDtByLoc.set(r.loc, r.dt);
+    }
+    return priceCmpRows.filter(r => r.dt === maxDtByLoc.get(r.loc));
+  }, [priceCmpRows]);
+
   const scopeTotals = uM(() => {
     let contrib = 0, revenue = 0;
     displayRows.forEach(r => { contrib += r.totalContrib; revenue += r.menuPrice * r.volume; });
@@ -956,7 +1113,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
           ? h(CrossStoreTab, { itemRows: recipeEnrichedItemRows, crossStore, wide })
           : tab === 'price-impact'
             ? h(PriceImpactTab, { itemRows: recipeEnrichedItemRows, wide, rangeLabel: range === 'all' ? 'All Time' : range + 'D' })
-            : div({ style: { flex: 1, overflowY: 'auto' } },
+            : tab === 'menu-prices'
+              ? h(MenuPricesTab, { rows: priceCmpLatest, state: priceCmpState, wide })
+              : div({ style: { flex: 1, overflowY: 'auto' } },
           div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
             div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Blended margin, this scope/range'),
             div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, heroLine || 'No margin data for this scope/range.'),
@@ -1017,7 +1176,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
       h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 6 } },
-      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }, { id: 'price-impact', label: '💥 Price Impact' }].map(t => btn({
+      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }, { id: 'price-impact', label: '💥 Price Impact' }, { id: 'menu-prices', label: '🏷️ Menu Prices' }].map(t => btn({
         key: t.id, className: 'btn btn-sm',
         style: {
           fontSize: 10.5, fontWeight: 700, padding: '5px 12px', borderRadius: 6,
