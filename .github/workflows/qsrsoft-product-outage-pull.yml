@@ -1,0 +1,58 @@
+name: QSRSoft Product Outage Pull
+
+# Backlog item K (memory/data-acquisition-shopping-list.md) — the cheapest pull in the catalog:
+# one HTTP request covers all 27 stores across a whole date range. Steady-state runs re-cover a
+# rolling 30-day window (an outage opened weeks ago can still restore later); the first run
+# backfills ~370 days since the vendor's own KB confirms a year of history is available and this
+# stream must not be built forward-only.
+
+on:
+  schedule:
+    - cron: '20 11 * * *'   # 11:20 UTC daily — after ops-pull (10:00) and the recipe pull (11:10), before the 11:30 baseline lock
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date for an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: today)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft Product Outage
+        run: node scripts/qsrsoft-product-outage-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          QSRSOFT_OUTAGE_START_DATE:  ${{ github.event.inputs.start_date || '' }}
+          QSRSOFT_OUTAGE_END_DATE:    ${{ github.event.inputs.end_date   || '' }}
+          QSRSOFT_DEBUG:              ${{ github.event.inputs.debug || '0' }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-outage-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
