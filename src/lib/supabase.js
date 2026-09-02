@@ -5061,6 +5061,37 @@ export async function loadQsrMenuItemRecipe({ loc } = {}) {
   }));
 }
 
+// ── qsr_product_outage (backlog item K) — dt-ranged, loc-scoped, matching
+// loadQsrMenuItemActivity's own filter shape. outageTs/restoredTs are the DB's naive
+// `timestamp` values passed through as-is (see supabase/schema-qsr-product-outage.sql's
+// header for why these are deliberately NOT given a timezone).
+export async function loadQsrProductOutage({ loc, dateRange } = {}) {
+  if (!supabase) return [];
+  const toDay = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+  const start = dateRange && (dateRange.start ?? dateRange.s) != null ? toDay(dateRange.start ?? dateRange.s) : null;
+  const end   = dateRange && (dateRange.end   ?? dateRange.e) != null ? toDay(dateRange.end   ?? dateRange.e) : null;
+  const locs = loc == null ? null : (Array.isArray(loc) ? loc : [loc]).map(l => String(l).padStart(7, '0'));
+
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_product_outage').select('*');
+    if (locs && locs.length) q = q.in('loc', locs);
+    if (start) q = q.gte('dt', start);
+    if (end) q = q.lte('dt', end);
+    return q.order('dt', { ascending: false }).range(from, to);
+  }, 1000, 'qsr_product_outage');
+
+  return (data || []).map(r => ({
+    loc:          r.loc,
+    dt:           r.dt,
+    item:         r.item,
+    outageTs:     r.outage_ts,
+    restoredTs:   r.restored_ts,
+    descr:        r.descr,
+    familyGroup:  r.family_group,
+    updatedAt:    r.updated_at,
+  }));
+}
+
 // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
 // of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
 // schema.sql) already scopes what a plain select() returns to whatever the logged-in user is

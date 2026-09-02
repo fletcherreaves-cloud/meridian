@@ -65,6 +65,7 @@ on:
       - QSRSoft On-Hand Pull (EOM count-progress)
       - QSRSoft Operations Report Pull
       - QSRSoft Product Mix Pull
+      - QSRSoft Product Outage Pull
       - QSRSoft Punch Times Pull
       - QSRSoft Register Audit Pull
       - QSRSoft Roster Statistics Pull
