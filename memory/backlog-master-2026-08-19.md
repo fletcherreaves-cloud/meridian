@@ -712,12 +712,17 @@ first below.
 
 ### Correctness bugs (extends §4)
 
-- [ ] #150 — `metricAvg` discards real KVS Healthy Usage 0% results as missing data, inflating
-  district averages on the One-Pager/Morning Brief (`project-scoring-revisit.md`).
-- [ ] #153 — `computeOpsScore` grades against static `constants.js` `tLabor` instead of the
-  monthly-approved `tCrewLabor` (`project-scoring-revisit.md`).
-- [ ] #156 — monthly-target precedence has device cache beating cloud at `App.js:2279`, backwards
-  from the cloud-first policy (`project-scoring-revisit.md`).
+- [x] ✅ Already fixed — #150, `metricAvg`'s KVS Healthy Usage 0%-discard. Confirmed live in
+  `src/engine/pipeline.js:179-182` (`computeOpsScore`): a presence check (`p.kvsu!=null`) replaced
+  the truthy check, with a comment citing #150/#178 item 6 directly. Do not re-diagnose.
+- [x] ✅ Already fixed — #153, `computeOpsScore` grading against static `tLabor`. Confirmed live in
+  `src/engine/pipeline.js:196-200`: routed through `resolveLaborTarget()` (`labor-basis.js`), with
+  a comment citing "#153 defect 2" directly, so the score and `computeLaborRow` grade the same
+  number. Do not re-diagnose.
+- [x] ✅ SHIPPED 2026-09-02 (PR #1031, v5.321, this session) — #156, monthly-target precedence.
+  `App.js`'s `_stMonthlyTargets` spread order inverted so cloud wins over stale device cache;
+  covered by `src/__tests__/dispatch-156-monthly-targets-cloud-precedence.test.js`. Do not
+  re-diagnose.
 - [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
   Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload
   (`docs-refresh-todo.md`).
