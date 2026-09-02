@@ -647,6 +647,8 @@ first below.
   entry is stale — do not re-scope.
 - [x] ✅ SHIPPED 2026-09-02 (v5.324) — Menu Price Comparison pull, `nsn`+`menuItemNumber` grain,
   live-verified 18,345 rows. `memory/data-acquisition-shopping-list.md`'s entry is stale.
+  ✅ Follow-on view ALSO SHIPPED same day (v5.329) — Pricing Engine's new "🏷️ Menu Prices" tab:
+  average delivery premium by store (district ranking) + per-item cross-store price detail.
 - ✅ CORRECTED 2026-09-02 — this line used to say "Tiered 'Any Transaction' exception-pull design
   (Tier A/B/C) — owner-approved 2026-08-14, pending only a probe run." **The probe already ran,
   2026-08-19** — see line ~923 of this same file / `dispatch-34-phase0a-findings.md`: **Tier A is
