@@ -638,21 +638,37 @@ first below.
   `grep -rl "QSRSOFT_TOKEN\|QSRSOFT_COGNITO_TOKEN" scripts/*.mjs` → 15 files still on the stale
   ~1h-TTL token, falling through to Playwright on nearly every run (`project-qsrsoft-cognito-
   auth-312.md`).
-- [ ] Product Outage pull (`GET /reporting/v2/product/outages`) — fully scoped, cheapest pull on
-  the list, backfillable to a year, zero remaining owner blockers (`data-acquisition-shopping-
-  list.md`).
-- [ ] Menu Price Comparison ("RFM Price Comparison") pull — ready-to-build, `nsn`+`menuItemNumber`
-  grain, 0 duplicates measured (`data-acquisition-shopping-list.md`).
-- [ ] Tiered "Any Transaction" exception-pull design (Tier A/B/C) — owner-approved 2026-08-14,
-  pending only a probe run (`data-acquisition-shopping-list.md`).
+- [x] ✅ SHIPPED 2026-09-02 (v5.322) — Product Outage pull (`GET /reporting/v2/product/outages`,
+  `reportType=allOutages`), live-verified 33,443 rows. `memory/data-acquisition-shopping-list.md`'s
+  entry is stale — do not re-scope.
+- [x] ✅ SHIPPED 2026-09-02 (v5.324) — Menu Price Comparison pull, `nsn`+`menuItemNumber` grain,
+  live-verified 18,345 rows. `memory/data-acquisition-shopping-list.md`'s entry is stale.
+- ✅ CORRECTED 2026-09-02 — this line used to say "Tiered 'Any Transaction' exception-pull design
+  (Tier A/B/C) — owner-approved 2026-08-14, pending only a probe run." **The probe already ran,
+  2026-08-19** — see line ~923 of this same file / `dispatch-34-phase0a-findings.md`: **Tier A is
+  SETTLED DEAD** (no exception-type filter exists on the endpoint; Register Audit already carries
+  all standing attribution), **Tier B is confirmed viable** (a `transaction_detail` endpoint
+  captured, full line-item + tender + operator/manager detail per transaction) but **not yet
+  built** — that's the real open item if this is picked up, not a probe.
+- [x] ✅ Register Audit pull is LIVE, not blocked — this file's own line ~919-921 said "both runs
+  failed... owner needs to confirm the service account's role" (dated 2026-08-20). Measured
+  2026-09-02: `QSRSoft Register Audit Pull` workflow has run 33 times, mostly succeeding since
+  2026-08-24 (most recent run, #33, succeeded 2026-09-02T14:14:11Z). Whatever blocked it 08-20 is
+  resolved; do not re-raise the permission question.
 - [ ] `parseLaborExceptions` parser exists (missed breaks, minors violations) with **zero**
-  table/loader/pull wired to it (`data-acquisition-shopping-list.md`).
+  table/loader/pull wired to it (`data-acquisition-shopping-list.md`). Report path confirmed to
+  exist (`/reports/mcd/people/laborExceptions`, `qsrsoft-report-catalog.md`) but the actual data
+  endpoint is unconfirmed — needs an owner DevTools capture, same method as every other
+  `finding-qsrsoft-*-endpoint-*.md` in this repo.
 - [ ] No automated pull populates `qsr_inventory_summary` — `saveQsrInventorySummary` is defined
   but never called anywhere; the Inventory Intelligence panel reads this table and shows "no cloud
-  data yet" for every store (`project-inventory-auto-wiring-214.md`).
-- [ ] `storewide_controls` QSRSoft endpoint (per-store T-Red/HALO/skim/cash thresholds, discount
-  %s) discovered but no pull script/table built to auto-populate `DEFAULT_TARGETS`/Signals
-  thresholds instead of hardcoding them (`project-qsrsoft-controls-endpoint.md`).
+  data yet" for every store (`project-inventory-auto-wiring-214.md`). Investigated 2026-08-27
+  (dispatch #178, `finding-inventory-summary-automation-2026-08-27.md`): the report almost
+  certainly exists (KB article match is exact) but discovery needs an owner DevTools capture —
+  this session has no QSRSoft credentials to probe it blind. Do not re-attempt without one.
+- [x] ✅ SHIPPED 2026-09-02 (v5.325, PR #1036) — `storewide_controls` QSRSoft endpoint pull built
+  (`scripts/qsrsoft-store-controls-pull.mjs` → `qsr_store_controls`, full raw JSONB per store).
+  Wiring real thresholds into `DEFAULT_TARGETS`/Signals is still a follow-on, not done.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
   discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
   (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).
