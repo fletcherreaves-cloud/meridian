@@ -656,8 +656,9 @@ first below.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
   discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
   (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).
-- [ ] MOP/app transactions (`mop_transactions`) not yet added to the DAR pull
-  (`project-qsrsoft-dar-columns.md`).
+- [x] ✅ SHIPPED 2026-09-02 — MOP/app transactions (`mop_transactions`) added to the DAR pull
+  (`scripts/qsrsoft-dar-pull.mjs` SELECT_COLS/mapRow/rollup, `supabase/schema-qsr-dar-mop-transactions.sql`).
+  Pull only — wiring into metric-source.js / a panel is a follow-on (`project-qsrsoft-dar-columns.md`).
 - [ ] `scripts/qsrsoft-ebos-pull.mjs` still runs the old dead SSO-first auth ladder instead of the
   working Playwright eBOS login already ported to the variance/on-hand pulls
   (`project-eom-diagnosis-flow.md`).
