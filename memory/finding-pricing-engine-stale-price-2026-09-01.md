@@ -91,12 +91,17 @@ item_number of its own (e.g. "what would 2 Big Macs + a large fry cost me").
   stepper and remove button, running Food Cost / Paper Cost / Total Cost / Σ Component Price
   totals, and an optional "actual combo price" input that computes real margin $ and % once
   entered.
-- **Not interactively verified in a live browser** (per this repo's own "don't claim UI success
-  you haven't tested" rule) — this codebase has no component-rendering test harness (jsdom-less
-  Vitest, confirmed by every other panel test file in `src/__tests__`), so verification here is:
-  the pure `computeComboCost` logic is unit-tested (5 tests), the build compiles clean, and the
-  JSX was manually re-read end-to-end for reference errors — but nobody has clicked through it in
-  a real browser yet. Worth a real click-through before or shortly after merge.
+- **✅ Interactively verified in a live browser (2026-09-02).** This codebase has no
+  component-rendering test harness (jsdom-less Vitest), so verification used a temporary Vite-
+  resolved harness (a `.jsx` file inside `src/` importing the real `PricingEnginePanel` with
+  synthetic `displayRows`/`ds`, so React resolves to one single instance — not an external CDN
+  React, which would double-instance and break hooks) driven by Playwright against the running
+  dev server; harness deleted after verification, never committed. Confirmed: search filters by
+  name ("big mac" → 1 match, MI# `#5` leading); "＋ Add" populates the Custom Combination tray;
+  the qty `<input type="number">` correctly scales all four totals (qty 3 → Food $5.13 = $1.71×3,
+  Paper $0.30 = $0.10×3, Total $5.43, Σ Component Price $20.37 = $6.79×3); "✕" remove empties the
+  tray back to its placeholder state; entering an actual combo price computes margin $ and %
+  correctly ($9.99 − $2.44 combined cost = $7.55, 75.6%). Zero console errors across all steps.
 
 ## What this does NOT change
 
