@@ -45,7 +45,21 @@ We must derive them ourselves from raw fields.
 ## Sales / GC / labor (already used elsewhere, for reference)
 - All Net Avg Check `avgCheck` = `allNetSales / transactions`
 - Prod Avg Check `productNetSalesAvgChk` = `productSales / transactions`
-- STW GC = `transactions`; DT GC = `dt_transactions`; In-Store GC = `is_transactions`; **MOP GC = `mop_transactions`** (app order+pay — we don't pull this yet)
+- STW GC = `transactions`; DT GC = `dt_transactions`; In-Store GC = `is_transactions`
+- ⚠️ **CORRECTED 2026-09-02 — `mop_transactions` does NOT exist on `daily-activity-raw`, this
+  file's own prior claim ("MOP GC = `mop_transactions`") was wrong for this endpoint.** Shipped
+  and reverted same-day (v5.326 → v5.327): a live diagnostic dump of the real API row (store 3708,
+  2026-09-01, 07:00) showed 106 real keys and **zero mop-shaped keys anywhere** — no
+  `mop_transactions`, no variant casing, nothing. Cross-verified independently: `sales_ledger_daily`
+  (a different report, daily grain) shows real MOP volume for the same store/date (178 guests,
+  `mop_gc` column) while this endpoint's field was silently always 0 the whole time it was live.
+  `qsrsoft-kb-digest.md` explains why: *"In-store includes Front Counter & Kiosk. Front Counter (FC)
+  includes Front Counter registers, Delivery and MOP (attended, unattended and curbside)"* — MOP
+  orders fold into `is_transactions`/`fc_trans_cnt` on THIS report, they are not broken out as
+  their own leg. **Daily-grain MOP guest count is already available** via
+  `sales_ledger_daily.mop_gc` (already pulled, no gap to close there) — an hourly MOP GC leg,
+  if ever wanted, would need a different QSRSoft report/endpoint than `daily-activity-raw`, not a
+  missing selectCols name on this one. Do not re-add `mop_transactions` to this pull.
 - Act Hrs = `actualPunchedHours + salariedManagerScheduledHours`
 - Act Hrs vs Sch = `actualHours − totalScheduledHours`; Act Hrs vs Need = `actualHours − totalNeededHours`
 - TPPH = `transScrubbed / actualPunchedHours`; TPTH = `transactions / actualHours`
@@ -93,9 +107,11 @@ Needed Hours · Act vs Needed. Win TTL removed.
 - OEPE now uses the **w/o-parked** formula per owner: `(dt serve − store − held)/GC`.
 
 ## Still open
-- ✅ SHIPPED 2026-09-02 — `mop_transactions` (MOP/app GC) added to `scripts/qsrsoft-dar-pull.mjs`
-  (SELECT_COLS + mapRow + rollup sum), schema `supabase/schema-qsr-dar-mop-transactions.sql`. Pull
-  only — not yet read by any loader/metric/panel; that wiring is still open.
+- ❌ NOT SHIPPABLE via this pull — see the corrected note above under "MOP GC". Shipped and
+  reverted same day (2026-09-02, v5.326 → v5.327): the field genuinely doesn't exist on
+  `daily-activity-raw`. Daily-grain MOP GC is already covered by `sales_ledger_daily.mop_gc`. An
+  hourly MOP leg is a real, still-open gap, but needs a different endpoint (not confirmed which
+  one) — not a one-line SELECT_COLS addition to this script.
 - Relabel the same timing columns anywhere else they surface (Signals SoS panel).
 - R2P / Avg CTP still show "—" until a DAR backfill repopulates fc-close-drawer /
   dt-recall history (field-name fix shipped v4.430).

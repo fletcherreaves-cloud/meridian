@@ -676,9 +676,17 @@ first below.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
   discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
   (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).
-- [x] ✅ SHIPPED 2026-09-02 — MOP/app transactions (`mop_transactions`) added to the DAR pull
-  (`scripts/qsrsoft-dar-pull.mjs` SELECT_COLS/mapRow/rollup, `supabase/schema-qsr-dar-mop-transactions.sql`).
-  Pull only — wiring into metric-source.js / a panel is a follow-on (`project-qsrsoft-dar-columns.md`).
+- [ ] ⚠️ CORRECTED 2026-09-02 — MOP/app transactions was shipped to the DAR pull (v5.326) and
+  **reverted the same day (v5.327) after live verification found it dead.** `mop_transactions`
+  does not exist as a raw field on `daily-activity-raw` — a diagnostic dump of the real API row
+  showed 106 real keys and zero mop-shaped ones; MOP orders fold into `is_transactions`/FC on this
+  report per `qsrsoft-kb-digest.md`. Cross-checked against `sales_ledger_daily.mop_gc` (real MOP
+  volume, e.g. 178 guests at store 3708 on 2026-09-01) while the new DAR field sat at 0 the whole
+  time. **Daily-grain MOP GC is already covered** via `sales_ledger_daily.mop_gc` — no gap there.
+  An hourly MOP leg is still a real, open gap but needs a different, unconfirmed QSRSoft endpoint,
+  not a SELECT_COLS addition to this script. Full writeup: `project-qsrsoft-dar-columns.md`.
+  Do not re-attempt the `mop_transactions`-on-`daily-activity-raw` approach — it's a measured dead
+  end, not an unconfirmed one.
 - [ ] `scripts/qsrsoft-ebos-pull.mjs` still runs the old dead SSO-first auth ladder instead of the
   working Playwright eBOS login already ported to the variance/on-hand pulls
   (`project-eom-diagnosis-flow.md`).
