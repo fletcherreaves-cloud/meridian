@@ -449,3 +449,91 @@ export function computeComboCost(itemRows, picks) {
   }
   return { items, sumFoodCost, sumPaperCost, sumPrice, count };
 }
+
+// ── Cross-store price comparison (owner request, 2026-09-02) ──────────────────────────────────
+// "The ability to cross reference price points between selected groups of stores." Live-measured
+// BEFORE designing this (store 3708 vs. the district, real qsr_product_mix, 2026-08-25..08-31)
+// to avoid inventing a threshold that would just be noise:
+//
+//   - PRICE varies enormously across stores for the SAME item BY DESIGN, not by error — Big Mac
+//     ranged $4.99-$6.99 (a $2.00/40% spread) across the 27 real stores; Double Quarter Cheese
+//     $6.19-$9.59 (55%). Regional/local pricing is a deliberate franchise decision, so a "flag
+//     any store priced far from the district" rule would trip on nearly every item and be pure
+//     noise -- the exact anti-pattern CLAUDE.md's "a number nobody acts on is not a shipped
+//     feature" rule warns against.
+//   - FOOD/PAPER COST is essentially UNIFORM across stores for the same item (Big Mac cost
+//     $1.43-$1.45 everywhere; same distributor, same recipe) -- so cross-store MARGIN % variance
+//     is almost entirely just price variance restated, not a second signal.
+//   - What IS a real, calibrated signal: a store's margin on ONE item relative to that SAME
+//     store's OWN typical margin across its other items. Every store showed roughly the same
+//     Big-Mac-to-Double-Quarter-Cheese margin GAP (~10-15 points) except one, whose gap was
+//     ~23 points -- double the norm -- because that store's Double Quarter Cheese was priced
+//     far out of step with how it prices everything else (its Big Mac was completely average).
+//     That is a real candidate for "did someone forget to update this item's price," not a
+//     regional-pricing artifact.
+//
+// So this function does NOT flag or threshold anything itself (deciding whether a given gap is
+// a mistake or a deliberate strategy is a business call, not this engine's to make -- see
+// CLAUDE.md's "Voice by role" rule: show the number, let the informed human decide). It computes
+// the number that makes that judgment possible: each item-at-store's marginPct against that
+// SAME store's own median marginPct across the items in scope, so the caller can sort/scan for
+// outliers without a hidden cutoff.
+//
+// itemRows: per-(loc, item) rows -- computeItemMargins()'s own un-aggregated output (or
+// enrichItemMargins/enrichItemRecipe's pass-through of it), NEVER aggregateAcrossStores()'s
+// output -- that collapses the very per-store rows this function needs to compare.
+//
+// Returns { byItem: [{itemNumber, descr, priceMin, priceMax, priceSpread, marginPctMin,
+// marginPctMax, stores: [{loc, menuPrice, foodCost, paperCost, marginPct, volume,
+// ownStoreMedianMarginPct, marginGapPts}]}], storeMedians: {loc: medianMarginPct} }.
+function median(nums) {
+  if (!nums.length) return null;
+  const s = nums.slice().sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+export function crossStoreCompare(itemRows) {
+  const rows = (itemRows || []).filter(r => r && r.loc != null && r.itemNumber != null);
+
+  // Each store's own median marginPct across every item it has in scope -- the "how this store
+  // typically prices things" baseline every item-at-that-store is compared against.
+  const byLoc = new Map(); // loc -> marginPct[]
+  for (const r of rows) {
+    if (r.marginPct == null || !isFinite(r.marginPct)) continue;
+    if (!byLoc.has(r.loc)) byLoc.set(r.loc, []);
+    byLoc.get(r.loc).push(r.marginPct);
+  }
+  const storeMedians = {};
+  for (const [loc, pcts] of byLoc) storeMedians[loc] = median(pcts);
+
+  const byItem = new Map(); // itemNumber -> accumulator
+  for (const r of rows) {
+    let a = byItem.get(r.itemNumber);
+    if (!a) { a = { itemNumber: r.itemNumber, descr: r.descr || '', stores: [] }; byItem.set(r.itemNumber, a); }
+    if (!a.descr && r.descr) a.descr = r.descr;
+    const ownMedian = storeMedians[r.loc] ?? null;
+    a.stores.push({
+      loc: r.loc, menuPrice: r.menuPrice, foodCost: r.foodCost, paperCost: r.paperCost,
+      marginPct: r.marginPct, volume: r.volume,
+      ownStoreMedianMarginPct: ownMedian,
+      marginGapPts: (r.marginPct != null && ownMedian != null) ? (r.marginPct - ownMedian) * 100 : null,
+    });
+  }
+
+  const out = [];
+  for (const a of byItem.values()) {
+    const prices = a.stores.map(s => s.menuPrice).filter(p => p != null && isFinite(p));
+    const margins = a.stores.map(s => s.marginPct).filter(p => p != null && isFinite(p));
+    out.push({
+      itemNumber: a.itemNumber,
+      descr: a.descr,
+      stores: a.stores.slice().sort((x, y) => (y.menuPrice || 0) - (x.menuPrice || 0)),
+      priceMin: prices.length ? Math.min(...prices) : null,
+      priceMax: prices.length ? Math.max(...prices) : null,
+      priceSpread: prices.length ? Math.max(...prices) - Math.min(...prices) : null,
+      marginPctMin: margins.length ? Math.min(...margins) : null,
+      marginPctMax: margins.length ? Math.max(...margins) : null,
+    });
+  }
+  return { byItem: out, storeMedians };
+}
