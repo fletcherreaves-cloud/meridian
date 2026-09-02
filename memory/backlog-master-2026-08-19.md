@@ -465,7 +465,11 @@ for full detail on each.
 - [ ] ❓ Visit Readiness rethink — "how to get ready and stay ready" diagnostic ruleset, needs a
   design session. *(Asked in 2 files — see Duplicates.)*
 - [ ] Graded Visits — more correlation analysis (open-ended).
-- [ ] Swing Watch "Acknowledged" placement at top of Needs Attention — fully scoped, not built.
+- [x] ✅ Already shipped (issue #140) — Swing Watch "Acknowledged" home in Needs Attention.
+  Confirmed live: `src/engine/swing-feed.js`'s `buildAckHistory()` merges `swing_acks` and
+  `attention_acks` into one persistent history (store/what/who/when, 120-day prune), wired into
+  `AttentionPanel` (`src/views/analytics.js:5412-5418`) via a comment citing "issue #140" directly.
+  Do not re-diagnose.
 - [ ] ❓ Scoring-system revisit (Ops/Controls/Combined/District/Model Health) — needs a joint
   owner session, findings already ready.
 - [ ] Multi-user startup-load tiering (core vs. extended fetch by role) — design decision needed
