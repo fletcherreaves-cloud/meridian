@@ -307,7 +307,21 @@ async function fetchDayDirect(token, date) {
   if (resp.status === 401 || resp.status === 403) throw new Error(`AUTH_FAILED:${resp.status}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
   const body = await resp.json();
-  return Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
+  const rows = Array.isArray(body) ? body : (Array.isArray(body?.result) ? body.result : []);
+  // TEMP diagnostic (dispatch: mop_transactions verification) — mop_transactions is landing as 0
+  // on every row post-merge despite real MOP volume in sales_ledger_daily for the same store/date
+  // (store 3708, 2026-09-01: 178 MOP guests via Sales Ledger, 0 via this pull for all 24 hours).
+  // Dump every key on a busy row once, plus anything mop-shaped, to find the real field name/
+  // location before assuming the selectCols name is wrong. Remove after diagnosis.
+  if (DEBUG && !globalThis.__mopDumped && rows.length) {
+    const busy = rows.find(r => Number(r.transactions) > 20) || rows[0];
+    globalThis.__mopDumped = true;
+    console.log('[MOP-DEBUG] row keys:', Object.keys(busy).join(', '));
+    const mopKeys = Object.keys(busy).filter(k => /mop/i.test(k));
+    console.log('[MOP-DEBUG] mop-shaped keys:', mopKeys.length ? JSON.stringify(Object.fromEntries(mopKeys.map(k => [k, busy[k]]))) : '(none found)');
+    console.log('[MOP-DEBUG] full busy row:', JSON.stringify(busy));
+  }
+  return rows;
 }
 
 // Resolves either a plain token string (Playwright mode) or the getFreshToken function itself
