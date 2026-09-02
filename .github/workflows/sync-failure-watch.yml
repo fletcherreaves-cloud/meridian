@@ -61,6 +61,7 @@ on:
       - QSRSoft McDelivery Pull
       - QSRSoft Menu Item Activity Pull
       - QSRSoft Menu Items Catalog Pull
+      - QSRSoft Menu Item Recipe Pull
       - QSRSoft On-Hand Pull (EOM count-progress)
       - QSRSoft Operations Report Pull
       - QSRSoft Product Mix Pull

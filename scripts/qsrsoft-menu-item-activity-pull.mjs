@@ -53,6 +53,7 @@ import { createClient } from '@supabase/supabase-js';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { EBOS_BASE, resolveEbosToken } from './lib/ebos-auth.mjs';
+import { activeItemNumbers, catalogLookup } from './lib/menu-item-selection.mjs';
 import { mapMenuItemActivity, mapMenuItemActivityCost } from '../src/engine/eom-parsers.js';
 
 const DEBUG = process.env.QSRSOFT_DEBUG === '1';
@@ -86,37 +87,9 @@ function resolveDate() {
   return d;
 }
 
-// ── Item selection: trailing-WINDOW_DAYS active item_numbers from qsr_product_mix, paginated ──
-async function activeItemNumbers(loc, cutoff) {
-  const items = new Set();
-  const PAGE = 5000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await withRetry(
-      () => supabase.from('qsr_product_mix').select('item').eq('loc', loc).gte('date', cutoff).range(from, from + PAGE - 1),
-      { label: 'qsr_product_mix select' },
-    );
-    if (error) throw new Error(`qsr_product_mix query failed for ${loc}: ${error.message}`);
-    for (const r of data || []) if (r.item != null) items.add(Number(r.item));
-    if (!data || data.length < PAGE) break;
-  }
-  return items;
-}
-
-// ── Catalog lookup: this store's qsr_menu_items, item_number -> {storeMenuitemId, value} ──────
-async function catalogLookup(loc) {
-  const map = new Map();
-  const PAGE = 5000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await withRetry(
-      () => supabase.from('qsr_menu_items').select('store_menuitem_id,item_number,value').eq('loc', loc).range(from, from + PAGE - 1),
-      { label: 'qsr_menu_items select' },
-    );
-    if (error) throw new Error(`qsr_menu_items query failed for ${loc}: ${error.message}`);
-    for (const r of data || []) if (r.item_number != null) map.set(Number(r.item_number), { storeMenuitemId: r.store_menuitem_id, value: r.value });
-    if (!data || data.length < PAGE) break;
-  }
-  return map;
-}
+// Item selection (activeItemNumbers/catalogLookup) — extracted to scripts/lib/menu-item-selection.mjs
+// on its second use (qsrsoft-menu-item-recipe-pull.mjs), per CLAUDE.md's "check whether a helper
+// exists" rule. Behavior unchanged — see that file for the implementation.
 
 // ── eBOS calls ───────────────────────────────────────────────────────────────
 async function postMenuItemActivity(token, nsn, { storeMenuitemId, date, itemLongDesc }) {
@@ -174,7 +147,10 @@ async function main() {
     if (authFailed) break;
     const loc = pad7(nsn);
     try {
-      const [active, catalog] = await Promise.all([activeItemNumbers(loc, cutoff), catalogLookup(loc)]);
+      const [active, catalog] = await Promise.all([
+        activeItemNumbers(supabase, withRetry, loc, cutoff),
+        catalogLookup(supabase, withRetry, loc),
+      ]);
       const selected = [...active].filter(n => catalog.has(n));
       if (!catalog.size) {
         // qsr_menu_items has no rows for this store yet (weekly pull hasn't fired since the

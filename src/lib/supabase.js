@@ -5030,6 +5030,37 @@ export async function loadQsrMenuItemActivity({ loc, dateRange } = {}) {
   }));
 }
 
+// ── qsr_menu_item_recipe (recipe/BOM + cost breakdown, current-state) ─────────────────────────
+// No date column — one row per (loc, store_menuitem_id), overwritten on each pull. loc-scoped
+// only (no dateRange param), matching the table's own current-state shape.
+export async function loadQsrMenuItemRecipe({ loc } = {}) {
+  if (!supabase) return [];
+  const locs = loc == null ? null : (Array.isArray(loc) ? loc : [loc]).map(l => String(l).padStart(7, '0'));
+
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_menu_item_recipe').select('*');
+    if (locs && locs.length) q = q.in('loc', locs);
+    return q.range(from, to);
+  }, 1000, 'qsr_menu_item_recipe');
+
+  return (data || []).map(r => ({
+    loc:               r.loc,
+    storeMenuitemId:   r.store_menuitem_id,
+    itemNumber:        r.item_number,
+    description:       r.description,
+    daypartCode:       r.daypart_code,
+    familyGroup:       r.family_group,
+    combinationItem:   r.combination_item,
+    onPos:             r.on_pos,
+    foodCost:          r.food_cost,
+    paperCost:         r.paper_cost,
+    totalCost:         r.total_cost,
+    recipe:            r.recipe,
+    histRecipe:        r.hist_recipe,
+    updatedAt:         r.updated_at,
+  }));
+}
+
 // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
 // of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
 // schema.sql) already scopes what a plain select() returns to whatever the logged-in user is

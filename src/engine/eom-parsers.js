@@ -15,6 +15,7 @@
 //   /menuitems                         → mapMenuItems      (per-store menu-item catalog, dispatch #186)
 //   /menu_item_activity2 (POST)        → mapMenuItemActivity      (per-item, per-day counts, dispatch #193)
 //   /menu_item_activity_cost           → mapMenuItemActivityCost  (per-item, per-day $ cost, dispatch #193)
+//   /menuitems/{store_menuitem_id}     → mapMenuItemRecipe   (per-item recipe/BOM + cost breakdown, Pricing Engine)
 import { normClass } from './eom-inventory.js';
 
 // ── Variance Stat rows ────────────────────────────────────────────────────────
@@ -312,5 +313,44 @@ export function mapMenuItemActivityCost(resp = {}) {
     paperCost: resp?.paper_cost != null ? Number(resp.paper_cost) : null,
     totalCost: resp?.total_cost != null ? Number(resp.total_cost) : null,
     lastCloseBusinessDate: resp?.last_close_business_date ?? null,
+  };
+}
+
+// ── Menu item recipe/BOM (GET /menuitems/{store_menuitem_id}) — Pricing Engine recipe ─────────
+// Per-item, CURRENT-STATE recipe/bill-of-materials + cost breakdown (owner-captured live,
+// 2026-09-01 — memory/finding-ebos-menu-item-activity-cost-endpoint-2026-09-01.md). A single flat
+// object, like menu_item_activity_cost, not a list. `recipe` = the item's current ingredient list
+// (full_wrin/long_desc/start_date/servings/class F-food|P-paper/loose_unit_cost/cost_price);
+// `hist_recipe` = prior recipe versions, same per-ingredient shape plus an end_date. `on_pos` and
+// `combination_item` are flag fields QSRSoft sends as JSON 1/0 in the real capture — normalized
+// the same permissive way mapRawItemInfo's recipeItem already handles this API family's flags
+// (true/'Y'/1/'1' all read as true), so a future response using a different truthy encoding for
+// the SAME field doesn't silently read as false.
+const truthy = v => v === true || v === 'Y' || v === 1 || v === '1';
+function mapRecipeIngredient(r = {}) {
+  return {
+    fullWrin: r.full_wrin ?? null,
+    longDesc: r.long_desc ?? null,
+    startDate: r.start_date ?? null,
+    endDate: r.end_date ?? null,           // present on hist_recipe entries, absent on current recipe
+    servings: r.servings != null ? Number(r.servings) : null,
+    cls: r.class ?? null,                  // 'F' food / 'P' paper — QSRSoft's own cost-category split
+    looseUnitCost: r.loose_unit_cost != null ? Number(r.loose_unit_cost) : null,
+    costPrice: r.cost_price != null ? Number(r.cost_price) : null,
+  };
+}
+export function mapMenuItemRecipe(resp = {}) {
+  return {
+    itemNumber: resp?.item_number != null ? Number(resp.item_number) : null,
+    description: resp?.description ?? null,
+    daypartCode: resp?.daypart_code ?? null,
+    familyGroup: resp?.family_group ?? null,
+    combinationItem: truthy(resp?.combination_item),
+    onPos: truthy(resp?.on_pos),
+    foodCost: resp?.cost_breakdown?.food != null ? Number(resp.cost_breakdown.food) : null,
+    paperCost: resp?.cost_breakdown?.paper != null ? Number(resp.cost_breakdown.paper) : null,
+    totalCost: resp?.cost_breakdown?.total != null ? Number(resp.cost_breakdown.total) : null,
+    recipe: Array.isArray(resp?.recipe) ? resp.recipe.map(mapRecipeIngredient) : [],
+    histRecipe: Array.isArray(resp?.hist_recipe) ? resp.hist_recipe.map(mapRecipeIngredient) : [],
   };
 }

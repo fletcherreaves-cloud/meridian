@@ -1,0 +1,85 @@
+name: QSRSoft Menu Item Recipe Pull
+
+# Per-menu-item recipe/BOM + cost breakdown (Pricing Engine) — GET /menuitems/{store_menuitem_id},
+# bounded per store to the same trailing-90-day active item_numbers the sibling Menu Item Activity
+# Pull uses (scripts/lib/menu-item-selection.mjs), further filtered to items whose stored row is
+# older than RECIPE_REFRESH_DAYS (default 21) — recipes change rarely, so most runs after the
+# initial backfill only pull new/stale items, not the full active set every time.
+#
+# Scheduled after the menu-item activity pull's 10:50 UTC slot, well clear of both it and the
+# weekly menu-items catalog pull's Sunday 11:30 UTC slot.
+
+on:
+  schedule:
+    - cron: '10 11 * * *'   # 11:10 UTC daily
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Subset of NSNs (comma-separated, default: all 27)'
+        required: false
+        default: ''
+      window_days:
+        description: 'Trailing-window days for item selection (default: 90)'
+        required: false
+        default: ''
+      refresh_days:
+        description: 'Re-pull an item if its stored row is older than this many days (default: 21)'
+        required: false
+        default: ''
+      force_full:
+        description: 'Ignore staleness, re-pull every selected item (1 = on)'
+        required: false
+        default: '0'
+      max_per_store:
+        description: 'Cap items pulled per store this run (default: no cap) — for a first live-volume check'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Menu Item Recipe/BOM
+        run: node scripts/qsrsoft-menu-item-recipe-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:     ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          RECIPE_STORES:             ${{ github.event.inputs.stores || '' }}
+          RECIPE_WINDOW_DAYS:        ${{ github.event.inputs.window_days || '' }}
+          RECIPE_REFRESH_DAYS:       ${{ github.event.inputs.refresh_days || '' }}
+          RECIPE_FORCE_FULL:         ${{ github.event.inputs.force_full || '0' }}
+          RECIPE_MAX_PER_STORE:      ${{ github.event.inputs.max_per_store || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-item-recipe-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
