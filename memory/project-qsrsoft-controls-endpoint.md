@@ -43,8 +43,21 @@ GET https://prod.ebos.qsrsoft.com/api/controls/{nsn}/storewide_controls
   `store_busn_dt`, `timezone`.
 
 ## Candidate uses (backlog — not the EOM priority)
-1. **Feed real T-Red / HALO / skim / cash thresholds into the Signals Controls registry** (replace assumed limits).
-2. **Auto-configure per-store metric thresholds** (UserDefinedMetrics → DEFAULT_TARGETS) rather than hard-coding.
-3. Wire discount %s + daypart windows into FOB (Emp/Mgr meals) and CSAT-daypart work.
-→ Would be a small `scripts/qsrsoft-controls-pull.mjs` (clone eBOS auth) → new `qsr_store_controls` table
-  (jsonb config per loc, refreshed weekly). Log here when built.
+1. ✅ **SHIPPED 2026-09-02 (v5.328)** — Feed real T-Red / HALO / skim / cash thresholds into a
+   Signals view. **Correction to this file's own original framing**: item 1's "replace assumed
+   limits" and item 2's "UserDefinedMetrics → DEFAULT_TARGETS" both implicitly conflated two
+   different concepts that turned out NOT to be interchangeable — DEFAULT_TARGETS' per-store
+   `tRedBPct`/`tKvst`/etc. are Smart-Targets-style *performance targets* derived from trailing
+   history, while `RFMControls`/`UserDefinedMetrics` are QSRSoft's own *classification/alert
+   thresholds* (the dollar amount that makes QSRSoft itself flag a transaction as a T-Red, or the
+   manager's own KVS-time alert setting) — a different question entirely. Auto-overwriting one with
+   the other would be a real product decision, not a mechanical wiring task, so v5.328 ships this as
+   a **side-by-side display** (Signals → 🎛️ Store Controls tab) instead: the real QSRSoft numbers
+   shown plainly, with only the one unambiguous match (KVST vs `tKvst`) shown as an explicit,
+   labeled reference — never auto-applied.
+   Also found live: `CashControls.max_storewide_cash` (10 for store 3708) does **not** match
+   `UserDefinedMetrics.SWC` (50, same store) despite this file's original claim that
+   `max_storewide_cash` "is the SWC metric threshold" — a real discrepancy, unresolved, shown raw
+   rather than asserted as one thing.
+2. Wire discount %s + daypart windows into FOB (Emp/Mgr meals) and CSAT-daypart work — still open,
+   not part of v5.328 (that tab displays them, doesn't yet feed them into FOB/CSAT calculations).

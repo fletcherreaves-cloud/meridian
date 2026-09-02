@@ -672,7 +672,10 @@ first below.
   this session has no QSRSoft credentials to probe it blind. Do not re-attempt without one.
 - [x] ✅ SHIPPED 2026-09-02 (v5.325, PR #1036) — `storewide_controls` QSRSoft endpoint pull built
   (`scripts/qsrsoft-store-controls-pull.mjs` → `qsr_store_controls`, full raw JSONB per store).
-  Wiring real thresholds into `DEFAULT_TARGETS`/Signals is still a follow-on, not done.
+  ✅ Follow-on view ALSO SHIPPED same day (v5.328) — Signals' new "🎛️ Store Controls" tab
+  displays the real per-store thresholds/discounts/tax/dayparts/metric-targets. Deliberately does
+  NOT overwrite `DEFAULT_TARGETS` (a different concept — see `project-qsrsoft-controls-endpoint.md`
+  for why conflating the two is a product decision, not a display task).
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
   discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
   (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).

@@ -3,12 +3,13 @@ import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS, pmixItemsIndex, pmixItemKey, isPmixItemKey } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, ensureLazyFillWide } from '../engine/metric-source.js';
-import { STORE_NAMES, sNameC, getKB } from '../constants.js';
+import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS } from '../constants.js';
 import { dKey } from '../utils/date.js';
+import { f$ } from '../utils/fmt.js';
 // Correlations tab (dispatch #195, 2026-08-28) — merges the retired standalone "Metric
 // Correlations" panel (corr-explorer) in here, keeping its layout/interaction model but
 // running it on Scanner's own statistics instead of the plain-Pearson math it used to have.
@@ -1334,6 +1335,173 @@ export function ParkOepeTab({ ds }) {
   );
 }
 
+// ── Store Controls tab ───────────────────────────────────────────────────────
+// The first UI consumer of qsr_store_controls (v5.325 shipped the pull only — this is the
+// promised follow-on view). Real per-store QSRSoft config: loss-prevention thresholds, discount
+// %s, tax table, daypart windows, and the owner's own metric targets — straight from what's
+// actually configured in QSRSoft, not a performance target.
+//
+// Deliberately does NOT overwrite DEFAULT_TARGETS or any Signals grading threshold. constants.js's
+// per-store TARGETS (tRedBPct, tKvst, ...) are Smart-Targets-style performance targets derived
+// from trailing history — a different concept from QSRSoft's own RFMControls/UserDefinedMetrics
+// config (the dollar/qty thresholds that decide what QSRSoft itself flags as a T-Red, or the
+// manager's own KVS-time alert setting). Conflating the two would be a real product decision, not
+// a display task — this tab shows QSRSoft's real numbers side by side with Meridian's own target
+// only where the match is unambiguous (KVST vs tKvst, same abbreviation/domain), always labeled
+// as a reference, never auto-applied.
+//
+// max_drawer_cash/max_storewide_cash are deliberately shown as raw numbers, not formatted as
+// dollars: the live sample values (2 / 10) are implausible as standalone dollar limits and the
+// finding this pull was built from conflates max_storewide_cash with the separate
+// UserDefinedMetrics.SWC threshold (50 for the same store) — a real discrepancy, not confirmed
+// which (if either) is right, so this shows the raw QSRSoft value without asserting a unit.
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+function ctrlMoney(v) { const n = num(v); return n == null ? '—' : f$(n); }
+function ctrlCount(v) { const n = num(v); return n == null ? '—' : n; }
+
+function extractStoreControls(config) {
+  const rfm = config?.RFMControls || {};
+  const cash = config?.CashControls || {};
+  return {
+    tredBeforeAmt: num(rfm.tred_before_total_amount),
+    tredAfterAmt: num(rfm.tred_after_total_amount),
+    tredAfterQty: num(rfm.tred_after_total_quantity),
+    haloAmt: num(rfm.halo_amount),
+    haloQty: num(rfm.halo_quantity),
+    skimAmt: num(rfm.skim_amount_limit),
+    skimTime: num(rfm.skim_time_limit),
+    pettyCash: num(rfm.petty_cash_limit),
+    cashlessSignLimit: num(rfm.CashlessSignLimit),
+    maxDrawerCash: num(cash.max_drawer_cash),
+    maxStorewideCash: num(cash.max_storewide_cash),
+    discounts: Array.isArray(rfm.discount_data) ? rfm.discount_data : [],
+    taxes: Array.isArray(rfm.active_taxes) ? rfm.active_taxes : [],
+    sobDaily: rfm.sob_daily_start_time || null,
+    eobDaily: rfm.eob_daily_end_time || null,
+    sobWeekend: rfm.sob_weekend_start_time || null,
+    eobWeekend: rfm.eob_weekend_end_time || null,
+    userMetrics: Array.isArray(config?.UserDefinedMetrics) ? config.UserDefinedMetrics : [],
+    additionalMetrics: config?.AdditionalMetrics || null,
+  };
+}
+
+const CONTROLS_COLS = [
+  { key: 'tredBeforeAmt', label: 'T-Red Before', fmt: ctrlMoney },
+  { key: 'tredAfterAmt',  label: 'T-Red After',  fmt: ctrlMoney },
+  { key: 'tredAfterQty',  label: 'T-Red After Qty', fmt: ctrlCount },
+  { key: 'haloAmt',       label: 'HALO $',       fmt: ctrlMoney },
+  { key: 'haloQty',       label: 'HALO Qty',     fmt: ctrlCount },
+  { key: 'skimAmt',       label: 'Skim $',       fmt: ctrlMoney },
+  { key: 'pettyCash',     label: 'Petty Cash',   fmt: ctrlMoney },
+  { key: 'cashlessSignLimit', label: 'Cashless Sign', fmt: ctrlMoney },
+];
+const CONTROLS_TH = { padding: '6px 8px', textAlign: 'left', fontSize: 10, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `2px solid ${bdr}` };
+
+function StoreControlsTab() {
+  const [raw, setRaw] = uSt(null); // null = loading, [] = loaded-empty
+  const [err, setErr] = uSt(null);
+  const [selLoc, setSelLoc] = uSt(null);
+
+  uE(() => {
+    let live = true;
+    loadQsrStoreControls({}).then(data => { if (live) setRaw(data || []); })
+      .catch(e => { if (live) { setErr(e.message); setRaw([]); } });
+    return () => { live = false; };
+  }, []);
+
+  const rows = uM(() => (raw || [])
+    .map(r => ({ loc: r.loc ? String(parseInt(r.loc, 10)) : r.loc, updatedAt: r.updatedAt, ...extractStoreControls(r.config) }))
+    .sort((a, b) => (STORE_NAMES?.[a.loc] || a.loc).localeCompare(STORE_NAMES?.[b.loc] || b.loc)),
+    [raw]);
+
+  if (raw === null) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } }, 'Loading store controls…');
+  if (err) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: red, fontSize: 12 } }, `Couldn't load store controls: ${err}`);
+  if (!rows.length) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } },
+    h('div', { style: { fontSize: 24, marginBottom: 10 } }, '☁'),
+    h('div', { style: { fontWeight: 700, marginBottom: 6 } }, 'No cloud data yet'),
+    h('div', null, 'Run the QSRSoft Store Controls Pull workflow, or wait for its weekly schedule.'));
+
+  const sel = selLoc ? rows.find(r => r.loc === selLoc) : null;
+  const kvstTarget = sel ? (DEFAULT_TARGETS?.[sel.loc]?.tKvst ?? null) : null;
+
+  return h('div', null,
+    h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 14 } },
+      "Real per-store configuration straight from QSRSoft — loss-prevention thresholds, discount %s, tax table, daypart windows, and the owner's own metric targets. A config object, pulled weekly, not a daily metric. Click a store for its full detail."),
+
+    h('div', { style: { overflowX: 'auto' } },
+      h('table', { style: { width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 820 } },
+        h('thead', null, h('tr', null,
+          h('th', { style: CONTROLS_TH }, 'Store'),
+          ...CONTROLS_COLS.map(c => h('th', { key: c.key, style: { ...CONTROLS_TH, textAlign: 'right' } }, c.label)),
+        )),
+        h('tbody', null, rows.map(r => h('tr', {
+          key: r.loc, onClick: () => setSelLoc(selLoc === r.loc ? null : r.loc),
+          style: { borderTop: `1px solid ${bdr}`, cursor: 'pointer', background: selLoc === r.loc ? 'rgba(245,158,11,.08)' : 'transparent' },
+        },
+          h('td', { style: { padding: '5px 8px', fontWeight: 600 } }, STORE_NAMES?.[r.loc] || `Store ${r.loc}`),
+          ...CONTROLS_COLS.map(c => h('td', { key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: muted } }, c.fmt(r[c.key]))),
+        ))),
+      ),
+    ),
+
+    sel && h('div', { style: { marginTop: 16, padding: 14, border: `1px solid ${bdr}`, borderRadius: 8, background: surf2 } },
+      h('div', { style: { fontSize: 13, fontWeight: 800, marginBottom: 4 } }, `${STORE_NAMES?.[sel.loc] || `Store ${sel.loc}`} — full config`),
+      h('div', { style: { fontSize: 10, color: muted, marginBottom: 12 } }, sel.updatedAt ? `As of ${new Date(sel.updatedAt).toLocaleDateString()}` : ''),
+
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 } },
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Discount %s'),
+          sel.discounts.length
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+                sel.discounts.map((d, i) => h('div', { key: i, style: { fontSize: 11 } }, `${d.pct_disc_name}: ${d.pct_disc_amt}%`)))
+            : h('div', { style: { fontSize: 11, color: muted } }, 'None configured.'),
+        ),
+
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Tax Table'),
+          sel.taxes.length
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+                sel.taxes.map((t, i) => h('div', { key: i, style: { fontSize: 11 } }, `${t.tax_table_name}: ${t.sale_tax_pct}%`)))
+            : h('div', { style: { fontSize: 11, color: muted } }, 'None configured.'),
+        ),
+
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Daypart Windows'),
+          h('div', { style: { fontSize: 11, lineHeight: 1.8 } },
+            h('div', null, `Weekday SOB → EOB: ${sel.sobDaily || '—'} → ${sel.eobDaily || '—'}`),
+            h('div', null, `Weekend SOB → EOB: ${sel.sobWeekend || '—'} → ${sel.eobWeekend || '—'}`),
+          ),
+        ),
+
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Cash Controls (raw, unit unconfirmed)'),
+          h('div', { style: { fontSize: 11, lineHeight: 1.8 } },
+            h('div', null, `max_drawer_cash: ${ctrlCount(sel.maxDrawerCash)}`),
+            h('div', null, `max_storewide_cash: ${ctrlCount(sel.maxStorewideCash)}`),
+            sel.skimTime != null && h('div', null, `skim_time_limit: ${sel.skimTime}`),
+          ),
+        ),
+      ),
+
+      h('div', { style: { marginTop: 16 } },
+        h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, "Owner's Metric Targets (set in QSRSoft)"),
+        sel.userMetrics.length
+          ? h('table', { style: { fontSize: 11, borderCollapse: 'collapse' } },
+              h('tbody', null, sel.userMetrics.map((m, i) => h('tr', { key: i },
+                h('td', { style: { padding: '2px 12px 2px 0', fontWeight: 600 } }, m.metric),
+                h('td', { style: { padding: '2px 12px 2px 0', fontFamily: 'monospace' } }, m.threshold),
+                h('td', { style: { padding: '2px 0', fontSize: 10, color: muted } }, `monitored by ${m.user_level || '—'}`),
+                m.metric === 'KVST' && kvstTarget != null && h('td', { style: { padding: '2px 0 2px 12px', fontSize: 10, color: blue } },
+                  `— Meridian's own KVS-time target for this store: ${kvstTarget}s (reference only, not the same threshold)`),
+              )))
+            )
+          : h('div', { style: { fontSize: 11, color: muted } }, 'None configured.'),
+        sel.additionalMetrics && h('div', { style: { fontSize: 10, color: muted, marginTop: 8 } }, `Also tracked in QSRSoft: ${sel.additionalMetrics}`),
+      ),
+    ),
+  );
+}
+
 // ── Auto-Correlation Scanner tab ────────────────────────────────────────────
 function ScannerTab({ ds, onTrack, onExportReady }) {
   const [gran, setGran] = uSt('daily');
@@ -2138,7 +2306,7 @@ function liveOpsPrintHtml(data) {
 // Valid Signals tabs, for the initialTab guard below — same "validate against a known list"
 // pattern as PlanningHubPanel/SchedulingHubPanel's initialTab (App.js). 'corr' added dispatch
 // #195: the retired corr-explorer panel redirects here via App.js's signalsInitialTab.
-const SIGNALS_TAB_IDS = ['liveops', 'projacc', 'parkoepe', 'builtin', 'lab', 'scanner', 'corr', 'csat', 'graveyard'];
+const SIGNALS_TAB_IDS = ['liveops', 'projacc', 'parkoepe', 'controls', 'builtin', 'lab', 'scanner', 'corr', 'csat', 'graveyard'];
 
 export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onCustomDefsChange, darRows, refreshDar, initialTab }) {
   const [tab, setTab] = uSt(SIGNALS_TAB_IDS.includes(initialTab) ? initialTab : 'liveops');
@@ -2287,6 +2455,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
       h('button', { onClick: () => setTab('liveops'), style: TAB_STYLE(tab === 'liveops') }, '⚡ Live Ops'),
       h('button', { onClick: () => setTab('projacc'), style: TAB_STYLE(tab === 'projacc') }, '📐 Projection Accuracy'),
       h('button', { onClick: () => setTab('parkoepe'), style: TAB_STYLE(tab === 'parkoepe') }, '🅿️ Park × OEPE'),
+      h('button', { onClick: () => setTab('controls'), style: TAB_STYLE(tab === 'controls') }, '🎛️ Store Controls'),
       h('button', { onClick: () => setTab('builtin'), style: TAB_STYLE(tab === 'builtin') }, `Built-in (${(signals || []).length})`),
       h('button', { onClick: () => setTab('lab'), style: TAB_STYLE(tab === 'lab') }, `Signal Lab${activeDefs.length ? ` (${activeDefs.length})` : ''}`),
       h('button', { onClick: () => setTab('scanner'), style: TAB_STYLE(tab === 'scanner') }, '🔎 Scanner'),
@@ -2314,6 +2483,9 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
 
     // ── PARK × OEPE QUADRANT TAB (#181) ──────────────────────────────────────
     tab === 'parkoepe' && h(ParkOepeTab, { ds }),
+
+    // ── STORE CONTROLS TAB ────────────────────────────────────────────────────
+    tab === 'controls' && h(StoreControlsTab, null),
 
     // ── BUILT-IN TAB ──────────────────────────────────────────────────────────
     tab === 'builtin' && h('div', null,
