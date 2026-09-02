@@ -1,0 +1,52 @@
+name: QSRSoft Store Controls Pull
+
+# memory/project-qsrsoft-controls-endpoint.md — per-store loss-prevention/config thresholds
+# (T-Red/HALO/skim/cash, discount %s, tax tables, user-defined metric targets). A CONFIG object,
+# not a metric — one request per store, pulled weekly since config changes rarely.
+
+on:
+  schedule:
+    - cron: '0 13 * * 1'   # Mondays 13:00 UTC — weekly, off the daily morning pull pack
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Subset of NSNs (comma-separated, default: all 27)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft Storewide Controls
+        run: node scripts/qsrsoft-store-controls-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          CONTROLS_STORES:           ${{ github.event.inputs.stores || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-controls-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3

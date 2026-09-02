@@ -5125,6 +5125,28 @@ export async function loadQsrMenuPriceComparison({ loc, dateRange } = {}) {
   }));
 }
 
+// ── qsr_store_controls (memory/project-qsrsoft-controls-endpoint.md) — current-state, one row
+// per store. `config` is the FULL raw JSONB blob (RFMControls, VarianceControls, CashControls,
+// UserDefinedMetrics, etc.) -- see the schema file's own header for why this is stored whole
+// rather than decomposed into named columns. Consumers read config.RFMControls.tred_before_total_amount
+// etc. directly off the returned object.
+export async function loadQsrStoreControls({ loc } = {}) {
+  if (!supabase) return [];
+  const locs = loc == null ? null : (Array.isArray(loc) ? loc : [loc]).map(l => String(l).padStart(7, '0'));
+
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_store_controls').select('*');
+    if (locs && locs.length) q = q.in('loc', locs);
+    return q.range(from, to);
+  }, 1000, 'qsr_store_controls');
+
+  return (data || []).map(r => ({
+    loc:        r.loc,
+    config:     r.config,
+    updatedAt:  r.updated_at,
+  }));
+}
+
 // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
 // of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
 // schema.sql) already scopes what a plain select() returns to whatever the logged-in user is
