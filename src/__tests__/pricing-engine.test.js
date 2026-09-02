@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact, estimateOutageLostSales } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -629,5 +629,106 @@ describe('simulatePriceImpact — static-elasticity price/profit model (legacy w
     expect(sim.totalVolume).toBe(0);
     expect(sim.totalProfitImpact).toBe(0);
     expect(sim.blendedMarginPctBefore).toBeNull(); // Σprice$=0 -- no basis to blend, not fabricated as 0%
+  });
+});
+
+// estimateOutageLostSales -- the "build on top of K" join (backlog item K, product outages ->
+// estimated lost sales). Static-demand assumption named in its own header: trailing daily volume
+// spread evenly across 24h, x hours flagged unavailable.
+describe('estimateOutageLostSales — outage x product-mix join (static-demand estimate, never a cause label)', () => {
+  // 300 units over a 30-day window -> avgDailyUnits = 10/day. price 5.00, foodCost 1.00,
+  // paperCost 0.50 -> marginDollars 3.50/unit.
+  const itemRows = [
+    { loc: '1001', itemNumber: 13, descr: 'Fried Apple Pie', menuPrice: 5.00, foodCost: 1.00, paperCost: 0.50, volume: 300 },
+  ];
+
+  it('a 24h closed outage estimates exactly one day\'s worth of trailing volume lost', () => {
+    const outageRows = [
+      { loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-15T00:00:00', descr: 'Fried Apple Pie' },
+    ];
+    const out = estimateOutageLostSales(outageRows, itemRows, 30, new Date('2026-08-20T00:00:00'));
+    expect(out.byItem).toHaveLength(1);
+    const b = out.byItem[0];
+    expect(b.itemNumber).toBe(13);
+    expect(b.totalHours).toBeCloseTo(24, 6);
+    expect(b.estLostUnits).toBeCloseTo(10, 6); // 10/day * (24/24)
+    expect(b.estLostRevenue).toBeCloseTo(50, 6); // 10 units * $5.00
+    expect(b.estLostMarginDollars).toBeCloseTo(35, 6); // 10 units * $3.50
+    expect(b.eventCount).toBe(1);
+    expect(b.openCount).toBe(0);
+  });
+
+  it('an open (not yet restored) outage measures duration against effectiveNow, not real browser time', () => {
+    const outageRows = [
+      { loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: null, descr: 'Fried Apple Pie' },
+    ];
+    // effectiveNow is exactly 12h after outageTs
+    const out = estimateOutageLostSales(outageRows, itemRows, 30, new Date('2026-08-14T12:00:00'));
+    const b = out.byItem[0];
+    expect(b.totalHours).toBeCloseTo(12, 6);
+    expect(b.estLostUnits).toBeCloseTo(5, 6); // half a day's trailing volume
+    expect(b.openCount).toBe(1);
+    expect(b.eventCount).toBe(1);
+  });
+
+  it('sums multiple outage events for the same (loc, item) rather than overwriting', () => {
+    const outageRows = [
+      { loc: '1001', item: 13, outageTs: '2026-08-01T00:00:00', restoredTs: '2026-08-01T12:00:00' }, // 12h
+      { loc: '1001', item: 13, outageTs: '2026-08-05T00:00:00', restoredTs: '2026-08-05T12:00:00' }, // 12h
+    ];
+    const out = estimateOutageLostSales(outageRows, itemRows, 30, new Date('2026-08-20T00:00:00'));
+    const b = out.byItem[0];
+    expect(b.totalHours).toBeCloseTo(24, 6); // 12 + 12
+    expect(b.eventCount).toBe(2);
+    expect(b.estLostRevenue).toBeCloseTo(50, 6); // same as the single 24h case
+  });
+
+  it('rolls up multiple stores under one item, sorted by that store\'s own estLostRevenue', () => {
+    const rows = [
+      { loc: '1001', itemNumber: 13, descr: 'Fried Apple Pie', menuPrice: 5.00, foodCost: 1.00, paperCost: 0.50, volume: 300 }, // 10/day
+      { loc: '1002', itemNumber: 13, descr: 'Fried Apple Pie', menuPrice: 5.00, foodCost: 1.00, paperCost: 0.50, volume: 30 },  // 1/day
+    ];
+    const outageRows = [
+      { loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-15T00:00:00' }, // 24h -> 10 units
+      { loc: '1002', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-15T00:00:00' }, // 24h -> 1 unit
+    ];
+    const out = estimateOutageLostSales(outageRows, rows, 30, new Date('2026-08-20T00:00:00'));
+    expect(out.byItem).toHaveLength(1);
+    const b = out.byItem[0];
+    expect(b.estLostRevenue).toBeCloseTo(55, 6); // 50 + 5
+    expect(b.stores).toHaveLength(2);
+    expect(b.stores[0].loc).toBe('1001'); // higher-volume store's own contribution sorts first
+    expect(b.stores[1].loc).toBe('1002');
+  });
+
+  it('an outage with no matching margin/volume row is skipped, not fabricated', () => {
+    const outageRows = [{ loc: '1001', item: 99999, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-15T00:00:00' }];
+    const out = estimateOutageLostSales(outageRows, itemRows, 30, new Date('2026-08-20T00:00:00'));
+    expect(out.byItem).toHaveLength(0);
+  });
+
+  it('a zero-volume item (no trailing sales to extrapolate from) is skipped', () => {
+    const rows = [{ loc: '1001', itemNumber: 13, descr: 'Fried Apple Pie', menuPrice: 5.00, foodCost: 1.00, paperCost: 0.50, volume: 0 }];
+    const outageRows = [{ loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-15T00:00:00' }];
+    const out = estimateOutageLostSales(outageRows, rows, 30, new Date('2026-08-20T00:00:00'));
+    expect(out.byItem).toHaveLength(0);
+  });
+
+  it('a zero-duration outage (outage_ts === restored_ts) contributes nothing', () => {
+    const outageRows = [{ loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-14T00:00:00' }];
+    const out = estimateOutageLostSales(outageRows, itemRows, 30, new Date('2026-08-20T00:00:00'));
+    expect(out.byItem).toHaveLength(0);
+  });
+
+  it('returns an empty result without a windowDays denominator (no fabricated "All Time" rate)', () => {
+    const outageRows = [{ loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00', restoredTs: '2026-08-15T00:00:00' }];
+    expect(estimateOutageLostSales(outageRows, itemRows, null, new Date())).toEqual({ byItem: [] });
+    expect(estimateOutageLostSales(outageRows, itemRows, 0, new Date())).toEqual({ byItem: [] });
+  });
+
+  it('empty outageRows or itemRows yields an empty result, not a throw', () => {
+    expect(estimateOutageLostSales([], itemRows, 30, new Date())).toEqual({ byItem: [] });
+    expect(estimateOutageLostSales(undefined, itemRows, 30, new Date())).toEqual({ byItem: [] });
+    expect(estimateOutageLostSales([{ loc: '1001', item: 13, outageTs: '2026-08-14T00:00:00' }], [], 30, new Date())).toEqual({ byItem: [] });
   });
 });

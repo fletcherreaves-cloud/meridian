@@ -614,3 +614,104 @@ export function simulatePriceImpact(itemRows, itemNumber, priceDelta) {
     blendedMarginPctAfter: sumPriceDollarsAfter > 0 ? sumMarginDollarsAfter / sumPriceDollarsAfter : null,
   };
 }
+
+// ── estimateOutageLostSales — the "build on top" half of backlog item K (2026-09-02) ──────────
+// Joins qsr_product_outage events to this same panel's own itemRows (loc,item) margin/volume
+// rows on (loc, item) -- the exact join supabase/schema-qsr-product-outage.sql's own header
+// names as the reason the outage pull exists at all: turning "Fried Apple Pie was flagged
+// unavailable at five stores" into an estimated lost-sales dollar figure at each store's own
+// sell rate.
+//
+// ── The one assumption this makes, named explicitly ────────────────────────────────────────
+// STATIC per-hour demand: an item's trailing average DAILY volume (itemRows' own volume,
+// already summed over the caller's window) spread evenly across 24 hours, multiplied by the
+// outage's duration in hours. Same kind of transparent, static assumption
+// simulatePriceImpact()'s own header already uses (trailing volume held constant) -- NOT a
+// fitted demand curve, and NOT aware of daypart shape (a breakfast item's real demand is not
+// flat across 24 hours; an outage during a rush costs more than the same duration overnight).
+// Named here so nobody mistakes this for more precision than it has.
+//
+// ── What this explicitly does NOT do ─────────────────────────────────────────────────────────
+// Never labels or infers CAUSE. An outage row is a manager's POS action, not a confirmed
+// out-of-stock (see the schema file's own caution). This only ever computes a dollar estimate
+// of foregone sales during the flagged window, regardless of why the item was unavailable.
+//
+// outageRows: qsr_product_outage rows already loc/date-filtered to the caller's scope
+// (loadQsrProductOutage()'s own shape: {loc, dt, item, outageTs, restoredTs, descr, familyGroup}).
+// itemRows: per-(loc,item) UN-aggregated rows (computeItemMargins()'s own output, or a sibling
+// enrich*() pass-through) -- never aggregateAcrossStores()'d output, for the same reason
+// crossStoreCompare() insists on it: this needs each store's OWN volume/price, not a blend.
+// windowDays: the number of days itemRows' own volume was summed over (the caller's date-range
+// picker) -- required to turn a window TOTAL into a daily RATE; returns {byItem:[]} without it
+// (an 'All Time' range has no natural denominator -- the caller should gate on this, not pass a
+// guessed value). effectiveNow: what an OPEN (not yet restored) outage's duration is measured
+// against -- pass the panel's own "as of" date (e.g. lastClosedBusinessDay()), not raw browser
+// time, so this stays consistent with the rest of the panel.
+//
+// Returns { byItem: [{itemNumber, descr, estLostRevenue, estLostMarginDollars, estLostUnits,
+// eventCount, openCount, totalHours, stores: [{loc, estLostRevenue, estLostMarginDollars,
+// estLostUnits, eventCount, openCount, totalHours}]}] }, sorted by estLostRevenue descending.
+export function estimateOutageLostSales(outageRows, itemRows, windowDays, effectiveNow) {
+  if (!windowDays || windowDays <= 0) return { byItem: [] };
+  const now = effectiveNow instanceof Date ? effectiveNow : new Date();
+
+  const byKey = new Map();
+  for (const r of itemRows || []) {
+    if (r && r.loc != null && r.itemNumber != null) byKey.set(r.loc + '|' + r.itemNumber, r);
+  }
+
+  const perStore = new Map(); // "loc|item" -> accumulator
+  for (const o of outageRows || []) {
+    if (!o || o.loc == null || o.item == null || !o.outageTs) continue;
+    const key = o.loc + '|' + o.item;
+    const item = byKey.get(key);
+    if (!item) continue; // no margin/volume data for this (loc,item) in scope -- can't estimate
+    const avgDailyUnits = item.volume / windowDays;
+    if (!(avgDailyUnits > 0)) continue;
+
+    const start = new Date(o.outageTs);
+    const isOpen = !o.restoredTs;
+    const end = isOpen ? now : new Date(o.restoredTs);
+    const hours = Math.max(0, (end - start) / 3600000);
+    if (!(hours > 0)) continue;
+
+    const estUnits = avgDailyUnits * (hours / 24);
+    const price = item.menuPrice || 0;
+    const marginDollars = item.marginDollars != null ? item.marginDollars : (price - (item.foodCost || 0) - (item.paperCost || 0));
+
+    let a = perStore.get(key);
+    if (!a) {
+      a = { loc: o.loc, itemNumber: o.item, descr: o.descr || item.descr || '', estLostUnits: 0, estLostRevenue: 0, estLostMarginDollars: 0, eventCount: 0, openCount: 0, totalHours: 0 };
+      perStore.set(key, a);
+    }
+    a.estLostUnits += estUnits;
+    a.estLostRevenue += estUnits * price;
+    a.estLostMarginDollars += estUnits * marginDollars;
+    a.eventCount += 1;
+    a.openCount += isOpen ? 1 : 0;
+    a.totalHours += hours;
+    if (!a.descr && o.descr) a.descr = o.descr;
+  }
+
+  const byItem = new Map(); // itemNumber -> accumulator
+  for (const a of perStore.values()) {
+    let b = byItem.get(a.itemNumber);
+    if (!b) {
+      b = { itemNumber: a.itemNumber, descr: a.descr, estLostUnits: 0, estLostRevenue: 0, estLostMarginDollars: 0, eventCount: 0, openCount: 0, totalHours: 0, stores: [] };
+      byItem.set(a.itemNumber, b);
+    }
+    if (!b.descr && a.descr) b.descr = a.descr;
+    b.estLostUnits += a.estLostUnits;
+    b.estLostRevenue += a.estLostRevenue;
+    b.estLostMarginDollars += a.estLostMarginDollars;
+    b.eventCount += a.eventCount;
+    b.openCount += a.openCount;
+    b.totalHours += a.totalHours;
+    b.stores.push(a);
+  }
+
+  const out = [...byItem.values()];
+  out.forEach(b => b.stores.sort((x, y) => y.estLostRevenue - x.estLostRevenue));
+  out.sort((x, y) => y.estLostRevenue - x.estLostRevenue);
+  return { byItem: out };
+}

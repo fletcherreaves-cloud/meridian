@@ -25,8 +25,8 @@ import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
-import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact } from '../engine/pricing-engine.js';
-import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe } from '../lib/supabase.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare, simulatePriceImpact, estimateOutageLostSales } from '../engine/pricing-engine.js';
+import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe, loadQsrProductOutage } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
   ensureLazyFillWide, isLazyFillWidePending, isLazyFillWideError, isLazyFillWideLoaded,
@@ -246,6 +246,66 @@ function DrainTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
             ? tr(null, td({ colSpan: DRAIN_HEAD_COLS.length, style: { padding: 16, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } },
               'No waste/comp/promo activity data for this scope/range yet — qsr_menu_item_activity is a new stream, still shallow (a couple of days deep as of this feature) and growing daily.'))
             : rows.map(row => h(DrainRow, {
+              key: row.itemNumber, row, wide,
+              expanded: expandedSet.has(row.itemNumber),
+              onToggle: () => onToggle(row.itemNumber),
+            })),
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Outage lost-sales table (2026-09-02) — "build on top of K" ────────────────────────────────
+// Own row/table component, same reasoning DrainTable's own comment gives: the columns this
+// needs (Est. Lost Sales $, Est. Lost Margin $, Hours Out, Events/Open) don't overlap with the
+// margin tables' or the drain table's own columns.
+const OUTAGE_HEAD_COLS = ['MI #', 'Item', 'Store', 'Est. Lost Sales $', 'Est. Lost Margin $', 'Hours Out', 'Events (Open)'];
+
+function OutageRow({ row, wide, expanded, onToggle }) {
+  return [
+    tr({
+      key: row.itemNumber, onClick: wide ? onToggle : undefined,
+      style: { borderBottom: '.5px solid var(--bdr)', cursor: wide ? 'pointer' : 'default' },
+    },
+      td({ style: { padding: '6px 10px', fontSize: 11, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--gold)' } },
+        (wide ? (expanded ? '▾ ' : '▸ ') : '') + '#' + row.itemNumber),
+      td({ style: { padding: '6px 10px', fontSize: 11, color: 'var(--text2)' } }, row.descr || '—'),
+      td({ style: { padding: '6px 10px', fontSize: 9, color: 'var(--text3)' } },
+        wide ? 'All stores' : sNameC(row.loc) || row.loc),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--crit)' } }, f$0(row.estLostRevenue)),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(row.estLostMarginDollars)),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)' } }, row.totalHours.toFixed(1) + 'h'),
+      td({ style: { padding: '6px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'var(--mono)', color: row.openCount ? 'var(--warn,#f59e0b)' : 'var(--text3)' } },
+        row.eventCount + (row.openCount ? ` (${row.openCount} open)` : '')),
+    ),
+    wide && expanded && row.stores && row.stores.map(sr => tr({
+      key: row.itemNumber + '|' + sr.loc, style: { borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' },
+    },
+      td({ style: { padding: '4px 10px 4px 28px', fontSize: 10, color: 'var(--text3)' }, colSpan: 3 }, sNameC(sr.loc) || sr.loc),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(sr.estLostRevenue)),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, f$0(sr.estLostMarginDollars)),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, sr.totalHours.toFixed(1) + 'h'),
+      td({ style: { padding: '4px 10px', fontSize: 10, textAlign: 'right', fontFamily: 'var(--mono)', color: sr.openCount ? 'var(--warn,#f59e0b)' : 'var(--text3)' } },
+        sr.eventCount + (sr.openCount ? ` (${sr.openCount} open)` : '')),
+    )),
+  ];
+}
+
+function OutageTable({ title, subtitle, rows, wide, expandedSet, onToggle }) {
+  return div(null,
+    div({ style: { padding: '10px 14px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em' } }, title),
+    subtitle && div({ style: { padding: '0 14px 6px', fontSize: 9, color: 'var(--text3)' } }, subtitle),
+    div({ style: { overflowX: 'auto' } },
+      table({ style: { width: '100%', borderCollapse: 'collapse', minWidth: 640 } },
+        thead(null, tr(null, ...OUTAGE_HEAD_COLS.map((c, i) => th({
+          key: c, style: { padding: '4px 10px', fontSize: 8.5, color: 'var(--text3)', textAlign: i >= 3 ? 'right' : 'left', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '.5px solid var(--bdr2)' },
+        }, c)))),
+        tbody(null,
+          !rows.length
+            ? tr(null, td({ colSpan: OUTAGE_HEAD_COLS.length, style: { padding: 16, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } },
+              'No outage events with a matching margin row in this scope/range (or select a bounded range — 7D/30D/90D/180D — All Time has no daily-rate basis to estimate from).'))
+            : rows.map(row => h(OutageRow, {
               key: row.itemNumber, row, wide,
               expanded: expandedSet.has(row.itemNumber),
               onToggle: () => onToggle(row.itemNumber),
@@ -772,6 +832,38 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
   // recipeEnrichedItemRows directly, never displayRows.
   const crossStore = uM(() => crossStoreCompare(recipeEnrichedItemRows), [recipeEnrichedItemRows]);
 
+  // ── Outage load (2026-09-02) — "build on top of K" per memory/data-acquisition-shopping-
+  // list.md. Scoped by BOTH loc and dateRange at the query (qsr_product_outage is a 33k+ row
+  // and growing table, unlike the shallow activity stream's "fetch everything, filter client-
+  // side" affordability) — matches recipeRows' own loc-scoped discipline, plus dateRange since
+  // this table actually supports it server-side.
+  const [outageState, setOutageState] = uSt('idle'); // idle | loading | loaded | error
+  const [outageRows, setOutageRows] = uSt([]);
+  uE(() => {
+    let cancelled = false;
+    setOutageState('loading');
+    loadQsrProductOutage({ loc: scopedLocs, dateRange }).then(rows => {
+      if (cancelled) return;
+      setOutageRows(rows || []);
+      setOutageState('loaded');
+    }).catch(() => {
+      if (cancelled) return;
+      setOutageState('error');
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locFilterKey, dateRange]);
+
+  // estimateOutageLostSales() needs a day-count denominator to turn recipeEnrichedItemRows'
+  // window-TOTAL volume into a daily RATE -- 'All Time' (dateRange===null) has no natural one,
+  // so windowDays stays null and the engine function returns an empty result rather than a
+  // guessed figure (gated explicitly in the tab's own empty state, not silently hidden).
+  const outageWindowDays = uM(() => (dateRange ? Math.round((dateRange.end - dateRange.start) / 86400000) + 1 : null), [dateRange]);
+  const outageLostSales = uM(
+    () => estimateOutageLostSales(outageRows, recipeEnrichedItemRows, outageWindowDays, maxDate || new Date()),
+    [outageRows, recipeEnrichedItemRows, outageWindowDays, maxDate],
+  );
+
   const scopeTotals = uM(() => {
     let contrib = 0, revenue = 0;
     displayRows.forEach(r => { contrib += r.totalContrib; revenue += r.menuPrice * r.volume; });
@@ -824,6 +916,23 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     : activityState === 'error'
       ? 'Could not load waste/comp/promo activity for this window — try reopening this panel.'
       : 'Ranked by waste $ + comp $. Promo $ is the FOOD-COST basis of promo\'d units (cost, not the discount given) — a different kind of dollar figure, shown separately, not folded into this ranking. qsr_menu_item_activity is a new stream, still shallow (a couple of days deep as of this feature) and growing daily.';
+
+  const byOutage = uM(() => outageLostSales.byItem.slice(0, 15), [outageLostSales]);
+
+  const outageHeroLine = uM(() => {
+    const top = byOutage[0];
+    if (!top || !(top.estLostRevenue > 0)) return null;
+    const openNote = top.openCount ? ` — ${top.openCount} outage${top.openCount === 1 ? '' : 's'} still open right now` : '';
+    return `${top.descr || ('#' + top.itemNumber)}: ~${f$0(top.estLostRevenue)} in estimated lost sales this window${openNote} — check the machine/POS status.`;
+  }, [byOutage]);
+
+  const outageSubtitle = outageState === 'loading'
+    ? 'Loading outage events…'
+    : outageState === 'error'
+      ? 'Could not load outage events for this window — try reopening this panel.'
+      : outageWindowDays == null
+        ? 'Select a bounded range (7D/30D/90D/180D) — "All Time" has no daily-rate basis to estimate lost sales from.'
+        : 'Estimated, not measured: an outage row is a manager\'s POS action (machine down / needs cleaning), not a confirmed out-of-stock — there\'s no cause code on the record. Estimate = the item\'s own trailing daily volume, spread evenly across 24h, × hours the item was flagged unavailable. A rough static-demand figure, not a fitted forecast — use it to prioritize, not as an exact loss.';
 
   const body = (!hasCloudPMix && !pending)
     ? div({ style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text3)', padding: 40 } },
@@ -878,6 +987,15 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
             title: 'Waste / Comp / Promo Dollar Drains',
             subtitle: drainSubtitle,
             rows: byDrain, wide, expandedSet, onToggle: toggleExpand,
+          }),
+          outageHeroLine && div({ style: { padding: '12px 14px', margin: '14px 14px 0', borderTop: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
+            div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Biggest estimated lost sales to an outage, this scope/range'),
+            div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, outageHeroLine),
+          ),
+          h(OutageTable, {
+            title: '📉 Estimated Lost Sales — Product Outages',
+            subtitle: outageSubtitle,
+            rows: byOutage, wide, expandedSet, onToggle: toggleExpand,
           }),
         ));
 
