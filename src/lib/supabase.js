@@ -5092,6 +5092,39 @@ export async function loadQsrProductOutage({ loc, dateRange } = {}) {
   }));
 }
 
+// ── qsr_menu_price_comparison (backlog item L, "RFM Price Comparison") — dt-ranged, loc-scoped,
+// same filter shape as loadQsrProductOutage. deliveryPremium is deliberately NOT a stored column
+// (see supabase/schema-qsr-menu-price-comparison.sql's header) -- recompute at read time from
+// price/priceDelivery, guarding price<=0 the same two ways the API itself is documented to.
+export async function loadQsrMenuPriceComparison({ loc, dateRange } = {}) {
+  if (!supabase) return [];
+  const toDay = d => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+  const start = dateRange && (dateRange.start ?? dateRange.s) != null ? toDay(dateRange.start ?? dateRange.s) : null;
+  const end   = dateRange && (dateRange.end   ?? dateRange.e) != null ? toDay(dateRange.end   ?? dateRange.e) : null;
+  const locs = loc == null ? null : (Array.isArray(loc) ? loc : [loc]).map(l => String(l).padStart(7, '0'));
+
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_menu_price_comparison').select('*');
+    if (locs && locs.length) q = q.in('loc', locs);
+    if (start) q = q.gte('dt', start);
+    if (end) q = q.lte('dt', end);
+    return q.order('dt', { ascending: false }).range(from, to);
+  }, 1000, 'qsr_menu_price_comparison');
+
+  return (data || []).map(r => ({
+    loc:            r.loc,
+    dt:             r.dt,
+    item:           r.item,
+    descr:          r.descr,
+    familyGroup:    r.family_group,
+    price:          r.price,
+    priceEatin:     r.price_eatin,
+    priceTakeout:   r.price_takeout,
+    priceDelivery:  r.price_delivery,
+    updatedAt:      r.updated_at,
+  }));
+}
+
 // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
 // of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
 // schema.sql) already scopes what a plain select() returns to whatever the logged-in user is
