@@ -51,9 +51,15 @@ const END_DATE    = (process.env.QSRSOFT_DAR_END_DATE   || '').trim();
 const FORCE_FULL  = process.env.QSRSOFT_DAR_FORCE_FULL === '1';
 const DEBUG       = process.env.QSRSOFT_DAR_DEBUG      === '1';
 
+// mop_transactions (added 2026-09-02, backlog-master-2026-08-19.md line 659) -- Mobile Order &
+// Pay guest count, one leg alongside dt_transactions/is_transactions. Field name taken verbatim
+// from QSRSoft's own extracted columnFactory bundle (memory/project-qsrsoft-dar-columns.md: "MOP
+// GC = mop_transactions"), not guessed. Requires supabase/schema-qsr-dar-mop-transactions.sql to
+// be applied first -- both qsr_daily_activity and its rollup upsert the WHOLE row, so a missing
+// column fails that date's entire save, not just this one field.
 const SELECT_COLS = [
   'transactions','productSales','allNetSales',
-  'dt_transactions','dt_allNetSales','is_transactions','is_allNetSales',
+  'dt_transactions','dt_allNetSales','is_transactions','is_allNetSales','mop_transactions',
   'transScrubbed','prodSalesScrubbed',
   'dt_trans_cnt','dt_untilserve','dt_untilstore','dt_untilrecall','dt_heldtime','dt_carsheld',
   'fc_trans_cnt','fc_untilserve','fc_untilclosedrawer',
@@ -139,6 +145,7 @@ function mapRow(row, date) {
     dt_sales:            nv(row.dt_allNetSales),
     is_transactions:     nv(row.is_transactions),
     is_sales:            nv(row.is_allNetSales),
+    mop_transactions:    nv(row.mop_transactions),
     trans_scrubbed:      nv(row.transScrubbed),
     prod_sales_scrubbed: nv(row.prodSalesScrubbed),
     dt_trans_cnt:        nv(row.dt_trans_cnt),
@@ -216,6 +223,7 @@ async function refreshRollup(records, date) {
     const a = byLoc.get(r.loc);
     add(a, 'product_sales',           r.product_sales);
     add(a, 'transactions',            r.transactions);
+    add(a, 'mop_transactions',        r.mop_transactions);
     add(a, 'healthy_count',           r.healthy_count);
     add(a, 'unhealthy_count',         r.unhealthy_count);
     add(a, 'dt_untilserve',           r.dt_untilserve);

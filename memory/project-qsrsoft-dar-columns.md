@@ -93,7 +93,9 @@ Needed Hours · Act vs Needed. Win TTL removed.
 - OEPE now uses the **w/o-parked** formula per owner: `(dt serve − store − held)/GC`.
 
 ## Still open
-- Consider adding `mop_transactions` to the pull (MOP/app GC) — not yet pulled.
+- ✅ SHIPPED 2026-09-02 — `mop_transactions` (MOP/app GC) added to `scripts/qsrsoft-dar-pull.mjs`
+  (SELECT_COLS + mapRow + rollup sum), schema `supabase/schema-qsr-dar-mop-transactions.sql`. Pull
+  only — not yet read by any loader/metric/panel; that wiring is still open.
 - Relabel the same timing columns anywhere else they surface (Signals SoS panel).
 - R2P / Avg CTP still show "—" until a DAR backfill repopulates fc-close-drawer /
   dt-recall history (field-name fix shipped v4.430).

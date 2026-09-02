@@ -465,7 +465,11 @@ for full detail on each.
 - [ ] ❓ Visit Readiness rethink — "how to get ready and stay ready" diagnostic ruleset, needs a
   design session. *(Asked in 2 files — see Duplicates.)*
 - [ ] Graded Visits — more correlation analysis (open-ended).
-- [ ] Swing Watch "Acknowledged" placement at top of Needs Attention — fully scoped, not built.
+- [x] ✅ Already shipped (issue #140) — Swing Watch "Acknowledged" home in Needs Attention.
+  Confirmed live: `src/engine/swing-feed.js`'s `buildAckHistory()` merges `swing_acks` and
+  `attention_acks` into one persistent history (store/what/who/when, 120-day prune), wired into
+  `AttentionPanel` (`src/views/analytics.js:5412-5418`) via a comment citing "issue #140" directly.
+  Do not re-diagnose.
 - [ ] ❓ Scoring-system revisit (Ops/Controls/Combined/District/Model Health) — needs a joint
   owner session, findings already ready.
 - [ ] Multi-user startup-load tiering (core vs. extended fetch by role) — design decision needed
@@ -638,26 +642,43 @@ first below.
   `grep -rl "QSRSOFT_TOKEN\|QSRSOFT_COGNITO_TOKEN" scripts/*.mjs` → 15 files still on the stale
   ~1h-TTL token, falling through to Playwright on nearly every run (`project-qsrsoft-cognito-
   auth-312.md`).
-- [ ] Product Outage pull (`GET /reporting/v2/product/outages`) — fully scoped, cheapest pull on
-  the list, backfillable to a year, zero remaining owner blockers (`data-acquisition-shopping-
-  list.md`).
-- [ ] Menu Price Comparison ("RFM Price Comparison") pull — ready-to-build, `nsn`+`menuItemNumber`
-  grain, 0 duplicates measured (`data-acquisition-shopping-list.md`).
-- [ ] Tiered "Any Transaction" exception-pull design (Tier A/B/C) — owner-approved 2026-08-14,
-  pending only a probe run (`data-acquisition-shopping-list.md`).
+- [x] ✅ SHIPPED 2026-09-02 (v5.322) — Product Outage pull (`GET /reporting/v2/product/outages`,
+  `reportType=allOutages`), live-verified 33,443 rows. `memory/data-acquisition-shopping-list.md`'s
+  entry is stale — do not re-scope.
+- [x] ✅ SHIPPED 2026-09-02 (v5.324) — Menu Price Comparison pull, `nsn`+`menuItemNumber` grain,
+  live-verified 18,345 rows. `memory/data-acquisition-shopping-list.md`'s entry is stale.
+- ✅ CORRECTED 2026-09-02 — this line used to say "Tiered 'Any Transaction' exception-pull design
+  (Tier A/B/C) — owner-approved 2026-08-14, pending only a probe run." **The probe already ran,
+  2026-08-19** — see line ~923 of this same file / `dispatch-34-phase0a-findings.md`: **Tier A is
+  SETTLED DEAD** (no exception-type filter exists on the endpoint; Register Audit already carries
+  all standing attribution), **Tier B is confirmed viable** (a `transaction_detail` endpoint
+  captured, full line-item + tender + operator/manager detail per transaction) but **not yet
+  built** — that's the real open item if this is picked up, not a probe.
+- [x] ✅ Register Audit pull is LIVE, not blocked — this file's own line ~919-921 said "both runs
+  failed... owner needs to confirm the service account's role" (dated 2026-08-20). Measured
+  2026-09-02: `QSRSoft Register Audit Pull` workflow has run 33 times, mostly succeeding since
+  2026-08-24 (most recent run, #33, succeeded 2026-09-02T14:14:11Z). Whatever blocked it 08-20 is
+  resolved; do not re-raise the permission question.
 - [ ] `parseLaborExceptions` parser exists (missed breaks, minors violations) with **zero**
-  table/loader/pull wired to it (`data-acquisition-shopping-list.md`).
+  table/loader/pull wired to it (`data-acquisition-shopping-list.md`). Report path confirmed to
+  exist (`/reports/mcd/people/laborExceptions`, `qsrsoft-report-catalog.md`) but the actual data
+  endpoint is unconfirmed — needs an owner DevTools capture, same method as every other
+  `finding-qsrsoft-*-endpoint-*.md` in this repo.
 - [ ] No automated pull populates `qsr_inventory_summary` — `saveQsrInventorySummary` is defined
   but never called anywhere; the Inventory Intelligence panel reads this table and shows "no cloud
-  data yet" for every store (`project-inventory-auto-wiring-214.md`).
-- [ ] `storewide_controls` QSRSoft endpoint (per-store T-Red/HALO/skim/cash thresholds, discount
-  %s) discovered but no pull script/table built to auto-populate `DEFAULT_TARGETS`/Signals
-  thresholds instead of hardcoding them (`project-qsrsoft-controls-endpoint.md`).
+  data yet" for every store (`project-inventory-auto-wiring-214.md`). Investigated 2026-08-27
+  (dispatch #178, `finding-inventory-summary-automation-2026-08-27.md`): the report almost
+  certainly exists (KB article match is exact) but discovery needs an owner DevTools capture —
+  this session has no QSRSoft credentials to probe it blind. Do not re-attempt without one.
+- [x] ✅ SHIPPED 2026-09-02 (v5.325, PR #1036) — `storewide_controls` QSRSoft endpoint pull built
+  (`scripts/qsrsoft-store-controls-pull.mjs` → `qsr_store_controls`, full raw JSONB per store).
+  Wiring real thresholds into `DEFAULT_TARGETS`/Signals is still a follow-on, not done.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
   discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
   (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).
-- [ ] MOP/app transactions (`mop_transactions`) not yet added to the DAR pull
-  (`project-qsrsoft-dar-columns.md`).
+- [x] ✅ SHIPPED 2026-09-02 — MOP/app transactions (`mop_transactions`) added to the DAR pull
+  (`scripts/qsrsoft-dar-pull.mjs` SELECT_COLS/mapRow/rollup, `supabase/schema-qsr-dar-mop-transactions.sql`).
+  Pull only — wiring into metric-source.js / a panel is a follow-on (`project-qsrsoft-dar-columns.md`).
 - [ ] `scripts/qsrsoft-ebos-pull.mjs` still runs the old dead SSO-first auth ladder instead of the
   working Playwright eBOS login already ported to the variance/on-hand pulls
   (`project-eom-diagnosis-flow.md`).
@@ -695,12 +716,17 @@ first below.
 
 ### Correctness bugs (extends §4)
 
-- [ ] #150 — `metricAvg` discards real KVS Healthy Usage 0% results as missing data, inflating
-  district averages on the One-Pager/Morning Brief (`project-scoring-revisit.md`).
-- [ ] #153 — `computeOpsScore` grades against static `constants.js` `tLabor` instead of the
-  monthly-approved `tCrewLabor` (`project-scoring-revisit.md`).
-- [ ] #156 — monthly-target precedence has device cache beating cloud at `App.js:2279`, backwards
-  from the cloud-first policy (`project-scoring-revisit.md`).
+- [x] ✅ Already fixed — #150, `metricAvg`'s KVS Healthy Usage 0%-discard. Confirmed live in
+  `src/engine/pipeline.js:179-182` (`computeOpsScore`): a presence check (`p.kvsu!=null`) replaced
+  the truthy check, with a comment citing #150/#178 item 6 directly. Do not re-diagnose.
+- [x] ✅ Already fixed — #153, `computeOpsScore` grading against static `tLabor`. Confirmed live in
+  `src/engine/pipeline.js:196-200`: routed through `resolveLaborTarget()` (`labor-basis.js`), with
+  a comment citing "#153 defect 2" directly, so the score and `computeLaborRow` grade the same
+  number. Do not re-diagnose.
+- [x] ✅ SHIPPED 2026-09-02 (PR #1031, v5.321, this session) — #156, monthly-target precedence.
+  `App.js`'s `_stMonthlyTargets` spread order inverted so cloud wins over stale device cache;
+  covered by `src/__tests__/dispatch-156-monthly-targets-cloud-precedence.test.js`. Do not
+  re-diagnose.
 - [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
   Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload
   (`docs-refresh-todo.md`).
