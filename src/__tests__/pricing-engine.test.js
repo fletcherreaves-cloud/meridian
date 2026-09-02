@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare } from '../engine/pricing-engine.js';
 
 // Synthetic qsr_product_mix-shaped fixtures — raw DB column names (desc_, sold_qty,
 // unit_food_cost, unit_paper_cost), per the dispatch. loc left unpadded here (single
@@ -452,5 +452,102 @@ describe('enrichItemRecipe', () => {
       recipeRow({ store_menuitem_id: 999999, food_cost: 9.99 }), // a different store_menuitem_id, same item_number
     ]);
     expect(out[0].recipeFoodCost).toBe(1.36); // the first one, not summed/averaged with 9.99
+  });
+});
+
+// Fixtures modeled on the live measurement documented in the crossStoreCompare header comment
+// (store 3708 vs. the district, real qsr_product_mix, 2026-08-25..08-31): Big Mac priced
+// $4.99-$6.99 across stores with near-uniform ~$1.44 food cost; Double Quarter Cheese priced
+// $6.19-$9.59; every store's Big-Mac-to-DQC margin gap sits ~10-15pts except one outlier store
+// (~23pts, double the norm) whose Big Mac is completely average but whose DQC is mispriced
+// relative to how that SAME store prices everything else. A third item (Quarter Pounder) is
+// included per store purely so median() has 3 points, not 2 (avoiding a median that just
+// degenerates to a 2-item average).
+describe('crossStoreCompare — self-relative margin gap (never a peer-price-deviation flag)', () => {
+  const crossStoreRows = [
+    // Store 1001 -- normal, ~12pt DQC gap
+    { loc: '1001', itemNumber: 5, descr: 'Big Mac', menuPrice: 5.99, foodCost: 1.44, paperCost: 0.08, marginPct: 0.76, volume: 200 },
+    { loc: '1001', itemNumber: 3, descr: 'Quarter Pounder', menuPrice: 5.49, foodCost: 1.30, paperCost: 0.07, marginPct: 0.75, volume: 150 },
+    { loc: '1001', itemNumber: 8, descr: 'Double Quarter Cheese', menuPrice: 7.59, foodCost: 1.90, paperCost: 0.09, marginPct: 0.63, volume: 90 },
+    // Store 1002 -- normal, ~11pt DQC gap
+    { loc: '1002', itemNumber: 5, descr: 'Big Mac', menuPrice: 6.49, foodCost: 1.45, paperCost: 0.08, marginPct: 0.77, volume: 220 },
+    { loc: '1002', itemNumber: 3, descr: 'Quarter Pounder', menuPrice: 5.79, foodCost: 1.31, paperCost: 0.07, marginPct: 0.76, volume: 140 },
+    { loc: '1002', itemNumber: 8, descr: 'Double Quarter Cheese', menuPrice: 8.29, foodCost: 1.91, paperCost: 0.09, marginPct: 0.65, volume: 100 },
+    // Store 1003 -- normal, ~12pt DQC gap
+    { loc: '1003', itemNumber: 5, descr: 'Big Mac', menuPrice: 4.99, foodCost: 1.43, paperCost: 0.08, marginPct: 0.75, volume: 180 },
+    { loc: '1003', itemNumber: 3, descr: 'Quarter Pounder', menuPrice: 4.59, foodCost: 1.29, paperCost: 0.07, marginPct: 0.74, volume: 130 },
+    { loc: '1003', itemNumber: 8, descr: 'Double Quarter Cheese', menuPrice: 6.19, foodCost: 1.89, paperCost: 0.08, marginPct: 0.62, volume: 70 },
+    // Store 0035064 -- the outlier: Big Mac completely average, DQC mispriced relative to its
+    // own other items (~23pt gap, ~double the ~11-12pt norm above)
+    { loc: '0035064', itemNumber: 5, descr: 'Big Mac', menuPrice: 6.99, foodCost: 1.44, paperCost: 0.08, marginPct: 0.76, volume: 210 },
+    { loc: '0035064', itemNumber: 3, descr: 'Quarter Pounder', menuPrice: 5.99, foodCost: 1.30, paperCost: 0.07, marginPct: 0.75, volume: 160 },
+    { loc: '0035064', itemNumber: 8, descr: 'Double Quarter Cheese', menuPrice: 9.59, foodCost: 1.90, paperCost: 0.09, marginPct: 0.52, volume: 85 },
+  ];
+
+  it('computes each store\'s own median margin across its items, not a district-wide median', () => {
+    const out = crossStoreCompare(crossStoreRows);
+    expect(out.storeMedians['1001']).toBeCloseTo(0.75, 6);
+    expect(out.storeMedians['1002']).toBeCloseTo(0.76, 6);
+    expect(out.storeMedians['1003']).toBeCloseTo(0.74, 6);
+    expect(out.storeMedians['0035064']).toBeCloseTo(0.75, 6);
+  });
+
+  it('price legitimately spans the full $4.99-$6.99 / $6.19-$9.59 range -- this is never itself flagged', () => {
+    const out = crossStoreCompare(crossStoreRows);
+    const bigMac = out.byItem.find(i => i.itemNumber === 5);
+    const dqc = out.byItem.find(i => i.itemNumber === 8);
+    expect(bigMac.priceMin).toBeCloseTo(4.99, 6);
+    expect(bigMac.priceMax).toBeCloseTo(6.99, 6);
+    expect(dqc.priceMin).toBeCloseTo(6.19, 6);
+    expect(dqc.priceMax).toBeCloseTo(9.59, 6);
+  });
+
+  it('marginGapPts is self-relative (item margin vs. that store\'s OWN median), not vs. any peer store', () => {
+    const out = crossStoreCompare(crossStoreRows);
+    const dqc = out.byItem.find(i => i.itemNumber === 8);
+    const byLoc = Object.fromEntries(dqc.stores.map(s => [s.loc, s]));
+    expect(byLoc['1001'].marginGapPts).toBeCloseTo(-12, 6);
+    expect(byLoc['1002'].marginGapPts).toBeCloseTo(-11, 6);
+    expect(byLoc['1003'].marginGapPts).toBeCloseTo(-12, 6);
+    expect(byLoc['0035064'].marginGapPts).toBeCloseTo(-23, 6);
+  });
+
+  it('flags the real signal: the outlier store\'s gap is ~double its peers\' even though its Big Mac (and its price) is unremarkable', () => {
+    const out = crossStoreCompare(crossStoreRows);
+    const dqc = out.byItem.find(i => i.itemNumber === 8);
+    const byLoc = Object.fromEntries(dqc.stores.map(s => [s.loc, s]));
+    const peerGaps = ['1001', '1002', '1003'].map(l => Math.abs(byLoc[l].marginGapPts));
+    const peerAvg = peerGaps.reduce((a, b) => a + b, 0) / peerGaps.length;
+    expect(Math.abs(byLoc['0035064'].marginGapPts)).toBeGreaterThan(peerAvg * 1.8);
+
+    const bigMac = out.byItem.find(i => i.itemNumber === 5);
+    const bmByLoc = Object.fromEntries(bigMac.stores.map(s => [s.loc, s]));
+    // its Big Mac gap stays small/unremarkable -- the outlier is item-specific, not store-wide
+    expect(Math.abs(bmByLoc['0035064'].marginGapPts)).toBeLessThan(5);
+  });
+
+  it('rows missing marginPct are excluded from a store\'s own median but still pass through in stores[]', () => {
+    const out = crossStoreCompare([
+      ...crossStoreRows,
+      { loc: '1001', itemNumber: 99, descr: 'No margin data', menuPrice: 3.99, foodCost: null, paperCost: null, marginPct: null, volume: 5 },
+    ]);
+    expect(out.storeMedians['1001']).toBeCloseTo(0.75, 6); // unchanged by the null row
+    const noMarginItem = out.byItem.find(i => i.itemNumber === 99);
+    expect(noMarginItem.stores[0].marginGapPts).toBeNull();
+  });
+
+  it('rows with a null loc or itemNumber are dropped rather than corrupting a group', () => {
+    const out = crossStoreCompare([
+      { loc: null, itemNumber: 5, marginPct: 0.9 },
+      { loc: '1001', itemNumber: null, marginPct: 0.9 },
+      { loc: '1001', itemNumber: 5, descr: 'Big Mac', menuPrice: 5.99, foodCost: 1.44, paperCost: 0.08, marginPct: 0.76, volume: 200 },
+    ]);
+    expect(out.byItem).toHaveLength(1);
+    expect(out.byItem[0].stores).toHaveLength(1);
+  });
+
+  it('an empty itemRows array yields empty output, not a throw', () => {
+    expect(crossStoreCompare([])).toEqual({ byItem: [], storeMedians: {} });
+    expect(crossStoreCompare(undefined)).toEqual({ byItem: [], storeMedians: {} });
   });
 });

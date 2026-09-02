@@ -25,7 +25,7 @@ import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '
 import { STORE_NAMES, INV_ORG_COORDS, sNameC } from '../constants.js';
 import { normLoc } from '../engine/insights.js';
 import { lastClosedBusinessDay } from '../utils/date.js';
-import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost } from '../engine/pricing-engine.js';
+import { computeItemMargins, enrichItemMargins, enrichItemRecipe, clampToLastClosedDay, computeComboCost, crossStoreCompare } from '../engine/pricing-engine.js';
 import { loadQsrMenuItemActivity, loadQsrMenuItemRecipe } from '../lib/supabase.js';
 import {
   ensureLazyFill, isLazyFillPending, isLazyFillError,
@@ -431,6 +431,113 @@ function LookupTab({ displayRows, wide }) {
   );
 }
 
+// ── Cross-Store Compare tab (owner request, 2026-09-02) ────────────────────────────────────────
+// "The ability to cross reference price points between selected groups of stores." Reuses
+// LookupTab's search-then-pin UX. crossStoreCompare()'s own header (src/engine/pricing-engine.js)
+// has the live measurement behind this design — price varies enormously across stores BY DESIGN
+// (regional pricing), so this never flags/colors a store as "wrong" for pricing an item
+// differently from its peers. The one number it DOES show, marginGapPts, compares a store's
+// margin on this item to that SAME store's own typical margin across everything else it sells —
+// a real, calibrated signal (see the engine file's Big Mac / Double Quarter Cheese measurement),
+// left as a plain sortable number for the operator to judge, never an auto-flag.
+function CrossStoreTab({ itemRows, crossStore, wide }) {
+  const { useState: uSt, useMemo: uM } = React;
+  const [query, setQuery] = uSt('');
+  const [pinned, setPinned] = uSt([]); // itemNumber[]
+
+  // Search against the same displayRows shape LookupTab searches (one row per item_number,
+  // description available even in narrow/single-store scope) — itemRows here is intentionally
+  // whatever the caller already has on hand (recipeEnrichedItemRows), not re-derived.
+  const results = uM(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const seen = new Set();
+    const matches = [];
+    for (const r of itemRows || []) {
+      if (seen.has(r.itemNumber)) continue;
+      if (String(r.itemNumber).includes(q) || (r.descr || '').toLowerCase().includes(q)) {
+        seen.add(r.itemNumber);
+        matches.push(r);
+      }
+    }
+    return matches.sort((a, b) => (a.descr || '').localeCompare(b.descr || '')).slice(0, 40);
+  }, [itemRows, query]);
+
+  const pin = itemNumber => setPinned(prev => prev.includes(itemNumber) ? prev : [...prev, itemNumber]);
+  const unpin = itemNumber => setPinned(prev => prev.filter(n => n !== itemNumber));
+
+  const byItemMap = uM(() => new Map(crossStore.byItem.map(it => [it.itemNumber, it])), [crossStore]);
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '.5px solid var(--bdr)', fontSize: 11 };
+  const chip = { padding: '3px 8px', borderRadius: 5, border: '1px solid var(--accent,#f5bc00)', background: 'var(--accent,#f5bc00)', color: '#111', cursor: 'pointer', fontSize: 10, fontWeight: 700, flex: 'none' };
+  const ghostBtn = { padding: '3px 8px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text3)', cursor: 'pointer', fontSize: 10, flex: 'none' };
+
+  if (!wide) {
+    return div({ style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: 'var(--text3)', padding: 40 } },
+      div({ style: { fontSize: 36 } }, '🏬'),
+      div({ style: { fontSize: 13, fontWeight: 700, color: 'var(--text)' } }, 'Select 2+ Stores to Compare'),
+      div({ style: { fontSize: 10, textAlign: 'center', maxWidth: 380, lineHeight: 1.7 } },
+        'Use the location selector above to pick a district, patch, or state — this tab compares the same item\'s price/cost/margin across every store in scope.'));
+  }
+
+  return div({ style: { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' } },
+    div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)' } },
+      h('input', {
+        type: 'text', value: query, onChange: e => setQuery(e.target.value),
+        placeholder: 'Search by item name or MI# to add it to the comparison…',
+        style: { width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--bdr)', background: 'var(--surf)', color: 'var(--text)', fontSize: 12 },
+      }),
+    ),
+    query && div({ style: { overflowX: 'auto' } },
+      results.length === 0
+        ? div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } }, 'No items match that search in the current scope/range.')
+        : results.map(row => div({ key: row.itemNumber, style: rowStyle },
+            span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)', minWidth: 48 } }, '#' + row.itemNumber),
+            span({ style: { flex: 1, color: 'var(--text)' } }, row.descr || '—'),
+            pinned.includes(row.itemNumber)
+              ? span({ style: { fontSize: 9.5, color: 'var(--text3)' } }, '✓ Added')
+              : btn({ onClick: () => pin(row.itemNumber), style: chip }, '＋ Compare'),
+          ))),
+    div({ style: { padding: '4px 14px', fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', paddingTop: 10 } },
+      pinned.length ? `Comparing ${pinned.length} item${pinned.length === 1 ? '' : 's'} across ${crossStore.byItem[0]?.stores.length || 0} stores` : 'Search above and add items to compare'),
+    div({ style: { padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 14 } },
+      pinned.length === 0 && div({ style: { padding: 20, fontSize: 11, color: 'var(--text3)', textAlign: 'center' } },
+        'Add an item above to see its price, cost, and margin at every store in the selected scope.'),
+      pinned.map(itemNumber => {
+        const it = byItemMap.get(itemNumber);
+        if (!it) return null;
+        return div({ key: itemNumber, style: { border: '1px solid var(--bdr)', borderRadius: 8, overflow: 'hidden' } },
+          div({ style: { padding: '8px 10px', background: 'var(--surf2)', display: 'flex', alignItems: 'center', gap: 8 } },
+            span({ style: { fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--gold)' } }, '#' + it.itemNumber),
+            span({ style: { flex: 1, fontWeight: 700, color: 'var(--text)' } }, it.descr || '—'),
+            it.priceMin != null && span({ style: { fontSize: 10, color: 'var(--text3)' } },
+              `${f$2(it.priceMin)}–${f$2(it.priceMax)} (Δ${f$2(it.priceSpread)})`),
+            btn({ onClick: () => unpin(itemNumber), style: ghostBtn }, '✕'),
+          ),
+          div({ style: { overflowX: 'auto' } },
+            table({ style: { width: '100%', borderCollapse: 'collapse', fontSize: 10.5 } },
+              thead({}, tr({},
+                th({ style: { textAlign: 'left', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Store'),
+                th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Price'),
+                th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Food+Paper Cost'),
+                th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 } }, 'Margin %'),
+                th({ style: { textAlign: 'right', padding: '4px 10px', color: 'var(--text3)', fontWeight: 700, fontSize: 9 }, title: 'This item\'s margin vs. this SAME store\'s own median margin across every other item — not a comparison to other stores.' }, 'Δ vs Store\'s Own Median'),
+              )),
+              tbody({}, it.stores.map(sr => tr({ key: sr.loc, style: { borderTop: '.5px solid var(--bdr)' } },
+                td({ style: { padding: '4px 10px', color: 'var(--text)' } }, sNameC(sr.loc) || sr.loc),
+                td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)' } }, sr.menuPrice != null ? f$2(sr.menuPrice) : '—'),
+                td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--text3)' } }, (sr.foodCost != null && sr.paperCost != null) ? f$2(sr.foodCost + sr.paperCost) : '—'),
+                td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)' } }, fPc(sr.marginPct)),
+                td({ style: { padding: '4px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: sr.marginGapPts != null && Math.abs(sr.marginGapPts) >= 10 ? 800 : 400, color: sr.marginGapPts != null && sr.marginGapPts <= -10 ? 'var(--crit)' : 'var(--text)' } },
+                  sr.marginGapPts != null ? (sr.marginGapPts > 0 ? '+' : '') + sr.marginGapPts.toFixed(1) + 'pp' : '—'),
+              ))),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+}
+
 export function PricingEnginePanel({ stores, ds, onClose }) {
   const { useState: uSt, useMemo: uM, useEffect: uE } = React;
 
@@ -556,6 +663,11 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
 
   const displayRows = uM(() => (wide ? aggregateAcrossStores(recipeEnrichedItemRows) : recipeEnrichedItemRows), [recipeEnrichedItemRows, wide]);
 
+  // Cross-Store Compare tab needs the UN-aggregated per-(loc,item) rows — aggregateAcrossStores()
+  // collapses exactly the per-store rows crossStoreCompare() exists to compare, so this reads
+  // recipeEnrichedItemRows directly, never displayRows.
+  const crossStore = uM(() => crossStoreCompare(recipeEnrichedItemRows), [recipeEnrichedItemRows]);
+
   const scopeTotals = uM(() => {
     let contrib = 0, revenue = 0;
     displayRows.forEach(r => { contrib += r.totalContrib; revenue += r.menuPrice * r.volume; });
@@ -627,7 +739,9 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
               : (range === 'all' ? 'All Time' : range + 'D') + ' pulls real historical breadth from Supabase — this can take longer than the default 30D view.'))
       : (tab === 'lookup'
         ? h(LookupTab, { displayRows, wide })
-        : div({ style: { flex: 1, overflowY: 'auto' } },
+        : tab === 'cross-store'
+          ? h(CrossStoreTab, { itemRows: recipeEnrichedItemRows, crossStore, wide })
+          : div({ style: { flex: 1, overflowY: 'auto' } },
           div({ style: { padding: '12px 14px', borderBottom: '.5px solid var(--bdr)', background: 'var(--surf2)' } },
             div({ style: { fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Blended margin, this scope/range'),
             div({ style: { fontSize: 15, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4 } }, heroLine || 'No margin data for this scope/range.'),
@@ -679,7 +793,7 @@ export function PricingEnginePanel({ stores, ds, onClose }) {
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)' } },
       h(LocationSelector, { stores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope })),
     div({ style: { padding: '8px 14px', borderBottom: '.5px solid var(--bdr)', display: 'flex', gap: 6 } },
-      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }].map(t => btn({
+      ...[{ id: 'rankings', label: '📊 Rankings' }, { id: 'lookup', label: '🔎 Item Lookup' }, { id: 'cross-store', label: '🏬 Cross-Store' }].map(t => btn({
         key: t.id, className: 'btn btn-sm',
         style: {
           fontSize: 10.5, fontWeight: 700, padding: '5px 12px', borderRadius: 6,
