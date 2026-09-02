@@ -537,3 +537,80 @@ export function crossStoreCompare(itemRows) {
   }
   return { byItem: out, storeMedians };
 }
+
+// ── simulatePriceImpact — the actual legacy-workbook deliverable (dispatch, 2026-09-02) ──
+// The owner's own 2008-2017 "Menu Management" workbook's BRK/REG PRICING IMPACT sheets were
+// the closest thing it had to a "Pricing Engine": enter a price change for an item, recompute
+// food-cost % and a total gain/loss dollar figure, using trailing PMIX volume as the demand
+// basis (see memory/finding-legacy-pricing-workbook-structure-2026-08-27.md, gap #7). At the
+// time that finding was written, a real per-item food-cost model looked blocked on a
+// Martin-Brower distributor-cost feed that didn't exist yet -- but qsr_product_mix already
+// carries real unit_food_cost/unit_paper_cost per item (computeItemMargins() has used it since
+// dispatch #212), so that blocker was never actually real for THIS calculation. Nothing new to
+// pull; this is the same margin math the Rankings tab already trusts, run twice (once at the
+// current price, once at a hypothetical one).
+//
+// ── What this explicitly is NOT (named so nobody mistakes it for more than it is) ────────
+// This is a STATIC-elasticity model, same assumption the legacy tool made: volume is held at
+// its trailing observed level regardless of the price change. It does NOT fit a demand curve,
+// does NOT model a customer diverting to a substitute item on a price increase, and does NOT
+// predict how big a price change a market will actually bear. Those all need either a real
+// historical price-change event to measure a response against, or a substitute-item model this
+// codebase has no calibrated basis for yet -- inventing one would be exactly the "flag any
+// deviation" mistake crossStoreCompare()'s own header rejected. So this function computes the
+// one thing it CAN show honestly: "at last quarter's volume, a price move of $X on this item
+// changes profit by $Y" -- a real, useful number for a human to weigh against their own judgment
+// of what the market will bear, never a demand/diversion forecast dressed up as one.
+//
+// itemRows: per-(loc, item) rows in the scope/window being modeled (computeItemMargins()'s own
+// un-aggregated output, or enrichItemMargins/enrichItemRecipe's pass-through of it) for ONE
+// itemNumber -- caller filters to the item first. priceDelta: dollars, may be negative.
+//
+// Returns null if no rows match. Otherwise { itemNumber, descr, priceDelta, stores: [{loc,
+// menuPrice, newMenuPrice, foodCost, paperCost, marginPct, newMarginPct, volume,
+// profitImpact}], totalVolume, totalProfitImpact, blendedMarginPctBefore, blendedMarginPctAfter
+// }. profitImpact per store is exactly priceDelta * volume (cost held constant, so the
+// per-unit margin change equals the price change exactly) -- summed for totalProfitImpact.
+// blendedMarginPct{Before,After} are dollar-weighted (Σmargin$/Σprice$ over volume), never a
+// plain average-of-store-percents, per CLAUDE.md's "never average averages" rule.
+export function simulatePriceImpact(itemRows, itemNumber, priceDelta) {
+  const rows = (itemRows || []).filter(r => r && r.loc != null && r.itemNumber === itemNumber);
+  if (!rows.length) return null;
+  const delta = Number(priceDelta) || 0;
+
+  let totalVolume = 0, totalProfitImpact = 0;
+  let sumMarginDollarsBefore = 0, sumPriceDollarsBefore = 0;
+  let sumMarginDollarsAfter = 0, sumPriceDollarsAfter = 0;
+  const stores = rows.map(r => {
+    const menuPrice = r.menuPrice || 0;
+    const foodCost = r.foodCost || 0;
+    const paperCost = r.paperCost || 0;
+    const volume = r.volume || 0;
+    const newMenuPrice = menuPrice + delta;
+    const marginDollars = menuPrice - foodCost - paperCost;
+    const newMarginDollars = newMenuPrice - foodCost - paperCost;
+    const marginPct = menuPrice > 0 ? marginDollars / menuPrice : null;
+    const newMarginPct = newMenuPrice > 0 ? newMarginDollars / newMenuPrice : null;
+    const profitImpact = delta * volume;
+
+    totalVolume += volume;
+    totalProfitImpact += profitImpact;
+    sumMarginDollarsBefore += marginDollars * volume;
+    sumPriceDollarsBefore += menuPrice * volume;
+    sumMarginDollarsAfter += newMarginDollars * volume;
+    sumPriceDollarsAfter += newMenuPrice * volume;
+
+    return { loc: r.loc, menuPrice, newMenuPrice, foodCost, paperCost, marginPct, newMarginPct, volume, profitImpact };
+  });
+
+  return {
+    itemNumber,
+    descr: rows.find(r => r.descr)?.descr || '',
+    priceDelta: delta,
+    stores: stores.slice().sort((a, b) => (b.volume || 0) - (a.volume || 0)),
+    totalVolume,
+    totalProfitImpact,
+    blendedMarginPctBefore: sumPriceDollarsBefore > 0 ? sumMarginDollarsBefore / sumPriceDollarsBefore : null,
+    blendedMarginPctAfter: sumPriceDollarsAfter > 0 ? sumMarginDollarsAfter / sumPriceDollarsAfter : null,
+  };
+}
