@@ -1,0 +1,62 @@
+name: QSRSoft Menu Price Comparison Pull
+
+# Backlog item L (memory/data-acquisition-shopping-list.md), UI name "RFM Price Comparison" — the
+# per-store LIST price book (in-store, eat-in/take-out, 3PO delivery). Dated (loc, dt, item), so
+# price history is backfillable — a dated book is the only way to establish WHEN a price action
+# took effect. Changes rarely, so a daily pull is cheap and mostly no-ops.
+
+on:
+  schedule:
+    - cron: '30 12 * * *'   # 12:30 UTC daily — well clear of the 10:00-11:40 UTC morning pull pack
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Backfill start (YYYY-MM-DD). Set with end_date for an explicit window.'
+        required: false
+        default: ''
+      end_date:
+        description: 'Backfill end (YYYY-MM-DD, default: start_date)'
+        required: false
+        default: ''
+      store:
+        description: 'Comma-separated NSNs to limit the pull (default: all 27)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+      - name: Pull QSRSoft Menu Price Comparison
+        run: node scripts/qsrsoft-menu-price-comparison-pull.mjs
+        env:
+          VITE_SUPABASE_URL:          ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_USERNAME:           ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:           ${{ secrets.QSRSOFT_PASSWORD }}
+          MENU_PRICE_START_DATE:      ${{ github.event.inputs.start_date || '' }}
+          MENU_PRICE_END_DATE:        ${{ github.event.inputs.end_date   || '' }}
+          MENU_PRICE_STORE:           ${{ github.event.inputs.store      || '' }}
+          QSRSOFT_DEBUG:              ${{ github.event.inputs.debug || '0' }}
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menu-price-comparison-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
