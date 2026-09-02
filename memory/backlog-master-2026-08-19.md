@@ -678,6 +678,11 @@ first below.
   displays the real per-store thresholds/discounts/tax/dayparts/metric-targets. Deliberately does
   NOT overwrite `DEFAULT_TARGETS` (a different concept — see `project-qsrsoft-controls-endpoint.md`
   for why conflating the two is a product decision, not a display task).
+  ✅ EXTENDED same day (v5.330) — remaining unused fields added (cash drawer starting amounts/
+  DrawerBanks, Safe & Deposit Controls, Variance Tolerances) + a live "🔎 District Standard Check"
+  answering the owner's controls-vs-actual-outcomes question. Full analysis + honest caveats
+  (the T-Red finding is real but outlier-group-driven; the cash-over-short correlation is a
+  single-store artifact, not a district trend) in `finding-controls-vs-outcomes-2026-09-02.md`.
 - [ ] QSRSoft's own Alerts/Notifications GraphQL API (`api.sso.myqsrsoft.com/alerts/graphql`)
   discovered alongside CoachQ — pulling QSRSoft's own operational alerts into Signals is unbuilt
   (`project-qsrsoft-coachq.md`; the CoachQ curated-prompts item itself is already in §6).

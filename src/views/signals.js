@@ -3,7 +3,7 @@ import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS, pmixItemsIndex, pmixItemKey, isPmixItemKey } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls, loadAuditRowsWindow } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, ensureLazyFillWide } from '../engine/metric-source.js';
@@ -1362,6 +1362,10 @@ function ctrlCount(v) { const n = num(v); return n == null ? '—' : n; }
 function extractStoreControls(config) {
   const rfm = config?.RFMControls || {};
   const cash = config?.CashControls || {};
+  const variance = config?.VarianceControls || {};
+  const deposit = config?.DepositSettings || {};
+  const safe = config?.SafeCountControls || {};
+  const autopost = config?.AutopostControls || {};
   return {
     tredBeforeAmt: num(rfm.tred_before_total_amount),
     tredAfterAmt: num(rfm.tred_after_total_amount),
@@ -1372,8 +1376,20 @@ function extractStoreControls(config) {
     skimTime: num(rfm.skim_time_limit),
     pettyCash: num(rfm.petty_cash_limit),
     cashlessSignLimit: num(rfm.CashlessSignLimit),
+    authNotAvailableLimit: num(rfm.auth_not_available_limit),
     maxDrawerCash: num(cash.max_drawer_cash),
     maxStorewideCash: num(cash.max_storewide_cash),
+    // VarianceControls -- never surfaced before v5.330. maxCashOSLimit is the one field with a
+    // real (if single-store-driven, see the District Standard Check caveat) live finding.
+    maxCashOSLimit: num(variance.max_drawer_cash_over_short_limit),
+    invoicePricePct: num(variance.invoice_price_pct),
+    invoiceQtyAmt: num(variance.invoice_qty_amt),
+    promoVarAmt: num(variance.promo_amt),
+    couponVarAmt: num(variance.coupon_amt),
+    discountVarAmt: num(variance.discount_amt),
+    giftCertMaxAmt: num(variance.gift_cert_max_amt),
+    giftCertQtyAmt: num(variance.gift_cert_qty_amt),
+    safAlertThreshold: num(variance.saf_alert_threshold),
     discounts: Array.isArray(rfm.discount_data) ? rfm.discount_data : [],
     taxes: Array.isArray(rfm.active_taxes) ? rfm.active_taxes : [],
     sobDaily: rfm.sob_daily_start_time || null,
@@ -1382,11 +1398,25 @@ function extractStoreControls(config) {
     eobWeekend: rfm.eob_weekend_end_time || null,
     userMetrics: Array.isArray(config?.UserDefinedMetrics) ? config.UserDefinedMetrics : [],
     additionalMetrics: config?.AdditionalMetrics || null,
+    // Cash drawer starting amounts (DrawerBanks) + FC spare drawers (SpareDrawers) -- never
+    // surfaced before v5.330.
+    drawerBanks: Array.isArray(config?.DrawerBanks) ? config.DrawerBanks : [],
+    spareDrawers: Array.isArray(config?.SpareDrawers) ? config.SpareDrawers : [],
+    safeBackupAmt: num(safe.backup_amt),
+    safePettyCashAmt: safe.petty_cash_active ? num(safe.petty_cash_amt) : null,
+    depositArmoredCar: !!deposit.armored_car_service,
+    depositSmartSafes: !!deposit.smart_safes,
+    depositManualRefundsDisabled: !!deposit.disable_manual_refunds,
+    depositValidateDeposits: !!deposit.validate_deposits,
+    depositNumDaily: num(deposit.num_daily_deposits),
+    depositGmAdjustCash: !!deposit.gm_adjust_cash,
+    autopostElectronicInvoice: !!autopost.electronic_invoice,
+    autopostManualPurchase: !!autopost.manual_purchase,
   };
 }
 
 const CONTROLS_COLS = [
-  { key: 'tredBeforeAmt', label: 'T-Red Before', fmt: ctrlMoney },
+  { key: 'tredBeforeAmt', label: 'T-Red Before', fmt: ctrlMoney, flagVsMode: true },
   { key: 'tredAfterAmt',  label: 'T-Red After',  fmt: ctrlMoney },
   { key: 'tredAfterQty',  label: 'T-Red After Qty', fmt: ctrlCount },
   { key: 'haloAmt',       label: 'HALO $',       fmt: ctrlMoney },
@@ -1394,8 +1424,27 @@ const CONTROLS_COLS = [
   { key: 'skimAmt',       label: 'Skim $',       fmt: ctrlMoney },
   { key: 'pettyCash',     label: 'Petty Cash',   fmt: ctrlMoney },
   { key: 'cashlessSignLimit', label: 'Cashless Sign', fmt: ctrlMoney },
+  { key: 'maxCashOSLimit', label: 'Cash O/S Tolerance', fmt: ctrlMoney, flagVsMode: true },
 ];
 const CONTROLS_TH = { padding: '6px 8px', textAlign: 'left', fontSize: 10, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `2px solid ${bdr}` };
+
+// District mode (most common value) for a numeric column, live-recomputed from whatever stores
+// are actually loaded -- never a frozen constant. Ties broken by the smaller value (the district's
+// most-restrictive setting), so a flagged store always reads as "looser than the modal standard,"
+// never the reverse.
+function districtMode(rows, key) {
+  const counts = new Map();
+  for (const r of rows) {
+    const v = r[key];
+    if (v == null) continue;
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  let best = null, bestCount = 0;
+  for (const [v, c] of counts) {
+    if (c > bestCount || (c === bestCount && (best == null || v < best))) { best = v; bestCount = c; }
+  }
+  return counts.size ? { mode: best, count: bestCount, total: rows.length } : null;
+}
 
 function StoreControlsTab() {
   const [raw, setRaw] = uSt(null); // null = loading, [] = loaded-empty
@@ -1424,12 +1473,19 @@ function StoreControlsTab() {
   const sel = selLoc ? rows.find(r => r.loc === selLoc) : null;
   const kvstTarget = sel ? (DEFAULT_TARGETS?.[sel.loc]?.tKvst ?? null) : null;
 
+  const modes = uM(() => {
+    const m = {};
+    for (const c of CONTROLS_COLS) if (c.flagVsMode) m[c.key] = districtMode(rows, c.key);
+    return m;
+  }, [rows]);
+
   return h('div', null,
     h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 14 } },
-      "Real per-store configuration straight from QSRSoft — loss-prevention thresholds, discount %s, tax table, daypart windows, and the owner's own metric targets. A config object, pulled weekly, not a daily metric. Click a store for its full detail."),
+      "Real per-store configuration straight from QSRSoft — loss-prevention thresholds, discount %s, tax table, daypart windows, and the owner's own metric targets. A config object, pulled weekly, not a daily metric. Click a store for its full detail. ",
+      h('span', { style: { color: amber } }, '●'), " marks a value that differs from this district's most common setting for that column (recomputed live from the stores loaded above, never a fixed number)."),
 
     h('div', { style: { overflowX: 'auto' } },
-      h('table', { style: { width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 820 } },
+      h('table', { style: { width: '100%', fontSize: 11, borderCollapse: 'collapse', minWidth: 900 } },
         h('thead', null, h('tr', null,
           h('th', { style: CONTROLS_TH }, 'Store'),
           ...CONTROLS_COLS.map(c => h('th', { key: c.key, style: { ...CONTROLS_TH, textAlign: 'right' } }, c.label)),
@@ -1439,10 +1495,16 @@ function StoreControlsTab() {
           style: { borderTop: `1px solid ${bdr}`, cursor: 'pointer', background: selLoc === r.loc ? 'rgba(245,158,11,.08)' : 'transparent' },
         },
           h('td', { style: { padding: '5px 8px', fontWeight: 600 } }, STORE_NAMES?.[r.loc] || `Store ${r.loc}`),
-          ...CONTROLS_COLS.map(c => h('td', { key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: muted } }, c.fmt(r[c.key]))),
+          ...CONTROLS_COLS.map(c => {
+            const nonStandard = c.flagVsMode && modes[c.key] && r[c.key] != null && r[c.key] !== modes[c.key].mode;
+            return h('td', { key: c.key, style: { padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: nonStandard ? amber : muted, fontWeight: nonStandard ? 700 : 400 } },
+              nonStandard && '● ', c.fmt(r[c.key]));
+          }),
         ))),
       ),
     ),
+
+    h(DistrictStandardCheck, { rows, modes }),
 
     sel && h('div', { style: { marginTop: 16, padding: 14, border: `1px solid ${bdr}`, borderRadius: 8, background: surf2 } },
       h('div', { style: { fontSize: 13, fontWeight: 800, marginBottom: 4 } }, `${STORE_NAMES?.[sel.loc] || `Store ${sel.loc}`} — full config`),
@@ -1479,6 +1541,42 @@ function StoreControlsTab() {
             h('div', null, `max_drawer_cash: ${ctrlCount(sel.maxDrawerCash)}`),
             h('div', null, `max_storewide_cash: ${ctrlCount(sel.maxStorewideCash)}`),
             sel.skimTime != null && h('div', null, `skim_time_limit: ${sel.skimTime}`),
+            sel.authNotAvailableLimit != null && h('div', null, `Auth-Not-Available limit: ${ctrlMoney(sel.authNotAvailableLimit)}`),
+          ),
+        ),
+
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Cash Drawer Starting Amounts'),
+          sel.drawerBanks.length
+            ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+                sel.drawerBanks.filter(b => b.active).map((b, i) => h('div', { key: i, style: { fontSize: 11 } }, `Register ${b.register_id}: ${ctrlMoney(b.bank_value)}`)))
+            : h('div', { style: { fontSize: 11, color: muted } }, 'None configured.'),
+          sel.spareDrawers.length > 0 && h('div', { style: { fontSize: 10, color: muted, marginTop: 6 } },
+            sel.spareDrawers.map((d, i) => h('div', { key: i }, `Spare (${d.type}): ${ctrlMoney(d.drawer_amt)} × ${ctrlCount(d.drawer_qty)}`))),
+        ),
+
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Safe & Deposit Controls'),
+          h('div', { style: { fontSize: 11, lineHeight: 1.8 } },
+            sel.safeBackupAmt != null && h('div', null, `Safe backup amount: ${ctrlMoney(sel.safeBackupAmt)}`),
+            sel.safePettyCashAmt != null && h('div', null, `Safe petty cash: ${ctrlMoney(sel.safePettyCashAmt)}`),
+            h('div', null, `Armored car service: ${sel.depositArmoredCar ? 'Yes' : 'No'}`),
+            h('div', null, `Smart safes: ${sel.depositSmartSafes ? 'Yes' : 'No'}`),
+            h('div', null, `Manual refunds disabled: ${sel.depositManualRefundsDisabled ? 'Yes' : 'No'}`),
+            h('div', null, `Deposits validated: ${sel.depositValidateDeposits ? 'Yes' : 'No'}`),
+            sel.depositNumDaily != null && h('div', null, `Daily deposits: ${ctrlCount(sel.depositNumDaily)}`),
+          ),
+        ),
+
+        h('div', null,
+          h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Variance Tolerances (raw, unit unconfirmed)'),
+          h('div', { style: { fontSize: 11, lineHeight: 1.8 } },
+            sel.maxCashOSLimit != null && h('div', null, `Cash O/S tolerance: ${ctrlMoney(sel.maxCashOSLimit)}`),
+            sel.invoicePricePct != null && h('div', null, `invoice_price_pct: ${sel.invoicePricePct}`),
+            sel.invoiceQtyAmt != null && h('div', null, `invoice_qty_amt: ${sel.invoiceQtyAmt}`),
+            sel.promoVarAmt != null && h('div', null, `promo_amt: ${sel.promoVarAmt}`),
+            sel.couponVarAmt != null && h('div', null, `coupon_amt: ${sel.couponVarAmt}`),
+            sel.discountVarAmt != null && h('div', null, `discount_amt: ${sel.discountVarAmt}`),
           ),
         ),
       ),
@@ -1499,6 +1597,148 @@ function StoreControlsTab() {
         sel.additionalMetrics && h('div', { style: { fontSize: 10, color: muted, marginTop: 8 } }, `Also tracked in QSRSoft: ${sel.additionalMetrics}`),
       ),
     ),
+  );
+}
+
+// ── District Standard Check (2026-09-02) ────────────────────────────────────────────────────
+// Owner asked: do stores with looser controls settings correlate with worse actual cash-control
+// results? Measured live (not a one-time analysis) against real Register Audit results, 27
+// stores, both a 1-month and 3-month trailing window -- both windows agreed:
+//   - T-Red Before threshold: the handful of stores running looser-than-standard settings DO show
+//     a materially higher actual T-Red-Before rate (~4.6-4.7% of sales vs ~3.9% for the
+//     standard-config stores, both windows). Real, but it's a group difference across a small
+//     number of outlier stores, not a smooth trend across all 27 -- correlation among only the
+//     standard-config stores is near zero (not enough spread left to test).
+//   - Cash-over-short tolerance (max_drawer_cash_over_short_limit): looked like a huge r=+0.94
+//     district relationship, but it collapses to r=-0.03 once the single store running a
+//     $4,000 tolerance (vs everyone else's $100-700) is excluded -- almost entirely a one-store
+//     artifact, and reverse causation (a chronic-variance store getting its limit widened) is at
+//     least as plausible as the limit causing the variance. Shown as a named outlier, not a trend.
+// This component recomputes the same shape of comparison live from whatever window is selected --
+// it does not hardcode the numbers above. Never claims causation; states group means and counts,
+// same discipline the rest of this file's Scanner tab uses for its own correlation findings.
+const DSC_WINDOWS = [{ id: 30, label: '1 Month' }, { id: 90, label: '3 Months' }];
+// fmtPct (above) expects a raw percentage number, not a 0-1 fraction -- this file's analysis
+// values are fractions (dollar-weighted ratios), so this wrapper converts and null-guards rather
+// than repeating `v == null ? null : v * 100` at every call site.
+const fmtRatePct = v => v == null ? '—' : fmtPct(v * 100);
+
+function aggregateAuditByLoc(auditRows) {
+  const byLoc = new Map();
+  for (const r of auditRows) {
+    const loc = r.loc ? String(parseInt(r.loc, 10)) : r.loc;
+    if (!byLoc.has(loc)) byLoc.set(loc, { drawerSales: 0, tRedBDollar: 0, cashOSAbs: 0 });
+    const a = byLoc.get(loc);
+    a.drawerSales += Number(r.drawerSales) || 0;
+    a.tRedBDollar += Number(r.tRedBDollar) || 0;
+    a.cashOSAbs += Math.abs(Number(r.cashOSDollar) || 0);
+  }
+  return byLoc;
+}
+
+function DistrictStandardCheck({ rows, modes }) {
+  const [windowDays, setWindowDays] = uSt(90);
+  const [auditState, setAuditState] = uSt('idle'); // idle | loading | loaded | error
+  const [auditRows, setAuditRows] = uSt([]);
+
+  const range = uM(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - windowDays * 86400000);
+    return { start: dKey(start), end: dKey(end) };
+  }, [windowDays]);
+
+  uE(() => {
+    let live = true;
+    setAuditState('loading');
+    loadAuditRowsWindow(range).then(data => {
+      if (!live) return;
+      setAuditRows(data || []);
+      setAuditState('loaded');
+    }).catch(() => { if (live) setAuditState('error'); });
+    return () => { live = false; };
+  }, [range.start, range.end]);
+
+  const analysis = uM(() => {
+    if (!auditRows.length || !modes.tredBeforeAmt) return null;
+    const byLoc = aggregateAuditByLoc(auditRows);
+    const modeVal = modes.tredBeforeAmt.mode;
+    const standardGroup = { sales: 0, tRedB: 0, n: 0 };
+    const looseGroup = { sales: 0, tRedB: 0, n: 0, stores: [] };
+    for (const r of rows) {
+      const a = byLoc.get(r.loc);
+      if (!a || !a.drawerSales) continue;
+      const isStandard = r.tredBeforeAmt === modeVal;
+      const g = isStandard ? standardGroup : looseGroup;
+      g.sales += a.drawerSales; g.tRedB += a.tRedBDollar; g.n += 1;
+      if (!isStandard) g.stores.push({ loc: r.loc, tredBeforeAmt: r.tredBeforeAmt, rate: a.drawerSales ? a.tRedBDollar / a.drawerSales : null });
+    }
+    // Highest cash-O/S-tolerance outlier -- named individually, never folded into a group mean
+    // (n=1 for the loosest tier historically, see header comment).
+    let cashOSOutlier = null;
+    const sortedByLimit = rows.filter(r => r.maxCashOSLimit != null).sort((a, b) => b.maxCashOSLimit - a.maxCashOSLimit);
+    if (sortedByLimit.length) {
+      const top = sortedByLimit[0];
+      const a = byLoc.get(top.loc);
+      if (a && a.drawerSales) cashOSOutlier = { loc: top.loc, limit: top.maxCashOSLimit, rate: a.cashOSAbs / a.drawerSales, districtMedianLimit: sortedByLimit[Math.floor(sortedByLimit.length / 2)]?.maxCashOSLimit ?? null };
+    }
+    return {
+      standardRate: standardGroup.sales ? standardGroup.tRedB / standardGroup.sales : null, standardN: standardGroup.n,
+      looseRate: looseGroup.sales ? looseGroup.tRedB / looseGroup.sales : null, looseN: looseGroup.n,
+      looseStores: looseGroup.stores.sort((a, b) => (b.rate || 0) - (a.rate || 0)),
+      cashOSOutlier,
+    };
+  }, [auditRows, rows, modes]);
+
+  return h('div', { style: { marginTop: 20, padding: 14, border: `1px solid ${bdr}`, borderRadius: 8, background: surf2 } },
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' } },
+      h('div', { style: { fontSize: 13, fontWeight: 800 } }, '🔎 District Standard Check'),
+      h('div', { style: { display: 'flex', gap: 6, marginLeft: 'auto' } },
+        DSC_WINDOWS.map(w => h('button', {
+          key: w.id, onClick: () => setWindowDays(w.id),
+          style: { fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${windowDays === w.id ? amber : bdr}`, background: windowDays === w.id ? 'rgba(245,158,11,.12)' : 'transparent', color: windowDays === w.id ? amber : muted },
+        }, w.label)),
+      ),
+    ),
+    h('div', { style: { fontSize: 10.5, color: muted, lineHeight: 1.6, marginBottom: 10 } },
+      "Does a store's own T-Red Before threshold (the dollar amount QSRSoft uses to flag a pre-total void) relate to its actual T-Red-Before rate? Grouped by whether the store matches this district's most common threshold, against real Register Audit results for the selected window."),
+
+    auditState === 'loading' && h('div', { style: { fontSize: 11, color: muted, padding: '8px 0' } }, 'Loading Register Audit results…'),
+    auditState === 'error' && h('div', { style: { fontSize: 11, color: red, padding: '8px 0' } }, "Couldn't load Register Audit results for this window."),
+
+    analysis && h('div', null,
+      h('div', { style: { display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 } },
+        h('div', null,
+          h('div', { style: { fontSize: 9, color: muted, textTransform: 'uppercase', letterSpacing: '.05em' } }, `Standard config (${analysis.standardN} stores)`),
+          h('div', { style: { fontSize: 18, fontWeight: 800, fontFamily: 'monospace' } }, fmtRatePct(analysis.standardRate)),
+          h('div', { style: { fontSize: 9, color: muted } }, 'actual T-Red-Before, % of sales'),
+        ),
+        h('div', null,
+          h('div', { style: { fontSize: 9, color: amber, textTransform: 'uppercase', letterSpacing: '.05em' } }, `Looser than standard (${analysis.looseN} stores)`),
+          h('div', { style: { fontSize: 18, fontWeight: 800, fontFamily: 'monospace', color: amber } }, fmtRatePct(analysis.looseRate)),
+          h('div', { style: { fontSize: 9, color: muted } }, 'actual T-Red-Before, % of sales'),
+        ),
+      ),
+      analysis.looseStores.length > 0 && h('div', { style: { marginBottom: 12 } },
+        h('div', { style: { fontSize: 9, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Non-standard stores (highest actual rate first)'),
+        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+          analysis.looseStores.map(s => h('div', { key: s.loc, style: { fontSize: 11, display: 'flex', gap: 10 } },
+            span({ style: { fontWeight: 600, minWidth: 140 } }, STORE_NAMES?.[s.loc] || `Store ${s.loc}`),
+            span({ style: { color: muted, fontFamily: 'monospace' } }, `threshold ${ctrlMoney(s.tredBeforeAmt)}`),
+            span({ style: { color: amber, fontFamily: 'monospace' } }, `actual ${fmtRatePct(s.rate)}`),
+          ))),
+      ),
+      analysis.cashOSOutlier && h('div', { style: { marginBottom: 4, paddingTop: 10, borderTop: `1px solid ${bdr}` } },
+        h('div', { style: { fontSize: 9, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 } }, 'Highest cash-over-short tolerance in the district'),
+        h('div', { style: { fontSize: 11 } },
+          span({ style: { fontWeight: 600 } }, STORE_NAMES?.[analysis.cashOSOutlier.loc] || `Store ${analysis.cashOSOutlier.loc}`),
+          ' — tolerance ', span({ style: { fontFamily: 'monospace', color: amber } }, ctrlMoney(analysis.cashOSOutlier.limit)),
+          ' vs district median ', span({ style: { fontFamily: 'monospace' } }, ctrlMoney(analysis.cashOSOutlier.districtMedianLimit)),
+          ', actual cash-over-short ', span({ style: { fontFamily: 'monospace', color: amber } }, fmtRatePct(analysis.cashOSOutlier.rate)), ' of sales.'),
+      ),
+    ),
+
+    h('div', { style: { fontSize: 9.5, color: muted, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${bdr}`, lineHeight: 1.6 } },
+      '⚠ Correlational, not causal — a difference here could reflect other things about these stores, and with only 27 stores district-wide a single outlier can swing a group average. Cash-over-short in particular is one store\'s number, not a district trend (removing it collapses the relationship). Use this to decide who to look at, not as proof of why.'),
   );
 }
 
