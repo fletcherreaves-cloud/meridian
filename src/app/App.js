@@ -1048,17 +1048,24 @@ function App() {
   const [isDragging, setIsDragging]    = useState(false);
   const dragCounter                    = useRef(0);
   const [sessionRestoring, setSessionRestoring] = useState(false);
-  // Dispatch #159 — true once T1's cloud/auto streams (qsrActSummaryRows, glimpseRows,
-  // opsServiceRows — the exact 3 sources metric-source.js's oepe/r2p/kvst/laborPct chains
-  // check BEFORE the manual opsRows fallback) have actually landed in `ds`, as opposed to
+  // Dispatch #159, extended (this session) — true once EVERY cloud/auto source
+  // autoPopulateKPIs() (review-engine.js) reads has actually landed in `ds`, as opposed to
   // `ds.loaded`, which flips true from the local IDB restore alone and has no dependency on
-  // this Supabase network round-trip. Root cause: Performance Reviews' "Auto-fill from
-  // Uploaded Data" button gated only on `ds?.loaded`, so a click in the window between IDB
-  // restore (near-instant) and T1 landing (a real network fetch, historically 5-20+ seconds)
-  // silently resolved OEPE/R2P/KVS/Labor% for every month with no chance to fall through to
-  // the not-yet-loaded auto streams — only to whatever the ALREADY-IDB-resident manual
-  // ds.opsRows happened to cover, and to nothing at all for months beyond that. See
-  // performance-reviews.js's KPITab `dataReady` prop, threaded from here.
+  // any Supabase network round-trip. Root cause (dispatch #159): Performance Reviews'
+  // "Auto-fill from Uploaded Data" button gated only on `ds?.loaded`, so a click in the window
+  // between IDB restore (near-instant) and the real network fetches landing (historically
+  // 5-20+ seconds) silently resolved auto-sourced metrics for every month with no chance to
+  // fall through to the not-yet-loaded auto streams — only to whatever the ALREADY-IDB-resident
+  // manual fallback happened to cover, and to nothing at all for months beyond that (observed as
+  // a "recent months blank" split). Originally set true right after T1 (qsrActSummaryRows/
+  // glimpseRows/opsServiceRows — the OEPE/R2P/KVS/Labor%/Sales chains only). Measured this
+  // session that autoPopulateKPIs ALSO reads several T2-loaded sources — ds.smgFullscale,
+  // ds.rosterStatsRows/rosterRoleCounts/turnoverRows, ds.digitalAppRows/mcdeliveryRows,
+  // ds.ebosRows, ds.qsrFobRows — none of which T1 covers, so the SAME race could still blank
+  // OSAT/EAP/Headcount/Turnover/Digital-Delivery/Op-Supplies/auto-FOB for a click made right when
+  // the button first enabled. Now set after T2 (see the `_t2.then` below) so it covers every
+  // source the button's own auto-fill actually depends on. See performance-reviews.js's KPITab
+  // `dataReady` prop, threaded from here.
   const [cloudStreamsReady, setCloudStreamsReady] = useState(false);
 
   // Auto-migrate flat targets → v2 on startup
@@ -2045,11 +2052,6 @@ function App() {
       const _t1Start = _t0;
       await Promise.all([_stMonthlyTargets(), _stYearlyTargets(), _stCloudEmailReport(), _stOpsReportStream(), _stQsrsoftActSummary(60)]);
       _flushDs(); // T1: 5 stages → 1 commit
-      // Dispatch #159 — T1 is exactly the tier carrying qsrActSummaryRows/glimpseRows/
-      // opsServiceRows, so this is the earliest point it's honest to tell a consumer (e.g.
-      // Performance Reviews' Auto-fill button) that those auto-first sources have had their
-      // chance to load, not just that SOME data (IDB) is present.
-      setCloudStreamsReady(true);
       console.log(`%c[Meridian] T1 ready — app usable in ${_ms()}ms (tier: ${_tierMs(_t1Start)}ms)`, 'color:#f5bc00;font-weight:700');
       const _t2Start = performance.now();
       const _t2 = Promise.all([
@@ -2084,6 +2086,21 @@ function App() {
       _t2.then(() => {
         _t2Done = performance.now();
         _flushDs();
+        // Dispatch #159, extended — originally flipped cloudStreamsReady right after T1
+        // (qsrActSummaryRows/glimpseRows/opsServiceRows: the OEPE/R2P/KVS/Labor%/Sales chains).
+        // That closed the race for those 4 metrics but left autoPopulateKPIs' OTHER auto-first
+        // reads — ds.smgFullscale (osat/eap), ds.rosterStatsRows/rosterRoleCounts/turnoverRows
+        // (headcount/shiftCert/turnover90), ds.digitalAppRows/mcdeliveryRows (digitalGC/delivGC/
+        // delivWait), ds.ebosRows (opSupplies), ds.qsrFobRows (the auto foodOB path) — all T2
+        // stages — still racing a click made the instant the Auto-fill button first enables.
+        // Same failure MODE #159 found and fixed for T1 (silently falls through to whatever's
+        // already IDB-resident, or to nothing, for any month those T2 sources would have
+        // covered), just not period-specific — any review, any month, if clicked in the T1→T2
+        // window. Moving the flag here (T2 complete, not T1) closes that for every source
+        // autoPopulateKPIs actually reads. T1's own "app usable" log line above is unchanged —
+        // this only delays the ONE downstream consumer (Performance Reviews' dataReady prop) a
+        // few more seconds, not first paint.
+        setCloudStreamsReady(true);
         console.log(`[Meridian] T2 auto streams complete — ${_ms()}ms (tier: ${_tierMs(_t2Start)}ms)`);
       }); // T2: 22 ds-touching stages → 1 commit
       const _t3 = _t2.then(() => Promise.all([
