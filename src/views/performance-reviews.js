@@ -1170,15 +1170,18 @@ function KPITab({review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, se
   const catMets = cfg.metrics[kpiCat] || [];
   const allCats = [...CAT_KEYS];
 
-  // Dispatch #159 — `ds.loaded` flips true off the local IDB restore alone, well before the
-  // Supabase auto/cloud streams (qsrActSummaryRows/glimpseRows/opsServiceRows) that
-  // autoPopulateKPIs' OEPE/R2P/KVS/Labor% chains check FIRST have actually landed (App.js's
-  // "T1", a real network round-trip). `dataReady` (defaulted true for any caller that hasn't
-  // been wired to the real signal, e.g. existing tests / other render paths) is App.js's
-  // honest "T1 finished" flag. Without this, a click in that window silently resolved every
-  // recent month from nothing — falling through past the not-yet-loaded auto sources straight
-  // to whatever the already-IDB-resident manual Ops Report rows happened to cover, and to nothing
-  // at all for months beyond that (root cause of the Jan-Jun-populates/Jul-Dec-blank split).
+  // Dispatch #159, extended (this session) — `ds.loaded` flips true off the local IDB restore
+  // alone, well before the Supabase auto/cloud streams autoPopulateKPIs actually reads (App.js's
+  // "T1" AND "T2", real network round-trips) have landed. `dataReady` (defaulted true for any
+  // caller that hasn't been wired to the real signal, e.g. existing tests / other render paths)
+  // is App.js's honest "every auto source autoPopulateKPIs reads has had its chance to load"
+  // flag — originally T1-only (qsrActSummaryRows/glimpseRows/opsServiceRows, the OEPE/R2P/KVS/
+  // Labor%/Sales chains), widened to also cover T2 (smgFullscale, rosterStats/roleCounts/
+  // turnover, digitalApp/mcdelivery, ebos, qsrFob — see App.js's cloudStreamsReady comment).
+  // Without this, a click in that window silently resolved every recent month from nothing —
+  // falling through past the not-yet-loaded auto sources straight to whatever the already-IDB-
+  // resident manual fallback happened to cover, and to nothing at all for months beyond that
+  // (root cause of the observed Jan-Jun-populates/Jul-Dec-blank split).
   const canAutoFill = !!ds?.loaded && dataReady;
 
   return div({style:{padding:16}},
@@ -1193,7 +1196,7 @@ function KPITab({review, resolvedReview, cfg, mths, qKeys, kpiCat, setKpiCat, se
         !ds?.loaded
           ? 'Upload Operations Report, Labor Analysis, and SMG FullScale files to enable auto-fill.'
           : !dataReady
-          ? 'Still loading live OEPE/R2P/KVS/Labor % data from the cloud — wait a moment before auto-filling, or recent months may come back blank.'
+          ? 'Still loading live data from the cloud (OEPE/R2P/KVS/Labor %/Sales, plus OSAT, Digital/Delivery, Headcount, Turnover, and FOB) — wait a moment before auto-filling, or recent months may come back blank.'
           : 'Fills OEPE, R2P, KVS, Sales vs Target, Labor %, FOB, and Voice OSAT from your uploaded Operations/Labor/SMG FullScale reports.')),
     // Category tabs
     div({style:{display:'flex',gap:4,marginBottom:16,flexWrap:'wrap'}},
