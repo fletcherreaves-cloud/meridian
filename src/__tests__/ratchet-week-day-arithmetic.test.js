@@ -45,7 +45,12 @@ const ROOTS = ['src/views', 'src/features'];
 // schedule-summary.js's own already-counted identical line (StoreRow's daily grid). Same
 // display-only day-name lookup on an already-resolved rollup() `days[].date`, not week-start/
 // business-day boundary arithmetic — reviewed and added deliberately, same as dispatch #68.
-const CEILING = 63;
+// Round-8 backlog sweep (2026-09-03): -1 -- removed src/features/projections.js's dead
+// loadLockedProjections/saveLockedProjections/getLockedAmount/lockProjectionWeek/weekKey (zero
+// callers anywhere; App.js's own comment already documented them as dead imports shadowed by a
+// local implementation). weekKey's own `(day - 3 + 7) % 7` was exactly the re-derive-inline
+// pattern this ratchet exists to catch, but it was unreachable dead code, not a live boundary bug.
+const CEILING = 62;
 
 const PATTERN = /\.getDay\(\)/g;
 
