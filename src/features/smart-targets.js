@@ -599,4 +599,4 @@ function SmartTargetPanel({stores, ds, settings, onClose}) {
   );
 }
 
-export { computeSmartTargets, SmartTargetPanel };
+export { computeSmartTargets, SmartTargetPanel, trimmedMean, bestSustained4wk, trendSlope, roundTarget };
