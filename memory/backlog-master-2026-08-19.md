@@ -356,8 +356,16 @@ for full detail on each.
 
 ## 5. New Data Sources / Automation
 
-- [ ] Product Mix → Pricing Engine (auto-pulls, elasticity/what-if) — blocks product-mix↔sales
-  correlations; ❓ owner to supply legacy spreadsheet.
+- [ ] ⚠️ **CORRECTED 2026-09-03 (quick-wins sweep, applying the §5-status-correction note below to
+  its actual source line) — "❓ owner to supply legacy spreadsheet" is stale; PMIX (#291) is a
+  real, live, tested pull, not blocked on the owner.** Re-verified 3 of the 5 remaining checklist
+  items from `project-product-mix-291.md` as done: the scheduled GitHub Action
+  (`qsrsoft-pmix-pull.yml`) exists, `sync-failure-watch.yml` watches "QSRSoft Product Mix Pull"
+  (test passing), and `loadPmixRows`/lazy-fill are wired into `App.js`'s `configureLazyFill`
+  (dispatch #170). Two remain genuinely open: the `productMixDiscount` pull (`disc_amt`
+  reconciliation) is unbuilt, and the multi-store `loc` field's identifying column is explicitly
+  flagged in that doc's own "do not treat as resolved" section as unconfirmed without a real
+  multi-store DevTools capture — not re-verified here, still needs owner input.
 - [ ] Graded Visits auto-pull from McDonald's (currently manual).
 - [ ] Demographics per location (Census/ACS API).
 - [ ] Register Audit engine (searchable, smart detection, SAGE+Signals integrated) — whole
@@ -466,7 +474,12 @@ for full detail on each.
 
 ## 10. Signals / Visit Readiness / Attention
 
-- [ ] Product-mix correlations — blocked on Product Mix pull (§5 above).
+- [x] ✅ **CORRECTED 2026-09-03 (quick-wins sweep) — already shipped, not blocked.** Re-verified
+  live: `src/engine/signal-registry.js`'s `pmixItem:<code>` dynamic metric resolver
+  (`pmixItemsIndex`/`PMIX_SCANNER_TOP_N`) lets any product-mix item correlate against every other
+  metric group through Signals' Scanner — no per-item hardcoding needed, per CLAUDE.md's own
+  Signals panel entry. §5's remaining PMIX gaps (multi-store `loc` field confirmation,
+  `productMixDiscount`) don't block this — Scanner correlations already work off what's pulled.
 - [ ] ❓ Visit Readiness rethink — "how to get ready and stay ready" diagnostic ruleset, needs a
   design session. *(Asked in 2 files — see Duplicates.)*
 - [ ] Graded Visits — more correlation analysis (open-ended).
@@ -723,11 +736,11 @@ first below.
   `supabase/schema-data-completeness.sql` never run in production; only 2 of 7 pull streams have
   tolerance rules; restricted-handling UI/SAGE gating for the `notes` column not built
   (`project-pull-completeness-263-265.md`).
-- [ ] **§5 status correction:** the Product Mix → Pricing Engine item currently reads "❓ owner to
-  supply legacy spreadsheet" — stale. PMIX (#291) is now a real, tested pull (schema/loader/pull
-  script all shipped); 5 concrete next steps remain instead: confirm the multi-store `loc` field,
-  wire lazy-fill, add a GitHub Action + `sync-failure-watch.yml` entry, build the
-  `productMixDiscount` pull, fix the manual-parser loc/date handling (`project-product-mix-291.md`).
+- [x] ✅ **Applied 2026-09-03 (quick-wins sweep) — now corrected in place at §5 (line ~359),
+  not just here.** Of the 5 next steps this bullet named: GitHub Action + `sync-failure-watch.yml`
+  entry + lazy-fill wiring are all confirmed done; the multi-store `loc` field remains explicitly
+  unconfirmed (owner DevTools needed) and `productMixDiscount` remains unbuilt. See §5 for the
+  precise current state instead of this summary.
 - [x] ✅ **DONE 2026-09-02, owner go-ahead given.** The 994-row count was as of 2026-08-19; a
   dry-run just before executing found only **6** rows still matching the stub signature
   (`labor_pct=0 AND sales>0`, all also `tpph=0 AND ot_hrs=0`, 5 stores, 2025-01-22..2026-01-25) —
@@ -962,12 +975,15 @@ first below.
 
 ### Status corrections to existing items
 
-- [ ] **§7 correction:** "Op Supplies actual, Total Profit-vs-Target derivation" is listed as
-  open/needs-field-confirmation — both are already shipped (v4.540/v4.541) per
-  `perf-review-data-sourcing.md`.
-- [ ] **§7 correction:** the Shift Manager Summary item is stale as worded — the report pull
-  already shipped (v4.550). The real open item is DM/shift-role review wiring: link a review to
-  `geid`, choose which manager-attributed metrics score it (`session-handoff-2026-07-28.md`).
+- [x] ✅ **Applied 2026-09-03 (quick-wins sweep) — both corrections below now live at their real
+  source, §7 itself (lines ~411-422), not just here in the appendix.** This appendix bullet used
+  to duplicate the correction without the actual §7 bullets ever being marked done, so a future
+  pass reading only §7 would re-flag them as open. Left this appendix entry as a pointer rather
+  than deleting it, so anyone landing here via search sees the real location: "Op Supplies actual,
+  Total Profit-vs-Target derivation" (both shipped v4.540/v4.541) and the Shift Manager Summary
+  item (report pull shipped v4.550; the real open item is DM/shift-role review wiring — link a
+  review to `geid`, choose which manager-attributed metrics score it,
+  `session-handoff-2026-07-28.md`) are both corrected in place at §7.
 - [ ] **§8 addition (new, from `notes-31-queue.md`/`notes-32-queue.md`):** Leadership One-Pager FL
   FOB yearly total read ~14.88% against an expected ~4% (FL) when the owner reviewed the shipped
   panel live (2026-07-28) — flagged twice, "still to confirm with owner," and explicitly deferred
