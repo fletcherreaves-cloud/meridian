@@ -10,7 +10,7 @@ import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGE
 import { computeSmartTarget, robustBaseline, weightedRecencyProjection, weightedRecencyLevel, weightedLevel, windowRate, backtestProjectors, peerAnchor, blend, confidence, median, _isNum } from '../engine/smart-targets.js';
 import { forecastModels } from '../engine/forecast.js';
 import { businessDate } from '../engine/swing-feed.js';
-import { loadDailySales, loadGlimpse, loadQsrFob, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
+import { loadDailySales, loadGlimpse, loadQsrFob, loadQsrActSummary, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 
 // The three simple trailing projectors. A 2026-07 backtest across all 27 stores
@@ -75,6 +75,8 @@ const isoOf = d => (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 
 const pct1 = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const pct2 = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 const secs = v => v == null ? '—' : Math.round(v) + 's';
+const num1 = v => v == null ? '—' : v.toFixed(1);
+const dollar2 = v => v == null ? '—' : '$' + v.toFixed(2);
 
 // qsr_fob rows are DAILY but carry CUMULATIVE month-to-date amounts, so the latest
 // daily row per (loc, month) IS that month's total. Collapse to one monthly point
@@ -136,6 +138,39 @@ const METRICS = [
     fetch: () => loadQsrFob().then(fobMonthly),
     daily: r => r.v, weight: r => r.w,
     officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tFOBTarget) ? t.tFOBTarget : null; },
+    fmt: pct2 },
+  // TPPH (transactions per actual-punched labor hour) — labor-productivity companion to Labor
+  // %, higher is better. From the DAR rollup (ds.qsrActSummaryRows), weighted by actHrs (the
+  // ratio's own denominator) so a short/partial day doesn't get the same say as a full one.
+  { key: 'tpph', label: 'TPPH (transactions/labor hr)', direction: 'higher', monthly: false, ratio: true,
+    mem: ds => (ds && ds.qsrActSummaryRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.tpph, w: r.actHrs })),
+    fetch: days => loadQsrActSummary(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.tpph, w: r.actHrs }))),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tTpph) ? t.tTpph : null; },
+    fmt: num1 },
+  // R2P (Receipt to Print, sec) — front-counter speed, lower is better. From the DAR rollup,
+  // weighted by the timed front-counter transaction count (_fcCnt).
+  { key: 'r2p', label: 'R2P (sec)', direction: 'lower', monthly: false, ratio: true,
+    mem: ds => (ds && ds.qsrActSummaryRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.r2p, w: r._fcCnt })),
+    fetch: days => loadQsrActSummary(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.r2p, w: r._fcCnt }))),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tR2p) ? t.tR2p : null; },
+    fmt: secs },
+  // Average check ($) — higher is better. From Daily Glimpse, weighted by guest count so the
+  // blended figure is the true Σsales/ΣGC, never a plain average of daily averages.
+  { key: 'avgcheck', label: 'Avg Check ($)', direction: 'higher', monthly: false, ratio: true,
+    mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.avgCheck, w: r.gc })),
+    fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.avgCheck, w: r.gc }))),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tAvgCheck) ? t.tAvgCheck : null; },
+    fmt: dollar2 },
+  // Promo % of sales — a loss-prevention/discount-discipline metric (Controls loss-prevention
+  // group, signal-registry.js), lower is better. From Daily Glimpse, dollar-weighted by sales.
+  { key: 'promopct', label: 'Promo % of sales', direction: 'lower', monthly: false, ratio: true,
+    mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.promoPct, w: r.allNetSales })),
+    fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.promoPct, w: r.allNetSales }))),
+    daily: r => r.v, weight: r => r.w,
+    officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tPromoPct) ? t.tPromoPct : null; },
     fmt: pct2 },
 ];
 
