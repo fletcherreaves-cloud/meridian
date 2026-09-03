@@ -115,19 +115,19 @@ function fmt$(v) { return '$' + (v||0).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/
 function fmtN(v, dec=1) { return (v||0).toFixed(dec); }
 function fmtPct(v) { return (v||0).toFixed(2) + '%'; }
 
-function colorForLaborPct(v) {
+export function colorForLaborPct(v) {
   if(!v) return TEXT3;
   if(v < 19) return GREEN;
   if(v < 22) return AMBER;
   return RED;
 }
-function colorForTPMH(v) {
+export function colorForTPMH(v) {
   if(!v) return TEXT3;
   if(v >= 6.0) return GREEN;
   if(v >= 5.0) return AMBER;
   return RED;
 }
-function colorForHrsDiff(diff) {
+export function colorForHrsDiff(diff) {
   if(Math.abs(diff) < 5) return TEXT2;
   return diff > 0 ? RED : GREEN;
 }
@@ -138,7 +138,7 @@ function toInputDate(d) {
   return `${y}-${m}-${dd}`;
 }
 // Previous Sunday / Saturday relative to a date
-function weekBounds(anchor) {
+export function weekBounds(anchor) {
   const d = new Date(anchor);
   const day = d.getDay(); // 0=Sun
   const sun = new Date(d); sun.setDate(d.getDate() - day);
