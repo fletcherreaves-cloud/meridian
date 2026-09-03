@@ -700,9 +700,20 @@ first below.
   not a SELECT_COLS addition to this script. Full writeup: `project-qsrsoft-dar-columns.md`.
   Do not re-attempt the `mop_transactions`-on-`daily-activity-raw` approach — it's a measured dead
   end, not an unconfirmed one.
-- [ ] `scripts/qsrsoft-ebos-pull.mjs` still runs the old dead SSO-first auth ladder instead of the
-  working Playwright eBOS login already ported to the variance/on-hand pulls
-  (`project-eom-diagnosis-flow.md`).
+- [ ] ⚠️ **PARTIALLY CORRECTED 2026-09-03 (quick-wins sweep) — the "still runs the old dead ladder"
+  framing is stale, but a real, unresolved discrepancy sits underneath it.** Re-verified live:
+  `qsrsoft-ebos-pull.mjs` already has `getFreshToken()` (dispatch #82, `290b132`, 2026-08-23 — four
+  days after this entry was written), tried before its Playwright fallback, not instead of it — so
+  it is not running a "dead" ladder. But `qsrsoft-variance-pull.mjs` uses the identical SSO-exchange
+  -via-`getFreshToken()`-first strategy, while `qsrsoft-onhand-pull.mjs`'s own `resolveEbosToken()`
+  comment says *"the SSO `/token/ebosByOrg` exchange is a confirmed 403 dead end… the ONLY reliable
+  path is a fresh Playwright login"* and skips SSO entirely. Three scripts, two different beliefs
+  about whether SSO-exchange for an eBOS token works at all — that contradiction is real and
+  unresolved, but confirming which script is right needs a live production auth run (real
+  credentials, a live SSO call), which is outside what an autonomous session can safely verify
+  blind. **If picked up:** dispatch a diagnostic run of `qsrsoft-ebos-pull.mjs`/`qsrsoft-variance-
+  pull.mjs` with `QSRSOFT_EBOS_DEBUG=1` and read whether Path B (SSO) actually succeeds or silently
+  falls through to Playwright every time — that measurement, not a doc re-read, settles it.
 - [ ] #263/#265 pull-completeness ledger system has no backlog presence at all:
   `supabase/schema-data-completeness.sql` never run in production; only 2 of 7 pull streams have
   tolerance rules; restricted-handling UI/SAGE gating for the `notes` column not built
@@ -751,9 +762,18 @@ first below.
 - [ ] `pending_reports` stores report base64 blobs directly in a Supabase column instead of
   Storage (a 12.37 MB row observed) despite a code comment claiming a bucket upload
   (`docs-refresh-todo.md`).
-- [ ] Tishomingo (43380) / Ponce de Leon (43701) store numbers collide with Excel's date-serial
-  range; a date-formatted loader silently mangles them. Fix "queued," not shipped
-  (`store-events-material-changes.md`).
+- [ ] ⚠️ **INVESTIGATED 2026-09-03 (quick-wins sweep) — could not locate the described bug in live
+  code; needs a file/function pointer before this is actionable.** `store-events-material-
+  changes.md`'s own wording ("the underlying cell value survives — the fix is re-formatting to
+  General, not re-typing") reads as an Excel-authoring caution, not necessarily a bug in Meridian's
+  own ingest code. Checked the actual hazard class directly: every `XLSX.utils.sheet_to_json` call
+  in `src/parsers/index.js` already passes `raw:true` (bypasses formatted-display values, returns
+  the underlying number), and every `XLSX.read`/`readFile` call project-wide either passes
+  `cellDates:false` explicitly or leaves SheetJS's own `cellDates:false` default — so the specific
+  "date-formatted cell → mangled loc" mechanism the note describes should already be structurally
+  prevented everywhere Meridian parses an upload. **Not marking this fixed** — only that a live
+  reproduction (an actual uploaded file where these two store numbers came out wrong) is needed to
+  find where this really bites, since the source doc names no file/function to check against.
 - [ ] Coaching loop #208's core verify mechanism is nonfunctional in production. ✅ **Re-measured
   today:** `src/engine/coaching-loop.js:58` — `export const NOISE_THRESHOLDS = {};`, still empty,
   so `computeVerdict()` returns `null` for every cycle. District-differencing was tested as the fix
