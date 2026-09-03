@@ -800,7 +800,7 @@ function storeLocKey(loc7) {
   return String(parseInt(loc7, 10));
 }
 
-function aggregateByStore(rows) {
+export function aggregateByStore(rows) {
   const map = {};
   for (const r of rows) {
     if (!map[r.loc]) map[r.loc] = { loc: r.loc, dtTime: 0, dtCnt: 0, punched: 0, needed: 0, healthy: 0, unhealthy: 0, slots: [] };
@@ -833,7 +833,7 @@ function aggregateByStore(rows) {
   }).sort((a, b) => a.storeName.localeCompare(b.storeName));
 }
 
-function alertCount(store) {
+export function alertCount(store) {
   let n = 0;
   if (store.salesPct != null && store.salesPct < PACE_AMB) n++;
   if (store.dtAvgSec != null && store.dtAvgSec > DT_AMB)   n++;
