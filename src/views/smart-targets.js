@@ -156,11 +156,17 @@ const METRICS = [
     daily: r => r.v, weight: r => r.w,
     officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tR2p) ? t.tR2p : null; },
     fmt: secs },
-  // Average check ($) — higher is better. From Daily Glimpse, weighted by guest count so the
-  // blended figure is the true Σsales/ΣGC, never a plain average of daily averages.
+  // Average check ($) — higher is better. Derived as sales/GC rather than read from Daily
+  // Glimpse's own avg_check column: measured live 2026-09-03, that column is 0 on every row
+  // in daily_glimpse_daily (a dead field in this pull, not just thin on recent days), which
+  // silently emptied this metric's whole history the day it shipped. metric-source.js's own
+  // avgCheck chain already treats sales/gc as "a real, always-available fallback" for the
+  // exact same reason -- this mirrors that derive rather than trusting the raw column.
+  // Weighted by guest count so the blended figure is the true Σsales/ΣGC, never a plain
+  // average of daily averages.
   { key: 'avgcheck', label: 'Avg Check ($)', direction: 'higher', monthly: false, ratio: true,
-    mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.avgCheck, w: r.gc })),
-    fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.avgCheck, w: r.gc }))),
+    mem: ds => (ds && ds.glimpseRows || []).map(r => ({ loc: r.loc, date: r.date, v: r.gc > 0 ? r.allNetSales / r.gc : null, w: r.gc })),
+    fetch: days => loadGlimpse(days).then(rows => (rows || []).map(r => ({ loc: r.loc, date: r.date, v: r.gc > 0 ? r.allNetSales / r.gc : null, w: r.gc }))),
     daily: r => r.v, weight: r => r.w,
     officialVal: loc => { const t = DEFAULT_TARGETS[locNum(loc)]; return t && _isNum(t.tAvgCheck) ? t.tAvgCheck : null; },
     fmt: dollar2 },
