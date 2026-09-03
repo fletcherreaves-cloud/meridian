@@ -19,7 +19,7 @@ import {
   saveEomItemDisposition, loadEomItemDisposition, loadSelfServeTowerLocs,
   saveEomSnapshots, loadEomSnapshots, saveEomSecondaryReview, loadEomSecondaryReview,
   saveEomCountException, deleteEomCountException, loadEomCountExceptions,
-  createEomShareLink, supabase,
+  createEomShareLink, loadEomShareLinks, revokeEomShareLink, supabase,
 } from '../lib/supabase.js';
 import { shareOrCopy } from '../utils/share.js';
 import { diffScope } from '../engine/eom-change-monitor.js';
@@ -2784,6 +2784,27 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
     } catch (e) { setShareMsg(`Share failed: ${e?.message || e}`); }
   }, [buildDiagResult, diagOptsFor, period]);
 
+  // 🔗 Manage Share Links — createShare above makes a link but never showed anywhere to see or
+  // revoke one afterward (loadEomShareLinks/revokeEomShareLink existed in supabase.js with zero
+  // consumers). Scoped to the current period, same as the digest/report modals.
+  const [linksOpen, setLinksOpen] = useState(false);
+  const [linksBusy, setLinksBusy] = useState(false);
+  const [shareLinks, setShareLinks] = useState([]);
+  const [linksMsg, setLinksMsg] = useState('');
+  const refreshLinks = useCallback(async () => {
+    setLinksBusy(true);
+    try { setShareLinks(await loadEomShareLinks({ period })); }
+    finally { setLinksBusy(false); }
+  }, [period]);
+  const openLinks = useCallback(() => { setLinksOpen(true); setLinksMsg(''); refreshLinks(); }, [refreshLinks]);
+  const doRevoke = useCallback(async (token, storeName) => {
+    setLinksMsg(`Revoking — ${storeName}…`);
+    const { error } = await revokeEomShareLink(token, true);
+    if (error) { setLinksMsg(`Revoke failed: ${error}`); return; }
+    setLinksMsg(`✓ Revoked — ${storeName}`);
+    refreshLinks();
+  }, [refreshLinks]);
+
   // Waste analysis (Notes 40 #2): run the Second-Look waste rules across the current scope on demand.
   const runWasteScan = useCallback(() => {
     const scoped = new Set(rows.map(r => unpad(r.loc)));
@@ -3115,6 +3136,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
         { label: '📊 FOB Report', onClick: () => { setFobRepStore(null); setFobRepOpen(true); }, disabled: rows.length === 0, title: 'FOB Report — all-location EOM-lean read for the current scope: OK/FL summary, biggest opportunities, then patch → store with each store\'s FOB vs target, month-over-month trend (improving/regressing), worst component, top item losers, a masking check, and a plain-language action plan. Reusable for one / all / patch.' },
         { label: '📣 Message all', onClick: openBulk, disabled: rows.length === 0, title: 'Generate the EOM follow-up message for every location in scope at once — copy each and send (recount lists / action plans, freshest-wins).' },
         { label: '📧 Generate Report', onClick: openDigest, disabled: rows.length === 0, title: 'Roll up the current scope\'s count completion + FOB(vs target) to Patch / Market / District — view it here immediately, or send it as email(s) from the same panel.' },
+        { label: '🔗 Manage Share Links', onClick: openLinks, title: 'List every read-only share link created for this period — view count, last viewed, acknowledged, and revoke.' },
       ],
     },
     {
@@ -3652,6 +3674,36 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
           ? digest.groups.map(groupCard)
           : div({ style: { color: 'var(--text3)', fontSize: '12px' } }, 'No stores with EOM data in the current scope.')));
     })(),
+    // 🔗 Manage Share Links modal — list every read-only share link for this period, with revoke.
+    linksOpen && h(ModalShell, { title: `🔗 Share Links — ${period}`, onClose: () => setLinksOpen(false), maxWidth: 820, closeOnBackdrop: true },
+      div({ style: { fontSize: '11px', color: 'var(--text3)', marginBottom: '10px' } },
+        'Read-only, no-login links created via "🔗 Share" on a store row. Revoking one immediately blocks further access to that link.'),
+      linksMsg ? div({ style: { fontSize: '11.5px', color: linksMsg.startsWith('✓') ? '#4ade80' : linksMsg.startsWith('Revoke failed') ? 'var(--crit)' : 'var(--text2)', marginBottom: '10px' } }, linksMsg) : null,
+      linksBusy ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, 'Loading…')
+        : shareLinks.length === 0 ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, `No share links found for ${period}.`)
+        : div({ style: { overflowX: 'auto' } },
+            h('table', { style: { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize: '12px' } },
+              h('thead', null, h('tr', null,
+                ['Store', 'Created', 'Expires', 'Views', 'Last Viewed', 'Acknowledged', 'Status', ''].map(t =>
+                  h('th', { key: t, style: { textAlign: 'left', padding: '5px 9px', borderBottom: '1px solid var(--bdr2)', fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', whiteSpace: 'nowrap' } }, t)))),
+              h('tbody', null, shareLinks.map(l => {
+                const expired = l.expiresAt && new Date(l.expiresAt) < new Date();
+                const status = l.revoked ? 'Revoked' : expired ? 'Expired' : 'Active';
+                const statusColor = l.revoked ? 'var(--text3)' : expired ? '#fb923c' : '#4ade80';
+                return h('tr', { key: l.token, style: { borderBottom: '1px solid var(--bdr)' } },
+                  h('td', { style: { padding: '5px 9px', whiteSpace: 'nowrap' } }, l.storeName || nm(l.loc)),
+                  h('td', { style: { padding: '5px 9px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, l.createdAt ? new Date(l.createdAt).toLocaleDateString() : '—'),
+                  h('td', { style: { padding: '5px 9px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, l.expiresAt ? new Date(l.expiresAt).toLocaleDateString() : '—'),
+                  h('td', { style: { padding: '5px 9px', color: 'var(--text2)' } }, l.viewCount ?? 0),
+                  h('td', { style: { padding: '5px 9px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, l.lastViewedAt ? new Date(l.lastViewedAt).toLocaleString() : '—'),
+                  h('td', { style: { padding: '5px 9px', color: 'var(--text2)', whiteSpace: 'nowrap' } }, l.acknowledgedAt ? new Date(l.acknowledgedAt).toLocaleString() : '—'),
+                  h('td', { style: { padding: '5px 9px', fontWeight: 600, color: statusColor, whiteSpace: 'nowrap' } }, status),
+                  h('td', { style: { padding: '5px 9px' } }, l.revoked ? null : h('button', {
+                    onClick: () => doRevoke(l.token, l.storeName || nm(l.loc)),
+                    style: { ...MODAL_TOOLBTN, color: 'var(--crit)', borderColor: 'var(--crit)' },
+                  }, 'Revoke')));
+              })))),
+    ),
     // 🔬 FOB Root-Cause Analysis modal (Notes 41) — recount impact + FOB consistency, scoped + verifiable.
     riddleOpen && (() => {
       const R = riddle;
