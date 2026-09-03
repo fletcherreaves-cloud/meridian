@@ -65,6 +65,39 @@ describe('changelog / per-version files (R6)', () => {
     expect(dupes, 'duplicate changelog versions across different files').toEqual([]);
   });
 
+  it('the most-recently-dated entry holds the global-max version (a backwards version-number typo would ship green otherwise)', () => {
+    // gen-changelog-latest.mjs picks "latest" purely by version number (major.minor, numeric —
+    // see its own comment on why date can't be the sort key: many days ship several versions).
+    // If a NEW file's version number is accidentally typed lower than what's already shipped
+    // (e.g. '5.31' meant to be '5.331'), gen-changelog-latest.mjs silently keeps pointing at the
+    // OLD entry — the new file's prose still reaches the About panel, but it never becomes
+    // MERIDIAN_VERSION, and nothing else in this suite catches that (the collision check above
+    // only rejects an exact duplicate, not an out-of-order one). This only asserts about the
+    // *tail* of history (today's date vs. the global max version) rather than pairwise across all
+    // ~370 files, deliberately — many older entries carry hand-typed dates that don't reflect
+    // true merge order (a real, pre-existing, harmless discrepancy: 5.101 is dated 2026-08-21,
+    // 5.100 dated the day after), and asserting full pairwise date/version ordering across that
+    // history would fail on that noise without catching any real bug.
+    const withNum = entries
+      .map(e => {
+        const [maj, min] = (e.version || '').split('.').map(Number);
+        return { file: e.file, date: e.date, version: e.version, maj, min };
+      })
+      .filter(e => Number.isFinite(e.maj) && Number.isFinite(e.min));
+    const cmp = (a, b) => (a.maj !== b.maj ? a.maj - b.maj : a.min - b.min);
+    const maxDate = withNum.reduce((m, e) => (e.date > m ? e.date : m), withNum[0].date);
+    const onMaxDate = withNum.filter(e => e.date === maxDate);
+    const globalMax = withNum.reduce((best, e) => (cmp(e, best) > 0 ? e : best), withNum[0]);
+    const bestOnMaxDate = onMaxDate.reduce((best, e) => (cmp(e, best) > 0 ? e : best), onMaxDate[0]);
+    expect(
+      cmp(bestOnMaxDate, globalMax),
+      `${maxDate} is the newest date in src/app/changelog/, but its highest version there is ` +
+      `${bestOnMaxDate.file} (v${bestOnMaxDate.version}) while the global max version is ` +
+      `${globalMax.file} (v${globalMax.version}) — a version number on the newest-dated file(s) ` +
+      `looks lower than it should be`
+    ).toBe(0);
+  });
+
   it('App.js derives MERIDIAN_VERSION from LATEST_CHANGELOG_ENTRY, never types it separately', () => {
     const APP_SRC = readFileSync('src/app/App.js', 'utf8');
     // A literal here is the exact failure mode this guards: it compiles, ships, and lies.
