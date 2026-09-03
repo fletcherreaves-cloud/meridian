@@ -2370,17 +2370,6 @@ export async function loadTurnoverMonthly() {
 // ── Digital App + McDelivery 3PO (monthly per-loc) → review digital/delivery ───
 // GC/R/D metrics. Parsers in src/engine/people-reports.js; pulls upsert monthly.
 // loaders return flat rows tagged with `month` for the review auto-populate lookup.
-export async function saveDigitalAppMonthly(periodMonth, byLoc) {
-  if (!supabase || !byLoc) return { saved: 0 };
-  const rows = Object.entries(byLoc).map(([loc, d]) => ({
-    loc: String(loc), period_month: periodMonth,
-    app_sales: d.sales ?? null, app_gc: d.gcs ?? null, app_gc_rd: d.gcPerRestDay ?? null,
-    app_pct_sales: d.pctOfSales ?? null, avg_check: d.avgCheck ?? null, rest_days: d.restDays ?? null,
-  }));
-  const { error } = await supabase.from('digital_app_monthly').upsert(rows, { onConflict: 'loc,period_month' });
-  if (error) { console.warn('[digital_app_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
-  return { saved: rows.length };
-}
 export async function loadDigitalAppMonthly() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('digital_app_monthly').select('*').order('period_month').range(from, to));
@@ -2391,22 +2380,6 @@ export async function loadDigitalAppMonthly() {
   }));
 }
 
-export async function saveMcdeliveryMonthly(periodMonth, byLoc, restDays = null) {
-  if (!supabase || !byLoc) return { saved: 0 };
-  const rows = Object.entries(byLoc).map(([loc, m]) => ({
-    loc: String(loc), period_month: periodMonth, vendor: m.vendor ?? null,
-    delivery_gc: m.threePoGC ?? null,
-    delivery_gc_rd: (m.threePoGC != null && restDays) ? m.threePoGC / restDays : (m.threePoGC ?? null),
-    pos_mcdelivery_gc: m.posMcDeliveryGC ?? null, pos_3po_sales: m.pos3poSales ?? null,
-    csat: m.csat ?? null, orders_missing_items_pct: m.ordersMissingItemsPct ?? null,
-    incorrect_orders: m.incorrectOrders ?? null, mcdelivery_time_sec: m.mcDeliveryTimeSec ?? null,
-    restaurant_time_sec: m.restaurantTimeSec ?? null, total_experience_time_sec: m.totalExperienceTimeSec ?? null,
-    rest_days: restDays ?? null,
-  }));
-  const { error } = await supabase.from('mcdelivery_monthly').upsert(rows, { onConflict: 'loc,period_month' });
-  if (error) { console.warn('[mcdelivery_monthly] save error:', error.message); return { saved: 0, errors: [error.message] }; }
-  return { saved: rows.length };
-}
 export async function loadMcdeliveryMonthly() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('mcdelivery_monthly').select('*').order('period_month').range(from, to));
@@ -3716,27 +3689,6 @@ async function _chunkUpsert(table, rows, onConflict) {
   return { saved, errors };
 }
 
-// ── On-Hand Inventory ─────────────────────────────────────────────────────────
-export async function saveQsrOnHand(rows) {
-  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const up = rows.map(r => ({
-    loc:            String(r.loc),
-    period:         String(r.period),
-    wrin:           String(r.wrin),
-    descr:          r.descr ?? r.desc ?? null,
-    cls:            r.cls ?? null,
-    cases:          r.cases ?? null,
-    packs:          r.packs ?? null,
-    loose:          r.loose ?? null,
-    total_units:    r.totalUnits ?? null,
-    unit_price:     r.unitPrice ?? null,
-    on_hand_amt:    r.onHandAmt ?? null,
-    last_counted:   _toISO(r.lastCounted),
-    last_submitted: _toISO(r.lastSubmitted),
-  }));
-  return _chunkUpsert('qsr_onhand', up, 'loc,period,wrin');
-}
-
 // ── Local news mentions (Notes 59) ────────────────────────────────────────────
 // news_mentions holds ONE ROW PER (article, attributed store) — a story about a
 // two-store town writes two rows with ambiguous=true. Callers that want articles
@@ -3786,29 +3738,6 @@ export async function loadQsrOnHand({ period } = {}) {
 }
 
 // ── Variance Stat / Yields ────────────────────────────────────────────────────
-export async function saveQsrVarianceStat(rows) {
-  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const up = rows.map(r => ({
-    loc:        String(r.loc),
-    period:     String(r.period),
-    wrin:       String(r.wrin),
-    cls:        r.cls ?? null,
-    descr:      r.descr ?? r.desc ?? null,
-    raw_waste:  r.rawWaste ?? null,
-    comp_waste: r.compWaste ?? null,
-    exp_usage:  r.expUsage ?? null,
-    act_usage:  r.actUsage ?? null,
-    variance:   r.variance ?? null,
-    dol_diff:   r.dolDiff ?? null,
-    yield_val:  r.yield ?? r.yieldVal ?? null,
-    pct_sales:  r.pctOfSales ?? r.pctSales ?? null,
-    raw_item_id: r.rawItemId ?? null,
-    yield_lo:   r.yieldLo ?? r.yieldBand?.lo ?? null,
-    yield_hi:   r.yieldHi ?? r.yieldBand?.hi ?? null,
-  }));
-  return _chunkUpsert('qsr_variance_stat', up, 'loc,period,wrin');
-}
-
 export async function loadQsrVarianceStat({ period } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
@@ -3913,11 +3842,14 @@ export async function saveChecklistSubmission({ loc, formId, formSlug, formTitle
 // Session cache for the variance-history pull (egress guard, task #20). The three integrity scans
 // (Chronic / Reliability / Rubber-band) request the SAME periods every run; without this, running
 // all three = 3× the multi-month fetch, and re-opening a modal re-pulls. Cache the FULL period pull
-// keyed by the sorted period set (loc filtering is applied client-side after), TTL 5 min. Cleared
-// on any variance write. This alone removes most of the egress from the integrity features.
+// keyed by the sorted period set (loc filtering is applied client-side after), TTL 5 min. This
+// alone removes most of the egress from the integrity features. TTL-only in practice, not write-
+// invalidated: every variance write happens via a separate Node pull-script process (never through
+// this in-browser client), so there was never a same-process write path to hook a clear into — the
+// clearVarianceHistoryCache() export this comment used to reference had zero callers and was
+// removed 2026-09-03. A stale read here is capped at 5 minutes by the TTL below, not by a write.
 const _varHistCache = new Map(); // periodsKey -> { at, rows }
 const _VARHIST_TTL = 5 * 60 * 1000;
-export function clearVarianceHistoryCache() { _varHistCache.clear(); }
 export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = {}) {
   if (!supabase || !periods.length) return [];
   const norm = s => String(s || '').replace(/^0+/, '') || String(s || '');
@@ -3940,24 +3872,6 @@ export async function loadQsrVarianceHistoryAll({ periods = [], locs = null } = 
 }
 
 // ── EOM Waste (raw_waste_promo) ───────────────────────────────────────────────
-export async function saveQsrWaste(rows) {
-  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const up = rows.map(r => ({
-    loc:      String(r.loc),
-    period:   String(r.period),
-    event_id: r.eventId ?? r.id,
-    busn_dt:  _toISO(r.dt ?? r.busnDt),
-    busn_tm:  r.tm ?? r.busnTm ?? null,
-    wtype:    r.type ?? r.wtype ?? null,
-    amount:   r.amount ?? null,
-    manager:  r.manager ?? null,
-    wsource:  r.source ?? r.wsource ?? null,
-    edited:   !!r.edited,
-    reason:   r.reason ?? null,
-  })).filter(r => r.event_id != null);
-  return _chunkUpsert('qsr_waste', up, 'loc,event_id');
-}
-
 export async function loadQsrWaste({ period } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
@@ -3973,27 +3887,6 @@ export async function loadQsrWaste({ period } = {}) {
 }
 
 // ── EOM Transfers (transfers) ─────────────────────────────────────────────────
-export async function saveQsrTransfers(rows) {
-  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const up = rows.map(r => ({
-    loc:          String(r.loc),
-    period:       String(r.period),
-    transfer_id:  r.transferId ?? r.id,
-    wrin:         String(r.wrin),
-    dir:          r.dir ?? null,
-    counterparty: r.counterpartyNsn ?? r.counterparty ?? null,
-    busn_dt:      _toISO(r.dt ?? r.busnDt),
-    status:       r.status ?? null,
-    line_amt:     r.lineAmt ?? null,
-    transfer_amt: r.transferTotal ?? r.transferAmt ?? null,
-    manager:      r.manager ?? null,
-    descr:        r.descr ?? null,
-    cls:          r.cls ?? null,
-    units:        r.units ?? null,
-  })).filter(r => r.transfer_id != null && r.wrin);
-  return _chunkUpsert('qsr_transfers', up, 'loc,transfer_id,wrin');
-}
-
 export async function loadQsrTransfers({ period } = {}) {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => {
@@ -4010,19 +3903,6 @@ export async function loadQsrTransfers({ period } = {}) {
 }
 
 // ── EOM Raw-item forensic register (raw_detail) ───────────────────────────────
-export async function saveQsrRawItemDetail(rows) {
-  if (!supabase || !rows?.length) return { saved: 0, errors: [] };
-  const up = rows.map(r => ({
-    loc:        String(r.loc),
-    period:     String(r.period),
-    wrin:       String(r.wrin),
-    descr:      r.descr ?? null,
-    item_class: r.itemClass ?? r.item_class ?? null,
-    history:    Array.isArray(r.history) ? r.history : [],
-  })).filter(r => r.wrin);
-  return _chunkUpsert('qsr_raw_item_detail', up, 'loc,period,wrin');
-}
-
 export async function loadQsrRawItemDetail({ period, loc } = {}) {
   if (!supabase) return [];
   // qsr_raw_item_detail stores the padded NSN format ("0033109"); querying by an unpadded
@@ -4374,19 +4254,6 @@ export async function loadOrgEventExceptions() {
   }
   return map;
 }
-export async function saveOrgEventException(eventId, loc, { status = 'canceled', overrides = null, note = null, enteredBy = null } = {}) {
-  if (!supabase || eventId == null || !loc) return { error: 'missing-id-or-loc' };
-  const { error } = await supabase.from('org_event_exceptions').upsert(
-    { event_id: eventId, loc: String(loc), status, overrides, note, entered_by: enteredBy },
-    { onConflict: 'event_id,loc' },
-  );
-  return { error: error?.message || null };
-}
-export async function deleteOrgEventException(eventId, loc) {
-  if (!supabase || eventId == null || !loc) return { error: 'missing-id-or-loc' };
-  const { error } = await supabase.from('org_event_exceptions').delete().eq('event_id', eventId).eq('loc', String(loc));
-  return { error: error?.message || null };
-}
 export async function loadOrgSchoolConfig() {
   if (!supabase) return [];
   const data = await fetchAll((from, to) => supabase.from('org_school_config').select('*').range(from, to), 1000, 'org_school_config');
@@ -4676,12 +4543,6 @@ export async function loadCoachingCycles() {
 }
 
 // ── QSRSoft Knowledge Base (#41) — grounds SAGE + diagnostics in QSRSoft's own methodology ──
-export async function loadQsrKb() {
-  if (!supabase) return [];
-  const data = await fetchAll((from, to) => supabase.from('qsrsoft_kb').select('id,title,body_text,category,section,html_url,updated_at').order('category', { ascending: true }).range(from, to));
-  return (data || []).map(r => ({ id: r.id, title: r.title, bodyText: r.body_text, category: r.category, section: r.section, htmlUrl: r.html_url, updatedAt: r.updated_at }));
-}
-
 // Keyword search over the KB (title + body). Sanitizes the query for PostgREST's or() filter syntax.
 export async function searchQsrKb(query, { limit = 20 } = {}) {
   if (!supabase || !query) return [];
