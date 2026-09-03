@@ -25,66 +25,14 @@ const tbl=(p,...c)=>h('table',p,...c);
 const inp=(p,...c)=>h('input',p,...c);
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-// Stores finalized projections per store per week.
-// Key: 'mf_locked_projections'
-// Structure: { locKey: { weekKey: { days:{date:amount}, gc:{date:gc}, model, notes, lockedAt, lockedBy } } }
-const PROJ_STORE_KEY = 'mf_locked_projections';
 const PROJ_LOG_KEY   = 'mf_projection_log';
 
 // Module-level weekData cache — survives modal close/reopen so projections
 // don't recompute from scratch every time the workspace is opened.
 const _weekDataCache = { key: null, data: {} };
 
-function loadLockedProjections() {
-  try { return JSON.parse(localStorage.getItem(PROJ_STORE_KEY)||'{}'); } catch { return {}; }
-}
-function saveLockedProjections(data) {
-  try { localStorage.setItem(PROJ_STORE_KEY, JSON.stringify(data)); } catch(e) { console.error('Proj save:', e); }
-}
 function loadProjectionLog() {
   try { return JSON.parse(localStorage.getItem(PROJ_LOG_KEY)||'[]'); } catch { return []; }
-}
-
-// weekKey: ISO Monday date string for the week containing a given date
-function weekKey(date) {
-  const d = new Date(date);
-  // Use Wednesday as week start (work week Wed-Tue)
-  const day = d.getDay(); // 0=Sun,1=Mon,...,6=Sat
-  const diffToWed = (day - 3 + 7) % 7; // days since last Wednesday
-  const wed = new Date(d);
-  wed.setDate(d.getDate() - diffToWed);
-  return dKey(wed);
-}
-
-function getLockedAmount(locked, loc, date) {
-  const lp = locked[loc];
-  if (!lp) return null;
-  const wk = weekKey(date);
-  const weekData = lp[wk];
-  if (!weekData) return null;
-  return weekData.days[dKey(date)] ?? null;
-}
-
-function lockProjectionWeek(locked, loc, weekStartDate, dayAmounts, gcAmounts, model, notes, name) {
-  const next = JSON.parse(JSON.stringify(locked));
-  if (!next[loc]) next[loc] = {};
-  const wk = weekKey(weekStartDate);
-  next[loc][wk] = {
-    days: dayAmounts,   // { 'YYYY-MM-DD': amount }
-    gc:   gcAmounts,    // { 'YYYY-MM-DD': gc }
-    model, notes,
-    lockedAt: new Date().toISOString(),
-    lockedBy: name || 'User',
-    weekStart: dKey(weekStartDate),
-  };
-  // Append to log
-  try {
-    const log = loadProjectionLog();
-    log.push({ loc, wk, total: Object.values(dayAmounts).reduce((a,v)=>a+v,0),
-      model, notes, lockedAt: next[loc][wk].lockedAt });
-    localStorage.setItem(PROJ_LOG_KEY, JSON.stringify(log.slice(-500))); // keep last 500
-  } catch(e) {}
-  return next;
 }
 
 // PROJECTION WORKFLOW COMPONENT
@@ -1921,4 +1869,4 @@ function ProjectionWorkflow({stores, ds, settings, userEvents, lockedProjections
   );
 }
 
-export { loadLockedProjections, saveLockedProjections, getLockedAmount, lockProjectionWeek, ProjectionWorkflow, PreForecastBrief };
+export { ProjectionWorkflow, PreForecastBrief };
