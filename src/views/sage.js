@@ -961,6 +961,14 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRo
   // (schema-sage-prompts-sharing.sql), which rejects a non-privileged share attempt outright.
   const canShare = userRole === 'admin' || userRole === 'developer';
   const creatorLabel = userName || 'Unknown';
+  // Org-level byline for the SHARED badge, not the sharer's personal name (owner-stated
+  // 2026-09-03) -- cleaner for a stranger encountering the badge who wouldn't know who a
+  // personal name refers to, and reads correctly once a second operator is on the platform.
+  // "Development Team" over the product name ("Meridian BI") -- a team can plausibly SHARE
+  // something, a product name reads oddly as the subject of "Shared by ___".
+  // Private/unshared prompts still show the real creatorLabel above -- only the shared byline
+  // is org-generic.
+  const ORG_SHARE_LABEL = 'Development Team';
   // Editable draft — NO longer gated on the SAGE composer having text. Prefilled from
   // the composer when it has text, but you can always type/paste a prompt to save here.
   const [draft, setDraft] = uSt((currentInput || '').trim());
@@ -1012,7 +1020,7 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRo
   const del = async (id) => { await deleteSagePrompt(id); onRefresh(); };
   const toggleShared = async (p) => {
     setBusy(true);
-    const res = await setSagePromptShared(p.id, !p.shared, creatorLabel);
+    const res = await setSagePromptShared(p.id, !p.shared, ORG_SHARE_LABEL);
     if (res && res.errors && res.errors.length) setMsg('⚠ ' + res.errors[0]);
     onRefresh(); setBusy(false);
   };
