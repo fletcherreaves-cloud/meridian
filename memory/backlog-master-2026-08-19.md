@@ -326,13 +326,13 @@ for full detail on each.
 - [ ] ❓ Food Cost Panel (`FOBAnalysisPanel`): `qsr_fob` returns empty under RLS for the
   anon/authenticated role. Root cause understood but unconfirmed — **needs a live `pg_policies`
   diff and explicit owner go-ahead before touching production RLS.**
-- [ ] Two disagreeing Model Health Score implementations (`modelHealthScore` vs
-  `computeModelHealth`). ❌ **(re-verified pass 1, still open — and confirmed live, not vestigial.)**
-  Both are defined in the same file (`src/engine/forecast.js:847` and `:1868`), both are exported,
-  and **each has its own consumer**: `src/views/at-a-glance.js` calls `modelHealthScore` (`:374`
-  red-store filter, `:821` green/yellow/red tally) while `src/views/model-health-badge.js:10`
-  imports `computeModelHealth`. So the same store can be graded by two different implementations
-  depending on which surface you look at — that is the actual user-visible risk, and it is real today.
+- [x] ✅ **CORRECTED 2026-09-03 (quick-wins morning sweep) — already fixed, not two disagreeing
+  implementations.** Re-verified live in `src/engine/forecast.js`: `computeModelHealth` is a thin
+  adapter that calls `modelHealthScore(loc, ds, settings)` and reshapes its result (its own header
+  comment: "Reconciled by calling the canonical modelHealthScore(...) and reshaping its result").
+  Both `src/views/at-a-glance.js` and `src/views/model-health-badge.js` therefore grade a store
+  identically today, whichever function they call — this was fixed by dispatch #41, this backlog
+  entry just never got its status updated. Nothing left to chase here.
 - [ ] District View 14-item visual-review punch list — mostly unconfirmed as fixed (Biggest Miss
   counting a partial day, missing labor at 10am, low-contrast Intelligence Brief, TPPH not
   populating in two panels, Tishomingo wrongly flagged "new model store," Records not all-time,
@@ -626,8 +626,11 @@ first below.
 - [ ] `xlsx@0.18.5` has unpatched CVEs on npm (`project-audit-2026-07-27.md` B3) — deferred by its
   own follow-on doc (`project-security-notes.md`) until untrusted uploads exist; noted here so the
   two files aren't rediscovered as separate gaps later.
-- [ ] Single global `ErrorBoundary` still wraps the entire app in `meridian.js`
-  (`project-audit-2026-07-27.md` B6) — one runtime error anywhere blanks the whole page.
+- [x] ✅ **CORRECTED 2026-09-03 (quick-wins morning sweep) — already fixed.** Re-verified live:
+  `lazyPanel()` (`src/features/session.js`) gives every panel its own `ErrorBoundary` (dispatch
+  #79) — a `compact` variant, opt-in and off by default, so the original top-level app boundary in
+  `meridian.js` is unchanged. Guarded by `src/__tests__/lazy-panel-error-boundary.test.js`. A
+  runtime error inside one panel no longer blanks the whole page.
 - [ ] SAGE knowledge-grounding sensitivity gating (restrict personnel-sensitive findings to DO+
   role, gate by subject not just caller role, fail-closed frontmatter) is designed but not built —
   safety-relevant, not just a nice-to-have: `memory/finding-padding-and-cash-hunt-2026-08-13.md`
@@ -843,16 +846,24 @@ first below.
   chase here; the 12 stores still `crit` post-fix are a real, actionable operational signal, not
   an artifact (see that file's own "not chased further, correct next thing for whoever owns Count
   Cycle rollout" note).
-- [ ] Two Supabase tables written by pull scripts but never read anywhere in the app
-  (`eom_count_progress_log`, `staff_assignments`), plus 12 loader functions defined but never
-  called — dead-write/dead-code surface not previously flagged (`metric-inventory-2026-08-07.md`).
+- [ ] One of the two tables in this item is now read; the other, and the loader-function count,
+  are unverified. ✅ **PARTIAL CORRECTION 2026-09-03 (quick-wins morning sweep) — `staff_assignments`
+  is now read**, confirmed live: `src/app/App.js` imports `loadStaffAssignments` and its T2 load
+  stage assigns the result to `ds.assignmentRows`. `eom_count_progress_log` was NOT re-checked and
+  should still be treated as open, as should the "12 loader functions defined but never called"
+  count — neither was re-verified in this pass
+  (`metric-inventory-2026-08-07.md`).
 
 ### Unbuilt designed features (owner-approved or fully specced, zero backlog presence)
 
-- [ ] **"Opportunity $"** — a fully-designed flagship feature: Labor/Food/GC three-pillar
-  dollar-gap-to-internal-best-in-class engine, complete formulas + UX + phasing, zero new data
-  needed, no build started (`design-opportunity-dollars.md`). §1's "Profit-Leak Index" is a
-  different, vaguer named idea — this one already has a real design doc.
+- [ ] **"Opportunity $"** — ⚠️ **CORRECTED 2026-09-03 (quick-wins morning sweep) — a v1 already
+  exists; this is not a zero-build item.** Re-verified live: `src/views/opportunity-dollars.js`
+  (102 lines) is registered in `panel-registry.js` (`kind:'test-kitchen', section:'analytics'`).
+  Not checked against the full design doc for feature-completeness — treat as "has a first build,
+  needs a gap-check against `design-opportunity-dollars.md`," not "design finished, nothing built."
+  Labor/Food/GC three-pillar dollar-gap-to-internal-best-in-class engine, complete formulas + UX +
+  phasing (`design-opportunity-dollars.md`). §1's "Profit-Leak Index" is a different, vaguer named
+  idea — this one already has a real design doc.
 - [ ] Events redesign (owner signed off 2026-08-11): confirm/dismiss anomaly-tagging queue (the
   core new build), a Competition/baseline-shift forecast mechanism (owner: "changes everything
   potentially" — never filed as its own issue), an LTO-asymmetry check, and a school-calendar
