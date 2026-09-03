@@ -89,7 +89,7 @@ function LinkBtn({ children, onClick }) {
 }
 
 // Map Supabase auth error messages to user-friendly strings
-function friendlyAuthError(err) {
+export function friendlyAuthError(err) {
   if (!err) return '';
   const m = (err.message || '').toLowerCase();
   if (m.includes('invalid login credentials') || m.includes('invalid_credentials'))
