@@ -1702,7 +1702,14 @@ create table if not exists public.sage_prompts (
   schedule_hour     int,
   schedule_freq     text,
   schedule_dow      int,
-  last_run_at       timestamptz
+  last_run_at       timestamptz,
+  -- Private-by-default + Admin/Developer sharing (schema-sage-prompts-sharing.sql). See that
+  -- file's own header for the sage_prompts_guard trigger that actually enforces this -- RLS
+  -- alone can't restrict which column a row-owner is allowed to change.
+  created_by_id     uuid references auth.users(id),
+  shared            boolean not null default false,
+  shared_by         text,
+  shared_at         timestamptz
 );
 
 alter table public.sage_prompts enable row level security;

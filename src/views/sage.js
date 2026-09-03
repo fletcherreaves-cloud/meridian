@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
-import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, searchQsrKb } from '../lib/supabase.js';
+import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, setSagePromptShared, searchQsrKb } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
@@ -954,7 +954,21 @@ function KbViewerModal({ onClose, onAskSage }) {
     document.body);
 }
 
-function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClose, onUse, onRun, onRefresh }) {
+function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], userRole, userName, onClose, onUse, onRun, onRefresh }) {
+  // Locked to Admin/Developer (owner-stated 2026-09-03) -- same idiom src/views/task-queue.js
+  // and src/views/management.js already use for this exact distinction. This is a UI
+  // convenience only; the real enforcement boundary is the sage_prompts_guard DB trigger
+  // (schema-sage-prompts-sharing.sql), which rejects a non-privileged share attempt outright.
+  const canShare = userRole === 'admin' || userRole === 'developer';
+  const creatorLabel = userName || 'Unknown';
+  // Org-level byline for the SHARED badge, not the sharer's personal name (owner-stated
+  // 2026-09-03) -- cleaner for a stranger encountering the badge who wouldn't know who a
+  // personal name refers to, and reads correctly once a second operator is on the platform.
+  // "Development Team" over the product name ("Meridian BI") -- a team can plausibly SHARE
+  // something, a product name reads oddly as the subject of "Shared by ___".
+  // Private/unshared prompts still show the real creatorLabel above -- only the shared byline
+  // is org-generic.
+  const ORG_SHARE_LABEL = 'Development Team';
   // Editable draft — NO longer gated on the SAGE composer having text. Prefilled from
   // the composer when it has text, but you can always type/paste a prompt to save here.
   const [draft, setDraft] = uSt((currentInput || '').trim());
@@ -969,7 +983,7 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClos
     if (!canSave) { setMsg('⚠ Type or paste a prompt above first'); return; }
     setBusy(true); setMsg('Saving…');
     try {
-      const res = await saveSagePrompt({ title: (title.trim() || draft.trim().slice(0, 48)), promptText: draft.trim(), createdBy: 'Fletcher' });
+      const res = await saveSagePrompt({ title: (title.trim() || draft.trim().slice(0, 48)), promptText: draft.trim(), createdBy: creatorLabel });
       if (res == null || (res.errors && res.errors.length)) { setMsg('⚠ ' + ((res && res.errors && res.errors[0]) || 'Save failed — is the sage_prompts table created?')); return; }
       setTitle(''); setDraft(''); setMsg('✓ Saved'); onRefresh();
       setTimeout(() => setMsg(''), 1500);
@@ -997,13 +1011,19 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClos
     const picks = selectedTexts(); if (!picks.length) { setMsg('⚠ Select at least one prompt below'); return; }
     setBusy(true); setMsg('Saving ' + picks.length + '…');
     try {
-      for (const p of picks) await saveSagePrompt({ title: p.slice(0, 48), promptText: p, createdBy: 'Fletcher' });
+      for (const p of picks) await saveSagePrompt({ title: p.slice(0, 48), promptText: p, createdBy: creatorLabel });
       setSel(new Set()); setMsg('✓ Saved ' + picks.length); onRefresh();
       setTimeout(() => setMsg(''), 1500);
     } catch (e) { setMsg('⚠ ' + (e?.message || 'Save failed')); }
     finally { setBusy(false); }
   };
   const del = async (id) => { await deleteSagePrompt(id); onRefresh(); };
+  const toggleShared = async (p) => {
+    setBusy(true);
+    const res = await setSagePromptShared(p.id, !p.shared, ORG_SHARE_LABEL);
+    if (res && res.errors && res.errors.length) setMsg('⚠ ' + res.errors[0]);
+    onRefresh(); setBusy(false);
+  };
   const [schedFor, setSchedFor] = uSt(null);   // prompt id whose schedule editor is open
   const [sdraft, setSdraft] = uSt({ freq: 'daily', hour: 13, dow: 1 });
   const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1042,12 +1062,14 @@ function PromptLibraryModal({ prompts, currentInput, sessionPrompts = [], onClos
             ...prompts.map(p => h('div', { key: p.id, style: { border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.3)' : 'var(--bdr)'), borderRadius: 8, padding: '8px 10px', background: 'rgba(255,255,255,.03)' } },
               h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 } },
                 h('div', { style: { fontSize: 12, fontWeight: 700, color: 'var(--text,#f1f5f9)', flex: 1 } }, p.title),
+                p.shared && h('span', { title: p.sharedBy ? ('Shared by ' + p.sharedBy) : 'Shared with your organization', style: { fontSize: 9, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,.14)', borderRadius: 99, padding: '1px 7px' } }, '🌐 Shared'),
                 schedLabel(p) && h('span', { title: 'Auto-runs on this schedule', style: { fontSize: 9, fontWeight: 700, color: amber, background: 'rgba(245,158,11,.14)', borderRadius: 99, padding: '1px 7px' } }, schedLabel(p))),
               h('div', { style: { fontSize: 10.5, color: muted, marginBottom: 6, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' } }, (p.promptText || '').slice(0, 220)),
-              h('div', { style: { display: 'flex', gap: 6, alignItems: 'center' } },
+              h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' } },
                 h('button', { onClick: () => onRun(p.promptText), style: { padding: '3px 11px', borderRadius: 5, border: 'none', background: amber, color: '#000', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' } }, '▶ Run'),
                 h('button', { onClick: () => onUse(p.promptText), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid var(--bdr)', background: 'transparent', color: muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, 'Use'),
                 h('button', { onClick: () => (schedFor === p.id ? setSchedFor(null) : openSched(p)), style: { padding: '3px 10px', borderRadius: 5, border: '1px solid ' + (p.scheduleEnabled ? 'rgba(245,158,11,.4)' : 'var(--bdr)'), background: 'transparent', color: p.scheduleEnabled ? amber : muted, fontSize: 10.5, fontWeight: 600, cursor: 'pointer' } }, '⏰ Schedule'),
+                canShare && h('button', { onClick: () => toggleShared(p), disabled: busy, title: p.shared ? 'Remove from the shared organization library' : 'Share with everyone in your organization', style: { padding: '3px 10px', borderRadius: 5, border: '1px solid rgba(34,197,94,.35)', background: 'transparent', color: '#22c55e', fontSize: 10.5, fontWeight: 600, cursor: busy ? 'default' : 'pointer' } }, p.shared ? '🌐 Unshare' : '🌐 Share'),
                 h('button', { onClick: () => del(p.id), title: 'Delete', style: { padding: '3px 9px', borderRadius: 5, border: '1px solid rgba(239,68,68,.25)', background: 'transparent', color: red, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', marginLeft: 'auto' } }, 'Delete')),
               // Inline schedule editor
               schedFor === p.id && h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--bdr)' } },
@@ -1200,7 +1222,7 @@ const QUICK_PROMPTS = [
 ];
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
+export function SagePanel({ ds, signals, customSignalDefs, onBusy, userRole, userName }) {
   const [messages, setMessages] = uSt(() => _normSageBlob(_readBlobLocal(SAGE_THREAD_KEY)).data);
   const [sessions, setSessions] = uSt(() => _normSageBlob(_readBlobLocal(SAGE_SESSIONS_KEY)).data);
   const [sessionsOpen, setSessionsOpen] = uSt(false);
@@ -1566,7 +1588,7 @@ export function SagePanel({ ds, signals, customSignalDefs, onBusy }) {
     // top and swallow every click/tap — the "opens but nothing responds" bug).
     logTarget && createPortal(h(LogIssueModal, { question: logTarget.question, answer: logTarget.answer, conversation: logTarget.conversation, onClose: () => setLogTarget(null) }), document.body),
     promptLibOpen && createPortal(h(PromptLibraryModal, {
-      prompts, currentInput: promptLibSeed || input,
+      prompts, currentInput: promptLibSeed || input, userRole, userName,
       sessionPrompts: messages.filter(m => m.role === 'user' && (m.content || '').trim()).map(m => m.content.trim()),
       onClose: () => { setPromptLibOpen(false); setPromptLibSeed(''); },
       onRefresh: refreshPrompts,
