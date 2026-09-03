@@ -654,4 +654,5 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
 // itself was exported) — added here as a pure export-list addition, no logic change, so
 // Overview's Tab Digest Location Intelligence tile can compute the same "Total Opp / Year"
 // figure LocationIntelligence's own roadmap shows, without a second copy of either function.
-export { LocationIntelligence, liComputeAll, liBuildRoadmap };
+export { LocationIntelligence, liComputeAll, liBuildRoadmap,
+  pearsonR, liDOWPatterns, liOEPECorr, liWeatherCorr, liOpsCorr, liOppCost, liLaborCoverage, liAvgCheckTrend };
