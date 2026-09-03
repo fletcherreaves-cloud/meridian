@@ -20,7 +20,7 @@ const th=(p,...c)=>h('th',p,...c);
 const thead=(p,...c)=>h('thead',p,...c);
 const tbody=(p,...c)=>h('tbody',p,...c);
 
-function invDist(locA,locB){
+export function invDist(locA,locB){
   const a=INV_ORG_COORDS[locA],b=INV_ORG_COORDS[locB];
   if(!a||!b||!a.lat||!b.lat)return Infinity;
   const R=3959,toR=d=>d*Math.PI/180;
@@ -28,7 +28,7 @@ function invDist(locA,locB){
   const x=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLon/2)**2;
   return+(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))).toFixed(1);
 }
-function invSameState(locA,locB){
+export function invSameState(locA,locB){
   const a=INV_ORG_COORDS[locA],b=INV_ORG_COORDS[locB];
   return!!(a&&b&&a.state&&a.state===b.state);
 }
@@ -37,7 +37,7 @@ function invSameState(locA,locB){
 // Format: {wrin: {unit:'Sleeve',count:100,display:'sleeve'}}
 // Until user provides WRIN-level list, common UOM keywords are used.
 const INV_INNER_PACKS_DEFAULTS={'Sleeve':50,'Case':1,'Bag':1,'Roll':1,'Pack':1,'Each':1};
-function formatXferQty(rawQty,wrin,uom,caseSize){
+export function formatXferQty(rawQty,wrin,uom,caseSize){
   if(rawQty<0.5)return null;
   const m=wrin?INV_MASTER[wrin]:null;
   const ipu=m&&m.ipu?m.ipu:null; // inner packs per case
