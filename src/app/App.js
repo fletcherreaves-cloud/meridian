@@ -1010,6 +1010,7 @@ function App() {
   // showDeliveryMix — dispatch #205: replaced by routePanel==='delivery-mix' (see routePanel above).
   const [showScheduling,      setShowScheduling]      = useState(false);
   const [userRole,            setUserRole]            = useState('admin');
+  const [userName,            setUserName]            = useState('');
   const [orgRoles,            setOrgRoles]            = useState(() => getOrgRoles());
   const [betaMode,            setBetaMode]            = useState(()=>{try{return JSON.parse(localStorage.getItem('mf_beta_mode')||'false');}catch{return false;}});
   const toggleBetaMode = React.useCallback(()=>setBetaMode(v=>{const nv=!v;try{localStorage.setItem('mf_beta_mode',JSON.stringify(nv));}catch{}return nv;}),[]);
@@ -1302,8 +1303,9 @@ function App() {
     // Fetch the logged-in user's role from their Supabase profile
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
-      supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+      supabase.from('profiles').select('role,name,email').eq('id', user.id).maybeSingle()
         .then(({ data }) => {
+          setUserName(data?.name || data?.email || user.email || '');
           if (data?.role) {
             setUserRole(data.role);
             // Non-developer roles default to release mode (Test Kitchen hidden)
@@ -3602,7 +3604,7 @@ function App() {
           h('button',{onClick:()=>{setShowSage(false);setSageMin(false);setSageBusy(false);},title:'Close',style:{background:'none',border:'none',cursor:'pointer',color:'#9ca3af',fontSize:'26px',lineHeight:1,padding:'4px 8px',margin:'-4px -8px',minWidth:'44px',minHeight:'44px',display:'flex',alignItems:'center',justifyContent:'center'}},'✕')),
       ),
       div({style:{flex:1,overflowY:'hidden',background:'var(--bg)',display:'flex',flexDirection:'column'}},
-        h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy}),
+        h(SagePanel,{ds,signals,customSignalDefs,onBusy:setSageBusy,userRole,userName}),
       ),
     ),
     // Minimized pill — click to restore. Red dot = thinking, green = ready.

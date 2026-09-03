@@ -3546,8 +3546,11 @@ export async function loadSagePrompts() {
       console.warn('[sage_prompts] load error:', error.message);
     return [];
   }
-  return (data || []).map(r => ({ id: r.id, title: r.title, promptText: r.prompt_text, tags: r.tags || '', createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at,
-    scheduleEnabled: !!r.schedule_enabled, scheduleHour: r.schedule_hour, scheduleFreq: r.schedule_freq || 'daily', scheduleDow: r.schedule_dow, lastRunAt: r.last_run_at }));
+  return (data || []).map(r => ({ id: r.id, title: r.title, promptText: r.prompt_text, tags: r.tags || '', createdBy: r.created_by, createdById: r.created_by_id || null, createdAt: r.created_at, updatedAt: r.updated_at,
+    scheduleEnabled: !!r.schedule_enabled, scheduleHour: r.schedule_hour, scheduleFreq: r.schedule_freq || 'daily', scheduleDow: r.schedule_dow, lastRunAt: r.last_run_at,
+    // shared/sharedBy/sharedAt are undefined pre-migration (schema-sage-prompts-sharing.sql not yet run) --
+    // !!undefined is false, so a not-yet-migrated table just reads as "nothing is shared", never crashes.
+    shared: !!r.shared, sharedBy: r.shared_by || null, sharedAt: r.shared_at || null }));
 }
 
 // Set/clear a prompt's auto-run schedule (Phase 2). enabled+hour+freq(+dow for weekly).
@@ -3591,6 +3594,17 @@ export async function deleteSagePrompt(id) {
   const { error } = await supabase.from('sage_prompts').delete().eq('id', id);
   if (error) { console.warn('[sage_prompts] delete error:', error.message); return { deleted: 0, errors: [error.message] }; }
   return { deleted: 1 };
+}
+
+// Promote/demote a prompt to the org-wide shared library. Server-side (sage_prompts_guard
+// trigger, schema-sage-prompts-sharing.sql) rejects this for anyone but Admin/Developer --
+// the UI-side role gate is a convenience, not the enforcement boundary.
+export async function setSagePromptShared(id, shared, sharedByLabel = '') {
+  if (!supabase || !id) return { saved: 0, errors: ['id required'] };
+  const row = { shared: !!shared, shared_by: shared ? (sharedByLabel || null) : null, shared_at: shared ? new Date().toISOString() : null };
+  const { error } = await supabase.from('sage_prompts').update(row).eq('id', id);
+  if (error) { console.warn('[sage_prompts] share error:', error.message); return { saved: 0, errors: [error.message] }; }
+  return { saved: 1, errors: [] };
 }
 
 // ── Crew Skills Matrix (LifeLenz People List) ────────────────────────────────
