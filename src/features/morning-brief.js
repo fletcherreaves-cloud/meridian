@@ -1,6 +1,6 @@
 // @ts-nocheck
 import * as React from 'react';
-import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES, whoRan, supervisorGroups } from '../constants.js';
+import { STORE_NAMES, sName, sNameC, DEFAULT_TARGETS, STORE_COORDS, EVENT_TYPES, whoRan, supervisorGroups, getStoreOrg } from '../constants.js';
 import { dKey, addD } from '../utils/date.js';
 import { supabase } from '../lib/supabase.js';
 import { metricDaily, metricAvg, metricSeries } from '../engine/metric-source.js';
@@ -1155,16 +1155,24 @@ const STORE_STAFF={
 
 // Store coordinates for live weather forecasts (Open-Meteo API)
 
-// Geographic distance (miles) between two store coords — used for regional event matching
+// Geographic distance (miles) between two store coords — used for regional event matching.
+// STORE_COORDS entries carry {lat,lon,tz} (constants.js) -- this used to read b.lng/a.lng, a
+// field that never exists on that object (a different coords table, INV_ORG_COORDS, uses lng).
+// Every real pair therefore computed NaN, and NaN<=radius is always false, so the "regional
+// broad-event" candidate queue in analytics.js's AI batch-tagging flow silently never surfaced
+// any nearby-store candidates. Fixed 2026-09-03.
 function storeDistance(locA, locB) {
   const a=STORE_COORDS[locA], b=STORE_COORDS[locB];
   if(!a||!b||!a.lat||!b.lat) return Infinity;
   const R=3959, toR=d=>d*Math.PI/180;
-  const dLat=toR(b.lat-a.lat), dLon=toR(b.lng-a.lng);
+  const dLat=toR(b.lat-a.lat), dLon=toR(b.lon-a.lon);
   const x=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
-// Regional radius per org — Oklahoma stores span ~250mi, FL panhandle ~100mi
-function regionalRadius(loc){return (STORE_COORDS[loc]&&STORE_COORDS[loc].org==='Emerald Arches')?80:150;}
+// Regional radius per org — Oklahoma stores span ~250mi, FL panhandle ~100mi. Was reading
+// STORE_COORDS[loc].org, a field that doesn't exist on that table (constants.js's own getStoreOrg
+// is the real org lookup) -- always fell through to 150, so the tighter FL radius never applied.
+// Fixed 2026-09-03.
+function regionalRadius(loc){return getStoreOrg(loc)==='emerald'?80:150;}
 
 export { computeMorningBrief, getLatestBriefDate, MorningBriefPanel, exportBriefHTML, getReportRecipients, storeDistance, regionalRadius, STORE_STAFF, CONTACTS, setLiveStoreStaff, setLiveContacts };
