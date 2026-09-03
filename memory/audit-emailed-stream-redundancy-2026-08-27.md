@@ -128,8 +128,8 @@ or `salesLedgerRows`:
 | `laborPct` | **glimpseRows** → ctrlRows (manual) → laborRows (manual), *then* a derive (crew$/DAR sales) | **Not redundant.** The derive is the only non-manual, non-Glimpse path, and it only matches Glimpse 89.8% of the time (#327, measured). Losing Glimpse measurably degrades this metric on ~10% of days. |
 | `cashOSPct` / `cashOSAmt` | **glimpseRows** → **cashRows** → opsCashRows (API) / ctrlRows (manual), plus a derive | **Not provably redundant** -- see §2's cash-field reconciliation numbers above. Both emailed sources sit ahead of the API source and a derive, but the three do not agree closely enough to say any one safely substitutes for another. |
 | `cashRefAmt`/`Cnt`, `cashlessRefAmt`/`Cnt` | opsCashRows (API) → **cashRows** → ctrlRows (manual) | API source already checked FIRST here -- `cashRows` is a fallback of a fallback. Given §2's 44% cash-refund reconciliation, this ordering (API first) already reflects the right caution; no change needed. |
-| `posOverAmt`/`Cnt` | **glimpseRows** → **cashRows** → ctrlRows (manual) | No API entry in this chain at all, despite `qsr_cash_sheet.overring_amt` reconciling 97%+ against Glimpse (§2). A same-shape fix to the one below is possible future work -- not done here (see §5). |
-| `promoAmt`/`promoPct` | **glimpseRows** → ctrlRows (manual) | Same story as posOver -- no API entry despite a 98% field-level match, and `qsr_cash_sheet.promo_amt` is not even aliased to camelCase in `loadOpsCashSheet` yet. Flagged, not fixed. |
+| `posOverAmt`/`Cnt` | opsCashRows (API) → **glimpseRows** → **cashRows** → ctrlRows (manual) | ✅ **Fixed 2026-09-03 (quick-wins sweep).** `loadOpsCashSheet` (`src/lib/supabase.js`) aliases `overring_amt`/`overring_qty` to camelCase `posOverAmt`/`posOverCnt` (dispatch #175), and `metric-source.js`'s chain now leads with `opsCashRows` before the two emailed fallbacks. |
+| `promoAmt`/`promoPct` | opsCashRows (API) → **glimpseRows** → ctrlRows (manual) | ✅ **Fixed 2026-09-03 (quick-wins sweep).** `loadOpsCashSheet` aliases `promo_amt` to camelCase `promoAmt`, derives net-sales-weighted `promoPct` (dispatch #180), and `metric-source.js`'s chain now leads with `opsCashRows`. |
 | `avgCheck` | **glimpseRows** → **cashRows** → **salesLedgerRows** → laborRows (manual), plus a derive (sales/gc, DAR-based) | Three emailed sources stacked ahead of an always-available DAR-based derive. Functionally low-risk to reorder, but not touched -- out of this audit's contained-fix bar. |
 | `dtMixPct` | **salesLedgerRows** → laborRows (manual) — **NO auto/API fallback at all** | **Fixed in this dispatch** -- see §4. This was the one chain matching the dispatch's own example of a genuine, contained bug: a metric whose only non-manual source is an emailed stream, with zero API backstop, despite an already-reconciling sibling sitting unwired in the same codebase. |
 | `empMealAmt`/`mgrMealAmt`/`empMealCnt`/`mgrMealCnt` | **glimpseRows** → ctrlRows/auditRows (manual) | `qsr_cash_sheet` DOES carry `emp_meal_discount_amt`/`mgr_meal_discount_amt` in its raw payload (confirmed in the §2 sample rows), but no chain reaches it and no camelCase alias exists. Same class of gap as promo/posOver -- flagged, not fixed. |
@@ -172,11 +172,10 @@ Changes:
 
 ## 5. Explicitly NOT fixed (future work, flagged not chased)
 
-- **`promoAmt`/`promoPct` and `posOverAmt`/`posOverCnt`** -- same shape as the `dtMixPct` fix
-  (a real field on `qsr_cash_sheet`, 97-98% reconciled, needs a camelCase alias in
-  `loadOpsCashSheet` plus a chain entry/derive). Left separate to keep this PR's blast radius
-  contained to one metric; a natural next dispatch.
-- **`empMealAmt`/`mgrMealAmt`/counts** -- same class of gap; `qsr_cash_sheet` carries the raw
+- ✅ **`promoAmt`/`promoPct` and `posOverAmt`/`posOverCnt`** -- **fixed 2026-09-03**, see §4's
+  table above (dispatch #175 for posOver, #180 for promo). No longer open.
+- **`empMealAmt`/`mgrMealAmt`/counts** -- still genuinely open, not re-verified in this pass;
+  same class of gap; `qsr_cash_sheet` carries the raw
   fields but they were not reconciliation-tested in this audit (unlike promo/posOver), so a fix
   here should re-verify field-level agreement first, the same way §2 did for the others.
 - **Cash O/S and refund fields** (`cashOSAmt`/`cashOSPct`, `cashRefAmt`/`Cnt`,
@@ -197,9 +196,10 @@ Changes:
   which already has the data (2024-01-01 forward).
 - **`daily_glimpse_daily` -- partially redundant, metric by metric.** `gc`, `oepe`/`kvst`/
   `kvsHealthy`/`park` are already fully backstopped by API/DAR sources in the same chain (safe to
-  treat as redundant today). `promoAmt`/`promoPct`/`posOverAmt`/`posOverCnt` are redundant *in
-  value* (97-98% exact match) but not yet redundant *in the chain* (no fallback wired) --
-  low-risk future work. `laborPct` and `cashOSAmt`/`cashOSPct` are genuinely NOT redundant:
+  treat as redundant today). ✅ `promoAmt`/`promoPct`/`posOverAmt`/`posOverCnt` were redundant *in
+  value* (97-98% exact match) but not yet *in the chain* when this was written -- **fixed
+  2026-09-03** (§4/§5 above), now fully redundant in both senses. `laborPct` and
+  `cashOSAmt`/`cashOSPct` are genuinely NOT redundant:
   laborPct's derive-based alternative measurably underperforms Glimpse (89.8% match), and
   cashOSAmt's API alternative essentially never agrees with Glimpse's own number (1/135) for
   reasons this audit did not chase down.

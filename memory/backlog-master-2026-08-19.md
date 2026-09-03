@@ -407,14 +407,19 @@ for full detail on each.
 - [ ] Personnel moves (loc↔loc, patch reassignment) tracking, editable override.
 - [ ] Location-attribution rule tightening (day-weighted split + ≥70%-of-days flag) — AI
   recommendation given, not built.
-- [ ] Shift Manager Summary — isolate individual manager performance (needs the QSRSoft report
-  captured first).
+- [x] ✅ **CORRECTED 2026-09-03 (quick-wins sweep) — stale, the report pull already shipped
+  (v4.550, per `session-handoff-2026-07-28.md`).** The real open item, not this one: DM/shift-role
+  review wiring — link a review to `geid`, decide which manager-attributed metrics score it.
 - [ ] Missing-targets UI in ReviewEditor (banner + one-click Smart-Targets seed).
 - [ ] FOB metric-definition fix: score on FOB% not fob$ (unblocks target auto-fill).
 - [ ] ❓ Per-metric wiring blocked on owner sourcing: Shift Certified Mgrs/Total Headcount, 0-90
   Day Crew Turnover, FS EcoSure, FS Completion T-60 (Jolt/Squabble), EPB2B (Pace Portal).
-- [ ] Per-metric doable, needs field confirmation: Op Supplies actual, Total Profit-vs-Target
-  derivation, Digital App / Delivery GC-per-restaurant-per-day.
+- [x] ✅ **CORRECTED 2026-09-03 (quick-wins sweep) — all three are already shipped and
+  auto-sourced, not "needs field confirmation."** Re-verified live: `src/views/performance-
+  reviews.js` lists Op Supplies, Total Profit, Digital App GC/R/D, and Delivery GC/R/D among the
+  metrics the "Auto-fill from Uploaded Data" action populates (`SRC('Digital App GC/R/D', ...)`,
+  `SRC('Delivery GC/R/D', ...)` source-mapping entries present), matching
+  `perf-review-data-sourcing.md`'s v4.540/v4.541 shipped state.
 - [ ] Banked threshold-value corrections (OEPE floor, Shift-Certified count step, FOB/Labor
   Bonus-Eligibility module, Total Profit bands) — separate from the shipped authoring UI.
 
@@ -866,13 +871,21 @@ first below.
   chase here; the 12 stores still `crit` post-fix are a real, actionable operational signal, not
   an artifact (see that file's own "not chased further, correct next thing for whoever owns Count
   Cycle rollout" note).
-- [ ] One of the two tables in this item is now read; the other, and the loader-function count,
-  are unverified. ✅ **PARTIAL CORRECTION 2026-09-03 (quick-wins morning sweep) — `staff_assignments`
-  is now read**, confirmed live: `src/app/App.js` imports `loadStaffAssignments` and its T2 load
-  stage assigns the result to `ds.assignmentRows`. `eom_count_progress_log` was NOT re-checked and
-  should still be treated as open, as should the "12 loader functions defined but never called"
-  count — neither was re-verified in this pass
-  (`metric-inventory-2026-08-07.md`).
+- [x] ✅ **FULLY CORRECTED 2026-09-03 (two quick-wins sweeps, same day) — both tables are now
+  read, and the "12 unused loaders" count is stale.** `staff_assignments`: confirmed live earlier
+  today — `src/app/App.js` imports `loadStaffAssignments` and its T2 load stage assigns the
+  result to `ds.assignmentRows`. `eom_count_progress_log`: confirmed live in a follow-up pass —
+  `scripts/eom-digest-send.mjs` reads it directly (`supabase.from('eom_count_progress_log')
+  .select('*')`, shipped dispatch #215, v5.255) to combine with `eom_count_status`'s per-store
+  done-booleans for the digest. Also re-checked all 12 names in `metric-inventory-2026-08-07.md`'s
+  "Loaders defined but never called" list against current consumers: all are now called except
+  `loadMyTenantId`/`loadTenantStores`/`loadTenants` (P4 multi-tenant scaffolding, a product
+  decision not a bug — leave alone, per standing guidance elsewhere in this file). The rest
+  (`loadDailyActivityRange`, `loadEomShareLinks`, `loadForecastSnapshots`, `loadOnePagers`,
+  `loadOrgSchoolConfig`, `loadQsrInventorySummary`, `loadQsrKb`, `loadStoreDaypartData`) are
+  either consumed live today or were removed as confirmed-dead code in this same day's sweeps
+  (`loadStoreDaypartData` deleted; `loadQsrKb` deleted, superseded by `searchQsrKb`;
+  `loadOnePagers`/`loadEomShareLinks` newly wired into real UI). Nothing left to chase here.
 
 ### Unbuilt designed features (owner-approved or fully specced, zero backlog presence)
 
