@@ -33,7 +33,7 @@ const WINDOW_PRESETS = [
 // absolute cross-metric scale (a $ figure and a % figure aren't comparable in magnitude, only
 // in rank-within-their-own-list). direction is folded in here so a "lower" metric's smallest
 // value still draws the longest (best) bar.
-function normalize(value, rows, direction) {
+export function normalize(value, rows, direction) {
   if (!rows.length) return 0;
   const vals = rows.map(r => r.value);
   const lo = Math.min(...vals), hi = Math.max(...vals);
