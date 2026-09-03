@@ -32,7 +32,15 @@ export const CSAT_OUTCOME_KEYS = (() => {
   return grp ? grp.metrics.map(m => m.key) : [];
 })();
 
-// ── Small stats helpers (self-contained; signal-registry's pearson isn't exported) ──
+// ── Small stats helpers ──────────────────────────────────────────────────────
+// Deliberately separate from engine/correlation-stats.js's own pearson(), not stale
+// duplication -- that comment used to justify this on correlation-stats.js's pearson "not
+// being exported," which stopped being true when dispatch #195 (2026-08-28) extracted and
+// exported it. The real, still-current reason to keep this one: correlation-stats.js requires
+// n>=5 (a floor tuned for Scanner's larger pooled samples), while this file's own within-store
+// centered correlation (below, `cen.length >= 3 ? pearson(...)`) is load-bearing on accepting
+// n=3 -- CSAT data is thin (one point per store per month), and switching to the n>=5 floor
+// would silently drop every store with only 3-4 months of history from the within-store read.
 function _mean(a) { return a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0; }
 
 export function pearson(pairs) {
