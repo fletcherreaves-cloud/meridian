@@ -294,20 +294,19 @@ describe('dispatch #227 — Recount Impact report', () => {
     await selectPeriod(container);
     await clickTab(container, 'Recount Impact');
 
-    const originalOpen = window.open;
-    let openedFeatures = null, writtenHtml = null;
-    const fakeWin = {
-      document: { write: (html) => { writtenHtml = html; }, close: () => {} },
-      focus: () => {},
-      print: () => {},
-    };
-    window.open = (url, target, features) => { openedFeatures = features; return fakeWin; };
+    // Print no longer opens a real window (window.open('', ...) trapped iOS users in a dead tab
+    // with no way back -- see src/utils/print-html.js). It renders into a same-page overlay
+    // iframe instead, so the report HTML is read back from that iframe's own document.
     try {
       const printBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('Print'));
       expect(printBtn, 'Print button not found').toBeTruthy();
       await act(async () => { printBtn.click(); });
 
-      expect(openedFeatures).toMatch(/width=900,height=1100/);
+      const iframes = [...document.querySelectorAll('iframe')];
+      const iframe = iframes[iframes.length - 1];
+      expect(iframe, 'printHtml overlay iframe not found').toBeTruthy();
+      const writtenHtml = '<!doctype html>' + iframe.contentDocument.documentElement.outerHTML;
+
       expect(writtenHtml).toMatch(/Recount-Impact Report/);
       expect(writtenHtml).toMatch(/Recount Test Item/);
       expect(writtenHtml).toMatch(/RJ1/);
@@ -317,7 +316,7 @@ describe('dispatch #227 — Recount Impact report', () => {
       expect(document.body.className).not.toMatch(/eom-printing/);
       expect(container.textContent).not.toMatch(/Generating the print preview/);
     } finally {
-      window.open = originalOpen;
+      document.querySelectorAll('iframe').forEach(f => f.parentElement && f.parentElement.remove());
     }
   });
 });

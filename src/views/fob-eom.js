@@ -2,6 +2,7 @@
 import * as React from 'react';
 import * as XLSX from 'xlsx';
 import { escapeHtml as esc } from '../utils/fmt.js';
+import { printHtml } from '../utils/print-html.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h     = React.createElement;
@@ -634,13 +635,10 @@ function PrintReport({analysis, storeName, period, selClasses}) {
       `4. Counts must be entered before close of business today (EOM).`,
       `5. Operational issues (no On-Hand) cannot be fixed today — note for follow-up.`,
     ];
-    const win = window.open('','_blank');
-    if (!win) return;
     // The report is plain text (item descriptions/WRINs from external QSRSoft data);
     // escape the whole block once so a stray < & > in an item name can't corrupt the <pre>.
-    win.document.write('<pre style="font-family:monospace;font-size:12px;padding:24px;white-space:pre-wrap">'+esc(lines.join('\n'))+'</pre>');
-    win.document.close();
-    win.print();
+    const html = '<pre style="font-family:monospace;font-size:12px;padding:24px;white-space:pre-wrap">'+esc(lines.join('\n'))+'</pre>';
+    printHtml(html);
   };
 
   return btn({onClick:handlePrint, style:{padding:'5px 12px',fontSize:'11px',borderRadius:5,background:'var(--mid2)',border:'.5px solid var(--bdr)',color:'var(--text)',cursor:'pointer'}},

@@ -32,6 +32,7 @@
 import * as React from 'react';
 import { ModalShell, Z } from '../components/ModalShell.js';
 import { withAlpha } from './patch-heatmap.js';
+import { printHtml as printHtmlOverlay } from '../utils/print-html.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -123,9 +124,7 @@ function printHtml(modeLabel, sections) {
 </body></html>`;
 }
 function openPrintReport(html) {
-  const w = window.open('', '_blank', 'width=900,height=850,scrollbars=yes');
-  if (w) { w.document.write(html); w.document.close(); }
-  else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+  printHtmlOverlay(html, { autoPrint: false });
 }
 
 // ── Panel ────────────────────────────────────────────────────────────────────

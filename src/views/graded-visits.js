@@ -5,6 +5,7 @@ import { parseGradedVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { oepeSeconds } from '../utils/oepe.js';
+import { printHtml } from '../utils/print-html.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 
 const h = React.createElement;
@@ -248,11 +249,6 @@ export function GradedVisitsPanel({ ds, onClose }) {
 
   const printReport = async () => {
     const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    // Open the window synchronously (in the click gesture) to dodge pop-up blockers,
-    // then fill it — context loading is async.
-    const w = window.open('', '_blank');
-    if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
-    w.document.write('<!doctype html><html><body style="font-family:-apple-system,sans-serif;color:#555;padding:40px">Generating report…</body></html>');
     const rows = filtered.map(v => {
       const mods = Object.entries(v.modules || {}).map(([k, m]) => `${esc(k)} ${fmtPct(m.pct)}`).join(' · ');
       const res = v.pass == null ? '—' : (v.pass ? 'PASS' : 'FAIL');
@@ -294,7 +290,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
       <table><thead><tr><th>Type</th><th>Store</th><th>Date</th><th>Channel / Status</th><th style="text-align:right">Score</th><th>Result</th><th>Modules</th></tr></thead><tbody>${rows}</tbody></table>
       ${ctxHtml}
       </body></html>`;
-    try { w.document.open(); w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300); } catch { /* window closed */ }
+    printHtml(html);
   };
 
   const card = (label, value, color) => div({ style: { flex: '1 1 120px', minWidth: 120, background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, padding: '9px 12px' } },
@@ -463,9 +459,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
       <div class="sub">${esc(niceDate(v.dateISO))}${v.completionTime ? ' · visit ' + esc(v.completionTime) : ''}${v.daypart ? ' · ' + esc(v.daypart) : ''}${v.channel ? ' · ' + esc(v.channel) : ''}${v.score != null ? ' · ' + esc(fmtPct(v.score)) + (v.pass ? ' PASS' : ' FAIL') : ''}</div>
       ${summaryHtml}${chipsHtml}${peaksHtml}${hourHtml}
       </body></html>`;
-    const w = window.open('', '_blank');
-    if (!w) { setMsg({ t: 'err', x: 'Pop-up blocked — allow pop-ups to print.' }); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+    printHtml(html);
   };
 
   const renderContext = (v) => {

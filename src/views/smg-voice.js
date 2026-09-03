@@ -8,6 +8,7 @@ import { escapeHtml as esc } from '../utils/fmt';
 import { rankCommentOpportunities, MIN_N } from '../engine/csat-opportunities';
 import { LocationSelector } from '../components/PanelControls.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
 
@@ -98,9 +99,7 @@ function exportCSV(filename, headers, rows) {
 function printReport(title, subtitle, headers, rows) {
   const th = headers.map(x => `<th>${esc(x)}</th>`).join('');
   const trs = rows.map(r => `<tr>${r.map(c => `<td>${c == null ? '' : esc(c)}</td>`).join('')}</tr>`).join('');
-  const w = window.open('', '_blank');
-  if (!w) return;
-  w.document.write(`<!doctype html><html><head><title>${esc(title)}</title><style>
+  const html = `<!doctype html><html><head><title>${esc(title)}</title><style>
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;color:#111}
     h1{font-size:18px;margin:0 0 2px} .sub{color:#666;font-size:12px;margin-bottom:14px}
     table{border-collapse:collapse;width:100%;font-size:11px}
@@ -108,9 +107,8 @@ function printReport(title, subtitle, headers, rows) {
     th{background:#f3f4f6;text-transform:uppercase;font-size:9px;letter-spacing:.4px}
     td:first-child,th:first-child{text-align:left}
     </style></head><body><h1>${esc(title)}</h1><div class="sub">${esc(subtitle)}</div>
-    <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></body></html>`);
-  w.document.close(); w.focus();
-  setTimeout(() => w.print(), 300);
+    <table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></body></html>`;
+  printHtml(html);
 }
 // Small toolbar of Export/Print buttons; caller supplies the data builders.
 function ExportButtons({ onCsv, onPrint }) {

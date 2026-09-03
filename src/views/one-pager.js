@@ -8,6 +8,7 @@
 import * as React from 'react';
 import { STORE_NAMES, INV_ORG_COORDS, supervisorGroups } from '../constants.js';
 import { escapeHtml, f$ } from '../utils/fmt.js';
+import { printHtml } from '../utils/print-html.js';
 import { computeOpportunity, annualize, rankByOpportunity } from '../engine/opportunity.js';
 import { buildOnePager } from '../engine/one-pager.js';
 import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows, buildReviewActuals } from '../engine/one-pager-data.js';
@@ -566,7 +567,7 @@ function topBottomHtml(page, esc) {
 
 // Print → clean one-pager (also Save-as-PDF via the dialog). Escaped throughout.
 function printOnePager(page, period, narrative, actions) {
-  const w = window.open('', '_blank', 'width=850,height=1000'); if (!w || !page) return;
+  if (!page) return;
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || period;
   const ytdLabel = page.ytdLabel || 'YTD';
@@ -575,7 +576,7 @@ function printOnePager(page, period, narrative, actions) {
   const opp = page.opportunity?.district || {};
   const acts = (actions || []).map(a => `<li>${esc(a.title)}${a.status ? ` — <i>${esc(a.status)}</i>` : ''}</li>`).join('');
   const foll = (page.followUps || []).map(it => `<li>${esc(it.title)} — ${esc((it.follow?.status || '').toString())}</li>`).join('');
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>One-Pager ${esc(rLabel)}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>One-Pager ${esc(rLabel)}</title>
     <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:26px;font-size:12px}
     h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:12px}
     .tag{display:inline-block;background:#f5bc00;color:#111;font-weight:800;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:6px}
@@ -593,15 +594,15 @@ function printOnePager(page, period, narrative, actions) {
     ${foll ? `<h2>Follow-up</h2><ul>${foll}</ul>` : ''}
     ${acts ? `<h2>Action plan</h2><ul>${acts}</ul>` : ''}
     ${narrative ? `<h2>Notes</h2><div>${esc(narrative)}</div>` : ''}
-    </body></html>`);
-  w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
+    </body></html>`;
+  printHtml(html);
 }
 
 // Generic OPEN-ENDED discussion one-pager: auto current-state for reference, but blank
 // sections for any pairing (Owner↔DO, DO↔Supervisor, Supervisor↔GM) to fill in together —
 // which forces both parties to look the numbers up and drive the conversation.
 function printBlankOnePager(page, period) {
-  const w = window.open('', '_blank', 'width=850,height=1000'); if (!w || !page) return;
+  if (!page) return;
   const esc = escapeHtml;
   const rLabel = page.rangeLabel || period;
   const casc = page.cascade || { tag: '', label: '' };
@@ -609,7 +610,7 @@ function printBlankOnePager(page, period) {
   const opp = page.opportunity?.district || {};
   const lines = (n) => Array.from({ length: n }, () => '<div class="wl"></div>').join('');
   const sec = (t, n) => `<h2>${esc(t)}</h2>${lines(n)}`;
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Discussion One-Pager ${esc(rLabel)}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Discussion One-Pager ${esc(rLabel)}</title>
     <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:26px;font-size:12px}
     h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:12px}
     .tag{display:inline-block;background:#f5bc00;color:#111;font-weight:800;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:6px}
@@ -629,8 +630,8 @@ function printBlankOnePager(page, period) {
     ${sec('Action plan — what are we working on this week?', 5)}
     ${sec("Follow-up — how did last week's items move?", 4)}
     ${sec('Notes / commitments', 3)}
-    </body></html>`);
-  w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
+    </body></html>`;
+  printHtml(html);
 }
 
 // Weekly Business Review & Checkpoint — a polished, mostly-blank prep sheet the leader
@@ -837,9 +838,8 @@ export function weeklyReviewHtml(page, { managerNames = [], storeLabel = '', bla
 
 // Print the Weekly Review (→ PDF via the browser dialog).
 export function printWeeklyReview(page, opts) {
-  const w = window.open('', '_blank', 'width=850,height=1100'); if (!w || !page) return;
-  w.document.write(weeklyReviewHtml(page, opts));
-  w.document.close(); w.focus(); setTimeout(() => { try { w.print(); } catch {} }, 350);
+  if (!page) return;
+  printHtml(weeklyReviewHtml(page, opts));
 }
 
 // Download an HTML doc as a Word-openable .doc (Word reads HTML-based .doc natively).

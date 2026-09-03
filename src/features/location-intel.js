@@ -4,6 +4,7 @@ import { sName, sNameC, DEFAULT_TARGETS, STORE_NAMES } from '../constants.js';
 import { dKey, nDays } from '../utils/date.js';
 import { gCol, escapeHtml as esc } from '../utils/fmt.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h=React.createElement;
 const div=(p,...c)=>h('div',p,...c);
@@ -403,8 +404,7 @@ function LocationIntelligence({store,allStores,ds,settings,scope,onClose,embedde
   var handlePrint=function(){
     if(!stats)return;
     var html=liGenerateExportHTML(stats,roadmap,aiContent,mode,settings.districtName);
-    var w=window.open('','_blank');
-    if(w){w.document.write(html);w.document.close();w.focus();setTimeout(function(){w.print();},600);}
+    printHtml(html);
   };
   var handleDownload=function(){
     if(!stats)return;

@@ -30,6 +30,7 @@ import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { worstStream } from '../engine/stream-freshness.js';
 import { reportRender as _traceRender, mark as _mark, count as _count } from '../utils/click-trace.js';
 import { tolStatusesDistrict, TOL_STATUS_COLOR } from '../engine/tolerance-status.js';
+import { printHtml } from '../utils/print-html.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module (+ the chart.js/auto
 // runtime it pulls in) that AtAGlance -- App.js's default landing view, statically imported via
@@ -1881,9 +1882,7 @@ function AtAGlance({stores, ds, settings, userEvents, lockedProjections, dateRan
 
   const handlePrintReport = React.useCallback(() => {
     const html = buildAtAGlancePrintHtml({ scopeStr, rangeStr, ruleComment, dataAge, latestLab, digitalSec, hlth, salesRecon, moversStrip, lbData });
-    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
-    if (w) { w.document.write(html); w.document.close(); }
-    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+    printHtml(html, { autoPrint: false });
   }, [scopeStr, rangeStr, ruleComment, dataAge, latestLab, digitalSec, hlth, salesRecon, moversStrip, lbData]);
 
   // ── RENDER ────────────────────────────────────────────────────

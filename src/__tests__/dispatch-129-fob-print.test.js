@@ -88,26 +88,30 @@ function fobRow(loc) {
   };
 }
 
+// Print/export no longer opens a real window (window.open('', ...) trapped iOS users in a dead
+// tab with no way back -- see src/utils/print-html.js). It renders the report into a same-page
+// overlay iframe instead, so the report HTML is read back from that iframe's own document.
+function lastPrintedHtml() {
+  const iframes = [...document.querySelectorAll('iframe')];
+  const iframe = iframes[iframes.length - 1];
+  expect(iframe, 'printHtml overlay iframe not found').toBeTruthy();
+  return '<!doctype html>' + iframe.contentDocument.documentElement.outerHTML;
+}
+
 describe('FOBAnalysisPanel print report (Dispatch #129)', () => {
-  let container, root, openSpy, openedWindows;
+  let container, root;
 
   afterEach(() => {
     if (root) act(() => root.unmount());
     if (container) container.remove();
-    if (openSpy) openSpy.mockRestore();
-    container = null; root = null; openSpy = null; openedWindows = null; resolveLoadQsrFob = undefined;
+    document.querySelectorAll('iframe').forEach(f => f.parentElement && f.parentElement.remove());
+    container = null; root = null; resolveLoadQsrFob = undefined;
   });
 
   async function renderAndSettle() {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    openedWindows = [];
-    openSpy = vi.spyOn(window, 'open').mockImplementation(() => {
-      const w = { document: { write: vi.fn(), close: vi.fn() } };
-      openedWindows.push(w);
-      return w;
-    });
 
     act(() => {
       root.render(h(FOBAnalysisPanel, {
@@ -131,8 +135,7 @@ describe('FOBAnalysisPanel print report (Dispatch #129)', () => {
     const printBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('HTML Report / Print'));
     expect(printBtn).toBeTruthy();
     act(() => { printBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(openedWindows.length).toBe(1);
-    return openedWindows[0].document.write.mock.calls[0][0];
+    return lastPrintedHtml();
   }
 
   it('the native window.print() button is gone -- print no longer depends on the scrolled DOM', async () => {

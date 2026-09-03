@@ -7,6 +7,7 @@
 // and prints a clean black-on-white sheet with checkboxes to mark by hand.
 import * as React from 'react';
 import { normalizeForm, buildFormPrintHTML, sectionColor, CARD_COLOR } from '../engine/forms-model.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
 const { useMemo, useState, useEffect } = React;
@@ -26,12 +27,7 @@ const slugOf = s => String(s || 'form').toLowerCase().replace(/[^a-z0-9]+/g, '-'
 
 // Open a print window → the browser print dialog also offers "Save as PDF".
 function openPrint(model, storeLabel, style) {
-  const w = window.open('', '_blank', 'width=850,height=1000');
-  if (!w) return;
-  w.document.write(buildFormPrintHTML(model, { storeLabel, style }));
-  w.document.close();
-  w.focus();
-  setTimeout(() => { try { w.print(); } catch { /* window closed */ } }, 350);
+  printHtml(buildFormPrintHTML(model, { storeLabel, style }));
 }
 
 // Download the blank form as a standalone .html file.

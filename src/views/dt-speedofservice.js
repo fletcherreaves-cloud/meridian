@@ -10,6 +10,7 @@ import { DateRangeControl, DATE_RANGE_PRESETS, resolveDatePreset } from '../comp
 // against. oepeSeconds is the one shared, already-reconciled definition -- reused here, not
 // re-derived, matching graded-visits.js and supabase.js's loadQsrActSummary.
 import { oepeSeconds } from '../utils/oepe.js';
+import { printHtml } from '../utils/print-html.js';
 // withAlpha (not string-concat) for any NEW alpha-tinted color -- R4 ratchet
 // (src/__tests__/ratchet-color-alpha-concat.test.js) caps color+hex-suffix concatenation sites in
 // src/ and requires new alpha tints go through this helper instead (safe for both hex-literal and
@@ -707,9 +708,7 @@ export function DTSpeedOfServicePanel({ stores, onClose }) {
   const handlePrintReport = React.useCallback(() => {
     const html = buildDtPrintHtml({ rows, activeLocs, station, rangeLabel, trendLabel, sorted,
       stationData, hourData, daypartData, districtAvg, totalTrans, bestStore, worstStore, bestDp, worstDp });
-    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
-    if (w) { w.document.write(html); w.document.close(); }
-    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+    printHtml(html, { autoPrint: false });
   }, [rows, activeLocs, station, rangeLabel, trendLabel, sorted, stationData, hourData, daypartData,
       districtAvg, totalTrans, bestStore, worstStore, bestDp, worstDp]);
 
