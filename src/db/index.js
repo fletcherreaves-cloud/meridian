@@ -236,13 +236,6 @@ function coverageFromLoadedRows(labor, ops, ctrl, fob, audit, peaks, dar, weathe
   };
 }
 
-function withTimeout(promise, ms, fallback) {
-  return Promise.race([
-    promise,
-    new Promise(resolve => setTimeout(() => resolve(fallback), ms)),
-  ]);
-}
-
 async function idbQuickSessionCheck() {
   try {
     const idb = await getRawIDB();
@@ -504,6 +497,6 @@ async function opfsClear() {
 
 export {
   idbDateKey, idbPutRows, idbGetAllRows, idbGetMeta, idbSetMeta,
-  idbClearAll, idbGetCoverage, coverageFromLoadedRows, withTimeout,
+  idbClearAll, idbGetCoverage, coverageFromLoadedRows,
   idbQuickSessionCheck, loadDsFromIDB, opfsSave, opfsClear,
 };
