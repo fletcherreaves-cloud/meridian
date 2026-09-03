@@ -35,7 +35,7 @@ const UE_COLOR = '#06b6d4';   // UberEats teal (readable on dark bg)
 const GH_COLOR = '#f97316';   // Grubhub orange
 
 // ── Aggregate cashRows into per-store totals for a given lookback window ─────
-function aggregate(cashRows, days) {
+export function aggregate(cashRows, days) {
   if (!cashRows?.length) return [];
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
