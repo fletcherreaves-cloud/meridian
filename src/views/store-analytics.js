@@ -39,7 +39,7 @@ const opt=(p,...c)=>h('option',p,...c);
 const inp=(p,...c)=>h('input',p,...c);
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-function laborColor(laborPct, tLabor, settings) {
+export function laborColor(laborPct, tLabor, settings) {
   if(!laborPct||!tLabor) return {color:'#94a3b8',arrow:'',label:'—'};
   const s = settings||DEF_SETTINGS;
   const green = (s.laborGreenPct!=null?s.laborGreenPct:0.5)/100;
