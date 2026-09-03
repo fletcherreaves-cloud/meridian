@@ -342,7 +342,7 @@ const NOTIF_STATUS_COLOR = { complete: '#34d399', in_progress: 'var(--gold)', no
 const NOTIF_TRIGGER_LABEL = { food_condiment: 'Food + Condiment', paper: 'Paper' };
 const NOTIF_POLL_MS = 60000; // "current within a minute" — dispatch's own bar, not a real-time push system
 
-function timeAgoShort(iso) {
+export function timeAgoShort(iso) {
   if (!iso) return '';
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < 0) return 'just now';
