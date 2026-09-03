@@ -15,6 +15,7 @@ import { STORE_NAMES } from '../constants.js';
 vi.mock('../lib/supabase.js', () => ({
   loadQsrFob: async () => [],
   loadActionItems: async () => [],
+  loadOnePagers: async () => [],
   saveOnePager: async () => ({}),
   saveActionItem: async () => ({}),
   updateActionItem: async () => ({}),
