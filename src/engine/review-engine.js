@@ -1799,8 +1799,6 @@ function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 export const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 export const H1_MONTHS = [1,2,3,4,5,6];
 export const H2_MONTHS = [7,8,9,10,11,12];
-export function halfMonths(half) { return half==='H1' ? H1_MONTHS : H2_MONTHS; }
-export function halfQKeys(half)  { return half==='H1' ? ['q1','q2'] : ['q3','q4']; }
 export function qLabel(q) { return {q1:'Q1',q2:'Q2',q3:'Q3',q4:'Q4'}[q]||q; }
 export function qMonths(q) { return {q1:[1,2,3],q2:[4,5,6],q3:[7,8,9],q4:[10,11,12]}[q]||[]; }
 
