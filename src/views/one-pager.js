@@ -12,7 +12,7 @@ import { computeOpportunity, annualize, rankByOpportunity } from '../engine/oppo
 import { buildOnePager } from '../engine/one-pager.js';
 import { buildOnePagerInputs, buildMetricNow, buildCurrentState, buildPerLocationRows, buildReviewActuals } from '../engine/one-pager-data.js';
 import { dailyDataFreshness } from '../engine/metric-source.js';
-import { loadQsrFob, loadActionItems, saveOnePager, saveActionItem, updateActionItem } from '../lib/supabase.js';
+import { loadQsrFob, loadActionItems, loadOnePagers, saveOnePager, saveActionItem, updateActionItem } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { ActionMenu } from '../components/PanelControls.js';
 
@@ -142,6 +142,22 @@ export function LeadershipCascadeBody({ ds, stores, settings }) {
 
   useEffect(() => { let live = true; loadQsrFob({}).then(r => { if (live) setFobRows(r || []); }).catch(() => setFobRows([])); return () => { live = false; }; }, []);
   useEffect(() => { let live = true; loadActionItems({ scopeKey }).then(r => { if (live) setPriorItems(r || []); }).catch(() => setPriorItems([])); return () => { live = false; }; }, [scopeKey]);
+  // save() writes narrative via saveOnePager (upsert on level,scope_key,period), but nothing
+  // ever read it back -- reopening the panel, or switching weeks and switching back, always
+  // showed a blank textarea even for an already-saved week. loadOnePagers() has no server-side
+  // filter (just an order+limit "recent list"), so the match is client-side against the exact
+  // (level, scope_key, period) key save() upserts on -- correct behavior when scope/period
+  // changes is to show THAT combo's own narrative (blank if it was never saved), not carry over
+  // text from whatever was open before.
+  useEffect(() => {
+    let live = true;
+    loadOnePagers({}).then(rows => {
+      if (!live) return;
+      const match = (rows || []).find(r => r.level === level && r.scope_key === scopeKey && r.period === period);
+      setNarrative(match?.narrative || '');
+    }).catch(() => { if (live) setNarrative(''); });
+    return () => { live = false; };
+  }, [level, scopeKey, period]);
 
   // Compute the page model from live data (pure engines).
   const page = useMemo(() => {
