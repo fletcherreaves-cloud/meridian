@@ -2460,7 +2460,7 @@ function SegmentedReviewSection({review, cfg, ds, assignmentRows, period, update
   );
 }
 
-function overallLabel(s) {
+export function overallLabel(s) {
   if (s==null) return '';
   return s>=3.5?'Exceeds Expectations':s>=2.5?'Meets Expectations':s>=1.5?'Below Expectations':'Needs Improvement';
 }
