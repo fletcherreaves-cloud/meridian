@@ -801,8 +801,13 @@ first below.
   Called "the single genuine differentiator on the table" in its own shipping changelog
   (`src/app/changelog/4.990.js`) — not referenced anywhere in this backlog until now.
 - [ ] OEPE is a plain unweighted mean at 4 sites (`opsRows` carries no car/GC weighting basis); DAR
-  re-sourcing would fix all four but hasn't been done. `src/views/scheduling.js`'s local
-  `wAvgLaborPct`/`wAvgTPMH` still duplicate `src/engine/weighted.js` (`weighted-rollup-audit.md`).
+  re-sourcing would fix all four but hasn't been done. ✅ **The `wAvgTPMH` half of the next
+  sentence is DONE (v5.333, do not re-flag)** — `src/views/scheduling.js`'s `wAvgTPMH` now calls
+  `engine/weighted.js`'s `ratioOfSumsDerived(rows, r=>r.tcs, r=>r.tpmh)` directly, not a duplicate.
+  `wAvgLaborPct` genuinely still has its own separate logic, and that's intentional, not
+  duplication left to fix: it dollar-weights AND runs each row through `normLaborPct` (#348) so a
+  mid-day partial-day read (labor accrued, sales not yet landed — can show 400%+) can't dominate
+  the average, a guard `weighted.js`'s generic helpers don't carry. (`weighted-rollup-audit.md`).
 - [ ] `LocationSelector`'s patch tier reads a static seed (`INV_ORG_COORDS[loc].sup`) while
   Inventory Control's own patch filter reads the live `_liveAssignments` override — unconfirmed
   whether the two stay in sync (`spine1-panel-controls-126.md`).
