@@ -5,6 +5,7 @@ import { generateSlideDeckHTML } from './scheduling-deck.js';
 import { metricDaily } from '../engine/metric-source.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { schedHrsOf, fcstHrsOf, normLaborPct } from '../engine/schedule-summary.js';
+import { ratioOfSumsDerived } from '../engine/weighted.js';
 
 const { useState, useMemo, useCallback } = React;
 
@@ -46,14 +47,7 @@ export function wAvgLaborPct(rows) {
  * the rows above it.
  */
 export function wAvgTPMH(rows) {
-  let tcs = 0, hrs = 0;
-  for (const r of rows || []) {
-    const t = +r.tcs || 0, m = +r.tpmh || 0;
-    if (t > 0 && m > 0) { tcs += t; hrs += t / m; }
-  }
-  if (hrs > 0) return tcs / hrs;
-  const v = (rows || []).map(r => +r.tpmh || 0).filter(x => x > 0);
-  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  return ratioOfSumsDerived(rows, r => r.tcs, r => r.tpmh);
 }
 
 // ── Time & Attendance data — Jun 1–28, 2026 ─────────────────────────────────

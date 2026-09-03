@@ -30,7 +30,7 @@ const WINDOW = 600; // chars scanned forward from each overflowX:'auto' for a ta
  * an oversight) — the scan only checks the table's own style block, so it can't see a minWidth
  * expressed per-column instead. */
 const EXEMPT = {
-  'src/views/scheduling.js:184': 'StoreScheduleTable — each column already carries its own ' +
+  'src/views/scheduling.js:178': 'StoreScheduleTable — each column already carries its own ' +
     'minWidth (cols[].w, summing to 734px), which forces the table past width:100% exactly like ' +
     'a table-level minWidth would; there is nothing to fix here.',
 };
