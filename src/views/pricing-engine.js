@@ -498,7 +498,7 @@ function LookupTab({ displayRows, wide }) {
 // (2) how much of a delivery premium is each store actually charging over its own in-store price.
 // price_eatin/price_takeout are currently identical to `price` everywhere pulled so far (per the
 // pull's own header) -- shown for completeness, not because they're known to diverge yet.
-function deliveryPremiumPct(row) {
+export function deliveryPremiumPct(row) {
   if (row.priceDelivery == null || !row.price) return null;
   return (row.priceDelivery - row.price) / row.price;
 }
