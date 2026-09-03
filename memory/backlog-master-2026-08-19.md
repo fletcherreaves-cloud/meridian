@@ -889,14 +889,21 @@ first below.
 
 ### Unbuilt designed features (owner-approved or fully specced, zero backlog presence)
 
-- [ ] **"Opportunity $"** — ⚠️ **CORRECTED 2026-09-03 (quick-wins morning sweep) — a v1 already
-  exists; this is not a zero-build item.** Re-verified live: `src/views/opportunity-dollars.js`
-  (102 lines) is registered in `panel-registry.js` (`kind:'test-kitchen', section:'analytics'`).
-  Not checked against the full design doc for feature-completeness — treat as "has a first build,
-  needs a gap-check against `design-opportunity-dollars.md`," not "design finished, nothing built."
-  Labor/Food/GC three-pillar dollar-gap-to-internal-best-in-class engine, complete formulas + UX +
-  phasing (`design-opportunity-dollars.md`). §1's "Profit-Leak Index" is a different, vaguer named
-  idea — this one already has a real design doc.
+- [x] ✅ **FULLY CORRECTED 2026-09-03 (two quick-wins sweeps, same day) — v1 is complete and the
+  gap-check already happened, at build time.** The morning correction above said "needs a
+  gap-check against the design doc" — checked the design doc itself
+  (`design-opportunity-dollars.md`) and it already carries its own dated "Resolution (2026-08-23)"
+  section: `src/engine/opportunity.js`, `opportunity-district.js`, the At-A-Glance headline tile,
+  the drill-down panel (`src/views/opportunity-dollars.js`), and `opportunityAlerts` in
+  `attention-feed.js` all shipped, tested (`opportunity.test.js`, `opportunity-district.test.js`,
+  `opportunity-dollars-panel.test.js`), with every design-doc guardrail (floor-at-$0,
+  dollar-weighted rollup, transparent methodology) traced to exactly where it lives in code, plus
+  an explicitly disclosed v1 wrinkle (a zero-data store renders as an indistinguishable `$0` row)
+  and an explicit "not done this pass" v2 list: Waste/Speed/Controls pillars, external
+  best-in-class, a SAGE "biggest opportunity" tool, and Projections wiring. Nothing left to
+  gap-check — any further work here is picking an item off that named v2 list, not auditing v1.
+  §1's "Profit-Leak Index" is a different, vaguer named idea — this one already has a real design
+  doc.
 - [ ] Events redesign (owner signed off 2026-08-11): confirm/dismiss anomaly-tagging queue (the
   core new build), a Competition/baseline-shift forecast mechanism (owner: "changes everything
   potentially" — never filed as its own issue), an LTO-asymmetry check, and a school-calendar
