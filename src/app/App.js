@@ -32,8 +32,10 @@ import { GMCoachingBrief } from '../engine/coaching.js';
 // lazy-loaded below (lazyPanel) rather than eagerly bundled into App.js's entry chunk — a real
 // entry-chunk win (CLAUDE.md's performance-budget rule), not just a refactor.
 import { LifelenzGapPanel } from '../features/lifelenz.js';
-import { CalendarManagerPanel, EventEntryModal, EventRegistryModal } from '../features/calendar.js';
-import { EventImpactPanel } from '../views/event-impact.js';
+// CalendarManagerPanel/EventImpactPanel used to be static imports here (eager bundle) so
+// EventsAndTagsPanel could render them directly. Events Phase 3 (a) moved that composition into
+// events-panel.js (EventsPanel, lazyPanel()'d below like every other route:true panel), so both
+// components now load in that lazy chunk instead of App.js's own entry chunk.
 import { detectCleanDataStart, runModelAssignmentBacktest, calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { analyzeRegisterAudit } from '../utils/register-audit.js';
@@ -195,7 +197,6 @@ const LeaderboardPanel       = lazyPanel(() => _storeDash().then(m => ({ default
 // standalone lazy-loaded panel here; 'perf-calc' deep-links now redirect into perf-reviews below.
 const UnifiedTargetsPanel   = lazyPanel(() => _storeDash().then(m => ({ default: m.UnifiedTargetsPanel })));
 const MonthlyTargetManager  = lazyPanel(() => _storeDash().then(m => ({ default: m.MonthlyTargetManager })));
-const EventCalendar         = lazyPanel(() => _storeDash().then(m => ({ default: m.EventCalendar })));
 
 const PerformanceReviewsPanel = lazyPanel(() => import('../views/performance-reviews.js').then(m => ({ default: m.PerformanceReviewsPanel })));
 // TargetsEditorPanel — dispatch #135 item 3 moved this UI into Performance Review -> Customize
@@ -215,6 +216,7 @@ const TroubleshootingPanel = lazyPanel(() => import('../views/troubleshooting.js
 // rendered as the Punches tab, same "absorbed into the hub, no standalone entry point" pattern as
 // CountCyclePanel/count-cycle-panel.js above.
 const CrewSchedulePanel = lazyPanel(() => import('../views/crew-schedule-panel.js').then(m => ({ default: m.CrewSchedulePanel })));
+const EventsPanel = lazyPanel(() => import('../views/events-panel.js').then(m => ({ default: m.EventsPanel })));
 // Dispatch #140 item 1: no longer a standalone route panel — ScheduleRetentionSection is
 // content-only, rendered as a Scheduling & Labor hub tab (SCHED_TABS 'retention' below), same
 // lazy-per-tab pattern as SchedulingPanel/LaborAllocationPanel just above/below it.
@@ -662,32 +664,13 @@ function _logMfEventsWrite(label, obj) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// EVENTS & TAGS  (merged with Calendar Manager — dispatch #191, 2026-08-28)
+// EVENTS  (Events Phase 3 (a), 2026-09-04 — see src/views/events-panel.js)
 // ════════════════════════════════════════════════════════════════════════════════
-// Owner-approved merge (memory/decisions-panel-inventory-2026-08-10.md), re-confirmed directly
-// 2026-08-28 after an apparent-but-mistaken reversal was flagged (memory/dispatch-191.md). The
-// two source panels are additive, not competing, so neither was rewritten — this is a thin mode
-// switch over both, the same "one shell, mode tabs swap the body" shape as EOMDashboardPanel
-// (eom-dashboard.js): EventCalendar (store-dash.js, "List" mode) is the REACTIVE view — every
-// tagged event, searchable/filterable/sortable, inline edit/remove, holiday auto-tag, CSV/print
-// export. CalendarManagerPanel (features/calendar.js, "Calendar" mode) is the PROACTIVE view —
-// month grid, recurring rules, AI-search + bulk-import pending review. `mode`/`onModeChange` are
-// owned by App (not local state here) so a saved-report launch (ReportSubscriptions' onLaunch,
-// 'calendar' report) and the retired calendar-manager dispatch id (see onOpenModal below) can
-// both open straight into Calendar mode from outside this component.
-function EventsAndTagsPanel({stores, ds, settings, userEvents, onUpdate, onClose, mode, onModeChange, initialScope}) {
-  const toggle = div({style:{display:'flex',gap:3}},
-    ...[['list','📋 List'],['calendar','📆 Calendar']].map(([id,l]) =>
-      btn({key:id, className:'btn btn-sm', style:{fontSize:'9px',fontWeight:mode===id?700:400,
-          background:mode===id?'var(--adim)':'transparent',
-          color:mode===id?'var(--amber)':'var(--text3)',
-          border:'.5px solid '+(mode===id?'rgba(245,158,11,.4)':'var(--bdr)'),cursor:'pointer'},
-        onClick:()=>onModeChange(id)}, l))
-  );
-  return mode==='calendar'
-    ? h(CalendarManagerPanel,{stores,ds,settings,userEvents,onUpdate,onClose,initialScope,viewToggle:toggle})
-    : h(EventCalendar,{userEvents,onUpdate,onClose,stores,viewToggle:toggle});
-}
+// EventsAndTagsPanel (the List/Calendar mode-switch shell that used to live here, dispatch #191)
+// is retired: routePanel==='events' now renders EventsPanel (lazy-loaded below), which composes
+// the same underlying components (EventCalendar/CalendarManagerPanel/EventImpactPanel, all
+// unchanged) under one route:true shell with five pills instead of a two-mode toggle. See that
+// file's own header for the exact scope of this pass.
 
 function App() {
   // Render timing that survives a PRODUCTION build. React's <Profiler onRender> is stripped
@@ -892,12 +875,13 @@ function App() {
   const [showLFZGap,      setShowLFZGap]      = useState(false);
   const [showDARDaypart,  setShowDARDaypart]  = useState(false);
   const [showPMix,        setShowPMix]        = useState(false);
-  const [showEvents, setShowEvents]    = useState(false);
-  // eventsMode (dispatch #191, 2026-08-28) — 'list' | 'calendar'. Replaces the old
-  // showCalendarManager boolean now that Calendar Manager is a mode of Events & Tags rather than
-  // its own panel; see EventsAndTagsPanel above and the calInitScope reuse below.
-  const [eventsMode, setEventsMode] = useState('list');
-  const [showEventImpact, setShowEventImpact] = useState(false);
+  // showEvents/showEventImpact — replaced by routePanel==='events' (see routePanel above).
+  // eventsView (Events Phase 3 (a), 2026-09-04) — which of EventsPanel's five pills to open into:
+  // 'upcoming' (default) | 'calendar' | 'log' | 'impact' | 'rules'. Same lifted-tab pattern as
+  // schedTab/crewTab above; replaces the old two-value eventsMode now that Events Phase 3 folded
+  // Event Impact in as a pill too. Read once before each goRoute('events') call below (calInitScope
+  // reuse unchanged).
+  const [eventsView, setEventsView] = useState('upcoming');
   // showAboveStore — dispatch #160: replaced by routePanel==='above-store' (see routePanel
   // above) as part of the panel-contract pass (memory/panel-contract.md item 1/4) —
   // "would I ever want to send someone a link to this district's rollup?" — yes. aboveStoreInit
@@ -2994,11 +2978,11 @@ function App() {
   // inventory/loc-intel/my-reports/smg-voice/task-queue the same way (now
   // routePanel==='dt-sos'/'news'/'inventory'/'loc-intel'/'my-reports'/'smg-voice'/'task-queue').
   const anyModalOpen = showAIScan||showAbout||showAudit||
-    showDistrictLens||showEventImpact||
+    showDistrictLens||
     showFormsLibrary||showFormsPrint||showMetricLineage||
     showStoreVlhConfig||showTutorial||
     showCompare||showDARDaypart||
-    showDataManager||showDialedIn||showEvents||
+    showDataManager||showDialedIn||
     showGMBrief||showWorkflow||showTroubleshoot||showKB||showEmailDigests||showLFZGap||showLaborAnalytics||
     showModelAssign||
     showPMix||showPVSA||showPace||showYearly||showSchedSum||
@@ -3027,7 +3011,7 @@ function App() {
       // closes every modal, full stop" contract above was actually broken for nearly all of
       // the ~70 modals swept below, not just these two. Removed rather than invented, since
       // there is no real showDev/showInsights state to close.
-      setShowDataManager(false);setShowDialedIn(false);setShowEvents(false);
+      setShowDataManager(false);setShowDialedIn(false);
       setShowFormsCompletion(false);setShowGMBrief(false);setShowWorkflow(false);setShowTroubleshoot(false);
       setShowKB(false);setShowEmailDigests(false);setShowLFZGap(false);
       setShowLaborAnalytics(false);
@@ -3042,7 +3026,7 @@ function App() {
       // setShowPlanningHub(false) — dispatch #207: replaced by routePanel==='planning' (see routePanel above); the routePanel!==null branch above already handles Escape for it.
       // v4.856 — these sixteen had drifted out of the hatch, so Escape did nothing for
       // them. Pinned by panel-registry.test.js so the gap can't silently reopen.
-      setShowDistrictLens(false);setShowEventImpact(false);
+      setShowDistrictLens(false);
       setShowFormsLibrary(false);
       setShowFormsPrint(false);setShowMetricLineage(false);
       setShowStoreVlhConfig(false);setShowTutorial(false);
@@ -3186,7 +3170,7 @@ function App() {
         // 'targets-editor' — dispatch #135 item 3: no longer its own panel, redirects into
         // Performance Review -> Customize -> Targets so an old deep link doesn't 404.
         if(modal==='targets-editor') perm('reviews.customize')&&(setPerfReviewsEntry({tab:'customize',section:'targets'}),goRoute('perf-reviews'));
-        if(modal==='events')         (setEventsMode('list'),setShowEvents(true));
+        if(modal==='events')         (setEventsView('upcoming'),goRoute('events'));
         if(modal==='workflow')       setShowWorkflow(true);
         if(modal==='troubleshoot')   setShowTroubleshoot(true);
         if(modal==='kb')             setShowKB(true);
@@ -3207,10 +3191,11 @@ function App() {
         if(modal==='store-kb')       perm('analytics.store')&&setShowStoreKB(true);
         if(modal==='one-pager')      perm('analytics.store')&&goRoute('one-pager');
         if(modal==='gm-brief')       perm('analytics.store')&&setShowGMBrief(true);
-        // calendar-manager — RETIRED id (dispatch #191, 2026-08-28), redirects into Events & Tags'
-        // Calendar mode rather than doing nothing; see panel-registry.js's comment on this id.
-        if(modal==='calendar-manager') perm('analytics.dashboard')&&(setEventsMode('calendar'),setShowEvents(true));
-        if(modal==='event-impact')   perm('analytics.dashboard')&&setShowEventImpact(true);
+        // calendar-manager/event-impact — RETIRED ids (dispatch #191; Events Phase 3 (a) for the
+        // latter), redirect into the unified Events panel's Calendar/Impact pill rather than doing
+        // nothing; see panel-registry.js's comments on these ids.
+        if(modal==='calendar-manager') perm('analytics.dashboard')&&(setEventsView('calendar'),goRoute('events'));
+        if(modal==='event-impact')   perm('analytics.dashboard')&&(setEventsView('impact'),goRoute('events'));
         if(modal==='above-store')    perm('analytics.district')&&goRoute('above-store');
         if(modal==='my-reports')     perm('analytics.dashboard')&&goRoute('my-reports');
         // channel-intel — RETIRED (dispatch #201, 2026-08-28): folded into DeliveryMixPanel's
@@ -3434,6 +3419,13 @@ function App() {
       // 'time-punches' no longer has its own routePanel branch — dispatch #197 folded it into
       // CrewSchedulePanel's Punches tab (crewTab, initialTab above).
       routePanel==='crew-schedule'&&h(CrewSchedulePanel,{stores,initialTab:crewTab,onClose:()=>goRoute(null)}),
+      // Events (Events Phase 3 (a)) — 'calendar-manager'/'event-impact' no longer have their own
+      // showX branches; both redirect here via eventsView (initialView), same shape as crewTab
+      // just above. calInitScope keeps flowing through to CalendarManagerPanel exactly as it did
+      // under the old EventsAndTagsPanel.
+      routePanel==='events'&&h(EventsPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,
+        initialView:eventsView,initialCalendarScope:calInitScope,
+        onClose:()=>{goRoute(null);setEventsView('upcoming');setCalInitScope(null);}}),
       // routePanel==='fob-eom' never renders here on purpose — the useEffect above (near
       // fobAnalysisInitialMode's declaration) redirects it into fob-analysis before this
       // switch is reached, so by the time this render runs routePanel is already
@@ -3516,7 +3508,7 @@ function App() {
       routePanel==='my-reports'&&h(ReportSubscriptions,{onClose:()=>goRoute(null),
         onLaunch:(sub)=>{
           goRoute(null);
-          if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsMode('calendar'); setShowEvents(true); }
+          if(sub.report==='calendar'){ setCalInitScope(sub.scope||'all'); setEventsView('calendar'); goRoute('events'); }
           else if(sub.report==='visit-readiness'){ setVisitReadyInit(sub.scope||'all'); goRoute('visit-readiness'); }
           else { setAboveStoreInit({scope:sub.scope,period:sub.period,panels:sub.panels}); goRoute('above-store'); }
         }}),
@@ -3557,13 +3549,8 @@ function App() {
     // visitReadyInit stays local App state, same shape as every other routed panel's initialX prop.
     showLFZGap&&h(LifelenzGapPanel,{ds,settings,onClose:()=>setShowLFZGap(false)}),
     showPMix&&h(ProductMixPanel,{stores,ds,settings,onClose:()=>setShowPMix(false)}),
-    // Events & Tags — merged with Calendar Manager (dispatch #191): EventsAndTagsPanel switches
-    // between EventCalendar ('list') and CalendarManagerPanel ('calendar') via eventsMode, both
-    // still full components, unmodified beyond the shared viewToggle header slot.
-    showEvents   &&h(EventsAndTagsPanel,{stores,ds,settings,userEvents,onUpdate:saveUserEvents,
-      mode:eventsMode,onModeChange:setEventsMode,initialScope:calInitScope,
-      onClose:()=>{setShowEvents(false);setEventsMode('list');setCalInitScope(null);}}),
-    showEventImpact&&h(EventImpactPanel,{onClose:()=>setShowEventImpact(false)}),
+    // showEvents/showEventImpact — Events Phase 3 (a): moved to the routePanel gate in the main
+    // content area (RoutePanelShell now lives inside EventsPanel itself; see routePanel==='events').
     // showAboveStore — Dispatch #160: moved to the routePanel gate in the main content area
     // (RoutePanelShell now lives inside AboveStoreOnePager itself; see routePanel==='above-store').
     // showReportSubs — Dispatch #206: moved to the routePanel gate in the main content area
