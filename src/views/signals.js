@@ -3,7 +3,7 @@ import * as React from 'react';
 import { computeInsights, normLoc } from '../engine/insights.js';
 import { METRIC_CATEGORIES, findMetric, computeCustomSignal, shouldRetire, getConditionLabel, scanAllPairs, SEEDED_SIGNALS, pmixItemsIndex, pmixItemKey, isPmixItemKey } from '../engine/signal-registry.js';
 import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '../engine/csat-signals.js';
-import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls, loadAuditRowsWindow } from '../lib/supabase.js';
+import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls, loadQsrStoreSettings, loadAuditRowsWindow } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
 import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
@@ -1457,11 +1457,24 @@ export function StoreControlsTab() {
   const [raw, setRaw] = uSt(null); // null = loading, [] = loaded-empty
   const [err, setErr] = uSt(null);
   const [selLoc, setSelLoc] = uSt(null);
+  // qsr_store_settings -- a SEPARATE endpoint/host from qsr_store_controls above (memory/
+  // project-qsrsoft-store-settings-endpoint.md), captured while exploring cash-control automation.
+  // Loaded independently and failing softly (settingsRaw stays [] on error) -- this tab's headline
+  // data is qsr_store_controls; the settings cash slice is a secondary, unreconciled cross-check,
+  // so a settings-load failure must never block or blank the main table.
+  const [settingsRaw, setSettingsRaw] = uSt(null);
 
   uE(() => {
     let live = true;
     loadQsrStoreControls({}).then(data => { if (live) setRaw(data || []); })
       .catch(e => { if (live) { setErr(e.message); setRaw([]); } });
+    return () => { live = false; };
+  }, []);
+
+  uE(() => {
+    let live = true;
+    loadQsrStoreSettings({}).then(data => { if (live) setSettingsRaw(data || []); })
+      .catch(() => { if (live) setSettingsRaw([]); });
     return () => { live = false; };
   }, []);
 
@@ -1480,6 +1493,13 @@ export function StoreControlsTab() {
     for (const c of CONTROLS_COLS) if (c.flagVsMode) m[c.key] = districtMode(rows, c.key);
     return m;
   }, [rows]);
+
+  // loc -> cash slice, keyed the same way `rows` normalizes loc (parseInt strips the zero-pad).
+  const settingsByLoc = uM(() => {
+    const m = {};
+    for (const r of (settingsRaw || [])) if (r.loc) m[String(parseInt(r.loc, 10))] = r.cash;
+    return m;
+  }, [settingsRaw]);
 
   if (raw === null) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } }, 'Loading store controls…');
   if (err) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: red, fontSize: 12 } }, `Couldn't load store controls: ${err}`);
@@ -1591,6 +1611,28 @@ export function StoreControlsTab() {
             sel.discountVarAmt != null && h('div', null, `discount_amt: ${sel.discountVarAmt}`),
           ),
         ),
+
+        (() => {
+          const cash = settingsByLoc[sel.loc];
+          return h('div', null,
+            h('div', { style: { fontSize: 10, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 } }, 'Store Settings — Cash (2nd source)'),
+            !cash
+              ? h('div', { style: { fontSize: 11, color: muted } }, settingsRaw === null ? 'Loading…' : 'Not pulled for this store yet.')
+              : h('div', { style: { fontSize: 11, lineHeight: 1.8 } },
+                  h('div', { style: { fontSize: 9, color: muted, marginBottom: 4 } }, 'From a different endpoint (store_settings, not storewide_controls) — shown separately, not reconciled against the Cash Controls / Safe & Deposit cells above.'),
+                  cash.drawerStartAmount != null && h('div', null, `Starting drawer bank: ${ctrlMoney(cash.drawerStartAmount)} × ${ctrlCount(cash.drawerCount)} drawer(s)`),
+                  cash.safeBackupAmount != null && h('div', null, `Safe backup amount: ${ctrlMoney(cash.safeBackupAmount)}`),
+                  cash.safePettyCash != null && h('div', null, `Safe petty cash: ${ctrlMoney(cash.safePettyCash)}`),
+                  cash.maxStorewideCash != null && h('div', null, `Max storewide cash: ${ctrlMoney(cash.maxStorewideCash)}`),
+                  cash.maxDrawerCash != null && h('div', null, `Max drawer cash: ${ctrlMoney(cash.maxDrawerCash)}`),
+                  cash.maxDrawerOverShort != null && h('div', null, `Max drawer over/short: ${ctrlMoney(cash.maxDrawerOverShort)}`),
+                  cash.requiredDailyDeposits != null && h('div', null, `Required daily deposits: ${ctrlCount(cash.requiredDailyDeposits)}`),
+                  cash.depositValidationDaysPastDue != null && h('div', null, `Deposit validation days past due: ${ctrlCount(cash.depositValidationDaysPastDue)}`),
+                  h('div', null, `Cash recycler: ${cash.cashRecyclerEnabled ? 'Yes' : 'No'}`),
+                  h('div', null, `Manual cash adjustments allowed: ${cash.allowCashAdjustments ? 'Yes' : 'No'}`),
+                ),
+          );
+        })(),
       ),
 
       h('div', { style: { marginTop: 16 } },

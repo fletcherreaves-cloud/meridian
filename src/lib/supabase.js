@@ -5070,6 +5070,31 @@ export async function loadQsrStoreControls({ loc } = {}) {
   }));
 }
 
+// ── qsr_store_settings (memory/project-qsrsoft-store-settings-endpoint.md) — current-state, one
+// row per store, DISTINCT source from qsr_store_controls above (different endpoint/host, captured
+// while exploring cash-control automation). `settings` is the full raw JSONB blob (drawer/safe/
+// instore/inventory/fdc_state/homepageMetrics/misc/storeConfig); `cash` is the flattened drawer/
+// safe/instore slice already computed server-side by the pull script (extractCashSettings(),
+// src/engine/store-settings.js) -- same field shape as that function's own output, so a consumer
+// never needs to re-derive it from `settings`.
+export async function loadQsrStoreSettings({ loc } = {}) {
+  if (!supabase) return [];
+  const locs = loc == null ? null : (Array.isArray(loc) ? loc : [loc]).map(l => String(l).padStart(7, '0'));
+
+  const data = await fetchAll((from, to) => {
+    let q = supabase.from('qsr_store_settings').select('*');
+    if (locs && locs.length) q = q.in('loc', locs);
+    return q.range(from, to);
+  }, 1000, 'qsr_store_settings');
+
+  return (data || []).map(r => ({
+    loc:        r.loc,
+    settings:   r.settings,
+    cash:       r.cash,
+    updatedAt:  r.updated_at,
+  }));
+}
+
 // Dispatch #157 (Performance Review continuity, Phase 4b/5b UI) — the first client-side reader
 // of `staff_assignments` (dispatch #150's reports-to graph). RLS ("assignments: own or above",
 // schema.sql) already scopes what a plain select() returns to whatever the logged-in user is
