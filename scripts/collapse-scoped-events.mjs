@@ -146,10 +146,16 @@ const insertRows = newScopedRows.map(e => ({
   scope: e.scope, scope_state: e.scopeState ?? null, scope_locs: e.scopeLocs ?? null,
 }));
 
+const stripStatus = arr => arr.map(({ status, ...rest }) => rest);
 let inserted = 0;
 for (let i = 0; i < insertRows.length; i += 500) {
   const chunk = insertRows.slice(i, i + 500);
-  const { error, count } = await sb.from('org_events').upsert(chunk, { onConflict: 'loc,date_start,label', count: 'exact' });
+  let attempt = chunk;
+  let { error, count } = await sb.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' });
+  if (error && /column .*status.* does not exist/i.test(error.message || '')) {
+    attempt = stripStatus(attempt);
+    ({ error, count } = await sb.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' }));
+  }
   if (error) { console.error(`Insert error at offset ${i}:`, error.message); console.error('Aborting before any deletes — no rows were removed.'); process.exit(1); }
   inserted += count ?? chunk.length;
 }
