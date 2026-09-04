@@ -43,6 +43,7 @@ on:
       - EOM Baseline Snapshot
       - EOM Digest Send (roll-up email)
       - Event Impact — Retail Lift Measurement
+      - Event Impact — Weather Lift Measurement
       - Forecast Week Precompute
       - Hourly Projection Accuracy
       - LifeLenz Daily Sync

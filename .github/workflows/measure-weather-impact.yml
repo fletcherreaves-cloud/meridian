@@ -1,0 +1,43 @@
+name: Event Impact — Weather Lift Measurement
+
+# Phase 2 (3/3) of memory/project-events-calendar-redesign-2026-09-04.md, item 8. Fills the
+# `weather` gap measure-retail-impact.yml's own header explicitly named as still-missing:
+# "`event` (festival), `weather`, and `promo` (LTO) categories still have no measurement
+# pipeline at all — real follow-up work, not covered by this workflow." Same pattern as that
+# workflow: re-measures from labor_rows sales history every run (idempotent upsert on
+# (loc,event_type)), so weather lift stays current as more seasons of real data accumulate.
+# Unlike retail/holiday (a fixed calendar), weather event days are DERIVED from Open-Meteo
+# observations each run (scripts/measure-weather-impact.mjs +
+# scripts/lib/weather-candidates.mjs) — no tagging required.
+
+on:
+  schedule:
+    # Monthly, 1st at 08:15 UTC — 15 minutes after the retail-lift measurement (same day, same
+    # 08:00 slot) so the two don't race each other hitting Supabase/labor_rows simultaneously;
+    # after the daily QSRSoft/LifeLenz pulls (10:00 UTC on ordinary days is irrelevant here since
+    # this runs earlier in the morning, same as retail).
+    - cron: '15 8 1 * *'
+  workflow_dispatch:
+    inputs:
+      minN:
+        description: 'Minimum observations required to write a store (default 2)'
+        required: false
+        default: '2'
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Measure weather event lift into event_impact
+        run: node scripts/measure-weather-impact.mjs --min-n "${{ github.event.inputs.minN || '2' }}"
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
