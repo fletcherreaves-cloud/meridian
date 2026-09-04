@@ -1342,40 +1342,27 @@ async function generateReviewPack(loc, ds, settings, userEvents, apiKey) {
     return r.dateStr||'';
   };
 
-  // ── Auto-tag holidays before building the pack ─────────────────────────────
-  // Ensures holidays are persisted to localStorage AND excluded from review.
-  // Uses HOLIDAY_MAP which covers 2019-2028 (yr-7 to yr+2).
-  let autoHolTagged=0; const _newlyTagged=[];
-  for(const row of allAnoms[loc]) {
-    const dk=normRow(row);
-    if(!dk||(uev[loc]&&uev[loc][dk])) continue;
-    const hol=isHoliday(new Date(dk+'T12:00:00'));
-    if(hol){
-      if(!uev[loc]) uev[loc]={};
-      uev[loc][dk]={label:hol.label||String(hol),tagLabel:hol.label||String(hol),
-        type:'holiday',source:'Auto-Holiday Scan',aiMatched:false,
-        note:'Auto-tagged during Review Pack generation'};
-      autoHolTagged++; _newlyTagged.push({loc,dk,label:hol.label||String(hol)});
-    }
-  }
-  if(autoHolTagged>0){
-    try{localStorage.setItem('mf_events',JSON.stringify(uev));}catch{}
-    // This is a standalone function (no onUpdate callback reaches it), so push straight to
-    // org_events instead — same table every other write path in this file already uses.
-    try{ saveOrgEvents(_newlyTagged.map(t=>({loc:t.loc,dateStart:t.dk,dateEnd:t.dk,span:false,
-      type:'holiday',label:t.label,note:'Auto-tagged during Review Pack generation'})),
-      {method:'manual'}); }catch(e){console.warn('[Meridian] review-pack holiday sync failed:',e);}
-  }
+  // ── Exclude holidays from review directly, without materializing a tag ─────
+  // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: this used to write an
+  // org_events row per holiday anomaly purely so the filter below would exclude it — the
+  // same "holidays are a rule, not data" anti-pattern #197 Slice 1 already retired the
+  // automatic-on-load version of. isHoliday() answers the same question on demand; nothing
+  // is lost by not persisting it. Uses HOLIDAY_MAP which covers 2019-2028 (yr-7 to yr+2).
+  const holExcluded = allAnoms[loc].filter(row => {
+    const dk = normRow(row);
+    return dk && !(uev[loc]&&uev[loc][dk]) && isHoliday(new Date(dk+'T12:00:00'));
+  }).length;
 
-  // ── Build review rows: exclude all tagged (includes just-tagged holidays) ──
+  // ── Build review rows: exclude already-tagged AND holiday-explained days ───
   const rows=(allAnoms[loc]||[]).filter(r=>{
     const dk=normRow(r);
-    return!!dk&&!(uev[loc]&&uev[loc][dk]);
+    if(!dk||(uev[loc]&&uev[loc][dk])) return false;
+    return !isHoliday(new Date(dk+'T12:00:00'));
   });
 
   if(!rows.length){
-    const msg=autoHolTagged>0
-      ?'✅ Auto-tagged '+autoHolTagged+' holiday'+(autoHolTagged!==1?'s':'')+' for '+sNameC(loc)+'. No other untagged anomalies remain — nothing to send out.'
+    const msg=holExcluded>0
+      ?'✅ '+holExcluded+' holiday'+(holExcluded!==1?'s are':' is')+' excluded for '+sNameC(loc)+'. No other untagged anomalies remain — nothing to send out.'
       :'All anomalies for '+(STORE_NAMES[loc]||loc)+' are already tagged. Nothing to review.';
     alert(msg);return;
   }
