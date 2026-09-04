@@ -89,8 +89,11 @@ function renderNavTexts(permFn) {
 // and 'calendar-manager' ('Calendar', 📅) merged into Events & Tags as a Calendar mode (App.js's
 // EventsAndTagsPanel) and flipped to kind:'internal' (dispatch #191). All four drop out of this
 // snapshot entirely; their shared icons (📋 for the first three) stay in the DOM via other
-// owners (Graded Visits/Performance Reviews), just not via any of these labels any more. Planning
-// is three links now, not four (hub · Events & Tags · Event Impact).
+// owners (Graded Visits/Performance Reviews), just not via any of these labels any more.
+// Events Phase 3 (a), 2026-09-04: EventsAndTagsPanel itself was later retired (src/views/
+// events-panel.js's EventsPanel absorbed it), 'events' relabeled "Events & Tags" -> "Events" and
+// flipped route:true, and 'event-impact' folded in the same way calendar-manager was in #191 --
+// flipped to kind:'internal'. Planning is two links now (hub · Events), not three.
 // Re-captured 2026-08-28 for dispatch #196: the former single 'help' entry (Admin section,
 // '?' icon) split in two, BOTH now under a real 'Help' section header (SECTIONS has always
 // declared this section id -- it just had zero members until now, an inert-section pattern
@@ -127,7 +130,7 @@ function renderNavTexts(permFn) {
 // folded into 'ranking' as a mode) -- both the label and its 🏆 drop out of ⚗ TEST KITCHEN
 // entirely (🏆 is still present once, on Leaderboards in the Reports section, from 'ranking'
 // itself -- same "harvest, no other icon claims it in THIS section" shape as #194/#197's drops).
-const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events & Tags','📈','Event Impact','Operations','🛵','3PO Delivery','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
+const EXPECTED = ['M','Meridian','Test','⌂','Home','⊞','District View','Daily','🔴','Needs Attention','☀️','Daily Brief','📅','Date-Range Report','Notifications','📧','Email Digests','Reports','📊','Org Summary','🏆','Leaderboards','Planning','🎯','Planning','◷','Events','Operations','🛵','3PO Delivery','📋','Graded Visits','🎟️','Promo / Discount ROI','💬','Guest Voice','🛡️','Visit Readiness','Inventory & Food Cost','📦','Inventory Control','🥗','Food Cost','📦','Inventory','💲','Pricing Engine','Scheduling & Labor','🗓','Scheduling','People','🗓','Crew Schedule','📋','Performance Reviews','🔒','Security','Analytics','📄','Above-Store One-Pager','🔭','Forecast Brief','🚗','DT Speed of Service','📰','Local News','🗺','Market Intelligence','🗂','My Reports','📄','Store One-Pager','🧠','SAGE','📡','Signals','⚡','Task Queue','Forms','🗂','Forms Library','🖨','Printable Forms','📝','Digital Checklists','Help','🧭','Workflow','?','Troubleshooting','⚗ TEST KITCHEN','▦','Projections','◑','Proj vs Actuals','🎯','Forecast Models','◎','DI Calibration','🎯','Forecast Reports','📊','LifeLenz Gap','⚡','DI Compare','📐','Fcst Reference','✅','Form Completions','🔬','Forecast Audit','💰','Opportunity $','Admin','ℹ️','About','🗄','Data Manager','📖','Knowledge Base','🔍','Metric Lineage','🧩','Panel Manager','⚙','Settings','💾','Save Session','📂','Restore Session','No data','v—'];
 
 // Part A's verification bar (tighter than Job B's): the nav must be IDENTICAL to the pre-Part-A
 // baseline except for exactly one lost label and one gained label. Frozen here so the diff is
@@ -140,11 +143,11 @@ describe('AppSidebar renders the section-driven nav (dispatch #54 Job B)', () =>
     expect(renderNavTexts()).toEqual(EXPECTED);
   });
 
-  it('the Planning section is exactly the owner\'s three links, hub first -- not five exploded tabs (dispatch #191: Calendar merged into Events & Tags)', () => {
+  it('the Planning section is exactly two links, hub first -- not five exploded tabs (dispatch #191 folded Calendar in; Events Phase 3 (a), 2026-09-04, folded Event Impact in too)', () => {
     const texts = renderNavTexts();
     const start = texts.indexOf('Planning'); // the section header
-    const slice = texts.slice(start, start + 7);
-    expect(slice).toEqual(['Planning', '🎯', 'Planning', '◷', 'Events & Tags', '📈', 'Event Impact']);
+    const slice = texts.slice(start, start + 5);
+    expect(slice).toEqual(['Planning', '🎯', 'Planning', '◷', 'Events']);
   });
 
   it('Inventory & Food Cost holds all six named panels -- three real nav entries plus End of Month (internal) and Count Cycle (hub-tab) and Product Mix (reachable once enabled)', () => {
@@ -196,7 +199,9 @@ const HIDDEN_WHEN_DENIED = {
   'analytics.brief': ['Daily Brief', 'Forecast Brief', '☀️', '🔭'],
   // dispatch #191 (2026-08-28): 'Calendar' dropped out of this list -- calendar-manager is
   // kind:'internal' now (merged into Events & Tags), no longer a sidebar entry to hide at all.
-  'analytics.dashboard': ['Event Impact', 'My Reports', '📈'],
+  // Events Phase 3 (a), 2026-09-04: 'Event Impact'/'📈' dropped the same way -- event-impact is
+  // kind:'internal' now too (merged into Events as an Impact pill), nothing left to hide.
+  'analytics.dashboard': ['My Reports'],
   // dispatch #202 (2026-08-28): 'EOM Supervisor' dropped out -- kind:'internal' now, renders
   // nowhere in the sidebar regardless of permission, so an analytics.district denial can't hide
   // text that was never rendered in the first place. 📊 stays absent from this list (unchanged --

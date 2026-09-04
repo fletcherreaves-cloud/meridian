@@ -55,13 +55,16 @@ const tr   = (props, ...c) => h('tr',     props, ...c);
 // EventCalendar (views/store-dash.js, "Events & Tags") can be swapped without either owning the
 // other's state. Undefined/falsy when CalendarManagerPanel is rendered standalone — nothing
 // renders in that case.
-function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClose, initialScope, viewToggle}) {
+function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClose, initialScope, initialTab, viewToggle}) {
   const {useState:uSt, useMemo:uM, useRef:uR} = React;
   const today = new Date();
   const [viewY, setViewY] = uSt(today.getFullYear());
   const [viewM, setViewM] = uSt(today.getMonth()+1); // 1-12
   const [scope, setScope] = uSt(initialScope || 'all'); // 'all' | 'ok' | 'fl' | a specific loc
-  const [tab,   setTab]   = uSt('grid'); // 'grid' | 'rules' | 'pending'
+  // initialTab (Events Phase 3 (a)) — lets a caller open straight into 'rules' (the new unified
+  // Events panel's Rules tab) instead of always landing on 'grid'. Same "raw prop, once" shape as
+  // initialScope just above; falls back to 'grid' for any unrecognized value, same as before.
+  const [tab,   setTab]   = uSt(['grid','rules','pending'].includes(initialTab) ? initialTab : 'grid');
   const [gridView, setGridView] = uSt('month'); // 'month' | 'agenda'
   const [printMonths, setPrintMonths] = uSt(1); // how many consecutive months to print (Notes 49)
 

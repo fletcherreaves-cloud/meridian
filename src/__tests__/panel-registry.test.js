@@ -290,9 +290,15 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // route:true from day one, same as #123's 'crew-schedule' above (thirty-two -> thirty-three).
     // 'pricing-engine' promoted OUT of Test Kitchen the same day (owner: "make it a URL page
     // for starters") -- kind:'test-kitchen' -> kind:'nav', route:true (thirty-three -> thirty-four).
+    // Events Phase 3 (a), 2026-09-04: 'events' -- deferred right above as "scoped and explicitly
+    // deferred, not converted" -- IS now converted. src/views/events-panel.js's EventsPanel gave
+    // it one real shell (RoutePanelShell) instead of the two-delegate-components shape that
+    // deferral was about; 'event-impact' folded in as an Impact pill and flipped kind:'internal'
+    // (see panel-registry.js's own comment on that entry) rather than becoming a second route id
+    // (thirty-four -> thirty-five).
     expect(ROUTE_IDS.slice().sort()).toEqual([
       'above-store', 'attention', 'brief', 'checklist-fill', 'crew-schedule', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
-      'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
+      'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
       'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'planning', 'pricing-engine', 'proj',
       'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'task-queue',
       'visit-readiness',
