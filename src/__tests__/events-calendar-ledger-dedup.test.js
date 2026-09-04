@@ -32,8 +32,9 @@ const STORES = [
 function buildUserEvents() {
   const uev = {};
   // A districtwide Thanksgiving tagged identically (same dk, label, type) across all 5 stores --
-  // exactly how the "Auto-Tag Holidays" writer and applyEventToStores (calendar.js) both shape a
-  // multi-store write. This is the case that used to render as 5 stacked, identical-looking rows.
+  // exactly how the now-retired "Auto-Tag Holidays" writer and applyEventToStores (calendar.js,
+  // still live) both shape a multi-store write. This is the case that used to render as 5
+  // stacked, identical-looking rows.
   for (const s of STORES) {
     uev[s.loc] = { '2026-11-26': { type: 'holiday', note: 'Thanksgiving', icon: '🗓', label: 'Holiday: Thanksgiving', autoTagged: true } };
   }

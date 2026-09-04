@@ -4163,7 +4163,6 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
   const [batchScanning, setBatchScanning] = React.useState(false);
   const [batchProg,     setBatchProg]     = React.useState({done:0,total:0,tagged:0,found:0});
   const [expandedTag,   setExpandedTag]   = React.useState(null); // key for expanded tag detail
-  const [autoHolTagged, setAutoHolTagged] = React.useState(0);    // count of auto-tagged holidays last scan
   const [showEventEntry,setShowEventEntry] = React.useState(false);
   const [showEventRegistry,setShowEventRegistry] = React.useState(false); // manual event entry modal
   const cancelBatchRef = React.useRef(false);
@@ -4552,32 +4551,12 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     }
 
     setResults(allResults);
-    // ── Auto-tag detected holidays ────────────────────────────────────────
-    // Holidays are definitively known events — no AI needed, tag automatically
-    (()=>{
-      const _uevNow=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();
-      const isTaggedNow=(loc,dk)=>{const k=nDK(dk);return!!(k&&_uevNow[loc]&&_uevNow[loc][k]);};
-      let autoHolCount=0;
-      for(const [loc,anoms] of Object.entries(allResults)){
-        for(const row of anoms){
-          if(!row.isHoliday||isTaggedNow(loc,row.dKeyStr)) continue;
-          const holName=row.holidayName||'Holiday';
-          const holType=holName.toLowerCase().includes('christmas')||holName.toLowerCase().includes('thanksgiving')
-            ?'holiday':'holiday';
-          onTagEvent(loc,dKey(row.date||new Date()),holName,'holiday',{
-            tagLabel:holName,
-            tags:[{type:'holiday',...(EVENT_TYPES.holiday||{icon:'🎉',label:holName,col:'#f59e0b'})}],
-            customNote:'Auto-detected by Holiday Calendar',
-            source:'Auto-Holiday Scan'
-          });
-          autoHolCount++;
-        }
-      }
-      if(autoHolCount>0){
-        // Brief toast-style note — store in state via a setTimeout so it shows after render
-        setAutoHolTagged(autoHolCount);
-      }
-    })();
+    // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: this used to write an
+    // org_events row per holiday-flagged anomaly on every scan, purely to mark it "reviewed" --
+    // the same "holidays are a rule, not data" anti-pattern #197 Slice 1 already retired the
+    // automatic-on-load version of. `row.isHoliday` is computed fresh every scan (isHoliday()),
+    // so tagCounts/tabRows/sortedRows below treat a holiday row as reviewed directly, with no
+    // persisted tag required -- see their `||r.isHoliday` branches.
     // Merge with any previously saved results (append new anomalies)
     try{
       const existing = JSON.parse(localStorage.getItem('mf_backtest_results')||'{}');
@@ -4619,7 +4598,10 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     if(!showHols) all = all.filter(r=>!r.isHoliday);
     const _uevSort=_uev; // Use the already-merged useMemo value — avoids redundant localStorage read
     if(tagFilter==='untagged') all=all.filter(r=>!isTagged(r.loc,r.dKeyStr||r.dateStr)&&!r.isHoliday);
-    if(tagFilter==='tagged')   all=all.filter(r=>isTagged(r.loc,r.dKeyStr||r.dateStr));
+    // A holiday-flagged row counts as "tagged" even with no persisted row -- isHoliday() is
+    // definitive on its own (Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md),
+    // matching the 'untagged' filter above which already excludes holidays the same way.
+    if(tagFilter==='tagged')   all=all.filter(r=>isTagged(r.loc,r.dKeyStr||r.dateStr)||r.isHoliday);
     if(tagFilter==='ai')       all=all.filter(r=>(_uevSort[r.loc]&&_uevSort[r.loc][r.dKeyStr||r.dateStr]||{}).aiMatched);
     if(tagFilter==='holiday')  all=all.filter(r=>r.isHoliday);
     if(tagFilter==='manual')   all=all.filter(r=>{const ev=_uevSort[r.loc]&&_uevSort[r.loc][r.dKeyStr||r.dateStr];return ev&&!ev.aiMatched&&ev.source!=='Auto-Holiday Scan';});
@@ -4761,6 +4743,10 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       const ev=_uev[r.loc]&&_uev[r.loc][dk];
       if(r.isHoliday) hols++;
       if(ev){tagged++;if(ev.aiMatched)aiTagged++;else if(ev.source==='Auto-Holiday Scan')holTagged++;else manual++;}
+      // A holiday row with no persisted tag still counts as reviewed -- isHoliday() is
+      // definitive on its own (Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md).
+      // Only reached when `ev` is falsy above, so a manually-tagged holiday isn't double-counted.
+      else if(r.isHoliday){tagged++;holTagged++;}
     }
     const tot=allFlatRows.length,untagged=tot-tagged;
     return{tot,tagged,aiTagged,manual,holTagged,hols,untagged,pct:tot?+(tagged/tot*100).toFixed(2):0};
@@ -4771,30 +4757,18 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     if(!sortedRows) return [];
     switch(scanTab){
       case 'review':   return sortedRows.filter(r=>!isTagged(r.loc,nDK(r.dKeyStr)||r.dateStr)&&!r.isHoliday);
-      case 'tagged':   return sortedRows.filter(r=>isTagged(r.loc,nDK(r.dKeyStr)||r.dateStr));
+      case 'tagged':   return sortedRows.filter(r=>isTagged(r.loc,nDK(r.dKeyStr)||r.dateStr)||r.isHoliday);
       case 'holidays': return sortedRows.filter(r=>r.isHoliday);
       default:         return sortedRows;
     }
   },[sortedRows,scanTab,_uev]);
 
-  // Tag all untagged holidays across loaded scan results (no scan required)
-  const tagAllHolidays = ()=>{
-    if(!allFlatRows.length){alert('Run a scan first to detect holiday anomalies.');return;}
-    const cur=(()=>{try{return JSON.parse(localStorage.getItem('mf_events')||'{}');}catch{return {};}})();
-    let n=0;
-    for(const r of allFlatRows){
-      if(!r.isHoliday) continue;
-      const dk=dKey(r.date instanceof Date?r.date:new Date(r.date));
-      if(cur[r.loc]&&cur[r.loc][dk]) continue;
-      onTagEvent(r.loc,dk,r.holidayName||'Holiday','holiday',{
-        tagLabel:r.holidayName||'Holiday',
-        tags:[{type:'holiday',...(EVENT_TYPES.holiday||{icon:'🎉',label:'Holiday',col:'#f59e0b'})}],
-        source:'Auto-Holiday Scan',customNote:'Tagged via Tag All Holidays'
-      });
-      n++;
-    }
-    n>0?setAutoHolTagged(n):alert('All detected holidays are already tagged.');
-  };
+  // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: "Tag All Holidays" (and
+  // its button below) used to exist so a click would write a row that made the review-queue
+  // filters exclude holiday anomalies. Those filters now check `r.isHoliday` directly (computed
+  // fresh from isHoliday() every scan), so holidays are already excluded from review with
+  // nothing to click -- there was never anything to compute that isHoliday() doesn't already
+  // provide. Retired, not replaced.
 
   // Calendar: available months + cells for active month
   const calMonths = React.useMemo(()=>{
@@ -4836,7 +4810,9 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
     const key=row.loc+'_'+(nDK(row.dKeyStr)||row.dateStr);
     const dk=nDK(row.dKeyStr)||row.dateStr;
     const ev=_uev[row.loc]&&_uev[row.loc][dk];
-    const isT=!!ev;
+    // A holiday row reads as "reviewed" (Edit label, no AI-lookup button) even with no
+    // persisted tag -- isHoliday() is definitive on its own, matching tagCounts/tabRows above.
+    const isT=!!ev||!!row.isHoliday;
     const absP=Math.abs(row.varPct);
     const varBg=row.varPct>0?`rgba(16,185,129,${Math.min(.18,absP/100*.25)})`:`rgba(239,68,68,${Math.min(.18,absP/100*.25)})`;
     const name=sName(row.loc);
@@ -5172,9 +5148,6 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         )
       ),
       div({style:{width:'.5px',height:14,background:'var(--bdr2)',margin:'0 2px'}}),
-      btn({className:'btn btn-sm',style:{color:'#f5bc00',borderColor:'rgba(245,188,0,.3)'},
-        title:'Auto-tag all detected holiday anomalies in current scan results',
-        onClick:tagAllHolidays,disabled:!results||!allFlatRows.some(r=>r.isHoliday)},'🎉 Tag Holidays'),
       btn({className:'btn btn-sm',style:{color:'#10b981',borderColor:'rgba(16,185,129,.3)'},
         onClick:()=>setShowEventEntry(true)},'➕ Add Event'),
       btn({className:'btn btn-sm',style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
@@ -5240,15 +5213,6 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
         )
       );
     })(),
-
-    // ── Toast: holiday auto-tag ───────────────────────────────────────────────
-    autoHolTagged>0&&div({style:{background:'rgba(245,158,11,.08)',border:'.5px solid rgba(245,158,11,.3)',
-      borderRadius:'var(--r)',padding:'4px 10px',marginBottom:6,fontSize:'8.5px',color:'#f59e0b',
-      display:'flex',gap:8,alignItems:'center'}},
-      '🎉 '+autoHolTagged+' holiday date'+(autoHolTagged!==1?'s':'')+' auto-tagged.',
-      btn({style:{marginLeft:'auto',background:'none',border:'none',color:'#f59e0b',cursor:'pointer',fontSize:'10px'},
-        onClick:()=>setAutoHolTagged(0)},'✕')
-    ),
 
     // ── Tab bar ───────────────────────────────────────────────────────────────
     results&&div({style:{display:'flex',gap:0,borderBottom:'.5px solid var(--bdr)',marginBottom:10}},
