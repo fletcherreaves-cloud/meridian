@@ -42,8 +42,14 @@ async function renderPanel(root) {
 }
 
 describe('Count Cycle — "🔗 Share" button creates a weekly-shaped share link', () => {
-  beforeEach(() => { createEomShareLink.mockClear(); });
-  afterEach(() => { document.body.innerHTML = ''; });
+  // cycleCompliance() grades the fixture's last_counted:'2026-08-25' against `new Date()`
+  // ("today") using a 9-day WEEKLY_DUE_DAYS cutoff (count-cycle.js) -- with no pinned clock this
+  // test silently flips from "on cycle" to "overdue" (and the "Show N stores on cycle" toggle
+  // this test depends on stops rendering at all) the moment wall-clock today passes 2026-09-03.
+  // Pin the clock well inside the compliant window so the fixture's story stays true regardless
+  // of when the suite actually runs.
+  beforeEach(() => { createEomShareLink.mockClear(); vi.useFakeTimers(); vi.setSystemTime(new Date('2026-08-28T12:00:00')); });
+  afterEach(() => { document.body.innerHTML = ''; vi.useRealTimers(); });
 
   // The fixture store is fully compliant ("on cycle") -- CountCycleSection's own exceptions-first
   // design collapses every clean store behind a "▸ Show N stores on cycle" toggle by default (a
