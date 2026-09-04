@@ -19,6 +19,25 @@ describe('buildStoreFobReport', () => {
     expect(r.actions.some(a => /Regressing/.test(a))).toBe(true);
   });
 
+  it('topItems carries wrin + variance (qty) through, alongside descr/dolDiff, for a caller to case-convert', () => {
+    const r = buildStoreFobReport('5985', {
+      name: 'Durant', org: 'OK', fob: { fobPct: 0.02, fob: 200 }, target: 0.015,
+      monthly: {}, varRows: [{ descr: 'McNuggets', wrin: 'W1', dolDiff: -201, variance: -50 }],
+    });
+    expect(r.topItems[0]).toEqual({ descr: 'McNuggets', dolDiff: -201, wrin: 'W1', variance: -50 });
+  });
+
+  it('topItems still works when varRows omit wrin/variance (older callers) -- both come through as undefined', () => {
+    const r = buildStoreFobReport('5985', {
+      name: 'Durant', org: 'OK', fob: { fobPct: 0.02, fob: 200 }, target: 0.015,
+      monthly: {}, varRows: [{ descr: 'McNuggets', dolDiff: -201 }],
+    });
+    expect(r.topItems[0].descr).toBe('McNuggets');
+    expect(r.topItems[0].dolDiff).toBe(-201);
+    expect(r.topItems[0].wrin).toBeUndefined();
+    expect(r.topItems[0].variance).toBeUndefined();
+  });
+
   it('flags masking when large losses are offset by gains', () => {
     const r = buildStoreFobReport('x', {
       name: 'X', org: 'OK', fob: { fobPct: 0.015, fob: 1000 }, target: 0.015,

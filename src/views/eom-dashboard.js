@@ -1267,7 +1267,7 @@ function ActionItemsProvenance({ findings, history, caseSzByWrin = {}, tolerance
   );
 }
 
-function ItemJourneyView({ journey: j }) {
+export function ItemJourneyView({ journey: j }) {
   const [laneFilter, setLaneFilter] = useState(null); // click a flow chip to drill into that lane's events
   if (!j) return null;
   const inWindow = (when) => j.windowStart != null && when != null && when >= j.windowStart;
@@ -1328,12 +1328,15 @@ function ItemJourneyView({ journey: j }) {
       const qtyLabel = 'Qty' + (j.uom ? ` (${j.uom})` : '');
       const hcell = (t, w, right) => span({ style: { fontSize: '9.5px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.03em', fontWeight: 700, minWidth: w, flex: w == null ? 1 : undefined, textAlign: right ? 'right' : 'left' } }, t);
       const fmtQty = (n) => `${n > 0 ? '+' : ''}${Math.round(n).toLocaleString()}`;
+      // Same case-pack suffix as the reconciliation box above (`cs`, line ~1299) -- never replaces
+      // the raw qty, just adds the case-converted read alongside it (backlog-master §6).
+      const csOf = (n) => (j.caseSz && Math.abs(n || 0) >= j.caseSz) ? ` (≈ ${(n / j.caseSz).toFixed(2)} cs)` : '';
       return div(null,
         div({ style: { fontSize: '11px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '6px' } },
           laneFilter ? `${LANE_META[laneFilter].label} events` : 'Count-cycle timeline',
           laneFilter && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '6px', color: 'var(--text3)' } }, `(${shownEvents.length})`),
           !laneFilter && j.netCountUnits != null && Math.abs(j.netCountUnits) >= 0.5 && span({ style: { textTransform: 'none', letterSpacing: 0, marginLeft: '8px', color: j.netCountUnits < 0 ? 'var(--crit)' : '#4ade80', fontWeight: 700 } },
-            `net count variance ${fmtQty(j.netCountUnits)}${j.uom ? ` ${j.uom}` : ' units'}`)),
+            `net count variance ${fmtQty(j.netCountUnits)}${csOf(j.netCountUnits)}${j.uom ? ` ${j.uom}` : ' units'}`)),
         shownEvents.length === 0
           ? div({ style: { fontSize: '12px', color: 'var(--text3)' } }, laneFilter ? `No ${LANE_META[laneFilter].label.toLowerCase()} events for this item.` : 'No ledger movement recorded for this item this period.')
           : div(null,
@@ -1357,7 +1360,7 @@ function ItemJourneyView({ journey: j }) {
                   span({ style: { fontSize: '12px', color: 'var(--text)', flex: 1 } },
                     e.isCount ? `count${e.manager ? ` · ${e.manager}` : ''}` : (e.invoice || '')),
                   span({ style: { fontSize: '12px', minWidth: '70px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: e.isCount ? 700 : 500, color: qtyVal == null ? 'var(--text3)' : e.isCount ? (qtyVal < 0 ? 'var(--crit)' : '#4ade80') : 'var(--text2)' } },
-                    qtyVal == null ? '—' : fmtQty(qtyVal)),
+                    qtyVal == null ? '—' : fmtQty(qtyVal) + csOf(qtyVal)),
                   span({ style: { fontSize: '12px', fontWeight: 700, minWidth: '62px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? (e.dollars < 0 ? 'var(--crit)' : '#4ade80') : 'var(--text3)' } },
                     (e.isCount && e.dollars != null && Math.abs(e.dollars) >= 1) ? `${e.dollars < 0 ? '-' : '+'}${jMoney(e.dollars)}` : '—'));
               }))));
@@ -2118,7 +2121,14 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       return {
         name: s.name, org: s.org === 'emerald' ? 'FL' : 'OK', patch: patchOfLoc(u),
         fob, target: tg.tFOBTarget != null ? Number(tg.tFOBTarget) : null, monthly: monthlyByLoc[loc] || monthlyByLoc[u] || {},
-        varRows: (varSource[loc] || varSource[u] || []).filter(v => v.hasDollars).map(v => ({ descr: v.descr, wrin: v.wrin, dolDiff: v.dolDiff })),
+        // `v.hasDollars` (pre-2026-08 dispatch) is a manual-upload-parser field (eom-parsers.js) --
+        // it does not exist on qsr_variance_stat rows (loadQsrVarianceStat's own field list has no
+        // such key), so this filter silently dropped EVERY row from the cloud stream this useMemo
+        // actually reads (varByLoc/prevVarByLoc), making varRows always []. That zeroed out
+        // grossLoss/grossGain/masking and "Top item losers" for every store, always -- found while
+        // wiring the case-pack suffix through this same line (backlog-master §6). Fixed to a real
+        // check against this source's own shape: a row carries a computed dollar figure at all.
+        varRows: (varSource[loc] || varSource[u] || []).filter(v => v.dolDiff != null).map(v => ({ descr: v.descr, wrin: v.wrin, dolDiff: v.dolDiff, variance: v.variance })),
         compActual, compTarget,
       };
     };
@@ -2196,6 +2206,17 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
 
   // FOB Report — printable (→ PDF) + CSV export, so it can go into a DO/GM review.
   const $ = n => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString();
+  // "Top item losers" case-pack suffix (backlog-master §6 / Notes 63 §EOM Change Monitor step 3):
+  // every variance qty shown ALSO gets a `= X.XX case(s)` suffix where a case size is known, never
+  // replacing the raw number -- same shape as ActionItemsProvenance/ItemJourneyView's caseSuffix,
+  // reusing rawByLoc's already-merged .caseSz (see rawByLoc's own comment for where that comes
+  // from). A missing/zero case size or missing qty renders nothing extra, same as those two.
+  const fobCaseSuffix = (loc, wrin, variance) => {
+    if (variance == null || !wrin) return '';
+    const it = (rawByLoc[loc] || []).find(x => String(x.wrin) === String(wrin));
+    const cs = it && it.caseSz;
+    return (cs > 0) ? ` = ${(Math.abs(variance) / cs).toFixed(2)} case(s)` : '';
+  };
   const fobRepPrintHtml = () => {
     const R = fobReport, esc = s => String(s || '').replace(/</g, '&lt;');
     const gap = r => r.gapPP == null ? '' : `${r.gapPP > 0 ? '+' : ''}${r.gapPP}pp`;
@@ -2204,7 +2225,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
       : (R.summary.nStores === 0 && R.summary.nInputStores > 0)
       ? `<p class="sub" style="color:#b45309">⚠ No FOB data resolved for any of the ${R.summary.nInputStores} store(s) in scope — NOT confirmed clean; the report couldn't match FOB data to a store. Do not read this as an all-clear.</p>`
       : '<p class="sub">No over-target or regressing stores in scope — clean.</p>';
-    const byOrg = R.orgs.map(o => `<h1 style="font-size:14px">${o.label} — avg ${o.summary.avgFobPP ?? '—'}%, ${o.summary.overTarget}/${o.summary.nStores} over target, ${o.summary.regressing} regressing</h1><table><thead><tr><th>Store</th><th>Patch</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Top item losers</th></tr></thead><tbody>${o.stores.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${esc(r.patch || '')}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}${r.masking ? ' · masking' : ''}</td><td>${esc(r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}`).join('; '))}</td></tr>`).join('')}</tbody></table>`).join('');
+    const byOrg = R.orgs.map(o => `<h1 style="font-size:14px">${o.label} — avg ${o.summary.avgFobPP ?? '—'}%, ${o.summary.overTarget}/${o.summary.nStores} over target, ${o.summary.regressing} regressing</h1><table><thead><tr><th>Store</th><th>Patch</th><th>FOB</th><th>Tgt</th><th>Gap</th><th>Trend</th><th>Top item losers</th></tr></thead><tbody>${o.stores.map(r => `<tr><td class="g">${esc(r.name || nm(r.loc))}</td><td>${esc(r.patch || '')}</td><td class="g${r.overTarget ? ' r' : ''}">${pct2(r.fobPct)}</td><td>${pct2(r.target)}</td><td class="${r.gapPP > 0 ? 'r' : ''}">${gap(r)}</td><td>${r.trend.dir}${r.masking ? ' · masking' : ''}</td><td>${esc(r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}${fobCaseSuffix(r.loc, i.wrin, i.variance)}`).join('; '))}</td></tr>`).join('')}</tbody></table>`).join('');
     return head + opps + byOrg;
   };
   // Leadership summary narrative — the district position + the math of laggards eroding achiever gains.
@@ -3498,7 +3519,7 @@ export function EOMDashboardPanel({ stores, ds, settings, onClose, initialMode, 
                   r.comps.some(c => c.deltaPP != null) ? div({ style: { marginBottom: '6px' } }, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Components vs target'),
                     div({ style: { display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '11px' } }, r.comps.filter(c => c.actualPP != null).map(c => span({ key: c.key, style: { color: c.deltaPP > 0.02 ? 'var(--crit)' : 'var(--text3)' } }, `${c.label} ${c.actualPP}%${c.tgtPP != null ? ` (t ${c.tgtPP}%)` : ''}`)))) : null,
                   r.topItems.length ? div(null, div({ style: { fontSize: '10px', textTransform: 'uppercase', color: 'var(--text3)', fontWeight: 700, marginBottom: '3px' } }, 'Top item losers'),
-                    div({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}`).join(' · '))) : null,
+                    div({ style: { fontSize: '11px', color: 'var(--text2)' } }, r.topItems.map(i => `${i.descr} ${$(i.dolDiff)}${fobCaseSuffix(r.loc, i.wrin, i.variance)}`).join(' · '))) : null,
                   r.masking ? div({ style: { fontSize: '10.5px', color: '#f5bc00', marginTop: '4px' } }, `Masking: ${$(r.grossLoss)} losses offset by ${$(r.grossGain)} gains (net ${$(r.net)}) — verify the offsetting counts are real.`) : null) : null);
             }))));
       };
