@@ -1,7 +1,7 @@
 // @ts-nocheck
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
-import { parseGradedVisit } from '../parsers/graded-visits.js';
+import { parseGradedVisit, parseEcoSureVisit } from '../parsers/graded-visits.js';
 import { loadGradedVisits, saveGradedVisits, loadVisitDAR } from '../lib/supabase.js';
 import { analyzeGradedVisits } from '../engine/visit-readiness.js';
 import { oepeSeconds } from '../utils/oepe.js';
@@ -146,9 +146,15 @@ export function GradedVisitsPanel({ ds, onClose }) {
 
   const onFiles = async (fileList) => {
     const all = Array.from(fileList || []);
+    // CFV/RGR export as HTML; EcoSure has no export -- its source is the raw JSON response body
+    // from propel.mcd.com's getThirdPartyFoodSafetyVisitReport, saved from the browser's Network
+    // tab (memory/finding-ecosure-propel-api-2026-08-22.md). One file per visit for JSON, same as
+    // HTML.
     const htmls = all.filter(f => /\.html?$/i.test(f.name));
-    const notHtml = all.length - htmls.length;
-    if (!htmls.length) { setMsg({ t: 'err', x: `No .html files (got ${all.length}). Export the visit as HTML, not PDF.` }); return; }
+    const jsons = all.filter(f => /\.json$/i.test(f.name));
+    const recognized = htmls.length + jsons.length;
+    const notRecognized = all.length - recognized;
+    if (!recognized) { setMsg({ t: 'err', x: `No .html or .json files (got ${all.length}). Export CFV/RGR as HTML, or save the EcoSure API response as JSON.` }); return; }
     setBusy(true); setMsg(null); setSkipList([]);
     const parsed = [], skipped = [];
     for (const f of htmls) {
@@ -158,6 +164,13 @@ export function GradedVisitsPanel({ ds, onClose }) {
         else skipped.push(f.name + (v.store ? ' — no date found' : ' — unrecognized format (no store id)'));
       } catch (e) { skipped.push(f.name + ' — parse error'); }
     }
+    for (const f of jsons) {
+      try {
+        const v = parseEcoSureVisit(await f.text());
+        if (v.store && v.dateISO) { v._file = f.name; parsed.push(v); }
+        else skipped.push(f.name + (v.store ? ' — no date found' : ' — unrecognized format (no restaurantNumber)'));
+      } catch (e) { skipped.push(f.name + ' — parse error (not valid JSON?)'); }
+    }
     // Key collisions = the parser read the same store+date for different files.
     const keys = parsed.map(v => String(v.store) + '|' + v.dateISO + '|' + (v.reportType || 'CFV'));
     const uniqueKeys = new Set(keys).size;
@@ -165,7 +178,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
     keys.forEach((k, i) => { (collisions[k] = collisions[k] || []).push(parsed[i]); });
     const collided = Object.entries(collisions).filter(([, arr]) => arr.length > 1)
       .map(([k, arr]) => `${arr.length}× same key ${k}  → e.g. ${arr[0]._file || ''} / ${arr[1]._file || ''}`);
-    console.log('[graded-visits] selected', all.length, '· HTML', htmls.length, '· parsed', parsed.length, '· unique keys', uniqueKeys, '· skipped', skipped.length, keys, all.map(f => f.name));
+    console.log('[graded-visits] selected', all.length, '· HTML', htmls.length, '· JSON', jsons.length, '· parsed', parsed.length, '· unique keys', uniqueKeys, '· skipped', skipped.length, keys, all.map(f => f.name));
     if (fileRef.current) fileRef.current.value = ''; // allow re-selecting the same files
     const res = parsed.length ? await saveGradedVisits(parsed) : { saved: 0, errors: [] };
     setBusy(false);
@@ -173,11 +186,11 @@ export function GradedVisitsPanel({ ds, onClose }) {
     if (res.errors.length) { setMsg({ t: 'err', x: 'Save error: ' + res.errors[0] }); return; }
     const dupN = parsed.length - uniqueKeys;
     const bits = [`Selected ${all.length}`];
-    if (notHtml) bits.push(`${htmls.length} HTML (${notHtml} non-HTML ignored)`);
+    if (notRecognized) bits.push(`${recognized} recognized (${notRecognized} ignored)`);
     bits.push(`parsed ${parsed.length}`, `saved ${res.saved}`);
     if (dupN > 0) bits.push(`${dupN} collapsed on duplicate store+date`);
     if (skipped.length) bits.push(`${skipped.length} skipped`);
-    setMsg({ t: (notHtml || skipped.length || dupN > 0) ? 'warn' : 'ok', x: bits.join(' · ') });
+    setMsg({ t: (notRecognized || skipped.length || dupN > 0) ? 'warn' : 'ok', x: bits.join(' · ') });
     if (res.saved) refresh();
   };
 
@@ -607,7 +620,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
             '📁 Upload folder'),
           h('input', { ref: fileRef, type: 'file', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
           h('input', { ref: dirRef, type: 'file', webkitdirectory: '', directory: '', multiple: true, style: { display: 'none' }, onChange: e => onFiles(e.target.files) }),
-          span({ style: { fontSize: 10, color: dragOver ? 'var(--amber)' : 'var(--text3)' } }, dragOver ? 'Drop to import' : 'Drag files or a whole folder here (or use the buttons). CFV & RGR HTML. Re-import overwrites same store+date.'),
+          span({ style: { fontSize: 10, color: dragOver ? 'var(--amber)' : 'var(--text3)' } }, dragOver ? 'Drop to import' : 'Drag files or a whole folder here (or use the buttons). CFV & RGR HTML, or EcoSure JSON. Re-import overwrites same store+date.'),
           msg && span({ style: { fontSize: 11, fontWeight: 600, marginLeft: 'auto', color: msg.t === 'ok' ? '#10b981' : msg.t === 'warn' ? '#f59e0b' : '#ef4444' } }, msg.x)),
 
         // Skipped files — so you can see exactly which didn't import and why.
@@ -620,7 +633,7 @@ export function GradedVisitsPanel({ ds, onClose }) {
           : visits.length === 0 ? div({ style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text3)', fontSize: 12, border: '1px dashed var(--bdr)', borderRadius: 8 } },
             div({ style: { fontSize: 26, marginBottom: 10 } }, '📋'),
             div({ style: { fontWeight: 700, marginBottom: 6 } }, 'No graded visits yet'),
-            'Upload your visit report HTML exports (CFV or RGR) above to get started.')
+            'Upload your visit report HTML exports (CFV or RGR), or EcoSure visit JSON, above to get started.')
             : [
               // Summary cards
               div({ key: 'cards', style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },

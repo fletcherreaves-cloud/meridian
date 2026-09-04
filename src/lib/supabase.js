@@ -3320,6 +3320,14 @@ export async function saveGradedVisits(rows) {
   const byKey = new Map();
   for (const r of rows) { if (r.store && r.dateISO) byKey.set(String(r.store) + '|' + r.dateISO + '|' + (r.reportType || 'CFV'), r); }
   const deduped = [...byKey.values()];
+  // parseEcoSureVisit() (src/parsers/graded-visits.js) carries the reviewer's name in
+  // `reviewerName`, NOT `visitBy` -- deliberately, so it can never reach this upsert as plaintext
+  // (memory/finding-ecosure-propel-api-2026-08-22.md's own PII note: "reviewedWithName is an
+  // employee name... routed through get_or_create_employee_token() like every other person
+  // field"). Tokenized here, the same identity-vault RPC saveAuditRows already uses, and only the
+  // resulting token is written -- into visit_by, EcoSure's closest existing column, since it has
+  // no reviewer column of its own and no name ever touches the table.
+  const reviewerTokenMap = await tokenizeRows(supabase, deduped, 'reviewerName');
   const upsert = deduped.map(r => ({
     report_type: r.reportType || 'CFV',
     loc:         String(r.store),
@@ -3328,7 +3336,7 @@ export async function saveGradedVisits(rows) {
     weekpart:    r.weekpart ?? null,
     owner:       r.owner    ?? null,
     manager:     r.manager  ?? null,
-    visit_by:    r.visitBy  ?? null,
+    visit_by:    r.visitBy ?? (r.reviewerName ? (reviewerTokenMap.get(r.reviewerName.trim()) ?? null) : null),
     score:           r.score    ?? null,
     pass:            r.pass     ?? null,
     channel:         r.channel  ?? null,

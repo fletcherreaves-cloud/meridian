@@ -167,3 +167,97 @@ export function parseGradedVisit(htmlText, { passThreshold = 80 } = {}) {
   const L = htmlToLines(htmlText);
   return L.some(l => /running great restaurants/i.test(l)) ? parseRGR(L, passThreshold) : parseCFV(L, passThreshold);
 }
+
+// ── EcoSure (3rd-party food safety) ──────────────────────────────────────────
+// Format IS now known (memory/finding-ecosure-propel-api-2026-08-22.md, owner-captured
+// 2026-08-22 from propel.mcd.com's getThirdPartyFoodSafetyVisitReport). Input is the raw JSON
+// response body for ONE visit -- a single GET returns a single visitId's report, unlike CFV/RGR's
+// HTML export. Accepts either a parsed object or a JSON string (the latter for a straight
+// file.text() call, matching how CFV/RGR read their files).
+//
+// Deliberately does NOT try to re-derive `pass` from the score or from criticalFlag/result --
+// visitMeetsTargetFlag is the report's OWN pass/fail determination (its exact target formula is
+// not documented anywhere captured), so this trusts it rather than inventing a threshold rule this
+// repo's own "measure it, don't reason about it" standing rule would flag as an unverified guess.
+// What IS computed here -- criticalFailCount, citedItems -- is arithmetic on values present in the
+// payload, not an inference about how they combine into pass/fail.
+const _ecoSectionOf = q => String(q?.questionSection ?? '').trim();
+const _ecoCodeOf = q => String(q?.questionCode ?? '').trim(); // trailing-space codes ("FS-A-US ") -- trim on ingest, per the finding
+const _ecoIsCritical = q => q?.criticalFlag === 1 || q?.criticalFlag === true || q?.criticalFlag === '1';
+const _ecoIsCited = q => Number(q?.result) === 1;               // 0 = pass, 1 = cited/fail, -1 = N/A
+const _ecoIsNA = q => Number(q?.result) === -1;
+
+// visitDate's raw wire format was never captured -- try ISO first, then the CFV/RGR "DD-Mon-YYYY"
+// shape (parseVisitDate above) in case the API uses the same convention as the exported reports,
+// then a plain Date parse as a last resort. Returns null (never throws) if none match, matching
+// every other date field in this file -- an unparseable date is a skip, not a guess.
+function parseEcoSureDate(s) {
+  if (!s) return null;
+  const str = String(s).trim();
+  const iso = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const viaCfvFormat = parseVisitDate(str);
+  if (viaCfvFormat) return viaCfvFormat;
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
+export function parseEcoSureVisit(input) {
+  const v = typeof input === 'string' ? JSON.parse(input) : (input || {});
+  const questions = Array.isArray(v.questions) ? v.questions : [];
+
+  const citedItems = questions.filter(_ecoIsCited).map(q => ({
+    code: _ecoCodeOf(q),
+    section: _ecoSectionOf(q),
+    critical: _ecoIsCritical(q),
+    pointsLost: (Number(q?.pointsPossible) || 0) - (Number(q?.pointsReceived) || 0),
+    reasons: Array.isArray(q?.reasons) ? q.reasons.map(r => ({ code: r?.reasonCode ?? null, text: r?.reasonText ?? null })) : [],
+  }));
+  const criticalFailCount = citedItems.filter(c => c.critical).length;
+
+  const sections = {};
+  for (const q of questions) {
+    const sec = _ecoSectionOf(q);
+    if (!sec) continue;
+    const s = sections[sec] || (sections[sec] = { questionCount: 0, citedCount: 0, naCount: 0 });
+    s.questionCount++;
+    if (_ecoIsCited(q)) s.citedCount++;
+    if (_ecoIsNA(q)) s.naCount++;
+  }
+
+  const scoreRaw = v.overallScorePercentage;
+  const score = scoreRaw == null ? null : parseFloat(String(scoreRaw).replace('%', ''));
+
+  return {
+    reportType: 'EcoSure',
+    title: 'EcoSure Food Safety Visit',
+    store: v.restaurantNumber != null ? String(v.restaurantNumber) : null,
+    name: v.restaurantName ?? null,
+    date: v.visitDate ?? null,
+    dateISO: parseEcoSureDate(v.visitDate),
+    daypart: null,
+    weekpart: null,
+    owner: null,
+    manager: null,
+    // Tokenized at save time (saveGradedVisits, src/lib/supabase.js), never persisted as
+    // plaintext -- reviewedWithName is a real employee name (memory finding's own PII note).
+    reviewerName: v.reviewedWithName ?? null,
+    completionTime: null,
+    score,
+    pass: v.visitMeetsTargetFlag === 1 || v.visitMeetsTargetFlag === true,
+    status: null,
+    channel: null,
+    mobileApp: null,
+    modules: {
+      pointsReceived: v.pointsReceived ?? null,
+      pointsPossible: v.pointsPossible ?? null,
+      questionCount: questions.length,
+      citedCount: citedItems.length,
+      criticalFailCount,
+      sections,
+      citedItems,
+      comments: v.visitComments ?? null,
+    },
+  };
+}
