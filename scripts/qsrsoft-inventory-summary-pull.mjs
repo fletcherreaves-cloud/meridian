@@ -36,7 +36,7 @@
 //   Network -> any prod.ebos.qsrsoft.com/api/inv/ request -> copy X-Auth-Token -> update
 //   QSRSOFT_EBOS_TOKEN.
 
-import { createClient } from '@supabase/supabase-js';
+import { safeCreateClient } from './lib/safe-supabase-client.mjs';
 import { withRetry } from './_retry.mjs';
 import { makeOutcomeTracker } from './lib/pull-outcome.mjs';
 import { EBOS_BASE, resolveEbosToken } from './lib/ebos-auth.mjs';
@@ -55,7 +55,13 @@ const STORE_NSNS = (process.env.INVSUM_STORES
     38609, 43380, 43701,
   ]).map(String);
 
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+// Guarded, not unconditional -- inclusiveDaySpan()/deriveUsageRate() are unit-tested by importing
+// this module directly (no supabase/fetch dependency in those functions themselves), and vitest's
+// environment has neither env var set. safeCreateClient() (not a bare env-var truthy check) is the
+// established pattern here -- scripts/lib/safe-supabase-client.mjs -- because a truthy-but-dummy
+// value stubbed by an unrelated test file can otherwise reach createClient() and crash Node 20's
+// Realtime sub-client setup even with fake credentials (see that file's own comment).
+const supabase = safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const pad2 = n => String(n).padStart(2, '0');
 const pad7 = n => String(n).padStart(7, '0');
