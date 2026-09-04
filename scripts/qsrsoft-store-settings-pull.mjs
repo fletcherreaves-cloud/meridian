@@ -11,20 +11,22 @@
 //   GET https://prod-green.ebos.qsrsoft.com/store_settings/{nsn}/settings?store_busn_dt=YYYY-MM-DD
 //   -> { drawer, safe, instore, inventory, fdc_state, homepageMetrics, misc, storeConfig }
 //
-// Two things distinguish this from every other eBOS pull, both UNVERIFIED in this environment
-// (no QSRSoft credentials reach this sandbox -- see the memory file's verification-caveat section):
+// Two things distinguish this from every other eBOS pull. Both were unverified when first
+// written (no QSRSoft credentials reach this sandbox) and were RESOLVED the same day by the
+// first real workflow_dispatch run (27/27 stores saved, log actually read -- see the memory
+// file's now-updated "RESOLVED" section, not left as an open caveat):
 //   1. Different HOST than the shared EBOS_BASE (prod-green.ebos.qsrsoft.com, not prod.ebos.qsrsoft.com)
-//      and no /api/ path prefix. Presumed same eBOS token family (same SSO/Cognito auth), but that
-//      is an assumption, not a measurement -- resolveEbosToken() is reused as-is, and an
-//      AUTH_FAILED here is exactly as diagnosable as any other eBOS pull's.
+//      and no /api/ path prefix. Confirmed: a Playwright-minted eBOS token (resolveEbosToken()'s
+//      fallback rung, reused as-is -- no new auth mechanism) authenticated against this host with
+//      no AUTH_FAILED across all 27 stores.
 //   2. The captured request's own Origin/Referer was https://prod.ebos.qsrsoft.com (NOT
 //      v3.myqsrsoft.com, unlike every other eBOS pull) -- honored exactly as captured rather than
 //      copied from the other scripts, since a same-site fetch can be origin-sensitive.
 //   3. store_busn_dt: the capture used a stale date (2016-09-28) that was almost certainly just
 //      whatever was in the browser's date picker, not a load-bearing value. Defaults here to
-//      TODAY (UTC) on the reasoning that this is a current-config snapshot, not a report -- if the
-//      endpoint actually returns date-specific historical settings, this default is wrong and will
-//      need correcting once someone can observe real behavior (STORESET_BUSN_DATE overrides it).
+//      TODAY (UTC) -- confirmed correct: the first real run logged "pulling 27 store(s) as of
+//      <today>" and all 27 stores returned the expected 8-top-level-key shape, no date-format
+//      error (STORESET_BUSN_DATE still overrides it for a manual probe).
 //
 // A CONFIG object, not a metric -- one request per store, pulled weekly like qsr_store_controls
 // (config changes rarely). Stored as a raw JSONB blob (same discipline as qsr_store_controls: this

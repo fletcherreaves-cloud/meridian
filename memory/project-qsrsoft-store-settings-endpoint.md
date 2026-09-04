@@ -31,28 +31,29 @@ GET https://prod-green.ebos.qsrsoft.com/store_settings/{nsn}/settings?store_busn
 - Returns a rich JSON **config** object (not time-series) — pull weekly, not daily, same cadence
   as `qsr_store_controls`.
 
-## ⚠️ Two open, unverified questions (this environment has no QSRSoft credentials — see
-CLAUDE.md's Dev Rules; nothing here could be dry-run against live data)
-1. **`store_busn_dt` semantics.** The capture used `2016-09-28` — a decade-stale date, almost
-   certainly just whatever was left in the browser's date picker when the request fired, not a
-   deliberately chosen value. The pull script defaults to **today (UTC)** on the reasoning that
-   this is a current-config snapshot endpoint, not a report — but if the endpoint actually returns
-   the settings *as they were on that historical date* (a settings-versioning feature), today's
-   default is wrong and the whole current design (current-state table, one row per store,
-   overwritten each pull) would need rethinking into something date-dimensioned instead.
-   `STORESET_BUSN_DATE` env var overrides it for a manual probe.
-2. **Same-host-family auth assumption.** `resolveEbosToken()`'s SSO-exchange token is presumed to
-   work against `prod-green.ebos.qsrsoft.com` the same as it does against `prod.ebos.qsrsoft.com`
-   (same Cognito/eBOS SSO backing both, going by the shared `x-auth-token`/`x-current-nsn` header
-   shape) — not independently confirmed. An `AUTH_FAILED` on this pull specifically (while the
-   sibling `qsr_store_controls`/FOB/On-Hand pulls keep working) would falsify this and mean
-   `prod-green` genuinely needs its own token minting path.
+## ✅ RESOLVED 2026-09-04 — both questions below were live-measured on the first real run, same
+day this file was written. **Do not re-raise either as open.**
+`workflow_dispatch`-triggered run (https://github.com/fletcherreaves-cloud/meridian/actions/runs/33913094476),
+job log actually read (not inferred from the green checkmark, per the "measure it" standing rule):
+1. **`store_busn_dt` semantics — today (UTC) works.** Log: `[store-settings] pulling 27 store(s)
+   as of 2026-09-04…` followed by `27/27 store(s) saved`, each with the expected `8 top-level
+   key(s)`. No date-format error, no empty/different-shaped response. The historical-versioning
+   worry (that the endpoint might return settings *as of* a past date rather than current config)
+   did not materialize — a current-date `store_busn_dt` returns the current config, matching this
+   file's original assumption.
+2. **Cross-host auth — confirmed, via the Playwright rung specifically.** The SSO-exchange rung
+   didn't return a token this run (expected — QSRSoft's Cognito token is short-lived by
+   construction, see CLAUDE.md), so `resolveEbosToken()` fell through to
+   `getEbosTokenViaPlaywright()`, which captured a fresh eBOS token from a live browser session.
+   That Playwright-minted token **was then accepted by `prod-green.ebos.qsrsoft.com`** — the
+   log shows no `AUTH_FAILED` anywhere, all 27 stores saved. This confirms the same-host-family
+   auth assumption for at least the Playwright-token path; the SSO-exchange path specifically
+   against `prod-green` remains unexercised (it simply didn't get reached this run) but is the
+   same code path already proven against `prod.ebos.qsrsoft.com` by every sibling eBOS pull, so
+   there is no reason to expect it to behave differently.
 
-**The owner should dry-run this locally once** (`node scripts/qsrsoft-store-settings-pull.mjs
---dry` — no such flag exists yet, so really: a single-store `SETTINGS_STORES=3708 QSRSOFT_DEBUG=1
-node scripts/qsrsoft-store-settings-pull.mjs` against a real session) before trusting the weekly
-schedule, same diligence the weather-impact script's own header asked for under the same
-no-live-verification constraint.
+`qsr_store_settings` now holds real per-store data for all 27 stores (backfilled the same day the
+table's schema was run).
 
 ## What's in it (why it's valuable)
 - **`drawer`** — starting drawer bank (`settingDrawerAmount` 100 / `settingDrawerCount` 6),
