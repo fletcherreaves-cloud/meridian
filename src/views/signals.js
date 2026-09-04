@@ -6,7 +6,8 @@ import { scanCsatDrivers, CSAT_OUTCOME_KEYS, describeDriver, tierWord } from '..
 import { saveCustomSignal, updateCustomSignal, loadDailyActivity, triggerDarSync, loadSavedCorrelations, saveSavedCorrelation, updateSavedCorrelation, deleteSavedCorrelation, loadHourlyProjectionAccuracy, loadQsrStoreControls, loadAuditRowsWindow } from '../lib/supabase.js';
 import { districtHourlyRatios, perStoreHourlyRatios, hourlyBiasTable } from '../engine/projection-accuracy.js';
 import { computeParkOepeQuadrants, QUADRANT_READ } from '../engine/park-oepe-quadrant.js';
-import { metricAvg, metricRate, ensureLazyFillWide } from '../engine/metric-source.js';
+import { metricAvg, metricRate, metricSeries, ensureLazyFillWide } from '../engine/metric-source.js';
+import { lastClosedBusinessDay } from '../engine/swing-feed.js';
 import { STORE_NAMES, sNameC, getKB, DEFAULT_TARGETS } from '../constants.js';
 import { dKey } from '../utils/date.js';
 import { f$ } from '../utils/fmt.js';
@@ -17,7 +18,7 @@ import { f$ } from '../utils/fmt.js';
 // (analytics.js) uses, lifted out so this file doesn't statically import that much larger
 // module. pearson/spearman/pValueFromR/benjaminiHochberg are Scanner's own stats, imported
 // directly rather than via signal-registry.js's re-export (see correlation-stats.js's header).
-import { CORR_TARGETS, CORR_PREDICTORS } from '../engine/correlation-predictors.js';
+import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY } from '../engine/correlation-predictors.js';
 import { pearson, spearman, pValueFromR, benjaminiHochberg, SCANNER_DEFAULT_MIN_ABS_R, SCANNER_DEFAULT_ALPHA } from '../engine/correlation-stats.js';
 import { printHtml } from '../utils/print-html.js';
 
@@ -1967,7 +1968,9 @@ function ScannerTab({ ds, onTrack, onExportReady }) {
 //     sentences, the strength bars, the expandable per-metric detail, the raw-stats table -- is
 //     unchanged presentation, per the "merge the engine, keep the presentation" decision
 //     (memory/decisions-panel-inventory-2026-08-10.md).
-function CorrelationsTab({ ds }) {
+// Exported for direct testability, same reasoning as ParkOepeTab's own export comment: was
+// previously only reachable through SignalsPanel's internal tab-navigation state.
+export function CorrelationsTab({ ds }) {
   const LOCS = uM(() => Object.keys(STORE_NAMES).sort((a, b) => STORE_NAMES[a].localeCompare(STORE_NAMES[b])), []);
   const [selLoc, setSelLoc] = uSt(LOCS[0]);
   const [target, setTarget] = uSt('sales');
@@ -1975,21 +1978,23 @@ function CorrelationsTab({ ds }) {
   const [expandedId, setExpandedId] = uSt(null);
 
   const correlations = uM(() => {
-    const lR = (ds?.laborRows || []).filter(r => String(r.loc) === selLoc && r.sales > 0);
-    const oR = (ds?.opsRows || []).filter(r => String(r.loc) === selLoc);
-    const cR = (ds?.ctrlRows || []).filter(r => String(r.loc) === selLoc);
-    const byDate = {};
-    const dk = d => dKey(d);
-    lR.forEach(r => { byDate[dk(r.date)] = { ...byDate[dk(r.date)], ...r }; });
-    oR.forEach(r => { byDate[dk(r.date)] = { ...byDate[dk(r.date)], ...r }; });
-    cR.forEach(r => { byDate[dk(r.date)] = { ...byDate[dk(r.date)], ...r }; });
-    const joined = Object.values(byDate).filter(r => r.sales > 0);
-    const tFn = CORR_TARGETS.find(t2 => t2.id === target)?.fn || (r => r.sales);
-    if (joined.length < 10) return [];
+    // Auto-first per-day series (metric-source.js's metricSeries), not a raw ds.laborRows/
+    // opsRows/ctrlRows join -- that was manual-upload-only, so this tab went blank on any
+    // auto-only recent day (same bug, same fix, as analytics.js's computeAllCorrelations; see
+    // TARGET_METRIC_KEY/PREDICTOR_METRIC_KEY's own comment in correlation-predictors.js). Full
+    // history (not a recency-capped window) -- a correlation coefficient wants maximum sample
+    // size, matching computeAllCorrelations' own reasoning.
+    const range = { s: new Date('2000-01-01'), e: lastClosedBusinessDay() };
+    const targetKey = TARGET_METRIC_KEY[target] || TARGET_METRIC_KEY.sales;
+    const tSeries = metricSeries(ds, selLoc, range, targetKey);
+    const dates = Object.keys(tSeries);
+    if (dates.length < 10) return [];
 
     const scored = CORR_PREDICTORS.map(pred => {
-      const paired = joined.map(r => ({ x: pred.fn(r), y: tFn(r) }))
-        .filter(({ x, y }) => x != null && x > 0 && y > 0 && !isNaN(x) && !isNaN(y));
+      const predKey = PREDICTOR_METRIC_KEY[pred.id];
+      const pSeries = predKey ? metricSeries(ds, selLoc, range, predKey) : {};
+      const paired = dates.map(dk => ({ x: pSeries[dk], y: tSeries[dk] }))
+        .filter(({ x, y }) => x != null && x > 0 && y != null && y > 0 && !isNaN(x) && !isNaN(y));
       const r = pearson(paired);
       const n = paired.length;
       return { ...pred, r, n, p: pValueFromR(r, n), paired };

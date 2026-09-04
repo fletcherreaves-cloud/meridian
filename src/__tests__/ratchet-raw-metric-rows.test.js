@@ -48,7 +48,14 @@ const ROOT = 'src/views';
 // comment carves out ("PANELS must not source metrics from raw rows; it was never that raw
 // rows are untouchable anywhere"), and the same category the sibling's pre-existing hasData
 // already established as acceptable within this ratchet's own baseline.
-const CEILING = 160;
+// 2026-09-04: -5 -- analytics.js's computeAllCorrelations and signals.js's CorrelationsTab
+// (District Lens / Signals Correlations tab) both joined RAW ds.laborRows/opsRows/ctrlRows rows
+// by date to pair a predictor against a target, manual-upload-only -- so either correlation
+// explorer went blank on any auto-only recent day. Converted both to metric-source.js's
+// metricSeries (auto-first per metric), removing the raw-row reads entirely. See
+// src/__tests__/analytics-correlations-auto-first.test.js and
+// src/__tests__/signals-correlations-tab-auto-first.test.js for the regression coverage.
+const CEILING = 155;
 
 const PATTERN = /\bds\??\.(laborRows|ctrlRows|opsRows)\b/g;
 

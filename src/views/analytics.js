@@ -26,7 +26,7 @@ import { metricSeries, metricAvg, metricDaily, ensureLazyFill, isLazyFillPending
 import { fobSnapshotByStore, pLFoodCostFromRow } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { computeStoreDataDiscipline, disciplineSummary } from '../engine/waste-discipline.js';
-import { CORR_TARGETS, CORR_PREDICTORS } from '../engine/correlation-predictors.js';
+import { CORR_TARGETS, CORR_PREDICTORS, TARGET_METRIC_KEY, PREDICTOR_METRIC_KEY } from '../engine/correlation-predictors.js';
 import { CoachingModal } from './coaching-modal.js';
 
 const h=React.createElement;
@@ -334,25 +334,35 @@ const corrPearson = (xs, ys) => {
   return denom===0?null:num/denom;
 };
 
+// Auto-first per-day series (metric-source.js's metricSeries) — same fix signature #2 already
+// gave computeMetricAverages below: this used to join RAW ds.laborRows/opsRows/ctrlRows rows by
+// date, manual-upload-only, so the correlation explorer went blank on any auto-only recent day
+// (notes-61 measured labor_rows 16 days stale while every auto stream was current). Pairing is
+// now per-metric-series-by-date instead of per-raw-row, but the value filter (x>0/y>0, dropping
+// zero/negative readings) is preserved EXACTLY as it was, to avoid silently changing which days
+// count toward a store's correlation beyond the sourcing fix itself.
+// Full history, not a recency-capped window like computeMetricAverages' 90 days below — a
+// correlation coefficient wants maximum sample size (n), not "current state"; the two functions
+// answer different questions and intentionally use different windows. Matches the existing
+// "load everything" idiom already used elsewhere in this file (e.g. the peer-comparison range).
 function computeAllCorrelations(ds) {
   if(!ds||!ds.loaded) return {};
+  const range={s:new Date('2000-01-01'), e:lastClosedBusinessDay()};
   const LOCS=Object.keys(STORE_NAMES);
   const result={};
   LOCS.forEach(loc=>{
     result[loc]={};
-    const lR=(ds.laborRows||[]).filter(r=>String(r.loc)===loc&&r.sales>0);
-    const oR=(ds.opsRows||[]).filter(r=>String(r.loc)===loc);
-    const cR=(ds.ctrlRows||[]).filter(r=>String(r.loc)===loc);
-    const byDate={};
-    const dk=d=>dKey(d);
-    lR.forEach(r=>{byDate[dk(r.date)]={...byDate[dk(r.date)],...r};});
-    oR.forEach(r=>{byDate[dk(r.date)]={...byDate[dk(r.date)],...r};});
-    cR.forEach(r=>{byDate[dk(r.date)]={...byDate[dk(r.date)],...r};});
-    const joined=Object.values(byDate).filter(r=>r.sales>0);
+    const tgtSeries={};
+    CORR_TARGETS.forEach(tgt=>{ tgtSeries[tgt.id]=metricSeries(ds,loc,range,TARGET_METRIC_KEY[tgt.id]); });
+    const predSeries={};
+    CORR_PREDICTORS.forEach(p=>{ const key=PREDICTOR_METRIC_KEY[p.id]; predSeries[p.id]=key?metricSeries(ds,loc,range,key):{}; });
     CORR_TARGETS.forEach(tgt=>{
-      if(joined.length<10){result[loc][tgt.id]=[];return;}
+      const tSeries=tgtSeries[tgt.id];
+      const dates=Object.keys(tSeries);
+      if(dates.length<10){result[loc][tgt.id]=[];return;}
       result[loc][tgt.id]=CORR_PREDICTORS.map(p=>{
-        const paired=joined.map(r=>({x:p.fn(r),y:tgt.fn(r)}))
+        const pSeries=predSeries[p.id];
+        const paired=dates.map(dk=>({x:pSeries[dk],y:tSeries[dk]}))
           .filter(({x,y})=>x!=null&&x>0&&y>0&&!isNaN(x)&&!isNaN(y));
         const r=corrPearson(paired.map(d=>d.x),paired.map(d=>d.y));
         const n=paired.length;
@@ -364,14 +374,6 @@ function computeAllCorrelations(ds) {
   });
   return result;
 }
-
-// CORR_PREDICTOR id → metric-source.js key. All 9 predictors already have a chain
-// (data-integrity sweep signature #2 — this used to read ds.laborRows/opsRows/ctrlRows
-// directly, manual-only, so the correlation explorer went blank on auto-only recent days).
-const PREDICTOR_METRIC_KEY = {
-  oepe:'oepe', park:'park', r2p:'r2p', labor:'laborPct', tpph:'tpph', otHrs:'otHrs',
-  cashOS:'cashOSPct', tRedA:'tRedAPct', discPct:'discPct',
-};
 
 function computeMetricAverages(ds) {
   if(!ds||!ds.loaded) return {};
@@ -8387,4 +8389,4 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
   );
 }
 
-export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP };
+export { AIInsightsTab, DistrictLensPanel, WhyEnginePanel, FOBAnalysisPanel, ForecastAccuracyPanel, AIBacktestScanner, DialedInPanel, DateRangeReport, ForecastAudit, LocationBrief, ProjectionVsActualsReport, DialedInComparisonReport, DistrictPriorityBrief, AttentionPanel, DataManagerPanel, StoreOnePager, MonthlyProjectionsPanel, StoreVlhConfigPanel, FOB_COMP, computeAllCorrelations, computeMetricAverages };
