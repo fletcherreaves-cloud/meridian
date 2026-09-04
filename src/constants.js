@@ -248,7 +248,8 @@ async function fetchOpenMeteoWeather(startDate, endDate, onProgress) {
       `&start_date=${s}&end_date=${e}`+
       `&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,`+
       `precipitation_sum,wind_speed_10m_max`+
-      `&temperature_unit=fahrenheit&timezone=${encodeURIComponent(tz)}`;
+      `&temperature_unit=fahrenheit&precipitation_unit=inch&wind_speed_unit=mph`+
+      `&timezone=${encodeURIComponent(tz)}`;
     const RETRY_DELAYS=[0,15000,30000,60000,120000]; // 0, 15s, 30s, 60s, 2min
     let fetched = false;
     for(let attempt=0; attempt<RETRY_DELAYS.length && !fetched; attempt++){
