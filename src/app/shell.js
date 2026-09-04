@@ -241,6 +241,81 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
     ];
   };
 
+  // ── Global nav search (owner req: "a search bar at the top of the menu to find anything
+  // in-app") ────────────────────────────────────────────────────────────────────────────────
+  // Index built from the SAME two sources + the SAME visibility rules the sidebar itself
+  // already renders from -- panelsForSection() per real section (matching renderSection()'s own
+  // `can(...)` gate) plus testKitchenPanels() when Test Kitchen is showing (renderTestKitchen()'s
+  // own `!betaMode` gate) -- so a search result is never something the user couldn't also have
+  // found by scrolling, and never silently drifts from what's actually clickable. kind:'internal'/
+  // 'orphan'/'hub-tab' panels are excluded by construction (panelsForSection/testKitchenPanels only
+  // return 'nav'/'optional'/'test-kitchen' kinds) -- an internal redirect-only id or a broken
+  // orphan is not something a user should be able to "find".
+  const [navQuery, setNavQuery] = useState('');
+  const [navSearchOpen, setNavSearchOpen] = useState(false);
+  const navSearchRef = useRef(null);
+  useEffect(() => {
+    const handler = e => { if (navSearchRef.current && !navSearchRef.current.contains(e.target)) setNavSearchOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+  const navIndex = useMemo(() => {
+    const seen = new Set();
+    const items = [];
+    for (const s of SECTIONS) {
+      for (const p of panelsForSection(s.id, can)) {
+        if (seen.has(p.id) || (betaMode && BETA_HIDDEN_EXTRAS.has(p.id))) continue;
+        seen.add(p.id);
+        items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: s.label });
+      }
+    }
+    if (!betaMode) {
+      for (const p of testKitchenPanels(can)) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        items.push({ id: p.id, label: p.label, icon: p.icon, groupLabel: 'Test Kitchen' });
+      }
+    }
+    return items;
+  }, [can, betaMode]);
+  const navResults = useMemo(() => {
+    const q = navQuery.trim().toLowerCase();
+    if (!q) return [];
+    return navIndex.filter(p => p.label.toLowerCase().includes(q) || p.groupLabel.toLowerCase().includes(q)).slice(0, 8);
+  }, [navIndex, navQuery]);
+  const goNavResult = (id) => {
+    onOpenModal(id); setNavQuery(''); setNavSearchOpen(false); closeMobile();
+  };
+  const navSearchBox = collapsed ? null : div({ ref: navSearchRef, style: { position: 'relative', padding: '8px 10px', borderBottom: '.5px solid var(--bdr)', flexShrink: 0 } },
+    inp({
+      type: 'text', placeholder: '🔍 Search…', value: navQuery,
+      onChange: e => { setNavQuery(e.target.value); setNavSearchOpen(true); },
+      onFocus: () => setNavSearchOpen(true),
+      onKeyDown: e => {
+        if (e.key === 'Enter' && navResults[0]) goNavResult(navResults[0].id);
+        else if (e.key === 'Escape') { setNavQuery(''); setNavSearchOpen(false); }
+      },
+      style: { width: '100%', boxSizing: 'border-box', fontSize: 11, padding: '6px 8px',
+        borderRadius: 'var(--r)', border: '.5px solid var(--bdr2)', background: 'var(--surf2)', color: 'var(--text)' },
+    }),
+    navSearchOpen && navQuery.trim() && div({
+      style: { position: 'absolute', top: '100%', left: 10, right: 10, zIndex: 50, marginTop: 2,
+        background: 'var(--surf)', border: '.5px solid var(--bdr2)', borderRadius: 'var(--r)',
+        boxShadow: '0 8px 24px rgba(0,0,0,.35)', maxHeight: 320, overflowY: 'auto' },
+    },
+      navResults.length
+        ? navResults.map(p => div({
+            key: p.id, onClick: () => goNavResult(p.id),
+            style: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer' },
+            onMouseEnter: e => { e.currentTarget.style.background = 'var(--surf2)'; },
+            onMouseLeave: e => { e.currentTarget.style.background = 'transparent'; },
+          },
+            span({ style: { fontSize: 14, flexShrink: 0 } }, p.icon),
+            div({ style: { flex: 1, minWidth: 0 } },
+              div({ style: { fontSize: 12, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, p.label),
+              div({ style: { fontSize: 9, color: 'var(--text3)' } }, p.groupLabel))))
+        : div({ style: { padding: '10px', fontSize: 11, color: 'var(--text3)' } }, 'No matches.')));
+
   const sideStyle=isMobile
     ?{position:'fixed',top:0,left:mobileOpen?0:'-270px',height:'100%',width:w,zIndex:300,
       background:'var(--surf)',borderRight:'.5px solid var(--bdr)',
@@ -272,6 +347,8 @@ function AppSidebar({view, setView, selStore, stores, ds, settings, onOpenModal,
           settings.districtName||'District')
       )
     ),
+
+    navSearchBox,
 
     // ── Navigation ──────────────────────────────────────────────
     div({style:{flex:1,overflowY:'auto',overflowX:'hidden',padding:collapsed?'8px 4px':'8px'}},
