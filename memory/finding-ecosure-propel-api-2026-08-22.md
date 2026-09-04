@@ -1288,3 +1288,99 @@ actionable, since this file fully documented that format.
   addenda (2024/2025, resolved which-year-is-which) — re-entering those as individual visits was
   not attempted here, since the per-visit JSON for each of those ~107 visits was never itself saved
   (only the aggregate rollup was).
+
+---
+
+# 🎯 Addendum — bulk visitId enumeration FOUND (2026-09-04), and a real parser bug it exposed
+
+This file's "still open" item 6 — *"EcoSure visitIds cannot currently be enumerated in bulk, only
+read off the UI one visit at a time"* — **is resolved.** The owner captured a full HAR of a live,
+authenticated Propel session (browsing Restaurant Visit History for two stores, one at
+`hierarchy-level 12` directly and one reached via the operator-level Scored Visit Results screen)
+and it hit two of the four actions this file listed as "unexplored, deprioritized, do not spend
+captures on these." One of them answers the enumeration question outright.
+
+## `getBrandProtectionVisits` IS the bulk EcoSure visit-list endpoint
+
+```
+GET /api/visits?v=801&action=getBrandProtectionVisits&locationId=<store hierarchyNodeId>&cultureName=en-US
+```
+
+Despite its name (probably a legacy/internal label for the whole third-party-audit family), the
+response is **one store's complete graded-visit history across several programs**, mixed in a
+single `brand_protection_visits[]` array, disambiguated by `visitTypeDescription`. Measured on one
+live store (`hierarchyNodeId 195500301853`, 16 total rows):
+
+| `visitTypeDescription` | count | meaning |
+|---|---|---|
+| `visits.thirdPartyFoodSafety` | 10 | **EcoSure** — 2022 through 2026, one row per visit |
+| `visits.runningGreatRestaurants` | 4 | RGR |
+| `visits.rgrHealthAndSafety` | 2 | RGR Health & Safety (a program not otherwise documented in this file) |
+
+Each `thirdPartyFoodSafety` row carries `visitId`, `visitDate`, `visitYear`, plus a **coarse
+score/result already computed** (`foodSafetyResult` grade letter, `foodSafetyPercentage`,
+`foodSafetyMissedCriticalQuestionQuantity`, `visitMeetsTargetFlag`) — useful for a quick rollup
+without a second call, but the per-question `questions[]` detail this file's core finding depends
+on still requires the follow-up `getThirdPartyFoodSafetyVisitReport&visitId=<id>` call per visit.
+
+**The full enumeration chain, all three legs confirmed live in the same capture:**
+1. `getDescendants` (`parentHierarchyLevel=11&parentHierarchyNode=<operator root>&childHierarchyLevel=12`) → every store's `hierarchyNodeId` + name (one call, `totalCount: 27`, matches the estate size this file already established).
+2. `getBrandProtectionVisits&locationId=<hierarchyNodeId>` per store → that store's full visit history with `visitId`s, filterable to `thirdPartyFoodSafety`.
+3. `getThirdPartyFoodSafetyVisitReport&visitId=<id>` per EcoSure visit (already documented above) → the full per-question report.
+
+A **browser-console script implementing this chain** now exists:
+`scripts/browser-ecosure-bulk-capture.js` — paste into DevTools Console on a signed-in
+`propel.mcd.com` tab; it walks all 27 stores, downloads a seed file in
+`memory/data/ecosure-visits-seed.json`'s exact shape, ready for
+`scripts/import-ecosure-history.mjs`. Uses `fetch(..., {credentials:'include'})` so the browser's
+own session cookies carry the auth — the script itself never reads or transmits a credential value.
+This turns backfill from "one hand-read visitId per capture" into "one console paste per session,"
+though it still requires a human physically at a signed-in browser (SSO+MFA still blocks any
+unattended path — unchanged from this file's security section).
+
+## 🔴 This also exposed a real bug in the shipped parser — now fixed
+
+The real `getThirdPartyFoodSafetyVisitReport` response wraps the report in a `results` envelope —
+`{"results": {"restaurantName": ..., "restaurantNumber": ..., "questions": [...], ...}}` — not the
+flat object this file's own payload section (and the fixture in
+`dispatch-ecosure-visit-parser.test.js`) assumed. `parseEcoSureVisit()` (`src/parsers/graded-visits.js`)
+was never checked against a real captured response until this HAR — the shipped fixture was
+hand-built flat from this file's prose documentation and passed every test while being
+unrepresentative of the actual wire shape. **Fixed 2026-09-04**: the function now unwraps
+`{results: {...}}` when present, falling back to the input as-is otherwise (so the existing flat
+fixtures, and any future pre-unwrapped caller, still work). Three new tests cover the wrapped
+shape (object and JSON-string forms) plus the flat back-compat case. `browser-ecosure-bulk-capture.js`
+deliberately stores the RAW wrapped response in the seed file — do not unwrap it before saving;
+the parser does that itself.
+
+**What this changes about the earlier `getThirdPartyFoodSafetyVisitReport` payload doc above**:
+that section's field list is otherwise still accurate — it just needs a `results.` prefix in front
+of every field name when reading the raw HTTP response body. Not correcting that section in place
+(it would just be a v.results.restaurantName rewrite of already-correct field names) — flagging
+here so a future reader checking the wire shape against this file's prose does not repeat the same
+gap this addendum found.
+
+## The `visitType=4` operator-level rollup — checked, not a new capability
+
+The same HAR also called `getScoredVisitListResults` with `visitType=4` (no `category=`) at the
+operator level — a candidate for the long-open "what does a non-zero `visitType` value mean"
+question. **Confirmed: `visitType=4` = the third-party-food-safety (EcoSure) category filter on
+the existing rollup**, e.g. `rollupResults.thirdPartyFoodSafety: {visitQuantity, scorePercentage,
+passPercentage, ...}` and each per-store row's `childHierarchyNodeName` + its own
+`thirdPartyFoodSafety` sub-object. This is the **same per-store ANNUAL ROLLUP shape** already
+established as a dead end for ingest in `memory/finding-propel-scored-visits-are-rollups-2026-08-23.md`
+(no visitId, no per-visit dates, one row per store) — `visitType=4` answers what the parameter
+means, but changes nothing about that dead end. The real enumeration path is `getBrandProtectionVisits`
+above, not this rollup.
+
+## The other three "unexplored, deprioritized" actions — now measured, still not useful for EcoSure
+
+The same capture also hit `getPaceSupportVisits` (empty, `[]`), `getMarketSupportVisits` (4 rows,
+`visitTypeDescription: "Check-In Visits"`), and `getMarketAdditionalVisits` (11 rows, including a
+**newly observed** `customerCare.healthDepartmentInspection` type — an unrelated program, paired
+with its own per-visit action `getHdiVisitReport&visitId=<id>`, spotted in the same capture's
+navigation but not otherwise investigated here). None of these three carry `thirdPartyFoodSafety`
+rows — `getBrandProtectionVisits` remains the only one that matters for EcoSure. Recording the HDI
+action name for a future session; not pursuing it now — it is outside this file's scope (CFV/RGR/
+EcoSure) and the owner's 2026-08-22 deprioritization of "additional visits" still stands for
+anything beyond the three that matter.

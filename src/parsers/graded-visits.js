@@ -204,7 +204,17 @@ function parseEcoSureDate(s) {
 }
 
 export function parseEcoSureVisit(input) {
-  const v = typeof input === 'string' ? JSON.parse(input) : (input || {});
+  const parsed = typeof input === 'string' ? JSON.parse(input) : (input || {});
+  // The live getThirdPartyFoodSafetyVisitReport endpoint wraps the actual report in a `results`
+  // envelope ({results: {restaurantName, restaurantNumber, ...}}) -- confirmed 2026-09-04 against
+  // a real captured response (a HAR from an authenticated Propel session), which this function had
+  // never been checked against before (the shipped fixture was hand-built flat, without the
+  // wrapper, and passed unit tests while being unrepresentative of the real wire shape). Unwrap it
+  // when present so both the true API response and an already-flat object (existing fixtures, any
+  // pre-unwrapped caller) parse the same way.
+  const v = (parsed && typeof parsed === 'object' && parsed.results && typeof parsed.results === 'object')
+    ? parsed.results
+    : parsed;
   const questions = Array.isArray(v.questions) ? v.questions : [];
 
   const citedItems = questions.filter(_ecoIsCited).map(q => ({
