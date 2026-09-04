@@ -13,6 +13,7 @@ import { STORE_NAMES, INV_ORG_COORDS, sNameC, EVENT_TYPES, supervisorGroups } fr
 import { supabase, loadEomCountStatus } from '../lib/supabase.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
 import { LocationSelector } from '../components/PanelControls.js';
+import { printHtml } from '../utils/print-html.js';
 // Dispatch #190 — merges the retired "Leadership One-Pager" (registry id leader-one-pager,
 // src/views/one-pager.js) into this panel via a `view` scope selector (see AboveStoreOnePager's
 // headerExtra below). LeadershipCascadeBody is the harvested content, header-less so it embeds
@@ -411,8 +412,7 @@ export function AboveStoreOnePager({ ds, settings, userEvents, eventImpact, onCl
       <style>body{font:12px -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:28px;max-width:760px}h1{font-size:17px;margin:0 0 2px}.sub{color:#666;font-size:11px;margin-bottom:14px}table td,table th{padding:3px 6px}table td{border-top:.5px solid #ddd}@media print{body{margin:12px}}</style></head>
       <body><h1>Above-Store One-Pager — ${esc(scopeLabel)}</h1><div class="sub">${esc(range.label)} (${range.s} → ${range.e}) · printed ${new Date().toLocaleDateString()}</div>
       ${sections.join('')}${upcomingHtml}${aiHtml}</body></html>`;
-    const w = window.open('', '_blank'); if (!w) { alert('Allow pop-ups to print.'); return; }
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    printHtml(html);
   };
 
   const badge = (actual, target, lowerBetter) => {

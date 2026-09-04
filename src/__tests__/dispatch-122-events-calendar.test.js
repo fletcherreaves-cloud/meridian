@@ -67,8 +67,18 @@ function setNativeValue(el, value) {
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+// Print/export no longer opens a real window (window.open('', ...) trapped iOS users in a dead
+// tab with no way back -- see src/utils/print-html.js). It renders the report into a same-page
+// overlay iframe instead, so the report HTML is read back from that iframe's own document.
+function lastPrintedHtml() {
+  const iframes = [...document.querySelectorAll('iframe')];
+  const iframe = iframes[iframes.length - 1];
+  expect(iframe, 'printHtml overlay iframe not found').toBeTruthy();
+  return '<!doctype html>' + iframe.contentDocument.documentElement.outerHTML;
+}
+
 describe('EventCalendar — holiday sub-filter + full-list print (Dispatch #122)', () => {
-  let container, root, userEvents, onUpdate, openSpy, openedWindows;
+  let container, root, userEvents, onUpdate;
 
   beforeEach(() => {
     container = document.createElement('div');
@@ -76,17 +86,11 @@ describe('EventCalendar — holiday sub-filter + full-list print (Dispatch #122)
     root = createRoot(container);
     userEvents = buildUserEvents();
     onUpdate = vi.fn();
-    openedWindows = [];
-    openSpy = vi.spyOn(window, 'open').mockImplementation(() => {
-      const w = { document: { write: vi.fn(), close: vi.fn() } };
-      openedWindows.push(w);
-      return w;
-    });
   });
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    openSpy.mockRestore();
+    document.querySelectorAll('iframe').forEach(f => f.parentElement && f.parentElement.remove());
   });
 
   function render() {
@@ -168,8 +172,7 @@ describe('EventCalendar — holiday sub-filter + full-list print (Dispatch #122)
     expect(printBtn).toBeTruthy();
     act(() => { printBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
-    expect(openedWindows.length).toBe(1);
-    const html = openedWindows[0].document.write.mock.calls[0][0];
+    const html = lastPrintedHtml();
     // One <tr> in <tbody> per data row — count matches the FULL unfiltered 29, not some
     // smaller number a scroll-viewport capture would have produced.
     const bodyMatch = html.match(/<tbody>([\s\S]*)<\/tbody>/);
@@ -191,7 +194,7 @@ describe('EventCalendar — holiday sub-filter + full-list print (Dispatch #122)
     const printBtn = [...container.querySelectorAll('button')].find(b => b.textContent.includes('HTML Report / Print'));
     act(() => { printBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
-    const html = openedWindows[0].document.write.mock.calls[0][0];
+    const html = lastPrintedHtml();
     const bodyMatch = html.match(/<tbody>([\s\S]*)<\/tbody>/);
     const rowCount = (bodyMatch[1].match(/<tr/g) || []).length;
     expect(rowCount).toBe(9);

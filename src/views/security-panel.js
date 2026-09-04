@@ -39,6 +39,7 @@ import {
 // needs since it keeps its own {level,value} scope shape (panel-contract.md §3) and the Org/Patch
 // decision recorded there.
 import { DateRangeControl, DATE_RANGE_PRESETS, LocationSelector } from '../components/PanelControls.js';
+import { printHtml } from '../utils/print-html.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module this already-lazyPanel()'d
 // panel (App.js) would otherwise drag into ITS OWN chunk on every open, before Export is ever
@@ -1124,9 +1125,7 @@ export function SecurityPanel({ userRole, onClose }) {
     const html = buildSecurityPrintHtml({
       groups: sortedGroups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange, newestBatch,
     });
-    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
-    if (w) { w.document.write(html); w.document.close(); }
-    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+    printHtml(html, { autoPrint: false });
   }, [sortedGroups, domain, rulesById, revealed, itemInfoFor, scope, ruleFilter, minSignals, dateRange, newestBatch]);
 
   // Dispatch #50 Part A -- owner: "scroll not working in the modal." Root cause: a flex item's

@@ -19,6 +19,7 @@ import { f$ } from '../utils/fmt.js';
 // directly rather than via signal-registry.js's re-export (see correlation-stats.js's header).
 import { CORR_TARGETS, CORR_PREDICTORS } from '../engine/correlation-predictors.js';
 import { pearson, spearman, pValueFromR, benjaminiHochberg, SCANNER_DEFAULT_MIN_ABS_R, SCANNER_DEFAULT_ALPHA } from '../engine/correlation-stats.js';
+import { printHtml } from '../utils/print-html.js';
 
 // Dispatch #143 -- ExportDropdown lives in store-dash.js, a 145 KB module signals.js would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -2675,9 +2676,7 @@ export function SignalsPanel({ ds, signals, customSignalDefs, customSignals, onC
     else if (tab === 'scanner' && scannerData) html = scannerPrintHtml(scannerData);
     else if (tab === 'liveops' && liveOpsData) html = liveOpsPrintHtml(liveOpsData);
     if (!html) return;
-    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
-    if (w) { w.document.write(html); w.document.close(); }
-    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+    printHtml(html, { autoPrint: false });
   }, [tab, displaySignals, filterDomain, filterLoc, activeDefs, labSignals, localDefs, scannerData, liveOpsData]);
 
   return h('div', { style: { padding: 16, maxWidth: 920, margin: '0 auto' } },

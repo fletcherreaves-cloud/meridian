@@ -8,6 +8,7 @@ import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap, collapseScopedEvents } from '../engine/events-import.js';
 import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatingDateMismatches } from '../engine/retail-events.js';
 import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
+import { printHtml } from '../utils/print-html.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
 const h    = React.createElement;
@@ -209,8 +210,7 @@ function CalendarManagerPanel({stores, ds, settings, userEvents, onUpdate, onClo
       .n{color:#888;font-weight:400}.x{color:#666}@media print{body{margin:0}section.mo{break-inside:avoid}}</style></head>
       <body><h1>Events — ${esc(rangeLabel)}</h1><div class="sub">${esc(scopeLabel)} · ${grandTotal} event${grandTotal===1?'':'s'} across ${nMonths} month${nMonths===1?'':'s'} · printed ${new Date().toLocaleDateString()}</div>
       ${sections.join('\n')}</body></html>`;
-    const w=window.open('','_blank'); if(!w){alert('Allow pop-ups to print.');return;}
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>w.print(),300);
+    printHtml(html);
   };
 
   const navMonth = (delta) => {

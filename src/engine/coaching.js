@@ -6,6 +6,7 @@ import { compute6wk } from '../engine/forecast.js';
 import { buildBrief, buildStore } from '../engine/pipeline.js';
 import { TH, escapeHtml as esc } from '../utils/fmt.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h    = React.createElement;
 const div  = (props, ...c) => h('div',    props, ...c);
@@ -293,8 +294,7 @@ function GMCoachingBrief({stores, ds, settings, userEvents, onClose}) {
 '<div class="meta">'+storeName+' · '+now+'</div>'+
 '<div class="brief"><p style="margin:0">'+formatted+'</p></div>'+
 '</body></html>';
-    const w=window.open('','_blank');
-    if(w){w.document.write(html);w.document.close();}
+    printHtml(html, { autoPrint: false });
   };
 
   // ── Format brief text with section highlighting ─────────────────────────────

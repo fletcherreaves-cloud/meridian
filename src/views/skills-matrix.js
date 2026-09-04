@@ -7,6 +7,7 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups } from '../constants.js';
 import { loadEmployeeSkills } from '../lib/supabase.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -169,7 +170,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
       th{font-size:8px;color:#555;border-bottom:2px solid #f5bc00;padding:3px 4px;text-align:center}th:first-child,th:nth-child(2){text-align:left}
       td{padding:2px 5px;border-bottom:1px solid #eee;text-align:center;font-variant-numeric:tabular-nums}td.s{text-align:left;font-weight:600}
       td.r1{background:#fecaca}td.r2{background:#fed7aa}td.r3{background:#fef08a}td.r4{background:#d9f99d}td.r5{background:#a7f3d0}</style></head><body>${locs.map(section).join('')}</body></html>`;
-    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+    printHtml(html);
   };
 
   // Manager update worksheet: current rating printed small; an open box to write
@@ -190,7 +191,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
       <table><thead>
         <tr><th class="pagehdr" colspan="${colspan}">${esc(storeName)} — Employee Skill Levels Update Worksheet · ${sorted.length} crew · ${esc(new Date().toLocaleDateString())}</th></tr>
         <tr>${head}</tr></thead><tbody>${body}${blanks}</tbody></table></body></html>`;
-    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+    printHtml(html);
   };
 
   // Bulk worksheet: one update worksheet PER STORE for the current scope (All/FL/
@@ -218,7 +219,7 @@ export function SkillsMatrixPanel({ ds, onClose, embedded }) {
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Skill Worksheets — ${esc(locs.length)} stores</title>
       <style>.store-sheet{page-break-before:always}.store-sheet:first-child{page-break-before:auto}
       ${WORKSHEET_PRINT_CSS}</style></head><body>${locs.map(sheet).join('')}</body></html>`;
-    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    printHtml(html);
   };
 
   const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };

@@ -9,6 +9,7 @@ import { computeVisitReadiness, analyzeGradedVisits, srcMeta, daysSince } from '
 import { readinessReportHTML, readinessAuditCSV, reportFileBase, fmtMetric } from './visit-readiness-report.js';
 import { STORE_NAMES, INV_ORG_COORDS, sNameC, supervisorGroups } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
 const sName = loc => STORE_NAMES?.[String(loc)] || ('Store ' + loc);
@@ -26,10 +27,7 @@ const pct2 = v => v == null ? '—' : (v * 100).toFixed(2) + '%';
 
 // Push a built report to the browser: print window for HTML, download for CSV.
 function openPrint(html) {
-  const win = window.open('', '_blank', 'width=980,height=800');
-  if (!win) { alert('Allow pop-ups to print this report.'); return; }
-  win.document.write(html); win.document.close(); win.focus();
-  setTimeout(() => win.print(), 350);
+  printHtml(html);
 }
 function downloadCsv(text, filename) {
   const blob = new Blob([text], { type: 'text/csv' });
@@ -112,11 +110,7 @@ function storeReportHTML(s) {
   </body></html>`;
 }
 function printStoreReport(s) {
-  const win = window.open('', '_blank', 'width=820,height=760');
-  if (!win) return;
-  win.document.write(storeReportHTML(s));
-  win.document.close(); win.focus();
-  setTimeout(() => win.print(), 350);
+  printHtml(storeReportHTML(s));
 }
 
 // Dispatch #77 -- exported so Top/Bottom Performers (top-bottom-performers.js) can reuse the

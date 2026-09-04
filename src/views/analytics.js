@@ -15,6 +15,7 @@ import { calibrateStore } from '../engine/backtest.js';
 import { computeEventFactors } from '../utils/events.js';
 import { EventEntryModal, EventRegistryModal, generateReviewPack } from '../features/calendar.js';
 import { TH, f$, escapeHtml as esc } from '../utils/fmt.js';
+import { printHtml } from '../utils/print-html.js';
 import { storeDistance, regionalRadius } from '../features/morning-brief.js';
 import { idbClearAll, opfsClear } from '../db/index.js';
 import { ExportDropdown, StoreCard, mdToNodes } from './store-dash.js';
@@ -1013,9 +1014,7 @@ function StoreOnePager({stores, ds, settings, onClose}) {
 </div>
 </body></html>`;
 
-    const w = window.open('','_blank','width=960,height=800,scrollbars=yes');
-    if(w){ w.document.write(html); w.document.close(); }
-    else { alert('Allow pop-ups for this page to open the one-pager. Then try again.'); }
+    printHtml(html, { autoPrint: false });
   };
 
   const LOCS = Object.keys(STORE_NAMES).sort((a,b)=>STORE_NAMES[a].localeCompare(STORE_NAMES[b]));
@@ -4988,8 +4987,7 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
       if(!tbl){alert('Calendar not visible');return;}
       const monthLabel=new Date(cy,cm-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'});
       const grpLabel=calGroup==='ok'?'MCDOK (OK)':calGroup==='fl'?'Emerald Arches (FL)':'All Locations';
-      const win=window.open('','_blank','width=1200,height=900');
-      win.document.write('<html><head><title>McForecast Anomaly Calendar — '+monthLabel+'</title>'+
+      const html='<html><head><title>McForecast Anomaly Calendar — '+monthLabel+'</title>'+
         '<style>body{font-family:system-ui,sans-serif;font-size:8px;padding:16px;color:#111}'+
         'h2{font-size:14px;margin:0 0 6px}p{font-size:10px;color:#666;margin:0 0 10px}'+
         'table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:2px 3px;text-align:center}'+
@@ -5006,8 +5004,8 @@ function AIBacktestScanner({stores, ds, settings, userEvents, onTagEvent}) {
           '<span><span class="ls" style="background:rgba(245,188,0,.35)"></span>Holiday</span>'+
           '<span><span class="ls" style="border:2px solid #10b981;background:transparent"></span>Tagged ✅</span>'+
         '</div>'+
-        tbl.outerHTML+'</body></html>');
-      win.document.close();
+        tbl.outerHTML+'</body></html>';
+      printHtml(html, { autoPrint: false });
     };
     return div({style:{padding:'0 0 20px'}},
       // Controls row
@@ -8223,8 +8221,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
     const groupLocs = (groupMap[sheetGroup]||[]).map(String).filter(l=>locs.includes(l));
     const storeMap  = Object.fromEntries((stores||[]).map(s=>[String(s.loc),s.name]));
     const html = buildGroupSheetHTML(sheetGroup, groupLocs, mt, mt_curr, actuals, sp, prevPeriod, asOfDate, storeMap);
-    const w = window.open('','_blank','width=1000,height=780,scrollbars=yes');
-    if(w){w.document.write(html);w.document.close();}
+    printHtml(html, { autoPrint: false });
     setSheetLoading(false);
     setSheetOpen(false);
   };
@@ -8297,11 +8294,7 @@ function MonthlyProjectionsPanel({ds, stores, settings, onClose, customSignalDef
       locs.length>0&&btn({
         onClick:()=>{
           const html = buildEmailReportHTML(mt, ds, settings||{}, selPeriod);
-          const w = window.open('','_blank','width=1100,height=750,scrollbars=yes');
-          if(w){
-            w.document.write(html);
-            w.document.close();
-          }
+          printHtml(html, { autoPrint: false });
         },
         title:'Open group-by-operator targets report — print or paste into email',
         style:{padding:'4px 10px',fontSize:11,borderRadius:4,cursor:'pointer',

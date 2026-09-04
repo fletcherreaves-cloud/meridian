@@ -47,6 +47,7 @@ import { buildItemJourney, buildStoreJourneys, storeSwingLedger, reconstructMiss
 import { weeklyExceptions, WEEKDAY_NAMES, itemVarianceWindows } from '../engine/weekly-cadence.js';
 import { detectSessions, cycleCompliance, isActive as isActiveOnHand } from '../engine/count-cycle.js';
 import { dowOf } from '../utils/date.js';
+import { printHtml } from '../utils/print-html.js';
 import { fobDailyTrace, annotateTouchpoints, biggestJumpDay, lastCountAnchor } from '../engine/variance-trace.js';
 // Dispatch #189 — Count Cycle folded in as a tab (harvested from the retired standalone
 // count-cycle.js route/panel; see count-cycle-panel.js's own header for the full story).
@@ -142,13 +143,11 @@ const csvCell = v => v == null ? '""' : (typeof v === 'number' ? v : '"' + Strin
 
 // Open the diagnosis report in a print window (→ PDF via the browser print dialog).
 function printDiagnosis(name, period, reportText) {
-  const w = window.open('', '_blank', 'width=800,height=900');
-  if (!w) return;
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // Render the SAME markdown the on-screen modal shows (mdToHtml) instead of dumping raw
   // markdown into a <pre> — so Print/PDF matches the formatted report incl. tables + chips
   // (Notes 36). Light-theme print CSS mirrors the modal's structure with print-safe colors.
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>EOM Diagnosis — ${esc(name)} ${esc(period)}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>EOM Diagnosis — ${esc(name)} ${esc(period)}</title>
     <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a;margin:28px;line-height:1.5;font-size:12.5px}
     h1{font-size:18px;margin:0 0 2px;color:#111} .sub{color:#666;font-size:12px;margin-bottom:16px}
     .rpt h1{font-size:15px;border-bottom:2px solid #111;padding-bottom:3px;margin:18px 0 8px}
@@ -167,9 +166,8 @@ function printDiagnosis(name, period, reportText) {
     @media print{@page{margin:0.6in}}</style></head><body>
     <h1>EOM Food-Cost Diagnosis — ${esc(name)}</h1>
     <div class="sub">Period ${esc(period)} · generated ${new Date().toLocaleString()}</div>
-    <div class="rpt">${mdToHtml(reportText)}</div></body></html>`);
-  w.document.close();
-  setTimeout(() => w.print(), 400);
+    <div class="rpt">${mdToHtml(reportText)}</div></body></html>`;
+  printHtml(html);
 }
 const money = v => (v == null || isNaN(v)) ? '—' : '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
 

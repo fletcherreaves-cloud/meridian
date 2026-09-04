@@ -19,6 +19,7 @@
 import * as React from 'react';
 import { STORE_NAMES, getStoreOrg } from '../constants.js';
 import { loadDailySales } from '../lib/supabase.js';
+import { printHtml } from '../utils/print-html.js';
 
 // Dispatch #147 -- ExportDropdown lives in store-dash.js, a 145 KB module this panel would
 // otherwise drag into its own chunk on every open. React.lazy defers the actual import() to
@@ -95,9 +96,7 @@ function reportShell(title, subtitle, bodyHtml) {
 </body></html>`;
 }
 function openPrintReport(html) {
-  const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
-  if (w) { w.document.write(html); w.document.close(); }
-  else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+  printHtml(html, { autoPrint: false });
 }
 
 // Sales Pace view -- full store-by-store table exactly as rendered (model.rows + subtotals),

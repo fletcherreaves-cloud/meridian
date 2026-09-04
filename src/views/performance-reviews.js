@@ -17,6 +17,7 @@ import {
   QUARTER_MONTHS, H1_MONTHS, H2_MONTHS, calendarMonthRange, computeSegmentedReview,
 } from '../engine/review-engine.js';
 import { STORE_NAMES, sName, getStoreOrg } from '../constants.js';
+import { printHtml } from '../utils/print-html.js';
 import { hasPermission, getOrgRoles, canOverrideLockedActual, canApproveDeparture, DEFAULT_ROLES, getRoleById } from '../engine/permissions.js';
 // Dispatch #162 (Performance Review continuity, build item #6) — departure/termination handling.
 import { applyDepartureAutoFinalize } from '../engine/departure.js';
@@ -1741,11 +1742,7 @@ function printCheckpoint(review, cfg, month, orgLabel, orgLogo) {
 
   </body></html>`;
 
-  const w = window.open('','_blank','width=900,height=800');
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(()=>w.print(), 400);
+  printHtml(html);
 }
 
 // ── Blank fillable form ────────────────────────────────────────────────────────
@@ -1900,11 +1897,7 @@ function printBlankForm(review, cfg, orgLabel, orgLogo, period='h1') {
 
   </body></html>`;
 
-  const w = window.open('','_blank','width=900,height=800');
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(()=>w.print(), 400);
+  printHtml(html);
 }
 
 // ── Print / PDF export ─────────────────────────────────────────────────────────
@@ -2090,11 +2083,7 @@ function printReview(review, cfg, orgLabel, orgLogo, period='year') {
   </div>
   </body></html>`;
 
-  const w = window.open('','_blank','width=960,height=800');
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(()=>w.print(), 400);
+  printHtml(html);
 }
 
 // ── Summary Tab ────────────────────────────────────────────────────────────────

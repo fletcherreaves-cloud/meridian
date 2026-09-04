@@ -25,6 +25,7 @@ import { loadEbosMonthlyByStore } from '../lib/supabase.js';
 import { metricAvg, metricSeries } from '../engine/metric-source.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
 const { useState: uSt, useEffect: uE, useMemo: uM, useCallback: uCB, useRef: uR } = React;
@@ -688,11 +689,7 @@ function EOMBlock({ data, isRollup, label, manual, onManualChange, expanded, set
 // app-wide (mirrors 9ba5140's own removal of ensureEomPrintStyleInjected for the same reason).
 export function openPrintWindow(title, bodyHtml) {
   try {
-    // NB: do NOT pass 'noopener' — with it window.open() returns null, so nothing gets written and
-    // the new tab stays blank white (owner Notes 38: "Print for summary report ... blank white page").
-    const w = window.open('', '_blank', 'width=900,height=1100');
-    if (!w) { console.warn('[eom] print window blocked'); return; }
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;color:#111;margin:26px;font-size:12px;line-height:1.45}
 h1{font-size:17px;margin:0 0 3px}.sub{color:#666;font-size:11px;margin:0 0 16px}
 table{border-collapse:collapse;width:100%;margin:0 0 18px}th,td{border:1px solid #cbcbcb;padding:5px 8px;text-align:left;vertical-align:top}
@@ -722,8 +719,10 @@ tr{break-inside:avoid}.g{font-weight:800}.r{color:#b00}.mono{font-family:ui-mono
 .s-labor td{font-size:11px;padding:4px 8px;text-align:left}
 .s-total{font-size:11px;margin-top:6px}
 @media print{.noprint{display:none}}</style></head><body>${bodyHtml}
-<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200)}<\/script></body></html>`);
-    w.document.close();
+<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200)}<\/script></body></html>`;
+    // autoPrint:false -- the html's own onload script (above) already triggers the print dialog,
+    // so printHtml doesn't need to fire a second one.
+    printHtml(html, { autoPrint: false });
   } catch (e) { console.warn('[eom] print failed', e); }
 }
 

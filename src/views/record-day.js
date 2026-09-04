@@ -4,6 +4,7 @@ import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { dKey, businessDate } from '../utils/date.js';
 import { fN } from '../utils/fmt.js';
 import { metricSeries, dailyDataFreshness } from '../engine/metric-source.js';
+import { printHtml } from '../utils/print-html.js';
 // Dispatch #136 Part 2 -- location scope (LocationSelector, mode:'progressive' per this app's
 // standing mobile-usability convention, PanelControls.js). This panel had NO location filtering
 // at all before this dispatch.
@@ -1240,9 +1241,7 @@ export function RecordDayTab({ stores, ds }) {
 
   const handlePrintReport = useCallback(() => {
     const html = buildFullReportHtml(viewData, windowDays);
-    const w = window.open('', '_blank', 'width=1050,height=850,scrollbars=yes');
-    if (w) { w.document.write(html); w.document.close(); }
-    else { alert('Allow pop-ups for this page to open the report. Then try again.'); }
+    printHtml(html, { autoPrint: false });
   }, [viewData, windowDays]);
 
   return div({},

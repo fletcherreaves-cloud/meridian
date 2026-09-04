@@ -12,6 +12,7 @@ import { forecastModels } from '../engine/forecast.js';
 import { businessDate } from '../engine/swing-feed.js';
 import { loadDailySales, loadGlimpse, loadQsrFob, loadQsrActSummary, loadSmartTargetAdjustments, saveSmartTargetAdjustment, applyOfficialTargets } from '../lib/supabase.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
+import { printHtml } from '../utils/print-html.js';
 
 // The three simple trailing projectors. A 2026-07 backtest across all 27 stores
 // found these beat every engineered model (Composite/Momentum/Regression/Ensemble)
@@ -557,9 +558,7 @@ export function SmartTargetsPanel({ ds, stores, settings, onClose, embedded }) {
       <div class="sub">Recommended target for <b>${esc(targetLabel)}</b> · learned from a ${windowDays}-day lookback · ${shown.length} stores · generated ${esc(new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }))}</div>
       <table><thead><tr><th>Store</th><th>Official</th><th>Smart</th><th>Current</th><th>vs Official</th><th style="text-align:center">Conf</th><th>Anomalies</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       </body></html>`;
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+    printHtml(html);
   };
 
   const OUTER = embedded ? { position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.82)', zIndex: 460, display: 'flex', flexDirection: 'column', paddingTop: 20 };

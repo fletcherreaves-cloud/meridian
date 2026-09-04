@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { supabase, saveTask, saveFeatureRequest, loadSagePrompts, saveSagePrompt, deleteSagePrompt, updateSagePromptSchedule, setSagePromptShared, searchQsrKb } from '../lib/supabase.js';
 import { STORE_NAMES } from '../constants.js';
 import { escapeHtml as esc } from '../utils/fmt.js';
+import { printHtml } from '../utils/print-html.js';
 import { fobSnapshotByStore } from '../engine/eom-inventory.js';
 import { metricSeries, metricAvg, metricRate } from '../engine/metric-source.js';
 import { ModalShell, Z } from '../components/ModalShell.js';
@@ -1109,9 +1110,7 @@ function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
 
   function handlePDF() {
     const date = new Date().toISOString().slice(0,10);
-    const win = window.open('', '_blank', 'width=860,height=700');
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>SAGE ${date}</title><style>
+    const html = `<!DOCTYPE html><html><head><title>SAGE ${date}</title><style>
       body{font-family:Arial,sans-serif;font-size:12px;color:#111;max-width:760px;margin:40px auto;line-height:1.7}
       h1{font-size:20px;margin:20px 0 8px}h2{font-size:15px;border-bottom:2px solid #f5bc00;padding-bottom:4px;margin:18px 0 8px}h3{font-size:13px;margin:14px 0 6px}
       table{border-collapse:collapse;width:100%;margin:12px 0;font-size:11px}
@@ -1121,10 +1120,8 @@ function MsgBubble({ msg, streaming, onLog, onSavePrompt }) {
       .t1{color:#c0392b;margin:4px 0}.t2{color:#d35400;margin:4px 0}.t3{color:#7f8c8d;margin:4px 0}
       li{margin:3px 0}p{margin:4px 0}
       @media print{body{margin:20px}}
-    </style></head><body><p style="color:#888;font-size:10px">SAGE Analysis · ${date}</p>${mdToHTML(msg.content)}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 350);
+    </style></head><body><p style="color:#888;font-size:10px">SAGE Analysis · ${date}</p>${mdToHTML(msg.content)}</body></html>`;
+    printHtml(html);
   }
 
   function handleExcel() {

@@ -10,6 +10,7 @@ import { STORE_NAMES, getStoreOrg, DEF_SETTINGS, supervisorGroups, DEFAULT_TARGE
 import { analyzeSheet, aggregateGroup, analyzeStore, fracToTime, deriveBand1FromSchedule, mergeAutoManualWeek } from '../engine/labor-analysis.js';
 import { resolveLaborTarget } from '../engine/labor-basis.js';
 import { loadLifeLenzLaborWeek, loadStoreLaborConfig, saveStoreLaborConfig, loadLifeLenzSchedule } from '../lib/supabase.js';
+import { printHtml } from '../utils/print-html.js';
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -248,7 +249,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
       <h1>Weekly Labor Analysis — Fixed Labor Hours</h1>
       <div class="sub2">Week of <b>${esc((week && week.weekStart) || '—')}</b> · ${shown.length} stores · scope: <b>${esc(scopeLabel)}</b> · generated ${esc(new Date().toLocaleDateString())}</div>
       <table><thead><tr>${head}</tr></thead><tbody>${body}${sub}</tbody></table></body></html>`;
-    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
+    printHtml(html);
   };
 
   // Per-store FLH planning worksheet (sheet-2 template). One page per store in the
@@ -300,7 +301,7 @@ export function LaborAnalysisPanel({ ds, settings, onClose, embedded }) {
       td.box{width:30px}td.note{color:#555;font-size:6.5px;line-height:1.05}
       tr.tr-tot td{font-weight:800;background:#fbfbe8}tr.tr-sec td{font-weight:800;background:#eee;text-transform:uppercase;letter-spacing:.3px;font-size:7px;padding:1px 3px}
       </style></head><body>${shown.map(sheet).join('')}</body></html>`;
-    const w = window.open('', '_blank'); if (!w) return; w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+    printHtml(html);
   };
 
   const scopeSelect = h('select', { value: scope, onChange: e => setScope(e.target.value), style: selStyle },
