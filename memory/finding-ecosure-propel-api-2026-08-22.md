@@ -1338,6 +1338,14 @@ This turns backfill from "one hand-read visitId per capture" into "one console p
 though it still requires a human physically at a signed-in browser (SSO+MFA still blocks any
 unattended path — unchanged from this file's security section).
 
+**Corrected 2026-09-04, first real run:** the script's first `getDescendants` call used
+`rowsPerPage=100` and got a live **400 Bad Request** (the owner ran it and pasted the console
+error). The real HAR capture that found this whole chain used `rowsPerPage=20` — the API
+evidently validates page size against a small allowed set, and 100 wasn't in it. Guessing a
+"safely large" page size instead of using the proven value was the mistake; fixed by paging
+properly at `rowsPerPage=20` (the estate is 27 stores, so this now takes 2 pages) instead of
+trying a bigger untested number again.
+
 ## 🔴 This also exposed a real bug in the shipped parser — now fixed
 
 The real `getThirdPartyFoodSafetyVisitReport` response wraps the report in a `results` envelope —

@@ -61,14 +61,22 @@
   };
 
   console.log('[ecosure-capture] fetching store list...');
-  const desc = await getJson('navigation', {
-    action: 'getDescendants', countryIsoNumber: '840',
-    parentHierarchyLevel: String(ORG_ROOT_LEVEL), parentHierarchyNode: ORG_ROOT_NODE,
-    childHierarchyLevel: String(STORE_LEVEL), orgRole: '1', page: '1', rowsPerPage: '100',
-  });
-  const stores = desc.results || [];
-  if (desc.totalCount > stores.length) {
-    console.warn(`[ecosure-capture] totalCount=${desc.totalCount} but only got ${stores.length} — increase rowsPerPage or add paging.`);
+  // rowsPerPage=20 -- NOT a round number picked for convenience. It's the exact value the real
+  // HAR capture that found this chain used (rowsPerPage=100 was tried first and got a 400 Bad
+  // Request; the API evidently validates page size against a small allowed set). Since the
+  // estate is 27 stores, this pages properly rather than guessing a bigger "safe" number again.
+  const ROWS_PER_PAGE = 20;
+  const stores = [];
+  for (let page = 1; ; page++) {
+    const desc = await getJson('navigation', {
+      action: 'getDescendants', countryIsoNumber: '840',
+      parentHierarchyLevel: String(ORG_ROOT_LEVEL), parentHierarchyNode: ORG_ROOT_NODE,
+      childHierarchyLevel: String(STORE_LEVEL), orgRole: '1', page: String(page), rowsPerPage: String(ROWS_PER_PAGE),
+    });
+    const pageResults = desc.results || [];
+    stores.push(...pageResults);
+    if (stores.length >= desc.totalCount || !pageResults.length) break;
+    await sleep(DELAY_MS);
   }
   console.log(`[ecosure-capture] ${stores.length} store(s) found`);
 
