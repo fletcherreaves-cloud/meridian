@@ -3494,7 +3494,7 @@ function App() {
       // elsewhere for the calendar/visit-readiness/above-store branches — a second goRoute call
       // in the same handler simply supersedes the first, same as every other saved-report launch.
       routePanel==='dt-sos'&&h(DTSpeedOfServicePanel,{stores,onClose:()=>goRoute(null)}),
-      routePanel==='news'&&h(NewsPanel,{onClose:()=>goRoute(null)}),
+      routePanel==='news'&&h(NewsPanel,{stores,onClose:()=>goRoute(null)}),
       routePanel==='inventory'&&h(InventoryIntelligence,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='loc-intel'&&h(LocationIntelligence,{allStores:stores,ds,settings,scope:'district',onClose:()=>goRoute(null)}),
       routePanel==='my-reports'&&h(ReportSubscriptions,{onClose:()=>goRoute(null),

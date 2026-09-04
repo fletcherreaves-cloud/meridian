@@ -24,8 +24,11 @@
 
 import * as React from 'react';
 import { loadNewsMentions } from '../lib/supabase.js';
-import { sName, STORE_NAMES } from '../constants.js';
+import { sName, STORE_NAMES, INV_ORG_COORDS } from '../constants.js';
 import { RoutePanelShell } from '../components/ModalShell.js';
+import { LocationSelector, buildLocationHierarchy, locationSelectorLocs } from '../components/PanelControls.js';
+
+const EMPTY_STORES = [];
 
 const h = React.createElement;
 const div = (p, ...c) => h('div', p, ...c);
@@ -73,10 +76,16 @@ function Story({ row }) {
       row.tier === 'brand' ? span({ style: { fontSize: 9, fontWeight: 800, color: '#f5bc00' } }, 'BRAND MENTION') : null));
 }
 
-export function NewsPanel({ onClose, initialLoc = null }) {
+export function NewsPanel({ onClose, stores, initialLoc = null }) {
   const [rows, setRows] = React.useState(null);
   const [err, setErr] = React.useState(null);
-  const [locFilter, setLocFilter] = React.useState(initialLoc);
+  // Standard location selector (feedback-selector-ui-standard: All -> State -> Patch -> Store,
+  // Notes 62 ask) in place of the old coverage-only chip row, which listed only stores that
+  // already had a story and had no state/patch tier at all.
+  const treeStores = stores || EMPTY_STORES;
+  const tree = React.useMemo(() => buildLocationHierarchy(treeStores, INV_ORG_COORDS, STORE_NAMES), [treeStores]);
+  const [scope, setScope] = React.useState(initialLoc ? { level: 'store', id: initialLoc } : { level: 'all', id: null });
+  const scopedLocs = React.useMemo(() => locationSelectorLocs(scope, tree), [scope, tree]);
   const [signalFilter, setSignalFilter] = React.useState(null);
 
   React.useEffect(() => {
@@ -96,8 +105,8 @@ export function NewsPanel({ onClose, initialLoc = null }) {
   }, [rows]);
 
   const shown = React.useMemo(() => articles.filter(a =>
-    (!locFilter || a.locs.includes(locFilter) || a.loc === locFilter) &&
-    (!signalFilter || a.signals.includes(signalFilter))), [articles, locFilter, signalFilter]);
+    (scope.level === 'all' || (a.locs.length ? a.locs : [a.loc]).some(l => scopedLocs.includes(l))) &&
+    (!signalFilter || a.signals.includes(signalFilter))), [articles, scope, scopedLocs, signalFilter]);
 
   const byLoc = React.useMemo(() => {
     const c = {};
@@ -140,15 +149,15 @@ export function NewsPanel({ onClose, initialLoc = null }) {
       : `${articles.length} stories · last 120 days · ${byLoc.length} of ${Object.keys(STORE_NAMES).filter(k=>/^\d+$/.test(k)).length} stores have coverage`,
     onBack: onClose,
   },
-    articles.length ? div({ style: { display: 'flex', gap: 5, flexWrap: 'wrap', paddingBottom: 10, marginBottom: 10, borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
-      chip(!signalFilter && !locFilter, 'All', () => { setSignalFilter(null); setLocFilter(null); }, 'all'),
-      ...Object.entries(SIGNAL_META).map(([k, m]) =>
-        chip(signalFilter === k, `${m.icon} ${m.label}`, () => setSignalFilter(signalFilter === k ? null : k), k)),
-      // Every location that HAS a story gets a chip. This was capped at 8, so the header could
-      // read "17 locations" while only 8 were selectable (Notes 62). The header counts stores
-      // with coverage, not the 27-store estate — most towns simply have no local story.
-      ...byLoc.map(([l, n]) =>
-        chip(locFilter === l, `${sName(l) || l} ${n}`, () => setLocFilter(locFilter === l ? null : l), 'loc' + l))) : null,
+    articles.length ? div({ style: { display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10, marginBottom: 10, borderBottom: '.5px solid var(--bdr,#2a2f3a)' } },
+      // Standard All -> State -> Patch -> Store selector (feedback-selector-ui-standard),
+      // replacing the old coverage-only chip list (every location that HAD a story, flat, no
+      // state/patch tier — capped at 8 chips while the header claimed a higher count, Notes 62).
+      h(LocationSelector, { stores: treeStores, invOrgCoords: INV_ORG_COORDS, storeNames: STORE_NAMES, value: scope, onChange: setScope, mode: 'progressive' }),
+      div({ style: { display: 'flex', gap: 5, flexWrap: 'wrap' } },
+        chip(!signalFilter, 'All signals', () => setSignalFilter(null), 'all'),
+        ...Object.entries(SIGNAL_META).map(([k, m]) =>
+          chip(signalFilter === k, `${m.icon} ${m.label}`, () => setSignalFilter(signalFilter === k ? null : k), k)))) : null,
 
     body,
 
