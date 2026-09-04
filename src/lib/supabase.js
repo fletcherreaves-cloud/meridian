@@ -2,6 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { oepeSeconds, oepeWithParkSeconds } from '../utils/oepe.js';
 import { tokenizeRows } from '../engine/identity-vault.js';
+import { defaultVisibilityFor } from '../constants.js';
 import { DEFAULT_EOM_DIGEST_CONFIG } from '../engine/eom-digest.js';
 
 const URL  = import.meta.env.VITE_SUPABASE_URL;
@@ -4151,6 +4152,20 @@ export async function loadEomSnapshots({ period, kind, loc, latestPerLoc } = {})
   return out;
 }
 
+// A missing-column error reads differently depending on the operation: a raw Postgres error
+// (SELECT with an explicit bad column name, 42703) says `column "x" does not exist`, but an
+// upsert/update with an unknown JSON key gets PostgREST's schema-cache-miss message instead --
+// `Could not find the 'x' column of 'table' in the schema cache` -- which the narrower
+// "does not exist" pattern never matches. Confirmed live 2026-09-04: an org_events upsert
+// missing the `status` column produced exactly that second shape, silently defeating a
+// self-heal check written for only the first. smg_fullscale's own `n`-column self-heal already
+// (independently) covers this via a `'n' column` substring match; this generalizes that same
+// idiom to any column-name list, for every org_events self-heal check below.
+function _columnMissing(message, ...cols) {
+  const names = cols.join('|');
+  return new RegExp(`column .*\\b(${names})\\b.* does not exist|'(?:${names})' column|column "(?:${names})"`, 'i').test(message || '');
+}
+
 // ── Org calendar events (Notes 46) — cloud-first replacement for the localStorage mf_events ──────
 // Row shape mirrors src/engine/events-import.js output. Returns app-shaped event objects.
 export async function loadOrgEvents() {
@@ -4168,6 +4183,17 @@ export async function loadOrgEvents() {
     // that hasn't run schema-org-events-scope.sql yet; orgEventsToDayMap() already treats a
     // missing/'store' scope as "expand to just [loc]", so this degrades to the old behavior.
     scope: r.scope ?? 'store', scopeState: r.scope_state ?? null, scopeLocs: r.scope_locs ?? null,
+    // Phase 2 of memory/project-events-calendar-redesign-2026-09-04.md — visibility + relevance/
+    // impact model, supabase/schema-org-events-visibility-impact.sql. A row's own `visibility`
+    // wins when set; `r.visibility ?? null` is deliberate here (NOT defaulted from event_type) so
+    // a caller can tell "explicitly set" apart from "falls back to the type default" — use
+    // defaultVisibilityFor(type) (src/constants.js) at the point of use for the effective value.
+    // relevance/expectedImpact/impactConfidence/impactN/rrule are all inert storage in this phase
+    // (see that migration's own header) -- no consumer reads them yet.
+    visibility: r.visibility ?? null, relevance: r.relevance ?? null,
+    expectedImpact: r.expected_impact ?? null, impactConfidence: r.impact_confidence ?? null,
+    impactN: r.impact_n ?? null, leadDays: r.lead_days ?? 0, lagDays: r.lag_days ?? 0,
+    rrule: r.rrule ?? null,
   }));
 }
 // Bulk upsert (import). Events keyed by (loc, date_start, label) -- for scope<>'store' rows, `loc`
@@ -4187,6 +4213,13 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
     entered_by: e.enteredBy ?? enteredBy, entered_at: e.enteredAt ?? nowIso, method: e.method ?? method,
     updated_at: nowIso,
     scope: e.scope ?? 'store', scope_state: e.scopeState ?? null, scope_locs: e.scopeLocs ?? null,
+    // Phase 2 (see loadOrgEvents' matching comment) — default `visibility` from the event's own
+    // type when the caller didn't explicitly set one, so every new row gets a real value from
+    // day one rather than sitting null until something backfills it.
+    visibility: e.visibility ?? defaultVisibilityFor(e.type) ?? null,
+    relevance: e.relevance ?? null, expected_impact: e.expectedImpact ?? null,
+    impact_confidence: e.impactConfidence ?? null, impact_n: e.impactN ?? null,
+    lead_days: e.leadDays ?? 0, lag_days: e.lagDays ?? 0, rrule: e.rrule ?? null,
   }));
   // Strip scope/scope_state/scope_locs if that migration hasn't run yet (schema-org-events-scope.sql)
   // so imports never break; self-heals once the columns exist. Mirrors the existing sports-columns
@@ -4195,19 +4228,26 @@ export async function saveOrgEvents(events, { method = 'bulk upload', enteredBy 
   // Strip opponent/kickoff if that migration hasn't run yet (schema-org-events-sports.sql) so imports
   // never break; self-heals once the columns exist.
   const stripSports = arr => arr.map(({ opponent, kickoff, ...rest }) => rest);
+  // Strip the Phase 2 visibility/impact columns if schema-org-events-visibility-impact.sql hasn't
+  // run yet, same self-heal shape.
+  const stripVisImpact = arr => arr.map(({ visibility, relevance, expected_impact, impact_confidence, impact_n, lead_days, lag_days, rrule, ...rest }) => rest);
   let saved = 0; const errors = [];
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500);
     let { error, count } = await supabase.from('org_events').upsert(chunk, { onConflict: 'loc,date_start,label', count: 'exact' });
     let attempt = chunk;
-    if (error && /column .*(scope_state|scope_locs|scope).* does not exist/i.test(error.message || '')) {
+    if (error && _columnMissing(error.message, 'scope_state', 'scope_locs', 'scope')) {
       attempt = stripScope(attempt);
       ({ error, count } = await supabase.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' }));
     }
     // Chained onto whatever `attempt` already is (not the original chunk) so a DB missing BOTH
     // migrations doesn't reintroduce the just-stripped scope columns on this second retry.
-    if (error && /column .*(opponent|kickoff).* does not exist/i.test(error.message || '')) {
+    if (error && _columnMissing(error.message, 'opponent', 'kickoff')) {
       attempt = stripSports(attempt);
+      ({ error, count } = await supabase.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' }));
+    }
+    if (error && _columnMissing(error.message, 'visibility', 'relevance', 'expected_impact', 'impact_confidence', 'impact_n', 'lead_days', 'lag_days', 'rrule')) {
+      attempt = stripVisImpact(attempt);
       ({ error, count } = await supabase.from('org_events').upsert(attempt, { onConflict: 'loc,date_start,label', count: 'exact' }));
     }
     if (error) errors.push(error.message); else saved += count ?? chunk.length;
@@ -4244,14 +4284,28 @@ export async function updateOrgEvent(id, patch = {}) {
     dateStart: 'date_start', dateEnd: 'date_end',
     expectedSalesDelta: 'expected_sales_delta', expectedGcDelta: 'expected_gc_delta',
     impactMagnitude: 'impact_magnitude', impactDaypart: 'impact_daypart', impactGameday: 'impact_gameday',
+    // Phase 2 of memory/project-events-calendar-redesign-2026-09-04.md.
+    visibility: 'visibility', relevance: 'relevance', expectedImpact: 'expected_impact',
+    impactConfidence: 'impact_confidence', impactN: 'impact_n',
+    leadDays: 'lead_days', lagDays: 'lag_days', rrule: 'rrule',
   };
   const row = { updated_at: new Date().toISOString() };
   for (const [k, col] of Object.entries(M)) if (k in patch) row[col] = patch[k];
-  let { error } = await supabase.from('org_events').update(row).eq('id', id);
+  let attempt = row;
+  let { error } = await supabase.from('org_events').update(attempt).eq('id', id);
   // Self-heal if the status column isn't migrated yet (schema-org-events-status.sql).
-  if (error && /column .*status.* does not exist/i.test(error.message || '') && 'status' in row) {
-    const { status, ...rest } = row;
-    ({ error } = await supabase.from('org_events').update(rest).eq('id', id));
+  if (error && _columnMissing(error.message, 'status') && 'status' in attempt) {
+    const { status, ...rest } = attempt;
+    attempt = rest;
+    ({ error } = await supabase.from('org_events').update(attempt).eq('id', id));
+  }
+  // Self-heal if the Phase 2 visibility/impact columns aren't migrated yet
+  // (schema-org-events-visibility-impact.sql). Chained onto whatever `attempt` already is, same
+  // as saveOrgEvents' chaining, so a DB missing both migrations doesn't reintroduce `status`.
+  if (error && _columnMissing(error.message, 'visibility', 'relevance', 'expected_impact', 'impact_confidence', 'impact_n', 'lead_days', 'lag_days', 'rrule')) {
+    const { visibility, relevance, expected_impact, impact_confidence, impact_n, lead_days, lag_days, rrule, ...rest } = attempt;
+    attempt = rest;
+    ({ error } = await supabase.from('org_events').update(attempt).eq('id', id));
   }
   return { error: error?.message || null };
 }
