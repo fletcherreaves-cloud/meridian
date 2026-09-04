@@ -27,7 +27,8 @@ function trendOf(monthly) {
 }
 
 // One store's report. fob = { fobPct, fob (the $), components:{statv,comp,raw,cond,emp,unex} $ }, target
-// = fraction, monthly = trend series, varRows = [{descr, dolDiff}] this period, compTgt = {key:fracTgt}.
+// = fraction, monthly = trend series, varRows = [{descr, dolDiff, wrin?, variance?}] this period
+// (wrin/variance optional -- used only to case-convert a topItems qty, see below), compTgt = {key:fracTgt}.
 export function buildStoreFobReport(loc, { name, org, patch, fob, target, monthly, varRows, compActual, compTarget }) {
   const fobPct = fob && fob.fobPct != null ? fob.fobPct : null;
   const sales = (fob && fob.fob != null && fobPct) ? fob.fob / fobPct : (fob && fob.sales) || null;
@@ -49,8 +50,11 @@ export function buildStoreFobReport(loc, { name, org, patch, fob, target, monthl
   const grossGain = (varRows || []).filter(v => (v.dolDiff || 0) > 0).reduce((s, v) => s + v.dolDiff, 0);
   const net = grossLoss + grossGain;
   const masking = abs(grossLoss) > 300 && grossGain > abs(grossLoss) * 0.3;   // gains hide >30% of loss
+  // wrin/variance (qty) carried through so a consumer can show the case-pack-converted quantity
+  // alongside the dollar loss (Notes 63 §EOM Change Monitor / backlog-master §6) -- optional on
+  // both ends: a caller without a case-size lookup just ignores them, same as before.
   const topItems = (varRows || []).filter(v => (v.dolDiff || 0) < 0).sort((a, b) => a.dolDiff - b.dolDiff).slice(0, 4)
-    .map(v => ({ descr: v.descr || v.wrin, dolDiff: v.dolDiff }));
+    .map(v => ({ descr: v.descr || v.wrin, dolDiff: v.dolDiff, wrin: v.wrin, variance: v.variance }));
 
   // Action plan — data-driven, easy real-work steps.
   const actions = [];
