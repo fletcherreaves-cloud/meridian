@@ -4413,6 +4413,7 @@ where tenant_id = '00000000-0000-0000-0000-000000000001'::uuid and rule_id = 'CA
 - [QSRSoft email pipeline](project-qsrsoft-pipeline.md) · [Daily Activity + Shift Dashboard](project-qsrsoft-daily-activity.md)
   · [DAR columns](project-qsrsoft-dar-columns.md) · [CoachQ](project-qsrsoft-coachq.md) +
   [query patterns](coachq-query-patterns.md) · [Controls endpoint](project-qsrsoft-controls-endpoint.md)
+  · [Store Settings endpoint](project-qsrsoft-store-settings-endpoint.md)
 
 ## 🎯 Scoring
 - [Ops Score attribution: #183/#181/#164](labor-park-oepe-score-attribution.md) — worked

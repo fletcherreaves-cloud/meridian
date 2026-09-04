@@ -75,6 +75,7 @@ on:
       - QSRSoft Security Events Pull
       - QSRSoft Shift Manager Pull
       - QSRSoft Store Controls Pull
+      - QSRSoft Store Settings Pull
       - QSRSoft Turnover Pull
       - QSRSoft Variance Pull (EOM diagnosis data)
       - QSRSoft eBOS Purchases Pull
