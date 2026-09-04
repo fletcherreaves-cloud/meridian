@@ -7,7 +7,7 @@ import { EVENT_TYPES, EVENT_TYPE_GROUPS, STORE_NAMES, STORE_COORDS, INV_ORG_COOR
 import { TH } from '../utils/fmt.js';
 import { parseStaffingEvents, parseSchoolDistricts, orgEventsToDayMap, collapseScopedEvents } from '../engine/events-import.js';
 import { expandRetailEvents, defaultRetailYears, RETAIL_EVENT_RULES, findFloatingDateMismatches } from '../engine/retail-events.js';
-import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent } from '../lib/supabase.js';
+import { saveOrgEvents, saveOrgSchoolConfig, updateOrgEvent, deleteOrgEvent, saveUserSetting } from '../lib/supabase.js';
 import { printHtml } from '../utils/print-html.js';
 
 const {useState, useEffect, useMemo, useRef, useCallback} = React;
@@ -1711,6 +1711,16 @@ function EventRegistryModal({stores, userEvents, onTagEvent, onClose}){
 // Storage: localStorage 'mf_recurring_rules' — array of:
 //   {id, label, type (EVENT_TYPES key), locs:[loc,...], month, day,
 //    durationDays, active, source:'manual'|'ai_search', createdAt}
+// Cloud-persisted too (Phase 2 of memory/project-events-calendar-redesign-2026-09-04.md, item
+// 7) via the generic user_settings key/value store (saveUserSetting/loadUserSetting,
+// src/lib/supabase.js) under key 'recurring_rules' — same mechanism model_assignments already
+// uses (CLAUDE.md's own cited template). localStorage stays the instant read path
+// (loadRecurringRules below is unchanged, still synchronous); App.js hydrates from cloud on
+// startup (_stRecurringRules, unconditional cloud-wins-when-nonempty, matching
+// _stModelAssignments); saveRecurringRules below pushes on every write, fire-and-forget --
+// there's exactly one write path (all three call sites in this file already route through it),
+// unlike model_assignments' several independent writers, so baking the push in here (rather
+// than a separate _push helper each caller must remember) can't be forgotten at a new call site.
 // ─────────────────────────────────────────────────────────────────────────────
 // ── Share Code encode/decode ──────────────────────────────────────────────────
 // Payload: {v,from,locs:[],start,end,type,label,notes,ts}
@@ -1733,6 +1743,7 @@ function loadRecurringRules(){
 }
 function saveRecurringRules(rules){
   try{ localStorage.setItem('mf_recurring_rules', JSON.stringify(rules)); }catch(e){}
+  try{ saveUserSetting('recurring_rules', rules).catch(()=>{}); }catch(e){}
 }
 
 // Expand one rule into a concrete {start,end} date range for a given year.

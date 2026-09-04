@@ -1971,6 +1971,21 @@ function App() {
           }
         }
       }catch(e){console.warn('[Meridian] org events hydration failed:',e);} };
+      const _stRecurringRules = async () => {
+      try{
+        // Cloud-persisted recurring event rules (Phase 2 of memory/project-events-calendar-
+        // redesign-2026-09-04.md, item 7): mf_recurring_rules was localStorage-only (device-
+        // local, invisible on another device/after a reinstall). Same unconditional
+        // cloud-wins-when-nonempty pattern as _stModelAssignments above; writes push back via
+        // saveRecurringRules itself (src/features/calendar.js), so there's nothing to
+        // invalidate here beyond the localStorage cache CalendarManagerPanel's loadRecurringRules
+        // reads synchronously on mount.
+        const remoteRules=await loadUserSetting('recurring_rules');
+        if(Array.isArray(remoteRules)&&remoteRules.length>0){
+          try{localStorage.setItem('mf_recurring_rules',JSON.stringify(remoteRules));}catch{}
+          console.log(`[Meridian] ✓ Loaded ${remoteRules.length} recurring rule(s) from Supabase`);
+        }
+      }catch(e){console.warn('[Meridian] recurring rules load failed:',e);} };
       const _stEventImpact = async () => {
       try{
         // Event Impact Registry (Notes 47): measured per-store × event-type sales lifts → forecast cache.
@@ -2085,6 +2100,7 @@ function App() {
         _timedStage('T2 modelAssignments', _stModelAssignments, _t2Start),
         _timedStage('T2 dialedIn', _stDialedIn, _t2Start),
         _timedStage('T2 orgEventsHydration', _stOrgEventsHydration, _t2Start),
+        _timedStage('T2 recurringRules', _stRecurringRules, _t2Start),
         _timedStage('T2 eventImpact', _stEventImpact, _t2Start),
         _timedStage('T2 coachingCycles', _stCoachingCycles, _t2Start),
         _timedStage('T2 staffAssignments', _stStaffAssignments, _t2Start),
