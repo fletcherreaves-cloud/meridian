@@ -1448,7 +1448,12 @@ function districtMode(rows, key) {
   return counts.size ? { mode: best, count: bestCount, total: rows.length } : null;
 }
 
-function StoreControlsTab() {
+// Exported (same reasoning as ParkOepeTab's own comment above) so the loading->loaded transition
+// has a real render-based test -- the React error #310 hook-count-mismatch bug this tab shipped
+// with (a hook called only after three early returns) was invisible to any test that didn't
+// actually render both states, and this tab was otherwise only reachable through SignalsPanel's
+// internal tab-navigation state.
+export function StoreControlsTab() {
   const [raw, setRaw] = uSt(null); // null = loading, [] = loaded-empty
   const [err, setErr] = uSt(null);
   const [selLoc, setSelLoc] = uSt(null);
@@ -1465,6 +1470,17 @@ function StoreControlsTab() {
     .sort((a, b) => (STORE_NAMES?.[a.loc] || a.loc).localeCompare(STORE_NAMES?.[b.loc] || b.loc)),
     [raw]);
 
+  // Hoisted ABOVE the early returns below (was after them) -- React error #310, a real hook-count
+  // mismatch: `raw` starts null on every first render, so the early "Loading…" return always fired
+  // before this hook was reached, then stopped firing once data loaded and rows.length was nonzero,
+  // changing the number of hooks called between renders. districtMode() already handles an empty
+  // `rows` array cleanly (returns null per column), so hoisting is behavior-neutral once data loads.
+  const modes = uM(() => {
+    const m = {};
+    for (const c of CONTROLS_COLS) if (c.flagVsMode) m[c.key] = districtMode(rows, c.key);
+    return m;
+  }, [rows]);
+
   if (raw === null) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } }, 'Loading store controls…');
   if (err) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: red, fontSize: 12 } }, `Couldn't load store controls: ${err}`);
   if (!rows.length) return h('div', { style: { padding: '24px 16px', textAlign: 'center', color: muted, fontSize: 12 } },
@@ -1474,12 +1490,6 @@ function StoreControlsTab() {
 
   const sel = selLoc ? rows.find(r => r.loc === selLoc) : null;
   const kvstTarget = sel ? (DEFAULT_TARGETS?.[sel.loc]?.tKvst ?? null) : null;
-
-  const modes = uM(() => {
-    const m = {};
-    for (const c of CONTROLS_COLS) if (c.flagVsMode) m[c.key] = districtMode(rows, c.key);
-    return m;
-  }, [rows]);
 
   return h('div', null,
     h('div', { style: { fontSize: 11, color: muted, lineHeight: 1.6, marginBottom: 14 } },
