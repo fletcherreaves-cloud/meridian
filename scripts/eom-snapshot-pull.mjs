@@ -18,6 +18,7 @@ import { latestVarianceByWrin } from '../src/engine/eom-variance-raw.js';
 import { computeCountTiming } from '../src/engine/eom-item-journey.js';
 import { DEFAULT_TARGETS } from '../src/constants.js';
 import { withRetry } from './_retry.mjs';
+import { nextMonthStart } from './lib/month-bounds.mjs';
 
 const unpad = (l) => String(l || '').replace(/^0+/, '') || String(l || '');
 
@@ -68,10 +69,15 @@ async function activePeriod() {
 async function main() {
   const PERIOD = await activePeriod();
   const monthStart = `${PERIOD}-01`;
-  const monthEnd = `${PERIOD}-31`;
+  // Exclusive next-month-start bound -- NOT `${PERIOD}-31`. That literal is an invalid date for
+  // any month with fewer than 31 days (Sept/Apr/Jun/Nov = 30, Feb = 28/29) and Postgres rejects it
+  // outright ("date/time field value out of range"), which is exactly what broke every scheduled
+  // run once the active EOM period rolled to September 2026 (found 2026-09-04, run #111). See
+  // scripts/lib/month-bounds.mjs for why this is a shared helper now, not a fourth inline copy.
+  const periodEnd = nextMonthStart(PERIOD);
 
   const [fobRaw, varRaw, ohRaw, rawRaw] = await Promise.all([
-    selectAll('qsr_fob', q => q.gte('date', monthStart).lte('date', monthEnd)),
+    selectAll('qsr_fob', q => q.gte('date', monthStart).lt('date', periodEnd)),
     selectAll('qsr_variance_stat', q => q.eq('period', PERIOD)),
     selectAll('qsr_onhand', q => q.eq('period', PERIOD)),
     selectAll('qsr_raw_item_detail', q => q.eq('period', PERIOD)),
