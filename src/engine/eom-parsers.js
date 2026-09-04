@@ -16,6 +16,7 @@
 //   /menu_item_activity2 (POST)        → mapMenuItemActivity      (per-item, per-day counts, dispatch #193)
 //   /menu_item_activity_cost           → mapMenuItemActivityCost  (per-item, per-day $ cost, dispatch #193)
 //   /menuitems/{store_menuitem_id}     → mapMenuItemRecipe   (per-item recipe/BOM + cost breakdown, Pricing Engine)
+//   /inv_summary/rawitems?start&end    → mapInventorySummaryResponse (begin/end inv + usage per WRIN, Inventory Intelligence)
 import { normClass } from './eom-inventory.js';
 
 // ── Variance Stat rows ────────────────────────────────────────────────────────
@@ -353,4 +354,32 @@ export function mapMenuItemRecipe(resp = {}) {
     recipe: Array.isArray(resp?.recipe) ? resp.recipe.map(mapRecipeIngredient) : [],
     histRecipe: Array.isArray(resp?.hist_recipe) ? resp.hist_recipe.map(mapRecipeIngredient) : [],
   };
+}
+
+// ── Inventory Usage (Inventory Intelligence's auto stream, qsr_inventory_summary) ────────────────
+// One row per raw item within the store's requested date window. Field-for-field the same shape
+// the manual "Inventory Summary and Usage.xlsx" upload already produces (parseInventoryData,
+// src/parsers/inventory-parse.js) and cloudRowsToPanelShape (src/views/inventory.js) already
+// expects — QSRSoft precomputes actual_usage itself (Starting + Purchases +/- Transfers - Waste -
+// Ending, per the KB's own "Inventory Usage" article), so this is a direct field rename, not a
+// re-derivation of their internal accounting.
+function mapInventorySummaryRow(r = {}) {
+  return {
+    wrin: r.full_wrin ?? null,
+    descr: r.long_desc ?? null,
+    cls: r.invty_class ?? null,           // 'Food' / 'Condiment' / 'Paper' / 'Non-Product' / 'Miscellaneous'
+    uom: r.uom_desc ?? null,
+    caseSz: r.case_qty != null ? Number(r.case_qty) : null,
+    cost: r.uom_cost != null ? Number(r.uom_cost) : null,
+    startInv: r.begin_inv_qty != null ? Number(r.begin_inv_qty) : null,
+    purchases: r.purchase_qty != null ? Number(r.purchase_qty) : null,
+    transferQty: r.transfer_qty != null ? Number(r.transfer_qty) : null,
+    wasteQty: r.waste_qty != null ? Number(r.waste_qty) : null,
+    endInv: r.end_inv_qty != null ? Number(r.end_inv_qty) : null,
+    actualUsage: r.actual_usage != null ? Number(r.actual_usage) : null,
+  };
+}
+export function mapInventorySummaryResponse(resp = {}) {
+  const items = Array.isArray(resp?.getInvSummaryInfo) ? resp.getInvSummaryInfo : [];
+  return items.map(mapInventorySummaryRow);
 }
