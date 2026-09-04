@@ -113,4 +113,27 @@ describe('parseEcoSureVisit', () => {
     expect(parseEcoSureVisit({}).store).toBeNull();
     expect(parseEcoSureVisit({}).modules.citedCount).toBe(0);
   });
+
+  // THE TRAP (found 2026-09-04 against a real captured getThirdPartyFoodSafetyVisitReport
+  // response): the live endpoint wraps the report in {results: {...}}, not flat -- this file's own
+  // fixture above was hand-built flat and never caught it. A caller feeding the raw HTTP response
+  // body straight through (the bulk-capture path, and any future direct-API path) must still parse.
+  it('unwraps a {results: {...}} envelope, matching the real API response shape', () => {
+    const wrapped = { results: fixture() };
+    const v = parseEcoSureVisit(wrapped);
+    expect(v.store).toBe('03708');
+    expect(v.score).toBe(86);
+    expect(v.modules.citedCount).toBe(4);
+  });
+
+  it('unwraps a {results: {...}} envelope given as a JSON string too', () => {
+    const wrapped = JSON.stringify({ results: fixture() });
+    const v = parseEcoSureVisit(wrapped);
+    expect(v.store).toBe('03708');
+  });
+
+  it('a flat (unwrapped) object with no results key still parses as before (back-compat)', () => {
+    const v = parseEcoSureVisit(fixture());
+    expect(v.store).toBe('03708');
+  });
 });

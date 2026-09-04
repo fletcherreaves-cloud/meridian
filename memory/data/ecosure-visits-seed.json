@@ -1,0 +1,8 @@
+{
+  "_source": "propel.mcd.com /api/visits?action=getThirdPartyFoodSafetyVisitReport&visitId=<id>&cultureName=en-US",
+  "_note": "Raw, UNMODIFIED response envelopes (including the {results:{...}} wrapper the live API actually returns -- parseEcoSureVisit() unwraps that itself) -- one per captured EcoSure visit. scripts/import-ecosure-history.mjs reads this file and maps every entry through parseEcoSureVisit() (src/parsers/graded-visits.js), the same mapper the app's own interactive JSON-upload path uses, so nothing here needs pre-processing before appending. Idempotent: re-running the import after appending only touches the store+date keys that changed.",
+  "_bulkCapture": "2026-09-04: bulk visitId enumeration is now possible -- getBrandProtectionVisits&locationId=<store node> returns a store's full EcoSure history (visitId+date per visit). scripts/browser-ecosure-bulk-capture.js walks all stores and downloads a seed in this exact shape; see memory/finding-ecosure-propel-api-2026-08-22.md's 'bulk visitId enumeration FOUND' addendum.",
+  "_doNotCommitRealData": "Each raw envelope carries reviewedWithName -- a real employee's name in plaintext -- until parseEcoSureVisit()/saveGradedVisits() tokenizes it AT IMPORT TIME. Never commit a version of this file populated with real captured visits. Keep this committed file as the empty shell it is; point ECOSURE_SEED_PATH (env var, see import-ecosure-history.mjs) at a local, gitignored/uncommitted file holding real captures instead, and run the import from there. (2026-09-04: two real visits captured in a HAR were imported this way -- store 11657 2026-08-10 and store 24471 2026-03-26 -- and never touched a committed file.)",
+  "count": 0,
+  "visits": []
+}
