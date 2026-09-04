@@ -1230,3 +1230,61 @@ thin one.
 ⚠️ Also still unknown: the EcoSure **`category=` value** itself. `thirdPartyFoodSafety` — its own
 response block name — returns HTTP 400, and the vocabulary is not guessable. Read it off a live
 request via the resource-timing one-liner if an automated pull is ever built.
+
+---
+
+# ✅ Addendum — manual EcoSure ingestion shipped (2026-09-04), matching this file's own "manual
+first" recommendation
+
+Owner asked to start on EcoSure automation. Given everything already settled above (headless SSO
+is impossible, MFA-blocked; the on-demand-button + persistent-profile design needs a self-hosted
+runner this session has no access to build or test against; and this file's own explicit
+recommendation was **"Manual capture into the existing upload path — do this first"**), the actual
+buildable work this pass was the missing half of that plan: EcoSure had a documented format but no
+ingest path at all. `src/parsers/graded-visits.js`'s own comment — *"RGR / Ecosure use a different
+layout — add adapters later... add Ecosure the same way once its format is known"* — is now
+actionable, since this file fully documented that format.
+
+## What shipped
+- **`parseEcoSureVisit()`** (`src/parsers/graded-visits.js`) — pure JSON→`graded_visits`-shape
+  mapper, tested against a fixture built from this file's own documented schema, anchored to the
+  verified Ardmore-Broadway arithmetic (86/100, FS15/18/25/26 cited, 3+5+3+3=14 lost). Deliberately
+  trusts `visitMeetsTargetFlag` for `pass` rather than re-deriving a threshold rule from score or
+  `criticalFlag` — the exact target formula was never captured, and guessing one would be exactly
+  the "reason instead of measure" mistake this file's own standing rule warns against repeatedly.
+  `criticalFailCount` is computed and surfaced separately (`modules.criticalFailCount`), per this
+  file's own note that "whatever replaces the waste flag must surface criticalFailQuantity
+  separately from score."
+- **PII handled as specified**: `reviewedWithName` never reaches `graded_visits` as plaintext.
+  `saveGradedVisits()` (`src/lib/supabase.js`) now tokenizes it via the same
+  `get_or_create_employee_token()` RPC / `tokenizeRows()` helper `saveAuditRows()` already uses,
+  writing only the resulting token into `visit_by` (EcoSure's closest existing column — no new
+  column added). Only the token, never the name, reaches the table; verified by a test that
+  inspects the exact upsert payload, not just that `tokenizeRows()` itself works.
+- **Upload UI** (`src/views/graded-visits.js`) now accepts `.json` files alongside CFV/RGR's
+  `.html` exports, routing to `parseEcoSureVisit()`. Source: save the raw JSON response body from
+  `getThirdPartyFoodSafetyVisitReport` (DevTools → Network tab) as a `.json` file, one per visit —
+  same manual-capture motion as every other endpoint this file documents, formalized into the app
+  instead of a one-off console/curl capture.
+- Once ingested, EcoSure visits flow into `ds.gradedVisits` with `reportType: 'EcoSure'` — the
+  exact shape `analyzeGradedVisits()`/`calibrateReadiness()` (`src/engine/visit-readiness.js`)
+  already expected and gated on (`hasEcoSure`), which until now was always false because nothing
+  had ever populated it. No engine changes were needed; the consumer side was already built and
+  waiting.
+- 15 new tests (`dispatch-ecosure-visit-parser.test.js`, `dispatch-ecosure-save-tokenization.test.js`).
+
+## Deliberately not done this pass
+- **No automation.** This file's own MFA/Akamai/self-hosted-runner analysis above is unchanged and
+  still the standing design if/when automation is revisited — nothing here supersedes it.
+- **No UI surfacing of EcoSure results beyond the existing Graded Visits panel.** They show up
+  there automatically (same panel CFV/RGR already use, filterable by `reportType`), but nothing
+  new was built to highlight EcoSure specifically (e.g., replacing the Visit Readiness food-safety
+  gap note, which dispatch #69 already correctly labels as a genuine, unmodelled gap rather than
+  claiming an automated feed exists).
+- **The `category=` value for the rollup endpoint is still unknown** (see above) — irrelevant to
+  this ingestion path, which uses the per-visit report endpoint, not the rollup.
+- **No backfill.** Ingestion is manual, one visit at a time, same cadence as CFV/RGR today. The
+  owner has the two years of EcoSure data already captured and summarized in this file's earlier
+  addenda (2024/2025, resolved which-year-is-which) — re-entering those as individual visits was
+  not attempted here, since the per-visit JSON for each of those ~107 visits was never itself saved
+  (only the aggregate rollup was).

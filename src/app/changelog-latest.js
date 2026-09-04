@@ -8,4 +8,4 @@
 // `node scripts/gen-changelog-latest.mjs --write` after adding a new src/app/changelog/<version>.js
 // file; src/__tests__/ratchet-changelog-latest.test.js fails the suite if this drifts from the
 // real max version, so a forgotten regen is caught before it ships, not after (R6, dispatch16).
-export const LATEST_CHANGELOG_ENTRY = {version:'5.347', date:'2026-09-04'};
+export const LATEST_CHANGELOG_ENTRY = {version:'5.349', date:'2026-09-04'};
