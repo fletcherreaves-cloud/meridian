@@ -60,3 +60,16 @@ export const CORR_PREDICTORS = [
    action:'Review waste, portion control, and ordering accuracy to manage food cost.',
    note:'Food cost is primarily a profitability metric. Its link to daily sales volume is usually indirect — but high FOB on low-sales days signals waste and portion control issues.'},
 ];
+
+// CORR_TARGETS/CORR_PREDICTORS id -> metric-source.js key, for the auto-first (metricSeries)
+// sourcing path both analytics.js's computeAllCorrelations and signals.js's CorrelationsTab use
+// instead of reading `.fn` off a raw ds.laborRows/opsRows/ctrlRows-joined row (manual-upload
+// only, went blank on auto-only recent days -- notes-61 measured labor_rows 16 days stale while
+// every auto stream was current). `.fn` itself stays on the catalog above for consumers that
+// still read a raw joined row directly (e.g. a caller with its own already-joined fixture).
+// Shared here (not duplicated in each view) so the two consumers can't drift out of sync.
+export const TARGET_METRIC_KEY = { sales:'sales', gc:'gc', avgChk:'avgCheck' };
+export const PREDICTOR_METRIC_KEY = {
+  oepe:'oepe', park:'park', r2p:'r2p', labor:'laborPct', tpph:'tpph', otHrs:'otHrs',
+  cashOS:'cashOSPct', tRedA:'tRedAPct', discPct:'discPct', fobPct:'fobPct',
+};
