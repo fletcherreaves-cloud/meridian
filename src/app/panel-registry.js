@@ -57,10 +57,30 @@ export const PANELS = [
   // dispatch #191, 2026-08-28, re-confirming the original 2026-08-10 merge decision -- see
   // memory/decisions-panel-inventory-2026-08-10.md and memory/dispatch-191.md. calendar-manager
   // stays registered below, kind:'internal', purely so a stray dispatch to the old id still
-  // redirects instead of doing nothing -- it is not a fifth link.)
+  // redirects instead of doing nothing -- it is not a fifth link.
+  //
+  // Events Phase 3 (a) (memory/project-events-calendar-redesign-2026-09-04.md) -- now two links,
+  // not three: 'events' (relabeled "Events & Tags" -> "Events", since it's no longer just the
+  // tagging ledger) becomes route:true and absorbs 'event-impact' as an internal Impact tab
+  // (src/views/events-panel.js's EventsPanel), same "kind:'internal' redirect" treatment
+  // calendar-manager already got in #191 -- see that entry below. 'calendar-manager' itself is
+  // UNCHANGED by this pass: EventsPanel opens it as an overlay from its Calendar/Rules pills
+  // exactly as EventsAndTagsPanel did, deliberately NOT flattened into embedded tab content this
+  // pass -- see events-panel.js's own header for why (it and event-impact.js both render their
+  // own full-screen backdrop/header, not a body meant to embed; the owner picked "thin shell now,
+  // full merge later" over a much larger, harder-to-verify rewrite of ~1800 lines of working UI).)
   { id:'planning', label:'Planning', icon:'🎯', perm:'analytics.store', kind:'nav', section:'planning', route:true },
-  { id:'events', label:'Events & Tags', icon:'◷', perm:null, kind:'nav', section:'planning' },
-  { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'nav', section:'planning' },
+  { id:'events', label:'Events', icon:'◷', perm:null, kind:'nav', section:'planning', route:true },
+  // event-impact — RETIRED as a nav entry (Events Phase 3 (a), 2026-09-04), same pattern as
+  // calendar-manager just below: its content (EventImpactPanel, src/views/event-impact.js,
+  // component itself unchanged) is now reached as an Impact pill inside the unified Events panel.
+  // kind:'internal' keeps the id registered (satisfies panel-registry.test.js's dispatch<->
+  // registry pairing) without a sidebar link, so onOpenModal('event-impact') below still redirects
+  // into Events' Impact overlay rather than silently no-oping. No routing.js LEGACY_PANEL_REDIRECTS
+  // entry needed -- 'event-impact' was never itself route:true, so there is no old `?panel=event-
+  // impact` bookmark to preserve (confirmed: routing.js's isRoutePanelId gate means a non-route id
+  // was never reachable via the URL param in the first place).
+  { id:'event-impact', label:'Event Impact', icon:'📈', perm:'analytics.dashboard', kind:'internal', section:'planning' },
   // calendar-manager — RETIRED as a nav entry (dispatch #191, 2026-08-28): its distinct capability
   // (month grid, recurring rules, AI-search/bulk-import pending review) was harvested into Events
   // & Tags as a Calendar mode (App.js's EventsAndTagsPanel), CalendarManagerPanel component itself
