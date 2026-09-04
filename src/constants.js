@@ -438,6 +438,42 @@ const EVENT_TYPE_GROUPS=[
   {label:'🛍 Retail / Shopping',items:['tax_free','black_friday','small_biz_sat','cyber_monday']},
 ];
 
+// Phase 2 of memory/project-events-calendar-redesign-2026-09-04.md — default `visibility`
+// ('calendar' | 'log') per EVENT_TYPES key, the owner's calendar-vs-log distinction made
+// structural (org_events.visibility, supabase/schema-org-events-visibility-impact.sql). An
+// event's own `visibility` column always wins when set; this is only the DEFAULT applied when
+// nothing was explicitly chosen — a store_incident that closed the store can still be flagged
+// 'calendar' by hand, and a 'calendar' type can still be hand-marked 'log'.
+// Every EVENT_TYPES key MUST have an entry here — guarded by
+// src/__tests__/event-type-visibility-coverage.test.js so a new type added to EVENT_TYPES can't
+// silently fall through with no default.
+const EVENT_TYPE_VISIBILITY={
+  // Weather — treated as forecast-style, community-relevant by default (the common case for how
+  // these get tagged); a routine after-the-fact entry can still be hand-marked 'log'.
+  winter_storm:'calendar', snow:'calendar', ice:'calendar', tornado:'calendar', t_storm:'calendar',
+  sev_weather:'calendar', high_winds:'calendar', flood:'calendar', hurricane:'calendar', weather:'calendar',
+  // Store Events / operational incidents — the owner's own "power was out" example.
+  tech:'log', utilities:'log', maintenance:'log', power:'log', outage:'log', pub_emergency:'log',
+  // Community / External — customer-facing, calendar-worthy.
+  road_closure:'calendar', construction:'calendar', event:'calendar', sports:'calendar',
+  comp:'log', // Competition (general) groups with the named comp_* types below.
+  // Competition — internal intelligence, not a customer-facing calendar item.
+  comp_new:'log', comp_promo:'log', comp_closure:'log', comp_pricing:'log', comp_media:'log',
+  // Operations
+  promo:'calendar', holiday:'calendar',
+  staffing:'log', training:'log',
+  cfv:'log', ecosure:'log', rgr:'log', // Visit — management-visible, not crew-facing.
+  other:'calendar', // the manual-add default type; most hand-tagged events are calendar-worthy.
+  // School Calendar — always calendar-worthy for in-store planning.
+  school_start:'calendar', school_end:'calendar', school_break:'calendar',
+  school_no_school:'calendar', school_early_release:'calendar',
+  // Retail / Shopping — customer-facing windows.
+  tax_free:'calendar', black_friday:'calendar', small_biz_sat:'calendar', cyber_monday:'calendar',
+};
+// Fallback for any EVENT_TYPES key not yet added to the map above (belt-and-suspenders alongside
+// the coverage test) — 'calendar' errs toward visible-by-default, matching `other`'s default.
+function defaultVisibilityFor(type) { return EVENT_TYPE_VISIBILITY[type] || 'calendar'; }
+
 const INV_ORG_COORDS={
   '3708':{lat:34.1741,lng:-97.1452,state:'OK',sup:'Robert Spencer',op:'Ryan Thorley',del:'Wed/Sun'},
   '5183':{lat:35.0254,lng:-97.9421,state:'OK',sup:'Krystiana Langford',op:'Gary Mornhinweg',del:'Tue/Fri'},
@@ -701,4 +737,4 @@ function setLiveDefaultTargets(targets) {
 // reviews.reviewee_loc/orgAssignments() are unpadded, e.g. "3708") -- reusing this one
 // definition rather than a second copy, per the standing "check whether a helper exists
 // before writing one" rule (dispatch16, 2026-08-17).
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };

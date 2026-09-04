@@ -198,6 +198,15 @@ export function orgEventsToDayMap(events, iconFor = () => '📌', exceptions = n
           expectedSalesDelta: e.expectedSalesDelta ?? null,
           expectedGcDelta: e.expectedGcDelta ?? null,
           verification: e.verification || null,
+          // Phase 2 of memory/project-events-calendar-redesign-2026-09-04.md. Raw pass-through,
+          // same as status/opponent/kickoff above -- `visibility` here is null unless the row
+          // explicitly set one; resolving the effective value (falling back to the type's
+          // default) is the consumer's job via defaultVisibilityFor(entry.type)
+          // (src/constants.js), kept out of this file deliberately dependency-free.
+          visibility: e.visibility ?? null, relevance: e.relevance ?? null,
+          expectedImpact: e.expectedImpact ?? null, impactConfidence: e.impactConfidence ?? null,
+          impactN: e.impactN ?? null, leadDays: e.leadDays ?? 0, lagDays: e.lagDays ?? 0,
+          rrule: e.rrule ?? null,
           ...(e.scope && e.scope !== 'store' ? { scope: e.scope, scopeState: e.scopeState ?? null } : {}),
           ...(multi ? { rangeId, rangeDayNum: i + 1, rangeTotalDays: days.length } : {}),
           ...(exc && exc.status === 'modified' && exc.overrides ? exc.overrides : {}),
