@@ -1338,13 +1338,29 @@ This turns backfill from "one hand-read visitId per capture" into "one console p
 though it still requires a human physically at a signed-in browser (SSO+MFA still blocks any
 unattended path — unchanged from this file's security section).
 
-**Corrected 2026-09-04, first real run:** the script's first `getDescendants` call used
+**Corrected 2026-09-04, two real runs:** the script's first `getDescendants` call used
 `rowsPerPage=100` and got a live **400 Bad Request** (the owner ran it and pasted the console
-error). The real HAR capture that found this whole chain used `rowsPerPage=20` — the API
-evidently validates page size against a small allowed set, and 100 wasn't in it. Guessing a
-"safely large" page size instead of using the proven value was the mistake; fixed by paging
-properly at `rowsPerPage=20` (the estate is 27 stores, so this now takes 2 pages) instead of
-trying a bigger untested number again.
+error). First fix attempt — matching `rowsPerPage=20`, the exact value the real HAR capture used
+— was WRONG, or at least incomplete: the owner re-ran it and got the identical 400, on a request
+whose query string was now byte-identical to the proven-working capture.
+
+**The real cause, found by re-reading the HAR's own request headers (names + non-secret values
+only) for that exact call:** every `/api/` request the real app makes carries three custom headers
+— `hierarchy-level`, `hierarchy-node`, `territory-code` — set by the app's own HTTP client. A
+plain browser `fetch()` never sends these; only cookies (`credentials:'include'`) and standard
+headers travel automatically. The server was rejecting the request outright for missing them (400,
+not 401/403 — consistent with a malformed/incomplete request rather than an auth failure).
+
+Cross-checking multiple captured calls confirmed the values reflect the **current page the signed-
+in user is on**, not the query's own target params — the SAME `getDescendants` action (querying
+the operator's stores, `parentHierarchyNode=1000890759`) carried `hierarchy-level:11,
+hierarchy-node:1000890759` while the user was on the operator root page, and `hierarchy-level:12,
+hierarchy-node:195500301853` once the user had navigated to a specific store's page — proving
+there's no single value tied to the query itself, just "a node this session legitimately has
+access to." `scripts/browser-ecosure-bulk-capture.js` now sends the operator root as this context
+for the store-list call, and each store's own node for its per-store calls — mirroring exactly
+what the real navigation produced. Not yet re-confirmed working end-to-end; the owner will re-run
+the corrected script next.
 
 ## 🔴 This also exposed a real bug in the shipped parser — now fixed
 
