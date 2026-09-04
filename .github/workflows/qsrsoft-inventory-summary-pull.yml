@@ -1,0 +1,73 @@
+name: QSRSoft Inventory Summary Pull
+
+# Fills qsr_inventory_summary — the Inventory Intelligence panel's auto stream, wired since
+# dispatch #214 but with no producer until now (memory/finding-inventory-summary-automation-
+# 2026-08-27.md, dispatch #178). Endpoint owner-captured live 2026-09-04:
+#   GET /api/inv/{nsn}/inv_summary/rawitems?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+# Same host/auth as the already-automated FOB and On-Hand pulls. Daily, after the On-Hand pull's
+# own progress-snapshot window so the two don't race the same eBOS host at once.
+
+on:
+  schedule:
+    - cron: '30 12 * * *'   # 12:30 UTC daily
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Subset of NSNs (comma-separated, default: all 27)'
+        required: false
+        default: ''
+      start_date:
+        description: 'Override window start (YYYY-MM-DD, default: month-to-date)'
+        required: false
+        default: ''
+      end_date:
+        description: 'Override window end (YYYY-MM-DD, default: yesterday)'
+        required: false
+        default: ''
+      debug:
+        description: 'Verbose logging (1 = on)'
+        required: false
+        default: '0'
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install chromium --with-deps
+
+      - name: Pull QSRSoft Inventory Summary (Usage)
+        run: node scripts/qsrsoft-inventory-summary-pull.mjs
+        env:
+          VITE_SUPABASE_URL:         ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          QSRSOFT_EBOS_TOKEN:        ${{ secrets.QSRSOFT_EBOS_TOKEN }}
+          QSRSOFT_COGNITO_TOKEN:     ${{ secrets.QSRSOFT_COGNITO_TOKEN }}
+          QSRSOFT_TOKEN:             ${{ secrets.QSRSOFT_TOKEN }}
+          QSRSOFT_USERNAME:          ${{ secrets.QSRSOFT_USERNAME }}
+          QSRSOFT_PASSWORD:          ${{ secrets.QSRSOFT_PASSWORD }}
+          INVSUM_STORES:             ${{ github.event.inputs.stores || '' }}
+          INVSUM_START_DATE:         ${{ github.event.inputs.start_date || '' }}
+          INVSUM_END_DATE:           ${{ github.event.inputs.end_date || '' }}
+          QSRSOFT_DEBUG:             ${{ github.event.inputs.debug || '0' }}
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-summary-pull-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
