@@ -1,6 +1,6 @@
 ---
 name: dispatch-91
-description: The QSRSoft security-events 403 investigation ran the token-injection test three times live (workflow_dispatch, self-hosted runner) on the pull's own documented first-failing unit -- 403 once, 200 twice, same identity, same code, ~5 minutes apart. The failure is NOT reliably reproducible, which overturns the assumption (a clean, stable token-vs-context split) the original two-test plan was built on. See part 2 of the Resolution for the live evidence and the recommended next step -- do NOT jump straight to a packet capture against a failure that may not currently be reproducible.
+description: The QSRSoft security-events pull has succeeded exactly ONCE in its complete 81-run history (2026-08-22 through 2026-09-04) -- a true ~1.2% success rate, not the ~10% a smaller 10-run sample suggested on 2026-08-24. The every-2-hours "catch more good windows" mitigation (dispatch #95) has run 40 times in the trailing week with zero successes. See part 4 of the Resolution for the complete run-history measurement and why options 1 (run more often) and 3 (QSRSoft support) are no longer live levers.
 sensitivity: open
 metadata:
   node_type: memory
@@ -14,10 +14,10 @@ history and current state — read it top to bottom, including the superseded/re
 they're in the file on purpose, not stale) and `memory/dispatch-63.md`'s resolution section (the
 earlier source-IP measurement, itself later complicated by the finding file's 2026-08-24 appendix).
 
-**Status:** ⚠️ UPDATE 2026-08-24 — test 1 has now been run live, three times (see "Resolution, part
-2 of 2" at the bottom). The result was NOT a clean, reproducible split, which changes what the
-right next step is. **Owner decision needed** on which of part 2's three recommended next steps to
-take — read that section before doing anything else here, including before running test 2.
+**Status:** 🔴 UPDATE 2026-09-04 — the complete 81-run history was pulled (not a sample): **1
+success total, 0 in the trailing 40 runs.** Read "Resolution, part 4 of 4" at the bottom first —
+it corrects part 3's "~10%" figure and narrows the live options. Parts 1-3 below are kept for the
+investigation trail; do not treat part 3's "~10%" or its option-1 recommendation as current.
 
 ---
 
@@ -279,3 +279,43 @@ this side alone, without vendor cooperation.
 **Owner's call which of 1-3 (or some combination) to pursue.** Not proposing a default here since
 this is a genuine trade-off between engineering effort and a problem that may not be fully
 fixable regardless of effort spent.
+
+## 🔴 Resolution (2026-09-04), part 4 of 4 — the COMPLETE run history, and it is worse than "~10%"
+
+Owner (session 2026-09-04): *"i feel like we built a pull, but it never completes."* Pulled the
+**entire** `qsrsoft-security-events-pull.yml` run history via the GitHub API (not a sample) —
+81 runs total, `#2` (2026-08-22, the first real run) through `#81` (2026-09-04, today).
+
+**Exactly ONE success in 81 runs: `#9`, 2026-08-23 21:28:38Z.** Every other run — 80 of 81,
+including all 40 most recent, running on the every-2-hours schedule dispatch #95 put in place
+specifically to "catch more good windows" — failed with the same `403 AccessDeniedException` /
+*"explicit deny in an identity-based policy"* shape documented throughout this dispatch. **The
+most recent run checked** (`#81`, triggered live this session): 3240/3240 units failed, zero rows
+saved, `Process completed with exit code 1` — a complete, total failure, not a partial one.
+
+**This corrects part 3's "~10% success rate" figure.** That number came from a 10-run sample
+(`#5`–`#14`) that happened to catch `#9`'s lone success inside its window — 1/10 in that sample
+read as "roughly 10%," but the true rate over the full 81-run population is **1/81 ≈ 1.2%**, and
+the trailing week (`#42`–`#81`, Aug 28 → Sep 4) is a flat **0/40**. Recorded here per this repo's
+own "measure it, don't reason about it" rule — the smaller sample wasn't wrong as a sample, it
+was just small enough to be misleading, and nobody had pulled the complete history until now.
+
+### What this changes for the three options part 3 left open
+
+1. **"Run more often to catch good windows" — already implemented (dispatch #95, the current
+   every-2-hours cron) and it has NOT worked.** 40 consecutive attempts on that exact cadence,
+   spread across a full week and every hour of the day, produced zero successes. Either "good
+   windows" are far rarer than one every few hours, or the run-level-correlation hypothesis itself
+   doesn't hold at this timescale. Either way, **this option is not a live lever anymore — it was
+   tried, for a week, at real cost (40 nine-minute self-hosted-runner jobs), and the data says it
+   isn't working.**
+2. **Packet capture** — still theoretically available, but only one single success (`#9`, now 12
+   days stale) exists anywhere in this investigation's history to compare against. There is no
+   fresh "good" request to capture back-to-back with a fresh "bad" one; re-manufacturing one would
+   mean hoping for a second lucky run.
+3. **QSRSoft support** — already ruled out (owner-stated 2026-08-24, unchanged).
+
+**So the real, current choice is narrower than part 3 framed it: continue burning self-hosted
+runner minutes on a schedule that has produced one success in 81 tries and zero in the last 40,
+or stand it down.** Neither "wait for a good window" nor "ask QSRSoft" is a live option anymore —
+both were tried or ruled out. This is the owner's call, not a technical one; not defaulted here.
