@@ -33,6 +33,7 @@
 import { chromium } from 'playwright';
 import { COVER_FRAC, sessionQualities, sessionLabel } from '../src/engine/count-cycle.js';
 import { safeCreateClient } from './lib/safe-supabase-client.mjs';
+import { nextMonthStart } from './lib/month-bounds.mjs';
 // Reuse the SAME count-progress engine the app uses (pure ESM, zero drift).
 import {
   computeCountProgress, diagnoseIncompleteCount, detectCountNotifications, BELIEVES_DONE_PCT,
@@ -774,11 +775,16 @@ export function isFobFresh(fobUpdatedAt, countCompletedAt) {
 // aggregation of the FOB dollars themselves.
 export async function fetchFobSnapshotForStore(loc, period) {
   if (!supabase) return null;
+  // NOT `.lte('date', \`${period}-31\`)` -- that literal is an invalid date for any month with
+  // fewer than 31 days and Postgres rejects it outright ("date/time field value out of range").
+  // Found live-armed 2026-09-04 while fixing the identical bug (already crashing in production)
+  // in scripts/eom-snapshot-pull.mjs -- see scripts/lib/month-bounds.mjs for why this is a shared
+  // helper now, the third independent occurrence of the same mistake in this repo.
   const { data, error } = await supabase.from('qsr_fob')
     .select('loc,date,prod_sales_amt,comp_waste_amt,raw_waste_amt,condiments_amt,emp_mgr_meals_amt,stat_variance_amt,unexplained_amt,updated_at')
     .eq('loc', loc)
     .gte('date', `${period}-01`)
-    .lte('date', `${period}-31`)
+    .lt('date', nextMonthStart(period))
     .order('date', { ascending: false });
   if (error) { console.warn('[qsr_fob] load error:', error.message); return null; }
   if (!data || !data.length) return null;
