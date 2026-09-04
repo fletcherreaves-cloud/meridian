@@ -5,8 +5,9 @@
 // Per this repo's standing "would this verification still pass if reverted?" rule, this renders
 // the ACTUAL EventCalendar component (not just the filtering logic in isolation) with a
 // realistic multi-year, multi-holiday, multi-store dataset shaped exactly like the panel's own
-// "🗓 Auto-Tag Holidays" button writes it (type:'holiday', note:hol.label — see
-// src/views/store-dash.js's EventCalendar). Confirms:
+// (now-retired, Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md) "🗓 Auto-Tag
+// Holidays" button used to write it (type:'holiday', note:hol.label — same shape other writers,
+// e.g. calendar.js's applyEventToStores, still use). Confirms:
 //   1. Selecting the Holiday type filter reveals a second selector listing the distinct holiday
 //      names present (derived from `note`), and picking one narrows the rendered list to just
 //      that holiday.
@@ -108,8 +109,11 @@ describe('EventCalendar — holiday sub-filter + full-list print (Dispatch #122)
   it('shows a second selector of distinct holiday names only after Holiday is selected, and narrows results', () => {
     render();
 
-    // Baseline: 29 events tagged total (27 + 1 Christmas Day + 1 sports).
-    expect(container.textContent).toContain('29 events tagged');
+    // Baseline: 29 events tagged total (27 + 1 Christmas Day + 1 sports). This fixture's dk's
+    // are all distinct (see buildUserEvents' monotonic dayCounter), so grouping (Phase 0 of
+    // memory/project-events-calendar-redesign-2026-09-04.md) never collapses any of them and
+    // the header reads "29 events" with no "(N store-tags)"/"shown" suffix.
+    expect(container.textContent).toContain('29 events');
 
     // No holiday sub-filter yet (typeFilter==='all').
     let selectsBefore = [...container.querySelectorAll('select')];
@@ -134,7 +138,7 @@ describe('EventCalendar — holiday sub-filter + full-list print (Dispatch #122)
 
     // Narrow to just Thanksgiving.
     setNativeValue(holidaySel, 'Thanksgiving');
-    expect(container.textContent).toContain('29 events tagged');
+    expect(container.textContent).toContain('29 events');
     expect(container.textContent).toContain('9 shown');
     // Every visible row's note should now be Thanksgiving-only.
     const noteEls = [...container.querySelectorAll('div')].filter(d => d.textContent === 'Thanksgiving');
