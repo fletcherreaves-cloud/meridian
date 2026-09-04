@@ -2,7 +2,6 @@
 import * as React from 'react';
 import { Chart } from 'chart.js/auto';
 import { addDR, dKey, fmtDI, sodOf } from '../utils/date.js';
-import { buildHolidays } from '../utils/holidays.js';
 import { businessDate } from '../engine/swing-feed.js';
 import { DEFAULT_TARGETS, DOW_BASE, STORE_COORDS, STORE_NAMES, sName, sNameC, EVENT_TYPES, INV_ORG_COORDS, supervisorOf, supervisorGroups } from '../constants.js';
 import { InfoIcon, fetchWx, getForecastWeather, gcCrossCheck, locRows, _wxCache } from '../engine/forecast.js';
@@ -3223,12 +3222,11 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
   const typeOptions = useMemo(()=>[...new Set(allEvents.map(e=>e.type||'other'))].sort(),[allEvents]);
 
   // Dispatch #122: distinct holiday names present among 'holiday'-typed events, keyed off
-  // `note` — the auto-tag flow below writes buildHolidays()'s stable per-holiday `label`
-  // straight into `note` (note:hol.label), so this is the same name every "New Year Day"/
-  // "Independence Day"/etc event carries across every year and store it was tagged on.
-  // NOTE: `holiday_major` is computed in the auto-tag loop below but never actually assigned
-  // (every auto-tagged holiday is written as type:'holiday' regardless of impact) — confirmed
-  // by grep, so there is only the one real holiday type to sub-filter here.
+  // `note` — historically written from buildHolidays()'s stable per-holiday `label` straight
+  // into `note` (note:hol.label) by this panel's own "🗓 Auto-Tag Holidays" button (retired,
+  // see below) and by other writers (calendar.js, analytics.js's anomaly scanner) that still
+  // use the same convention, so this is the same name every "New Year Day"/"Independence
+  // Day"/etc event carries across every year and store it was tagged on.
   const holidayCounts = useMemo(()=>{
     const c={};
     for(const e of allEvents){
@@ -3274,6 +3272,27 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
     return evs;
   },[allEvents,typeFilter,holidayFilter,locFilter,search,sortBy,dupesOnly,dupeKeys]);
 
+  // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: this ledger used to render
+  // one row per (store x day) with zero grouping, so a districtwide event became N visually-
+  // identical consecutive rows -- the owner's "wall of repetitive events". calendar.js's
+  // monthAgenda already solved this for the month-grid view (byLabel grouping + "(N stores)");
+  // this ports the identical grouping key -- (dk, normalized label, type) -- into the flat ledger,
+  // sorted-by list here instead of by-day. Grouping happens AFTER filter/sort so `filtered`'s
+  // ordering (date/loc/type) still drives which group is "first" and where it sorts.
+  const groupKeyOf = e => e.dk+'|'+normLabel(e.label)+'|'+(e.type||'other');
+  const groupEvents = (evs) => {
+    const byKey = new Map();
+    for(const e of evs){
+      const k = groupKeyOf(e);
+      if(!byKey.has(k)) byKey.set(k, {...e, locs:[e.loc], items:[e]});
+      else { const g=byKey.get(k); g.locs.push(e.loc); g.items.push(e); }
+    }
+    return Array.from(byKey.values());
+  };
+  const allEventsGrouped = useMemo(()=>groupEvents(allEvents),[allEvents]);
+  const groupedFiltered = useMemo(()=>groupEvents(filtered),[filtered]);
+  const [expandedGroups, setExpandedGroups] = useState({});
+
   const save=()=>{
     const next=JSON.parse(JSON.stringify(userEvents));
     const existing = next[editLoc] && next[editLoc][editDate];
@@ -3304,30 +3323,18 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
     div({style:{background:'var(--surf)',borderRadius:'var(--rl)',border:'.5px solid var(--bdr2)',width:'100%',maxWidth:900,display:'flex',flexDirection:'column',maxHeight:'92vh',overflow:'auto',overflow:'hidden'}},
       div({style:{padding:'14px 18px',borderBottom:'.5px solid var(--bdr)',display:'flex',alignItems:'center',gap:10}},
         div(null,div({style:{fontSize:'15px',fontWeight:700}},'📅 Event Calendar'),div({style:{fontSize:'11px',color:'var(--text2)',marginTop:2}},
-          allEvents.length+' events tagged'+(filtered.length!==allEvents.length?' · '+filtered.length+' shown':''))),
+          allEventsGrouped.length+' event'+(allEventsGrouped.length===1?'':'s')+
+          (allEvents.length!==allEventsGrouped.length?' ('+allEvents.length+' store-tags)':'')+
+          (groupedFiltered.length!==allEventsGrouped.length?' · '+groupedFiltered.length+' shown':''))),
         btn({className:'btn btn-sm btn-a',onClick:()=>{setEditKey('new');setEditLoc(stores[0]?.loc||'');setEditDate(fmtDI(new Date()));setEditType('other');setEditNote('');}},'+Add Event'),
-        btn({className:'btn btn-sm',style:{color:'#a5b4fc',borderColor:'rgba(165,180,252,.3)'},
-          onClick:()=>{
-            // Auto-tag all known holidays for current year ±1 across ALL stores
-            const next=JSON.parse(JSON.stringify(userEvents));
-            const yr=new Date().getFullYear();
-            let count=0;
-            for(let y=yr-1;y<=yr+1;y++){
-              const hols=buildHolidays(y);
-              for(const [dk,hol] of Object.entries(hols)){
-                const evType = hol.impact==='major'?'holiday_major':hol.impact==='moderate'?'holiday':'other';
-                for(const s of stores){
-                  if(!next[s.loc])next[s.loc]={};
-                  if(!next[s.loc][dk]){ // don't overwrite existing user tags
-                    next[s.loc][dk]={type:'holiday',note:hol.label,icon:'🗓',label:'Holiday: '+hol.label,autoTagged:true};
-                    count++;
-                  }
-                }
-              }
-            }
-            onUpdate(next);
-            alert('Auto-tagged '+count+' holiday events across all stores (current year ±1). Pre-existing tags were preserved.');
-          }},'🗓 Auto-Tag Holidays'),
+        // Phase 0 of memory/project-events-calendar-redesign-2026-09-04.md: the "🗓 Auto-Tag
+        // Holidays" button used to live here — one click wrote ~1,539 org_events rows (19
+        // holidays x 27 stores x 3 years) purely to materialize a fact isHoliday()/buildHolidays()
+        // (src/utils/holidays.js) already answers on demand at forecast/display time (#197 Slice 1
+        // established the same principle and stopped the automatic-on-load version of this write;
+        // this was the one remaining owner-clicked path). Retired, not replaced — there is nothing
+        // for a user to click to get the same information, because there was never anything to
+        // compute that isHoliday() doesn't already provide.
         // Dispatch #122: reuse the repo's existing print pattern (ExportDropdown's "HTML
         // Report / Print" — same component RankingView etc. already use) instead of a native
         // Ctrl+P, since this panel's results live inside a scrolled overflow:auto container
@@ -3428,25 +3435,42 @@ function EventCalendar({userEvents, onUpdate, onClose, stores, viewToggle}) {
         )
       ),
       div({style:{overflowY:'auto',flex:1}},
-        !filtered.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},
+        !groupedFiltered.length&&div({style:{padding:30,textAlign:'center',color:'var(--text3)',fontSize:'13px'}},
           allEvents.length===0?'No events tagged yet. Tag events from the Forecast Table or Anomaly Panel.':'No events match your search/filter.'),
-        filtered.map((ev,i)=>{
-          const et=EVENT_TYPES[ev.type]||EVENT_TYPES.other;
-          const isDupe = dupesOnly && dupeKeys.has(ev.loc+'|'+ev.dk+'|'+normLabel(ev.label));
-          const isCombined = ev.combinedOf>1;
-          return div({key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',
-            borderBottom:'.5px solid var(--bdr)',background:isDupe?'rgba(244,63,94,.06)':'transparent'}},
-            span({style:{fontSize:'18px'}}),ev.icon||et.icon,
-            div({style:{flex:1}},
-              div({style:{fontWeight:600,fontSize:'11px'}},ev.label||et.label),
-              div({style:{fontSize:'10px',color:'var(--text3)'}},
-                (STORE_NAMES[ev.loc]||ev.loc)+' · '+new Date(ev.dk+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-              ev.note&&div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},ev.note),
-              isCombined&&div({style:{fontSize:'9px',color:'#a5b4fc',marginTop:2}},
-                'Shares this day with '+(ev.combinedOf-1)+' other tagged event'+(ev.combinedOf-1!==1?'s':'')+' — Edit/✕ act on the whole day')
+        groupedFiltered.map(g=>{
+          const et=EVENT_TYPES[g.type]||EVENT_TYPES.other;
+          const key=groupKeyOf(g);
+          const isMulti=g.locs.length>1;
+          const expanded=!!expandedGroups[key];
+          const isDupe = dupesOnly && g.items.some(ev=>dupeKeys.has(ev.loc+'|'+ev.dk+'|'+normLabel(ev.label)));
+          const isCombined = g.combinedOf>1;
+          return div({key},
+            div({style:{display:'flex',alignItems:'center',gap:10,padding:'10px 18px',
+              borderBottom:'.5px solid var(--bdr)',background:isDupe?'rgba(244,63,94,.06)':'transparent',
+              cursor:isMulti?'pointer':'default'},
+              onClick:isMulti?()=>setExpandedGroups(p=>({...p,[key]:!p[key]})):undefined},
+              span({style:{fontSize:'18px'}}),g.icon||et.icon,
+              div({style:{flex:1}},
+                div({style:{fontWeight:600,fontSize:'11px'}},g.label||et.label),
+                div({style:{fontSize:'10px',color:'var(--text3)'}},
+                  (isMulti?('◍ '+g.locs.length+' stores '+(expanded?'▾':'▸')):(STORE_NAMES[g.loc]||g.loc))+
+                  ' · '+new Date(g.dk+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+                g.note&&div({style:{fontSize:'10px',color:'var(--text2)',marginTop:2}},g.note),
+                isCombined&&div({style:{fontSize:'9px',color:'#a5b4fc',marginTop:2}},
+                  'Shares this day with '+(g.combinedOf-1)+' other tagged event'+(g.combinedOf-1!==1?'s':'')+' — Edit/✕ act on the whole day')
+              ),
+              !isMulti&&btn({className:'btn btn-sm',onClick:e=>{e.stopPropagation();startEdit(g.items[0]);}},'✎ Edit'),
+              !isMulti&&btn({className:'btn btn-sm btn-red',onClick:e=>{e.stopPropagation();remove(g.items[0].loc,g.items[0].dk);}},'✕')
             ),
-            btn({className:'btn btn-sm',onClick:()=>startEdit(ev)},'✎ Edit'),
-            btn({className:'btn btn-sm btn-red',onClick:()=>remove(ev.loc,ev.dk)},'✕')
+            isMulti&&expanded&&g.items.map((ev,j)=>{
+              const isDupeItem = dupesOnly && dupeKeys.has(ev.loc+'|'+ev.dk+'|'+normLabel(ev.label));
+              return div({key:j,style:{display:'flex',alignItems:'center',gap:10,padding:'6px 18px 6px 46px',
+                borderBottom:'.5px solid var(--bdr)',background:isDupeItem?'rgba(244,63,94,.06)':'var(--surf2)',fontSize:'10px'}},
+                div({style:{flex:1,color:'var(--text2)'}},STORE_NAMES[ev.loc]||ev.loc),
+                btn({className:'btn btn-sm',onClick:()=>startEdit(ev)},'✎ Edit'),
+                btn({className:'btn btn-sm btn-red',onClick:()=>remove(ev.loc,ev.dk)},'✕')
+              );
+            })
           );
         })
       )
