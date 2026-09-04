@@ -23,8 +23,15 @@ const fakeRows = [
   { loc: '5183', updatedAt: '2026-09-01T00:00:00Z', config: {} },
 ];
 
+// qsr_store_settings -- a second, independent loader StoreControlsTab now also calls (2026-09-04,
+// same session as the hook-order fix: wired the cash-control automation's data into this tab).
+const fakeSettingsRows = [
+  { loc: '3708', updatedAt: '2026-09-04T00:00:00Z', cash: { drawerStartAmount: 100, drawerCount: 6, safeBackupAmount: 1800, maxStorewideCash: 10, maxDrawerCash: 2, cashRecyclerEnabled: false, allowCashAdjustments: false } },
+];
+
 vi.mock('../lib/supabase.js', () => ({
   loadQsrStoreControls: async () => fakeRows,
+  loadQsrStoreSettings: async () => fakeSettingsRows,
   // StoreControlsTab renders DistrictStandardCheck as a child, which independently fetches its
   // own audit window -- unrelated to the hook-order bug, but must resolve or mounting throws.
   loadAuditRowsWindow: async () => [],
@@ -54,5 +61,22 @@ describe('StoreControlsTab hook order across the loading -> loaded transition (d
 
     expect(container.textContent).not.toContain('Loading store controls…');
     expect(container.textContent).toContain('Real per-store configuration');
+  });
+
+  it('clicking a store shows the store_settings cash slice as a separate, unreconciled section', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => { root.render(React.createElement(StoreControlsTab)); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    const storeCell = [...container.querySelectorAll('td')].find(td => td.textContent.includes('Ardmore') || td.textContent.includes('3708'));
+    expect(storeCell).toBeTruthy();
+    act(() => { storeCell.closest('tr').dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    expect(container.textContent).toContain('Store Settings — Cash (2nd source)');
+    expect(container.textContent).toContain('Starting drawer bank: $100 × 6 drawer(s)');
+    expect(container.textContent).toContain('not reconciled against the Cash Controls / Safe & Deposit cells above');
   });
 });
