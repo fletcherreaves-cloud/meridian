@@ -236,6 +236,16 @@ input,select{font-family:var(--sans);color:var(--text)}
 .ic-fc{background:rgba(129,140,248,.2);color:#a5b4fc}
 .bitext{font-size:12px;line-height:1.65}
 .bt-crit{color:#fca5a5}.bt-watch{color:#fdba74}.bt-ok{color:#6ee7b7}.bt-fc{color:#c7d2fe}
+/* Light mode (shipped default) -- the pastel-300 tones above were tuned for the dark surface
+   (~9-12:1 contrast there) and measure ~1.5-1.9:1 on a white --surf, well under WCAG AA's 4.5:1
+   floor for body text -- effectively unreadable (Notes 61 District View #5, owner: "all pastel,
+   including the text -- unreadable"). Reuses the SAME darker tones already vetted for print
+   (below, @media print's .bt-* block) -- both render on a white/near-white surface, so one set
+   covers both. [data-mode="light"] alone (no [data-theme=...]) matches all 4 theme families. */
+html[data-mode="light"] .bt-crit{color:#991b1b}
+html[data-mode="light"] .bt-watch{color:#92400e}
+html[data-mode="light"] .bt-ok{color:#166534}
+html[data-mode="light"] .bt-fc{color:#1e40af}
 
 /* Scorecard */
 .sc-hdr{display:flex;align-items:center;padding:7px 12px;border-radius:var(--r);margin-bottom:6px;font-size:10px;font-weight:700;letter-spacing:.3px}
