@@ -37,4 +37,17 @@ describe('buildRow (complaints import)', () => {
     const row = buildRow({ ...parsedRow(), store: '689' });
     expect(row.loc).toBe('00689');
   });
+
+  // Measured on the first real capture (2026-09-05, 3033 raw entries): some cases have no
+  // incidentDate at all, which the customer_complaints NOT NULL constraint rejected outright.
+  it('falls back to receivedDate for incident_date when incidentDate is missing', () => {
+    const row = buildRow({ ...parsedRow(), incidentDate: null });
+    expect(row.incident_date).toBe('2026-01-06');
+    expect(row.received_date).toBe('2026-01-06');
+  });
+
+  it('leaves incident_date null when neither incidentDate nor receivedDate is present', () => {
+    const row = buildRow({ ...parsedRow(), incidentDate: null, receivedDate: null });
+    expect(row.incident_date).toBeNull();
+  });
 });
