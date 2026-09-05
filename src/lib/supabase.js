@@ -756,8 +756,17 @@ export async function loadSmgFullscale({ year, month } = {}) {
 // memory/dispatch-231-complaints-metric.md.
 export async function loadCustomerComplaints() {
   if (!supabase) return [];
+  // Dispatch #231 follow-on (2026-09-05, real capture) -- many complaints share the same
+  // incident_date (multiple cases/day across 27 stores), so ordering by incident_date ALONE
+  // gives Postgres no deterministic tiebreaker across separate range()-paginated requests: the
+  // relative order of tied rows isn't guaranteed stable between page 1's query and page 2's, so
+  // the same row can land in two pages (visible duplicate rows in the panel) while another tied
+  // row silently never appears at all. child_case_id is the table's own unique key -- adding it
+  // as a secondary sort makes the order fully deterministic, matching the pattern every other
+  // fetchAll()-paginated loader in this file uses (e.g. loadQsrActSummary's .order('dt').order
+  // ('loc').order('hour_slot')).
   const data = await fetchAll((from, to) =>
-    supabase.from('customer_complaints').select('*').order('incident_date', { ascending: false }).range(from, to)
+    supabase.from('customer_complaints').select('*').order('incident_date', { ascending: false }).order('child_case_id', { ascending: false }).range(from, to)
   );
   return (data || []).map(r => ({
     childCaseId: r.child_case_id,
