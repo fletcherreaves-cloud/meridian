@@ -57,6 +57,22 @@ export function buildRow(row) {
   };
 }
 
+// The same real-world case can appear twice in one raw capture: once as the top-level case entry,
+// once again inside its own childCases[] (dispatch #231's parser test documents this as real API
+// behavior, not a parser bug -- see dispatch-231-complaints-parser.test.js's "Multiple Issues"
+// case). Both copies share the same real child_case_id, so a single upsert statement can't touch
+// both -- measured 2026-09-05 on the real capture: "ON CONFLICT DO UPDATE command cannot affect
+// row a second time" once the incident_date fix got past the first error. It's one case described
+// twice, not two complaints, so collapsing to one row is correct, not lossy -- keeps the LAST
+// occurrence, since parseComplaintEntry() always pushes the top-level entry first and its
+// childCases[] entries after, and the childCases[] version carries the more specific per-issue
+// issueCode/issueSubCode rather than the generic parent-case wrapper's.
+export function dedupeByChildCaseId(rows) {
+  const map = new Map();
+  for (const row of rows) map.set(row.child_case_id, row);
+  return [...map.values()];
+}
+
 async function main() {
   const supabase = (process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
     ? safeCreateClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -101,13 +117,20 @@ async function main() {
   }
 
   const allRows = parsed.map(buildRow);
+
+  const deduped = dedupeByChildCaseId(allRows);
+  const duplicateCount = allRows.length - deduped.length;
+  if (duplicateCount) {
+    console.warn(`[import-complaints-history] ${duplicateCount} duplicate child_case_id row(s) collapsed (same case listed twice in the raw capture -- kept the more specific entry).`);
+  }
+
   // Backstop for the case neither date is present (not observed 2026-09-05, but incident_date is
   // NOT NULL and a row missing both would fail the whole chunk otherwise) -- skip and report it
   // rather than losing every row in that chunk to one bad case.
-  const rows = allRows.filter(r => r.incident_date);
-  const noDateAtAll = allRows.length - rows.length;
+  const rows = deduped.filter(r => r.incident_date);
+  const noDateAtAll = deduped.length - rows.length;
   if (noDateAtAll) {
-    console.warn(`[import-complaints-history] ${noDateAtAll} case(s) had neither incidentDate nor receivedDate -- skipped (child_case_id: ${allRows.filter(r => !r.incident_date).map(r => r.child_case_id).join(', ')}).`);
+    console.warn(`[import-complaints-history] ${noDateAtAll} case(s) had neither incidentDate nor receivedDate -- skipped (child_case_id: ${deduped.filter(r => !r.incident_date).map(r => r.child_case_id).join(', ')}).`);
   }
   const CHUNK = 500;
   let saved = 0;
@@ -117,7 +140,7 @@ async function main() {
     if (error) { console.error(`[import-complaints-history] upsert failed on chunk starting at ${i}: ${error.message}`); process.exit(1); }
     saved += chunk.length;
   }
-  console.log(`[import-complaints-history] upserted ${saved} row(s) (${parsed.length} parsed from ${entries.length} raw entries, including flattened childCases)`);
+  console.log(`[import-complaints-history] upserted ${saved} row(s) (${parsed.length} parsed from ${entries.length} raw entries, including flattened childCases, minus ${duplicateCount} duplicate(s) and ${noDateAtAll} dateless skip(s))`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
