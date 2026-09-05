@@ -215,6 +215,10 @@ export const PANELS = [
   // Owner-answered 2026-08-21 (dispatch #54 Job B): "They would be more Operations" -- moved out
   // of People alongside visit-readiness below.
   { id:'graded-visits', label:'Graded Visits', icon:'📋', perm:'analytics.store', kind:'nav', section:'operations', route:true },
+  // Dispatch #231 follow-on (2026-09-05) -- browsing panel over the raw customer_complaints rows
+  // the Complaint Contacts/100K review metric already consumes (autoPopulateKPIs). Same section
+  // as Graded Visits (owner: "it can live there") -- both are Propel-sourced case/record browsers.
+  { id:'customer-complaints', label:'Customer Complaints', icon:'📮', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   // Dispatch #196 -- the former single 'help' entry split in two, and BOTH now carry the
   // real section:'help' (not 'admin') -- SECTIONS below has always declared a 'help' section
   // (label 'Help') that no panel actually used until now, exactly the "inert section" pattern
