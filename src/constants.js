@@ -537,54 +537,156 @@ const VLH_COFFEE = [
   {value:'both',   label:'BDAP + McCafé'},
 ];
 
-// QSR_DAR_FIELDS — field dictionary for the qsr_daily_activity table.
-// Maps each DB column name to a display label, description, and unit.
-// Source: QSRSoft Daily Activity Report (DAR) via daily-activity-raw API endpoint.
-// Purpose: UI tooltips, SAGE system context, and data documentation.
+// QSR_DAR_FIELDS — field dictionary for the qsr_daily_activity table (hourly DAR).
+// Maps each DB column name (exactly as scripts/qsrsoft-dar-pull.mjs's mapRow() writes it) to a
+// display label, description, and unit. Sources: QSRSoft's own DAR page field descriptions
+// (screenshots/field-definitions-parsed.json, scraped 2026-08-24 via the ℹ-icon dialogs) for the
+// derived/display metrics, and memory/project-qsrsoft-dar-columns.md (formulas extracted
+// verbatim from QSRSoft's frontend bundle, 2026-07-21) for the raw timing legs those metrics are
+// built from. Purpose: UI tooltips, SAGE system context, and data documentation.
+//
+// 2026-09-05: rewritten from scratch against the REAL columns mapRow() emits — the prior version
+// of this dict (shipped v4.x, never wired into any UI or import, confirmed dead code by a repo
+// grep) named columns (trans_cnt, healthy_cnt, avg_check, dt_pullforward/dt_greet/dt_menu/
+// dt_payment/dt_cashier/dt_avgspeed, ly_avg_check, ly_healthy_cnt) that do not exist on this
+// table at all. Every key below was checked against mapRow()'s actual output, not assumed.
 const QSR_DAR_FIELDS = {
   // ── Identity / Time ────────────────────────────────────────────────────
-  loc:                  {label:'Store NSN',         desc:'McDonald\'s National Store Number, zero-padded to 7 digits',            unit:''},
-  dt:                   {label:'Date',              desc:'Calendar date of the data row (local time)',                             unit:'YYYY-MM-DD'},
-  hour_slot:            {label:'Hour Slot',         desc:'End time of the 1-hour slot (e.g. "11:00" = 10am–11am block). Slots above "24:00" span past midnight: "25:00" = 12am–1am, etc.',  unit:'HH:MM'},
+  loc:      {label:'Store NSN', desc:'McDonald\'s National Store Number, zero-padded to 7 digits', unit:''},
+  dt:       {label:'Date',      desc:'Calendar date of the data row (local time)',                  unit:'YYYY-MM-DD'},
+  hour_slot:{label:'Hour Slot', desc:'End time of the 1-hour slot (e.g. "11:00" = 10am–11am block). Slots above "24:00" span past midnight, matching the 4am-4am McDonald\'s business day: "25:00" = 12am–1am, etc.', unit:'HH:MM'},
 
   // ── Sales ──────────────────────────────────────────────────────────────
-  product_sales:        {label:'Actual Sales',      desc:'Actual product sales dollars for this hour slot',                       unit:'$'},
-  mean_sales:           {label:'Hist Mean Sales',   desc:'QSRSoft rolling historical mean sales for this store/slot/DOW (approx 5-week rolling avg). Used as the system baseline.',  unit:'$'},
-  proj_sales_dollars:   {label:'Sched Proj Sales',  desc:'Scheduled sales projection for this slot, sourced from LifeLenz. Represents the sales volume implied by the GM\'s scheduled labor hours — a human-in-the-loop estimate, not a QSRSoft statistical model.',  unit:'$'},
-  ly_product_sales:     {label:'LY Sales',          desc:'Last year product sales for the same slot and calendar date',           unit:'$'},
+  transactions:       {label:'STW GC',            desc:'Storewide guest count (total transactions) for this hour slot',  unit:'#'},
+  product_sales:      {label:'Prod Sales',        desc:'Product sales dollars for this hour slot (scrubbed of refunds/voids where the raw feed provides that)', unit:'$'},
+  net_sales:          {label:'All Net Sales',     desc:'Storewide all-net-sales dollars for this hour slot (Product Sales plus non-product revenue lines QSRSoft counts as net sales)', unit:'$'},
+  trans_scrubbed:     {label:'STW GC (Scrubbed)', desc:'Scrubbed storewide transaction count — QSRSoft\'s own cleaned guest count, used as the denominator for TPPH/TPTH', unit:'#'},
+  prod_sales_scrubbed:{label:'Prod Sales (Scrubbed)', desc:'Scrubbed product sales dollars — used as the denominator for SPPH and Punch Labor %', unit:'$'},
+  ly_product_sales:   {label:'LY Sales',          desc:'Last year product sales for the same slot and calendar date', unit:'$'},
+  ly_sales_dollars:   {label:'LY Sched Proj Sales',desc:'Last year value of the scheduled/system sales projection for this slot', unit:'$'},
+  proj_sales_dollars: {label:'Sched Proj Sales',  desc:'System sales dollar projection for this slot, from the scheduling software (LifeLenz) — the sales volume implied by the schedule\'s projected demand.', unit:'$'},
+  mean_sales:         {label:'Hist Mean Sales',   desc:'QSRSoft rolling historical mean sales for this store/slot/day-of-week (approx 5-week rolling average). Used as the system baseline the "vs mean" comparisons run against.', unit:'$'},
 
-  // ── Transactions ───────────────────────────────────────────────────────
-  trans_cnt:            {label:'Trans Count',       desc:'Total transaction count (orders completed) in this hour slot',         unit:'#'},
-  ly_trans_cnt:         {label:'LY Trans Count',    desc:'Last year transaction count for this slot',                            unit:'#'},
-  mean_trans_cnt:       {label:'Mean Trans Count',  desc:'Historical mean transaction count for this slot',                      unit:'#'},
+  // ── Guest count by channel ───────────────────────────────────────────────
+  dt_transactions:    {label:'DT GC',            desc:'Drive-thru guest count for this hour slot', unit:'#'},
+  dt_sales:           {label:'DT Sales',         desc:'Drive-thru product sales dollars for this hour slot', unit:'$'},
+  is_transactions:    {label:'In-Store GC',      desc:'All transactions that are not drive-thru — Front Counter, Kiosk, Delivery and MOP (attended/unattended/curbside) all fold into this leg on the DAR; they are not broken out separately here.', unit:'#'},
+  is_sales:           {label:'In-Store Sales',   desc:'In-store (non-drive-thru) product sales dollars for this hour slot', unit:'$'},
+  ly_transactions:    {label:'LY STW GC',        desc:'Last year storewide guest count for this slot', unit:'#'},
+  ly_dt_transactions: {label:'LY DT GC',         desc:'Last year drive-thru guest count for this slot', unit:'#'},
+  ly_dt_sales:        {label:'LY DT Sales',      desc:'Last year drive-thru sales dollars for this slot', unit:'$'},
+  ly_is_transactions: {label:'LY In-Store GC',   desc:'Last year in-store guest count for this slot', unit:'#'},
+  mean_transactions:      {label:'Mean STW GC',    desc:'Historical mean storewide guest count for this slot', unit:'#'},
+  mean_dt_transactions:   {label:'Mean DT GC',     desc:'Historical mean drive-thru guest count for this slot', unit:'#'},
 
-  // ── Average Check ──────────────────────────────────────────────────────
-  avg_check:            {label:'Avg Check',         desc:'Average sales per transaction (product_sales / trans_cnt)',             unit:'$'},
-  ly_avg_check:         {label:'LY Avg Check',      desc:'Last year average check for this slot',                                unit:'$'},
+  // ── Drive-thru speed (raw timing legs, all cumulative MILLISECONDS — divide by dt_trans_cnt
+  //    for a per-car average, and always sum both legs across the range being measured before
+  //    dividing, never average pre-divided per-hour rates — CLAUDE.md's "never average averages") ─
+  dt_trans_cnt:  {label:'DT Trans Count',  desc:'Number of drive-thru transactions in this slot. Denominator for every DT timing formula below.', unit:'#'},
+  dt_untilserve: {label:'DT Until Serve',  desc:'Cumulative ms from the first order keystroke to food served at the present window. OEPE = (dt_untilserve − dt_untilstore) / 1000 / dt_trans_cnt (includes parked-order wait). Avg DT TTL = dt_untilserve / dt_trans_cnt / 1000 (parks excluded).', unit:'ms'},
+  dt_untilstore: {label:'DT Until Store',  desc:'Cumulative ms from car arrival at the speaker/menu board to order entry ("store"). Used as the OEPE subtrahend.', unit:'ms'},
+  dt_untilrecall:{label:'DT Until Recall', desc:'Cumulative ms from car arrival to being recalled at the cash booth. Avg CTP (Cash-to-Present) = (dt_untilserve − dt_untilrecall) / 1000 / dt_trans_cnt.', unit:'ms'},
+  dt_heldtime:   {label:'DT Held Time',    desc:'Cumulative ms cars spent "parked"/held during this slot. Subtracted from OEPE for the OEPE-w/o-parked variant.', unit:'ms'},
+  dt_carsheld:   {label:'DT Cars Held',    desc:'Count of cars parked/pulled forward this slot. DT Pull Forward % = dt_carsheld / dt_trans_cnt.', unit:'#'},
 
-  // ── Drive-Thru Speed ───────────────────────────────────────────────────
-  dt_untilserve:        {label:'DT Until Serve',    desc:'Cumulative MILLISECONDS from car arrival at speaker to food delivery window (OEPE). Per-car seconds = sum(dt_untilserve)/sum(dt_trans_cnt)/1000 — a ratio of sums, never an average of averages.',  unit:'ms'},
-  dt_trans_cnt:         {label:'DT Trans Count',    desc:'Number of drive-thru transactions in this slot. Use as denominator for all DT timing averages.',  unit:'#'},
-  dt_pullforward:       {label:'DT Pull-Forward',   desc:'Cumulative ms cars were held in pull-forward queue during this slot',   unit:'ms'},
-  dt_greet:             {label:'DT Greet',          desc:'Cumulative ms from car arrival to greeting (speaker activation)',       unit:'ms'},
-  dt_menu:              {label:'DT Menu',           desc:'Cumulative ms from greeting to order completion at speaker',           unit:'ms'},
-  dt_payment:           {label:'DT Payment',        desc:'Cumulative ms from order completion to payment at window',             unit:'ms'},
-  dt_cashier:           {label:'DT Cashier / Pick-Up', desc:'Cumulative ms at the pick-up / cashier window before food delivery', unit:'ms'},
-  dt_avgspeed:          {label:'DT Avg Speed',      desc:'QSRSoft computed average DT speed (may duplicate dt_untilserve/dt_trans_cnt calculation)',  unit:'ms'},
-  ly_dt_untilserve:     {label:'LY DT Until Serve', desc:'Last year DT Until Serve for this slot',                               unit:'ms'},
-  ly_dt_trans_cnt:      {label:'LY DT Trans Count', desc:'Last year drive-thru transaction count for this slot',                  unit:'#'},
+  // ── Front Counter / Kitchen (Made-For-You) / Beverage speed ──────────────
+  fc_trans_cnt:         {label:'FC Trans Count', desc:'Front-counter transaction count this slot. Denominator for R2P and Avg Win TTL.', unit:'#'},
+  fc_untilserve:        {label:'FC Until Serve', desc:'Cumulative ms from first POS keystroke to order served from the Front Counter KVS. Avg Win TTL = fc_untilserve / fc_trans_cnt / 1000.', unit:'ms'},
+  fc_untilclosedrawer:  {label:'FC Until Close Drawer', desc:'Cumulative ms from order paid to order presented at the front counter. R2P (Receipt-to-Present) = (fc_untilserve − fc_untilclosedrawer) / 1000 / fc_trans_cnt — a FRONT COUNTER metric, not drive-thru.', unit:'ms'},
+  mfy1_trans_cnt:       {label:'MFY1 Trans Count', desc:'Made-For-You station 1 transaction count this slot', unit:'#'},
+  mfy1_untilserve:      {label:'MFY1 Until Serve', desc:'Cumulative ms on Made-For-You station 1 from order start to served', unit:'ms'},
+  mfy1_itemscount:      {label:'MFY1 Items',       desc:'Item count sent to Made-For-You station 1 this slot', unit:'#'},
+  mfy2_trans_cnt:       {label:'MFY2 Trans Count', desc:'Made-For-You station 2 transaction count this slot', unit:'#'},
+  mfy2_untilserve:      {label:'MFY2 Until Serve', desc:'Cumulative ms on Made-For-You station 2 from order start to served. KVS Time Per GC = (mfy1_untilserve + mfy2_untilserve) / 1000 / (mfy1_trans_cnt + mfy2_trans_cnt).', unit:'ms'},
+  mfy2_itemscount:      {label:'MFY2 Items',       desc:'Item count sent to Made-For-You station 2 this slot', unit:'#'},
+  bev_trans_cnt:        {label:'Bev Trans Count',  desc:'Beverage-monitor transaction count this slot', unit:'#'},
+  bev_untilserve:       {label:'Bev Until Serve',  desc:'Cumulative ms from start of a beverage order to served. Bev TTL = bev_untilserve / bev_trans_cnt / 1000.', unit:'ms'},
+  bev_untilclosedrawer: {label:'Bev Until Close Drawer', desc:'Cumulative ms from a beverage order being paid to served. Bev Run Time = (bev_untilserve − bev_untilclosedrawer) / bev_trans_cnt / 1000.', unit:'ms'},
+  bev_itemscount:       {label:'Bev Items',        desc:'Number of menu items sent to the beverage monitor this slot', unit:'#'},
+
+  // ── Order accuracy (KVS Healthy Usage) ────────────────────────────────────
+  healthy_count:   {label:'Healthy Count',   desc:'Count of prep-table 5-minute windows where both KVS sides were open and each ran ≥20% of orders ("healthy" kitchen usage)', unit:'#'},
+  unhealthy_count: {label:'Unhealthy Count', desc:'Count of prep-table windows that failed the healthy-usage test. KVS Healthy Usage = healthy_count / (healthy_count + unhealthy_count).', unit:'#'},
 
   // ── Labor ──────────────────────────────────────────────────────────────
-  actual_punched_hours: {label:'Act Hrs',           desc:'Actual labor hours punched (clocked in/out) during this hour slot',   unit:'hrs'},
-  total_needed_hours:   {label:'Needed Hrs',        desc:'Labor hours for this slot from LifeLenz — either (a) the algorithmic recommendation ("needed" hours for the projected sales volume) or (b) the actual hours the manager scheduled. Ambiguous without further API investigation; compare against actual_punched_hours to derive over/under-scheduling variance.',  unit:'hrs'},
-  ly_actual_punched_hours:{label:'LY Act Hrs',      desc:'Last year actual punched labor hours for this slot',                   unit:'hrs'},
+  actual_punched_hours:             {label:'Act Punch Hrs', desc:'Actual hourly (non-salaried) labor hours punched on the timeclock this slot', unit:'hrs'},
+  salaried_manager_scheduled_hours: {label:'Sal Mgr Sched Hrs', desc:'Salaried-manager scheduled hours this slot (not clocked — salaried managers don\'t punch). Act Hrs = actual_punched_hours + salaried_manager_scheduled_hours.', unit:'hrs'},
+  actual_punched_dollars:           {label:'Act Punch $', desc:'Actual punched labor dollars this slot. Punch Labor % = actual_punched_dollars / prod_sales_scrubbed; Avg Rate = actual_punched_dollars / actual_punched_hours.', unit:'$'},
+  total_scheduled_hours: {label:'Sched Hrs', desc:'Total hours scheduled for this slot (LifeLenz). Act Hrs vs Sch = Act Hrs − total_scheduled_hours.', unit:'hrs'},
+  total_needed_hours:    {label:'Needed Hrs',desc:'Algorithmic "needed" hours for this slot\'s projected volume (Variable Needed + Fixed Sched + Floor Need). Act Hrs vs Need = Act Hrs − total_needed_hours.', unit:'hrs'},
+  ly_punched_hours:      {label:'LY Act Punch Hrs', desc:'Last year actual punched labor hours for this slot', unit:'hrs'},
 
-  // ── Order Accuracy ─────────────────────────────────────────────────────
-  healthy_cnt:          {label:'Healthy Orders',    desc:'Orders with no reported errors or customer complaints (order accuracy)',  unit:'#'},
-  unhealthy_cnt:        {label:'Unhealthy Orders',  desc:'Orders with reported errors, missing items, or customer complaints',   unit:'#'},
-  ly_healthy_cnt:       {label:'LY Healthy Orders', desc:'Last year healthy order count for this slot',                          unit:'#'},
-  ly_unhealthy_cnt:     {label:'LY Unhealthy Orders',desc:'Last year unhealthy order count for this slot',                      unit:'#'},
+  // ── System projections (future/scheduled hours, not yet actualized) ──────
+  proj_trans_scrubbed:      {label:'Proj STW GC (Scrubbed)', desc:'Scrubbed system-projected storewide transaction count for this slot', unit:'#'},
+  proj_dt_trans_scrubbed:   {label:'Proj DT GC (Scrubbed)',  desc:'Scrubbed system-projected drive-thru transaction count for this slot', unit:'#'},
+  proj_is_trans_scrubbed:   {label:'Proj In-Store GC (Scrubbed)', desc:'Scrubbed system-projected in-store transaction count for this slot', unit:'#'},
+  proj_prod_sales_scrubbed: {label:'Proj Prod Sales (Scrubbed)',  desc:'Scrubbed system-projected product sales dollars for this slot', unit:'$'},
+  proj_kvs_items_scrubbed:  {label:'Proj KVS Items (Scrubbed)',   desc:'Scrubbed system-projected kitchen item count for this slot', unit:'#'},
+  proj_total_transactions:  {label:'Proj Total Transactions', desc:'System-projected total transaction count for this slot', unit:'#'},
+  proj_dt_transactions:     {label:'Proj DT GC',   desc:'System-projected drive-thru guest count for this slot', unit:'#'},
+  proj_sandwich_counts:     {label:'Proj Sandwich Count', desc:'System-projected sandwich item count for this slot', unit:'#'},
+  proj_is_transactions:     {label:'Proj In-Store GC', desc:'System-projected in-store transaction count for this slot', unit:'#'},
+  mean_sandwiches: {label:'Mean Sandwiches', desc:'Historical mean sandwich item count for this slot', unit:'#'},
+  mean_fry_hashes: {label:'Mean Fry/Hash',   desc:'Historical mean fry/hash-brown item count for this slot', unit:'#'},
+  mean_beverages:  {label:'Mean Beverages',  desc:'Historical mean beverage item count for this slot', unit:'#'},
 };
+
+// QSR_FOB_FIELDS — field dictionary for the qsr_fob table (Food Over Base / P&L food-cost pull).
+// Same shape and sourcing convention as QSR_DAR_FIELDS: db column (supabase/schema.sql's
+// `qsr_fob` CREATE TABLE) → {label, desc, unit}, with descriptions drawn verbatim from
+// QSRSoft's own FOB report field definitions (screenshots/field-definitions-parsed.json, page
+// 'fob') wherever QSRSoft scraped one for that dollar figure; the paper-cost columns (QSRSoft's
+// ℹ dialogs only covered the food-cost side) and the ly_ twins get a parallel description written
+// to match. `ly_*` columns are the identical metric for last year, same (loc, date) grain.
+const QSR_FOB_FIELDS = {
+  loc:  {label:'Store NSN', desc:'McDonald\'s National Store Number, zero-padded to 7 digits', unit:''},
+  date: {label:'Date',      desc:'Calendar date (or period-end date) this FOB row covers',      unit:'YYYY-MM-DD'},
+  prod_sales_amt:            {label:'Product Net Sales',  desc:'Product net sales dollars for the period — the denominator every FOB %/percentage figure below divides into.', unit:'$'},
+  comp_waste_amt:            {label:'Comp Waste $',       desc:'Dollar value of food that had to be thrown away after it was assembled into completed products. Comp Waste % = comp_waste_amt / prod_sales_amt.', unit:'$'},
+  raw_waste_amt:             {label:'Raw Waste $',        desc:'Dollar value of raw (unassembled) food product wasted before it became a completed item', unit:'$'},
+  condiments_amt:            {label:'Condiment $',        desc:'Dollar value of all condiments used, including shortening. Condiment % = condiments_amt / prod_sales_amt.', unit:'$'},
+  emp_mgr_meals_amt:         {label:'Emp/Mgr Meal $',     desc:'Base food dollar amount for orders that were employee or manager meals. Emp Meal % = emp_mgr_meals_amt / prod_sales_amt.', unit:'$'},
+  discount_coupons_amt:      {label:'Disc Coupon $',      desc:'Base food dollar amount for items discounted electronically or on the register — does NOT include promos. Disc Coupon % = discount_coupons_amt / prod_sales_amt.', unit:'$'},
+  stat_variance_amt:         {label:'Stat Variance $',    desc:'Statistical (unaccounted inventory) variance dollar amount — part of the FOB $ roll-up alongside Comp Waste, Raw Waste, Condiments, and Employee Meals.', unit:'$'},
+  unexplained_amt:           {label:'Unexplained $',      desc:'Inventory dollar shortfall that doesn\'t reconcile to any of the other FOB categories — the last, catch-all leg of the full FOB $ figure.', unit:'$'},
+  total_base_food:           {label:'Base Food $',        desc:'Dollar value of the raw cost of all menu items sold. Base Food % = total_base_food / prod_sales_amt.', unit:'$'},
+  pnl_food_cost_begin:       {label:'P&L Food Cost: Beginning Inv', desc:'Beginning food inventory dollar value for the P&L Food Cost calculation.', unit:'$'},
+  pnl_food_cost_purchases:   {label:'P&L Food Cost: Purchases',     desc:'Food purchase dollars added into the P&L Food Cost calculation.', unit:'$'},
+  pnl_food_cost_adjustments: {label:'P&L Food Cost: Adjustments',   desc:'Food inventory adjustment dollars (waste write-offs, counts corrections, etc.) in the P&L Food Cost calculation.', unit:'$'},
+  pnl_food_cost_transfers:   {label:'P&L Food Cost: Transfers',     desc:'Food inventory transfer dollars (store-to-store) in the P&L Food Cost calculation.', unit:'$'},
+  pnl_food_cost_promotions:  {label:'P&L Food Cost: Promotions',    desc:'Base food dollars of food given away as promotions. P&L Food Promo % = pnl_food_cost_promotions / prod_sales_amt.', unit:'$'},
+  pnl_food_cost_end:         {label:'P&L Food Cost: Ending Inv',    desc:'Ending food inventory dollar value. P&L Food Cost $ = Begin + Purchases +/- Adjustments and Transfers − Promotions − End. P&L Food Cost % = that figure / prod_sales_amt.', unit:'$'},
+  pnl_paper_cost_begin:       {label:'P&L Paper Cost: Beginning Inv', desc:'Beginning paper/packaging inventory dollar value — same P&L roll-up shape as the food-cost legs above, applied to paper.', unit:'$'},
+  pnl_paper_cost_purchases:   {label:'P&L Paper Cost: Purchases',     desc:'Paper/packaging purchase dollars in the P&L Paper Cost calculation.', unit:'$'},
+  pnl_paper_cost_adjustments: {label:'P&L Paper Cost: Adjustments',   desc:'Paper inventory adjustment dollars in the P&L Paper Cost calculation.', unit:'$'},
+  pnl_paper_cost_transfers:   {label:'P&L Paper Cost: Transfers',     desc:'Paper inventory transfer dollars in the P&L Paper Cost calculation.', unit:'$'},
+  pnl_paper_cost_promotions:  {label:'P&L Paper Cost: Promotions',    desc:'Paper/packaging dollars given away as promotions.', unit:'$'},
+  pnl_paper_cost_end:         {label:'P&L Paper Cost: Ending Inv',    desc:'Ending paper inventory dollar value. P&L Paper Cost $ follows the same Begin+Purchases±Adjustments/Transfers−Promotions−End shape as P&L Food Cost.', unit:'$'},
+};
+
+// QSR_EBOS_FIELDS — field dictionary for the qsr_ebos_daily table (eBOS purchase-ledger pull).
+// Source: prod.ebos.qsrsoft.com's store_ledger endpoint (scripts/qsrsoft-ebos-pull.mjs); columns
+// are already sums of ledger sub-categories, documented inline in supabase/schema.sql.
+const QSR_EBOS_FIELDS = {
+  loc:             {label:'Store NSN',        desc:'McDonald\'s National Store Number, zero-padded to 7 digits', unit:''},
+  date:            {label:'Date',             desc:'Calendar date of the purchase ledger entries this row sums', unit:'YYYY-MM-DD'},
+  food_purchases:  {label:'Food Purchases',   desc:'Sum of the ledger\'s food sub-category purchase dollars for the day', unit:'$'},
+  paper_purchases: {label:'Paper Purchases',  desc:'Sum of the ledger\'s paper/packaging sub-category purchase dollars for the day', unit:'$'},
+  ops_purchases:   {label:'Ops Purchases',    desc:'Sum of the ledger\'s operating-supplies sub-category purchase dollars for the day (cleaning supplies, smallwares)', unit:'$'},
+  hm_purchases:    {label:'Happy Meal Purchases', desc:'Sum of the ledger\'s Happy Meal sub-category purchase dollars for the day', unit:'$'},
+  other_purchases: {label:'Other Purchases',  desc:'Sum of the ledger\'s other/uncategorized purchase dollars for the day', unit:'$'},
+};
+
+// qsrFieldLabelMap(dict) — reshapes a QSR_*_FIELDS dict (db_col → {label,desc,unit}) into the
+// {label: desc} shape SAGE's field-definitions context builder and the live qsr_field_definitions
+// Supabase table both already use, keyed by QSRSoft's own display label rather than our internal
+// db column — the vocabulary a user (or SAGE) actually asks about ("what is OEPE") rather than
+// implementation detail. Used as the static fallback when the live scraped table isn't loaded.
+function qsrFieldLabelMap(dict) {
+  const out = {};
+  for (const col in dict) out[dict[col].label] = dict[col].desc;
+  return out;
+}
 
 // ── Optional / experimental panels (Test Kitchen) — visibility registry ───────
 // Notes 24 prune + feature-registry: these low-traffic experiment panels are HIDDEN
@@ -738,4 +840,4 @@ function setLiveDefaultTargets(targets) {
 // reviews.reviewee_loc/orgAssignments() are unpadded, e.g. "3708") -- reusing this one
 // definition rather than a second copy, per the standing "check whether a helper exists
 // before writing one" rule (dispatch16, 2026-08-17).
-export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
+export { DEFAULT_TARGETS, DEFAULT_MODEL_ASSIGNMENTS, MODEL_ASSIGNMENT_KEY, DEF_SETTINGS, setLiveSupervisorGroups, supervisorGroups, supervisorOf, setLiveOperators, operatorGroups, operatorOf, setLiveAssignments, orgAssignments, whoRan, groupsAt, seedAssignmentsFromGroups, _unpadLoc as unpadLoc, setLiveStoreNames, setLiveDefaultTargets, AE_DI_PARAMS, MODEL_CODE_LABELS, STORE_COORDS, STORE_NAMES, sName, sNameC, DOW_BASE, STORE_KB, STORE_KB_EDIT_KEY, getKBEdits, saveKBEdits, getKB, EVENT_TYPES, EVENT_TYPE_GROUPS, EVENT_TYPE_VISIBILITY, defaultVisibilityFor, INV_ORG_COORDS, fetchOpenMeteoWeather, getStoreOrg, QSR_DAR_FIELDS, QSR_FOB_FIELDS, QSR_EBOS_FIELDS, qsrFieldLabelMap, VLH_DT_TYPES, VLH_IN_STORE, VLH_KITCHEN, VLH_GUIDE, VLH_COFFEE, OPTIONAL_PANELS, PANEL_VIS_KEY, loadPanelVis, savePanelVis };
