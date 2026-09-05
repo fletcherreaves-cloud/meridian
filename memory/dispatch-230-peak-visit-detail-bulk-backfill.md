@@ -159,16 +159,10 @@ scoping), and the entity-id guess (wrong) all preceded landing on the actual, si
 1/2/3 are now genuinely complete, pending one more live run across the corrected page range to
 confirm 27 stores and a proportionally larger visit count than the 190/189 measured across 17.
 
-**Fix attempted same day, NOT YET verified against a real run.** `GetEntities`' real shape is now
-confirmed: `{EntityTypes:[{EntityList:[{Id,Name,Description1,...}],EntityCount}]}`. The one live
-account measured has `EntityCount:1` — a single entity, `Id:"8685"`, `Description1:"1000890759"`.
-That `Description1` value is not a coincidence: it is byte-identical to `ORG_ROOT_NODE` already
-hardcoded in this repo's Propel scripts (`browser-ecosure-bulk-capture.js`) for the SAME
-organization — strong cross-system corroboration that `1000890759` is a real, meaningful scope id,
-not a random guess. The capture script now extracts this entity and sends its `Id`/`Description1`
-into every `Stores/Paged` call under several plausible key-casings (`entityId`/`EntityId`/
-`entityID`/`hierarchyNode`/`HierarchyNode`) alongside `page` — unrecognized extra JSON keys are
-normally ignored server-side, so sending several costs nothing if all are wrong. **UNCONFIRMED
-until the next live run shows the store count actually reach 27** (or doesn't, in which case the
-per-page log will show what each key attempt's response looked like, same diagnostic discipline as
-the last three rounds).
+✅ **VERIFIED live, same day, by the owner: a full re-run after the `page=0` fix found all 27
+stores.** Dispatch #230 (all tasks) and this store-count question are both fully closed. The
+entity-scoping detour (`GetEntities`' entity `Id`/`Description1` passed into `Stores/Paged`) is
+dead history, kept in the diagnosis chain above only as a record of what was tried and ruled out —
+do not resurrect it. Next real step, if pursued: re-run the full capture + import with all 27
+stores in scope (the 190/189 numbers above only cover the 17-store subset) and spot-check the
+newly-reached ~10 stores' rows in the Graded Visits panel UI.
