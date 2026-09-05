@@ -1,0 +1,8 @@
+{
+  "_source": "propel.mcd.com -- getCfvHistory (cfv) + getBrandProtectionVisits filtered to RGR/RGR-HealthSafety (rgr) + getThirdPartyFoodSafetyVisitReport (ecosure). Captured via scripts/browser-graded-visits-bulk-capture.js.",
+  "_note": "cfv/rgr entries are {store, name, visit: <raw API row>}; ecosure entries are the RAW getThirdPartyFoodSafetyVisitReport envelope (including its {results:{...}} wrapper), same shape memory/data/ecosure-visits-seed.json already uses. scripts/import-graded-visits-bulk.mjs reads this file and maps every entry through the SAME parsers (src/parsers/graded-visits.js) the app's own interactive JSON-upload path and the other bulk-import scripts use. Idempotent: re-running the import after appending only touches the store+date+report_type keys that changed.",
+  "_doNotCommitRealData": "EcoSure entries carry reviewedWithName -- a real employee's name in plaintext -- until parseEcoSureVisit()/the import script's tokenizeRows() call tokenizes it AT IMPORT TIME (RGR/CFV summary rows carry no PII field at all). Never commit a version of this file populated with real captured visits. Keep this committed file as the empty shell it is; point GRADED_VISITS_BULK_SEED_PATH (env var, see import-graded-visits-bulk.mjs) at a local, gitignored/uncommitted file holding real captures instead, and run the import from there.",
+  "cfv": [],
+  "rgr": [],
+  "ecosure": []
+}
