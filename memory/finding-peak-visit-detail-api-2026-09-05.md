@@ -1,6 +1,6 @@
 ---
 name: finding-peak-visit-detail-api-2026-09-05
-description: peak.mcd.com has a full per-visit detail API (store enumeration -> per-store visit history -> per-visit question/comment/score detail) that answers the open "does a per-visit CFV/RGR detail endpoint exist" question from finding-ecosure-propel-api-2026-08-22.md -- confirmed working for CFV, architecturally identical for RGR though not yet directly tested. Richer than anything Propel offers per visit (every question, not just cited/failed ones, plus real per-question comments and scores). Not built into Meridian yet.
+description: peak.mcd.com has a full per-visit detail API (store enumeration -> per-store visit history -> per-visit question/comment/score detail) that answers the open "does a per-visit CFV/RGR detail endpoint exist" question from finding-ecosure-propel-api-2026-08-22.md -- confirmed working for BOTH CFV and RGR (2026-09-05, two independent live captures). Richer than anything Propel offers per visit (every question, not just cited/failed ones, plus real per-question comments and scores). LIVE in production the same day -- two real visits (one CFV, one RGR) imported end-to-end via scripts/import-peak-visit-detail.mjs after the owner ran graded_visits' peak_detail column migration.
 sensitivity: open
 metadata:
   node_type: memory
@@ -92,23 +92,45 @@ CFV (EcoSure already had one via Propel; RGR and CFV never did).
 
 ## What remains open
 
-1. **RGR's `RoipSurvey` response was never actually captured** — only CFV was. The chain
-   architecture (a single generic endpoint keyed only by `visitId`, already proven against a
-   CFV `VisitTypeId`) makes it very likely RGR (`VisitTypeId 3781`, real visitIds already sitting
-   in this same store's history — e.g. `8308164`, dated 2026-02-10) returns the same rich shape,
-   but this is an inference, not a measurement. **The next capture should open that exact RGR
-   visit's own report page in PEAK and confirm.**
+1. ✅ **RESOLVED 2026-09-05, same day — RGR confirmed.** A second HAR capture (owner-provided,
+   428 entries) included a real `RoipSurvey/8308164` call — the exact RGR visit named as the
+   "next capture" above. Measured directly (structural fields only, no PII): `Success: true`,
+   `VisitTypeId: 3781` (RGR, per `PEAK_VISIT_TYPE_TO_REPORT_TYPE`), store `06972`, visit date
+   `2026-02-10`, **193 questions** returned across 7 root categories (vs. CFV's 26 across 2). RGR
+   returns the identical rich per-question shape CFV does — the single-generic-endpoint
+   architecture holds. Do not re-verify this; capture a different store/visit only if a specific
+   new question needs answering.
 2. **EcoSure's presence in PEAK is unconfirmed** — not found by name in this one store's 83-visit
    history. Propel remains the only confirmed EcoSure source regardless of how this resolves.
-3. **Auth mechanism is unclear from this capture** — no `Cookie` or `Authorization` header
-   appeared on ANY request in this HAR, including the successful, clearly-authenticated
-   `RoipSurvey`/`GetStoreDetails` calls. This almost certainly means the HAR export stripped
-   cookies (a common browser DevTools export behavior), not that these endpoints are
-   unauthenticated — **do not treat this as "no auth needed."** Confirm the real auth mechanism
-   (cookie name(s), any MFA/SSO gate analogous to Propel's) before designing any automation
-   around this API.
+3. **Auth mechanism — sharpened, still not fully confirmed.** The second capture ALSO showed zero
+   `Cookie`/`Authorization` header on any `peak.mcd.com` request (same as the first) — with two
+   independent captures now agreeing, this is more likely genuine (HAR export omitting an HttpOnly
+   session cookie is still possible, but "coincidence twice" is less likely than "the tool
+   consistently doesn't show it"). **New signal found:** every `peak.mcd.com`/`gas.mcd.com` POST
+   carries a `__RequestVerificationToken` request header — the standard ASP.NET anti-forgery-token
+   header name, which in that framework's usual pattern pairs with an (often HttpOnly, hence
+   plausibly HAR-invisible) session cookie carrying the real auth. No `Set-Cookie` response header
+   and no request `Cookie` header appeared in either capture, header names checked directly, no
+   values ever inspected or recorded here. **Still do not treat this as "no auth needed"** — an
+   ASP.NET anti-forgery pattern almost always implies a paired session cookie exists even where
+   this capture method doesn't surface it. Confirm the real mechanism (cookie name, MFA/SSO gate)
+   before designing automation, same caution as before, just with a sharper hypothesis to test.
 4. Whether `Stores/Paged` genuinely returns every store in one small paginated set (27 stores / 3
    pages observed here) at any scale, or is itself capped, wasn't stress-tested.
+5. ✅ **RESOLVED same day — owner ran the migration, import completed end-to-end.**
+   `graded_visits.peak_detail` did not exist in production (`ALTER TABLE graded_visits ADD COLUMN
+   IF NOT EXISTS peak_detail jsonb;`, added alongside the parser at PR #1123, had never actually
+   been run against the live database — same "SQL patch written, not run" pattern as
+   `forecast_snapshots`/`qsr_daily_activity_rollup` elsewhere in this repo's history). Owner ran it
+   in the Supabase SQL Editor; `scripts/import-peak-visit-detail.mjs` was then run against both
+   real captures and confirmed live, structure-only (no PII re-inspected): CFV row
+   (`8721634`→store `06972`/2026-08-19) now carries `peak_detail` with `questionCount:26`,
+   `commentedCount:2`; RGR row (`8308164`→store `06972`/2026-02-10) carries `questionCount:193`,
+   `commentedCount:15` — both match the counts measured directly from the raw capture earlier in
+   this file. `auditor` on both rows is a 36-char UUID-shaped token (tokenization confirmed
+   working — not a plaintext name). **This is the first real PEAK per-visit detail data live in
+   Meridian.** The local seed file holding the real captures was deleted after the import; the
+   committed seed path stays the empty shell it always was.
 
 ## Why this changes the plan, not just answers the question
 
