@@ -77,10 +77,10 @@ export function CustomerComplaintsPanel({ ds, stores, onClose }) {
 
   const csvCell = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
   const exportCSV = () => {
-    const cols = ['Store', 'NSN', 'Date', 'Status', 'Issue', 'Sub-Issue', 'Comment'];
+    const cols = ['Case #', 'Store', 'NSN', 'Incident Date', 'Received Date', 'Status', 'Issue', 'Sub-Issue', 'Comment'];
     const lines = [cols.map(csvCell).join(',')];
     for (const c of filtered) {
-      lines.push([storeName(c.loc), locNum(c.loc), c.incidentDate || '', c.caseStatus || '', c.issueCode || '', c.issueSubCode || '', c.customerComments || ''].map(csvCell).join(','));
+      lines.push([c.childCaseId || '', storeName(c.loc), locNum(c.loc), c.incidentDate || '', c.receivedDate || '', c.caseStatus || '', c.issueCode || '', c.issueSubCode || '', c.customerComments || ''].map(csvCell).join(','));
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -131,10 +131,12 @@ export function CustomerComplaintsPanel({ ds, stores, onClose }) {
             filtered.length === 0
               ? div({ key: 'empty', style: { textAlign: 'center', padding: '32px 20px', color: 'var(--text3)', fontSize: 12 } }, 'No cases match these filters.')
               : div({ key: 'tbl', style: { background: 'var(--surf2)', border: '.5px solid var(--bdr)', borderRadius: 8, overflowX: 'auto' } },
-                  h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 640 } },
+                  h('table', { style: { width: '100%', borderCollapse: 'collapse', minWidth: 760 } },
                     h('thead', null, h('tr', null,
+                      h('th', { style: thS }, 'Case #'),
                       h('th', { style: thS }, 'Store'),
-                      h('th', { style: thS }, 'Date'),
+                      h('th', { style: thS }, 'Incident Date'),
+                      h('th', { style: thS }, 'Received Date'),
                       h('th', { style: thS }, 'Status'),
                       h('th', { style: thS }, 'Issue'),
                       h('th', { style: thS }, 'Comment'))),
@@ -146,9 +148,11 @@ export function CustomerComplaintsPanel({ ds, stores, onClose }) {
                         title: comment ? 'Click to ' + (isOpen ? 'collapse' : 'expand') + ' the full comment' : undefined,
                         style: { cursor: comment ? 'pointer' : 'default', background: isOpen ? 'rgba(245,188,0,.06)' : 'transparent' },
                       },
+                        h('td', { style: { ...tdS, color: 'var(--text3)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' } }, c.childCaseId || '—'),
                         h('td', { style: { ...tdS, fontWeight: 600, whiteSpace: 'nowrap' } },
                           storeName(c.loc), span({ style: { color: 'var(--text3)', fontWeight: 400, fontSize: 9, marginLeft: 5 } }, '#' + locNum(c.loc))),
                         h('td', { style: { ...tdS, color: 'var(--text2)', whiteSpace: 'nowrap' } }, niceDate(c.incidentDate)),
+                        h('td', { style: { ...tdS, color: 'var(--text2)', whiteSpace: 'nowrap' } }, niceDate(c.receivedDate)),
                         h('td', { style: tdS },
                           span({ style: { fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: withAlpha(statusColor(c.caseStatus), '22'), color: statusColor(c.caseStatus) } }, c.caseStatus || '—')),
                         h('td', { style: { ...tdS, color: 'var(--text2)' } },

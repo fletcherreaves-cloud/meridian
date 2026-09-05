@@ -289,3 +289,53 @@ scoped:
 
 Not scoped or built yet — needs the owner to say which metrics, which report(s), and whether (2)
 is wanted at all before any implementation starts.
+
+## Idea logged for later (2026-09-05, owner) — Alerts/Notifications customization + expiry
+
+Owner, verbatim: *"Work on Alerts Notifications in app — I would like to see some customization
+options and the ability to delete notifications or have them fall off if no longer relevant.
+Would also like other ideas for what or how this is implemented across the industry."*
+
+**Current state** (`src/app/shell.js`'s `NotificationBell`/`NotificationRow`, dispatch #209): the
+app's only real in-app notification surface is EOM count-completion alerts specifically (food/
+condiment/paper/non-product count status), sourced from `eom_count_notifications` via
+`loadEomCountNotifications({limit:20})`, polled every 60s. A row can be marked read
+(`markEomCountNotificationRead`) but there is no delete, no expiry/auto-fall-off, and no
+customization of what surfaces or how — exactly the two gaps the owner named. Not a general-
+purpose alerts system yet; it's one notification TYPE with a bell UI, not an extensible one.
+
+**Not scoped or designed yet** — needs the owner's input on which customization axes matter
+(per-user? per-notification-type? snooze vs. delete? a settings panel vs. inline per-row
+controls?) before implementation starts. Logging industry patterns worth considering when this
+gets scoped, not a recommendation to copy any one of them wholesale:
+- **Read/unread + swipe-or-click dismiss** (Gmail, most mobile OS notification centers) — the
+  baseline: dismissing removes it from the list, doesn't undo whatever it was warning about.
+- **TTL / auto-expiry** (Slack's `@here`-style ephemeral banners, GitHub's PR-check notifications
+  that resolve themselves once the check re-runs green) — a notification tied to a state that
+  later resolves itself (e.g. a count that gets completed) could auto-clear rather than needing a
+  manual dismiss, which maps well onto Meridian's own "count completed" trigger.
+  `sync-failure-watch`-style staleness already exists elsewhere in this app as a pattern worth
+  reusing conceptually (a condition auto-clears once the underlying data catches up).
+  ⚠️ Genuinely useful but unconfirmed which of Meridian's own current notifications resolve
+  themselves this way vs. need a manual dismiss — would need auditing per type, not assumed.
+  ⚠️ Speculative, not measured against Meridian's own data — flagging as an idea, not a finding.
+- **Notification preferences/settings page** (Slack, GitHub, most SaaS dashboards) — per-type
+  on/off toggles (e.g. "notify me about X but not Y"), often also channel selection (in-app vs.
+  push vs. email) — Meridian already has push notifications (`upsertPushSubscription`) and email
+  digests (`eom-digest.js`) as separate delivery paths for related data, so a unified preferences
+  surface could plausibly cover all three rather than just the in-app bell.
+  ⚠️ Speculative, not measured against Meridian's own data — flagging as an idea, not a finding.
+- **Grouping/digest** (GitHub's "3 new comments" collapsing instead of 3 separate rows) — relevant
+  once notification TYPES multiply beyond just EOM counts, so the bell doesn't become a long flat
+  list.
+  ⚠️ Speculative, not measured against Meridian's own data — flagging as an idea, not a finding.
+- **Severity/priority tiers** (PagerDuty/Opsgenie's critical/warning/info) — could map onto this
+  app's existing severity vocabulary elsewhere (e.g. Signals' anomaly flags, visit-readiness risk
+  flags) if/when other alert types get added to the same bell.
+  ⚠️ Speculative, not measured against Meridian's own data — flagging as an idea, not a finding.
+
+Scoping questions for whoever picks this up: does "customization" mean per-user preferences, or
+just better controls on the existing bell (delete button, mark-all-read, auto-clear-when-
+resolved)? Does this stay EOM-count-specific or become a general notification framework other
+features (Signals anomalies, forecast accuracy drops, etc.) could plug into later? Both are
+reasonable directions — the owner hasn't said which yet.
