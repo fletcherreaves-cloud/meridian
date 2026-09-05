@@ -397,6 +397,12 @@ export const PANELS = [
   // through 'ranking' now). tkOrder dropped (no longer a Test Kitchen panel). Same "kept
   // registered so old deep links redirect" pattern as record-day just above.
   { id:'top-bottom', label:'Top/Bottom Performers', icon:'🏆', perm:'analytics.district', kind:'internal', section:'analytics' },
+  // Trend Explorer (owner-requested 2026-09-05, memory/project-trends-panel.md) -- pick any
+  // registry metric + store, a date range and a daily/weekly/monthly/yearly frequency, see the
+  // series as a sparkline + table, and get a day-of-week diagnostic read plus what else moves
+  // with it (reusing Signals' own Scanner correlation engine). Single-store only in v1 -- see
+  // src/engine/trend-explorer.js's header comment.
+  { id:'trends', label:'Trend Explorer', icon:'📈', perm:'analytics.store', kind:'nav', section:'analytics', route:true },
   { id:'unified-targets', label:'Unified Targets', icon:'', perm:'analytics.store', kind:'hub-tab', section:'planning' },
   { id:'visit-readiness', label:'Visit Readiness', icon:'🛡️', perm:'analytics.store', kind:'nav', section:'operations', route:true },
   { id:'why-engine', label:'Why Engine', icon:'🔬', perm:'analytics.ai', kind:'optional', section:'analysis' },

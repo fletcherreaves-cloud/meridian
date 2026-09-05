@@ -290,6 +290,7 @@ import { TaskQueuePanel } from '../views/task-queue.js'; // dispatch #194: absor
 // dead top-of-file Chart import above.
 const DTSpeedOfServicePanel = lazyPanel(() => import('../views/dt-speedofservice.js').then(m => ({ default: m.DTSpeedOfServicePanel })));
 const GradedVisitsPanel = lazyPanel(() => import('../views/graded-visits.js').then(m => ({ default: m.GradedVisitsPanel })));
+const TrendExplorerPanel = lazyPanel(() => import('../views/trends.js').then(m => ({ default: m.TrendExplorerPanel })));
 const FormsCompletionPanel = lazyPanel(() => import('../views/forms-panel.js').then(m => ({ default: m.FormsCompletionPanel })));
 import { computeInsights } from '../engine/insights.js';
 import { configureLazyFill } from '../engine/metric-source.js';
@@ -3152,6 +3153,7 @@ function App() {
         if(modal==='lifelenz-bridge') perm('analytics.forecasting')&&(setForecastReportsTab('lifelenz-bridge'),goRoute('forecast-reports'));
         if(modal==='dt-sos')         perm('analytics.store')&&goRoute('dt-sos');
         if(modal==='graded-visits')  perm('analytics.store')&&goRoute('graded-visits');
+        if(modal==='trends')         perm('analytics.store')&&goRoute('trends');
         if(modal==='security')       perm('security.view')&&goRoute('security');
         // 'crew-schedule'/'time-punches' — dispatch #197 merged Time Punches into Crew Schedule
         // as a Punches tab; both modal ids still route to 'crew-schedule', selecting the right
@@ -3493,6 +3495,7 @@ function App() {
       })),
       routePanel==='visit-readiness'&&h(VisitReadinessPanel,{ds,initialScope:visitReadyInit,onClose:()=>{goRoute(null);setVisitReadyInit(null);}}),
       routePanel==='graded-visits'&&h(GradedVisitsPanel,{ds,onClose:()=>goRoute(null)}),
+      routePanel==='trends'&&h(TrendExplorerPanel,{ds,onClose:()=>goRoute(null)}),
       routePanel==='operator-summary'&&h(OperatorSummaryPanel,{stores,ds,settings,onClose:()=>goRoute(null)}),
       routePanel==='delivery-mix'&&h(DeliveryMixPanel,{ds,stores,onClose:()=>goRoute(null)}),
       // Dispatch #206 (URL migration batch 3) — dt-sos/news/inventory/loc-intel/my-reports/

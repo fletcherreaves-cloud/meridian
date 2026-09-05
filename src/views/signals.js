@@ -298,7 +298,9 @@ function DataReadiness({ ds }) {
 }
 
 // ── Metric Selector ───────────────────────────────────────────────────────────
-function MetricSelect({ value, onChange, label, excludeKey }) {
+// Exported so other panels needing a "pick any metric from the registry" dropdown (e.g.
+// trends.js's Trend Explorer) reuse the exact same picker instead of a second near-copy.
+export function MetricSelect({ value, onChange, label, excludeKey }) {
   const optStyle = { color: '#f1f5f9', background: '#1a1f2e' };
   return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 } },
     h('label', { style: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: muted } }, label),
