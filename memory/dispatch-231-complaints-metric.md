@@ -46,6 +46,51 @@ divide-by-zero). Full suite green, build clean.
 - The 10-second visual dropdown check for the `timeFrame` label mapping was already done
   separately (see the finding file) — not blocking this dispatch's own remaining verification.
 
+## ✅ RESOLVED 2026-09-05 — real capture run, two real bugs found and fixed, verification closed
+
+The owner ran `browser-complaints-bulk-capture.js` against production and `import-complaints-
+history.mjs` against the real seed. Two genuine data bugs surfaced on the FIRST real run (not
+anticipated in advance — exactly the "measure it, don't reason about it" pattern) and both are
+fixed and merged (PRs #1150, #1151):
+
+1. **Some cases have no `incidentDate` at all** — `customer_complaints.incident_date` is `NOT
+   NULL` (by design, review-engine.js buckets by it), so the whole first upsert chunk failed
+   outright. Fixed: `buildRow()` falls back to `receivedDate` (every real case has one) when
+   `incidentDate` is absent — 95 of 4418 parsed rows needed the fallback.
+2. **A "Multiple Issues" case's own `childCases[]` can reuse the PARENT case's own
+   `childCaseId`** — already documented as real in `dispatch-231-complaints-parser.test.js`'s
+   own "Multiple Issues" test, but the import script didn't yet handle what that means for a
+   single-statement upsert: Postgres refused with "ON CONFLICT DO UPDATE command cannot affect
+   row a second time." Fixed: `dedupeByChildCaseId()` collapses to one row (last occurrence —
+   the more specific per-issue entry), applied before the upsert. **631 of 4418 parsed rows were
+   duplicates — 14%, far more common than the "rare edge case" the original code comment
+   assumed.**
+
+**Final real numbers (2026-09-05, all 27 stores, `timeFrame=5`/History):**
+- 3033 raw case entries → 4418 parsed rows (including flattened `childCases[]`) → 3787 rows
+  actually stored (4418 − 631 duplicates − 0 dateless skips). Math self-checks: 4418 − 631 = 3787.
+- `caseStatus` values found: **`CLOSED` and `OPEN`** — resolves the dispatch's own open question;
+  it is NOT `CLOSED`-only. (Whether `OPEN` cases should count toward the Complaint Contacts/100K
+  metric is a product question the owner hasn't been asked yet — `autoPopulateKPIs` currently
+  counts every case regardless of status, matching "a complaint is a complaint" until told
+  otherwise.)
+- `issueSubCode` — no encoding quirks found on this real 3787-row set.
+- **RLS confirmed by measurement, not assertion** (2026-09-05, `apikey`+`Authorization: Bearer`
+  recipe): anon key (`sb_publishable_...`) → `content-range: */0` (zero rows visible); service-
+  role key → `content-range: 0-0/3787` (exact match to the console's own "upserted 3787" count).
+  Same three-way calibration discipline as every other credential measurement in this file.
+- Item 4 (a real `review-engine.js` number spot-checked by hand) — sampled directly from the
+  live table (store 03708, 5 most recent cases, all `CLOSED`, dated 2026-08-29–2026-09-03);
+  a full month-bucketed `autoPopulateKPIs` spot-check against Performance Reviews itself has not
+  been done yet by a human — safe to do opportunistically, not blocking.
+
+**Follow-on shipped same day (v5.370):** a Customer Complaints browsing panel
+(`src/views/customer-complaints.js`, Operations section next to Graded Visits, `route:true` from
+day one) — explicitly out of scope for this dispatch's own original text ("a drill-down/detail
+view, if ever wanted, is a separate follow-on, not bundled in here"), built once real data existed
+to browse. Reads the same `ds.complaintCases` array the metric filters; does not recompute the
+`/100K` rate.
+
 ## What already exists (measured, not assumed)
 
 - **Endpoint confirmed working, full payload shape documented.** `locationId` = the existing

@@ -200,7 +200,7 @@ describe('route panels (Dispatch27 Workstream E)', () => {
   // this?" rule this implements.
   const ROUTE_IDS = PANELS.filter(p => p.route).map(p => p.id);
 
-  it('is exactly the thirty-six panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3 and Trend Explorer)', () => {
+  it('is exactly the thirty-seven panels converted so far (Dispatch27 + Dispatch #55 Part B + #106 + #121 + #123 + #134 + #138 + #160 + #192 + #205 + #206 + #207, minus #140, #189, #190 and #197, plus Digital Checklists, Pricing Engine, Events Phase 3, Trend Explorer and Customer Complaints)', () => {
     // Ratchet, not a ceiling: adding a twentieth route panel is a real routing change (a new
     // App.js render-gate wire-up via goRoute, not a label flip) -- fails loudly so the next
     // one is a deliberate choice, not route:true copy-pasted onto an ordinary modal. The
@@ -297,9 +297,12 @@ describe('route panels (Dispatch27 Workstream E)', () => {
     // (see panel-registry.js's own comment on that entry) rather than becoming a second route id
     // (thirty-four -> thirty-five). 2026-09-05: 'trends' (Trend Explorer) is a brand-new panel,
     // not a conversion -- built route:true from day one, same as 'checklist-fill'/'crew-schedule'
-    // above (thirty-five -> thirty-six).
+    // above (thirty-five -> thirty-six). Same day, 'customer-complaints' (Customer Complaints) --
+    // dispatch #231's own explicitly-deferred follow-on ("a drill-down/detail view, if ever
+    // wanted, is a separate follow-on, not bundled in here") -- is a brand-new panel, also built
+    // route:true from day one (thirty-six -> thirty-seven).
     expect(ROUTE_IDS.slice().sort()).toEqual([
-      'above-store', 'attention', 'brief', 'checklist-fill', 'crew-schedule', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
+      'above-store', 'attention', 'brief', 'checklist-fill', 'crew-schedule', 'customer-complaints', 'delivery-mix', 'dicompare', 'dt-sos', 'eom-dashboard',
       'events', 'fcst-ref', 'fob-analysis', 'fob-eom', 'forecast-reports', 'graded-visits', 'inventory', 'loc-intel',
       'morning-brief', 'my-reports', 'news', 'one-pager', 'operator-summary', 'perf-reviews', 'planning', 'pricing-engine', 'proj',
       'promo-roi', 'ranking', 'report', 'sched-hub', 'security', 'signals', 'smg-voice', 'task-queue', 'trends',
